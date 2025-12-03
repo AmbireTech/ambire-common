@@ -24,7 +24,6 @@ export const dappRequestMethodToRequestKind = (method: DappProviderRequest['meth
   return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase()) as
     | 'dappConnect'
     | 'unlock'
-    | 'switchAccount'
     | 'walletAddEthereumChain'
     | 'walletWatchAsset'
 }

@@ -6,7 +6,7 @@ import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
-import { Dapp, DappProviderRequest } from './dapp'
+import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
 
@@ -28,7 +28,7 @@ export interface Message {
 }
 
 export type DappPromise = {
-  dapp: Dapp | null
+  id: string
   session: DappProviderRequest['session']
   meta: { isWalletSendCalls?: boolean }
   resolve: (data: any) => void
@@ -98,7 +98,7 @@ export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> 
   }
 }
 
-export interface AuthorizationUserRequest extends UserRequestBase {
+export interface AuthorizationUserRequest extends UserRequestBase<[]> {
   kind: 'authorization-7702'
   meta: UserRequestBase['meta'] & {
     params: {
@@ -111,7 +111,7 @@ export interface AuthorizationUserRequest extends UserRequestBase {
   }
 }
 
-export interface BenzinUserRequest extends UserRequestBase {
+export interface BenzinUserRequest extends UserRequestBase<[]> {
   kind: 'benzin'
   meta: UserRequestBase['meta'] & {
     submittedAccountOp?: SubmittedAccountOp
@@ -123,7 +123,7 @@ export interface BenzinUserRequest extends UserRequestBase {
   }
 }
 
-export interface SwitchAccountRequest extends UserRequestBase {
+export interface SwitchAccountRequest extends UserRequestBase<[DappPromise]> {
   kind: 'switchAccount'
   meta: UserRequestBase['meta'] & {
     accountAddr: string
@@ -149,15 +149,15 @@ export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappProm
   }
 }
 
-export interface SwapAndBridgeRequest extends UserRequestBase {
+export interface SwapAndBridgeRequest extends UserRequestBase<[]> {
   kind: 'swapAndBridge'
 }
 
-export interface TransferRequest extends UserRequestBase {
+export interface TransferRequest extends UserRequestBase<[]> {
   kind: 'transfer'
 }
 
-export interface UnlockRequest extends UserRequestBase {
+export interface UnlockRequest extends UserRequestBase<[DappPromise]> {
   kind: 'unlock'
 }
 

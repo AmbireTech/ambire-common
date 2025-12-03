@@ -37,7 +37,7 @@ import {
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -366,17 +366,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             })
 
             dappPromises.forEach((p) => {
-              p.reject(
-                ethErrors.rpc.transactionRejected({
-                  message: errorMessage
-                })
-              )
+              p.reject(ethErrors.rpc.transactionRejected({ message: errorMessage }))
             })
 
-            await this.#ui.notification.create({
-              title: 'Rejected!',
-              message: errorMessage
-            })
+            await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
 
             hasTxInProgressErrorShown = true
           }
@@ -467,7 +460,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return true
     })
 
-    if (this.currentUserRequest && this.currentUserRequest.kind === 'benzin') {
+    if (
+      this.currentUserRequest &&
+      !this.userRequests.find((r) => r.id === this.currentUserRequest!.id)
+    ) {
       this.currentUserRequest = null
     }
 
@@ -667,15 +663,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async updateCallsUserRequest(accountOp: AccountOp) {
-    const { accountAddr, chainId } = accountOp
+    const { accountAddr, chainId, calls: newCalls } = accountOp
+
     const request = this.userRequests.find(
       (r) => r.kind === 'calls' && r.id === `${accountAddr}-${chainId}`
-    )
+    ) as CallsUserRequest | undefined
 
-    if (!request || request.kind !== 'calls') return
+    if (!request) return
 
     const oldCalls = request.accountOp.calls
-    const newCalls = accountOp.calls
 
     if (newCalls.length === 0) {
       await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
@@ -685,23 +681,76 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     if (newCalls.length < oldCalls.length) {
-      const missingCalls = oldCalls.filter(
-        (oldCall) => !newCalls.some((newCall) => newCall.id === oldCall.id)
-      )
+      const newCallIds = new Set(newCalls.map((c) => c.id))
+      const missingCalls = oldCalls.filter((c) => !newCallIds.has(c.id))
 
-      if (missingCalls.length > 0) {
-        const missingCallIds = missingCalls.map((c) => c.id)
-
-        request.dappPromises
-          .filter((d) => missingCallIds.includes(d?.dapp?.id))
-          .forEach((p) => {
-            p.reject('User rejected the transaction request.')
-          })
-      }
+      missingCalls.forEach((c) => this.rejectCall({ callId: c.id }))
     }
 
     Object.assign(request.accountOp, accountOp)
     this.emitUpdate()
+  }
+
+  rejectCall({
+    callId,
+    activeRouteId,
+    errorMessage = 'User rejected the transaction request!'
+  }: {
+    callId?: Call['id']
+    activeRouteId?: string
+    errorMessage?: string
+  }) {
+    if (!callId && !activeRouteId) return
+
+    const findRequestByCall = (predicate: (c: Call) => boolean) =>
+      this.userRequests.find((r) => r.kind === 'calls' && r.accountOp.calls.some(predicate)) as
+        | CallsUserRequest
+        | undefined
+
+    const rejectAndCleanup = (request: CallsUserRequest, callsToRemove: Call[]) => {
+      const signAccountOp = this.#getSignAccountOp()
+
+      if (signAccountOp && signAccountOp.fromRequestId === request.id) {
+        signAccountOp.removeAccountOpCalls(callsToRemove.map((c) => c.id!))
+        return
+      }
+
+      request.accountOp.calls = request.accountOp.calls.filter((c) => {
+        const shouldRemove = callsToRemove.some((rm) => rm.id === c.id)
+
+        if (shouldRemove) {
+          if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
+
+          if (c.dappPromiseId) {
+            request.dappPromises
+              .find((p) => p.id === c.dappPromiseId)
+              ?.reject(ethErrors.provider.userRejectedRequest<any>(errorMessage))
+            request.dappPromises = request.dappPromises.filter((p) => p.id !== c.dappPromiseId)
+          }
+        }
+
+        return !shouldRemove
+      })
+    }
+
+    if (callId) {
+      const request = findRequestByCall((c) => c.id === callId)
+      if (!request) return
+
+      const call = request.accountOp.calls.find((c) => c.id === callId)!
+      rejectAndCleanup(request, [call])
+    }
+
+    if (activeRouteId) {
+      const request = findRequestByCall((c) => c.activeRouteId === activeRouteId)
+      if (!request) return
+
+      const callsToRemove = request.accountOp.calls.filter((c) => c.activeRouteId === activeRouteId)
+
+      if (callsToRemove.length > 0) {
+        rejectAndCleanup(request, callsToRemove)
+      }
+    }
   }
 
   async removeUserRequests(
@@ -741,12 +790,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         if (shouldUpdateAccount)
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
 
-        if (
-          this.#swapAndBridge.activeRoutes.length &&
-          shouldRemoveSwapAndBridgeRoute &&
-          meta.activeRouteId
-        ) {
-          this.#swapAndBridge.removeActiveRoute(meta.activeRouteId)
+        if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
+          req.accountOp.calls.forEach((c) => {
+            if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
+          })
         }
 
         const signAccountOp = this.#getSignAccountOp()
@@ -818,38 +865,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       shouldOpenNextRequest?: boolean
     }
   ) {
-    const userRequestsToRemove: string[] = []
+    this.userRequests
+      .filter((r) => requestIds.includes(r.id))
+      .forEach((r) =>
+        r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+      )
 
-    requestIds.forEach((requestId) => {
-      const userRequest = this.userRequests.find((r) => r.id === requestId)
-      if (!userRequest) return
-
-      const { kind, meta, dappPromises } = userRequest
-
-      // if the userRequest that is about to be removed is an approval request
-      // find and remove the associated pending transaction request if there is any
-      // this is valid scenario for a swap & bridge txs with a BA
-      if (kind === 'calls') {
-        const acc = this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)!
-
-        if (
-          isBasicAccount(acc, this.#accounts.accountStates[acc.addr][meta.chainId.toString()]) &&
-          meta.isSwapAndBridgeCall
-        ) {
-          userRequestsToRemove.push(
-            meta.activeRouteId || '',
-            `${meta.activeRouteId}-approval`,
-            `${meta.activeRouteId}-revoke-approval`
-          )
-        }
-      }
-
-      dappPromises.forEach((p) => {
-        p.reject(ethErrors.provider.userRejectedRequest<any>(err))
-      })
-    })
-
-    await this.removeUserRequests([...userRequestsToRemove, ...requestIds], options)
+    await this.removeUserRequests(requestIds, options)
   }
 
   async build({ type, params }: BuildRequest) {
@@ -898,6 +920,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async #buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
+      id: string
       session: DappProviderRequest['session']
       resolve: (data: any) => void
       reject: (data: any) => void
@@ -948,7 +971,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       let calls: AccountOp['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
-      calls = calls.map((c) => ({ ...c, id: uuidv4(), dapp: dapp ?? undefined }))
+      const id = uuidv4()
+      calls = calls.map((c) => ({
+        ...c,
+        id,
+        dapp: dapp ?? undefined,
+        dappPromiseId: dappPromise.id
+      }))
       const paymasterService =
         isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
           ? getPaymasterService(network.chainId, request.params[0].capabilities)
@@ -974,7 +1003,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           walletSendCallsVersion,
           paymasterService
         },
-        dappPromises: [{ ...dappPromise, dapp, meta: { isWalletSendCalls } }]
+        dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }]
       })
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -997,7 +1026,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         id: new Date().getTime(),
         kind: 'message',
         meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
-        dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
+        dappPromises: [
+          {
+            ...dappPromise,
+            session: request.session,
+            meta: {}
+          }
+        ]
       } as PlainTextMessageUserRequest
 
       // SIWE
@@ -1129,14 +1164,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           accountAddr: msgAddress,
           chainId: network.chainId
         },
-        dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
+        dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
     } else {
       userRequest = {
         id: new Date().getTime(),
         kind,
-        meta: { params: request.params } as any,
-        dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
+        meta: { params: request.params },
+        dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       }
     }
 

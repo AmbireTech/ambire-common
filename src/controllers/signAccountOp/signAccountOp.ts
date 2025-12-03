@@ -1269,8 +1269,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
-  removeAccountOpCall(callId: string) {
-    this.update({ accountOpData: { calls: this.accountOp.calls.filter((c) => c.id !== callId) } })
+  removeAccountOpCalls(callIds: string[]) {
+    const call = this.accountOp.calls.find((c) => callIds.includes(c.id!))
+    if (!call) return
+
+    const idsToRemove = call.activeRouteId
+      ? [
+          call.activeRouteId,
+          `${call.activeRouteId}-approval`,
+          `${call.activeRouteId}-revoke-approval`
+        ]
+      : [call.id]
+
+    this.update({
+      accountOpData: { calls: this.accountOp.calls.filter((c) => !idsToRemove.includes(c.id)) }
+    })
   }
 
   destroy() {

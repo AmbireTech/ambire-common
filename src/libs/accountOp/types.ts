@@ -24,4 +24,6 @@ export interface Call {
   }
   validationError?: string
   dapp?: Dapp
+  dappPromiseId?: string
+  activeRouteId?: string
 }

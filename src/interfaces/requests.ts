@@ -14,6 +14,7 @@ export type BuildRequest =
       params: {
         request: DappProviderRequest
         dappPromise: {
+          id: string
           session: DappProviderRequest['session']
           resolve: (data: any) => void
           reject: (data: any) => void

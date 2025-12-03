@@ -328,12 +328,14 @@ const buildRevokeApprovalIfNeeded = async (
   if (!fails) return
 
   return {
+    id: `${userTx.activeRouteId}-revoke-approval`,
     to: userTx.approvalData.approvalTokenAddress,
     value: BigInt('0'),
     data: erc20Contract.interface.encodeFunctionData('approve', [
       userTx.approvalData.allowanceTarget,
       BigInt(0)
-    ])
+    ]),
+    activeRouteId: userTx.activeRouteId
   }
 }
 
@@ -351,13 +353,14 @@ const getSwapAndBridgeCalls = async (
     if (revokeApproval) calls.push(revokeApproval)
 
     calls.push({
-      id: userTx.activeRouteId,
+      id: `${userTx.activeRouteId}-approval`,
       to: userTx.approvalData.approvalTokenAddress,
       value: BigInt('0'),
       data: erc20Interface.encodeFunctionData('approve', [
         userTx.approvalData.allowanceTarget,
         BigInt(userTx.approvalData.minimumApprovalAmount)
-      ])
+      ]),
+      activeRouteId: userTx.activeRouteId
     } as Call)
   }
 
@@ -365,7 +368,8 @@ const getSwapAndBridgeCalls = async (
     id: userTx.activeRouteId,
     to: userTx.txTarget,
     value: BigInt(userTx.value),
-    data: userTx.txData
+    data: userTx.txData,
+    activeRouteId: userTx.activeRouteId
   })
 
   return calls

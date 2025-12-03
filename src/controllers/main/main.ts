@@ -817,12 +817,8 @@ export class MainController extends EventEmitter implements IMainController {
           submittedAccountOp.calls.every((c) => c.id !== call.id)
         )
 
-        rejectedCalls.forEach(({ id, dapp }) => {
-          if (id) this.removeActiveRoute(id)
-          if (dapp) {
-            const dappPromise = userRequest.dappPromises.find((p) => p.dapp?.id === dapp.id)
-            if (dappPromise) dappPromise.reject('Transaction rejected by the bundler')
-          }
+        rejectedCalls.forEach(({ id }) => {
+          this.requests.rejectCall({ callId: id })
         })
       }
     }
@@ -1486,27 +1482,19 @@ export class MainController extends EventEmitter implements IMainController {
   async rejectSignAccountOpCall(callId: string) {
     if (!this.signAccountOp) return
 
-    if (this.signAccountOp.accountOp.calls.find((c) => c.id === callId)) {
-      this.signAccountOp.removeAccountOpCall(callId)
-    } else {
-      this.emitError({
-        message: 'Reject call: the call was not found or was not linked to a user request',
-        level: 'major',
-        error: new Error(
-          `Error: rejectAccountOpCall: userRequest for call with id ${callId} was not found`
-        )
-      })
-    }
+    this.signAccountOp.removeAccountOpCalls([callId])
   }
 
   async removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
-    const userRequest = this.requests.userRequests.find((r) =>
-      [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
-        r.id as string
-      )
-    )
+    const userRequest = this.requests.userRequests.find(
+      (r) =>
+        r.kind === 'calls' && !!r.accountOp.calls.find((c) => c.activeRouteId === activeRouteId)
+    ) as CallsUserRequest | undefined
 
     if (userRequest) {
+      userRequest.accountOp.calls = userRequest.accountOp.calls.filter(
+        (c) => c.activeRouteId !== activeRouteId
+      )
       await this.requests.rejectUserRequests('User rejected the transaction request.', [
         userRequest.id
       ])
