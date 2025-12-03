@@ -744,6 +744,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
       if (minWaitTimeout) clearTimeout(minWaitTimeout)
 
+      this.accountsLoading = false
       this.emitUpdate()
 
       if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
@@ -1333,6 +1334,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (calledForPage !== this.page) return
 
     this.#linkedAccounts = linkedAccountsWithNetworks
+    this.linkedAccountsLoading = false
     this.emitUpdate()
   }
 
