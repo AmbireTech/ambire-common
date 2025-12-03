@@ -1455,7 +1455,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((chainId) => {
       const provider = this.providers.providers[chainId]
-      const isWorking = provider.isWorking
+      const isWorking = provider?.isWorking
 
       return typeof isWorking === 'boolean' && !isWorking
     })

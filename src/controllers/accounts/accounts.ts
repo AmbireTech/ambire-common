@@ -155,7 +155,13 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // Don't await this. Networks should update one by one
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    // --------------------------------------------------
+    // @TODO: Consider not updating account states for all accounts here.
+    // We do it as the user may choose to broadcast with another imported EOA
+    // so we need to know all account states. But this may be too much overhead
+    // on initial load for users with many accounts.
+    // Instead, we can fetch all account states if the user is using a SA, but do it only for the network
+    // that the user is transacting on.
     this.accountStatesInitialLoadPromise = this.#updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
     ).finally(() => {
