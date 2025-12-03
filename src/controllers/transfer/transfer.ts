@@ -142,7 +142,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #ui: IUiController
 
-  #waitTokenCounter = 0
+  #waitPortfolioTimeout: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     callRelayer: Function,
@@ -189,18 +189,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ui.uiEvent.on('updateView', async (view: View) => {
       if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
 
-      // Increment token → invalidates previous calls
-      const waitToken = ++this.#waitTokenCounter
-
-      const isValid = await this.#waitUntilReadyPortfolio(waitToken)
+      const isReady = await this.#waitUntilReadyPortfolio()
 
       // If aborted → don't continue
-      if (!isValid) return
+      if (!isReady) return
 
       const tokens = this.#selectedAccountData.portfolio.isAllReady
         ? this.#selectedAccountData.portfolio.tokens
             .filter((t) => t.amount > 0n && !t.flags.rewardsType)
-            .sort((a, b) => Number(b.amount - a.amount))
+            // eslint-disable-next-line no-nested-ternary
+            .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
         : []
 
       if (!tokens.length) return
@@ -229,46 +227,47 @@ export class TransferController extends EventEmitter implements ITransferControl
       // 3. Only update if changed
       if (
         newSelectedToken &&
-        (!this.selectedToken || this.selectedToken.address !== newSelectedToken.address)
+        (!this.selectedToken ||
+          this.selectedToken.address !== newSelectedToken.address ||
+          this.selectedToken.chainId !== newSelectedToken.chainId)
       ) {
         this.selectedToken = newSelectedToken
+        // Emit update to reflect possible changes in the UI
+        this.emitUpdate()
       }
-
-      // Emit update to reflect possible changes in the UI
-      if (this.selectedToken) this.emitUpdate()
     })
 
     this.emitUpdate()
   }
 
-  #waitUntilReadyPortfolio(waitToken: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      let timeoutId: ReturnType<typeof setTimeout> | null = null
-      let fallbackId: ReturnType<typeof setTimeout> | null = null
+  #waitUntilReadyPortfolio(): Promise<boolean> {
+    // Cancel previous wait if any
+    if (this.#waitPortfolioTimeout) {
+      clearTimeout(this.#waitPortfolioTimeout)
+      this.#waitPortfolioTimeout = null
+    }
 
-      const checkReady = () => {
-        // Abort if another call superseded this one
-        if (waitToken !== this.#waitTokenCounter) {
-          if (timeoutId) clearTimeout(timeoutId)
-          if (fallbackId) clearTimeout(fallbackId)
+    return new Promise((resolve) => {
+      const startTime = Date.now()
+
+      const check = () => {
+        // Timeout after 30s
+        if (Date.now() - startTime > 30000) {
+          this.#waitPortfolioTimeout = null
           return resolve(false)
         }
 
+        // If ready → resolve
         if (this.#selectedAccountData.portfolio.isAllReady) {
-          if (timeoutId) clearTimeout(timeoutId)
-          if (fallbackId) clearTimeout(fallbackId)
+          this.#waitPortfolioTimeout = null
           return resolve(true)
         }
 
-        timeoutId = setTimeout(checkReady, 200)
+        // Not ready → check again
+        this.#waitPortfolioTimeout = setTimeout(check, 150)
       }
 
-      checkReady()
-
-      fallbackId = setTimeout(() => {
-        if (timeoutId) clearTimeout(timeoutId)
-        resolve(waitToken === this.#waitTokenCounter)
-      }, 10000)
+      check()
     })
   }
 
