@@ -243,21 +243,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     this.#ui.window.event.on('windowFocusChange', async (winId: number) => {
-      if (this.requestWindow.windowProps) {
-        if (
-          this.requestWindow.windowProps.id === winId &&
-          !this.requestWindow.windowProps.focused
-        ) {
-          this.requestWindow.windowProps.focused = true
-          this.emitUpdate()
-        } else if (
-          this.requestWindow.windowProps.id !== winId &&
-          this.requestWindow.windowProps.focused
-        ) {
-          this.requestWindow.windowProps.focused = false
-          this.emitUpdate()
-        }
-      }
+      const props = this.requestWindow.windowProps
+      if (!props) return
+
+      const newIsFocused = props.id === winId
+      if (newIsFocused === props.focused) return
+
+      props.focused = newIsFocused
+      this.emitUpdate()
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
