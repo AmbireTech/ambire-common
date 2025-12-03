@@ -55,17 +55,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         }
       }
 
-      const batchMaxCount = ProvidersController.getProviderBatchMaxCount(network)
-
       this.providers[network.chainId.toString()] = getRpcProvider(
         network.rpcUrls,
         network.chainId,
         network.selectedRpcUrl,
-        batchMaxCount
-          ? {
-              batchMaxCount: ProvidersController.getProviderBatchMaxCount(network)
-            }
-          : undefined
+        {
+          batchMaxCount: ProvidersController.getProviderBatchMaxCount(network),
+          // 24KB is deployless' max data size for calls without state override
+          batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
+        }
       )
     }
   }
