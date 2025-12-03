@@ -263,7 +263,8 @@ const prepareTest = async () => {
     providersCtrl,
     phishing,
     relayerUrl,
-    () => Promise.resolve()
+    () => Promise.resolve(),
+    uiCtrl
   )
 
   await selectedAccountCtrl.initialLoadPromise
