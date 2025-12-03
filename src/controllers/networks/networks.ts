@@ -397,7 +397,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       has7702: false
     }
 
-    this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]])
+    this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]!])
 
     await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
@@ -429,7 +429,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       ...changedNetwork
     }
 
-    if (!skipUpdate) this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]])
+    if (!skipUpdate) this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]!])
     await this.#storage.set('networks', this.#networks)
 
     const checkRPC = async (
@@ -465,7 +465,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
         getNetworkInfo(
           this.#fetch,
           changedNetwork.selectedRpcUrl,
-          this.#networks[chainId.toString()].chainId!,
+          this.#networks[chainId.toString()]!.chainId!,
           async (info) => {
             if (Object.values(info).some((prop) => prop === 'LOADING')) {
               return

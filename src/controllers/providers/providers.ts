@@ -37,11 +37,12 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   }
 
   setProvider(network: Network) {
-    const provider = this.providers[network.chainId.toString()]
+    const stringChainId = network.chainId.toString()
+    const provider = this.providers[stringChainId]
+    const isRpcUrlChanged = provider?._getConnection().url !== network.selectedRpcUrl
 
-    // Only update the RPC if the new RPC is different from the current one or if there is no RPC for this network yet.
-    if (!provider || provider?._getConnection().url !== network.selectedRpcUrl) {
-      const oldRPC = this.providers[network.chainId.toString()]
+    if (!provider || isRpcUrlChanged) {
+      const oldRPC = this.providers[stringChainId]
 
       // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC it will keep trying to reconnect forever.
       try {
@@ -54,19 +55,27 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         }
       }
 
+      const batchMaxCount = ProvidersController.getProviderBatchMaxCount(network)
+
       this.providers[network.chainId.toString()] = getRpcProvider(
         network.rpcUrls,
         network.chainId,
-        network.selectedRpcUrl
+        network.selectedRpcUrl,
+        batchMaxCount
+          ? {
+              batchMaxCount: ProvidersController.getProviderBatchMaxCount(network)
+            }
+          : undefined
       )
     }
   }
 
   updateProviderIsWorking(chainId: bigint, isWorking: boolean) {
-    if (!this.providers[chainId.toString()]) return
-    if (this.providers[chainId.toString()].isWorking === isWorking) return
+    const provider = this.providers[chainId.toString()]
+    if (!provider) return
+    if (provider.isWorking === isWorking) return
 
-    this.providers[chainId.toString()].isWorking = isWorking
+    provider.isWorking = isWorking
     this.emitUpdate()
   }
 
@@ -76,6 +85,18 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.providers[chainId.toString()]?.destroy()
     delete this.providers[chainId.toString()]
     this.emitUpdate()
+  }
+
+  static getProviderBatchMaxCount(network: Network): number | undefined {
+    const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
+
+    if (!rpcUrl) return undefined
+
+    // No limit for invictus. Maybe we should set some higher limit in the future (like 20)
+    if (rpcUrl.includes('invictus.ambire.com')) return undefined
+
+    // 10 for non-invictus RPCs that are coming from the relayer, no batching for the rest
+    return network.predefinedConfigVersion ? 10 : 1
   }
 
   toJSON() {
