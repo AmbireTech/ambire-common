@@ -282,18 +282,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.kind === 'typedMessage' ||
         r.kind === 'message' ||
         r.kind === 'authorization-7702' ||
-        r.kind === 'siwe'
+        r.kind === 'siwe' ||
+        r.kind === 'benzin' ||
+        r.kind === 'swapAndBridge' ||
+        r.kind === 'transfer'
       ) {
-        return r.meta.accountAddr === this.#selectedAccount.account?.addr
-      }
-      if (r.kind === 'benzin') {
         return r.meta.accountAddr === this.#selectedAccount.account?.addr
       }
       if (r.kind === 'switchAccount') {
         return r.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
-      }
-      if (r.kind === 'swapAndBridge' || r.kind === 'transfer') {
-        return r.meta.accountAddr === this.#selectedAccount.account?.addr
       }
 
       return true
