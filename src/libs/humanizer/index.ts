@@ -16,6 +16,7 @@ import {
   snapshotModule,
   zealyMessageModule
 } from './messageModules'
+import { signUserOperationsModule } from './messageModules/signUserOperationsModule'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -97,7 +98,8 @@ const humanizerTMModules = [
   zealyMessageModule,
   safeMessageModule,
   eip7702AuthorizationModule,
-  snapshotModule
+  snapshotModule,
+  signUserOperationsModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {

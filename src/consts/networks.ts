@@ -152,6 +152,93 @@ const networks: Network[] = [
     wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
   },
   {
+    name: 'Arbitrum Sepolia Mainnet',
+    nativeAssetSymbol: 'ETH',
+    has7702: true,
+    nativeAssetName: 'Ether',
+    rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
+    selectedRpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
+    rpcNoStateOverride: false,
+    chainId: 421614n,
+    explorerUrl: 'https://sepolia.arbiscan.io/',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: false,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: '',
+    nativeAssetId: '',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: false
+    },
+    predefined: true
+  },
+  {
+    name: 'OP Sepolia',
+    nativeAssetSymbol: 'ETH',
+    has7702: true,
+    nativeAssetName: 'Ether',
+    rpcUrls: ['https://sepolia.optimism.io'],
+    selectedRpcUrl: 'https://sepolia.optimism.io',
+    rpcNoStateOverride: false,
+    chainId: 11155420n,
+    explorerUrl: 'https://sepolia-optimism.etherscan.io/',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: false,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: '',
+    nativeAssetId: '',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: false
+    },
+    predefined: true
+  },
+  {
+    name: 'Ethereum Sepolia',
+    nativeAssetSymbol: 'ETH',
+    has7702: true,
+    nativeAssetName: 'Ether',
+    rpcUrls: ['https://eth-sepolia.g.alchemy.com/v2/demo'],
+    selectedRpcUrl: 'https://eth-sepolia.g.alchemy.com/v2/demo',
+    rpcNoStateOverride: false,
+    chainId: 11155111n,
+    explorerUrl: 'https://sepolia.etherscan.io',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: false,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: '',
+    nativeAssetId: '',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: false
+    },
+    predefined: true
+  },
+  {
     name: 'Base',
     nativeAssetSymbol: 'ETH',
     has7702: false,

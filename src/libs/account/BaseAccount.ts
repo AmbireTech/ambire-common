@@ -118,6 +118,20 @@ export abstract class BaseAccount {
   }
 
   /**
+   * Cross chain capability
+   */
+  canEilCrossChainSign(): boolean {
+    return false
+  }
+
+  /**
+   * Cross chain capability
+   */
+  canSendRawUserOperation(): boolean {
+    return false
+  }
+
+  /**
    * Get the broadcast nonce for each account if special conditions
    * for its fetch should apply
    */

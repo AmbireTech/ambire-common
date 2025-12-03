@@ -197,4 +197,12 @@ export class EOA7702 extends BaseAccount {
     // 7702 accounts have an execution layer nonce and an entry point nonce
     return `${this.accountState.eoaNonce!.toString()}-${this.accountState.erc4337Nonce.toString()}`
   }
+
+  canEilCrossChainSign(): boolean {
+    return true
+  }
+
+  canSendRawUserOperation(): boolean {
+    return true
+  }
 }

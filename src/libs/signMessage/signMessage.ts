@@ -26,7 +26,7 @@ import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { EIP7702Signature } from '../../interfaces/signatures'
+import { EILSignature, EIP7702Signature } from '../../interfaces/signatures'
 import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
@@ -691,7 +691,7 @@ export function get7702Sig(
 }
 
 export function getVerifyMessageSignature(
-  signature: EIP7702Signature | string,
+  signature: EIP7702Signature | EILSignature[] | string,
   account: Account,
   accountState: AccountOnchainState
 ): Hex {
@@ -708,13 +708,13 @@ export function getVerifyMessageSignature(
 // to the dapp if the account is not deployed
 // and we return directly an EIP7702Signature if it's that type
 export function getAppFormatted(
-  signature: EIP7702Signature | string,
+  signature: EIP7702Signature | EILSignature[] | string,
   account: Account,
   accountState: AccountOnchainState
-): EIP7702Signature | Hex {
+): EIP7702Signature | EILSignature[] | Hex {
   if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
 
-  return signature as EIP7702Signature
+  return signature as EIP7702Signature | EILSignature[]
 }
 
 /**

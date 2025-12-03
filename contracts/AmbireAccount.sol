@@ -227,9 +227,9 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   value  the amount we're sending
 	 * @param   data  callData
 	 */
-	function executeCall(address to, uint256 value, bytes memory data) internal {
+	function executeCall(address to, uint256 value, bytes memory data) internal returns (bytes memory result) {
 		assembly {
-			let result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
+			result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
 
 			if eq(result, 0) {
 				let size := returndatasize()
@@ -295,7 +295,7 @@ contract AmbireAccount is IAmbireAccount {
 	 * address aggregator, uint48 validUntil, uint48 validAfter
 	 */
 	function validateUserOp(PackedUserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
-	external payable returns (uint256)
+	external virtual payable returns (uint256)
 	{
 		require(privileges(msg.sender) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 

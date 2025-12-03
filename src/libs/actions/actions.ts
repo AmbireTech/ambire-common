@@ -13,6 +13,7 @@ export const dappRequestMethodToActionKind = (method: DappProviderRequest['metho
   )
     return 'typedMessage'
   if (['personal_sign'].includes(method)) return 'message'
+  if (['wallet_signUserOperations'].includes(method)) return 'signUserOperations'
   // method to camelCase
   return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase())
 }

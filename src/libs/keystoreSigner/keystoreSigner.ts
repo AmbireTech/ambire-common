@@ -13,12 +13,13 @@ import {
 import { ecdsaSign } from 'secp256k1'
 
 import {
-  signTypedData as signTypedDataWithMetaMaskSigUtil,
-  SignTypedDataVersion
+  SignTypedDataVersion,
+  signTypedData as signTypedDataWithMetaMaskSigUtil
 } from '@metamask/eth-sig-util'
 
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { PlainSignature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
@@ -87,8 +88,24 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return transactionRes
   }
 
+  plainSign(hex: string): PlainSignature {
+    if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
+
+    const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))
+    const signature = hexlify(data.signature)
+    return {
+      yParity: toBeHex(data.recid, 1) as Hex,
+      r: signature.substring(0, 66) as Hex,
+      s: `0x${signature.substring(66)}`
+    }
+  }
+
   // eslint-disable-next-line class-methods-use-this
-  sign7702: KeystoreSignerInterface['sign7702'] = async ({ chainId, contract, nonce }) => {
+  sign7702: KeystoreSignerInterface['sign7702'] = async ({
+    chainId,
+    contract,
+    nonce
+  }): Promise<PlainSignature> => {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const hex = getAuthorizationHash(chainId, contract, nonce)
@@ -104,7 +121,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async ({
     txnRequest,
     eip7702Auth
-  }) => {
+  }): Promise<Hex> => {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const maxPriorityFeePerGas = txnRequest.maxPriorityFeePerGas ?? txnRequest.gasPrice
