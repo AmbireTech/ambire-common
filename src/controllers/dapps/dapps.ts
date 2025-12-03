@@ -659,10 +659,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
         const { dappPromises } = currentRequest
         const dapp = await this.#buildDapp({
-          id: getDappIdFromUrl(dappPromises[0]!.session.origin),
-          name: dappPromises[0]!.session.name,
-          url: dappPromises[0]!.session.origin,
-          icon: dappPromises[0]!.session.icon,
+          id: getDappIdFromUrl(dappPromises[0].session.origin),
+          name: dappPromises[0].session.name,
+          url: dappPromises[0].session.origin,
+          icon: dappPromises[0].session.icon,
           chainId: 1,
           isConnected: false
         })

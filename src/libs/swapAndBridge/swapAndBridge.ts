@@ -9,7 +9,6 @@ import {
 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { Session } from '../../classes/session'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -24,7 +23,7 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
-import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,

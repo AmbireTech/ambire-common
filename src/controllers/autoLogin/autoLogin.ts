@@ -392,7 +392,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   async autoLogin(messageToSign: {
     accountAddr: string
     chainId: bigint
-    message: PlainTextMessageUserRequest['meta']['message']
+    message: PlainTextMessageUserRequest['meta']['params']['message']
   }) {
     await this.initialLoadPromise
 

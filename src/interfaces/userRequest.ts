@@ -35,23 +35,24 @@ export interface Message {
   signature: EIP7702Signature | string | null
 }
 
-interface UserRequestBase {
+export type DappPromise = {
+  dapp: Dapp | null
+  session: DappProviderRequest['session']
+  meta: { isWalletSendCalls?: boolean }
+  resolve: (data: any) => void
+  reject: (data: any) => void
+}
+interface UserRequestBase<DP = DappPromise[]> {
   id: string | number
   kind: string
   meta: {
     pendingToRemove?: boolean
     [key: string]: any
   }
-  dappPromises: {
-    dapp: Dapp | null
-    session: DappProviderRequest['session']
-    meta: { isWalletSendCalls?: boolean }
-    resolve: (data: any) => void
-    reject: (data: any) => void
-  }[]
+  dappPromises: DP
 }
 
-export interface CallsUserRequest extends UserRequestBase {
+export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
   kind: 'calls'
   meta: UserRequestBase['meta'] & {
     accountAddr: string
@@ -139,7 +140,7 @@ export interface SwitchAccountRequest extends UserRequestBase {
     pendingToRemove?: boolean
   }
 }
-export interface WalletAddEthereumChainRequest extends UserRequestBase {
+export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappPromise]> {
   kind: 'walletAddEthereumChain'
   meta: UserRequestBase['meta'] & {
     params: [
@@ -168,17 +169,17 @@ export interface UnlockRequest extends UserRequestBase {
   kind: 'unlock'
 }
 
-export interface DappConnectRequest extends UserRequestBase {
+export interface DappConnectRequest extends UserRequestBase<[DappPromise]> {
   kind: 'dappConnect'
   meta: UserRequestBase['meta'] & { params: any }
 }
 
-export interface WalletWatchAssetRequest extends UserRequestBase {
+export interface WalletWatchAssetRequest extends UserRequestBase<[DappPromise]> {
   kind: 'walletWatchAsset'
   meta: UserRequestBase['meta'] & { params: any }
 }
 
-export interface GetEncryptionPublicKeyRequest extends UserRequestBase {
+export interface GetEncryptionPublicKeyRequest extends UserRequestBase<[DappPromise]> {
   kind: 'ethGetEncryptionPublicKey'
   meta: UserRequestBase['meta'] & { params: any }
 }
