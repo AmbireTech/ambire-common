@@ -323,6 +323,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const userRequestsToAdd = []
 
+    // If any of the requests is a dapp request, we know the source window ID,
+    // so we set it as the baseWindowId. This will be used as the reference
+    // for the request window that will be opened, making positioning and size
+    // calculations more accurate.
     reqs.forEach((r) => {
       r.dappPromises.forEach((p) => {
         if (p.session.windowId && !baseWindowId) baseWindowId = p.session.windowId
