@@ -117,9 +117,6 @@ const prepareTest = async () => {
     await wait(500)
   })
   mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
-  mainCtrl.accounts.updateAccountStates = jest.fn().mockImplementation(async () => {
-    await wait(500)
-  })
   mainCtrl.accounts.updateAccountState = jest.fn().mockImplementation(async () => {
     await wait(500)
   })
@@ -174,7 +171,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
     // ensure all providers are working
     mockedProviders[1]!.isWorking = true
-    mockedProviders[137].isWorking = true
+    mockedProviders[137]!.isWorking = true
     mainCtrl.providers.providers = mockedProviders
 
     jest.spyOn(mainCtrl.continuousUpdates.updatePortfolioInterval, 'restart')
@@ -292,7 +289,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
     // ensure there is at least one provider that is not working
     mockedProviders[1]!.isWorking = false
-    mockedProviders[137].isWorking = true
+    mockedProviders[137]!.isWorking = true
     mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
     mainCtrl.continuousUpdates.accountStateLatestInterval.start = jest
@@ -310,7 +307,7 @@ describe('ContinuousUpdatesController intervals', () => {
 
     // ensure there is at least one provider that is not working
     mainCtrl.providers.providers[1]!.isWorking = false
-    mainCtrl.providers.providers[137].isWorking = true
+    mainCtrl.providers.providers[137]!.isWorking = true
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     const initialFnExecutionsCount =
       mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount
