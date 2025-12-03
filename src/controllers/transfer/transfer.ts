@@ -189,13 +189,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ui.uiEvent.on('updateView', async (view: View) => {
       if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
 
-      await this.#setDefaultSelectedToken(true, view)
+      await this.#setDefaultSelectedToken(view)
     })
 
     this.emitUpdate()
   }
 
-  async #setDefaultSelectedToken(shouldEmitUpdate: boolean, view?: View): Promise<void> {
+  async #setDefaultSelectedToken(view?: View): Promise<void> {
     const isReady = await this.#waitUntilReadyPortfolio()
 
     // If aborted → don't continue
@@ -239,10 +239,9 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.chainId !== newSelectedToken.chainId)
     ) {
       this.selectedToken = newSelectedToken
+
       // Emit update to reflect possible changes in the UI
-      if (shouldEmitUpdate) {
-        this.emitUpdate()
-      }
+      this.emitUpdate()
     }
   }
 
@@ -859,9 +858,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   async destroyLatestBroadcastedAccountOp() {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
-    await this.#setDefaultSelectedToken(false)
-
-    this.emitUpdate()
+    await this.#setDefaultSelectedToken()
   }
 
   async unloadScreen(forceUnload?: boolean) {
