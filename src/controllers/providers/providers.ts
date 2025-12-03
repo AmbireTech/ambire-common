@@ -46,8 +46,12 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC it will keep trying to reconnect forever.
       try {
         if (oldRPC) oldRPC.destroy()
-      } catch (e) {
-        // no need to do anything; try/catch is just in case a double destroy is attempted
+      } catch (error: any) {
+        // Log any errors except the "double destroyed" case (triggered when oldRPC.destroy() is called twice)
+        if (error?.message !== 'provider destroyed; cancelled request') {
+          // eslint-disable-next-line no-console
+          this.emitError({ error, message: error.message, level: 'silent', sendCrashReport: true })
+        }
       }
 
       this.providers[network.chainId.toString()] = getRpcProvider(
