@@ -113,7 +113,7 @@ describe('AccountsController', () => {
     expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
   test('removeAccountData', async () => {
-    await accountsCtrl.updateAccountStates(accounts[0]!.addr)
+    await accountsCtrl.updateAccountState(accounts[0]!.addr)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)

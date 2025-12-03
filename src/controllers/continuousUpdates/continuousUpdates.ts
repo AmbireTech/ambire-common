@@ -183,7 +183,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updateAccountStateLatest() {
     await this.initialLoadPromise
-    await this.#main.accounts.accountStatesInitialLoadPromise
+    await this.#main.accounts.accountStateInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
@@ -219,7 +219,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updateAccountStatePending() {
     await this.initialLoadPromise
-    await this.#main.accounts.accountStatesInitialLoadPromise
+    await this.#main.accounts.accountStateInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to update pending state')

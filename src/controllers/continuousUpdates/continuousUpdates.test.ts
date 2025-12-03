@@ -147,7 +147,7 @@ const waitForContinuousUpdatesCtrlReady = async (mainCtrl: MainController) => {
 const waitForAccountStatesInitialLoad = async (mainCtrl: MainController) => {
   await jest.advanceTimersByTimeAsync(0)
 
-  while (mainCtrl.accounts.accountStatesInitialLoadPromise) {
+  while (mainCtrl.accounts.accountStateInitialLoadPromise) {
     await jest.advanceTimersByTimeAsync(20)
   }
 }
