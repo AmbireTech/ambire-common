@@ -549,7 +549,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
 
     // @ts-ignore-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
-    const shouldCleanupUsedOnNetworks = accounts.some((a) => a.usedOnNetworks)
+    const shouldCleanupUsedOnNetworks = accounts.some((a) => 'usedOnNetworks' in a)
     if (shouldCleanupUsedOnNetworks) {
       await this.#storage.set(
         'accounts',
