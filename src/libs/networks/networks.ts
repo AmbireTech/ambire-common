@@ -48,7 +48,7 @@ export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): bo
   if (!hasBundlerSupport) return false
 
   // if we have set it specifically
-  if (network && network.predefined) return network.erc4337.enabled
+  if (network && network.predefined) return true
 
   // this will be true in this case
   return hasBundlerSupport
