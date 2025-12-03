@@ -77,6 +77,7 @@ describe('AccountsController', () => {
   let accountsCtrl: IAccountsController
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
+    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
 
     accountsCtrl = new AccountsController(
       storageCtrl,
