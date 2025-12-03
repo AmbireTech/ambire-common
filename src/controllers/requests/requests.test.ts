@@ -258,7 +258,6 @@ describe('RequestsController ', () => {
       },
       session: new Session(),
       meta: {
-        isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         chainId: 1n
       }
@@ -341,7 +340,6 @@ describe('RequestsController ', () => {
       },
       session: new Session(),
       meta: {
-        isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         chainId: 1n
       },
@@ -378,7 +376,6 @@ describe('RequestsController ', () => {
       },
       session: new Session(),
       meta: {
-        isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         chainId: 1n
       },
