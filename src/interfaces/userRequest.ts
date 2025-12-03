@@ -22,16 +22,8 @@ export interface Message {
     | (AuthorizationUserRequest['meta']['params'] & { kind: AuthorizationUserRequest['kind'] })
     | (SiweMessageUserRequest['meta']['params'] & { kind: SiweMessageUserRequest['kind'] })
 
-  accountAddr:
-    | PlainTextMessageUserRequest['meta']['accountAddr']
-    | TypedMessageUserRequest['meta']['accountAddr']
-    | AuthorizationUserRequest['meta']['accountAddr']
-    | SiweMessageUserRequest['meta']['accountAddr']
-  chainId:
-    | PlainTextMessageUserRequest['meta']['chainId']
-    | TypedMessageUserRequest['meta']['chainId']
-    | AuthorizationUserRequest['meta']['chainId']
-    | SiweMessageUserRequest['meta']['chainId']
+  accountAddr: string
+  chainId: bigint
   signature: EIP7702Signature | string | null
 }
 
@@ -67,7 +59,7 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
   accountOp: AccountOp
 }
 
-export interface PlainTextMessageUserRequest extends UserRequestBase {
+export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromise]> {
   kind: 'message'
   meta: UserRequestBase['meta'] & {
     params: { message: Hex }
@@ -76,7 +68,7 @@ export interface PlainTextMessageUserRequest extends UserRequestBase {
   }
 }
 
-export interface SiweMessageUserRequest extends UserRequestBase {
+export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
   kind: 'siwe'
   meta: UserRequestBase['meta'] & {
     params: {
@@ -92,7 +84,7 @@ export interface SiweMessageUserRequest extends UserRequestBase {
   }
 }
 
-export interface TypedMessageUserRequest extends UserRequestBase {
+export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> {
   kind: 'typedMessage'
   meta: UserRequestBase['meta'] & {
     params: {
