@@ -684,30 +684,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const newCallIds = new Set(newCalls.map((c) => c.id))
       const missingCalls = oldCalls.filter((c) => !newCallIds.has(c.id))
 
-      missingCalls.forEach((c) => this.rejectCall({ callId: c.id }))
+      await this.rejectCalls({ callIds: missingCalls.map((c) => c.id) })
     }
 
     Object.assign(request.accountOp, accountOp)
     this.emitUpdate()
   }
 
-  rejectCall({
-    callId,
-    activeRouteId,
+  async rejectCalls({
+    callIds = [],
+    activeRouteIds = [],
     errorMessage = 'User rejected the transaction request!'
   }: {
-    callId?: Call['id']
-    activeRouteId?: string
+    callIds?: Call['id'][]
+    activeRouteIds?: string[]
     errorMessage?: string
   }) {
-    if (!callId && !activeRouteId) return
+    if (!callIds.length && !activeRouteIds.length) return
 
     const findRequestByCall = (predicate: (c: Call) => boolean) =>
       this.userRequests.find((r) => r.kind === 'calls' && r.accountOp.calls.some(predicate)) as
         | CallsUserRequest
         | undefined
 
-    const rejectAndCleanup = (request: CallsUserRequest, callsToRemove: Call[]) => {
+    const rejectAndCleanup = async (request: CallsUserRequest, callsToRemove: Call[]) => {
       const signAccountOp = this.#getSignAccountOp()
 
       if (signAccountOp && signAccountOp.fromRequestId === request.id) {
@@ -733,30 +733,37 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       })
 
       if (request.accountOp.calls.length === 0) {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.rejectUserRequests('User rejected the transaction request.', [request.id], {
+        await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
           shouldOpenNextRequest: true
         })
       }
     }
 
-    if (callId) {
+    // eslint-disable-next-line no-restricted-syntax
+    for (const callId of callIds) {
       const request = findRequestByCall((c) => c.id === callId)
-      if (!request) return
+      // eslint-disable-next-line no-continue
+      if (!request) continue
 
-      const call = request.accountOp.calls.find((c) => c.id === callId)!
-      rejectAndCleanup(request, [call])
+      const call = request.accountOp.calls.find((c) => c.id === callId)
+      // eslint-disable-next-line no-continue
+      if (!call) continue
+
+      await rejectAndCleanup(request, [call])
     }
 
-    if (activeRouteId) {
+    // eslint-disable-next-line no-restricted-syntax
+    for (const activeRouteId of activeRouteIds) {
       const request = findRequestByCall((c) => c.activeRouteId === activeRouteId)
-      if (!request) return
+      // eslint-disable-next-line no-continue
+      if (!request) continue
 
       const callsToRemove = request.accountOp.calls.filter((c) => c.activeRouteId === activeRouteId)
 
-      if (callsToRemove.length > 0) {
-        rejectAndCleanup(request, callsToRemove)
-      }
+      // eslint-disable-next-line no-continue
+      if (callsToRemove.length === 0) continue
+
+      await rejectAndCleanup(request, callsToRemove)
     }
   }
 

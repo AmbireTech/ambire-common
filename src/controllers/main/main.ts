@@ -818,9 +818,7 @@ export class MainController extends EventEmitter implements IMainController {
           submittedAccountOp.calls.every((c) => c.id !== call.id)
         )
 
-        rejectedCalls.forEach(({ id }) => {
-          this.requests.rejectCall({ callId: id })
-        })
+        await this.requests.rejectCalls({ callIds: rejectedCalls.map((c) => c.id) })
       }
     }
 
