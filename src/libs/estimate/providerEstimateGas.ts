@@ -6,6 +6,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import { isSmartAccount } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
@@ -29,7 +30,7 @@ export function getEstimateGasProps(
   }
 
   // normal EOA: a single call
-  const call = op.calls[0]
+  const call = op.calls[0]!
   return {
     from: account.addr as Hex,
     to: call.to as Hex,
@@ -68,7 +69,7 @@ export async function providerEstimateGas(
     data: properties.data,
     nonce: toQuantity(accountState.eoaNonce as bigint)
   }
-  const blockTag = 'pending'
+  const blockTag = getPendingBlockTagIfSupported(network)
   const stateOverride = {
     [DEPLOYLESS_SIMULATION_FROM]: {
       balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'

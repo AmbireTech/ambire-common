@@ -93,6 +93,7 @@ export async function relayerCall(
     headers,
     timeoutMs
   )
+
   if (!res.success) {
     const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res
     throw new RelayerError(

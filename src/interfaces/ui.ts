@@ -11,6 +11,7 @@ export type View = {
   type: 'request-window' | 'tab' | 'popup'
   currentRoute?: string
   isReady?: boolean
+  searchParams?: { [key: string]: string }
 }
 
 export type UiManager = {
