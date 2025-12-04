@@ -410,7 +410,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const [isValid, standard, error]: TokenValidationResult = await validateERC20Token(
       token,
       accountId,
-      this.#providers.providers[token.chainId.toString()]
+      this.#providers.providers[token.chainId.toString()],
+      {
+        allNetworks: this.#networks.networks,
+        allProviders: this.#providers.providers,
+        enableNetworkDetection: true
+      }
     )
 
     this.validTokens[standard] = {
