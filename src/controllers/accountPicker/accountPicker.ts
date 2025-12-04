@@ -726,6 +726,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
       this.#derivedAccounts = derivedAccounts
 
+      // The used on information is not critical. Allow the user to proceed after
+      // 1 second. It will get popuplated in the background.
       const minWaitTimeout = setTimeout(() => {
         if (this.page !== page) return
 
@@ -1317,6 +1319,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.#verifyLinkedAccounts()
 
+    // The used on information is not critical. Allow the user to proceed after
+    // 1 second. It will get popuplated in the background.
     const minWaitTimeout = setTimeout(() => {
       this.linkedAccountsLoading = false
       this.emitUpdate()
