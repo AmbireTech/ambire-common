@@ -844,7 +844,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
-    if (kind === 'unlock' || kind === 'switchAccount') {
+    if (kind === 'unlock' || kind === 'dappConnect' || kind === 'switchAccount') {
       meta.pendingToRemove = true
 
       setTimeout(async () => {
@@ -975,6 +975,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       calls = calls.map((c) => ({
         ...c,
         id,
+        data: c.data || '0x',
+        value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,
         dappPromiseId: dappPromise.id
       }))
