@@ -77,6 +77,7 @@ describe('AccountsController', () => {
   let accountsCtrl: IAccountsController
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
+    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
 
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -113,7 +114,7 @@ describe('AccountsController', () => {
     expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
   test('removeAccountData', async () => {
-    await accountsCtrl.updateAccountStates(accounts[0]!.addr)
+    await accountsCtrl.updateAccountState(accounts[0]!.addr)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)

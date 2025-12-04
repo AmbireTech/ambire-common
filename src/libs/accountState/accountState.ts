@@ -39,10 +39,9 @@ export async function getAccountState(
   )
 
   const args = accounts.map((account) => {
-    const associatedKeys =
-      network.erc4337.enabled && !account.associatedKeys.includes(ERC_4337_ENTRYPOINT)
-        ? [...account.associatedKeys, ERC_4337_ENTRYPOINT]
-        : account.associatedKeys
+    const associatedKeys = !account.associatedKeys.includes(ERC_4337_ENTRYPOINT)
+      ? [...account.associatedKeys, ERC_4337_ENTRYPOINT]
+      : account.associatedKeys
 
     return [
       account.addr,
@@ -136,7 +135,6 @@ export async function getAccountState(
       isErc4337Enabled: isSmarterEoa
         ? true
         : !!(
-            network.erc4337.enabled &&
             accResult.erc4337Nonce < MAX_UINT256 &&
             associatedKeys.find(
               (associatedKey: string[]) =>
