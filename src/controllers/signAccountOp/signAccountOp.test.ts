@@ -327,10 +327,10 @@ const nativeFeeToken: TokenResult = {
 
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
-  symbol: 'POL',
-  name: 'Polygon Ecosystem Token',
+  symbol: 'ETH',
+  name: 'ETH',
   amount: 323871237812612123123n,
-  chainId: 137n,
+  chainId: 1n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -1270,9 +1270,8 @@ describe('Negative cases', () => {
     expect(controller.accountOp?.signature).toBe(null)
   })
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
-    const chainId = 137n
+    const chainId = 1n
     const network = networks.find((n) => n.chainId === chainId)!
-    network.erc4337.enabled = false
     const feePaymentOptions = [
       {
         paidBy: e2esmartAccount.addr,
@@ -1282,9 +1281,9 @@ describe('Negative cases', () => {
         token: {
           address: '0x0000000000000000000000000000000000000000',
           amount: 1n,
-          symbol: 'POL',
-          name: 'Polygon Ecosystem Token',
-          chainId: 137n,
+          symbol: 'ETH',
+          name: 'ETH',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1305,7 +1304,7 @@ describe('Negative cases', () => {
           amount: 1n,
           symbol: 'usdt',
           name: 'USD Token',
-          chainId: 137n,
+          chainId: 1n,
           decimals: 6,
           priceIn: [],
           flags: {
@@ -1416,7 +1415,7 @@ describe('Negative cases', () => {
     expect(controller.accountOp.feeCall!.data).toEqual(
       abiCoder.encode(
         ['string', 'uint256', 'string'],
-        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'POL']
+        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'ETH']
       )
     )
 
