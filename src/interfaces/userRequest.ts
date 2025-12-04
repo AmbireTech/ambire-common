@@ -1,5 +1,7 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
-import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
+// TODO: impl these 2 types in the project (they introduce many optional props that are
+// not well handled in our codebase)
+// import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
 import { AccountOp } from '../libs/accountOp/accountOp'
@@ -136,7 +138,8 @@ export interface SwitchAccountRequest extends UserRequestBase<[DappPromise]> {
 export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappPromise]> {
   kind: 'walletAddEthereumChain'
   meta: UserRequestBase['meta'] & {
-    params: [AddEthereumChainParameter]
+    // TODO: impl AddEthereumChainParameter
+    params: [any]
     [key: string]: any
   }
 }
@@ -159,7 +162,10 @@ export interface DappConnectRequest extends UserRequestBase<[DappPromise]> {
 
 export interface WalletWatchAssetRequest extends UserRequestBase<[DappPromise]> {
   kind: 'walletWatchAsset'
-  meta: UserRequestBase['meta'] & { params: WatchAssetParams }
+  meta: UserRequestBase['meta'] & {
+    // TODO: impl WatchAssetParams
+    params: any
+  }
 }
 
 export interface GetEncryptionPublicKeyRequest extends UserRequestBase<[DappPromise]> {
