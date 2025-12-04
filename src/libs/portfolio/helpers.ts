@@ -350,25 +350,18 @@ export const validateERC20Token = async (
     }
   }
 
-  const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
-    erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
-    erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
-  ]).catch((e) => {
-    if (isNetworkError(e)) {
-      hasNetworkError = true
-      isValid = false
-
-      errorType = 'network'
-      errorMessage = `Network error validating token: ${
-        e.message || 'Network error during token validation'
-      }`
-    } else {
-      errorType = 'validation'
-      errorMessage = 'This token type is not supported'
-    }
-    isValid = false
-  })) || [undefined, undefined, undefined]
+  let balance
+  let symbol
+  let decimals
+  try {
+    ;[balance, symbol, decimals] = await Promise.all([
+      erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
+      erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
+      erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+    ])
+  } catch (e) {
+    handleERC20Error(e, 'token validation')
+  }
 
   if (
     typeof balance === 'undefined' ||
@@ -393,7 +386,8 @@ export const validateERC20Token = async (
   // If validation failed and network detection is enabled, check other networks
   if (!isValid && !hasNetworkError && enableNetworkDetection && allNetworks && allProviders) {
     try {
-      // Inline network detection to avoid circular dependency
+      // Check each network directly here instead of calling getValidERC20Networks()
+      // to avoid circular dependency (getValidERC20Networks calls this function)
       const validationPromises = allNetworks
         .filter((network) => allProviders[network.chainId.toString()]?.isWorking !== false)
         .filter((network) => network.chainId !== token.chainId) // Skip the current network
@@ -422,7 +416,7 @@ export const validateERC20Token = async (
 
       if (validNetworks.length > 0) {
         const networkNames = validNetworks.map((net) => net.name).join(', ')
-        errorMessage = `Invalid token network. This token is found on ${networkNames}. Please switch to the correct network.`
+        errorMessage = `This token is found on ${networkNames}. Is the correct network selected?`
         errorType = 'validation'
       }
     } catch (networkDetectionError) {
@@ -439,64 +433,6 @@ export const validateERC20Token = async (
       type: errorType
     }
   ]
-}
-
-/**
- * Checks all networks to detect on which ones the given address is a valid ERC20 token.
- *
- */
-export const detectERC20AcrossNetworks = async (
-  address: string,
-  networks: Network[],
-  providers: { [chainId: string]: RPCProvider },
-  accountId: string
-): Promise<{ network: Network; validation: TokenValidationResult }[]> => {
-  const validationPromises = networks
-    .filter((network) => providers[network.chainId.toString()]?.isWorking !== false)
-    .map(async (network) => {
-      try {
-        const provider = providers[network.chainId.toString()]
-        if (!provider) return null
-
-        // Use validateERC20Token without network detection to avoid circular dependency
-        const validation = await validateERC20Token(
-          { address, chainId: network.chainId },
-          accountId,
-          provider,
-          { enableNetworkDetection: false }
-        )
-
-        const [isValid] = validation
-        if (isValid) {
-          return { network, validation }
-        }
-        return null
-      } catch (error) {
-        // Log the error but don't throw - we want to continue checking other networks
-        console.warn(`Error validating token ${address} on ${network.name}:`, error)
-        return null
-      }
-    })
-
-  const results = await Promise.all(validationPromises)
-  return results.filter(
-    (result): result is { network: Network; validation: TokenValidationResult } => result !== null
-  )
-}
-
-/**
- * Simplified version that returns only the networks where the address is a valid ERC20 token.
- * This is a convenience wrapper around detectERC20AcrossNetworks that extracts just the network objects.
- *
- */
-export const getValidERC20Networks = async (
-  address: string,
-  networks: Network[],
-  providers: { [chainId: string]: RPCProvider },
-  accountId: string
-): Promise<Network[]> => {
-  const results = await detectERC20AcrossNetworks(address, networks, providers, accountId)
-  return results.map(({ network }) => network)
 }
 
 /**
