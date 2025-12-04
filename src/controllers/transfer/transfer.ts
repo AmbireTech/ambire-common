@@ -189,55 +189,79 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ui.uiEvent.on('updateView', async (view: View) => {
       if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
 
-      const isReady = await this.#waitUntilReadyPortfolio()
-
-      // If aborted → don't continue
-      if (!isReady) return
-
-      const tokens = this.#selectedAccountData.portfolio.isAllReady
-        ? this.#selectedAccountData.portfolio.tokens
-            .filter((t) => t.amount > 0n && !t.flags.rewardsType)
-            // eslint-disable-next-line no-nested-ternary
-            .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
-        : []
-
-      if (!tokens.length) return
-
-      const searchParams = view.searchParams || {}
-      const tokenAddress = (searchParams.address || '').toLowerCase()
-      const tokenChainId = searchParams.chainId
-
-      let newSelectedToken = null
-
-      // 1. If a valid address is provided → try to match it
-      if (tokenAddress) {
-        newSelectedToken = tokens.find(
-          (t: TokenResult) =>
-            t.address.toLowerCase() === tokenAddress &&
-            tokenChainId === t.chainId.toString() &&
-            t.flags.onGasTank === false
-        )
-      }
-
-      // 2. If no valid address or no match → fallback to first token
-      if (!newSelectedToken) {
-        newSelectedToken = tokens[0]
-      }
-
-      // 3. Only update if changed
-      if (
-        newSelectedToken &&
-        (!this.selectedToken ||
-          this.selectedToken.address !== newSelectedToken.address ||
-          this.selectedToken.chainId !== newSelectedToken.chainId)
-      ) {
-        this.selectedToken = newSelectedToken
-        // Emit update to reflect possible changes in the UI
-        this.emitUpdate()
-      }
+      await this.#setDefaultSelectedToken(view)
     })
 
     this.emitUpdate()
+  }
+
+  async #setDefaultSelectedToken(view?: View): Promise<void> {
+    const isTopUpView = view?.currentRoute === 'top-up-gas-tank'
+
+    const isReady = await this.#waitUntilReadyPortfolio()
+
+    // If aborted → don't continue
+    if (!isReady) return
+
+    const tokens = this.#selectedAccountData.portfolio.isAllReady
+      ? this.#selectedAccountData.portfolio.tokens
+          .filter((token) => {
+            const hasAmount = Number(getTokenAmount(token)) > 0
+
+            if (isTopUpView) {
+              const tokenNetwork = this.#networks.networks.find(
+                (network) => network.chainId === token.chainId
+              )
+
+              return (
+                hasAmount &&
+                tokenNetwork?.hasRelayer &&
+                token.flags.canTopUpGasTank &&
+                !token.flags.onGasTank
+              )
+            }
+
+            return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+          })
+          // eslint-disable-next-line no-nested-ternary
+          .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
+      : []
+
+    if (!tokens.length) return
+
+    const searchParams = (view && view.searchParams) || {}
+    const tokenAddress = (searchParams.address || '').toLowerCase()
+    const tokenChainId = searchParams.chainId
+
+    let newSelectedToken = null
+
+    // 1. If a valid address is provided → try to match it
+    if (tokenAddress) {
+      newSelectedToken = tokens.find(
+        (t: TokenResult) =>
+          t.address.toLowerCase() === tokenAddress &&
+          tokenChainId === t.chainId.toString() &&
+          t.flags.onGasTank === false
+      )
+    }
+
+    // 2. If no valid address or no match → fallback to first token
+    if (!newSelectedToken) {
+      newSelectedToken = tokens[0]
+    }
+
+    // 3. Only update if changed
+    if (
+      newSelectedToken &&
+      (!this.selectedToken ||
+        this.selectedToken.address !== newSelectedToken.address ||
+        this.selectedToken.chainId !== newSelectedToken.chainId)
+    ) {
+      this.selectedToken = newSelectedToken
+
+      // Emit update to reflect possible changes in the UI
+      this.emitUpdate()
+    }
   }
 
   #waitUntilReadyPortfolio(): Promise<boolean> {
@@ -850,16 +874,18 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.hasProceeded = false
   }
 
-  destroyLatestBroadcastedAccountOp() {
+  async destroyLatestBroadcastedAccountOp(shouldResetSelectedToken = true) {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
-    this.emitUpdate()
+    if (shouldResetSelectedToken) {
+      await this.#setDefaultSelectedToken()
+    }
   }
 
-  unloadScreen(forceUnload?: boolean) {
+  async unloadScreen(forceUnload?: boolean) {
     if (this.hasPersistedState && !forceUnload) return
 
-    this.destroyLatestBroadcastedAccountOp()
+    await this.destroyLatestBroadcastedAccountOp(false)
     this.resetForm()
   }
 
