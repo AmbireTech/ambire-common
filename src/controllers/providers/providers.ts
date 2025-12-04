@@ -1,6 +1,7 @@
-/* eslint-disable no-underscore-dangle */
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
+/* eslint-disable no-underscore-dangle */
+import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -60,7 +61,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         network.chainId,
         network.selectedRpcUrl,
         {
-          batchMaxCount: ProvidersController.getProviderBatchMaxCount(network),
+          batchMaxCount: getProviderBatchMaxCount(network),
           // 24KB is deployless' max data size for calls without state override
           batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
         }
@@ -83,22 +84,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.providers[chainId.toString()]?.destroy()
     delete this.providers[chainId.toString()]
     this.emitUpdate()
-  }
-
-  static getProviderBatchMaxCount(network: Network): number | undefined {
-    const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
-
-    if (!rpcUrl) return undefined
-
-    // No limit for invictus. Maybe we should set some higher limit in the future (like 20)
-    if (rpcUrl.includes('invictus.ambire.com')) return undefined
-
-    // Custom network
-    if (!network.predefinedConfigVersion) return 1
-
-    const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl
-
-    return hasUserChangedRpc ? 1 : 10
   }
 
   toJSON() {

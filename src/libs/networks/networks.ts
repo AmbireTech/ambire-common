@@ -56,7 +56,10 @@ export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): bo
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter(
-    (chainId) => typeof providers[chainId].isWorking === 'boolean' && !providers[chainId].isWorking
+    (chainId) =>
+      providers[chainId] &&
+      typeof providers[chainId].isWorking === 'boolean' &&
+      !providers[chainId].isWorking
   )
 }
 
@@ -72,6 +75,22 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
   })
 
   return result
+}
+
+export function getProviderBatchMaxCount(network: Network): number | undefined {
+  const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
+
+  if (!rpcUrl) return undefined
+
+  // No limit for invictus. Maybe we should set some higher limit in the future (like 20)
+  if (rpcUrl.includes('invictus.ambire.com')) return undefined
+
+  // Custom network
+  if (!network.predefinedConfigVersion) return 1
+
+  const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl
+
+  return hasUserChangedRpc ? 1 : 10
 }
 
 /**
@@ -112,7 +131,9 @@ export async function getNetworkInfo(
   }
 
   let flagged = false
-  const provider = getRpcProvider([rpcUrl], chainId)
+  const provider = getRpcProvider([rpcUrl], chainId, undefined, {
+    batchMaxCount: network ? getProviderBatchMaxCount(network) : 1
+  })
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
@@ -496,6 +517,8 @@ export const getNetworksUpdatedWithRelayerNetworks = (
   }
 
   Object.keys(networks).forEach((chainId: string) => {
+    if (!networks[chainId]) return
+
     // Remove unnecessary properties:
     if ('disabledByDefault' in networks[chainId]) {
       delete networks[chainId].disabledByDefault
