@@ -176,7 +176,7 @@ const prepareTest = async () => {
     }
   })
 
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
 
   const uiCtrl = new UiController({ uiManager })

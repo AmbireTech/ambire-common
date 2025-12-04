@@ -86,7 +86,7 @@ export function getProviderBatchMaxCount(network: Network, rpcUrl: string): numb
 
   const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl
 
-  return hasUserChangedRpc ? 1 : 10
+  return hasUserChangedRpc ? 1 : network.suggestedRpcBatchCount
 }
 
 /**
@@ -498,7 +498,8 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       networks[chainId.toString()] = {
         ...currentNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
-        suggestedRpcUrl: relayerNetwork.selectedRpcUrl,
+        suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
+        suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
         iconUrls: relayerNetwork.iconUrls,
         predefined: relayerNetwork.predefined
       }

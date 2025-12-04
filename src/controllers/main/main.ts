@@ -253,7 +253,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    this.providers = new ProvidersController(this.networks)
+    this.providers = new ProvidersController(this.networks, this.storage)
     this.accounts = new AccountsController(
       this.storage,
       this.providers,

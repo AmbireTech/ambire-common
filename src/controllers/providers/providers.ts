@@ -1,9 +1,15 @@
+import { Statuses } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 /* eslint-disable no-underscore-dangle */
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const STATUS_WRAPPED_METHODS = {
+  toggleBatching: 'INITIAL'
+} as const
 
 /**
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
@@ -12,15 +18,22 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export class ProvidersController extends EventEmitter implements IProvidersController {
   #networks: INetworksController
 
+  #storage: IStorageController
+
   providers: RPCProviders = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  constructor(networks: INetworksController) {
+  isBatchingEnabled = true
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
+  constructor(networks: INetworksController, storage: IStorageController) {
     super()
 
     this.#networks = networks
+    this.#storage = storage
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -33,16 +46,25 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   async #load() {
     await this.#networks.initialLoadPromise
+
+    const storageIsBatchingEnabled = await this.#storage.get(
+      'isBatchingEnabled',
+      this.isBatchingEnabled
+    )
+
+    this.isBatchingEnabled = storageIsBatchingEnabled
+
     this.#networks.allNetworks.forEach((n) => this.setProvider(n))
     this.emitUpdate()
   }
 
-  setProvider(network: Network) {
+  setProvider(network: Network, opts?: { forceUpdate: boolean }) {
+    const { forceUpdate = false } = opts || {}
     const stringChainId = network.chainId.toString()
     const provider = this.providers[stringChainId]
     const isRpcUrlChanged = provider?._getConnection().url !== network.selectedRpcUrl
 
-    if (!provider || isRpcUrlChanged) {
+    if (!provider || isRpcUrlChanged || forceUpdate) {
       const oldRPC = this.providers[stringChainId]
 
       // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC it will keep trying to reconnect forever.
@@ -56,16 +78,21 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         }
       }
 
+      const batchMaxCount = this.isBatchingEnabled
+        ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
+        : 1
+
       this.providers[network.chainId.toString()] = getRpcProvider(
         network.rpcUrls,
         network.chainId,
         network.selectedRpcUrl,
         {
-          batchMaxCount: getProviderBatchMaxCount(network, network.selectedRpcUrl),
+          batchMaxCount,
           // 24KB is deployless' max data size for calls without state override
           batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
         }
       )
+      this.providers[network.chainId.toString()]!.batchMaxCount = batchMaxCount
     }
   }
 
@@ -84,6 +111,16 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.providers[chainId.toString()]?.destroy()
     delete this.providers[chainId.toString()]
     this.emitUpdate()
+  }
+
+  toggleBatching() {
+    return this.withStatus('toggleBatching', async () => {
+      this.isBatchingEnabled = !this.isBatchingEnabled
+      await this.#storage.set('isBatchingEnabled', this.isBatchingEnabled)
+
+      this.#networks.allNetworks.forEach((n) => this.setProvider(n, { forceUpdate: true }))
+      this.emitUpdate()
+    })
   }
 
   toJSON() {

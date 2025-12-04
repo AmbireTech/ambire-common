@@ -75,6 +75,12 @@ export interface Network {
    * Used to detected whether the user has changed it to a custom one.
    */
   suggestedRpcUrl?: string
+  /**
+   * selectedRpcBatchCount from the relayer network config.
+   * Used to configure the max batch count for rpcs if the selected rpc
+   * matches the suggestedRpcUrl.
+   */
+  suggestedRpcBatchCount?: number
   erc4337: NetworkInfo['erc4337']
   rpcNoStateOverride: NetworkInfo['rpcNoStateOverride']
   feeOptions: NetworkInfo['feeOptions']
@@ -165,6 +171,7 @@ export type RelayerNetwork = {
   explorerUrl: string
   rpcUrls: string[]
   selectedRpcUrl: string
+  selectedRpcBatchCount?: number
   native: {
     symbol: string
     name: string

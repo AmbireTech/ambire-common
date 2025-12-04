@@ -4,8 +4,8 @@ import { AbiCoder, getAddress, hexlify, parseEther, toBeHex, verifyMessage } fro
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
-
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
+
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -395,7 +395,7 @@ const init = async (
       providersCtrl.removeProvider(id)
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
     storageCtrl,
