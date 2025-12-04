@@ -49,7 +49,9 @@ export class ContinuousUpdatesController extends EventEmitter {
     return this.#fastAccountStateReFetchTimeout
   }
 
-  #retriedFastAccountStateReFetchForNetworks: string[] = []
+  #accountStateRetriesByNetwork: {
+    [chainId: string]: number
+  } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -167,7 +169,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
       ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
       : []
-    if (selectedAccountBroadcastedButNotConfirmed.length) return
+    if (selectedAccountBroadcastedButNotConfirmed?.length) return
     await this.#main.updateSelectedAccountPortfolio({
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
@@ -181,7 +183,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updateAccountStateLatest() {
     await this.initialLoadPromise
-    await this.#main.accounts.accountStatesInitialLoadPromise
+    await this.#main.accounts.accountStateInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
@@ -193,7 +195,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     })
 
     const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr] ||
+        []
       : []
     const networksWithPendingAccountOp = selectedAccountBroadcastedButNotConfirmed
       .map((op) => op.chainId)
@@ -216,7 +219,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updateAccountStatePending() {
     await this.initialLoadPromise
-    await this.#main.accounts.accountStatesInitialLoadPromise
+    await this.#main.accounts.accountStateInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to update pending state')
@@ -224,7 +227,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     }
 
     const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr] ||
+        []
       : []
     const networksToUpdate = selectedAccountBroadcastedButNotConfirmed
       .map((op) => op.chainId)
@@ -246,25 +250,33 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #fastAccountStateReFetch() {
     await this.initialLoadPromise
 
+    const selectedAccountAddr = this.#main.selectedAccount.account?.addr
+
     const failedChainIds: string[] = getNetworksWithFailedRPC({
       providers: this.#main.providers.providers
     })
-    if (!failedChainIds.length) {
+
+    const chainIdsToRetry = failedChainIds.filter((id) => {
+      const retries = this.#accountStateRetriesByNetwork[id] || 0
+
+      return retries < 3
+    })
+
+    if (!chainIdsToRetry.length || !selectedAccountAddr) {
       this.#fastAccountStateReFetchTimeout.stop()
-      this.#retriedFastAccountStateReFetchForNetworks = []
+      this.#accountStateRetriesByNetwork = {}
       return
     }
 
-    await this.#main.accounts.updateAccountStates(
-      this.#main.selectedAccount.account?.addr,
+    await this.#main.accounts.updateAccountState(
+      selectedAccountAddr,
       'latest',
-      failedChainIds.map((id) => BigInt(id))
+      chainIdsToRetry.map((id) => BigInt(id))
     )
 
-    // Add the networks that have been retried to the list
-    failedChainIds.forEach((id) => {
-      if (this.#retriedFastAccountStateReFetchForNetworks.includes(id)) return
-      this.#retriedFastAccountStateReFetchForNetworks.push(id)
+    // Increment the retry count for each chainId
+    chainIdsToRetry.forEach((id) => {
+      this.#accountStateRetriesByNetwork[id] = (this.#accountStateRetriesByNetwork[id] || 0) + 1
     })
 
     const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
@@ -273,11 +285,11 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
     // if the RPC goes down again
-    if (this.#retriedFastAccountStateReFetchForNetworks.length) {
+    if (Object.keys(this.#accountStateRetriesByNetwork).length) {
       const networksToUpdate: Network[] = []
-      this.#retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
+      Object.keys(this.#accountStateRetriesByNetwork).forEach((chainId) => {
         if (!failedChainIdsAfterUpdate.includes(chainId)) {
-          delete this.#retriedFastAccountStateReFetchForNetworks[index]
+          delete this.#accountStateRetriesByNetwork[chainId]
 
           const network = this.#main.networks.networks.find((n) => n.chainId.toString() === chainId)
 
@@ -292,13 +304,12 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     if (!failedChainIdsAfterUpdate.length) {
       this.#fastAccountStateReFetchTimeout.stop()
-      this.#retriedFastAccountStateReFetchForNetworks = []
       return
     }
 
     // Filter out the network ids that have already been retried
     const networksNotYetRetried = failedChainIdsAfterUpdate.filter(
-      (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
+      (id) => !this.#accountStateRetriesByNetwork[id]
     )
 
     const updateTime = networksNotYetRetried.length ? 8000 : 20000

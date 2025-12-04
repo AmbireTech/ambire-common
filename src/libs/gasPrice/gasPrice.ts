@@ -2,12 +2,12 @@ import { Block, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
+import { getActivatorCall } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -245,18 +245,15 @@ export async function getGasPriceRecommendations(
 }
 
 export function getProbableCallData(
-  account: Account,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  network: Network
+  shouldIncludeActivatorCall: boolean
 ): string {
   let estimationCallData
 
   // include the activator call for estimation if any
   const localOp = { ...accountOp }
-  if (shouldIncludeActivatorCall(network, account, accountState, false)) {
-    localOp.activatorCall = getActivatorCall(localOp.accountAddr)
-  }
+  if (shouldIncludeActivatorCall) localOp.activatorCall = getActivatorCall(localOp.accountAddr)
 
   // always call executeMultiple as the worts case scenario
   // we disregard the initCode
