@@ -196,6 +196,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   async #setDefaultSelectedToken(view?: View): Promise<void> {
+    const isTopUpView = view?.currentRoute === 'top-up-gas-tank'
+
     const isReady = await this.#waitUntilReadyPortfolio()
 
     // If aborted → don't continue
@@ -203,7 +205,24 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const tokens = this.#selectedAccountData.portfolio.isAllReady
       ? this.#selectedAccountData.portfolio.tokens
-          .filter((t) => t.amount > 0n && !t.flags.rewardsType)
+          .filter((token) => {
+            const hasAmount = Number(getTokenAmount(token)) > 0
+
+            if (isTopUpView) {
+              const tokenNetwork = this.#networks.networks.find(
+                (network) => network.chainId === token.chainId
+              )
+
+              return (
+                hasAmount &&
+                tokenNetwork?.hasRelayer &&
+                token.flags.canTopUpGasTank &&
+                !token.flags.onGasTank
+              )
+            }
+
+            return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+          })
           // eslint-disable-next-line no-nested-ternary
           .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
       : []
