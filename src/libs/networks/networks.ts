@@ -473,7 +473,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       // update the selectedRpcUrl on disabledByDefault networks as we can
       // determine better which RPC is the best for our custom networks
       if (relayerNetwork.disabledByDefault)
-        networks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
+        networks[chainId.toString()]!.selectedRpcUrl = relayerNetwork.selectedRpcUrl
     } else {
       // No need to add this network to the updated list
       // as the selectedRpcUrl is not changed and the network is
@@ -481,6 +481,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       networks[chainId.toString()] = {
         ...currentNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
+        suggestedRpcUrl: relayerNetwork.selectedRpcUrl,
         iconUrls: relayerNetwork.iconUrls,
         predefined: relayerNetwork.predefined
       }

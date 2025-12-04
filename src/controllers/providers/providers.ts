@@ -93,8 +93,12 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     // No limit for invictus. Maybe we should set some higher limit in the future (like 20)
     if (rpcUrl.includes('invictus.ambire.com')) return undefined
 
-    // 10 for non-invictus RPCs that are coming from the relayer, no batching for the rest
-    return network.predefinedConfigVersion ? 10 : 1
+    // Custom network
+    if (!network.predefinedConfigVersion) return 1
+
+    const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl
+
+    return hasUserChangedRpc ? 1 : 10
   }
 
   toJSON() {
