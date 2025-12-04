@@ -430,8 +430,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.phishing,
       relayerUrl,
-      this.#commonHandlerForBroadcastSuccess.bind(this),
-      this.ui
+      this.#commonHandlerForBroadcastSuccess.bind(this)
     )
     this.domains = new DomainsController(
       this.providers.providers,
