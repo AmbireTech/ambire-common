@@ -731,6 +731,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         return !shouldRemove
       })
+
+      if (request.accountOp.calls.length === 0) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.rejectUserRequests('User rejected the transaction request.', [request.id], {
+          shouldOpenNextRequest: true
+        })
+      }
     }
 
     if (callId) {
