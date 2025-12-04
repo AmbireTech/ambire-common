@@ -22,6 +22,7 @@ import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { RELAYER_DOWN_MESSAGE } from '../../libs/relayerCall/relayerCall'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -196,13 +197,19 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     } catch (error: any) {
       this.cancelEmailConfirmation()
 
-      const msg = error?.message
+      let message
+      if (error?.message === RELAYER_DOWN_MESSAGE) {
+        message = error?.message
+      } else if (error?.message) {
+        message = `Can't request magic link for email ${email}: ${error?.message}. Please try again or contact support if the problem persists.`
+      } else {
+        message = `Can't request magic link for email ${email}. Please try again or contact support if the problem persists.`
+      }
+
       this.emitError({
-        message: msg
-          ? `Can't request magic link for email ${email}: ${msg}. Please try again or contact support if the problem persists.`
-          : `Can't request magic link for email ${email}. Please try again or contact support if the problem persists.`,
+        message,
         level: 'major',
-        error: msg
+        error
       })
     }
 
