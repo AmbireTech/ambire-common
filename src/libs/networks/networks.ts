@@ -77,11 +77,7 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
   return result
 }
 
-export function getProviderBatchMaxCount(network: Network): number | undefined {
-  const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
-
-  if (!rpcUrl) return undefined
-
+export function getProviderBatchMaxCount(network: Network, rpcUrl: string): number | undefined {
   // No limit for invictus. Maybe we should set some higher limit in the future (like 20)
   if (rpcUrl.includes('invictus.ambire.com')) return undefined
 
@@ -132,7 +128,7 @@ export async function getNetworkInfo(
 
   let flagged = false
   const provider = getRpcProvider([rpcUrl], chainId, undefined, {
-    batchMaxCount: network ? getProviderBatchMaxCount(network) : 1
+    batchMaxCount: network ? getProviderBatchMaxCount(network, rpcUrl) : 1
   })
 
   const raiseFlagged = (e: Error, returnData: any): any => {
