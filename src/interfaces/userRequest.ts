@@ -1,4 +1,5 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
+import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
 import { AccountOp } from '../libs/accountOp/accountOp'
@@ -135,16 +136,7 @@ export interface SwitchAccountRequest extends UserRequestBase<[DappPromise]> {
 export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappPromise]> {
   kind: 'walletAddEthereumChain'
   meta: UserRequestBase['meta'] & {
-    params: [
-      {
-        chainId: string
-        chainName: string
-        rpcUrls: string[]
-        nativeCurrency: { name: string; symbol: string; decimals: number }
-        iconUrls?: string[]
-        blockExplorerUrls?: string[]
-      }
-    ]
+    params: [AddEthereumChainParameter]
     [key: string]: any
   }
 }
@@ -163,17 +155,16 @@ export interface UnlockRequest extends UserRequestBase<[DappPromise]> {
 
 export interface DappConnectRequest extends UserRequestBase<[DappPromise]> {
   kind: 'dappConnect'
-  meta: UserRequestBase['meta'] & { params: any }
 }
 
 export interface WalletWatchAssetRequest extends UserRequestBase<[DappPromise]> {
   kind: 'walletWatchAsset'
-  meta: UserRequestBase['meta'] & { params: any }
+  meta: UserRequestBase['meta'] & { params: WatchAssetParams }
 }
 
 export interface GetEncryptionPublicKeyRequest extends UserRequestBase<[DappPromise]> {
   kind: 'ethGetEncryptionPublicKey'
-  meta: UserRequestBase['meta'] & { params: any }
+  meta: UserRequestBase['meta'] & { params: [address: string] }
 }
 
 export type UserRequest =
