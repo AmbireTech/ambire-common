@@ -16,6 +16,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -725,7 +726,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
         priceCache: networkPriceCache,
-        blockTag: 'both',
+        blockTag: getPendingBlockTagIfSupported(network) === 'pending' ? 'both' : 'latest',
         fetchPinned: !hasNonZeroTokens,
         ...portfolioProps
       })
@@ -1026,7 +1027,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           const isSuccessful = await this.updatePortfolioState(accountId, network, portfolioLib, {
             maxDataAgeMs,
             isManualUpdate,
-            blockTag: 'both',
+            blockTag: getPendingBlockTagIfSupported(network) === 'pending' ? 'both' : 'latest',
             lastExternalApiUpdateData: hintsResponse,
             ...(currentAccountOps &&
               state && {
