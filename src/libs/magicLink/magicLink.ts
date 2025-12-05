@@ -1,5 +1,6 @@
 import { MagicLinkFlow } from '../../interfaces/emailVault'
 import { Fetch } from '../../interfaces/fetch'
+import { relayerCall } from '../relayerCall/relayerCall'
 
 export interface MagicLinkData {
   key: string
@@ -10,28 +11,31 @@ export interface MagicLinkData {
 export interface RequestMagicLinkResult {
   success: Boolean
   data: MagicLinkData
-  message: String
+  message: string
 }
 
 export async function requestMagicLink(
-  email: String,
-  relayerUrl: String,
+  email: string,
+  relayerUrl: string,
   fetch: Fetch,
   options?: { autoConfirm?: boolean; flow?: MagicLinkFlow }
 ): Promise<MagicLinkData> {
+  const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   const flow = options?.flow
 
-  const resp = await fetch(
-    `${relayerUrl}/email-vault/request-key/${email}${flow ? `?flow=${flow}` : ''}`
+  const result: RequestMagicLinkResult = await callRelayer(
+    `/email-vault/request-key/${email}${flow ? `?flow=${flow}` : ''}`
   )
-  const result: RequestMagicLinkResult = await resp.json()
+
+  // This is only for testing purposes, which acts as email confirmation
   if (result?.data?.secret && options?.autoConfirm)
     setTimeout(() => {
+      // We don't use `relayerCall` here because this request returns HTML without a `success` flag,
+      // which would wrongly throw RELAYER_DOWN error in the tests.
       fetch(
         `${relayerUrl}/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`
       )
     }, 2000)
 
-  if (!result.success) throw new Error(`magicLink: error getting magic link: ${result.message}`)
   return result.data
 }
