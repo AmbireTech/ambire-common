@@ -3,7 +3,6 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import {
-  ACCOUNT_STATE_PENDING_INTERVAL,
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
@@ -35,12 +34,6 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   get accountStateLatestInterval() {
     return this.#accountStateLatestInterval
-  }
-
-  #accountStatePendingInterval: IRecurringTimeout
-
-  get accountStatePendingInterval() {
-    return this.#accountStatePendingInterval
   }
 
   #fastAccountStateReFetchTimeout: IRecurringTimeout
@@ -105,13 +98,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       this.emitError.bind(this)
     )
 
-    this.#accountStatePendingInterval = new RecurringTimeout(
-      this.#updateAccountStatePending.bind(this),
-      ACCOUNT_STATE_PENDING_INTERVAL,
-      this.emitError.bind(this),
-      'accountStatePendingInterval'
-    )
-
     this.#accountsOpsStatusesInterval = new RecurringTimeout(
       this.#updateAccountsOpsStatuses.bind(this),
       ACTIVITY_REFRESH_INTERVAL,
@@ -131,7 +117,6 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#main.onUpdate(() => {
       if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
-        this.#accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
         this.#accountStateLatestInterval.restart()
       }
     }, 'continuous-update')
@@ -235,7 +220,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       .filter((chainId, index, self) => self.indexOf(chainId) === index)
 
     if (!networksToUpdate.length) {
-      this.#accountStatePendingInterval.stop()
       this.#accountStateLatestInterval.restart()
       return
     }

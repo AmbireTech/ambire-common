@@ -143,7 +143,7 @@ export function getUserOperation({
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
-  if (entryPointSig) {
+  if (entryPointSig && !accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
 
     const factoryInterface = new Interface(AmbireFactory.abi)
@@ -156,7 +156,7 @@ export function getUserOperation({
     ])
   }
 
-  userOp.eip7702Auth = eip7702Auth
+  userOp.eip7702Auth = eip7702Auth && !accountState.isSmarterEoa ? eip7702Auth : undefined
   return userOp
 }
 

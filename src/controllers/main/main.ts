@@ -253,7 +253,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    this.providers = new ProvidersController(this.networks)
+    this.providers = new ProvidersController(this.networks, this.storage)
     this.accounts = new AccountsController(
       this.storage,
       this.providers,
@@ -647,7 +647,6 @@ export class MainController extends EventEmitter implements IMainController {
     await this.selectedAccount.setAccount(accountToSelect)
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
-    this.#continuousUpdates.accountStatePendingInterval.restart()
     this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.resetForm()

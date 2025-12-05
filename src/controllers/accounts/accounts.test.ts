@@ -71,7 +71,7 @@ describe('AccountsController', () => {
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
 
   let accountsCtrl: IAccountsController
