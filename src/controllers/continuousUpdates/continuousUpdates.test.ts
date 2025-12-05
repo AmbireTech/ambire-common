@@ -7,7 +7,6 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
-import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
 import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import * as accountStateLib from '../../libs/accountState/accountState'
@@ -243,19 +242,14 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
 
     jest.spyOn(mainCtrl.continuousUpdates.accountStateLatestInterval, 'restart')
-    jest.spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'start')
-    jest.spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'stop')
 
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
     const initialAccountStateLatestFnExecutionsCount =
       mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount
 
-    const initialAccountStatePendingFnExecutionsCount =
-      mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount
-
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
-    expect(mainCtrl.continuousUpdates.accountStatePendingInterval.running).toBe(false)
+
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStateLatestInterval)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount).toBe(
       initialAccountStateLatestFnExecutionsCount + 1
@@ -265,19 +259,9 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
-    expect(mainCtrl.continuousUpdates.accountStatePendingInterval.start).toHaveBeenCalledTimes(1)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
-    expect(mainCtrl.continuousUpdates.accountStatePendingInterval.running).toBe(true)
-    expect(mainCtrl.continuousUpdates.accountStatePendingInterval.currentTimeout).toBe(
-      ACCOUNT_STATE_PENDING_INTERVAL / 2
-    )
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStatePendingInterval)
-    expect(mainCtrl.continuousUpdates.accountStatePendingInterval.fnExecutionsCount).toBe(
-      initialAccountStatePendingFnExecutionsCount + 1
-    )
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(2)
-    expect(mainCtrl.continuousUpdates.accountStatePendingInterval.stop).toHaveBeenCalledTimes(1)
   })
 
   test('should run fastAccountStateReFetchTimeout', async () => {
@@ -296,12 +280,6 @@ describe('ContinuousUpdatesController intervals', () => {
       .fn()
       .mockResolvedValue(undefined)
     mainCtrl.continuousUpdates.accountStateLatestInterval.restart = jest
-      .fn()
-      .mockResolvedValue(undefined)
-    mainCtrl.continuousUpdates.accountStatePendingInterval.start = jest
-      .fn()
-      .mockResolvedValue(undefined)
-    mainCtrl.continuousUpdates.accountStatePendingInterval.restart = jest
       .fn()
       .mockResolvedValue(undefined)
 
