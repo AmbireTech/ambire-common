@@ -755,13 +755,13 @@ export class MainController extends EventEmitter implements IMainController {
         provider: this.providers.providers[network.chainId.toString()],
         phishing: this.phishing,
         fromRequestId: requestId,
-        accountOp,
+        accountOp: structuredClone(accountOp),
         isSignRequestStillActive: () => {
           return this.isSignRequestStillActive
         },
         shouldSimulate: true,
         onAccountOpUpdate: (updatedAccountOp: AccountOp) => {
-          this.requests.updateCallsUserRequest(updatedAccountOp)
+          this.requests.onSignAccountOpUpdate(updatedAccountOp)
         },
         traceCall: (ctrl: ISignAccountOpController) => {
           this.traceCall(ctrl)
@@ -1484,12 +1484,6 @@ export class MainController extends EventEmitter implements IMainController {
       { maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate }
     )
     this.#updateIsOffline()
-  }
-
-  async rejectSignAccountOpCall(callId: string) {
-    if (!this.signAccountOp) return
-
-    this.signAccountOp.removeAccountOpCalls([callId])
   }
 
   async removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {

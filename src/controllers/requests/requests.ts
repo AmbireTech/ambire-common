@@ -426,22 +426,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       } else if (req.kind === 'typedMessage' || req.kind === 'message') {
         const existingMessageRequest = this.userRequests.find(
-          (r) =>
-            (r.kind === 'typedMessage' || r.kind === 'message') &&
-            r.meta.accountAddr === req.meta.accountAddr
+          (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
         ) as PlainTextMessageUserRequest | TypedMessageUserRequest | undefined
 
         if (existingMessageRequest) {
-          existingMessageRequest.dappPromises.forEach((p) => {
-            p.reject(
-              ethErrors.provider.custom({
-                code: 1001,
-                message:
-                  'Rejected: Please complete your pending message request before initiating a new one.'
-              })
-            )
-          })
-          return
+          await this.rejectUserRequests('User rejected the message request', [
+            existingMessageRequest.id
+          ])
         }
 
         userRequestsToAdd.push(req)
@@ -494,10 +485,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.sendNewRequestMessage(nextRequest, 'queued')
         currentUserRequest = this.currentUserRequest || this.visibleUserRequests[0] || null
       }
-      await this.#setCurrentUserRequest(currentUserRequest, {
-        skipFocus,
-        baseWindowId
-      })
+      await this.#setCurrentUserRequest(currentUserRequest, { skipFocus, baseWindowId })
     } else {
       this.emitUpdate()
     }
@@ -662,32 +650,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  async updateCallsUserRequest(accountOp: AccountOp) {
-    const { accountAddr, chainId, calls: newCalls } = accountOp
+  async onSignAccountOpUpdate(accountOp: AccountOp) {
+    const { accountAddr, chainId } = accountOp
 
     const request = this.userRequests.find(
       (r) => r.kind === 'calls' && r.id === `${accountAddr}-${chainId}`
     ) as CallsUserRequest | undefined
 
     if (!request) return
+    // The RequestsController is responsible for managing the calls array of each request.
+    // When a signAccountOp update arrives, only the *non-call* fields of accountOp should
+    // be applied to the existing userRequest. The calls themselves must remain unchanged
+    // and continue to be managed exclusively by the controller.
+    const { calls, ...rest } = accountOp
 
-    const oldCalls = request.accountOp.calls
-
-    if (newCalls.length === 0) {
-      await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
-        shouldOpenNextRequest: true
-      })
-      return
-    }
-
-    if (newCalls.length < oldCalls.length) {
-      const newCallIds = new Set(newCalls.map((c) => c.id))
-      const missingCalls = oldCalls.filter((c) => !newCallIds.has(c.id))
-
-      await this.rejectCalls({ callIds: missingCalls.map((c) => c.id) })
-    }
-
-    Object.assign(request.accountOp, accountOp)
+    Object.assign(request.accountOp, rest)
     this.emitUpdate()
   }
 
@@ -707,16 +684,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         | CallsUserRequest
         | undefined
 
-    const rejectAndCleanup = async (request: CallsUserRequest, callsToRemove: Call[]) => {
-      const signAccountOp = this.#getSignAccountOp()
-
-      if (signAccountOp && signAccountOp.fromRequestId === request.id) {
-        signAccountOp.removeAccountOpCalls(callsToRemove.map((c) => c.id!))
-        return
-      }
-
+    const rejectAndCleanup = async (request: CallsUserRequest, callIdsToRemove: Call['id'][]) => {
       request.accountOp.calls = request.accountOp.calls.filter((c) => {
-        const shouldRemove = callsToRemove.some((rm) => rm.id === c.id)
+        const shouldRemove = callIdsToRemove.some((id) => id === c.id)
 
         if (shouldRemove) {
           if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
@@ -732,10 +702,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return !shouldRemove
       })
 
-      if (request.accountOp.calls.length === 0) {
+      const signAccountOp = this.#getSignAccountOp()
+
+      if (signAccountOp && signAccountOp.fromRequestId === request.id) {
+        signAccountOp.update({ accountOpData: { calls: request.accountOp.calls } })
+      }
+
+      if (!request.accountOp.calls.length) {
         await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
           shouldOpenNextRequest: true
         })
+      } else {
+        this.emitUpdate()
       }
     }
 
@@ -746,10 +724,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!request) continue
 
       const call = request.accountOp.calls.find((c) => c.id === callId)
+
       // eslint-disable-next-line no-continue
       if (!call) continue
 
-      await rejectAndCleanup(request, [call])
+      const idsToRemove = call.activeRouteId
+        ? [
+            call.activeRouteId,
+            `${call.activeRouteId}-approval`,
+            `${call.activeRouteId}-revoke-approval`
+          ]
+        : [call.id]
+
+      await rejectAndCleanup(request, idsToRemove)
     }
 
     // eslint-disable-next-line no-restricted-syntax
@@ -758,12 +745,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // eslint-disable-next-line no-continue
       if (!request) continue
 
-      const callsToRemove = request.accountOp.calls.filter((c) => c.activeRouteId === activeRouteId)
+      const callIdsToRemove = request.accountOp.calls
+        .filter((c) => c.activeRouteId === activeRouteId)
+        .map((c) => c.id)
+        .filter(Boolean) as string[]
 
       // eslint-disable-next-line no-continue
-      if (callsToRemove.length === 0) continue
+      if (callIdsToRemove.length === 0) continue
 
-      await rejectAndCleanup(request, callsToRemove)
+      await rejectAndCleanup(request, callIdsToRemove)
     }
   }
 
@@ -841,9 +831,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       await this.#setCurrentUserRequest(this.visibleUserRequests[0] || null, {
         skipFocus: true
       })
+    } else {
+      this.emitUpdate()
     }
-
-    this.emitUpdate()
   }
 
   async resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -985,10 +975,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       let calls: AccountOp['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
-      const id = uuidv4()
+
       calls = calls.map((c) => ({
         ...c,
-        id,
+        id: uuidv4(),
         data: c.data || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,

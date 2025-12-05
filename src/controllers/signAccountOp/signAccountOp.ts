@@ -1213,23 +1213,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
-  removeAccountOpCalls(callIds: string[]) {
-    const call = this.accountOp.calls.find((c) => callIds.includes(c.id!))
-    if (!call) return
-
-    const idsToRemove = call.activeRouteId
-      ? [
-          call.activeRouteId,
-          `${call.activeRouteId}-approval`,
-          `${call.activeRouteId}-revoke-approval`
-        ]
-      : [call.id]
-
-    this.update({
-      accountOpData: { calls: this.accountOp.calls.filter((c) => !idsToRemove.includes(c.id)) }
-    })
-  }
-
   destroy() {
     super.destroy()
     this.estimation.destroy()
@@ -2065,9 +2048,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
         }
-        this.#updateAccountOp({
-          signature: '0x'
-        })
+        this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
