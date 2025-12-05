@@ -14,13 +14,16 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import { has7702 } from '../7702/7702'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
-const hasAmbireDelegation = (code: string) => {
+const hasAmbireDelegation = (code?: string) => {
+  if (!code) return false
+
   let hasCode = false
   for (let i = 0; i < eip7702AmbireContracts.length; i++) {
-    hasCode = code === concat(['0xef0100', eip7702AmbireContracts[i]])
+    hasCode = code === concat(['0xef0100', eip7702AmbireContracts[i]!])
     if (hasCode) break
   }
   return hasCode
@@ -66,6 +69,16 @@ export async function getAccountState(
   }
 
   async function getEOAsCode(eoaAccounts: any[]): Promise<{ [addr: string]: string }> {
+    // if the network doesn't support 7702, don't search for codes on it
+    if (!has7702(network)) {
+      return Object.assign(
+        {},
+        ...eoaAccounts.map((addr: string) => ({
+          [addr]: null
+        }))
+      )
+    }
+
     const codes: any = await Promise.all(eoaAccounts.map((addr: string) => provider.getCode(addr)))
     return Object.assign(
       {},
@@ -91,18 +104,18 @@ export async function getAccountState(
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
     const associatedKeys = accResult.associatedKeyPrivileges.map(
       (privilege: string, keyIndex: number) => {
-        return [args[index][1][keyIndex], privilege]
+        return [args[index]?.[1]?.[keyIndex], privilege]
       }
     )
 
-    const account = accounts[index]
+    const account = accounts[index]!
 
     // an EOA is smarter if it either:
     // - has an active authorization
     // - has an active AMBIRE delegation
     const delegatedContract =
-      eoaCodes[account.addr] && eoaCodes[account.addr].startsWith('0xef0100')
-        ? `0x${eoaCodes[account.addr].substring(8)}`
+      eoaCodes[account.addr] && eoaCodes[account.addr]!.startsWith('0xef0100')
+        ? `0x${eoaCodes[account.addr]!.substring(8)}`
         : null
     const isSmarterEoa = accResult.isEOA && hasAmbireDelegation(eoaCodes[account.addr])
 

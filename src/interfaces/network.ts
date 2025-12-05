@@ -65,8 +65,26 @@ export interface Network {
   nativeAssetSymbol: string
   nativeAssetName: string
   rpcUrls: string[]
+<<<<<<< HEAD
   explorerUrl?: string
+=======
+  explorerUrl: string
+  /**
+   * The currently selected RPC URL for this network.
+   */
+>>>>>>> v2
   selectedRpcUrl: string
+  /**
+   * The selectedRpcUrl from the relayer network config.
+   * Used to detected whether the user has changed it to a custom one.
+   */
+  suggestedRpcUrl?: string
+  /**
+   * selectedRpcBatchCount from the relayer network config.
+   * Used to configure the max batch count for rpcs if the selected rpc
+   * matches the suggestedRpcUrl.
+   */
+  suggestedRpcBatchCount?: number
   erc4337: NetworkInfo['erc4337']
   rpcNoStateOverride: NetworkInfo['rpcNoStateOverride']
   feeOptions: NetworkInfo['feeOptions']
@@ -75,7 +93,13 @@ export interface Network {
   features: NetworkFeature[]
   hasRelayer: boolean
   hasSingleton: NetworkInfo['hasSingleton']
+  /**
+   * The coingecko id of the network
+   */
   platformId: NetworkInfo['platformId']
+  /**
+   * The coingecko id of the native asset
+   */
   nativeAssetId: NetworkInfo['nativeAssetId']
   iconUrls?: string[]
   isOptimistic?: NetworkInfo['isOptimistic']
@@ -85,6 +109,9 @@ export interface Network {
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
+  /**
+   * Mechanism to merge relayer config with user storage.
+   */
   predefinedConfigVersion?: number
   // Last time the network details were updated from the rpc for custom and no SA networks
   lastUpdatedNetworkInfo?: number
@@ -148,6 +175,7 @@ export type RelayerNetwork = {
   explorerUrl: string
   rpcUrls: string[]
   selectedRpcUrl: string
+  selectedRpcBatchCount?: number
   native: {
     symbol: string
     name: string

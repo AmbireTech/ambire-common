@@ -249,7 +249,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    this.providers = new ProvidersController(this.networks)
+    this.providers = new ProvidersController(this.networks, this.storage)
     this.accounts = new AccountsController(
       this.storage,
       this.providers,
@@ -426,8 +426,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.phishing,
       relayerUrl,
-      this.#commonHandlerForBroadcastSuccess.bind(this),
-      this.ui
+      this.#commonHandlerForBroadcastSuccess.bind(this)
     )
     this.domains = new DomainsController(
       this.providers.providers,
@@ -644,7 +643,6 @@ export class MainController extends EventEmitter implements IMainController {
     await this.selectedAccount.setAccount(accountToSelect)
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
-    this.#continuousUpdates.accountStatePendingInterval.restart()
     this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.resetForm()
@@ -1439,7 +1437,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((chainId) => {
       const provider = this.providers.providers[chainId]
-      const isWorking = provider.isWorking
+      const isWorking = provider?.isWorking
 
       return typeof isWorking === 'boolean' && !isWorking
     })

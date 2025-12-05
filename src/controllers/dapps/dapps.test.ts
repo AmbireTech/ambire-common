@@ -54,7 +54,7 @@ const prepareTest = async (
       providersCtrl.removeProvider(id)
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })

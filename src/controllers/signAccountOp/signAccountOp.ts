@@ -1745,7 +1745,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   async #getInitialUserOp(
     shouldReestimate: boolean,
-    eip7702Auth?: EIP7702Auth
+    eip7702Auth?: EIP7702Auth,
+    counter: number = 0
   ): Promise<UserOperation> {
     const gasFeePayment = this.accountOp.gasFeePayment!
     let erc4337Estimation = this.estimation.estimation!.bundlerEstimation as Erc4337GasLimits
@@ -1787,15 +1788,25 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         eip7702Auth
       )
 
-      if (!(newEstimate instanceof Error)) {
-        erc4337Estimation = newEstimate as Erc4337GasLimits
-        this.gasPrices = erc4337Estimation.gasPrice
+      if (newEstimate instanceof Error) {
+        if (counter === 0) {
+          await this.#accounts
+            .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+            // eslint-disable-next-line no-console
+            .catch((e) => console.error(e))
+          return this.#getInitialUserOp(true, eip7702Auth, 1)
+        }
 
-        gasFeePayment.gasPrice = BigInt(this.gasPrices[this.selectedFeeSpeed!].maxFeePerGas)
-        gasFeePayment.maxPriorityFeePerGas = BigInt(
-          this.gasPrices[this.selectedFeeSpeed!].maxPriorityFeePerGas
-        )
+        throw newEstimate
       }
+
+      // set the new estimation value
+      erc4337Estimation = newEstimate as Erc4337GasLimits
+      this.gasPrices = erc4337Estimation.gasPrice
+      gasFeePayment.gasPrice = BigInt(this.gasPrices[this.selectedFeeSpeed!].maxFeePerGas)
+      gasFeePayment.maxPriorityFeePerGas = BigInt(
+        this.gasPrices[this.selectedFeeSpeed!].maxPriorityFeePerGas
+      )
     }
 
     const userOperation = getUserOperation({
@@ -2611,6 +2622,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message = accountState?.isV2
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
+        this.#accounts
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .then(() => this.simulate())
+          .catch((e) => e)
       } else if (
         originalMessage.includes('underpriced') ||
         originalMessage.includes('Fee confirmation failed')

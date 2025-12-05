@@ -211,6 +211,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     nativeAssetName,
     nativeAssetId,
     hasRelayer,
+    suggestedRpcUrl: relayerNetwork.selectedRpcUrl,
+    suggestedRpcBatchCount: relayerNetwork.selectedRpcBatchCount,
     wrappedAddr,
     oldNativeAssetSymbols,
     feeOptions,

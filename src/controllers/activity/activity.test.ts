@@ -196,7 +196,7 @@ describe('Activity Controller ', () => {
         providersCtrl.removeProvider(id)
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 
     const { uiManager } = mockUiManager()
     const uiCtrl = new UiController({ uiManager })
