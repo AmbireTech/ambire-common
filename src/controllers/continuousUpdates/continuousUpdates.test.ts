@@ -260,8 +260,6 @@ describe('ContinuousUpdatesController intervals', () => {
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
-
-    expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(2)
   })
 
   test('should run fastAccountStateReFetchTimeout', async () => {
