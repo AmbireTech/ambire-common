@@ -937,6 +937,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
     if (shouldResetSelectedToken) {
+      this.#ensureTransferSessionId()
       await this.#setTokens()
       await this.#setDefaultSelectedToken()
     }

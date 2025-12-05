@@ -884,10 +884,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.fromAmountFieldMode = fromAmountFieldMode
     }
 
-    if (fromAmountFieldMode) {
-      this.fromAmountFieldMode = fromAmountFieldMode
-    }
-
     if (shouldSetMaxAmount) {
       this.fromAmountFieldMode = 'token'
       this.#setFromAmountAmount(this.maxFromAmount, true)
