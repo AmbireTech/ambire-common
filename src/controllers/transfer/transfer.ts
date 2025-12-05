@@ -194,13 +194,34 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', async (view: View) => {
-      if (
-        (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') ||
-        !this.#currentTransferSessionId
-      )
+      const isTransferRoute =
+        view.currentRoute === 'transfer' || view.currentRoute === 'top-up-gas-tank'
+
+      if (isTransferRoute) {
+        this.#ensureTransferSessionId()
+        await this.#setTokens(view)
+        await this.#setDefaultSelectedToken(view)
         return
-      await this.#setTokens(view)
-      await this.#setDefaultSelectedToken(view)
+      }
+
+      if (this.#currentTransferSessionId) {
+        this.destroyTransferSession()
+        // Optionally reset tokens/selection when leaving
+        this.#tokens = []
+        this.selectedToken = null
+        this.emitUpdate()
+      }
+    })
+
+    this.#selectedAccountData.onUpdate(async () => {
+      if (!this.#currentTransferSessionId) {
+        return
+      }
+
+      await this.#setTokens()
+      await this.#setDefaultSelectedToken()
+
+      this.emitUpdate()
     })
 
     this.emitUpdate()
@@ -225,7 +246,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get transferSessionId() {
-    this.#ensureTransferSessionId()
     return this.#currentTransferSessionId
   }
 
@@ -888,8 +908,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.resetForm()
       }
     })
-
-    // TODO: Add selectedAccountData.onUpdate listener to update the accountOp when account changes
 
     this.signAccountOpController.onUpdate(() => {
       this.emitUpdate()
