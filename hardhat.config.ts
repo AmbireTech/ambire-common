@@ -25,11 +25,11 @@ const config: HardhatUserConfig = {
     coinmarketcap: 'c47b3b52-863b-4ffe-8673-955a09a393c2',
     token: 'ETH'
   },
-  sourcify: {
-    enabled: true,
-    apiUrl: 'https://sourcify-api-monad.blockvision.org/',
-    browserUrl: 'https://monadvision.com/'
-  },
+  // sourcify: {
+  //   enabled: true,
+  //   apiUrl: 'https://sourcify-api-monad.blockvision.org/',
+  //   browserUrl: 'https://monadvision.com/'
+  // },
   networks: {
     base: {
       url: 'https://mainnet.base.org',
@@ -93,6 +93,10 @@ const config: HardhatUserConfig = {
     },
     katana: {
       url: 'https://rpc.katana.network',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    world: {
+      url: 'https://worldchain.drpc.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     celo: {
@@ -261,6 +265,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.monadvision.com',
           browserURL: 'https://monadvision.com'
+        }
+      },
+      {
+        network: 'world',
+        chainId: 480,
+        urls: {
+          apiURL: 'https://api.worldscan.org/',
+          browserURL: 'https://worldscan.org/'
         }
       }
     ]
