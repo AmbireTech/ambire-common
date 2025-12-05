@@ -73,6 +73,11 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #humanizerInfo: HumanizerMeta | null = null
 
+  // session / debounce
+  #currentTransferSessionId: string | null = null
+
+  #pendingSessionGeneration: boolean = false
+
   isSWWarningVisible = false
 
   isSWWarningAgreed = false
@@ -144,6 +149,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #waitPortfolioTimeout: ReturnType<typeof setTimeout> | null = null
 
+  #tokens: TokenResult[] = []
+
   constructor(
     callRelayer: Function,
     storage: IStorageController,
@@ -187,15 +194,42 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', async (view: View) => {
-      if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
-
+      if (
+        (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') ||
+        !this.#currentTransferSessionId
+      )
+        return
+      await this.#setTokens(view)
       await this.#setDefaultSelectedToken(view)
     })
 
     this.emitUpdate()
   }
 
-  async #setDefaultSelectedToken(view?: View): Promise<void> {
+  #ensureTransferSessionId() {
+    if (this.#pendingSessionGeneration) return
+
+    if (!this.#currentTransferSessionId) {
+      this.#pendingSessionGeneration = true
+
+      setTimeout(() => {
+        this.#currentTransferSessionId = String(randomId())
+        this.#pendingSessionGeneration = false
+      }, 0)
+    }
+  }
+
+  destroyTransferSession() {
+    this.#currentTransferSessionId = null
+    this.#pendingSessionGeneration = false
+  }
+
+  get transferSessionId() {
+    this.#ensureTransferSessionId()
+    return this.#currentTransferSessionId
+  }
+
+  async #setTokens(view?: View) {
     const isTopUpView = view?.currentRoute === 'top-up-gas-tank'
 
     const isReady = await this.#waitUntilReadyPortfolio()
@@ -227,7 +261,11 @@ export class TransferController extends EventEmitter implements ITransferControl
           .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
       : []
 
-    if (!tokens.length) return
+    this.#tokens = tokens
+  }
+
+  async #setDefaultSelectedToken(view?: View): Promise<void> {
+    if (!this.#tokens.length) return
 
     const searchParams = (view && view.searchParams) || {}
     const tokenAddress = (searchParams.address || '').toLowerCase()
@@ -237,7 +275,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // 1. If a valid address is provided → try to match it
     if (tokenAddress) {
-      newSelectedToken = tokens.find(
+      newSelectedToken = this.#tokens.find(
         (t: TokenResult) =>
           t.address.toLowerCase() === tokenAddress &&
           tokenChainId === t.chainId.toString() &&
@@ -246,9 +284,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // 2. If no valid address or no match → fallback to first token
-    if (!newSelectedToken) {
-      newSelectedToken = tokens[0]
-    }
+    if (!newSelectedToken) newSelectedToken = this.#tokens[0]
 
     // 3. Only update if changed
     if (
@@ -341,9 +377,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.chainId !== token?.chainId
     ) {
-      if (!token.priceIn.length) {
-        this.amountFieldMode = 'token'
-      }
+      if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.#setSWWarningVisibleIfNeeded()
@@ -352,6 +386,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   get selectedToken() {
     return this.#selectedToken
+  }
+
+  get tokens() {
+    return this.#tokens
   }
 
   get maxAmount(): string {
@@ -385,6 +423,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   resetForm(shouldDestroyAccountOp = true) {
+    this.destroyTransferSession()
     this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
@@ -850,6 +889,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     })
 
+    // TODO: Add selectedAccountData.onUpdate listener to update the accountOp when account changes
+
     this.signAccountOpController.onUpdate(() => {
       this.emitUpdate()
     })
@@ -878,6 +919,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
     if (shouldResetSelectedToken) {
+      await this.#setTokens()
       await this.#setDefaultSelectedToken()
     }
   }
@@ -894,10 +936,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     return {
       ...this,
       ...super.toJSON(),
+      transferSessionId: this.transferSessionId,
       validationFormMsgs: this.validationFormMsgs,
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
+      tokens: this.tokens,
       maxAmount: this.maxAmount,
       maxAmountInFiat: this.maxAmountInFiat,
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
