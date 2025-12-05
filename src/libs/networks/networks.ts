@@ -78,15 +78,29 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
 }
 
 export function getProviderBatchMaxCount(network: Network, rpcUrl: string): number | undefined {
-  // No limit for invictus. Maybe we should set some higher limit in the future (like 20)
-  if (rpcUrl.includes('invictus.ambire.com')) return undefined
-
-  // Custom network
-  if (!network.predefinedConfigVersion) return 1
-
   const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl
 
-  return hasUserChangedRpc ? 1 : network.suggestedRpcBatchCount
+  // if the user hasn't changed the RPC the relayer has returned for this network
+  // and there's a set suggestedRpcBatchCount, return it
+  // there are cases where we use invictus (hyperevm) and regardless, we want
+  // to disable batching. Therefore, always use suggestedRpcBatchCount with priority
+  // if the RPC hasn't changed
+  if (!hasUserChangedRpc && network.suggestedRpcBatchCount) return network.suggestedRpcBatchCount
+
+  // No limit for invictus if suggestedRpcBatchCount is not provied
+  if (rpcUrl.includes('invictus.ambire.com')) return undefined
+
+  // no batching for custom networks
+  if (!network.predefinedConfigVersion) return 1
+
+  // a special rule for ethereum because we're resolving ENSes there:
+  // no invictus = batch limit of 3 to prevent rate limit
+  if (network.chainId === 1n && hasUserChangedRpc) return 3
+
+  // if suggestedRpcBatchCount is not provided, make the limit 1
+  // as we don't want to risk it by making it infinite
+  const suggestedRpcBatchCount = network.suggestedRpcBatchCount ?? 1
+  return hasUserChangedRpc ? 1 : suggestedRpcBatchCount
 }
 
 /**
