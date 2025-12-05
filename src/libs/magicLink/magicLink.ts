@@ -27,9 +27,14 @@ export async function requestMagicLink(
     `/email-vault/request-key/${email}${flow ? `?flow=${flow}` : ''}`
   )
 
+  // This is only for testing purposes, which acts as email confirmation
   if (result?.data?.secret && options?.autoConfirm)
     setTimeout(() => {
-      callRelayer(`/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`)
+      // We don't use `relayerCall` here because this request returns HTML without a `success` flag,
+      // which would wrongly throw RELAYER_DOWN error in the tests.
+      fetch(
+        `${relayerUrl}/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`
+      )
     }, 2000)
 
   return result.data
