@@ -978,7 +978,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       calls = calls.map((c) => ({
         ...c,
-        id: uuidv4(),
         data: c.data || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,
@@ -1579,11 +1578,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ...existingUserRequest.accountOp.calls,
             ...calls.map((call) => ({
               ...call,
+              id: uuidv4(),
               to: call.to,
               data: call.data || '0x',
               value: call.value ? getBigInt(call.value) : 0n
             }))
-          ].map((c) => ({ ...c, id: c.id || uuidv4() })),
+          ],
           meta: { ...existingUserRequest.accountOp.meta, ...meta }
         },
         dappPromises: [...existingUserRequest.dappPromises, ...dappPromises]

@@ -39,7 +39,6 @@ function getMintVestingRequestParams({
   return {
     calls: [
       {
-        id: uuidv4(),
         to: SUPPLY_CONTROLLER_ADDR,
         value: BigInt(0),
         data: supplyControllerInterface.encodeFunctionData('mintVesting', [
@@ -71,7 +70,6 @@ function getClaimWalletRequestParams({
   return {
     calls: [
       {
-        id: uuidv4(),
         to: SUPPLY_CONTROLLER_ADDR,
         value: BigInt(0),
         data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
@@ -134,13 +132,11 @@ function getTransferRequestParams({
     return {
       calls: [
         {
-          id: uuidv4(),
           to: wrappedAddr,
           value: BigInt(bigNumberHexAmount),
           data: deposit
         },
         {
-          id: uuidv4(),
           to: wrappedAddr,
           value: BigInt(0),
           data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
@@ -157,7 +153,6 @@ function getTransferRequestParams({
 
   let calls = [
     {
-      id: uuidv4(),
       to: selectedToken.address,
       value: BigInt(0),
       data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
@@ -167,7 +162,6 @@ function getTransferRequestParams({
   if (Number(selectedToken.address) === 0) {
     calls = [
       {
-        id: uuidv4(),
         to: recipientAddress,
         value: BigInt(bigNumberHexAmount),
         data: '0x'

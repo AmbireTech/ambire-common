@@ -65,14 +65,10 @@ export interface Network {
   nativeAssetSymbol: string
   nativeAssetName: string
   rpcUrls: string[]
-<<<<<<< HEAD
   explorerUrl?: string
-=======
-  explorerUrl: string
   /**
    * The currently selected RPC URL for this network.
    */
->>>>>>> v2
   selectedRpcUrl: string
   /**
    * The selectedRpcUrl from the relayer network config.
