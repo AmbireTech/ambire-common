@@ -126,7 +126,7 @@ export interface BenzinUserRequest extends UserRequestBase<[]> {
   }
 }
 
-export interface SwitchAccountRequest extends UserRequestBase<[DappPromise]> {
+export interface SwitchAccountRequest extends UserRequestBase {
   kind: 'switchAccount'
   meta: UserRequestBase['meta'] & {
     accountAddr: string
