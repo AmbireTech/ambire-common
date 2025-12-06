@@ -24,7 +24,7 @@ import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
-import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
+import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import { getAddressFromAddressState } from '../../utils/domains'
 import {
@@ -592,7 +592,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
     const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
-    const userRequest = buildTransferUserRequest({
+    const userRequestParams = getTransferRequestParams({
       selectedAccount: this.#selectedAccountData.account.addr,
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
@@ -600,7 +600,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       amountInFiat: amountInFiatBigInt
     })
 
-    if (!userRequest || userRequest.action.kind !== 'calls') {
+    if (!userRequestParams) {
       this.emitError({
         level: 'major',
         message: 'Unexpected error while building transfer request',
@@ -612,16 +612,14 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    const calls = userRequest.action.calls
-
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
       this.signAccountOpController.update({
         accountOpData: {
-          calls,
+          calls: userRequestParams.calls,
           meta: {
             ...(this.signAccountOpController.accountOp.meta || {}),
-            topUpAmount: userRequest.meta.topUpAmount
+            topUpAmount: userRequestParams.meta.topUpAmount
           }
         }
       })
@@ -629,7 +627,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    await this.#initSignAccOp(calls, userRequest.meta.topUpAmount)
+    await this.#initSignAccOp(userRequestParams.calls, userRequestParams.meta.topUpAmount)
   }
 
   async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
@@ -715,7 +713,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       network,
       provider,
       phishing: this.#phishing,
-      fromActionId: randomId(), // the account op and the action are fabricated,
+      fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       isSignRequestStillActive: () => true,
       shouldSimulate: false,

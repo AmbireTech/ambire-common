@@ -12,7 +12,7 @@ import {
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController, SignMessageUpdateParams } from '../../interfaces/signMessage'
-import { Message } from '../../interfaces/userRequest'
+import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
   getEIP712Signature,
@@ -20,7 +20,6 @@ import {
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
-import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -203,7 +202,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       let signature
 
       try {
-        if (isPlainTextMessage(this.messageToSign.content)) {
+        if (
+          this.messageToSign.content.kind === 'message' ||
+          this.messageToSign.content.kind === 'siwe'
+        ) {
           signature = await getPlainTextSignature(
             this.messageToSign.content.message,
             network,
@@ -264,7 +266,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         signer: this.messageToSign.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
-        ...(isPlainTextMessage(this.messageToSign.content)
+        ...(this.messageToSign.content.kind === 'message' ||
+        this.messageToSign.content.kind === 'siwe'
           ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
@@ -275,7 +278,13 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
                 primaryType: this.messageToSign.content.primaryType
               }
             }
-          : { authorization: this.messageToSign.content.message })
+          : {
+              authorization: (
+                this.messageToSign.content as AuthorizationUserRequest['meta']['params'] & {
+                  kind: AuthorizationUserRequest['kind']
+                }
+              ).message
+            })
       }
       const isValidSignature = await verifyMessage(verifyMessageParams)
       if (!this.#isSigningOperationValidAfterAsyncOperation()) return
@@ -287,10 +296,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       this.signedMessage = {
-        fromActionId: this.messageToSign.fromActionId,
-        accountAddr: this.messageToSign.accountAddr,
-        chainId: this.messageToSign.chainId,
-        content: this.messageToSign.content,
+        ...this.messageToSign,
         timestamp: new Date().getTime(),
         signature: getAppFormatted(signature, account, accountState),
         dapp: this.dapp

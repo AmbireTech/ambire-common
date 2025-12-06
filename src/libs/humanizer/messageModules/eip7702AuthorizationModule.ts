@@ -8,7 +8,7 @@ export const eip7702AuthorizationModule: HumanizerTypedMessageModule = (message:
   return {
     fullVisualization: [
       getAction('EIP-7702 Authorization'),
-      getChain(message.content.chainId),
+      getChain(message.chainId),
       getText('Nonce'),
       getLabel(message.content.nonce.toString()),
       getText('Implementation'),

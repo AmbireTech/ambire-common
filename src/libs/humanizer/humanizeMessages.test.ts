@@ -84,7 +84,7 @@ let messageTemplate: Message
 describe('typed message tests', () => {
   beforeEach(() => {
     messageTemplate = {
-      fromActionId: 'randomActionId',
+      fromRequestId: 'randomActionId',
       accountAddr: address1,
       chainId: 1n,
       signature: null,
@@ -179,7 +179,7 @@ describe('typed message tests', () => {
   })
 
   test('Entry point module', () => {
-    messageTemplate.fromActionId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+    messageTemplate.fromRequestId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
     const { fullVisualization: received } = entryPointModule(messageTemplate)
     const expected = [
       getAction('Authorize entry point'),

@@ -8,7 +8,7 @@ export type IUiController = ControllerInterface<
 
 export type View = {
   id: string
-  type: 'action-window' | 'tab' | 'popup'
+  type: 'request-window' | 'tab' | 'popup'
   currentRoute?: string
   isReady?: boolean
 }

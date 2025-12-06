@@ -19,7 +19,7 @@ import {
 
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { TypedMessage } from '../../interfaces/userRequest'
+import { TypedMessageUserRequest } from '../../interfaces/userRequest'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getAuthorizationHash
@@ -52,7 +52,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return sig
   }
 
-  async signTypedData(typedMessage: TypedMessage) {
+  async signTypedData(typedMessage: TypedMessageUserRequest['meta']['params']) {
     const sig = signTypedDataWithMetaMaskSigUtil({
       privateKey: Buffer.from(getBytes(this.#signer.privateKey)),
       data: adaptTypedMessageForMetaMaskSigUtil(typedMessage),

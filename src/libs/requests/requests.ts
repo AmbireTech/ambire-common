@@ -1,9 +1,83 @@
-import { Account, AccountId } from '../../interfaces/account'
-import { AccountOpAction, Action } from '../../interfaces/actions'
+import { AccountId } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
-import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import generateSpoofSig from '../../utils/generateSpoofSig'
+import {
+  CallsUserRequest,
+  SignUserRequest,
+  SwitchAccountRequest,
+  UserRequest
+} from '../../interfaces/userRequest'
 import { Call } from '../accountOp/types'
+
+export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
+  if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'
+  if (
+    [
+      'eth_signTypedData',
+      'eth_signTypedData_v1',
+      'eth_signTypedData_v3',
+      'eth_signTypedData_v4'
+    ].includes(method)
+  )
+    return 'typedMessage'
+  if (['personal_sign'].includes(method)) return 'message'
+  // method to camelCase
+  return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase()) as
+    | 'dappConnect'
+    | 'unlock'
+    | 'walletAddEthereumChain'
+    | 'walletWatchAsset'
+}
+
+export const isSignRequest = (kind: UserRequest['kind']) =>
+  kind === 'calls' ||
+  kind === 'message' ||
+  kind === 'typedMessage' ||
+  kind === 'siwe' ||
+  kind === 'authorization-7702'
+
+export const messageOnNewRequest = (request: UserRequest, addType: 'queued' | 'updated') => {
+  let requestType = ''
+  if (request.kind === 'calls') requestType = 'Sign Transaction'
+  if (
+    request.kind === 'message' ||
+    request.kind === 'typedMessage' ||
+    request.kind === 'authorization-7702' ||
+    request.kind === 'siwe'
+  )
+    requestType = 'Sign Message'
+
+  if (request.kind === 'dappConnect') requestType = 'Dapp Connect'
+  if (request.kind === 'walletAddEthereumChain') requestType = 'Add Chain'
+  if (request.kind === 'walletWatchAsset') requestType = 'Watch Asset'
+  if (request.kind === 'ethGetEncryptionPublicKey') requestType = 'Get Encryption Public Key'
+
+  if (addType === 'queued') {
+    return `A new${requestType ? ` ${requestType} ` : ' '}request was queued.`
+  }
+
+  if (addType === 'updated') {
+    return `${requestType ? ` ${requestType} ` : ' '}request was updated.`
+  }
+
+  return null
+}
+
+export const getCallsUserRequestsByNetwork = (
+  accountAddr: string,
+  userRequests: UserRequest[]
+): { [key: string]: CallsUserRequest[] } => {
+  const callsUserRequests = (
+    userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]
+  ).filter((req) => req.accountOp.accountAddr === accountAddr)
+
+  const requestsByNetwork = callsUserRequests.reduce((acc: any, req) => {
+    const { chainId } = req.accountOp
+    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
+    acc[chainId.toString()].push(req)
+    return acc
+  }, {})
+  return requestsByNetwork
+}
 
 export const batchCallsFromUserRequests = ({
   accountAddr,
@@ -14,13 +88,11 @@ export const batchCallsFromUserRequests = ({
   chainId: bigint
   userRequests: UserRequest[]
 }): Call[] => {
-  return (userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
+  return (userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]).reduce(
     (uCalls: Call[], req) => {
-      if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
-        const { calls } = req.action as Calls
-        calls.forEach((call) =>
-          uCalls.push({ ...call, fromUserRequestId: req.id, dapp: req.meta.dapp })
-        )
+      if (req.accountOp.chainId === chainId && req.accountOp.accountAddr === accountAddr) {
+        const { calls } = req.accountOp
+        calls.forEach((call) => uCalls.push({ ...call, dapp: req.meta.dapp }))
       }
       return uCalls
     },
@@ -28,145 +100,33 @@ export const batchCallsFromUserRequests = ({
   )
 }
 
-export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
-
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,
   selectedAccountAddr,
-  session,
-  dappPromise
+  dappPromises
 }: {
-  nextUserRequest: UserRequest
+  nextUserRequest: SignUserRequest
   selectedAccountAddr: string
-  session?: DappProviderRequest['session']
-  dappPromise?: DappUserRequest['dappPromise']
-}): UserRequest => {
+  dappPromises: UserRequest['dappPromises']
+}): SwitchAccountRequest => {
   return {
-    id: ACCOUNT_SWITCH_USER_REQUEST,
-    action: {
-      kind: 'switchAccount',
-      params: {
-        accountAddr: selectedAccountAddr,
-        switchToAccountAddr: nextUserRequest.meta.accountAddr,
-        nextRequestType: nextUserRequest.action.kind
-      }
-    },
-    session,
+    id: new Date().getTime(),
+    kind: 'switchAccount',
     meta: {
-      isSignAction: false,
       accountAddr: selectedAccountAddr,
       switchToAccountAddr: nextUserRequest.meta.accountAddr,
-      nextRequestType: nextUserRequest.action.kind
+      nextRequestKind: nextUserRequest.kind
     },
-    dappPromise: dappPromise
-      ? {
-          ...dappPromise,
-          resolve: () => {}
-        }
-      : undefined
-  } as any
+    dappPromises
+  } as SwitchAccountRequest
 }
 
-const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
+export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
   return (
     userRequests
-      .filter((req) => req.meta.topUpAmount)
-      .map((req) => req.meta.topUpAmount)
-      .reduce((a, b) => a + b, 0n) ?? undefined
+      .filter((req) => req.kind === 'calls')
+      .filter((req) => req.accountOp?.meta?.topUpAmount)
+      .map((req) => req.accountOp.meta!.topUpAmount)
+      .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
-}
-
-export const makeAccountOpAction = ({
-  account,
-  chainId,
-  nonce,
-  actionsQueue,
-  userRequests
-}: {
-  account: Account
-  chainId: bigint
-  nonce: bigint | null
-  actionsQueue: Action[]
-  userRequests: UserRequest[]
-}): AccountOpAction => {
-  const accountOpAction = actionsQueue.find(
-    (a) => a.type === 'accountOp' && a.id === `${account.addr}-${chainId}`
-  ) as AccountOpAction | undefined
-
-  if (accountOpAction) {
-    const calls = batchCallsFromUserRequests({
-      accountAddr: account.addr,
-      chainId,
-      userRequests
-    })
-
-    // add top ups
-    if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
-    accountOpAction.accountOp.meta.topUpAmount = sumTopUps(userRequests)
-
-    // the nonce might have changed during estimation because of
-    // a nonce discrepancy issue. This makes sure we're with the
-    // latest nonce should the user decide to batch
-    accountOpAction.accountOp.nonce = nonce
-    return { ...accountOpAction, accountOp: { ...accountOpAction.accountOp, calls } }
-  }
-
-  // find the user request with a paymaster service
-  const userReqWithPaymasterService = userRequests.find(
-    (req) =>
-      req.meta.accountAddr === account.addr &&
-      req.meta.chainId === chainId &&
-      req.meta.paymasterService
-  )
-  const paymasterService = userReqWithPaymasterService
-    ? userReqWithPaymasterService.meta.paymasterService
-    : undefined
-
-  // find the user request with a wallet send calls version if any
-  const userReqWithWalletSendCallsVersion = userRequests.find(
-    (req) =>
-      req.meta.accountAddr === account.addr &&
-      req.meta.chainId === chainId &&
-      req.meta.walletSendCallsVersion
-  )
-  const walletSendCallsVersion = userReqWithWalletSendCallsVersion
-    ? userReqWithWalletSendCallsVersion.meta.walletSendCallsVersion
-    : undefined
-
-  // find the user request with a setDelegation meta property if any
-  const userReqWithDelegation = userRequests.find(
-    (req) =>
-      req.meta.accountAddr === account.addr &&
-      req.meta.chainId === chainId &&
-      'setDelegation' in req.meta
-  )
-  const setDelegation = userReqWithDelegation ? userReqWithDelegation.meta.setDelegation : undefined
-
-  const accountOp: AccountOpAction['accountOp'] = {
-    accountAddr: account.addr,
-    chainId,
-    signingKeyAddr: null,
-    signingKeyType: null,
-    gasLimit: null,
-    gasFeePayment: null,
-    nonce,
-    signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-    calls: batchCallsFromUserRequests({
-      accountAddr: account.addr,
-      chainId,
-      userRequests
-    }),
-    meta: {
-      paymasterService,
-      walletSendCallsVersion,
-      setDelegation,
-      topUpAmount: sumTopUps(userRequests)
-    }
-  }
-
-  return {
-    id: `${account.addr}-${chainId}`, // SA accountOpAction id
-    type: 'accountOp',
-    accountOp
-  }
 }

@@ -279,7 +279,7 @@ describe('TypedMessages', () => {
       primaryType: 'Permit'
     }
     const fullMessage = {
-      fromActionId: 1,
+      fromRequestId: 1,
       accountAddr: accountOp.accountAddr,
       content: tmTemplate,
       signature: null,

@@ -18,7 +18,7 @@ import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { TypedMessage } from '../../interfaces/userRequest'
+import { TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { callToTuple, getSignableHash } from '../accountOp/accountOp'
@@ -399,8 +399,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountState = accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
-    const typedDataTest: TypedMessage = {
-      kind: 'typedMessage',
+    const typedDataTest: TypedMessageUserRequest['meta']['params'] = {
       types: {
         BulkOrder: [
           {

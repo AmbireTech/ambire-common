@@ -10,10 +10,9 @@ import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
 import { networks } from '../../consts/networks'
-import { DappRequestAction } from '../../interfaces/actions'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController, Storage } from '../../interfaces/storage'
-import { DappUserRequest } from '../../interfaces/userRequest'
+import { DappConnectRequest } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -235,22 +234,19 @@ describe('DappsController', () => {
   test('should add dapp to connect and update blacklisted status', async () => {
     const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
     MOCK_SESSION.setProp({ name: 'Test Dapp' })
-    const DAPP_CONNECT_REQUEST: DappUserRequest = {
+    const DAPP_CONNECT_REQUEST: DappConnectRequest = {
       id: 1,
-      action: { kind: 'dappConnect', params: {} },
-      meta: { isSignAction: false },
-      session: MOCK_SESSION,
-      dappPromise: {
-        resolve: () => {},
-        reject: () => {},
-        session: MOCK_SESSION
-      }
-    }
-
-    const DAPP_CONNECT_ACTION: DappRequestAction = {
-      id: DAPP_CONNECT_REQUEST.id,
-      type: 'dappRequest',
-      userRequest: DAPP_CONNECT_REQUEST
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          dapp: null,
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session: MOCK_SESSION
+        }
+      ]
     }
 
     const { controller } = await prepareTest(async (storageCtrl) => {
@@ -259,7 +255,7 @@ describe('DappsController', () => {
     })
     await controller.initialLoadPromise
 
-    controller.setDappToConnectIfNeeded(DAPP_CONNECT_ACTION)
+    controller.setDappToConnectIfNeeded(DAPP_CONNECT_REQUEST)
 
     await new Promise((resolve) => {
       let emitCounter = 0
