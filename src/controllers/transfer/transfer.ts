@@ -14,6 +14,7 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
+import { IUiController, View } from '../../interfaces/ui'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -71,6 +72,11 @@ export class TransferController extends EventEmitter implements ITransferControl
   #selectedAccountData: ISelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
+
+  // session / debounce
+  #currentTransferSessionId: string | null = null
+
+  #pendingSessionGeneration: boolean = false
 
   isSWWarningVisible = false
 
@@ -139,6 +145,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #onBroadcastSuccess: OnBroadcastSuccess
 
+  #ui: IUiController
+
+  #waitPortfolioTimeout: ReturnType<typeof setTimeout> | null = null
+
+  #tokens: TokenResult[] = []
+
   constructor(
     callRelayer: Function,
     storage: IStorageController,
@@ -154,7 +166,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     providers: IProvidersController,
     phishing: IPhishingController,
     relayerUrl: string,
-    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastSuccess: OnBroadcastSuccess,
+    ui: IUiController
   ) {
     super()
 
@@ -174,11 +187,168 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#phishing = phishing
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
+    this.#ui = ui
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
+
+    this.#ui.uiEvent.on('updateView', async (view: View) => {
+      const isTransferRoute =
+        view.currentRoute === 'transfer' || view.currentRoute === 'top-up-gas-tank'
+
+      if (isTransferRoute) {
+        this.#ensureTransferSessionId()
+        await this.#setTokens(view)
+        await this.#setDefaultSelectedToken(view)
+        return
+      }
+
+      if (this.#currentTransferSessionId) {
+        this.destroyTransferSession()
+        // Optionally reset tokens/selection when leaving
+        this.#tokens = []
+        this.selectedToken = null
+        this.emitUpdate()
+      }
+    })
+
+    this.#selectedAccountData.onUpdate(async () => {
+      if (!this.#currentTransferSessionId) {
+        return
+      }
+
+      await this.#setTokens()
+      await this.#setDefaultSelectedToken()
+
+      this.emitUpdate()
+    })
+
     this.emitUpdate()
+  }
+
+  #ensureTransferSessionId() {
+    if (this.#pendingSessionGeneration) return
+
+    if (!this.#currentTransferSessionId) {
+      this.#pendingSessionGeneration = true
+
+      setTimeout(() => {
+        this.#currentTransferSessionId = String(randomId())
+        this.#pendingSessionGeneration = false
+      }, 0)
+    }
+  }
+
+  destroyTransferSession() {
+    this.#currentTransferSessionId = null
+    this.#pendingSessionGeneration = false
+  }
+
+  get transferSessionId() {
+    return this.#currentTransferSessionId
+  }
+
+  async #setTokens(view?: View) {
+    const isTopUpView = view?.currentRoute === 'top-up-gas-tank'
+
+    const isReady = await this.#waitUntilReadyPortfolio()
+
+    // If aborted → don't continue
+    if (!isReady) return
+
+    const tokens = this.#selectedAccountData.portfolio.isAllReady
+      ? this.#selectedAccountData.portfolio.tokens
+          .filter((token) => {
+            const hasAmount = Number(getTokenAmount(token)) > 0
+
+            if (isTopUpView) {
+              const tokenNetwork = this.#networks.networks.find(
+                (network) => network.chainId === token.chainId
+              )
+
+              return (
+                hasAmount &&
+                tokenNetwork?.hasRelayer &&
+                token.flags.canTopUpGasTank &&
+                !token.flags.onGasTank
+              )
+            }
+
+            return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+          })
+          // eslint-disable-next-line no-nested-ternary
+          .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
+      : []
+
+    this.#tokens = tokens
+  }
+
+  async #setDefaultSelectedToken(view?: View): Promise<void> {
+    if (!this.#tokens.length) return
+
+    const searchParams = (view && view.searchParams) || {}
+    const tokenAddress = (searchParams.address || '').toLowerCase()
+    const tokenChainId = searchParams.chainId
+
+    let newSelectedToken = null
+
+    // 1. If a valid address is provided → try to match it
+    if (tokenAddress) {
+      newSelectedToken = this.#tokens.find(
+        (t: TokenResult) =>
+          t.address.toLowerCase() === tokenAddress &&
+          tokenChainId === t.chainId.toString() &&
+          t.flags.onGasTank === false
+      )
+    }
+
+    // 2. If no valid address or no match → fallback to first token
+    if (!newSelectedToken) newSelectedToken = this.#tokens[0]
+
+    // 3. Only update if changed
+    if (
+      newSelectedToken &&
+      (!this.selectedToken ||
+        this.selectedToken.address !== newSelectedToken.address ||
+        this.selectedToken.chainId !== newSelectedToken.chainId)
+    ) {
+      this.selectedToken = newSelectedToken
+
+      // Emit update to reflect possible changes in the UI
+      this.emitUpdate()
+    }
+  }
+
+  #waitUntilReadyPortfolio(): Promise<boolean> {
+    // Cancel previous wait if any
+    if (this.#waitPortfolioTimeout) {
+      clearTimeout(this.#waitPortfolioTimeout)
+      this.#waitPortfolioTimeout = null
+    }
+
+    return new Promise((resolve) => {
+      const startTime = Date.now()
+
+      const check = () => {
+        // Timeout after 30s
+        if (Date.now() - startTime > 30000) {
+          this.#waitPortfolioTimeout = null
+          return resolve(false)
+        }
+
+        // If ready → resolve
+        if (this.#selectedAccountData.portfolio.isAllReady) {
+          this.#waitPortfolioTimeout = null
+          return resolve(true)
+        }
+
+        // Not ready → check again
+        this.#waitPortfolioTimeout = setTimeout(check, 150)
+      }
+
+      check()
+    })
   }
 
   async #load() {
@@ -227,9 +397,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.chainId !== token?.chainId
     ) {
-      if (!token.priceIn.length) {
-        this.amountFieldMode = 'token'
-      }
+      if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.#setSWWarningVisibleIfNeeded()
@@ -238,6 +406,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   get selectedToken() {
     return this.#selectedToken
+  }
+
+  get tokens() {
+    return this.#tokens
   }
 
   get maxAmount(): string {
@@ -271,6 +443,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   resetForm(shouldDestroyAccountOp = true) {
+    this.destroyTransferSession()
     this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
@@ -760,16 +933,20 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.hasProceeded = false
   }
 
-  destroyLatestBroadcastedAccountOp() {
+  async destroyLatestBroadcastedAccountOp(shouldResetSelectedToken = true) {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
-    this.emitUpdate()
+    if (shouldResetSelectedToken) {
+      this.#ensureTransferSessionId()
+      await this.#setTokens()
+      await this.#setDefaultSelectedToken()
+    }
   }
 
-  unloadScreen(forceUnload?: boolean) {
+  async unloadScreen(forceUnload?: boolean) {
     if (this.hasPersistedState && !forceUnload) return
 
-    this.destroyLatestBroadcastedAccountOp()
+    await this.destroyLatestBroadcastedAccountOp(false)
     this.resetForm()
   }
 
@@ -778,10 +955,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     return {
       ...this,
       ...super.toJSON(),
+      transferSessionId: this.transferSessionId,
       validationFormMsgs: this.validationFormMsgs,
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
+      tokens: this.tokens,
       maxAmount: this.maxAmount,
       maxAmountInFiat: this.maxAmountInFiat,
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,

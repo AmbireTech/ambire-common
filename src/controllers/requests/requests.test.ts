@@ -177,7 +177,8 @@ const prepareTest = async () => {
     providersCtrl,
     phishingCtrl,
     relayerUrl,
-    () => Promise.resolve()
+    () => Promise.resolve(),
+    uiCtrl
   )
 
   const requestsController: IRequestsController = {} as IRequestsController
