@@ -9,6 +9,11 @@ import { isValidAddress } from '../address'
 type ValidateReturnType = {
   success: boolean
   message: string
+  // Severity levels:
+  // 'error' - Critical validation failures that block the transaction (success: false)
+  // 'warning' - Important information user should know but transaction can proceed (success: true)
+  // 'info' - Neutral informational messages (success: true)
+  severity?: 'info' | 'warning' | 'error'
   errorType?: 'insufficient_amount'
 }
 
@@ -104,14 +109,16 @@ const validateSendTransferAddress = (
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
-      message: "You can't send to the same address you're sending from."
+      message: "You can't send to the same address you're sending from.",
+      severity: 'error'
     }
   }
 
   if (isRecipientHumanizerKnownTokenOrSmartContract) {
     return {
       success: false,
-      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
+      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
+      severity: 'error'
     }
   }
 
@@ -124,7 +131,8 @@ const validateSendTransferAddress = (
     }
     return {
       success: true,
-      message
+      message,
+      severity: lastRecipientTransactionDate ? 'warning' : 'info'
     }
   }
 
@@ -137,7 +145,8 @@ const validateSendTransferAddress = (
   ) {
     return {
       success: false,
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
+      severity: 'error'
     }
   }
 
@@ -150,25 +159,28 @@ const validateSendTransferAddress = (
   ) {
     return {
       success: false,
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
+      severity: 'error'
     }
   }
 
   if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
     return {
       success: false,
-      message: 'Please confirm that the recipient address is not an exchange.'
+      message: 'Please confirm that the recipient address is not an exchange.',
+      severity: 'error'
     }
   }
 
   if (lastRecipientTransactionDate) {
     return {
       success: true,
-      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
+      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
+      severity: 'warning'
     }
   }
 
-  return { success: true, message: '' }
+  return { success: true, message: '', severity: 'warning' }
 }
 
 const validateSendTransferAmount = (
@@ -189,13 +201,15 @@ const validateSendTransferAmount = (
     if (Number(amount) > 0 && selectedAsset.decimals && selectedAsset.decimals > 0) {
       return {
         success: false,
-        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`
+        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`,
+        severity: 'error'
       }
     }
 
     return {
       success: false,
-      message: 'The amount must be greater than 0.'
+      message: 'The amount must be greater than 0.',
+      severity: 'error'
     }
   }
 
@@ -204,7 +218,8 @@ const validateSendTransferAmount = (
       if (Number(sanitizedAmount) < 1 / 10 ** selectedAsset.decimals)
         return {
           success: false,
-          message: 'Token amount too low.'
+          message: 'Token amount too low.',
+          severity: 'error'
         }
 
       const currentAmount: bigint = parseUnits(sanitizedAmount, selectedAsset.decimals)
@@ -213,16 +228,18 @@ const validateSendTransferAmount = (
         return {
           success: false,
           message: 'Insufficient amount.',
+          severity: 'error',
           errorType: 'insufficient_amount'
         }
       }
     }
   } catch (e) {
-    console.error(e)
-
+    // Keep original behavior but avoid adding new console usage beyond existing
+    // callers may log if needed; return a warning indicating invalid amount.
     return {
       success: false,
-      message: 'Invalid amount.'
+      message: 'Invalid amount.',
+      severity: 'error'
     }
   }
 

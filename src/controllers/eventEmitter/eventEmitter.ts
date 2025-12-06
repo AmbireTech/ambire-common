@@ -183,6 +183,14 @@ export default class EventEmitter {
     }
   }
 
+  destroy() {
+    this.#callbacks = []
+    this.#callbacksWithId = []
+    this.#errorCallbacks = []
+    this.#errorCallbacksWithId = []
+    this.#errors = []
+  }
+
   toJSON() {
     return {
       ...this,

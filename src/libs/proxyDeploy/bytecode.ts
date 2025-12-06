@@ -14,6 +14,14 @@ export async function get4437Bytecode(network: Network, priLevels: PrivLevels[])
   const code = await provider.getCode(PROXY_AMBIRE_4337_ACCOUNT)
   if (code === '0x') throw new Error('No proxy ambire account mined for the specified network')
 
+  // clean up the provider after usage
+  try {
+    provider.destroy()
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e)
+  }
+
   // get the bytecode and deploy it
   return getProxyDeployBytecode(PROXY_AMBIRE_4337_ACCOUNT, priLevels, {
     ...getStorageSlotsFromArtifact(null)

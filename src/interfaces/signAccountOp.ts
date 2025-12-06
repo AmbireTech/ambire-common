@@ -20,6 +20,12 @@ type SignAccountOpError = {
   text?: string
 }
 
+type SignAccountOpBanner = {
+  id: string
+  type: 'error' | 'warning'
+  text: string
+}
+
 enum TraceCallDiscoveryStatus {
   NotStarted = 'not-started',
   InProgress = 'in-progress',
@@ -29,4 +35,4 @@ enum TraceCallDiscoveryStatus {
 }
 
 export { TraceCallDiscoveryStatus }
-export type { Warning, SignAccountOpError }
+export type { Warning, SignAccountOpError, SignAccountOpBanner }

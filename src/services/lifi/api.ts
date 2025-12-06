@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -174,7 +174,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
 }
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
-  parentStep: LiFiStep
+  parentStep: LiFiStep,
+  routeId: string
 ): SwapAndBridgeSendTxRequest => {
   if (
     !parentStep.transactionRequest ||
@@ -188,8 +189,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   }
 
   return {
-    // Route ID is the string before the colon, then it's the step index
-    activeRouteId: parentStep.id.split(':')[0],
+    activeRouteId: routeId,
     approvalData:
       parentStep.action.fromToken.address === ZERO_ADDRESS
         ? null // No approval needed fo native tokens
@@ -200,10 +200,10 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
             owner: ''
           },
     chainId: parentStep.action.fromChainId,
-    txData: parentStep.transactionRequest.data,
     txTarget: parentStep.transactionRequest.to,
     userTxIndex: 0,
-    value: parentStep.transactionRequest.value
+    value: parentStep.transactionRequest.value,
+    txData: parentStep.transactionRequest.data
   }
 }
 
@@ -223,6 +223,8 @@ export class LiFiAPI implements SwapProvider {
   isHealthy: boolean | null = null
 
   #apiKey: string
+
+  supportedChains: SwapProvider['supportedChains'] = null
 
   /**
    * We don't use the apiKey as a default option for sending LiFi API
@@ -299,10 +301,11 @@ export class LiFiAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
+      let timeoutPromise: NodeJS.Timeout | undefined
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
-          setTimeout(() => {
+          timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
                 'Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'
@@ -311,6 +314,8 @@ export class LiFiAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
+
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       // Rethrow the same error if it's already humanized
       if (e instanceof SwapAndBridgeProviderApiError) throw e
@@ -368,7 +373,10 @@ export class LiFiAPI implements SwapProvider {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response.chains.map((c) => ({ chainId: c.id }))
+    const chains = response.chains.map((c) => ({ chainId: c.id }))
+    this.supportedChains = chains
+
+    return chains
   }
 
   async getToTokenList({
@@ -541,7 +549,7 @@ export class LiFiAPI implements SwapProvider {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response)
+    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response, route.routeId)
   }
 
   async getRouteStatus({

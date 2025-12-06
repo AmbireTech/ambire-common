@@ -1,15 +1,18 @@
+import { suppressConsole } from '../../../test/helpers/console'
 import { RecurringTimeout } from './recurringTimeout'
 
 describe('RecurringTimeout', () => {
+  let restoreFunc: any
   beforeEach(() => {
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+    const { restore } = suppressConsole()
+    restoreFunc = restore
   })
 
   afterEach(() => {
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restoreFunc()
   })
 
   const createDeferred = () => {

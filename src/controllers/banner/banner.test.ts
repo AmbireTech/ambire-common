@@ -27,7 +27,7 @@ describe('BannerController', () => {
     controller.addBanner(banner)
 
     expect(controller.banners).toHaveLength(1)
-    expect(controller.banners[0].id).toBe('test-banner')
+    expect(controller.banners[0]!.id).toBe('test-banner')
   })
   it('should not add a banner with the same id', async () => {
     const controller = await prepareTest()

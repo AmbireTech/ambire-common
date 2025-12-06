@@ -75,7 +75,7 @@ const getMockSelectedAccountPortfolio = (params?: {
         : []
     }
     return acc
-  }, {} as SelectedAccountPortfolio['latest'])
+  }, {} as SelectedAccountPortfolio['portfolioState'])
 }
 
 describe('selectedAccount errors', () => {
@@ -131,8 +131,8 @@ describe('selectedAccount errors', () => {
         const result = addRPCError(existingErrors, '1', mockNetworks)
 
         expect(result).toHaveLength(1)
-        expect(result[0].networkNames).toEqual(['Ethereum'])
-        expect(result[0].title).toBe(
+        expect(result[0]!.networkNames).toEqual(['Ethereum'])
+        expect(result[0]!.title).toBe(
           'Failed to retrieve network data for Ethereum (RPC malfunction)'
         )
       })
@@ -191,9 +191,9 @@ describe('selectedAccount errors', () => {
         result = addRPCError(result, '42161', mockNetworks)
 
         expect(result).toHaveLength(2)
-        expect(result[0].id).toBe('custom-rpcs-down-137')
-        expect(result[1].id).toBe('custom-rpcs-down-42161')
-        expect(result[1].networkNames).toEqual(['Arbitrum'])
+        expect(result[0]!.id).toBe('custom-rpcs-down-137')
+        expect(result[1]!.id).toBe('custom-rpcs-down-42161')
+        expect(result[1]!.networkNames).toEqual(['Arbitrum'])
       })
     })
 
@@ -219,7 +219,7 @@ describe('selectedAccount errors', () => {
         expect(result).not.toBe(originalErrors)
         expect(originalErrors).toHaveLength(0)
         expect(result).toHaveLength(1)
-        expect(result[0].networkNames).toEqual(['Ethereum'])
+        expect(result[0]!.networkNames).toEqual(['Ethereum'])
       })
     })
 
@@ -387,7 +387,7 @@ describe('selectedAccount errors', () => {
         ]
         const result = addPortfolioError(existingErrors, 'Polygon', 'portfolio-critical')
 
-        expect(result[0].title).toBe('Failed to retrieve the portfolio data on Ethereum, Polygon')
+        expect(result[0]!.title).toBe('Failed to retrieve the portfolio data on Ethereum, Polygon')
       })
 
       it('should handle multiple " on " occurrences correctly', () => {
@@ -402,7 +402,7 @@ describe('selectedAccount errors', () => {
         ]
         const result = addPortfolioError(existingErrors, 'Network Two', 'loading-too-long')
 
-        expect(result[0].title).toBe('Something went wrong on Network One, Network Two')
+        expect(result[0]!.title).toBe('Something went wrong on Network One, Network Two')
       })
     })
 
@@ -414,8 +414,8 @@ describe('selectedAccount errors', () => {
         result = addPortfolioError(result, 'BNB Smart Chain', 'PriceFetchError')
 
         expect(result).toHaveLength(3)
-        expect(result[0].id).toBe('portfolio-critical')
-        expect(result[1].id).toBe('loading-too-long')
+        expect(result[0]!.id).toBe('portfolio-critical')
+        expect(result[1]!.id).toBe('loading-too-long')
         expect(result[2].id).toBe('PriceFetchError')
       })
 
@@ -426,8 +426,8 @@ describe('selectedAccount errors', () => {
         result = addPortfolioError(result, 'BNB Smart Chain', 'portfolio-critical') // Same type as first
 
         expect(result).toHaveLength(2)
-        expect(result[0].networkNames).toEqual(['Ethereum', 'BNB Smart Chain'])
-        expect(result[1].networkNames).toEqual(['Polygon'])
+        expect(result[0]!.networkNames).toEqual(['Ethereum', 'BNB Smart Chain'])
+        expect(result[1]!.networkNames).toEqual(['Polygon'])
       })
     })
 
@@ -437,7 +437,7 @@ describe('selectedAccount errors', () => {
         const result = addPortfolioError(errors, '', 'portfolio-critical')
 
         expect(result).toHaveLength(1)
-        expect(result[0].networkNames).toEqual([''])
+        expect(result[0]!.networkNames).toEqual([''])
       })
 
       it('should create new array (function does not mutate input)', () => {
@@ -454,7 +454,7 @@ describe('selectedAccount errors', () => {
         result = addPortfolioError(result, 'Ethereum', 'portfolio-critical')
 
         expect(result).toHaveLength(1)
-        expect(result[0].networkNames).toEqual(['Ethereum'])
+        expect(result[0]!.networkNames).toEqual(['Ethereum'])
       })
     })
   })
@@ -467,7 +467,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 137n]
         }),
         isAllReady: true,
@@ -482,7 +482,7 @@ describe('selectedAccount errors', () => {
     it('critical portfolio error', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 137n]
         }),
         isAllReady: true,
@@ -493,8 +493,8 @@ describe('selectedAccount errors', () => {
       })
 
       expect(errors).toHaveLength(1)
-      expect(errors[0].id).toBe('portfolio-critical')
-      expect(errors[0].networkNames).toEqual(['Ethereum', 'Polygon'])
+      expect(errors[0]!.id).toBe('portfolio-critical')
+      expect(errors[0]!.networkNames).toEqual(['Ethereum', 'Polygon'])
     })
     it('rpc down errors are added in favour of portfolio errors', () => {
       const providers = structuredClone(mockProviders)
@@ -503,7 +503,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 56n]
         }),
         isAllReady: true,
@@ -514,13 +514,13 @@ describe('selectedAccount errors', () => {
       })
 
       expect(errors).toHaveLength(1)
-      expect(errors[0].id).toBe('rpcs-down')
-      expect(errors[0].networkNames).toEqual(['Ethereum', 'BNB Smart Chain'])
+      expect(errors[0]!.id).toBe('rpcs-down')
+      expect(errors[0]!.networkNames).toEqual(['Ethereum', 'BNB Smart Chain'])
     })
     it('no errors are added when the state is fresh (not Ethereum)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           freshDataChainIds: [56n, 137n],
           criticalErrorChainIds: [56n]
         }),
@@ -536,7 +536,7 @@ describe('selectedAccount errors', () => {
     it('errors are added even when the state is fresh (Ethereum)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           freshDataChainIds: [1n, 56n, 137n],
           criticalErrorChainIds: [1n]
         }),
@@ -548,8 +548,8 @@ describe('selectedAccount errors', () => {
       })
 
       expect(errors).toHaveLength(1)
-      expect(errors[0].id).toBe('portfolio-critical')
-      expect(errors[0].networkNames).toEqual(['Ethereum'])
+      expect(errors[0]!.id).toBe('portfolio-critical')
+      expect(errors[0]!.networkNames).toEqual(['Ethereum'])
     })
     it('no errors are added when the portfolio is loading from scratch', () => {
       const providers = structuredClone(mockProviders)
@@ -558,7 +558,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -577,7 +577,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [137n]
         }),
         isAllReady: true,
@@ -592,7 +592,7 @@ describe('selectedAccount errors', () => {
     it("critical portfolio error, but we don't know if the user has assets", () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [137n]
         }),
         isAllReady: true,
@@ -603,13 +603,13 @@ describe('selectedAccount errors', () => {
       })
 
       expect(errors).toHaveLength(1)
-      expect(errors[0].id).toBe('portfolio-critical')
-      expect(errors[0].networkNames).toEqual(['Polygon'])
+      expect(errors[0]!.id).toBe('portfolio-critical')
+      expect(errors[0]!.networkNames).toEqual(['Polygon'])
     })
     it('non-critical portfolio errors', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           nonCriticalErrorChainIds: [1n, 137n],
           criticalErrorChainIds: [1n]
         }),
@@ -622,16 +622,16 @@ describe('selectedAccount errors', () => {
 
       expect(errors).toHaveLength(2)
 
-      expect(errors[0].id).toBe('portfolio-critical')
-      expect(errors[0].networkNames).toEqual(['Ethereum'])
+      expect(errors[0]!.id).toBe('portfolio-critical')
+      expect(errors[0]!.networkNames).toEqual(['Ethereum'])
 
-      expect(errors[1].id).toBe('PriceFetchError')
-      expect(errors[1].networkNames).toEqual(['Polygon'])
+      expect(errors[1]!.id).toBe('PriceFetchError')
+      expect(errors[1]!.networkNames).toEqual(['Polygon'])
     })
     it('no errors are added for loading networks if (isAllReady=false)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -647,7 +647,7 @@ describe('selectedAccount errors', () => {
     it('errors are added for loading networks if (isAllReady=true)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -660,12 +660,12 @@ describe('selectedAccount errors', () => {
 
       expect(errors).toHaveLength(1)
 
-      expect(errors[0].id).toBe('portfolio-critical')
+      expect(errors[0]!.id).toBe('portfolio-critical')
     })
     it('loading-too-long error is added for loading networks if isAllReady=false and shouldShowPartialResult=true', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n]
         }),
         isAllReady: false,
@@ -677,13 +677,13 @@ describe('selectedAccount errors', () => {
 
       expect(errors).toHaveLength(1)
 
-      expect(errors[0].id).toBe('loading-too-long')
-      expect(errors[0].networkNames).toEqual(['Ethereum', 'BNB Smart Chain'])
+      expect(errors[0]!.id).toBe('loading-too-long')
+      expect(errors[0]!.networkNames).toEqual(['Ethereum', 'BNB Smart Chain'])
     })
     it('loading-too-long error is not added for loading networks if isAllReady=true and shouldShowPartialResult=true', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n]
         }),
         isAllReady: true,

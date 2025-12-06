@@ -26,11 +26,15 @@ async function runTests() {
     console.log('Running portfolio test in isolation...')
     await run(['src/libs/portfolio/portfolio.test.ts', ...additionalArgs])
 
+    // Run the assetInfo test in isolation to avoid conflicts with other tests
+    console.log('Running assetInfo test in isolation...')
+    await run(['src/services/assetInfo/assetInfo.test.ts', ...additionalArgs])
+
     // Run remaining tests in parallel
     console.log('Running all remaining tests...')
     await run([
       '--forceExit=true',
-      '--testPathIgnorePatterns=src/libs/portfolio/portfolio.test.ts',
+      '--testPathIgnorePatterns=src/services/assetInfo/assetInfo.test.ts|src/libs/portfolio/portfolio.test.ts',
       ...additionalArgs
     ])
   } catch (error) {

@@ -248,16 +248,6 @@ describe('isSuspectedToken', () => {
     expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
   })
 
-  it('returns "no-latin-symbol" for token with hidden/invisible symbol', () => {
-    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_NON_LATIN_SYMBOL
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('no-latin-symbol')
-  })
-
-  it('returns "no-latin-name" for token with non-Latin name', () => {
-    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_NON_LATIN_NAME
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('no-latin-name')
-  })
-
   it('returns "suspected" for spoofed token with same symbol but different address', () => {
     const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
     expect(isSuspectedToken(address, symbol, name, chainId)).toBe('suspected')

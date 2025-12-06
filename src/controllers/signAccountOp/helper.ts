@@ -3,7 +3,6 @@ import { ZeroAddress } from 'ethers'
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
@@ -12,11 +11,7 @@ import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/form
 
 export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
 
-function getFeeSpeedIdentifier(
-  option: FeePaymentOption,
-  accountAddr: string,
-  rbfAccountOp: SubmittedAccountOp | null
-) {
+function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {
   // if the token is native and we're paying with EOA, we do not need
   // a different identifier as the fee speed calculations will be the same
   // regardless of the EOA address
@@ -25,7 +20,7 @@ function getFeeSpeedIdentifier(
 
   return `${paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
     option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
-  }${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`
+  }`
 }
 
 function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
@@ -38,30 +33,49 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 }
 
 function getSignificantBalanceDecreaseWarning(
-  latest: AccountState,
-  pending: AccountState,
+  portfolioState: AccountState,
   chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const latestNetworkData = latest?.[chainId.toString()]
-  const pendingNetworkData = pending?.[chainId.toString()]
-  const canDetermineIfBalanceWillDecrease =
-    latestNetworkData &&
-    !latestNetworkData.isLoading &&
-    pendingNetworkData &&
-    !pendingNetworkData.isLoading
+  const portfolioNetworkState = portfolioState?.[chainId.toString()]
 
-  if (canDetermineIfBalanceWillDecrease) {
-    const latestTotalInUSD = getAccountPortfolioTotal(
-      latest,
+  if (portfolioNetworkState && portfolioNetworkState.result && !portfolioNetworkState.isLoading) {
+    const totalInUSD = getAccountPortfolioTotal(
+      portfolioState,
       ['rewards', 'gasTank', 'projectedRewards'],
       false
     )
-    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
-    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
-    const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
+    const simulatedTokens = portfolioNetworkState.result.tokens.filter(
+      (t) => typeof t.amountPostSimulation === 'bigint'
+    )
+
+    if (!simulatedTokens.length) return null
+
+    // Calculates the amount on the pending block * the price of the token
+    const simulatedTokensValueBeforeSimulationInUSD = getTotal(simulatedTokens, {
+      includeHiddenTokens: true,
+      beforeSimulation: true
+    })?.usd
+    // Calculates the amount after the simulation * the price of the token
+    const simulatedTokensValueAfterSimulationInUSD = getTotal(simulatedTokens, {
+      includeHiddenTokens: true,
+      beforeSimulation: false
+    })?.usd
+
+    if (
+      typeof simulatedTokensValueBeforeSimulationInUSD !== 'number' ||
+      typeof simulatedTokensValueAfterSimulationInUSD !== 'number'
+    )
+      return null
+
+    const absoluteDecreaseInUSD =
+      simulatedTokensValueBeforeSimulationInUSD - simulatedTokensValueAfterSimulationInUSD
+
+    // In case the balance increased or stayed the same
+    if (absoluteDecreaseInUSD <= 0) return null
+
     const hasSignificantBalanceDecrease =
-      absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
+      absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
     if (!hasSignificantBalanceDecrease) return null
 

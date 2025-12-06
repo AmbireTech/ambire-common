@@ -3,6 +3,7 @@ import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -34,6 +35,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     onBroadcastFailed?: OnBroadcastFailed
     estimateController: EstimationController
     gasPriceController: GasPriceController
+    phishing: IPhishingController
   }) {
     super(props)
 

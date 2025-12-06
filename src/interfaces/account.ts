@@ -26,8 +26,11 @@ export interface Account {
   newlyAdded?: boolean
   disable7702Popup?: boolean
   disable7702Banner?: boolean
-  // Timestamp when the identity was fetched from the Ambire Relayer, needed to determine
-  // if the account is EOA or Ambire smart account (and set the correct creation, associatedKeys and initialPrivileges)
+  /**
+   * Timestamp when the identity was fetched from the Ambire Relayer, needed to
+   * determine if the account is EOA or Ambire smart account (and set the
+   * correct creation, associatedKeys and initialPrivileges).
+   */
   identityFetchedAt?: number
 }
 
@@ -35,7 +38,7 @@ export interface AccountCreation {
   factoryAddr: string
   bytecode: string
   salt: string
-  // Timestamp when the identity was created on the Ambire Relayer
+  /** Timestamp when the identity was created on the Ambire Relayer */
   identityCreatedAt?: number
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
@@ -111,7 +114,14 @@ type AccountDerivationMeta = {
   isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
-export type AccountWithNetworkMeta = Account & { usedOnNetworks: Network[] }
+export type AccountWithNetworkMeta = Account & {
+  /**
+   * - undefined - loading
+   * - null - won't be fetched
+   * - array - fetched
+   */
+  usedOnNetworks?: Network[] | null
+}
 
 /**
  * The account that is derived programmatically and internally by Ambire.

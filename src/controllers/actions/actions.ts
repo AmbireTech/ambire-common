@@ -55,9 +55,20 @@ export class ActionsController extends EventEmitter {
 
   actionsQueue: Action[] = []
 
-  currentAction: Action | null = null
+  #currentAction: Action | null = null
+
+  #onSetCurrentAction: (currentAction: Action | null) => void
 
   #onActionWindowClose: () => Promise<void>
+
+  get currentAction() {
+    return this.#currentAction
+  }
+
+  set currentAction(val: Action | null) {
+    this.#currentAction = val
+    this.#onSetCurrentAction(val)
+  }
 
   get visibleActionsQueue(): Action[] {
     return this.actionsQueue.filter((a) => {
@@ -112,18 +123,19 @@ export class ActionsController extends EventEmitter {
   constructor({
     selectedAccount,
     ui,
-
+    onSetCurrentAction,
     onActionWindowClose
   }: {
     selectedAccount: ISelectedAccountController
     ui: IUiController
-
+    onSetCurrentAction: (currentAction: Action | null) => void
     onActionWindowClose: () => Promise<void>
   }) {
     super()
 
     this.#selectedAccount = selectedAccount
     this.#ui = ui
+    this.#onSetCurrentAction = onSetCurrentAction
     this.#onActionWindowClose = onActionWindowClose
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
@@ -430,7 +442,8 @@ export class ActionsController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       visibleActionsQueue: this.visibleActionsQueue,
-      banners: this.banners
+      banners: this.banners,
+      currentAction: this.currentAction
     }
   }
 }

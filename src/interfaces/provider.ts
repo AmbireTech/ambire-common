@@ -6,6 +6,6 @@ export type IProvidersController = ControllerInterface<
   InstanceType<typeof import('../controllers/providers/providers').ProvidersController>
 >
 
-export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }
+export type RPCProvider = JsonRpcProvider & { isWorking?: boolean; batchMaxCount?: number }
 
 export type RPCProviders = { [chainId: string]: RPCProvider }

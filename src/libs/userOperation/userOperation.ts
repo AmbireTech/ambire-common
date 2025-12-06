@@ -5,7 +5,6 @@ import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
 import {
-  AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
@@ -14,7 +13,6 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Network } from '../../interfaces/network'
 //  TODO: dependency cycle
 // eslint-disable-next-line import/no-cycle
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
@@ -145,7 +143,7 @@ export function getUserOperation({
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
-  if (entryPointSig) {
+  if (entryPointSig && !accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
 
     const factoryInterface = new Interface(AmbireFactory.abi)
@@ -158,27 +156,8 @@ export function getUserOperation({
     ])
   }
 
-  userOp.eip7702Auth = eip7702Auth
+  userOp.eip7702Auth = eip7702Auth && !accountState.isSmarterEoa ? eip7702Auth : undefined
   return userOp
-}
-
-// for special cases where we broadcast a 4337 operation with an EOA,
-// add the activator call so the use has the entry point attached
-export function shouldIncludeActivatorCall(
-  network: Network,
-  account: Account,
-  accountState: AccountOnchainState,
-  is4337Broadcast = true
-) {
-  return (
-    account.creation &&
-    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
-    accountState.isV2 &&
-    !accountState.isEOA &&
-    network.erc4337.enabled &&
-    !accountState.isErc4337Enabled &&
-    (accountState.isDeployed || !is4337Broadcast)
-  )
 }
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'

@@ -96,11 +96,14 @@ export interface FullEstimation {
   // flags that signal to the app what needs to be handled if a state
   // inconsistency issue was found during estimation
   flags: EstimationFlags
+  bundlerGasPrices?: GasSpeeds
+  criticalError?: Error
 }
 
 export interface FullEstimationSummary {
   providerEstimation?: ProviderEstimation
   ambireEstimation?: AmbireEstimation
   bundlerEstimation?: Erc4337GasLimits
+  bundlerGasPrices?: GasSpeeds
   flags: EstimationFlags
 }

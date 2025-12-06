@@ -94,10 +94,6 @@ export type Action =
       meta: { timestamp: number; addr: string; chainId: bigint; isHideStyle: boolean }
     }
   | {
-      label: 'Open'
-      actionName: 'open-first-cashback-modal'
-    }
-  | {
       label: 'Reload'
       actionName: 'update-extension-version'
     }

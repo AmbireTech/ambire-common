@@ -58,13 +58,6 @@ const removeNonLatinChars = (str: string): string =>
     })
     .join('')
 
-// returns true if the original string contained any non-ASCII / invisible chars
-const nonLatinSymbol = (str: string): boolean => {
-  if (!str) return false
-  const cleaned = removeNonLatinChars(str)
-  return cleaned !== str
-}
-
 // safe address normalizer
 const normalizeAddress = (addr: string) => {
   try {
@@ -120,14 +113,10 @@ export const isSuspectedToken = (
     return null // trusted
   }
 
-  // 3) Unknown address (or known but no chainIds) => run symbol/name checks
-  if (nonLatinSymbol(symbol)) return 'no-latin-symbol'
-  if (nonLatinSymbol(name)) return 'no-latin-name'
-
-  // 4) Same-symbol spoofing on same chain (different address)
+  // 3) Same-symbol spoofing on same chain (different address)
   if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
 
-  // 5) Not flagged
+  // 4) Not flagged
   return null
 }
 
@@ -205,10 +194,11 @@ export const mapToken = (
   token: Pick<TokenResult, 'amount' | 'decimals' | 'name' | 'symbol'>,
   network: Network,
   address: string,
-  opts: Pick<GetOptions, 'specialErc20Hints'>,
-  hasSimulationAmount?: boolean
+  opts: Pick<GetOptions, 'specialErc20Hints' | 'blockTag'>,
+  hasSimulationAmount?: boolean,
+  latestAmount?: bigint
 ) => {
-  const { specialErc20Hints } = opts
+  const { specialErc20Hints, blockTag } = opts
 
   let symbol = 'Unknown'
   try {
@@ -245,7 +235,7 @@ export const mapToken = (
     }
   }
 
-  return {
+  const tokenResult = {
     amount: token.amount,
     chainId: network.chainId,
     decimals: Number(token.decimals),
@@ -258,6 +248,18 @@ export const mapToken = (
     address,
     flags: tokenFlags
   } as TokenResult
+
+  if (blockTag !== 'both') return tokenResult
+
+  return {
+    ...tokenResult,
+    // Fallback to the pending amount if latestAmount is not provided
+    // Otherwise it will look like someone is receiving tokens and the current amount is 0
+    // It's important that we are using ?? here instead of ||
+    // because latestAmount can be 0
+    latestAmount: latestAmount ?? token.amount,
+    pendingAmount: tokenResult.amount
+  }
 }
 
 export const validateERC20Token = async (
@@ -300,7 +302,9 @@ export const validateERC20Token = async (
 
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
-export const getTokenAmount = (token: TokenResult): bigint => {
+export const getTokenAmount = (token: TokenResult, beforeSimulation?: boolean): bigint => {
+  if (beforeSimulation) return token.amount
+
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
@@ -314,20 +318,26 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
   return balance * price
 }
 
-export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
-  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+export const getTotal = (
+  t: TokenResult[],
+  opts?: { includeHiddenTokens?: boolean; beforeSimulation?: boolean }
+) => {
+  const { includeHiddenTokens = false, beforeSimulation = false } = opts || {}
+
+  return t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
-    if (token.flags.isHidden && excludeHiddenTokens) return localCur
+    if (token.flags.isHidden && !includeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
 
-      const tokenAmount = Number(getTokenAmount(token)) / 10 ** token.decimals
+      const tokenAmount = Number(getTokenAmount(token, beforeSimulation)) / 10 ** token.decimals
       localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
     }
 
     return localCur
   }, {})
+}
 
 export const addHiddenTokenValueToTotal = (
   totalWithoutHiddenTokens: number,

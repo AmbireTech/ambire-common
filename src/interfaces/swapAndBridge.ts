@@ -113,6 +113,7 @@ export interface SwapAndBridgeRoute {
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
+  isSelectedManually?: boolean
   // put in a service fee only if it's not included in the quote
   serviceFee?: {
     amount: string
@@ -490,6 +491,11 @@ export interface SwapProvider {
   isHealthy: boolean | null
   updateHealth(): void
   resetHealth(): void
+  /**
+   * List of supported chains by the provider
+   * null if a successful fetch has not been made yet
+   */
+  supportedChains: SwapAndBridgeSupportedChain[] | null
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,

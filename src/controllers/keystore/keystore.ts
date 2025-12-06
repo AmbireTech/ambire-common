@@ -166,12 +166,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
       this.#keystoreKeys = keystoreKeys
-    } catch (e) {
+    } catch (e: any) {
       this.emitError({
         message:
           'Something went wrong when loading the Keystore. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('keystore: failed to pull keys from storage')
+        error: e
       })
     }
 
