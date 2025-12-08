@@ -661,6 +661,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.activity.forceEmitUpdate(),
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
+      this.swapAndBridge.forceEmitUpdate(),
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
