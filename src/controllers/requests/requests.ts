@@ -1619,7 +1619,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           gasFeePayment: null,
           nonce: accountState.nonce,
           signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-          calls,
+          calls: [
+            ...calls.map((call) => ({
+              ...call,
+              id: uuidv4(),
+              to: call.to,
+              data: call.data || '0x',
+              value: call.value ? getBigInt(call.value) : 0n
+            }))
+          ],
           meta
         },
         dappPromises
