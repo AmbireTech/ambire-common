@@ -519,87 +519,115 @@ export class ActivityController extends EventEmitter implements IActivityControl
               }
             }
 
-            const fetchTxnIdResult = await fetchTxnId(
-              accountOp.identifiedBy,
-              network,
-              this.#callRelayer,
-              accountOp
-            )
-            if (fetchTxnIdResult.status === 'rejected') {
-              const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              return
-            }
-            if (fetchTxnIdResult.status === 'not_found') {
-              declareStuckIfFiveMinsPassed(accountOp)
-              return
-            }
-
-            const txnId = fetchTxnIdResult.txnId as string
-            // eslint-disable-next-line no-param-reassign
-            accountOp.txnId = txnId
-
-            try {
-              let receipt = await provider.getTransactionReceipt(txnId)
-              if (receipt) {
-                // if the status is a failure and it's an userOp, it means it
-                // could've been front ran. We need to make sure we find the
-                // transaction that has succeeded
-                if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                  const frontRanTxnId = await fetchFrontRanTxnId(
-                    accountOp.identifiedBy,
-                    txnId,
-                    network
-                  )
-                  // eslint-disable-next-line no-param-reassign
-                  accountOp.txnId = frontRanTxnId
-                  receipt = await provider.getTransactionReceipt(frontRanTxnId)
-                  if (!receipt) return
-                }
-
-                // if this is an user op, we have to check the logs
-                let isSuccess: boolean | undefined
-                if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
-                  if (userOpEventLog) isSuccess = userOpEventLog.success
-                }
-
-                // if it's not an userOp or it is, but isSuccess was not found
-                if (isSuccess === undefined) isSuccess = !!receipt.status
-
-                const updatedOpIfAny = updateOpStatus(
-                  accountOp,
-                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
-                  receipt
-                )
+            const txIds = []
+            if (accountOp.identifiedBy.type !== 'MultipleTxns') {
+              const fetchTxnIdResult = await fetchTxnId(
+                accountOp.identifiedBy,
+                network,
+                this.#callRelayer,
+                accountOp
+              )
+              if (fetchTxnIdResult.status === 'rejected') {
+                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-
-                if (accountOp.isSingletonDeploy && receipt.status) {
-                  await this.#onContractsDeployed(network)
-                }
-
-                // learn tokens from the transfer logs
-                if (isSuccess) {
-                  const foundTokens = await getTransferLogTokens(
-                    receipt.logs,
-                    accountOp.accountAddr
-                  )
-                  if (foundTokens.length) {
-                    this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-                  }
-                }
-
-                // update the chain if a receipt has been received as otherwise, we're
-                // left hanging with a pending portfolio balance
-                chainsToUpdate.add(network.chainId)
+                return
+              }
+              if (fetchTxnIdResult.status === 'not_found') {
+                declareStuckIfFiveMinsPassed(accountOp)
                 return
               }
 
-              // if there's no receipt, confirm there's a txn
-              // if there's no txn and 15 minutes have passed, declare it a failure
-              const txn = await provider.getTransaction(txnId)
-              if (txn) return
-              declareStuckIfFiveMinsPassed(accountOp)
+              const txnId = fetchTxnIdResult.txnId as string
+              // eslint-disable-next-line no-param-reassign
+              accountOp.txnId = txnId
+              txIds.push(txnId)
+            } else {
+              txIds.push(...accountOp.calls.map((call) => call.txnId))
+            }
+
+            try {
+              const receipts = await Promise.all(
+                txIds.map((txnId) =>
+                  txnId ? provider.getTransactionReceipt(txnId).catch(null) : null
+                )
+              )
+              for (let i = 0; i < receipts.length; i++) {
+                let receipt = receipts[i]
+                const txnId = txIds[i]
+                if (receipt) {
+                  // if the status is a failure and it's an userOp, it means it
+                  // could've been front ran. We need to make sure we find the
+                  // transaction that has succeeded
+                  if (
+                    !receipt.status &&
+                    isIdentifiedByUserOpHash(accountOp.identifiedBy) &&
+                    txnId
+                  ) {
+                    // eslint-disable-next-line no-await-in-loop
+                    const frontRanTxnId = await fetchFrontRanTxnId(
+                      accountOp.identifiedBy,
+                      txnId,
+                      network
+                    )
+                    // eslint-disable-next-line no-param-reassign
+                    accountOp.txnId = frontRanTxnId
+                    // eslint-disable-next-line no-await-in-loop
+                    receipt = await provider.getTransactionReceipt(frontRanTxnId)
+                    if (!receipt) return
+                  }
+
+                  // if this is an user op, we have to check the logs
+                  let isSuccess: boolean | undefined
+                  if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                    const userOpEventLog = parseLogs(
+                      receipt.logs,
+                      accountOp.identifiedBy.identifier
+                    )
+                    if (userOpEventLog) isSuccess = userOpEventLog.success
+                  }
+
+                  // if it's not an userOp or it is, but isSuccess was not found
+                  if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                  const updatedOpIfAny = updateOpStatus(
+                    accountOp,
+                    isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                    receipt
+                  )
+                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+
+                  if (accountOp.isSingletonDeploy && receipt.status) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await this.#onContractsDeployed(network)
+                  }
+
+                  // learn tokens from the transfer logs
+                  if (isSuccess) {
+                    // eslint-disable-next-line no-await-in-loop
+                    const foundTokens = await getTransferLogTokens(
+                      receipt.logs,
+                      accountOp.accountAddr
+                    )
+                    if (foundTokens.length) {
+                      this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                    }
+                  }
+
+                  // update the chain if a receipt has been received as otherwise, we're
+                  // left hanging with a pending portfolio balance
+                  chainsToUpdate.add(network.chainId)
+                  // eslint-disable-next-line no-continue
+                  continue
+                }
+
+                // if there's no receipt, confirm there's a txn
+                // if there's no txn and 15 minutes have passed, declare it a failure
+                // eslint-disable-next-line no-await-in-loop
+                const txn = txnId ? await provider.getTransaction(txnId) : null
+                // eslint-disable-next-line no-continue
+                if (txn) continue
+                declareStuckIfFiveMinsPassed(accountOp)
+              }
             } catch {
               this.emitError({
                 level: 'silent',
