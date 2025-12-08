@@ -542,14 +542,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
               accountOp.txnId = txnId
               txIds.push(txnId)
             } else {
-              txIds.push(...accountOp.calls.map((call) => call.txnId))
+              const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
+              txIds.push(
+                ...accountOp.calls
+                  .filter((call) => !!call.status)
+                  .map((call) => call.txnId)
+                  .slice(0, limit)
+              )
             }
 
             try {
               const receipts = await Promise.all(
-                txIds.map((txnId) =>
-                  txnId ? provider.getTransactionReceipt(txnId).catch(null) : null
-                )
+                // no catch, throw an error if one promise doesn't complete
+                txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null))
               )
               for (let i = 0; i < receipts.length; i++) {
                 let receipt = receipts[i]
