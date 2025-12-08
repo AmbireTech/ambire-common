@@ -23,7 +23,7 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
@@ -303,8 +303,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
             return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
           })
-          // eslint-disable-next-line no-nested-ternary
-          .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
+          .sort((a, b) => {
+            const tokenAinUSD = getTokenBalanceInUSD(a)
+            const tokenBinUSD = getTokenBalanceInUSD(b)
+
+            return tokenBinUSD - tokenAinUSD
+          })
       : []
 
     this.#tokens = tokens
