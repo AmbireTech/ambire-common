@@ -227,7 +227,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ensureTransferSessionId()
 
     this.unsubscribeSelectedAccountController()
-    this.#subscribeToSelectedAccountUpdates()
+    this.#subscribeToSelectedAccountUpdates(view)
 
     await this.#setTokens(view)
     await this.#setDefaultSelectedToken(view)
@@ -252,12 +252,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#currentTransferSessionId = null
   }
 
-  #subscribeToSelectedAccountUpdates() {
+  #subscribeToSelectedAccountUpdates(view: View) {
     this.#unsubscribeSelectedAccountController = this.#selectedAccountData.onUpdate(async () => {
       if (!this.#currentTransferSessionId) return
 
-      await this.#setTokens()
-      await this.#setDefaultSelectedToken()
+      await this.#setTokens(view)
+      await this.#setDefaultSelectedToken(view)
 
       this.emitUpdate()
     })
