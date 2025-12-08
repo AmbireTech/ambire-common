@@ -182,12 +182,12 @@ const prepareTest = async () => {
     ui: uiCtrl
   })
 
-  await providersCtrl.initialLoadPromise
-  await networksCtrl.initialLoadPromise
   await accountsCtrl.initialLoadPromise
   await accountsCtrl.accountStateInitialLoadPromise
-  await selectedAccountCtrl.initialLoadPromise
+  await networksCtrl.initialLoadPromise
+  await providersCtrl.initialLoadPromise
   await autoLoginCtrl.initialLoadPromise
+  await selectedAccountCtrl.initialLoadPromise
 
   selectedAccountCtrl.initControllers({
     portfolio: portfolioCtrl,
