@@ -82,7 +82,11 @@ export class RecurringTimeout implements IRecurringTimeout {
       this.fnExecutionsCount += 1
       await this.promise
     } catch (err: any) {
-      if (!this.promise) return
+      if (!this.promise) {
+        console.error('Reccuring task error but no promise', err)
+
+        return
+      }
       console.error('Recurring task error:', err)
       if (this.#emitError)
         this.#emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
