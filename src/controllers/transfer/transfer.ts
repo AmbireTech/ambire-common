@@ -291,33 +291,31 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setTokens() {
-    const tokens = this.#selectedAccount.portfolio.isAllReady
-      ? this.#selectedAccount.portfolio.tokens
-          .filter((token) => {
-            const hasAmount = Number(getTokenAmount(token)) > 0
+    const tokens = this.#selectedAccount.portfolio.tokens
+      .filter((token) => {
+        const hasAmount = Number(getTokenAmount(token)) > 0
 
-            if (this.isTopUp) {
-              const tokenNetwork = this.#networks.networks.find(
-                (network) => network.chainId === token.chainId
-              )
+        if (this.isTopUp) {
+          const tokenNetwork = this.#networks.networks.find(
+            (network) => network.chainId === token.chainId
+          )
 
-              return (
-                hasAmount &&
-                tokenNetwork?.hasRelayer &&
-                token.flags.canTopUpGasTank &&
-                !token.flags.onGasTank
-              )
-            }
+          return (
+            hasAmount &&
+            tokenNetwork?.hasRelayer &&
+            token.flags.canTopUpGasTank &&
+            !token.flags.onGasTank
+          )
+        }
 
-            return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
-          })
-          .sort((a, b) => {
-            const tokenAinUSD = getTokenBalanceInUSD(a)
-            const tokenBinUSD = getTokenBalanceInUSD(b)
+        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+      })
+      .sort((a, b) => {
+        const tokenAinUSD = getTokenBalanceInUSD(a)
+        const tokenBinUSD = getTokenBalanceInUSD(b)
 
-            return tokenBinUSD - tokenAinUSD
-          })
-      : []
+        return tokenBinUSD - tokenAinUSD
+      })
 
     this.#tokens = tokens
 
