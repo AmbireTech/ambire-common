@@ -76,8 +76,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   // session / debounce
   #currentTransferSessionId: string | null = null
 
-  #pendingSessionGeneration: boolean = false
-
   isSWWarningVisible = false
 
   isSWWarningAgreed = false
@@ -151,6 +149,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #tokens: TokenResult[] = []
 
+  #unsubscribeSelectedAccountController: (() => void) | null = null
+
+  #previousRoute: string | undefined = undefined
+
   constructor(
     callRelayer: Function,
     storage: IStorageController,
@@ -194,55 +196,79 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', async (view: View) => {
-      const isTransferRoute =
-        view.currentRoute === 'transfer' || view.currentRoute === 'top-up-gas-tank'
-
-      if (isTransferRoute) {
-        this.#ensureTransferSessionId()
-        await this.#setTokens(view)
-        await this.#setDefaultSelectedToken(view)
-        return
-      }
-
-      if (this.#currentTransferSessionId) {
-        this.destroyTransferSession()
-        // Optionally reset tokens/selection when leaving
-        this.#tokens = []
-        this.selectedToken = null
-        this.emitUpdate()
-      }
+      await this.#handleUpdateView(view)
     })
 
-    this.#selectedAccountData.onUpdate(async () => {
-      if (!this.#currentTransferSessionId) {
-        return
-      }
+    this.emitUpdate()
+  }
+
+  async #handleUpdateView(view: View) {
+    const current = view.currentRoute
+    const prev = this.#previousRoute
+    this.#previousRoute = current
+
+    const isTransfer = (route: string | undefined) => {
+      return route === 'transfer' || route === 'top-up-gas-tank'
+    }
+
+    // Detect entering transfer
+    if (!isTransfer(prev) && isTransfer(current)) {
+      await this.#enterTransfer(view)
+      return
+    }
+
+    // Detect leaving transfer
+    if (isTransfer(prev) && !isTransfer(current)) {
+      this.#leaveTransfer()
+    }
+  }
+
+  async #enterTransfer(view: View) {
+    this.#ensureTransferSessionId()
+
+    this.unsubscribeSelectedAccountController()
+    this.#subscribeToSelectedAccountUpdates()
+
+    await this.#setTokens(view)
+    await this.#setDefaultSelectedToken(view)
+  }
+
+  #leaveTransfer() {
+    this.destroyTransferSession()
+    this.unsubscribeSelectedAccountController()
+
+    this.#tokens = []
+    this.selectedToken = null
+    this.emitUpdate()
+  }
+
+  #ensureTransferSessionId() {
+    if (!this.#currentTransferSessionId) {
+      this.#currentTransferSessionId = String(randomId())
+    }
+  }
+
+  destroyTransferSession() {
+    this.#currentTransferSessionId = null
+  }
+
+  #subscribeToSelectedAccountUpdates() {
+    this.#unsubscribeSelectedAccountController = this.#selectedAccountData.onUpdate(async () => {
+      if (!this.#currentTransferSessionId) return
 
       await this.#setTokens()
       await this.#setDefaultSelectedToken()
 
       this.emitUpdate()
     })
-
-    this.emitUpdate()
   }
 
-  #ensureTransferSessionId() {
-    if (this.#pendingSessionGeneration) return
-
-    if (!this.#currentTransferSessionId) {
-      this.#pendingSessionGeneration = true
-
-      setTimeout(() => {
-        this.#currentTransferSessionId = String(randomId())
-        this.#pendingSessionGeneration = false
-      }, 0)
+  unsubscribeSelectedAccountController() {
+    if (this.#unsubscribeSelectedAccountController) {
+      this.#unsubscribeSelectedAccountController()
     }
-  }
 
-  destroyTransferSession() {
-    this.#currentTransferSessionId = null
-    this.#pendingSessionGeneration = false
+    this.#unsubscribeSelectedAccountController = null
   }
 
   get transferSessionId() {
