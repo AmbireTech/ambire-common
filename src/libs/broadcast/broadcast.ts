@@ -105,6 +105,11 @@ async function estimateGas(
   // if there's an error, wait a bit and retry
   // the error is most likely because of an incorrect RPC pending state
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
+    // if the gasLimit is throwing because the smart account is returning INSUFFICIENT_PRIVILEGE,
+    // return the error without retrying
+    if (gasLimit instanceof Error && gasLimit.message.includes('INSUFFICIENT_PRIVILEGE'))
+      throw gasLimit
+
     await wait(1500)
     return estimateGas(provider, from, call, nonce, gasLimit, counter + 1)
   }

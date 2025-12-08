@@ -114,7 +114,14 @@ type AccountDerivationMeta = {
   isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
-export type AccountWithNetworkMeta = Account & { usedOnNetworks: Network[] }
+export type AccountWithNetworkMeta = Account & {
+  /**
+   * - undefined - loading
+   * - null - won't be fetched
+   * - array - fetched
+   */
+  usedOnNetworks?: Network[] | null
+}
 
 /**
  * The account that is derived programmatically and internally by Ambire.
