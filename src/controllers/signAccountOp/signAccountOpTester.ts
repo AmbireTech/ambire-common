@@ -25,7 +25,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     network: Network
     activity: IActivityController
     provider: RPCProvider
-    fromActionId: AccountOpAction['id']
+    fromRequestId: AccountOpAction['id']
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean

@@ -1,5 +1,5 @@
-import { AccountOpAction } from './actions'
 import { ControllerInterface } from './controller'
+import { UserRequest } from './userRequest'
 
 export type IBannerController = ControllerInterface<
   InstanceType<typeof import('../controllers/banner/banner').BannerController>
@@ -44,14 +44,14 @@ export type Action =
   | {
       label: 'Open'
       actionName: 'open-accountOp'
-      meta: { actionId: AccountOpAction['id'] }
+      meta: { requestId: UserRequest['id'] }
     }
   | {
       label: 'Reject'
       actionName: 'reject-accountOp'
       meta: {
         err: string
-        actionId: AccountOpAction['id']
+        requestId: UserRequest['id']
         shouldOpenNextAction: boolean
       }
     }
