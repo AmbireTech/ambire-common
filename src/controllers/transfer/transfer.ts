@@ -151,11 +151,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #ui: IUiController
 
-  #tokenToSelect: {
-    address: string
-    chainId: string | number
-  } | null = null
-
   #tokens: TokenResult[] = []
 
   constructor(
@@ -220,12 +215,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (!this.#currentTransferSessionId) return
       this.#setTokens()
 
-      if (
-        this.#selectedAccount.portfolio.isReadyToVisualize &&
-        (this.#tokenToSelect || !this.selectedToken)
-      ) {
-        this.#setDefaultSelectedToken(this.#tokenToSelect || undefined)
-        this.#tokenToSelect = null
+      if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
+        this.#setDefaultSelectedToken()
 
         if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady) this.isReady = true
       }
@@ -254,16 +245,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     console.log('Debug: ', tokenParams, searchParams)
 
     this.#setTokens()
-
-    if (this.#selectedAccount.portfolio.isReadyToVisualize) {
-      this.#setDefaultSelectedToken(tokenParams)
-      this.isReady = true
-    } else {
-      this.#tokenToSelect = tokenParams as {
-        address: string
-        chainId: string | number
-      }
-    }
+    this.#setDefaultSelectedToken(tokenParams)
+    this.isReady = true
   }
 
   #leaveTransfer() {
