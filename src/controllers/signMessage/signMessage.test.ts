@@ -89,6 +89,7 @@ const messageToSign: Message = {
   fromRequestId: 1,
   content: { kind: 'message', message: '0x74657374' },
   accountAddr: account.addr,
+  chainId: 1n,
   signature: null
 }
 
