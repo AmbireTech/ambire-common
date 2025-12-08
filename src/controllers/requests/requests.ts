@@ -887,7 +887,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } catch (e: any) {
         this.emitError({
           error: e,
-          message: 'error in #buildUserRequestFromDAppRequest, sending back to the dapp',
+          message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
           level: 'major'
         })
         throw e
