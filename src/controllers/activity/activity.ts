@@ -211,11 +211,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let lastTimestamp: number | null = null
 
     accounts.forEach((account) => {
-      if (!this.#accountsOps[account]) return
-      const networks = Object.keys(this.#accountsOps[account])
+      const accountOpsOfAccount = this.#accountsOps[account]
+      if (!accountOpsOfAccount) return
+      const networks = Object.keys(accountOpsOfAccount)
       networks.forEach((network) => {
-        if (!this.#accountsOps[account][network]) return
-        this.#accountsOps[account][network].forEach((op) => {
+        const networkAccountOpsOfAccount = accountOpsOfAccount[network]
+        if (!networkAccountOpsOfAccount) return
+        networkAccountOpsOfAccount.forEach((op) => {
           const toAddrLower = toAddress.toLowerCase()
           const sentToTarget = op.calls.some((call) => {
             // 1) Direct call.to match
@@ -330,8 +332,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const promises = Object.keys(this.accountsOps).map(async (sessionId) => {
       await this.filterAccountsOps(
         sessionId,
-        this.accountsOps[sessionId].filters,
-        this.accountsOps[sessionId].pagination
+        this.accountsOps[sessionId]!.filters,
+        this.accountsOps[sessionId]!.pagination
       )
     })
 
@@ -371,8 +373,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const promises = Object.keys(this.signedMessages).map(async (sessionId) => {
       await this.filterSignedMessages(
         sessionId,
-        this.signedMessages[sessionId].filters,
-        this.signedMessages[sessionId].pagination
+        this.signedMessages[sessionId]!.filters,
+        this.signedMessages[sessionId]!.pagination
       )
     })
 
@@ -382,7 +384,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   removeNetworkData(chainId: bigint) {
     Object.keys(this.accountsOps).forEach(async (sessionId) => {
       const state = this.accountsOps[sessionId]
-      const isFilteredByRemovedNetwork = state.filters.chainId === chainId
+      const isFilteredByRemovedNetwork = state?.filters.chainId === chainId
 
       if (isFilteredByRemovedNetwork) {
         await this.filterAccountsOps(
@@ -404,8 +406,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
     // newest SubmittedAccountOp goes first in the list
-    this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp })
-    trim(this.#accountsOps[accountAddr][chainId.toString()])
+    this.#accountsOps[accountAddr]![chainId.toString()]!.unshift({ ...accountOp })
+    trim(this.#accountsOps[accountAddr][chainId.toString()]!)
 
     await this.syncFilteredAccountsOps()
 
@@ -494,8 +496,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
         if (!network) return
         const provider = this.#providers.providers[network.chainId.toString()]
+        if (!provider) return
 
-        const allOps = this.#accountsOps[accountAddr][network.chainId.toString()]
+        const allOps = this.#accountsOps[accountAddr]![network.chainId.toString()]
         const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : []
         const opsToUpdate = recentOps.filter(
           (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
@@ -698,13 +701,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ): Promise<string | undefined> {
     if (
       !this.#accountsOps[submittedAccountOp.accountAddr] ||
-      !this.#accountsOps[submittedAccountOp.accountAddr][submittedAccountOp.chainId.toString()]
+      !this.#accountsOps[submittedAccountOp.accountAddr]![submittedAccountOp.chainId.toString()]
     )
       return undefined
 
-    const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr][
+    const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr]![
       submittedAccountOp.chainId.toString()
-    ].find((op) => op.identifiedBy === submittedAccountOp.identifiedBy)
+    ]!.find((op) => op.identifiedBy === submittedAccountOp.identifiedBy)
     // shouldn't happen
     if (!activityAccountOp) return undefined
 
@@ -739,7 +742,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       return undefined
     }
 
-    return this.#accountsOps[accountAddr][chainId.toString()].find(
+    return this.#accountsOps[accountAddr]?.[chainId.toString()]?.find(
       (op) => op.identifiedBy.identifier === identifiedBy.identifier
     )
   }
