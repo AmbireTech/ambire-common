@@ -40,7 +40,7 @@ export async function getRelayerNonce(
   // if there's a failure in the last 5 txns
   // get the failure and check if we have a confirmed txn after
   // if we don't, the latest nonce should be equal to the failed one
-  const lastFiveTxns = activity.getLastFive()
+  const lastFiveTxns = activity.getAccountOpsForAccount({ from: 0, numberOfItems: 5 })
   const failure = lastFiveTxns.find((subOp) => subOp.status === AccountOpStatus.Failure)
   if (!failure) return pendingActivityOp.nonce + 1n
 

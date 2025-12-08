@@ -644,6 +644,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
     this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.resetForm()
 
@@ -1248,6 +1249,14 @@ export class MainController extends EventEmitter implements IMainController {
       addressesWithPendingOps
     )
 
+    Object.values(updatedAccountsOpsByAccount).forEach(
+      ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
+        accUpdatedAccountsOps.forEach((op) => {
+          this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+        })
+      }
+    )
+
     if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
 
     const updatedAccountsOpsForSelectedAccount = updatedAccountsOpsByAccount[
@@ -1258,7 +1267,7 @@ export class MainController extends EventEmitter implements IMainController {
       updatedAccountsOps: [],
       newestOpTimestamp: 0
     }
-    const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
+    const { shouldEmitUpdate, chainsToUpdate, newestOpTimestamp } =
       updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
@@ -1281,10 +1290,6 @@ export class MainController extends EventEmitter implements IMainController {
         }
       }
     }
-
-    updatedAccountsOps.forEach((op) => {
-      this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
-    })
 
     return { newestOpTimestamp }
   }

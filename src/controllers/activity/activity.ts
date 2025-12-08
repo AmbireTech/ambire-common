@@ -706,16 +706,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
   }
 
-  getLastFive(): SubmittedAccountOp[] {
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return []
-
-    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
-      .flat()
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 5)
-  }
-
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
     await this.#initialLoadPromise
 
@@ -903,6 +893,23 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     return Array.from(this.#bannersByAccount.values()).flat()
+  }
+
+  getAccountOpsForAccount({
+    accountAddr = this.#selectedAccount.account?.addr,
+    from,
+    numberOfItems
+  }: {
+    accountAddr?: string
+    from: number
+    numberOfItems: number
+  }) {
+    if (!accountAddr) return []
+
+    return Object.values(this.#accountsOps[accountAddr] || {})
+      .flat()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(from, from + numberOfItems)
   }
 
   toJSON() {
