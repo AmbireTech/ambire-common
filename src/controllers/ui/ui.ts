@@ -69,7 +69,7 @@ export class UiController extends EventEmitter implements IUiController {
 
   removeView(viewId: string) {
     const view = this.views.find((v) => v.id === viewId)
-    console.log('Debug: removing view with id', viewId, 'found view:', view)
+
     if (!view) return
 
     this.views = this.views.filter((v) => v.id !== viewId)
