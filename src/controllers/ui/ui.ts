@@ -52,13 +52,24 @@ export class UiController extends EventEmitter implements IUiController {
     const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => view[key] !== value)
     if (!shouldUpdate) return
 
+    let previousRoute = view.previousRoute
+    if (updatedProps.currentRoute) {
+      previousRoute = view.currentRoute
+    }
+
     Object.assign(view, updatedProps)
+
+    if (previousRoute) {
+      view.previousRoute = previousRoute
+    }
+
     this.uiEvent.emit('updateView', view)
     this.emitUpdate()
   }
 
   removeView(viewId: string) {
     const view = this.views.find((v) => v.id === viewId)
+    console.log('Debug: removing view with id', viewId, 'found view:', view)
     if (!view) return
 
     this.views = this.views.filter((v) => v.id !== viewId)

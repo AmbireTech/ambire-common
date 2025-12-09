@@ -10,6 +10,7 @@ export type View = {
   id: string
   type: 'action-window' | 'tab' | 'popup'
   currentRoute?: string
+  previousRoute?: string
   isReady?: boolean
   searchParams?: { [key: string]: string }
 }

@@ -58,6 +58,10 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
+const isTransfer = (route: string | undefined) => {
+  return route === 'transfer' || route === 'top-up-gas-tank'
+}
+
 export class TransferController extends EventEmitter implements ITransferController {
   #callRelayer: Function
 
@@ -69,7 +73,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccountData: ISelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -97,6 +101,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   amountFieldMode: 'fiat' | 'token' = 'token'
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
+
+  isReady = false
 
   isRecipientAddressUnknown = false
 
@@ -145,19 +151,13 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #ui: IUiController
 
-  #waitPortfolioTimeout: ReturnType<typeof setTimeout> | null = null
-
   #tokens: TokenResult[] = []
-
-  #unsubscribeSelectedAccountController: (() => void) | null = null
-
-  #previousRoute: string | undefined = undefined
 
   constructor(
     callRelayer: Function,
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
-    selectedAccountData: ISelectedAccountController,
+    selectedAccount: ISelectedAccountController,
     networks: INetworksController,
     addressBook: IAddressBookController,
     accounts: IAccountsController,
@@ -176,7 +176,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#callRelayer = callRelayer
     this.#storage = storage
     this.#humanizerInfo = humanizerInfo
-    this.#selectedAccountData = selectedAccountData
+    this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#addressBook = addressBook
 
@@ -195,50 +195,67 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#initialLoadPromise = undefined
     })
 
-    this.#ui.uiEvent.on('updateView', async (view: View) => {
-      await this.#handleUpdateView(view)
+    this.#ui.uiEvent.on('updateView', (view: View) => {
+      if (isTransfer(view.currentRoute)) {
+        console.log('Debug: navigated to transfer')
+        this.#enterTransfer(view)
+      } else if (isTransfer(view.previousRoute)) {
+        console.log('Debug: navigated out of transfer')
+        this.#leaveTransfer()
+      }
+    })
+
+    this.#ui.uiEvent.on('removeView', (view: View) => {
+      if (!isTransfer(view.currentRoute)) return
+
+      this.#leaveTransfer()
+    })
+
+    this.#selectedAccount.onUpdate(async () => {
+      if (!this.#currentTransferSessionId) return
+      this.#setTokens()
+
+      if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
+        this.#setDefaultSelectedToken()
+
+        if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady) this.isReady = true
+      }
+
+      this.emitUpdate()
     })
 
     this.emitUpdate()
   }
 
-  async #handleUpdateView(view: View) {
-    const current = view.currentRoute
-    const prev = this.#previousRoute
-    this.#previousRoute = current
-
-    const isTransfer = (route: string | undefined) => {
-      return route === 'transfer' || route === 'top-up-gas-tank'
-    }
-
-    // Detect entering transfer
-    if (!isTransfer(prev) && isTransfer(current)) {
-      await this.#enterTransfer(view)
-      return
-    }
-
-    // Detect leaving transfer
-    if (isTransfer(prev) && !isTransfer(current)) {
-      this.#leaveTransfer()
-    }
-  }
-
-  async #enterTransfer(view: View) {
+  #enterTransfer(view: View) {
+    console.log('Debug: entered transfer view')
     this.#ensureTransferSessionId()
 
-    this.unsubscribeSelectedAccountController()
-    this.#subscribeToSelectedAccountUpdates(view)
+    this.isTopUp = view.currentRoute === 'top-up-gas-tank'
+    const searchParams = view.searchParams
 
-    await this.#setTokens(view)
-    await this.#setDefaultSelectedToken(view)
+    const tokenParams =
+      searchParams && searchParams.address && searchParams.chainId
+        ? {
+            address: String(searchParams.address),
+            chainId: String(searchParams.chainId)
+          }
+        : undefined
+
+    console.log('Debug: ', tokenParams, searchParams)
+
+    this.#setTokens()
+    this.#setDefaultSelectedToken(tokenParams)
+    this.isReady = true
   }
 
   #leaveTransfer() {
-    this.destroyTransferSession()
-    this.unsubscribeSelectedAccountController()
+    console.log('Debug: left transfer, destroying session')
+    this.#destroyTransferSession()
 
     this.#tokens = []
     this.selectedToken = null
+    this.isReady = false
     this.emitUpdate()
   }
 
@@ -248,78 +265,60 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
   }
 
-  destroyTransferSession() {
+  #destroyTransferSession() {
     this.#currentTransferSessionId = null
-  }
-
-  #subscribeToSelectedAccountUpdates(view: View) {
-    this.#unsubscribeSelectedAccountController = this.#selectedAccountData.onUpdate(async () => {
-      if (!this.#currentTransferSessionId) return
-
-      await this.#setTokens(view)
-      await this.#setDefaultSelectedToken(view)
-
-      this.emitUpdate()
-    })
-  }
-
-  unsubscribeSelectedAccountController() {
-    if (this.#unsubscribeSelectedAccountController) {
-      this.#unsubscribeSelectedAccountController()
-    }
-
-    this.#unsubscribeSelectedAccountController = null
   }
 
   get transferSessionId() {
     return this.#currentTransferSessionId
   }
 
-  async #setTokens(view?: View) {
-    const isTopUpView = view?.currentRoute === 'top-up-gas-tank'
+  #setTokens() {
+    const tokens = this.#selectedAccount.portfolio.tokens
+      .filter((token) => {
+        const hasAmount = Number(getTokenAmount(token)) > 0
 
-    const isReady = await this.#waitUntilReadyPortfolio()
+        if (this.isTopUp) {
+          const tokenNetwork = this.#networks.networks.find(
+            (network) => network.chainId === token.chainId
+          )
 
-    // If aborted → don't continue
-    if (!isReady) return
+          return (
+            hasAmount &&
+            tokenNetwork?.hasRelayer &&
+            token.flags.canTopUpGasTank &&
+            !token.flags.onGasTank
+          )
+        }
 
-    const tokens = this.#selectedAccountData.portfolio.isAllReady
-      ? this.#selectedAccountData.portfolio.tokens
-          .filter((token) => {
-            const hasAmount = Number(getTokenAmount(token)) > 0
+        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+      })
+      .sort((a, b) => {
+        const tokenAinUSD = getTokenBalanceInUSD(a)
+        const tokenBinUSD = getTokenBalanceInUSD(b)
 
-            if (isTopUpView) {
-              const tokenNetwork = this.#networks.networks.find(
-                (network) => network.chainId === token.chainId
-              )
-
-              return (
-                hasAmount &&
-                tokenNetwork?.hasRelayer &&
-                token.flags.canTopUpGasTank &&
-                !token.flags.onGasTank
-              )
-            }
-
-            return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
-          })
-          .sort((a, b) => {
-            const tokenAinUSD = getTokenBalanceInUSD(a)
-            const tokenBinUSD = getTokenBalanceInUSD(b)
-
-            return tokenBinUSD - tokenAinUSD
-          })
-      : []
+        return tokenBinUSD - tokenAinUSD
+      })
 
     this.#tokens = tokens
+
+    if (this.selectedToken) {
+      this.selectedToken =
+        this.#tokens.find(
+          (t) =>
+            t.address === this.selectedToken?.address &&
+            t.chainId === this.selectedToken?.chainId &&
+            !t.flags.onGasTank
+        ) ?? null
+    }
   }
 
-  async #setDefaultSelectedToken(view?: View): Promise<void> {
+  #setDefaultSelectedToken(tokenData?: { address: string; chainId: string | number }) {
+    console.log('Debug: setting default selected token', tokenData)
     if (!this.#tokens.length) return
 
-    const searchParams = (view && view.searchParams) || {}
-    const tokenAddress = (searchParams.address || '').toLowerCase()
-    const tokenChainId = searchParams.chainId
+    const tokenAddress = tokenData?.address.toLowerCase() || ''
+    const tokenChainId = tokenData?.chainId.toString() || ''
 
     let newSelectedToken = null
 
@@ -345,40 +344,11 @@ export class TransferController extends EventEmitter implements ITransferControl
     ) {
       this.selectedToken = newSelectedToken
 
+      console.log('Debug: newSelectedToken', newSelectedToken)
+
       // Emit update to reflect possible changes in the UI
       this.emitUpdate()
     }
-  }
-
-  #waitUntilReadyPortfolio(): Promise<boolean> {
-    // Cancel previous wait if any
-    if (this.#waitPortfolioTimeout) {
-      clearTimeout(this.#waitPortfolioTimeout)
-      this.#waitPortfolioTimeout = null
-    }
-
-    return new Promise((resolve) => {
-      const startTime = Date.now()
-
-      const check = () => {
-        // Timeout after 30s
-        if (Date.now() - startTime > 30000) {
-          this.#waitPortfolioTimeout = null
-          return resolve(false)
-        }
-
-        // If ready → resolve
-        if (this.#selectedAccountData.portfolio.isAllReady) {
-          this.#waitPortfolioTimeout = null
-          return resolve(true)
-        }
-
-        // Not ready → check again
-        this.#waitPortfolioTimeout = setTimeout(check, 150)
-      }
-
-      check()
-    })
   }
 
   async #load() {
@@ -387,7 +357,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       false
     )
 
-    await this.#selectedAccountData.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
   }
 
   get shouldSkipTransactionQueuedModal() {
@@ -473,8 +443,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   resetForm(shouldDestroyAccountOp = true) {
-    this.destroyTransferSession()
-    this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
@@ -494,12 +462,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
-    if (this.#humanizerInfo && this.#selectedAccountData.account?.addr) {
+    if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
       const recipientValidation = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccountData.account?.addr,
+        this.#selectedAccount.account?.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
@@ -549,7 +517,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   get isInitialized() {
     return (
       !!this.#humanizerInfo &&
-      !!this.#selectedAccountData.account?.addr &&
+      !!this.#selectedAccount.account?.addr &&
       !!this.#networks.networks.length
     )
   }
@@ -625,7 +593,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (isAddress(this.recipientAddress)) {
       const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
-        this.#selectedAccountData.account?.addr || ''
+        this.#selectedAccount.account?.addr || ''
       )
       found = result.found
       lastTransactionDate = result.lastTransactionDate
@@ -761,11 +729,11 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setSWWarningVisibleIfNeeded() {
-    if (!this.#selectedAccountData.account?.addr) return
+    if (!this.#selectedAccount.account?.addr) return
 
     this.isSWWarningVisible =
       this.isRecipientAddressUnknown &&
-      isSmartAccount(this.#selectedAccountData.account) &&
+      isSmartAccount(this.#selectedAccount.account) &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
@@ -783,7 +751,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   async syncSignAccountOp() {
     // shouldn't happen ever
-    if (!this.#selectedAccountData.account) return
+    if (!this.#selectedAccount.account) return
 
     const recipientAddress = this.isTopUp
       ? FEE_COLLECTOR
@@ -796,7 +764,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
     const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
     const userRequest = buildTransferUserRequest({
-      selectedAccount: this.#selectedAccountData.account.addr,
+      selectedAccount: this.#selectedAccount.account.addr,
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
       recipientAddress,
@@ -836,7 +804,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
-    if (!this.#selectedAccountData.account || this.signAccountOpController) return
+    if (!this.#selectedAccount.account || this.signAccountOpController) return
 
     const network = this.#networks.networks.find(
       (net) => net.chainId === this.#selectedToken!.chainId
@@ -845,9 +813,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     // shouldn't happen ever
     if (!network) return
 
-    const provider = this.#providers.providers[network.chainId.toString()]
+    const provider = this.#providers.providers[network.chainId.toString()]!
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-      this.#selectedAccountData.account.addr,
+      this.#selectedAccount.account.addr,
       network.chainId
     )
 
@@ -866,14 +834,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     const baseAcc = getBaseAccount(
-      this.#selectedAccountData.account,
+      this.#selectedAccount.account,
       accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccountData.account),
+      this.#keystore.getAccountKeys(this.#selectedAccount.account),
       network
     )
 
     const accountOp = {
-      accountAddr: this.#selectedAccountData.account.addr,
+      accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
       signingKeyType: null,
@@ -894,7 +862,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (isAddress(this.recipientAddress)) {
       const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
-        this.#selectedAccountData.account.addr
+        this.#selectedAccount.account.addr
       )
       previousTransactionExists = result.found
       lastTransactionDate = result.lastTransactionDate
@@ -914,7 +882,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       portfolio: this.#portfolio,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
-      account: this.#selectedAccountData.account,
+      account: this.#selectedAccount.account,
       network,
       provider,
       phishing: this.#phishing,
@@ -963,20 +931,15 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.hasProceeded = false
   }
 
-  async destroyLatestBroadcastedAccountOp(shouldResetSelectedToken = true) {
+  async destroyLatestBroadcastedAccountOp() {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
-    if (shouldResetSelectedToken) {
-      this.#ensureTransferSessionId()
-      await this.#setTokens()
-      await this.#setDefaultSelectedToken()
-    }
   }
 
   async unloadScreen(forceUnload?: boolean) {
     if (this.hasPersistedState && !forceUnload) return
 
-    await this.destroyLatestBroadcastedAccountOp(false)
+    await this.destroyLatestBroadcastedAccountOp()
     this.resetForm()
   }
 
