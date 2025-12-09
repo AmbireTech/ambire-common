@@ -593,11 +593,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
-    if (typeof isTopUp === 'boolean') {
-      this.isTopUp = isTopUp
-      this.#setSWWarningVisibleIfNeeded()
-    }
-
     await this.syncSignAccountOp()
     this.emitUpdate()
   }
