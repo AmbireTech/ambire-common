@@ -264,15 +264,8 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const {
-      tokens,
-      collections,
-      tokenErrors,
-      priceCache,
-      toBeLearned,
-      lastExternalApiUpdateData,
-      ...result
-    } = networkState.result
+    const { tokens, collections, tokenErrors, toBeLearned, lastExternalApiUpdateData, ...result } =
+      networkState.result
 
     strippedState[chainId] = { ...networkState, result }
   })
@@ -342,7 +335,12 @@ const recalculateNetworkPortfolio = (
   defiPositionsAccountState: DefiPositionsAccountState,
   simulatedAccountOp: NetworkSimulatedAccountOp[string] | undefined
 ) => {
-  const collectionsArray: CollectionResult[] = portfolioState.result?.collections || []
+  const collectionsArray: CollectionResult[] =
+    portfolioState.result &&
+    'collections' in portfolioState.result &&
+    portfolioState.result?.collections
+      ? portfolioState.result.collections
+      : []
   let tokensArray = portfolioState.result?.tokens || []
   let networkTotal = portfolioState.result?.total?.usd || 0
   const hasTokensWithAmountOnNetwork = tokensArray.some(({ amount }) => amount > 0n)
@@ -571,13 +569,15 @@ export function calculateSelectedAccountPortfolio(
 }
 
 export const calculateAndSetProjectedRewards = (
-  projectedRewards: NetworkState | undefined,
+  projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
   latestBalances: { [chainId: string]: number },
   walletOrStkWalletTokenPrice: number | undefined
 ): ProjectedRewardsTokenResult | undefined => {
   if (!projectedRewards) return
 
-  const result = projectedRewards?.result as PortfolioProjectedRewardsResult
+  const result = projectedRewards?.result
+  if (!result) return
+
   const {
     currentSeasonSnapshots,
     supportedChainIds,
@@ -588,8 +588,10 @@ export const calculateAndSetProjectedRewards = (
     walletPrice,
     minLvl,
     minBalance,
-    userXp
+    userXp,
+    reasonToNotDisplayProjectedRewards
   } = result
+  if (reasonToNotDisplayProjectedRewards) return
 
   const currentTotalBalanceOnSupportedChains = supportedChainIds
     .map((chainId: number) => latestBalances[chainId] || 0)

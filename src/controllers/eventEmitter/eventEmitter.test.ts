@@ -1,6 +1,6 @@
 import { expect, jest } from '@jest/globals'
 
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import EventEmitter from './eventEmitter'
 
@@ -78,5 +78,95 @@ describe('EventEmitter', () => {
     expect(mockErrorCallback).toHaveBeenCalledTimes(2)
 
     consoleSuppressor.restore()
+  })
+  it('should not execute callbacks after destroy', () => {
+    const { restore } = suppressConsole()
+    const emitter = new EventEmitter()
+    const mockCallback = jest.fn()
+    const mockErrorCallback = jest.fn()
+
+    emitter.onUpdate(mockCallback)
+    emitter.onError(mockErrorCallback)
+
+    // Verify they work before destroy
+    // @ts-ignore
+    emitter.emitUpdate()
+    expect(mockCallback).toHaveBeenCalledTimes(1)
+
+    // Destroying the EventEmitter should remove all callbacks
+    emitter.destroy()
+
+    // Try to emit again
+    // @ts-ignore
+    emitter.emitUpdate()
+    // @ts-ignore
+    emitter.emitError({ level: 'minor', message: 'test', error: new Error() })
+
+    // Should not have been called again
+    expect(mockCallback).toHaveBeenCalledTimes(1)
+    expect(mockErrorCallback).not.toHaveBeenCalled()
+    restore()
+  })
+  describe('EventEmitter memory leak with nested controllers', () => {
+    suppressConsoleBeforeEach()
+    const externalClosure = {}
+    it('should leak memory when sub-controller is nullified without destroy()', () => {
+      // Simulate a callback that captures the controller in its closure
+      function addCallbackThatCapturesController(ctrl: EventEmitter) {
+        ctrl.onError(() => {
+          console.log('Error in controller:', ctrl, externalClosure)
+        }, 'background')
+      }
+
+      // Create a controller and add a callback
+      let controller = new EventEmitter()
+      addCallbackThatCapturesController(controller)
+
+      // Keep a reference to verify the leak
+      const oldController = controller
+
+      // Wrong: Nullify without calling destroy()
+      controller = null as any
+
+      // The problem: Old controller still has the callback
+      // This creates a circular reference: EventEmitter -> callback -> closure(ctrl) -> EventEmitter
+      expect(oldController.onErrorIds).toContain('background')
+
+      // The callback can still be executed, proving the old controller is kept alive
+      const mockCallback = jest.fn()
+      oldController.onError(mockCallback, 'test')
+      // @ts-ignore
+      oldController.emitError({
+        level: 'minor',
+        message: 'test error',
+        error: new Error('test')
+      })
+      expect(mockCallback).toHaveBeenCalled()
+    })
+
+    it('should NOT leak memory when destroy() is called before nullifying', () => {
+      // Simulate a callback that captures the controller in its closure
+      function addCallbackThatCapturesController(ctrl: EventEmitter) {
+        ctrl.onError(() => {
+          console.log('Error in controller:', ctrl, externalClosure)
+        }, 'background')
+      }
+
+      // Create a controller and add a callback
+      let controller = new EventEmitter()
+      addCallbackThatCapturesController(controller)
+
+      // Keep a reference to verify no leak
+      const oldController = controller
+
+      // Correct: Call destroy() before nullifying
+      controller.destroy()
+      controller = null as any
+
+      // Verify the fix: Old controller has no callbacks
+      // The old 'background' callback is gone, breaking the circular reference
+      // The old controller can now be garbage collected
+      expect(oldController.onErrorIds).toHaveLength(0)
+    })
   })
 })

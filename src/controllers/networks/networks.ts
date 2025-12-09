@@ -345,8 +345,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      getNetworkInfo(
+      await getNetworkInfo(
         this.#fetch,
         networkToAddOrUpdate.rpcUrl,
         networkToAddOrUpdate.chainId,

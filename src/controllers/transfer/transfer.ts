@@ -7,6 +7,7 @@ import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -49,7 +50,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
   },
   recipientAddress: {
     success: false,
-    message: ''
+    message: '',
+    severity: 'info'
   }
 }
 
@@ -112,6 +114,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #providers: IProvidersController
 
+  #phishing: IPhishingController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -119,12 +123,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   lastSentToRecipientAt: Date | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
-
-  /**
-   * Holds all subscriptions (on update and on error) to the signAccountOpController.
-   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
-   */
-  #signAccountOpSubscriptions: Function[] = []
 
   latestBroadcastedAccountOp: AccountOp | null = null
 
@@ -154,6 +152,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
+    phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess
   ) {
@@ -172,6 +171,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
+    this.#phishing = phishing
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
 
@@ -294,7 +294,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo && this.#selectedAccountData.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
-      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
+      const recipientValidation = validateSendTransferAddress(
         this.recipientAddress,
         this.#selectedAccountData.account?.addr,
         this.isRecipientAddressUnknownAgreed,
@@ -307,6 +307,12 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt
       )
+
+      validationFormMsgsNew.recipientAddress = {
+        success: recipientValidation.success,
+        message: recipientValidation.message,
+        severity: recipientValidation.severity ?? 'info'
+      }
     }
 
     // Validate the amount
@@ -332,14 +338,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
 
-    const isRecipientAddressUnknownMissingOrAccepted =
-      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
-
     return (
-      areFormFieldsValid &&
-      isSWWarningMissingOrAccepted &&
-      isRecipientAddressUnknownMissingOrAccepted &&
-      !this.addressState.isDomainResolving
+      areFormFieldsValid && isSWWarningMissingOrAccepted && !this.addressState.isDomainResolving
     )
   }
 
@@ -377,7 +377,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     if (selectedToken) {
-      if (selectedToken.chainId !== this.selectedToken?.chainId) {
+      if (this.selectedToken && selectedToken.chainId !== this.selectedToken.chainId) {
         // The SignAccountOp controller is already initialized with the previous chainId and account operation.
         // When the chainId changes, we need to recreate the controller to correctly estimate for the new chain.
         // Here, we destroy it, and at the end of this update method, we initialize it again.
@@ -587,7 +587,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       : getAddressFromAddressState(this.addressState)
 
     // form field validation
-    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress)) return
+    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress) || !this.isFormValid)
+      return
 
     const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
     const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
@@ -647,6 +648,20 @@ export class TransferController extends EventEmitter implements ITransferControl
       network.chainId
     )
 
+    if (!accountState) {
+      const error = new Error(
+        `Failed to fetch account on-chain state for network with chainId ${network.chainId}`
+      )
+
+      this.emitError({
+        level: 'major',
+        message:
+          'Unable to proceed with the transfer due to missing information (account state). Please try again later.',
+        error
+      })
+      return
+    }
+
     const baseAcc = getBaseAccount(
       this.#selectedAccountData.account,
       accountState,
@@ -699,6 +714,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       account: this.#selectedAccountData.account,
       network,
       provider,
+      phishing: this.#phishing,
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
       isSignRequestStillActive: () => true,
@@ -720,19 +736,14 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     })
 
-    // propagate updates from signAccountOp here
-    this.#signAccountOpSubscriptions.push(
-      this.signAccountOpController.onUpdate(() => {
-        this.emitUpdate()
-      })
-    )
-    this.#signAccountOpSubscriptions.push(
-      this.signAccountOpController.onError((error) => {
-        if (this.signAccountOpController)
-          this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
-        this.emitError(error)
-      })
-    )
+    this.signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.signAccountOpController.onError((error) => {
+      if (this.signAccountOpController)
+        this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
+      this.emitError(error)
+    })
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -741,12 +752,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   destroySignAccountOp() {
-    // Unsubscribe from all previous subscriptions
-    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
-    this.#signAccountOpSubscriptions = []
-
     if (this.signAccountOpController) {
-      this.signAccountOpController.reset()
+      this.signAccountOpController.destroy()
       this.signAccountOpController = null
     }
 

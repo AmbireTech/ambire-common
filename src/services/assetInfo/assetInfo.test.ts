@@ -57,7 +57,7 @@ describe('Asset info service', () => {
       assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], () => {}),
       assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], () => {})
     ])
-    const requests = interceptedRequests.filter((i) => i.url === networks[0].rpcUrls[0])
+    const requests = interceptedRequests.filter((i) => i.url === networks[0]!.rpcUrls[0])
     expect(requests.length).toBe(1)
   })
 })

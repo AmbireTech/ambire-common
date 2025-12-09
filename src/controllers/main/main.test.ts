@@ -54,6 +54,7 @@ describe('Main Controller ', () => {
   let controller: MainController
   test('Init controller', async () => {
     controller = new MainController({
+      appVersion: '5.31.0',
       platform: 'default',
       storageAPI: storage,
       fetch,
@@ -135,6 +136,7 @@ describe('Main Controller ', () => {
 
   test('should add an account from the account picker and persist it in accounts', async () => {
     controller = new MainController({
+      appVersion: '5.31.0',
       platform: 'default',
       storageAPI: storage,
       fetch,
@@ -148,9 +150,17 @@ describe('Main Controller ', () => {
       velcroUrl
     })
 
-    while (!controller.isReady) {
+    let retries = 0
+
+    while (!controller.isReady && retries < 20) {
       // eslint-disable-next-line no-await-in-loop
       await wait(100)
+      retries++
+    }
+
+    if (!controller.isReady) {
+      console.error('Controller failed to become ready in time', controller)
+      throw new Error('Controller initialization timeout')
     }
 
     await controller.keystore.addSecret('password', '12345678', '', true)
@@ -165,12 +175,21 @@ describe('Main Controller ', () => {
 
     await controller.accountPicker.init()
     await controller.accountPicker.setPage({ page: 1 })
-    while (controller.accountPicker.accountsLoading) {
+
+    let retries2 = 0
+    while (controller.accountPicker.accountsLoading && retries2 < 20) {
       // eslint-disable-next-line no-await-in-loop
       await wait(100)
+      retries2++
     }
-    const accToSelect = controller.accountPicker.accountsOnPage[0].account
-    controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0].account)
+
+    if (controller.accountPicker.accountsLoading) {
+      console.error('Account picker failed to load accounts in time', controller.accountPicker)
+      throw new Error('Account picker accounts loading timeout')
+    }
+
+    const accToSelect = controller.accountPicker.accountsOnPage[0]!.account
+    controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0]!.account)
     await controller.accountPicker.addAccounts().catch(console.error)
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
@@ -179,6 +198,7 @@ describe('Main Controller ', () => {
   // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
     const mainCtrl = new MainController({
+      appVersion: '5.31.0',
       platform: 'default',
       storageAPI: storage,
       fetch,
@@ -202,7 +222,7 @@ describe('Main Controller ', () => {
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
         ],
-        creation: accounts[0].creation,
+        creation: accounts[0]!.creation,
         preferences: {
           label: DEFAULT_ACCOUNT_LABEL,
           pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
@@ -214,11 +234,11 @@ describe('Main Controller ', () => {
     const unsubscribe = mainCtrl.onUpdate(() => {
       emitCounter++
       if (emitCounter === 3) {
-        expect(mainCtrl.accounts.accounts[0].associatedKeys.length).toEqual(2)
-        expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts.accounts[0]!.associatedKeys.length).toEqual(2)
+        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
           '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
         )
-        expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
           '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
         )
         unsubscribe()
@@ -237,7 +257,7 @@ describe('Main Controller ', () => {
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
         ],
-        creation: accounts[0].creation,
+        creation: accounts[0]!.creation,
         preferences: {
           label: DEFAULT_ACCOUNT_LABEL,
           pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'

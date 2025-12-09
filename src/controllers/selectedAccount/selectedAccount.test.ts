@@ -11,7 +11,6 @@ import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { stringify } from '../../libs/richJson/richJson'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -276,14 +275,14 @@ describe('SelectedAccount Controller', () => {
   it('Selected account portfolio is calculated immediately when an account with ready portfolio is selected', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
 
     await selectedAccountCtrl.setAccount(accounts[1])
 
-    await portfolioCtrl.updateSelectedAccount(accounts[1].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[1]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
@@ -335,7 +334,7 @@ describe('SelectedAccount Controller', () => {
   it('portfolio isAllReady becomes false when resetSelectedAccountPortfolio is called with isManualUpdate=true', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
@@ -346,7 +345,7 @@ describe('SelectedAccount Controller', () => {
   it('portfolio isAllReady remains true in subsequent portfolio and defi updates', async () => {
     const { selectedAccountCtrl, portfolioCtrl, defiPositionsCtrl } = await prepareTest()
 
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
@@ -360,7 +359,7 @@ describe('SelectedAccount Controller', () => {
     })
 
     await defiPositionsCtrl.updatePositions({ forceUpdate: true })
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
     expect(didSetToFalse).toBe(false)
@@ -368,7 +367,7 @@ describe('SelectedAccount Controller', () => {
   })
 
   describe('Banners', () => {
-    const accountAddr = accounts[0].addr
+    const accountAddr = accounts[0]!.addr
     beforeEach(() => {
       jest.clearAllMocks()
       jest.restoreAllMocks()
@@ -558,24 +557,5 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)
     })
-  })
-  test("Cashback status is not updated for the account because it's view-only", async () => {
-    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
-
-    await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
-    ;(
-      selectedAccountCtrl.portfolio.portfolioState.gasTank!.result as PortfolioGasTankResult
-    ).gasTankTokens[0].cashback = 0n
-    // Mocks 'no-cashback'
-    await selectedAccountCtrl.updateCashbackStatus()
-    ;(
-      selectedAccountCtrl.portfolio.portfolioState.gasTank!.result as PortfolioGasTankResult
-    ).gasTankTokens[0].cashback = 10n
-    // Mocks 'unseen-cashback'
-    await selectedAccountCtrl.updateCashbackStatus()
-
-    // Cashback is undefined because the account is view-only
-    expect(selectedAccountCtrl.cashbackStatus).toBeUndefined()
   })
 })

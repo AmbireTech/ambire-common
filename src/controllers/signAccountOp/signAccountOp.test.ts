@@ -1,28 +1,29 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, getAddress, hexlify, parseEther, verifyMessage } from 'ethers'
+import { AbiCoder, getAddress, hexlify, parseEther, toBeHex, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
-import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
+import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
+import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
-import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
@@ -31,9 +32,13 @@ import {
   getTypedData
 } from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { GasSpeeds } from '../../services/bundlers/types'
+import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
@@ -42,6 +47,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -54,6 +60,8 @@ import { SignAccountOpTesterController } from './signAccountOpTester'
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
+
+paymasterFactory.init(relayerUrl, fetch, () => {})
 
 const createEOAAccountOp = (account: Account) => {
   const to = '0x0000000000000000000000000000000000000000'
@@ -344,7 +352,7 @@ const init = async (
   },
   signer: any,
   estimationOrMock: FullEstimationSummary,
-  gasPricesOrMock: { [key: string]: GasRecommendation[] },
+  gasPricesOrMock: GasSpeeds,
   updateWholePortfolio?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -400,6 +408,22 @@ const init = async (
     relayerUrl,
     fetch
   )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystore,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl,
+    keystore,
+    autoLogin: autoLoginCtrl
+  })
+  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
   await waitForAccountsCtrlFirstLoad(accountsCtrl)
   await networksCtrl.initialLoadPromise
@@ -416,6 +440,11 @@ const init = async (
     velcroUrl,
     new BannerController(storageCtrl)
   )
+  const phishing = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    addressBook: addressBookCtrl
+  })
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
@@ -461,25 +490,11 @@ const init = async (
   })
   const baseAccount = getBaseAccount(
     account,
-    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
+    accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
     keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
     network
   )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore,
-    autoLogin: autoLoginCtrl
-  })
+
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
     storageCtrl,
@@ -496,7 +511,7 @@ const init = async (
     keystore,
     accountsCtrl,
     networksCtrl,
-    providers,
+    provider,
     portfolio,
     bundlerSwitcher,
     activity
@@ -507,17 +522,11 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(
-    network,
-    provider,
-    baseAccount,
-    bundlerSwitcher,
-    () => ({
-      estimation: estimationController,
-      readyToSign: true,
-      isSignRequestStillActive: () => true
-    })
-  )
+  const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
+    estimation: estimationController,
+    readyToSign: true,
+    isSignRequestStillActive: () => true
+  }))
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController({
     accounts: accountsCtrl,
@@ -529,10 +538,11 @@ const init = async (
     network,
     activity,
     provider,
+    phishing,
     fromActionId: 1,
     accountOp: op,
-    isSignRequestStillActive: () => {},
-    shouldSimulate: true,
+    isSignRequestStillActive: () => true,
+    shouldSimulate: false,
     onAccountOpUpdate: () => {},
     // @ts-ignore
     onBroadcastSuccess: () => {},
@@ -541,13 +551,201 @@ const init = async (
   })
   controller.update({
     hasNewEstimation: true,
-    gasPrices: gasPricesOrMock[network.chainId.toString()]
+    gasPrices: gasPricesOrMock
   })
 
   return { controller }
 }
 
 describe('SignAccountOp Controller ', () => {
+  test('Estimation race conditions are prevented', async () => {
+    const { restore } = suppressConsole()
+    const chainId = 137n
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: usdcFeeToken.address,
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const accountOp = createAccountOp(smartAccount, chainId)
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        slow: {
+          maxFeePerGas: toBeHex(2000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(4000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(14000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
+        }
+      }
+    )
+
+    controller.update({
+      feeToken: usdcFeeToken,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      hasNewEstimation: true
+    })
+
+    // Slow down the first estimation artificially
+    jest.spyOn(estimationLib, 'getEstimation').mockImplementationOnce(async (...allParams) => {
+      await wait(8000)
+
+      // call the original implementation
+      return estimationLib.getEstimation(...allParams)
+    })
+
+    controller.update({
+      accountOpData: {
+        calls: [
+          {
+            to: '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45',
+            value: 10n,
+            data: '0x'
+          }
+        ]
+      }
+    })
+
+    const firstOpId = controller.accountOp.id
+
+    // This estimation should finish after the other one, but as it's for the latest accountOp,
+    // it should be applied and the other should be scrapped
+    controller.update({
+      accountOpData: {
+        calls: [
+          {
+            to: '0x96Aa53ece4214b9e42036452C399719d346D9a1A', // different address
+            value: 10n,
+            data: '0x'
+          }
+        ]
+      }
+    })
+
+    const latestAccountOpId = controller.accountOp.id
+
+    await Promise.all([
+      new Promise((resolve) => {
+        const unsub = controller.onUpdate(() => {
+          if (controller.estimation.status !== EstimationStatus.Loading) {
+            resolve(true)
+            unsub()
+            // @ts-ignore
+            expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
+          }
+        })
+      }),
+      new Promise((resolve) => {
+        const unsub = controller.estimation.onError((error) => {
+          expect(error.error.message).toBe(
+            `Estimation race condition prevented. Op id: ${firstOpId}. Expected: ${latestAccountOpId}`
+          )
+          resolve(true)
+          unsub()
+        })
+      })
+    ])
+
+    expect.assertions(2)
+    restore()
+  })
   test('Signing [EOA]: EOA account paying with a native token', async () => {
     const feePaymentOptions = [
       {
@@ -591,29 +789,22 @@ describe('SignAccountOp Controller ', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
 
@@ -641,8 +832,8 @@ describe('SignAccountOp Controller ', () => {
       feeTokenChainId: 1n,
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
-      maxPriorityFeePerGas: 300n,
-      gasPrice: 600n
+      maxPriorityFeePerGas: 330n, // 10% increase for fast
+      gasPrice: 660n // 10% increase for fast
     })
 
     expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
@@ -692,28 +883,22 @@ describe('SignAccountOp Controller ', () => {
         flags: {}
       },
       {
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
 
@@ -778,28 +963,22 @@ describe('SignAccountOp Controller ', () => {
         flags: {}
       },
       {
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
 
@@ -916,28 +1095,22 @@ describe('SignAccountOp Controller ', () => {
         flags: {}
       },
       {
-        '137': [
-          {
-            name: 'slow',
-            baseFeePerGas: 1000000000n,
-            maxPriorityFeePerGas: 1000000000n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 2000000000n,
-            maxPriorityFeePerGas: 2000000000n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 5000000000n,
-            maxPriorityFeePerGas: 5000000000n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 7000000000n,
-            maxPriorityFeePerGas: 7000000000n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(2000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(4000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(14000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
+        }
       }
     )
 
@@ -951,9 +1124,9 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.estimation.availableFeeOptions.length).toBe(3)
     controller.estimation.availableFeeOptions.forEach((option) => {
-      const identifier = getFeeSpeedIdentifier(option, smartAccount.addr, null)
+      const identifier = getFeeSpeedIdentifier(option, smartAccount.addr)
       expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
-      expect(controller.feeSpeeds[identifier].length).not.toBe(0)
+      expect(controller.feeSpeeds[identifier]!.length).not.toBe(0)
     })
 
     await controller.sign()
@@ -1049,28 +1222,22 @@ describe('Negative cases', () => {
         flags: {}
       },
       {
-        '137': [
-          {
-            name: 'slow',
-            baseFeePerGas: 1000000000n,
-            maxPriorityFeePerGas: 1000000000n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 2000000000n,
-            maxPriorityFeePerGas: 2000000000n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 5000000000n,
-            maxPriorityFeePerGas: 5000000000n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 7000000000n,
-            maxPriorityFeePerGas: 7000000000n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(2000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(4000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(14000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
+        }
       }
     )
 
@@ -1084,17 +1251,18 @@ describe('Negative cases', () => {
 
     expect(controller.estimation.availableFeeOptions.length).toBe(1)
     const identifier = getFeeSpeedIdentifier(
-      controller.estimation.availableFeeOptions[0],
-      smartAccount.addr,
-      null
+      controller.estimation.availableFeeOptions[0]!,
+      smartAccount.addr
     )
     expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
-    expect(controller.feeSpeeds[identifier].length).toBe(0)
+    expect(controller.feeSpeeds[identifier]!.length).toBe(0)
 
     const errors = controller.errors
     expect(errors.length).toBe(1)
-    expect(errors[0].title).toBe(
-      `Currently, ${controller.estimation.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+    expect(errors[0]!.title).toBe(
+      `Currently, ${
+        controller.estimation.availableFeeOptions[0]!.token.symbol
+      } is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
     )
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
@@ -1189,28 +1357,22 @@ describe('Negative cases', () => {
         flags: {}
       },
       {
-        '137': [
-          {
-            name: 'slow',
-            baseFeePerGas: 1000000000n,
-            maxPriorityFeePerGas: 1000000000n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 2000000000n,
-            maxPriorityFeePerGas: 2000000000n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 5000000000n,
-            maxPriorityFeePerGas: 5000000000n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 7000000000n,
-            maxPriorityFeePerGas: 7000000000n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(2000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(4000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(14000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
+        }
       },
       true
     )
@@ -1347,28 +1509,22 @@ describe('Negative cases', () => {
         flags: {}
       },
       {
-        '137': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
 
@@ -1382,19 +1538,17 @@ describe('Negative cases', () => {
 
     expect(controller.estimation.availableFeeOptions.length).toBe(3)
     const firstIdentity = getFeeSpeedIdentifier(
-      controller.estimation.availableFeeOptions[0],
-      smartAccount.addr,
-      null
+      controller.estimation.availableFeeOptions[0]!,
+      smartAccount.addr
     )
     const secondIdentity = getFeeSpeedIdentifier(
-      controller.estimation.availableFeeOptions[1],
-      smartAccount.addr,
-      null
+      controller.estimation.availableFeeOptions[1]!,
+      smartAccount.addr
     )
     expect(firstIdentity).toBe(secondIdentity)
     expect(Object.keys(controller.feeSpeeds).length).toBe(1)
     expect(controller.feeSpeeds[firstIdentity]).not.toBe(undefined)
-    expect(controller.feeSpeeds[firstIdentity].length).toBe(4)
+    expect(controller.feeSpeeds[firstIdentity]!.length).toBe(4)
 
     await controller.sign()
 
@@ -1412,8 +1566,8 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(330n) // 10% increase
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(660n) // 10% increase
 
     const typedData = getTypedData(
       network.chainId,
@@ -1487,28 +1641,22 @@ describe('Negative cases', () => {
         flags: {}
       },
       {
-        '137': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
 
@@ -1522,7 +1670,7 @@ describe('Negative cases', () => {
 
     const errors = controller.errors
     expect(errors.length).toBe(1)
-    expect(errors[0].title.indexOf('Insufficient funds to cover the fee') !== -1).toBe(true)
+    expect(errors[0]!.title.indexOf('Insufficient funds to cover the fee') !== -1).toBe(true)
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
 
@@ -1553,29 +1701,22 @@ describe('throwBroadcastAccountOp', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
     try {
@@ -1607,29 +1748,22 @@ describe('throwBroadcastAccountOp', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
     try {
@@ -1664,29 +1798,22 @@ describe('throwBroadcastAccountOp', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
     const error = new InnerCallFailureError(
@@ -1723,29 +1850,22 @@ describe('throwBroadcastAccountOp', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
     const error = new Error("I'm a teapot")
@@ -1778,29 +1898,22 @@ describe('throwBroadcastAccountOp', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
     const error = new Error('replacement fee too low')
@@ -1833,29 +1946,22 @@ describe('throwBroadcastAccountOp', () => {
         flags: {}
       },
       {
-        // ethereum chain id
-        '1': [
-          {
-            name: 'slow',
-            baseFeePerGas: 100n,
-            maxPriorityFeePerGas: 100n
-          },
-          {
-            name: 'medium',
-            baseFeePerGas: 200n,
-            maxPriorityFeePerGas: 200n
-          },
-          {
-            name: 'fast',
-            baseFeePerGas: 300n,
-            maxPriorityFeePerGas: 300n
-          },
-          {
-            name: 'ape',
-            baseFeePerGas: 400n,
-            maxPriorityFeePerGas: 400n
-          }
-        ]
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
       }
     )
 
@@ -1917,28 +2023,22 @@ test('Signing [V1 with EOA payment]: working case', async () => {
       flags: {}
     },
     {
-      '1': [
-        {
-          name: 'slow',
-          baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
-        }
-      ]
+      slow: {
+        maxFeePerGas: toBeHex(200n) as Hex,
+        maxPriorityFeePerGas: toBeHex(100n) as Hex
+      },
+      medium: {
+        maxFeePerGas: toBeHex(400n) as Hex,
+        maxPriorityFeePerGas: toBeHex(200n) as Hex
+      },
+      fast: {
+        maxFeePerGas: toBeHex(600n) as Hex,
+        maxPriorityFeePerGas: toBeHex(300n) as Hex
+      },
+      ape: {
+        maxFeePerGas: toBeHex(800n) as Hex,
+        maxPriorityFeePerGas: toBeHex(400n) as Hex
+      }
     }
   )
 

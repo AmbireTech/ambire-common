@@ -83,6 +83,8 @@ export interface AccountOp {
   }
 }
 
+export type AccountOpWithId = AccountOp & { id: string }
+
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or

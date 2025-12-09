@@ -4,12 +4,15 @@ import fetch from 'node-fetch'
 /* eslint-disable prettier/prettier */
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
 import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import * as accountStateLib from '../../libs/accountState/accountState'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
 import { MainController } from '../main/main'
 
@@ -88,7 +91,12 @@ const prepareTest = async () => {
   await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
 
   const uiManager = mockUiManager().uiManager
+  jest.spyOn(accountStateLib, 'getAccountState').mockImplementation(async () => {
+    return []
+  })
+  jest.spyOn(SwapProviderParallelExecutor.prototype, 'getSupportedChains').mockResolvedValue([])
   const mainCtrl = new MainController({
+    appVersion: '5.31.0',
     platform: 'default',
     storageAPI: storage,
     fetch,
@@ -100,6 +108,9 @@ const prepareTest = async () => {
     externalSignerControllers: {},
     uiManager,
     velcroUrl
+  })
+  mainCtrl.defiPositions.updatePositions = jest.fn().mockImplementation(async () => {
+    await wait(500)
   })
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
   mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockImplementation(async () => {
@@ -142,14 +153,17 @@ const waitForAccountStatesInitialLoad = async (mainCtrl: MainController) => {
 }
 
 describe('ContinuousUpdatesController intervals', () => {
+  let restoreFunc: any
   beforeEach(() => {
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+    const { restore } = suppressConsole()
+
+    restoreFunc = restore
   })
   afterEach(() => {
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restoreFunc()
   })
 
   test('should run updatePortfolioInterval', async () => {
@@ -159,7 +173,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const providersForTesting = ['1', '137']
     const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
     // ensure all providers are working
-    mockedProviders[1].isWorking = true
+    mockedProviders[1]!.isWorking = true
     mockedProviders[137].isWorking = true
     mainCtrl.providers.providers = mockedProviders
 
@@ -277,7 +291,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const providersForTesting = ['1', '137']
     const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
     // ensure there is at least one provider that is not working
-    mockedProviders[1].isWorking = false
+    mockedProviders[1]!.isWorking = false
     mockedProviders[137].isWorking = true
     mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
@@ -295,7 +309,7 @@ describe('ContinuousUpdatesController intervals', () => {
       .mockResolvedValue(undefined)
 
     // ensure there is at least one provider that is not working
-    mainCtrl.providers.providers[1].isWorking = false
+    mainCtrl.providers.providers[1]!.isWorking = false
     mainCtrl.providers.providers[137].isWorking = true
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     const initialFnExecutionsCount =

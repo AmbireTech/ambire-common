@@ -347,15 +347,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.phishing = new PhishingController({
       fetch: this.fetch,
       storage: this.storage,
-      ui: this.ui
-    })
-    this.dapps = new DappsController({
-      appVersion: this.#appVersion,
-      fetch: this.fetch,
-      storage: this.storage,
-      networks: this.networks,
-      phishing: this.phishing,
-      ui: this.ui
+      addressBook: this.addressBook
     })
 
     this.selectedAccount.initControllers({
@@ -393,6 +385,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       invite: this.invite,
       storage: this.storage,
+      phishing: this.phishing,
       swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
@@ -435,6 +428,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.activity,
       this.#externalSignerControllers,
       this.providers,
+      this.phishing,
       relayerUrl,
       this.#commonHandlerForBroadcastSuccess.bind(this)
     )
@@ -471,12 +465,15 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
-      dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
+      getDapp: async (id) => {
+        await this.dapps.initialLoadPromise
+        return this.dapps.getDapp(id)
+      },
       getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
@@ -488,7 +485,20 @@ export class MainController extends EventEmitter implements IMainController {
         await this.updateSelectedAccountPortfolio({ networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
-      guardHWSigning: this.#guardHWSigning.bind(this)
+      guardHWSigning: this.#guardHWSigning.bind(this),
+      onSetCurrentAction: (currentAction) => {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.dapps.setDappToConnectIfNeeded(currentAction)
+      }
+    })
+
+    this.dapps = new DappsController({
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -603,11 +613,12 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async selectAccount(toAccountAddr: string) {
+    await this.initialLoadPromise
+
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
   async #selectAccount(toAccountAddr: string | null) {
-    await this.initialLoadPromise
     if (!toAccountAddr) {
       await this.selectedAccount.setAccount(null)
 
@@ -641,6 +652,15 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge.reset()
     this.transfer.resetForm()
 
+    // Don't await this as it's not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reloadSelectedAccount({
+      maxDataAgeMs: 5 * 60 * 1000,
+      maxDataAgeMsUnused: 60 * 60 * 1000
+    })
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
       this.activity.forceEmitUpdate(),
@@ -649,14 +669,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
-    // Don't await these as they are not critical for the account selection
-    // and if the user decides to quickly change to another account withStatus
-    // will block the UI until these are resolved.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      maxDataAgeMsUnused: 60 * 60 * 1000
-    })
   }
 
   async #onAccountPickerSuccess() {
@@ -742,6 +754,7 @@ export class MainController extends EventEmitter implements IMainController {
         account: this.selectedAccount.account,
         network,
         provider: this.providers.providers[network.chainId.toString()],
+        phishing: this.phishing,
         fromActionId: actionId,
         accountOp,
         isSignRequestStillActive: () => {
@@ -970,7 +983,7 @@ export class MainController extends EventEmitter implements IMainController {
     if (!this.signAccountOp) return
 
     this.#abortHWTransactionSign(this.signAccountOp)
-    this.signAccountOp.reset()
+    this.signAccountOp.destroy()
     this.signAccountOp = null
     this.signAccOpInitError = null
 
@@ -1272,8 +1285,16 @@ export class MainController extends EventEmitter implements IMainController {
           ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
           : undefined
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateSelectedAccountPortfolio({ networks })
+        if (networks?.length) {
+          this.updateSelectedAccountPortfolio({ networks })
+
+          // update the account state to latest as well
+          this.accounts.updateAccountState(
+            this.selectedAccount.account.addr,
+            'latest',
+            networks?.map((net) => net.chainId)
+          )
+        }
       }
     }
 

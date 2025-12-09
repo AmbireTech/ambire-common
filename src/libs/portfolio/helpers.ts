@@ -58,13 +58,6 @@ const removeNonLatinChars = (str: string): string =>
     })
     .join('')
 
-// returns true if the original string contained any non-ASCII / invisible chars
-const nonLatinSymbol = (str: string): boolean => {
-  if (!str) return false
-  const cleaned = removeNonLatinChars(str)
-  return cleaned !== str
-}
-
 // safe address normalizer
 const normalizeAddress = (addr: string) => {
   try {
@@ -120,14 +113,10 @@ export const isSuspectedToken = (
     return null // trusted
   }
 
-  // 3) Unknown address (or known but no chainIds) => run symbol/name checks
-  if (nonLatinSymbol(symbol)) return 'no-latin-symbol'
-  if (nonLatinSymbol(name)) return 'no-latin-name'
-
-  // 4) Same-symbol spoofing on same chain (different address)
+  // 3) Same-symbol spoofing on same chain (different address)
   if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
 
-  // 5) Not flagged
+  // 4) Not flagged
   return null
 }
 
@@ -331,12 +320,13 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
 
 export const getTotal = (
   t: TokenResult[],
-  excludeHiddenTokens: boolean = true,
-  beforeSimulation: boolean = false
-) =>
-  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+  opts?: { includeHiddenTokens?: boolean; beforeSimulation?: boolean }
+) => {
+  const { includeHiddenTokens = false, beforeSimulation = false } = opts || {}
+
+  return t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
-    if (token.flags.isHidden && excludeHiddenTokens) return localCur
+    if (token.flags.isHidden && !includeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
@@ -347,6 +337,7 @@ export const getTotal = (
 
     return localCur
   }, {})
+}
 
 export const addHiddenTokenValueToTotal = (
   totalWithoutHiddenTokens: number,

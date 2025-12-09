@@ -90,10 +90,10 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   return newCalls
 }
 
-export const genericErc20Humanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
+export const genericErc20Humanizer = (
+  { accountAddr }: { accountAddr: string },
   currentIrCalls: IrCall[]
-) => {
+): IrCall[] => {
   const matcher = {
     [ERC20_INTERFACE.getFunction('approve')?.selector!]: (call: IrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
@@ -158,7 +158,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
     [ERC20_INTERFACE.getFunction('transferFrom')?.selector!]: (call: IrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const args = ERC20_INTERFACE.parseTransaction(call)?.args.toArray() || []
-      if (args[0] === accountOp.accountAddr) {
+      if (args[0] === accountAddr) {
         return [
           getAction('Transfer'),
           getToken(call.to, args[2]),
@@ -166,7 +166,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
           getAddressVisualization(args[1])
         ]
       }
-      if (args[1] === accountOp.accountAddr) {
+      if (args[1] === accountAddr) {
         return [
           getAction('Take'),
           getToken(call.to, args[2]),

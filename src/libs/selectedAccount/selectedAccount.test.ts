@@ -5,7 +5,7 @@ import {
   NetworkState as DefiNetworkState
 } from '../defiPositions/types'
 /* eslint-disable @typescript-eslint/no-use-before-define */
-import { AccountState, NetworkState, PriceCache, TokenResult } from '../portfolio/interfaces'
+import { AccountState, NetworkState, TokenResult } from '../portfolio/interfaces'
 import {
   calculateDefiPositions,
   calculateSelectedAccountPortfolio,
@@ -57,7 +57,7 @@ describe('Selected Account lib', () => {
         totalBalance: 0,
         collections: [],
         tokens: [],
-        defiPositionsUpdatedAt: DEFI_STATE['1'].updatedAt,
+        defiPositionsUpdatedAt: DEFI_STATE['1']?.updatedAt,
         portfolioUpdateStarted: clonedPortfolioEthereumState?.result?.updateStarted
       }
 
@@ -138,7 +138,7 @@ describe('Selected Account lib', () => {
     it('should add a price to portfolio defi tokens if the price is defined in the defi state', () => {
       const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
       const aBasWETHWithoutPrice: TokenResult = {
-        ...structuredClone(DEFI_STATE['1'].positionsByProvider[2].positions[0].assets[0]),
+        ...structuredClone(DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]),
         flags: {
           onGasTank: false,
           rewardsType: null,
@@ -147,7 +147,13 @@ describe('Selected Account lib', () => {
           canTopUpGasTank: false
         },
         priceIn: [],
-        chainId: 1n
+        chainId: 1n,
+        // Ensure required fields are present and not undefined
+        address: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.address ?? '',
+        symbol: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.symbol ?? '',
+        name: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.name ?? '',
+        decimals: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.decimals ?? 18,
+        amount: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.amount ?? 0n
       }
 
       expect(aBasWETHWithoutPrice.priceIn.length).toBe(0)
@@ -171,8 +177,10 @@ describe('Selected Account lib', () => {
     it('should add the value of hidden collateral tokens to the total balance', () => {
       const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
       const originalToken = structuredClone(
-        DEFI_STATE['1'].positionsByProvider[2].positions[0].assets[0]
+        DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]!
       )
+      if (!originalToken) throw new Error('Original token not found')
+
       const hiddenCollateralToken: TokenResult = {
         ...originalToken,
         flags: {
@@ -256,6 +264,8 @@ describe('Selected Account lib', () => {
         false,
         true
       )
+
+      if (!selectedAccountPortfolioByNetworks['1']) throw new Error('Network state missing')
 
       expect(
         getIsRecalculationNeeded(
@@ -451,7 +461,6 @@ const PORTFOLIO_STATE: AccountState = {
       discoveryTime: 415,
       oracleCallTime: 364,
       priceUpdateTime: 1585,
-      priceCache: {} as PriceCache,
       tokens: [
         {
           amount: 100n,
@@ -554,7 +563,6 @@ const PORTFOLIO_STATE: AccountState = {
       discoveryTime: 415,
       oracleCallTime: 364,
       priceUpdateTime: 1585,
-      priceCache: {} as PriceCache,
       tokens: [
         {
           amount: 10n ** 18n,
@@ -596,8 +604,6 @@ const PORTFOLIO_STATE: AccountState = {
           name: 'USD Coin',
           amount: 5n * 10n ** 6n,
           availableAmount: 5n * 10n ** 6n,
-          cashback: 1n,
-          saved: 14040n,
           decimals: 6,
           chainId: 1n,
           priceIn: [{ baseCurrency: 'usd', price: 1 }],
@@ -812,7 +818,9 @@ const DEFI_STATE: DefiAccountState = {
   }
 }
 
-PORTFOLIO_STATE['1']!.result!.tokens[0].amount = 10n
+if (PORTFOLIO_STATE['1']?.result?.tokens?.[0]) {
+  PORTFOLIO_STATE['1'].result.tokens[0]!.amount = 10n
+}
 PORTFOLIO_STATE['1']!.accountOps = [
   {
     accountAddr: '0x',
