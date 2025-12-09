@@ -303,7 +303,9 @@ export class TransferController extends EventEmitter implements ITransferControl
             t.address === this.selectedToken?.address &&
             t.chainId === this.selectedToken?.chainId &&
             !t.flags.onGasTank
-        ) ?? null
+        ) ||
+        this.#tokens[0] ||
+        null
     }
   }
 
