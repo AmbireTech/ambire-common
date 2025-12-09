@@ -516,7 +516,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
       const message = `accountPicker: account ${account.addr} was not found in the accountsOnPage.`
-      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+      this.emitError({ message, level: 'silent', error: new Error(message) })
 
       return []
     }
@@ -935,7 +935,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // Should never happen
     if (!nextAccount) {
       const message = 'accountPicker: selectNextAccount called, but no next account found.'
-      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+      this.emitError({ message, level: 'silent', error: new Error(message) })
     }
 
     this.selectNextAccountStatus = 'SUCCESS'
@@ -989,7 +989,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
       const message = 'accountPicker: #deriveAccounts called, but keyIterator was missing'
-      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+      this.emitError({ message, level: 'silent', error: new Error(message) })
 
       return []
     }

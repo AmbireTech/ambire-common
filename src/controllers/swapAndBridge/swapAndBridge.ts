@@ -1342,7 +1342,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #accountNativeBalance(amount: bigint): bigint {
     if (!this.#selectedAccount.account || !this.fromChainId) return 0n
 
-    const currentPortfolio = this.#portfolio.getLatestPortfolioState(
+    const currentPortfolio = this.#portfolio.getAccountPortfolioState(
       this.#selectedAccount.account.addr
     )
     const currentPortfolioNetwork = currentPortfolio[this.fromChainId.toString()]
@@ -2455,7 +2455,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // that is ALWAYS up-to-date with the current quote and the current form state.
         // Due to the async nature, it might not exist - an issue caught by our crash reporting.
         if (this.#signAccountOpController)
-          this.#portfolio.overridePendingResults(this.#signAccountOpController.accountOp)
+          this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
 
         this.emitError(error)
       })

@@ -5,9 +5,9 @@ import { KyberSwap } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { eToNative, getAction, getLabel, getToken } from '../../utils'
 
-const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface(KyberSwap)
+const iface = new Interface(KyberSwap)
 
+const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const matcher = {
     [iface.getFunction(
       'swap(tuple(address callTarget,address approveTarget,bytes targetData,tuple(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes clientData) execution)'
