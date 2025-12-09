@@ -65,7 +65,7 @@ export interface Network {
   nativeAssetSymbol: string
   nativeAssetName: string
   rpcUrls: string[]
-  explorerUrl: string
+  explorerUrl?: string
   /**
    * The currently selected RPC URL for this network.
    */
@@ -123,7 +123,7 @@ export interface AddNetworkRequestParams {
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
   nativeAssetName: Network['nativeAssetName']
-  explorerUrl: Network['explorerUrl']
+  explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
 }
 
