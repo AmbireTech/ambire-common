@@ -197,10 +197,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#ui.uiEvent.on('updateView', (view: View) => {
       if (isTransfer(view.currentRoute)) {
-        console.log('Debug: navigated to transfer')
         this.#enterTransfer(view)
       } else if (isTransfer(view.previousRoute)) {
-        console.log('Debug: navigated out of transfer')
         this.#leaveTransfer()
       }
     })
@@ -228,7 +226,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #enterTransfer(view: View) {
-    console.log('Debug: entered transfer view')
     this.#ensureTransferSessionId()
 
     this.isTopUp = view.currentRoute === 'top-up-gas-tank'
@@ -242,15 +239,12 @@ export class TransferController extends EventEmitter implements ITransferControl
           }
         : undefined
 
-    console.log('Debug: ', tokenParams, searchParams)
-
     this.#setTokens()
     this.#setDefaultSelectedToken(tokenParams)
     this.isReady = true
   }
 
   #leaveTransfer() {
-    console.log('Debug: left transfer, destroying session')
     this.#destroyTransferSession()
 
     this.#tokens = []
@@ -314,7 +308,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setDefaultSelectedToken(tokenData?: { address: string; chainId: string | number }) {
-    console.log('Debug: setting default selected token', tokenData)
     if (!this.#tokens.length) return
 
     const tokenAddress = tokenData?.address.toLowerCase() || ''
@@ -343,8 +336,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.chainId !== newSelectedToken.chainId)
     ) {
       this.selectedToken = newSelectedToken
-
-      console.log('Debug: newSelectedToken', newSelectedToken)
 
       // Emit update to reflect possible changes in the UI
       this.emitUpdate()
