@@ -1,5 +1,6 @@
 import { Interface, isAddress } from 'ethers'
 
+import { IUiController } from 'interfaces/ui'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -135,6 +136,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #portfolio: IPortfolioController
 
+  #ui: IUiController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #callRelayer: Function
@@ -162,6 +165,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,
+    ui: IUiController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
@@ -173,6 +177,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#providers = providers
     this.#networks = networks
     this.#portfolio = portfolio
+    this.#ui = ui
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -618,6 +623,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     }
                   }
 
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.blockNumber = receipt.blockNumber
+
                   // update the chain if a receipt has been received as otherwise, we're
                   // left hanging with a pending portfolio balance
                   chainsToUpdate.add(network.chainId)
@@ -910,6 +918,26 @@ export class ActivityController extends EventEmitter implements IActivityControl
       .flat()
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(from, from + numberOfItems)
+  }
+
+  /**
+   * Send one time data back to benzina when using it in-app to avoid
+   * making multiple requests for data we already have
+   */
+  async getBenzinaInfo(identifiedBy: AccountOpIdentifiedBy, accountAddr: string, chainId: bigint) {
+    const accOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
+    if (
+      !accOp ||
+      accOp.status === AccountOpStatus.BroadcastedButNotConfirmed ||
+      accOp.status === AccountOpStatus.Pending
+    )
+      return
+
+    this.#ui.message.sendUiMessage({
+      status: accOp.status,
+      blockNumber: accOp.blockNumber,
+      txnId: accOp.txnId
+    })
   }
 
   toJSON() {

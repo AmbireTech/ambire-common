@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import { UiController } from 'controllers/ui/ui'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
@@ -26,7 +27,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -132,6 +132,9 @@ let networksCtrl: INetworksController
 const storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
 
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
+
 const prepareTest = async () => {
   const controller = new ActivityController(
     storageCtrl,
@@ -142,6 +145,7 @@ const prepareTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    uiCtrl,
     () => Promise.resolve()
   )
 
@@ -166,6 +170,7 @@ const prepareSignedMessagesTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    uiCtrl,
     () => Promise.resolve()
   )
 
@@ -198,8 +203,6 @@ describe('Activity Controller ', () => {
     })
     providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
     const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -910,6 +913,7 @@ describe('Activity Controller ', () => {
       providersCtrl,
       networksCtrl,
       portfolioCtrl,
+      uiCtrl,
       () => Promise.resolve()
     )
 
