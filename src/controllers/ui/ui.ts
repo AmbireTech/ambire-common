@@ -53,7 +53,7 @@ export class UiController extends EventEmitter implements IUiController {
     if (!shouldUpdate) return
 
     let previousRoute = view.previousRoute
-    if (updatedProps.currentRoute) {
+    if (updatedProps.currentRoute && updatedProps.currentRoute !== view.currentRoute) {
       previousRoute = view.currentRoute
     }
 
