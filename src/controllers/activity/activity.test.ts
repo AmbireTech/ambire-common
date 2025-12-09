@@ -2,7 +2,6 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
-import { UiController } from 'controllers/ui/ui'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
@@ -27,6 +26,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 

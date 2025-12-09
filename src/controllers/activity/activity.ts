@@ -1,6 +1,5 @@
 import { Interface, isAddress } from 'ethers'
 
-import { IUiController } from 'interfaces/ui'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -10,6 +9,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import {
   AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
