@@ -209,7 +209,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
     this.emitUpdate()
 
-    if (!dappsToFetch.length) return
+    if (!dappsToFetch.length) return // there will be dappsToFetch only if this.#domains is still empty
 
     const res = await fetchWithTimeout(
       this.#fetch,
@@ -330,8 +330,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
     this.emitUpdate()
 
-    // If nothing to fetch → we are done
-    if (!addressesToFetch.length) return
+    if (!addressesToFetch.length) return // there will be addressesToFetch only if this.#addresses is still empty
 
     const res = await fetchWithTimeout(
       this.#fetch,
