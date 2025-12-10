@@ -114,6 +114,7 @@ export interface Network {
   has7702: boolean
   allowForce4337?: boolean
   disabled?: boolean
+  customBundlerUrl?: string
 }
 
 export interface AddNetworkRequestParams {
@@ -125,6 +126,7 @@ export interface AddNetworkRequestParams {
   nativeAssetName: Network['nativeAssetName']
   explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
+  customBundlerUrl?: Network['customBundlerUrl']
 }
 
 export interface ChainlistNetwork {
