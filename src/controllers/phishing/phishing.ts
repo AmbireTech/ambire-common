@@ -4,7 +4,10 @@ import { getDomain } from 'tldts'
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
-import { PHISHING_UPDATE_INTERVAL } from '../../consts/intervals'
+import {
+  PHISHING_FAILED_TO_GET_UPDATE_INTERVAL,
+  PHISHING_UPDATE_INTERVAL
+} from '../../consts/intervals'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
@@ -90,6 +93,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async continuouslyUpdatePhishing() {
+    await this.#continuouslyUpdatePhishing().catch(() => {
+      this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_FAILED_TO_GET_UPDATE_INTERVAL })
+    })
+  }
+
+  async #continuouslyUpdatePhishing() {
     if (this.#updatedAt && this.#updatedAt < PHISHING_UPDATE_INTERVAL) return
 
     const res = await fetchWithTimeout(
@@ -135,6 +144,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       domains: [...this.#domains],
       addresses: [...this.#addresses]
     })
+
+    if (this.updatePhishingInterval.currentTimeout !== PHISHING_UPDATE_INTERVAL) {
+      this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_UPDATE_INTERVAL })
+    }
   }
 
   /**
@@ -397,7 +410,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      updatePhishingInterval: this.updatePhishingInterval
     }
   }
 }
