@@ -444,7 +444,7 @@ export class SocketAPI implements SwapProvider {
         ? {
             allowanceTarget: response.approvalData.spenderAddress,
             approvalTokenAddress: response.approvalData.tokenAddress,
-            minimumApprovalAmount: response.approvalData.amount,
+            minimumApprovalAmount: route.fromAmount,
             owner: response.approvalData.userAddress
           }
         : null,
