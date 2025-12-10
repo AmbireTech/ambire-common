@@ -1,3 +1,5 @@
+import { getDomain } from 'tldts'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -329,7 +331,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         dappsMap.set(id, modifiedDapp)
       })
 
-      if (!dappsMap.has(id)) dappsMap.set(id, updatedDapp)
+      if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url)!)) {
+        dappsMap.set(id, updatedDapp)
+      }
     }
 
     // Add predefined
@@ -373,6 +377,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           d.description = existingByDomain.description
           d.tvl = existingByDomain.tvl
           d.icon = existingByDomain.icon
+          d.isFeatured = existingByDomain.isFeatured
           d.twitter = existingByDomain.twitter
           d.geckoId = existingByDomain.geckoId
           d.chainIds = existingByDomain.chainIds
