@@ -702,7 +702,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs
     )
 
-    if (canSkipUpdate) return false
+    if (canSkipUpdate && !isManualUpdate) return false
 
     this.#setNetworkLoading(accountId, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
