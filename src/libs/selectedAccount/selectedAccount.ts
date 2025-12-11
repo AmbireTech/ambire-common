@@ -591,6 +591,22 @@ export const calculateAndSetProjectedRewards = (
     userXp,
     reasonToNotDisplayProjectedRewards
   } = result
+
+  if (
+    currentSeasonSnapshots === undefined ||
+    supportedChainIds === undefined ||
+    numberOfWeeksSinceStartOfSeason === undefined ||
+    totalRewardsPool === undefined ||
+    totalWeightNonUser === undefined ||
+    userLevel === undefined ||
+    walletPrice === undefined ||
+    minLvl === undefined ||
+    minBalance === undefined ||
+    userXp === undefined
+  ) {
+    return
+  }
+
   if (reasonToNotDisplayProjectedRewards) return
 
   const currentTotalBalanceOnSupportedChains = supportedChainIds
