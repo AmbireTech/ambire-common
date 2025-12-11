@@ -43,8 +43,12 @@ export type StorageProps = {
   keyStoreUid: string | null
   keystoreSecrets: MainKeyEncryptedWithSecret[]
   onboardingState?: object
-  domainsBlacklistedStatus: BlacklistedStatuses
-  addressesBlacklistedStatus: BlacklistedStatuses
+  phishing: {
+    version: number
+    updatedAt: number
+    domains: string[]
+    addresses: string[]
+  }
   selectedAccount: string | null
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
   termsState?: object
