@@ -271,6 +271,7 @@ export type ProjectedRewardsStats = {
   averageLiquidity: number
   averageStkWalletBalance: number
   // Other
+  votedTimes: number
   swapVolume: number
   poolSize: number
   weeklyTx: number

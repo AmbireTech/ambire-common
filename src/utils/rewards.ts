@@ -61,6 +61,7 @@ export const calculateRewardsStats = (
     swapVolumeScore,
     swapVolume,
     goveranceScore,
+    votedTimes: governanceVotes.length,
     multiplier: totalMultiplier,
     estimatedRewards,
     estimatedRewardsUSD: estimatedRewards * walletOrStkWalletTokenPrice
