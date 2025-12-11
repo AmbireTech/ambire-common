@@ -41,10 +41,6 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
 }
 
-export type ProjectedRewardsTokenResult = TokenResult & {
-  userXp: number
-}
-
 export interface CollectionResult extends TokenResult {
   name: string
   collectibles: bigint[]
@@ -242,19 +238,46 @@ export type PortfolioGasTankResult = CommonResultProps & {
 }
 
 export type PortfolioProjectedRewardsResult = {
-  currentSeasonSnapshots: { week: number; balance: number }[]
-  currentWeek: number
-  supportedChainIds: number[]
-  numberOfWeeksSinceStartOfSeason: number
-  totalRewardsPool: number
-  totalWeightNonUser: number
-  userLevel: number
+  weeksWithData: {
+    week: number
+    balance: number
+    liquidityUsd: number
+    stkWalletUsd: number
+  }[]
+  swapVolume: number
+  poolSize: number
+  rank: number
   walletPrice: number
-  apy: number
-  minLvl: number
-  minBalance: number
-  userXp: number
-  reasonToNotDisplayProjectedRewards?: string
+  pointsOfOtherUsers: number
+  numberOfWeeksSinceStartOfSeason: number
+  multiplier: number
+  weeklyTx: number
+  governanceVotes: {
+    weight: number
+    walletPrice: number
+  }[]
+  supportedChainIds: number[]
+}
+
+export type ProjectedRewardsStats = {
+  // Scores
+  balanceScore: number
+  stkWALLETScore: number
+  liquidityScore: number
+  swapVolumeScore: number
+  goveranceScore: number
+  // Average
+  averageBalance: number
+  averageLiquidity: number
+  averageStkWalletBalance: number
+  // Other
+  swapVolume: number
+  poolSize: number
+  weeklyTx: number
+  totalScore: number
+  multiplier: number
+  estimatedRewards: number
+  estimatedRewardsUSD: number
 }
 
 export type PortfolioKeyResult =

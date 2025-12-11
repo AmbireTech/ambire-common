@@ -1,5 +1,6 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
+import { getProjectedRewardsToken } from 'utils/rewards'
 
 import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -30,10 +31,7 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import {
-  calculateAndSetProjectedRewards,
-  calculateSelectedAccountPortfolio
-} from '../../libs/selectedAccount/selectedAccount'
+import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
@@ -326,9 +324,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
 
       // Calculate and add projected rewards token
-      const projectedRewardsToken = calculateAndSetProjectedRewards(
+      const projectedRewardsToken = getProjectedRewardsToken(
         portfolioAccountState.projectedRewards,
-        newSelectedAccountPortfolio.balancePerNetwork,
         walletOrStkWalletTokenPrice
       )
 
