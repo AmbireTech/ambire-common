@@ -12,7 +12,7 @@ export const calculateRewardsStats = (
 ): ProjectedRewardsStats | null => {
   if (!projectedRewardsResult || !walletOrStkWalletTokenPrice) return null
 
-  const { weeksWithData, governanceVotes, weeklyTx, poolSize, pointsOfOtherUsers, swapVolume } =
+  const { weeksWithData, governanceVotes, poolSize, pointsOfOtherUsers, swapVolume } =
     projectedRewardsResult
 
   const { averageBalance, liquidityAverage, stkWalletBalanceAverage } = weeksWithData.reduce(
@@ -32,17 +32,20 @@ export const calculateRewardsStats = (
   const seasonLiquidityAverage = liquidityAverage / numberOfWeeksSinceStartOfSeason
   const seasonStkWalletBalanceAverage = stkWalletBalanceAverage / numberOfWeeksSinceStartOfSeason
 
-  const balanceScore = seasonAverageBalance / 1000
-  const stkWALLETScore = (seasonStkWalletBalanceAverage / 1000) * 20
-  const swapVolumeScore = (swapVolume / 1000) * 10
-  const liquidityScore = (seasonLiquidityAverage / 1000) * 30
-  const goveranceScore =
-    (governanceVotes.map((x) => x.weight).reduce((a, b) => a + b, 0) *
-      walletOrStkWalletTokenPrice) /
-    2000
-  const totalMultiplier = 1.06 ** projectedRewardsResult.multiplier
+  const balanceScore = Math.round(seasonAverageBalance / 1000)
+  const stkWALLETScore = Math.round((seasonStkWalletBalanceAverage / 1000) * 20)
+  const swapVolumeScore = Math.round((swapVolume / 1000) * 10)
+  const liquidityScore = Math.round((seasonLiquidityAverage / 1000) * 30)
+  const governanceWeight = governanceVotes.reduce((acc, vote) => {
+    const weight = vote.weight * vote.walletPrice
+
+    return acc + weight
+  }, 0)
+  const governanceScore = Math.round(governanceWeight / 2000)
+  const totalMultiplier =
+    projectedRewardsResult.multiplier === 1 ? 1 : 1.06 ** projectedRewardsResult.multiplier
   const totalScore = Math.round(
-    (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + goveranceScore) *
+    (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
       totalMultiplier
   )
 
@@ -54,14 +57,13 @@ export const calculateRewardsStats = (
     averageBalance: seasonAverageBalance,
     averageLiquidity: seasonLiquidityAverage,
     averageStkWalletBalance: seasonStkWalletBalanceAverage,
-    weeklyTx,
     totalScore,
     stkWALLETScore,
     liquidityScore,
     swapVolumeScore,
     swapVolume,
-    goveranceScore,
-    votedTimes: governanceVotes.length,
+    governanceScore,
+    governanceWeight,
     multiplier: totalMultiplier,
     estimatedRewards,
     estimatedRewardsUSD: estimatedRewards * walletOrStkWalletTokenPrice

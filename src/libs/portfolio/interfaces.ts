@@ -265,16 +265,15 @@ export type ProjectedRewardsStats = {
   stkWALLETScore: number
   liquidityScore: number
   swapVolumeScore: number
-  goveranceScore: number
+  governanceScore: number
   // Average
   averageBalance: number
   averageLiquidity: number
   averageStkWalletBalance: number
   // Other
-  votedTimes: number
+  governanceWeight: number
   swapVolume: number
   poolSize: number
-  weeklyTx: number
   totalScore: number
   multiplier: number
   estimatedRewards: number
