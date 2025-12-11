@@ -2,6 +2,7 @@ import {
   CollectionResult as CollectionResultInterface,
   NetworkSimulatedAccountOp,
   NetworkState,
+  ProjectedRewardsStats,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
 import { ControllerInterface } from './controller'
@@ -79,4 +80,5 @@ export interface SelectedAccountPortfolio {
   }
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
+  projectedRewardsStats: ProjectedRewardsStats | null
 }

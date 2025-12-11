@@ -31,7 +31,7 @@ import {
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
-import { getProjectedRewardsToken } from '../../utils/rewards'
+import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
@@ -45,7 +45,8 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   shouldShowPartialResult: false,
   isReloading: false,
   networkSimulatedAccountOp: {},
-  portfolioState: {}
+  portfolioState: {},
+  projectedRewardsStats: null
 }
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
@@ -320,16 +321,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
 
-    if (newSelectedAccountPortfolio.isAllReady && portfolioAccountState.projectedRewards) {
+    if (portfolioAccountState.projectedRewards) {
       const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
 
-      // Calculate and add projected rewards token
-      const projectedRewardsToken = getProjectedRewardsToken(
+      const projectedRewardsData = getProjectedRewardsStatsAndToken(
         portfolioAccountState.projectedRewards,
         walletOrStkWalletTokenPrice
       )
 
-      if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
+      // Calculate and add projected rewards token
+      if (projectedRewardsData) {
+        newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token)
+
+        newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data
+      }
     }
 
     // Reset the loading timestamp if the portfolio is ready

@@ -12,7 +12,7 @@ export const calculateRewardsStats = (
 ): ProjectedRewardsStats | null => {
   if (!projectedRewardsResult || !walletOrStkWalletTokenPrice) return null
 
-  const { weeksWithData, governanceVotes, poolSize, pointsOfOtherUsers, swapVolume } =
+  const { weeksWithData, governanceVotes, rank, poolSize, pointsOfOtherUsers, swapVolume } =
     projectedRewardsResult
 
   const { averageBalance, liquidityAverage, stkWalletBalanceAverage } = weeksWithData.reduce(
@@ -58,6 +58,7 @@ export const calculateRewardsStats = (
     averageLiquidity: seasonLiquidityAverage,
     averageStkWalletBalance: seasonStkWalletBalanceAverage,
     totalScore,
+    rank,
     stkWALLETScore,
     liquidityScore,
     swapVolumeScore,
@@ -70,33 +71,44 @@ export const calculateRewardsStats = (
   }
 }
 
-export const getProjectedRewardsToken = (
+export const getProjectedRewardsStatsAndToken = (
   projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
   walletOrStkWalletTokenPrice: number | undefined
-): TokenResult | undefined => {
+):
+  | {
+      token: TokenResult
+      data: ProjectedRewardsStats
+    }
+  | undefined => {
   if (!projectedRewards) return
 
   const result = projectedRewards?.result
+
   if (!result) return
 
   // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
   const walletTokenPrice = walletOrStkWalletTokenPrice || result.walletPrice
 
-  const { estimatedRewards } = calculateRewardsStats(result, walletTokenPrice) || {}
+  const data = calculateRewardsStats(result, walletTokenPrice)
+
+  if (!data) return
 
   return {
-    chainId: BigInt(1),
-    amount: BigInt(estimatedRewards || 0),
-    address: WALLET_TOKEN,
-    symbol: 'WALLET',
-    name: '$WALLET',
-    decimals: 18,
-    priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
-    flags: {
-      onGasTank: false,
-      rewardsType: 'wallet-projected-rewards' as const,
-      canTopUpGasTank: false,
-      isFeeToken: false
-    }
+    token: {
+      chainId: BigInt(1),
+      amount: BigInt(data.estimatedRewards || 0) * BigInt(10 ** 18),
+      address: WALLET_TOKEN,
+      symbol: 'WALLET',
+      name: '$WALLET',
+      decimals: 18,
+      priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
+      flags: {
+        onGasTank: false,
+        rewardsType: 'wallet-projected-rewards' as const,
+        canTopUpGasTank: false,
+        isFeeToken: false
+      }
+    },
+    data
   }
 }

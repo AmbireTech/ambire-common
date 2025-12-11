@@ -274,6 +274,7 @@ export type ProjectedRewardsStats = {
   governanceWeight: number
   swapVolume: number
   poolSize: number
+  rank: number
   totalScore: number
   multiplier: number
   estimatedRewards: number
