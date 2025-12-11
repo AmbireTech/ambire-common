@@ -666,7 +666,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const errors: SignAccountOpError[] = []
 
-    const estimationErrors = this.estimation.errors
+    const estimationErrors = this.estimation?.errors || []
     if (estimationErrors.length) return estimationErrors
 
     const isAmbireV1 = isAmbireV1LinkedAccount(this.account?.creation?.factoryAddr)
@@ -897,9 +897,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       warnings.push(WARNINGS.delegationDetected)
     }
 
-    const estimationWarnings = this.estimation.calculateWarnings()
+    const estimationWarnings = this.estimation?.calculateWarnings()
 
-    this.warnings = warnings.concat(estimationWarnings)
+    this.warnings = warnings.concat(estimationWarnings || [])
 
     this.emitUpdate()
   }
@@ -1182,7 +1182,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (isInTheMiddleOfSigning || isDone) return
 
     // if we have an estimation error, set the state so and return
-    if (this.estimation.error) {
+    if (this.estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
       this.emitUpdate()
       return
