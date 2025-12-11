@@ -1,6 +1,5 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
-import { getProjectedRewardsToken } from 'utils/rewards'
 
 import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -32,6 +31,7 @@ import {
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import { getProjectedRewardsToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
