@@ -333,6 +333,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       )
 
       if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
+      else {
+        this.emitError({
+          level: 'silent',
+          message: 'The projected rewards token for the selected account could not be calculated.',
+          error: new Error('Failed to calculate projected rewards token')
+        })
+      }
     }
 
     // Reset the loading timestamp if the portfolio is ready
