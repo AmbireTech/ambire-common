@@ -538,7 +538,8 @@ export function calculateSelectedAccountPortfolio(
     isAllReady,
     shouldShowPartialResult,
     networkSimulatedAccountOp: {},
-    portfolioState: stripPortfolioState(portfolioAccountState)
+    portfolioState: stripPortfolioState(portfolioAccountState),
+    projectedRewardsStats: null
   }
 
   Object.keys(selectedAccountPortfolioByNetworks).forEach((chainId) => {
