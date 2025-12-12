@@ -313,11 +313,7 @@ export function isBasicAccount(account: Account, state: AccountOnchainState): bo
   return !account.creation && !state.isSmarterEoa
 }
 
-const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = [
-  'internal',
-  // TODO: Temporarily enable only for Ambire Next, while testing, best to use feature flag for this
-  ...(process.env.AMBIRE_NEXT === 'true' ? (['lattice'] as const) : [])
-]
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice']
 
 // can the account as a whole become smarter (disregarding chain and state)
 export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
