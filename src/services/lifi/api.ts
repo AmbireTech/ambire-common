@@ -156,14 +156,14 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     fromAmount: route.fromAmount,
     toAmount: route.toAmount,
     currentUserTxIndex: 0,
-    ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
-      ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
-      : { usedDexName: route.steps[0].toolDetails.name }),
+    ...(route.steps[0]!.includedSteps.some((s) => s.type === 'cross')
+      ? { usedBridgeNames: [route.steps[0]!.toolDetails.key] }
+      : { usedDexName: route.steps[0]!.toolDetails.name }),
     userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
-    serviceTime: route.steps[0].estimate.executionDuration,
+    serviceTime: route.steps[0]!.estimate.executionDuration,
     rawRoute: route,
     sender: route.fromAddress,
     toToken: route.toToken,
@@ -396,6 +396,7 @@ export class LiFiAPI implements SwapProvider {
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
+    if (!response || !response.tokens || !response.tokens[toChainId]) return []
 
     const tokens: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)

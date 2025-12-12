@@ -13,6 +13,7 @@ import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -36,6 +37,7 @@ import {
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
+import { getAllowance } from '../erc20/erc20'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
@@ -564,9 +566,9 @@ export const calculateAmountWarnings = (
     }
 
     // try to calculate the slippage
-    const minAmountOutInWei = BigInt(
-      selectedRoute.userTxs[selectedRoute.userTxs.length - 1].minAmountOut
-    )
+    const userTxn = selectedRoute.userTxs[selectedRoute.userTxs.length - 1]
+    if (!userTxn) return null
+    const minAmountOutInWei = BigInt(userTxn.minAmountOut)
     const minInUsd = safeTokenAmountAndNumberMultiplication(
       minAmountOutInWei,
       selectedRoute.toToken.decimals,
@@ -613,9 +615,28 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
+const getTokenAllowance = async (
+  tokenAddress: string,
+  spenderAddress: string,
+  accountAddr: string,
+  provider: RPCProvider
+): Promise<bigint | null> => {
+  let timeoutId
+  const allowance = await Promise.race([
+    getAllowance(tokenAddress, accountAddr, spenderAddress, provider).catch(null),
+    new Promise((_resolve, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error('bundler gas price fetch fail, request too slow')),
+        4000
+      )
+    })
+  ]).catch(null)
+  clearTimeout(timeoutId)
+  return BigInt(allowance as Hex)
+}
+
 export {
   addCustomTokensIfNeeded,
-  getSwapAndBridgeRequestParams,
   convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
@@ -624,6 +645,8 @@ export {
   getLink,
   getSlippage,
   getSwapAndBridgeCalls,
+  getSwapAndBridgeRequestParams,
+  getTokenAllowance,
   isNoFeeToken,
   isTxnBridge,
   lifiMapNativeToAddr,

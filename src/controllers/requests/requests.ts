@@ -1402,7 +1402,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         const network = this.#networks.networks.find(
           (n) => Number(n.chainId) === transaction!.chainId
-        )!
+        )
+        if (!network) {
+          const error = new SwapAndBridgeError(
+            "Network couldn't be retrieved. Please try again later or contact Ambire support."
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
+        }
+        const provider = this.#providers.providers[network.chainId.toString()]
+        if (!provider) {
+          const error = new SwapAndBridgeError(
+            "Required provider couldn't be retrieved. Please try again later or contact Ambire support."
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
+        }
 
         const accountState = await this.#accounts.getOrFetchAccountOnChainState(
           this.#selectedAccount.account.addr,
@@ -1426,7 +1439,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           transaction,
           network.chainId,
           this.#selectedAccount.account,
-          this.#providers.providers[network.chainId.toString()],
+          provider,
           accountState,
           getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
