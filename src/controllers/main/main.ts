@@ -457,6 +457,11 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.requests = new RequestsController({
       relayerUrl,
+      callRelayer: this.callRelayer,
+      portfolio: this.portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.activity,
+      phishing: this.phishing,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -471,12 +476,7 @@ export class MainController extends EventEmitter implements IMainController {
         await this.dapps.initialLoadPromise
         return this.dapps.getDapp(id)
       },
-      getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
-      updateSignAccountOp: (props) => {
-        if (!this.signAccountOp) return
-        this.signAccountOp.update(props)
-      },
       destroySignAccountOp: this.destroySignAccOp.bind(this),
       updateSelectedAccountPortfolio: async (networks) => {
         await this.updateSelectedAccountPortfolio({ networks })
@@ -486,7 +486,19 @@ export class MainController extends EventEmitter implements IMainController {
       onSetCurrentUserRequest: (currentRequest) => {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.dapps.setDappToConnectIfNeeded(currentRequest)
-      }
+      },
+      onBroadcastSuccess: async (props) => {
+        const { submittedAccountOp, fromRequestId } = props
+        this.portfolio.markSimulationAsBroadcasted(
+          submittedAccountOp.accountAddr,
+          submittedAccountOp.chainId
+        )
+        await this.#commonHandlerForBroadcastSuccess(props)
+        // resolve dapp requests, open benzin and etc only if the main sign accountOp
+        this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
+        this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
+      },
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
 
     this.dapps = new DappsController({
@@ -977,96 +989,6 @@ export class MainController extends EventEmitter implements IMainController {
     // fired upon removeUserRequest
 
     this.emitUpdate()
-  }
-
-  async traceCall(signAccountOpCtrl: ISignAccountOpController) {
-    const accountOp = signAccountOpCtrl.accountOp
-    if (!accountOp) return
-
-    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
-    if (!network) return
-
-    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)
-    if (!account) return
-
-    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
-    // it should be cleared to prevent the previous interval from changing the status
-    // to `SlowPendingResponse` for the newer `traceCall` invocation.
-    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
-
-    // Here, we also check the status because, in the case of re-estimation,
-    // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
-    // This prevents the BalanceDecrease banner from flickering.
-    if (signAccountOpCtrl.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted)
-      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
-
-    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
-    const timeoutId = setTimeout(() => {
-      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
-      signAccountOpCtrl.calculateWarnings()
-    }, 2000)
-
-    this.#traceCallTimeoutId = timeoutId
-
-    try {
-      const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
-      const stateOverride =
-        accountOp.calls.length > 1 && isBasicAccount(account, state)
-          ? {
-              [account.addr]: {
-                code: AmbireAccount7702.binRuntime
-              }
-            }
-          : undefined
-      const { tokens, nfts } = await debugTraceCall(
-        account,
-        accountOp,
-        network,
-        state,
-        !network.rpcNoStateOverride,
-        stateOverride
-      )
-      const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
-      const learnedNewNfts = this.portfolio.addErc721sToBeLearned(
-        nfts,
-        account.addr,
-        network.chainId
-      )
-      const accountOpsForSimulation = getAccountOpsForSimulation(
-        account,
-        this.requests.visibleUserRequests,
-        this.networks.networks
-      )
-
-      // update the portfolio only if new tokens were found through tracing
-      const canUpdateSignAccountOp = !signAccountOpCtrl || signAccountOpCtrl.canUpdate()
-      if (canUpdateSignAccountOp && (learnedNewTokens || learnedNewNfts)) {
-        await this.portfolio.updateSelectedAccount(
-          accountOp.accountAddr,
-          [network],
-          accountOpsForSimulation
-            ? {
-                accountOps: accountOpsForSimulation,
-                states: await this.accounts.getOrFetchAccountStates(account.addr)
-              }
-            : undefined
-        )
-      }
-
-      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
-    } catch (e: any) {
-      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
-
-      this.emitError({
-        level: 'silent',
-        message: 'Error in main.traceCall',
-        error: e
-      })
-    }
-
-    signAccountOpCtrl?.calculateWarnings()
-    this.#traceCallTimeoutId = null
-    clearTimeout(timeoutId)
   }
 
   async handleSignMessage() {

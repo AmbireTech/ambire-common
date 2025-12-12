@@ -16,6 +16,7 @@ import {
 } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import EmittableError from '../../classes/EmittableError'
@@ -65,7 +66,7 @@ import {
 } from '../../interfaces/signAccountOp'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
-import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
+import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import {
@@ -104,6 +105,7 @@ import {
   wrapUnprotected
 } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
+import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -206,6 +208,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #accounts: IAccountsController
 
+  #networks: INetworksController
+
   #keystore: IKeystoreController
 
   #portfolio: IPortfolioController
@@ -292,8 +296,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #onAccountOpUpdate: (updatedAccountOp: AccountOp) => void
 
-  #traceCall: Function
-
   shouldSignAuth: {
     type: 'V2Deploy' | '7702'
     text: string
@@ -312,6 +314,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #activity: IActivityController
 
+  #onUpdateAfterTraceCallSuccess?: () => Promise<void>
+
   #onBroadcastSuccess: OnBroadcastSuccess
 
   #onBroadcastFailed?: OnBroadcastFailed
@@ -323,6 +327,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   broadcastPromise: Promise<void> | undefined
 
   signAndBroadcastPromise: Promise<void> | undefined
+
+  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
     type,
@@ -341,8 +347,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOp,
     isSignRequestStillActive,
     shouldSimulate,
+    onUpdateAfterTraceCallSuccess,
     onAccountOpUpdate,
-    traceCall,
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
@@ -362,8 +368,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean
+    onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void
-    traceCall?: Function
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
   }) {
@@ -372,6 +378,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#accounts = accounts
+    this.#networks = networks
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
@@ -409,7 +416,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#activity
     )
     const emptyFunc = () => {}
-    this.#traceCall = traceCall ?? emptyFunc
+    this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
     this.#onAccountOpUpdate = onAccountOpUpdate ?? emptyFunc
     this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
       estimation: this.estimation,
@@ -908,7 +915,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
-    if (shouldTraceCall) this.#traceCall(this)
+    if (shouldTraceCall) this.#traceCall()
 
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
@@ -1303,6 +1310,75 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     return result
+  }
+
+  async #traceCall() {
+    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
+    // it should be cleared to prevent the previous interval from changing the status
+    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+
+    // Here, we also check the status because, in the case of re-estimation,
+    // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
+    // This prevents the BalanceDecrease banner from flickering.
+    if (this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted)
+      this.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
+
+    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
+    const timeoutId = setTimeout(() => {
+      this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
+      this.calculateWarnings()
+    }, 2000)
+
+    this.#traceCallTimeoutId = timeoutId
+
+    try {
+      const state =
+        this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+      // TODO: how to handle this case?
+      if (!state) return
+
+      const stateOverride =
+        this.accountOp.calls.length > 1 && isBasicAccount(this.account, state)
+          ? {
+              [this.account.addr]: {
+                code: AmbireAccount7702.binRuntime
+              }
+            }
+          : undefined
+      const { tokens, nfts } = await debugTraceCall(
+        this.account,
+        this.accountOp,
+        this.#network,
+        state,
+        !this.#network.rpcNoStateOverride,
+        stateOverride
+      )
+      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(tokens, this.#network.chainId)
+      const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
+        nfts,
+        this.account.addr,
+        this.#network.chainId
+      )
+
+      if (this.canUpdate() && (learnedNewTokens || learnedNewNfts)) {
+        !!this.#onUpdateAfterTraceCallSuccess && (await this.#onUpdateAfterTraceCallSuccess())
+      }
+
+      this.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+    } catch (e: any) {
+      this.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
+
+      this.emitError({
+        level: 'silent',
+        message: 'Error in main.traceCall',
+        error: e
+      })
+    }
+
+    this.calculateWarnings()
+    this.#traceCallTimeoutId = null
+    clearTimeout(timeoutId)
   }
 
   /**
