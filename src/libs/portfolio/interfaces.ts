@@ -284,6 +284,7 @@ export type ProjectedRewardsStats = {
   multiplier: number
   estimatedRewards: number
   estimatedRewardsUSD: number
+  totalSwapAndBridgeVolume: number
 }
 
 export type PortfolioKeyResult =
