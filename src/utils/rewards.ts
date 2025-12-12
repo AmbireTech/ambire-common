@@ -49,7 +49,10 @@ export const calculateRewardsStats = (
       totalMultiplier
   )
 
-  const estimatedRewards = Math.round((totalScore / (pointsOfOtherUsers + totalScore)) * poolSize)
+  const estimatedRewardsUSD = Math.round(
+    (totalScore / (pointsOfOtherUsers + totalScore)) * poolSize
+  )
+  const estimatedRewards = Math.round(estimatedRewardsUSD / walletOrStkWalletTokenPrice)
 
   return {
     balanceScore,
@@ -67,7 +70,7 @@ export const calculateRewardsStats = (
     governanceWeight,
     multiplier: totalMultiplier,
     estimatedRewards,
-    estimatedRewardsUSD: estimatedRewards * walletOrStkWalletTokenPrice
+    estimatedRewardsUSD
   }
 }
 
