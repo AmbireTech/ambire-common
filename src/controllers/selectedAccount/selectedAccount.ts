@@ -30,10 +30,8 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import {
-  calculateAndSetProjectedRewards,
-  calculateSelectedAccountPortfolio
-} from '../../libs/selectedAccount/selectedAccount'
+import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
@@ -47,7 +45,8 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   shouldShowPartialResult: false,
   isReloading: false,
   networkSimulatedAccountOp: {},
-  portfolioState: {}
+  portfolioState: {},
+  projectedRewardsStats: null
 }
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
@@ -322,24 +321,29 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
 
-    if (newSelectedAccountPortfolio.isAllReady && portfolioAccountState.projectedRewards) {
-      const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
+    // Try catch this just in case the relayer sends unexpected data
+    try {
+      if (portfolioAccountState.projectedRewards) {
+        const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
 
-      // Calculate and add projected rewards token
-      const projectedRewardsToken = calculateAndSetProjectedRewards(
-        portfolioAccountState.projectedRewards,
-        newSelectedAccountPortfolio.balancePerNetwork,
-        walletOrStkWalletTokenPrice
-      )
+        const projectedRewardsData = getProjectedRewardsStatsAndToken(
+          portfolioAccountState.projectedRewards,
+          walletOrStkWalletTokenPrice
+        )
 
-      if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
-      else {
-        this.emitError({
-          level: 'silent',
-          message: 'The projected rewards token for the selected account could not be calculated.',
-          error: new Error('Failed to calculate projected rewards token')
-        })
+        // Calculate and add projected rewards token
+        if (projectedRewardsData) {
+          newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token)
+
+          newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data
+        }
       }
+    } catch (e) {
+      this.emitError({
+        level: 'silent',
+        message: 'Should NEVER happen: Error while calculating projected rewards stats',
+        error: e as Error
+      })
     }
 
     // Reset the loading timestamp if the portfolio is ready
