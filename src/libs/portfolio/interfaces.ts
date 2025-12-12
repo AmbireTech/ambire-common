@@ -231,6 +231,10 @@ export type PortfolioRewardsResult = CommonResultProps &
   Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
+    xWalletClaimableBalance?: Pick<TokenResult, 'decimals' | 'address' | 'priceIn' | 'symbol'> & {
+      amount: string
+      chainId: number
+    }
   }
 
 export type PortfolioGasTankResult = CommonResultProps & {
