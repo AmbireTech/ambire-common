@@ -57,6 +57,8 @@ export class Session {
 
   isAmbireNext: boolean = false
 
+  isForceConnectDisabled: boolean = false
+
   sendMessage(event: any, data: any) {
     if (!this.messenger) {
       console.error(
