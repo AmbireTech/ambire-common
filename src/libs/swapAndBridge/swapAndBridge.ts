@@ -341,6 +341,26 @@ const buildRevokeApprovalIfNeeded = async (
   }
 }
 
+const getTokenAllowance = async (
+  tokenAddress: string,
+  spenderAddress: string,
+  accountAddr: string,
+  provider: RPCProvider
+): Promise<bigint | null> => {
+  let timeoutId
+  const allowance = await Promise.race([
+    getAllowance(tokenAddress, accountAddr, spenderAddress, provider).catch(null),
+    new Promise((_resolve, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error('bundler gas price fetch fail, request too slow')),
+        4000
+      )
+    })
+  ]).catch(null)
+  clearTimeout(timeoutId)
+  return BigInt(allowance as Hex)
+}
+
 const getSwapAndBridgeCalls = async (
   userTx: SwapAndBridgeSendTxRequest,
   account: Account,
@@ -349,21 +369,29 @@ const getSwapAndBridgeCalls = async (
 ): Promise<Call[]> => {
   const calls: Call[] = []
   if (userTx.approvalData) {
-    const erc20Interface = new Interface(ERC20.abi)
+    const allowance = await getTokenAllowance(
+      userTx.approvalData.approvalTokenAddress,
+      userTx.approvalData.allowanceTarget,
+      userTx.approvalData.owner,
+      provider
+    )
+    if (allowance === null || allowance < BigInt(userTx.approvalData.minimumApprovalAmount)) {
+      const erc20Interface = new Interface(ERC20.abi)
 
-    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
-    if (revokeApproval) calls.push(revokeApproval)
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
+      if (revokeApproval) calls.push(revokeApproval)
 
-    calls.push({
-      id: `${userTx.activeRouteId}-approval`,
-      to: userTx.approvalData.approvalTokenAddress,
-      value: BigInt('0'),
-      data: erc20Interface.encodeFunctionData('approve', [
-        userTx.approvalData.allowanceTarget,
-        BigInt(userTx.approvalData.minimumApprovalAmount)
-      ]),
-      activeRouteId: userTx.activeRouteId
-    } as Call)
+      calls.push({
+        id: `${userTx.activeRouteId}-approval`,
+        to: userTx.approvalData.approvalTokenAddress,
+        value: BigInt('0'),
+        data: erc20Interface.encodeFunctionData('approve', [
+          userTx.approvalData.allowanceTarget,
+          BigInt(userTx.approvalData.minimumApprovalAmount)
+        ]),
+        activeRouteId: userTx.activeRouteId
+      } as Call)
+    }
   }
 
   calls.push({
@@ -614,26 +642,6 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
-
-const getTokenAllowance = async (
-  tokenAddress: string,
-  spenderAddress: string,
-  accountAddr: string,
-  provider: RPCProvider
-): Promise<bigint | null> => {
-  let timeoutId
-  const allowance = await Promise.race([
-    getAllowance(tokenAddress, accountAddr, spenderAddress, provider).catch(null),
-    new Promise((_resolve, reject) => {
-      timeoutId = setTimeout(
-        () => reject(new Error('bundler gas price fetch fail, request too slow')),
-        4000
-      )
-    })
-  ]).catch(null)
-  clearTimeout(timeoutId)
-  return BigInt(allowance as Hex)
-}
 
 export {
   addCustomTokensIfNeeded,

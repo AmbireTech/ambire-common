@@ -175,7 +175,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   parentStep: LiFiStep,
-  routeId: string
+  routeId: string,
+  owner: string
 ): SwapAndBridgeSendTxRequest => {
   if (
     !parentStep.transactionRequest ||
@@ -197,7 +198,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
             allowanceTarget: parentStep.estimate.approvalAddress,
             approvalTokenAddress: parentStep.action.fromToken.address,
             minimumApprovalAmount: parentStep.estimate.fromAmount,
-            owner: ''
+            owner
           },
     chainId: parentStep.action.fromChainId,
     txTarget: parentStep.transactionRequest.to,
@@ -550,7 +551,7 @@ export class LiFiAPI implements SwapProvider {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response, route.routeId)
+    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response, route.routeId, route.userAddress)
   }
 
   async getRouteStatus({
