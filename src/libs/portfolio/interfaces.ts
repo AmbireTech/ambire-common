@@ -242,18 +242,18 @@ export type PortfolioGasTankResult = CommonResultProps & {
 }
 
 export type PortfolioProjectedRewardsResult = {
-  currentSeasonSnapshots: { week: number; balance: number }[]
-  currentWeek: number
-  supportedChainIds: number[]
-  numberOfWeeksSinceStartOfSeason: number
-  totalRewardsPool: number
-  totalWeightNonUser: number
-  userLevel: number
-  walletPrice: number
-  apy: number
-  minLvl: number
-  minBalance: number
-  userXp: number
+  currentSeasonSnapshots?: { week: number; balance: number }[]
+  currentWeek?: number
+  supportedChainIds?: number[]
+  numberOfWeeksSinceStartOfSeason?: number
+  totalRewardsPool?: number
+  totalWeightNonUser?: number
+  userLevel?: number
+  walletPrice?: number
+  apy?: number
+  minLvl?: number
+  minBalance?: number
+  userXp?: number
   reasonToNotDisplayProjectedRewards?: string
 }
 
