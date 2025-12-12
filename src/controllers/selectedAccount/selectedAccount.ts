@@ -321,20 +321,29 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
 
-    if (portfolioAccountState.projectedRewards) {
-      const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
+    // Try catch this just in case the relayer sends unexpected data
+    try {
+      if (portfolioAccountState.projectedRewards) {
+        const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
 
-      const projectedRewardsData = getProjectedRewardsStatsAndToken(
-        portfolioAccountState.projectedRewards,
-        walletOrStkWalletTokenPrice
-      )
+        const projectedRewardsData = getProjectedRewardsStatsAndToken(
+          portfolioAccountState.projectedRewards,
+          walletOrStkWalletTokenPrice
+        )
 
-      // Calculate and add projected rewards token
-      if (projectedRewardsData) {
-        newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token)
+        // Calculate and add projected rewards token
+        if (projectedRewardsData) {
+          newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token)
 
-        newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data
+          newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data
+        }
       }
+    } catch (e) {
+      this.emitError({
+        level: 'silent',
+        message: 'Should NEVER happen: Error while calculating projected rewards stats',
+        error: e as Error
+      })
     }
 
     // Reset the loading timestamp if the portfolio is ready

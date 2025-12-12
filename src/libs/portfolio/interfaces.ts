@@ -252,6 +252,7 @@ export type PortfolioProjectedRewardsResult = {
   numberOfWeeksSinceStartOfSeason: number
   multiplier: number
   weeklyTx: number
+  frozenRewardSeason1: number
   governanceVotes: {
     weight: number
     walletPrice: number

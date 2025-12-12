@@ -635,7 +635,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isLoading: false,
       errors: [],
       result: {
-        ...res.data.rewardsProjectionDataV2
+        ...res.data.rewardsProjectionDataV2,
+        frozenRewardSeason1: res.data.frozenRewardSeason1 ? res.data.frozenRewardSeason1 : 0
       }
     }
 

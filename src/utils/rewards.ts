@@ -96,10 +96,16 @@ export const getProjectedRewardsStatsAndToken = (
 
   if (!data) return
 
+  let estimatedRewardsBothSeasons = data.estimatedRewards
+
+  if (result.frozenRewardSeason1) {
+    estimatedRewardsBothSeasons += Math.round(result.frozenRewardSeason1)
+  }
+
   return {
     token: {
       chainId: BigInt(1),
-      amount: BigInt(data.estimatedRewards || 0) * BigInt(10 ** 18),
+      amount: BigInt(estimatedRewardsBothSeasons) * BigInt(10 ** 18),
       address: WALLET_TOKEN,
       symbol: 'WALLET',
       name: '$WALLET',
