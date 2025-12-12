@@ -19,7 +19,7 @@ import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { GasTankTokenResult, TokenResult } from '../portfolio'
-import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
+import { getActivatorCall } from '../userOperation/userOperation'
 import { AmbireEstimation, EstimationFlags, FeePaymentOption } from './interfaces'
 
 function getOracleAddr(network: Network) {
@@ -74,7 +74,7 @@ export async function ambireEstimateGas(
 
   // only the activator call is added here as there are cases where it's needed
   const calls = [...op.calls.map(toSingletonCall)]
-  if (shouldIncludeActivatorCall(network, account, accountState, true)) {
+  if (baseAcc.shouldIncludeActivatorCall()) {
     calls.push(getActivatorCall(op.accountAddr))
   }
 
@@ -83,7 +83,7 @@ export async function ambireEstimateGas(
     account.addr,
     ...getAccountDeployParams(account),
     [account.addr, op.nonce || 1, calls, '0x'],
-    getProbableCallData(account, op, accountState, network),
+    getProbableCallData(op, accountState, baseAcc.shouldIncludeActivatorCall()),
     account.associatedKeys,
     feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,

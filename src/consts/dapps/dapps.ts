@@ -72,13 +72,13 @@ export const dappIdsToBeRemoved = new Set([
 export const featuredDapps = new Set([
   'rewards.ambire.com',
   'snapshot.box/#/s:ambire.eth',
-  'aave.com',
   'lido.fi',
-  'uniswap.org',
   'bitrefill.com',
-  'altitude.fi'
+  'altitude.fi',
+  'drops.bot'
 ])
 
+// NOTE: The final dApp list sorting preserves the order of this list
 export const predefinedDapps = [
   {
     id: 'rewards.ambire.com',
@@ -98,6 +98,15 @@ export const predefinedDapps = [
     chainIds: [1],
     category: 'Services',
     twitter: 'ambire'
+  },
+  {
+    id: 'drops.bot',
+    url: 'https://www.drops.bot/?r=ambire',
+    name: 'Drops',
+    icon: 'https://avatars.githubusercontent.com/u/175563563?v=4',
+    description: 'Check any crypto wallet address for unclaimed airdrops with Drops.',
+    twitter: 'DropsBotHQ',
+    category: 'Analytics'
   },
   {
     id: 'bitrefill.com',

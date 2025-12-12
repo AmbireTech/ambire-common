@@ -48,7 +48,7 @@ export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): bo
   if (!hasBundlerSupport) return false
 
   // if we have set it specifically
-  if (network && network.predefined) return network.erc4337.enabled
+  if (network && network.predefined) return true
 
   // this will be true in this case
   return hasBundlerSupport
@@ -56,7 +56,10 @@ export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): bo
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter(
-    (chainId) => typeof providers[chainId].isWorking === 'boolean' && !providers[chainId].isWorking
+    (chainId) =>
+      providers[chainId] &&
+      typeof providers[chainId].isWorking === 'boolean' &&
+      !providers[chainId].isWorking
   )
 }
 
@@ -72,6 +75,32 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
   })
 
   return result
+}
+
+export function getProviderBatchMaxCount(network: Network, rpcUrl: string): number | undefined {
+  const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl
+
+  // if the user hasn't changed the RPC the relayer has returned for this network
+  // and there's a set suggestedRpcBatchCount, return it
+  // there are cases where we use invictus (hyperevm) and regardless, we want
+  // to disable batching. Therefore, always use suggestedRpcBatchCount with priority
+  // if the RPC hasn't changed
+  if (!hasUserChangedRpc && network.suggestedRpcBatchCount) return network.suggestedRpcBatchCount
+
+  // No limit for invictus if suggestedRpcBatchCount is not provied
+  if (rpcUrl.includes('invictus.ambire.com')) return undefined
+
+  // no batching for custom networks
+  if (!network.predefinedConfigVersion) return 1
+
+  // a special rule for ethereum because we're resolving ENSes there:
+  // no invictus = batch limit of 3 to prevent rate limit
+  if (network.chainId === 1n && hasUserChangedRpc) return 3
+
+  // if suggestedRpcBatchCount is not provided, make the limit 1
+  // as we don't want to risk it by making it infinite
+  const suggestedRpcBatchCount = network.suggestedRpcBatchCount ?? 1
+  return hasUserChangedRpc ? 1 : suggestedRpcBatchCount
 }
 
 /**
@@ -112,7 +141,9 @@ export async function getNetworkInfo(
   }
 
   let flagged = false
-  const provider = getRpcProvider([rpcUrl], chainId)
+  const provider = getRpcProvider([rpcUrl], chainId, undefined, {
+    batchMaxCount: network ? getProviderBatchMaxCount(network, rpcUrl) : 1
+  })
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
@@ -473,7 +504,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       // update the selectedRpcUrl on disabledByDefault networks as we can
       // determine better which RPC is the best for our custom networks
       if (relayerNetwork.disabledByDefault)
-        networks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
+        networks[chainId.toString()]!.selectedRpcUrl = relayerNetwork.selectedRpcUrl
     } else {
       // No need to add this network to the updated list
       // as the selectedRpcUrl is not changed and the network is
@@ -481,6 +512,8 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       networks[chainId.toString()] = {
         ...currentNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
+        suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
+        suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
         iconUrls: relayerNetwork.iconUrls,
         predefined: relayerNetwork.predefined
       }
@@ -495,6 +528,8 @@ export const getNetworksUpdatedWithRelayerNetworks = (
   }
 
   Object.keys(networks).forEach((chainId: string) => {
+    if (!networks[chainId]) return
+
     // Remove unnecessary properties:
     if ('disabledByDefault' in networks[chainId]) {
       delete networks[chainId].disabledByDefault

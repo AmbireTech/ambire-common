@@ -236,8 +236,11 @@ export class EstimationController extends EventEmitter {
       this.estimation &&
       (this.estimation.flags.hasNonceDiscrepancy || this.estimation.flags.has4337NonceDiscrepancy)
     ) {
-      // silenly continuing on error here as the flags are more like app helpers
-      this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.chainId]).catch((e) => e)
+      // continue on error here as the flags are more like app helpers
+      this.#accounts
+        .updateAccountState(op.accountAddr, 'pending', [op.chainId])
+        // eslint-disable-next-line no-console
+        .catch((e) => console.error(e))
     }
 
     this.hasEstimated = true

@@ -86,8 +86,10 @@ async function estimate(
     try {
       decodedError = bundler.decodeBundlerError(e)
     } catch (error) {
-      // silence, we just can't decode the error because it's too custom
+      // we just can't decode the error because it's too custom
       // so it's better to continue forward with the original one
+      // eslint-disable-next-line no-console
+      console.error(error)
     }
 
     // if the bundler estimation fails, add a nonFatalError so we can react to

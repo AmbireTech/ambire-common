@@ -1481,7 +1481,6 @@ describe('estimate', () => {
     expect(res.ambire instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation
     expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
-    expect(res.bundler).toBe(null)
   })
 
   it('[v2]:Ethereum | deployed account | should fail with singletor deployer as inner contracts have already been deployed once', async () => {

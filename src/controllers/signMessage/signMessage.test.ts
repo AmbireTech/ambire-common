@@ -127,7 +127,7 @@ describe('SignMessageController', () => {
         providersCtrl.removeProvider(id)
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
     providersCtrl.providers = providers
 
     accountsCtrl = new AccountsController(

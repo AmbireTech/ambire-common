@@ -82,7 +82,7 @@ const prepareTest = async () => {
       providersCtrl.removeProvider(id)
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 
   providersCtrl.providers = Object.fromEntries(
     networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
