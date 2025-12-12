@@ -299,7 +299,8 @@ const isNetworkError = (error: any): boolean => {
     'etimedout',
     'socket hang up',
     'request timeout',
-    'failed to fetch'
+    'failed to fetch',
+    'networkerror'
   ]
 
   // Common network error codes
