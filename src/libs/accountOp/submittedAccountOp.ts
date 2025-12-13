@@ -49,6 +49,7 @@ export interface SubmittedAccountOp extends AccountOp {
   timestamp: number
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
+  blockNumber?: number
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {

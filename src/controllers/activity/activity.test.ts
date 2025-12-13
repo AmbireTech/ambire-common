@@ -132,6 +132,9 @@ let networksCtrl: INetworksController
 const storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
 
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
+
 const prepareTest = async () => {
   const controller = new ActivityController(
     storageCtrl,
@@ -142,6 +145,7 @@ const prepareTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    uiCtrl,
     () => Promise.resolve()
   )
 
@@ -166,6 +170,7 @@ const prepareSignedMessagesTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    uiCtrl,
     () => Promise.resolve()
   )
 
@@ -198,8 +203,6 @@ describe('Activity Controller ', () => {
     })
     providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
     const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -487,7 +490,13 @@ describe('Activity Controller ', () => {
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
       expect(controller.accountsOps[sessionId]!.result).toEqual({
-        items: [{ ...accountOp, status: 'success' }], //  we expect success here
+        items: [
+          {
+            ...accountOp,
+            status: 'success',
+            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber
+          }
+        ], //  we expect success here
         itemsTotal: 1,
         currentPage: 0,
         maxPages: 1
@@ -533,7 +542,13 @@ describe('Activity Controller ', () => {
       const controllerAccountsOps = controller.accountsOps
 
       expect(controllerAccountsOps[sessionId]!.result).toEqual({
-        items: [{ ...accountOp, status: 'failure' }], // we expect failure here
+        items: [
+          {
+            ...accountOp,
+            status: 'failure',
+            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber
+          }
+        ], // we expect failure here
         itemsTotal: 1,
         currentPage: 0,
         maxPages: 1
@@ -910,6 +925,7 @@ describe('Activity Controller ', () => {
       providersCtrl,
       networksCtrl,
       portfolioCtrl,
+      uiCtrl,
       () => Promise.resolve()
     )
 
