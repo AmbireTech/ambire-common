@@ -85,6 +85,9 @@ export async function relayerCall(
   headers: any = null,
   timeoutMs: number = 20000
 ): Promise<any> {
+  if (!this.fetch) {
+    console.error('No fetch available for relayerCall. Called with', path)
+  }
   const res = await relayerCallUncaught(
     this.url + path,
     this.fetch,

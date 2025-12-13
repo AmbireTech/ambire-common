@@ -89,9 +89,7 @@ const prepareTest = async (
     keystore,
     () => {},
     () => {},
-    () => {},
-    relayerUrl,
-    global.fetch as any
+    () => {}
   )
 
   await networksCtrl.initialLoadPromise
