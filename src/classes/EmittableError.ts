@@ -23,6 +23,7 @@ export default class EmittableError extends Error {
 
     if (!errorRef.error) {
       this.error = new Error(errorRef.message)
+      Error.captureStackTrace(this.error, EmittableError)
     } else {
       this.error = errorRef.error
     }
