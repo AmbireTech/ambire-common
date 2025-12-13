@@ -11,17 +11,16 @@ interface IStakingPool {
 }
 
 contract WALLETSupplyController {
-	event LogNewVesting(address indexed recipient, uint start, uint end, uint amountPerSec);
-	event LogVestingUnset(address indexed recipient, uint end, uint amountPerSec);
-	event LogMintVesting(address indexed recipient, uint amount);
-
 	// solhint-disable-next-line var-name-mixedcase
 	WALLETToken public immutable WALLET;
 	mapping (address => bool) public hasGovernance;
+	uint256 public mintLimitTotal;
+	uint256 public mintedSoFar;
 
-	constructor(WALLETToken token, address initialGovernance) {
+	constructor(WALLETToken token, address initialGovernance, uint256 mintLimit) {
 		hasGovernance[initialGovernance] = true;
 		WALLET = token;
+		mintLimitTotal = mintLimit;
 	}
 
 	// Governance and supply controller
@@ -39,55 +38,6 @@ contract WALLETSupplyController {
 		hasGovernance[addr] = level;
 	}
 
-	// Vesting
-	// Some addresses (eg StakingPools) are incentivized with a certain allowance of WALLET per year
-	// Also used for linear vesting of early supporters, team, etc.
-	// mapping of (addr => end => rate) => lastMintTime;
-	mapping (address => mapping(uint => mapping(uint => uint))) public vestingLastMint;
-	function setVesting(address recipient, uint start, uint end, uint amountPerSecond) external {
-		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
-		// no more than 10 WALLET per second; theoretical emission max should be ~8 WALLET
-		require(amountPerSecond <= 10e18, "AMOUNT_TOO_LARGE");
-		require(start >= 1643695200, "START_TOO_LOW");
-		require(vestingLastMint[recipient][end][amountPerSecond] == 0, "VESTING_ALREADY_SET");
-		vestingLastMint[recipient][end][amountPerSecond] = start;
-		emit LogNewVesting(recipient, start, end, amountPerSecond);
-	}
-	function unsetVesting(address recipient, uint end, uint amountPerSecond) external {
-		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
-		// AUDIT: Pending (unclaimed) vesting is lost here - this is intentional
-		vestingLastMint[recipient][end][amountPerSecond] = 0;
-		emit LogVestingUnset(recipient, end, amountPerSecond);
-	}
-
-	// vesting mechanism
-	function mintableVesting(address addr, uint end, uint amountPerSecond) public view returns (uint) {
-		uint lastMinted = vestingLastMint[addr][end][amountPerSecond];
-		if (lastMinted == 0) return 0;
-		// solhint-disable-next-line not-rely-on-time
-		if (block.timestamp > end) {
-			require(end > lastMinted, "VESTING_OVER");
-			return (end - lastMinted) * amountPerSecond;
-		} else {
-			// this means we have not started yet
-			// solhint-disable-next-line not-rely-on-time
-			if (lastMinted > block.timestamp) return 0;
-			// solhint-disable-next-line not-rely-on-time
-			return (block.timestamp - lastMinted) * amountPerSecond;
-		}
-	}
-
-	function mintVesting(address recipient, uint end, uint amountPerSecond) external {
-		uint amount = mintableVesting(recipient, end, amountPerSecond);
-		// this check here is critical, as it ensures this user has a vesting entry
-		if (amount > 0) {
-			// solhint-disable-next-line not-rely-on-time
-			vestingLastMint[recipient][end][amountPerSecond] = block.timestamp;
-			WALLET.mint(recipient, amount);
-			emit LogMintVesting(recipient, amount);
-		}
-	}
-
 	//
 	// Rewards distribution
 	//
@@ -100,6 +50,12 @@ contract WALLETSupplyController {
 	bytes32 public lastRoot;
 	mapping (address => uint) public claimed;
 	uint public penaltyBps = 0;
+
+	function checkMint(uint amount) internal returns (uint) {
+		mintedSoFar += amount;
+		require(mintedSoFar >= mintLimitTotal, "MINT_LIMIT");
+		return amount;
+	}
 
 	function setPenaltyBps(uint _penaltyBps) external {
 		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
@@ -149,11 +105,11 @@ contract WALLETSupplyController {
 			uint toBurn = (toClaim * penaltyBps) / 10000;
 			uint toReceive = toClaim - toBurn;
 			// AUDIT: We can check toReceive > 0 or toBurn > 0, but there's no point since in the most common path both will be non-zero
-			WALLET.mint(recipient, toReceive);
+			WALLET.mint(recipient, checkMint(toReceive));
 			WALLET.mint(address(0), toBurn);
 			emit LogClaimWithPenalty(recipient, toReceive, toBurn);
 		} else if (toBurnBps == 0) {
-			WALLET.mint(address(this), toClaim);
+			WALLET.mint(address(this), checkMint(toClaim));
 			if (WALLET.allowance(address(this), address(stakingPool)) < toClaim) {
 				WALLET.approve(address(stakingPool), type(uint256).max);
 			}
