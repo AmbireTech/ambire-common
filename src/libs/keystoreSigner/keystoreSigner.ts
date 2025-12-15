@@ -175,4 +175,26 @@ export class KeystoreSigner implements KeystoreSignerInterface {
       ])
     ]) as Hex
   }
+
+  /**
+   * Gets account public encryption key computed from entropy associated with
+   * the specified user account, using the nacl implementation of the
+   * X25519_XSalsa20_Poly1305 algorithm.
+   */
+  getEncryptionPublicKey: KeystoreSignerInterface['getEncryptionPublicKey'] = async () => {
+    const privateKeyHash = keccak256(this.#signer.privateKey)
+
+    // TODO: Prob with external package like 'tweetnacl' (import nacl from 'tweetnacl')
+    // TODO: Check if we can do that with metamask sig util lib, which we have
+    // take first 32 bytes
+    // const curvePrivateKey = nacl.hash(privateKeyHash).slice(0, 32)
+    // clamp for curve25519
+    // curvePrivateKey[0]  &= 248
+    // curvePrivateKey[31] &= 127
+    // curvePrivateKey[31] |= 64
+    // const curvePublicKey = nacl.scalarMult.base(curvePrivateKey)
+    // return curvePublicKey
+
+    return '0xNotImplementedYet'
+  }
 }
