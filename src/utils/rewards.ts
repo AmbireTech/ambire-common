@@ -32,27 +32,27 @@ export const calculateRewardsStats = (
   const seasonLiquidityAverage = liquidityAverage / numberOfWeeksSinceStartOfSeason
   const seasonStkWalletBalanceAverage = stkWalletBalanceAverage / numberOfWeeksSinceStartOfSeason
 
-  const balanceScore = Math.round(seasonAverageBalance / 1000)
-  const stkWALLETScore = Math.round((seasonStkWalletBalanceAverage / 1000) * 20)
-  const swapVolumeScore = Math.round((swapVolume / 2000) * 10)
-  const liquidityScore = Math.round((seasonLiquidityAverage / 1000) * 30)
+  const balanceScore = Math.floor(seasonAverageBalance / 1000)
+  const stkWALLETScore = Math.floor((seasonStkWalletBalanceAverage / 1000) * 20)
+  const swapVolumeScore = Math.floor(swapVolume / 2000)
+  const liquidityScore = Math.floor((seasonLiquidityAverage / 1000) * 30)
   const governanceWeight = governanceVotes.reduce((acc, vote) => {
     const weight = vote.weight * vote.walletPrice
 
     return acc + weight
   }, 0)
-  const governanceScore = Math.round(governanceWeight / 2000)
+  const governanceScore = Math.floor(governanceWeight / 2000)
   const totalMultiplier =
     projectedRewardsResult.multiplier === 1 ? 1 : 1.06 ** projectedRewardsResult.multiplier
-  const totalScore = Math.round(
+  const totalScore = Math.floor(
     (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
       totalMultiplier
   )
 
-  const estimatedRewardsUSD = Math.round(
+  const estimatedRewardsUSD = Math.floor(
     (totalScore / (pointsOfOtherUsers + totalScore)) * poolSize
   )
-  const estimatedRewards = Math.round(estimatedRewardsUSD / walletOrStkWalletTokenPrice)
+  const estimatedRewards = Math.floor(estimatedRewardsUSD / walletOrStkWalletTokenPrice)
 
   return {
     balanceScore,
@@ -99,7 +99,7 @@ export const getProjectedRewardsStatsAndToken = (
   let estimatedRewardsBothSeasons = data.estimatedRewards
 
   if (result.frozenRewardSeason1) {
-    estimatedRewardsBothSeasons += Math.round(result.frozenRewardSeason1)
+    estimatedRewardsBothSeasons += Math.floor(result.frozenRewardSeason1)
   }
 
   return {
