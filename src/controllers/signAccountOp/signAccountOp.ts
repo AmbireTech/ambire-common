@@ -1224,6 +1224,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     super.destroy()
     this.estimation.destroy()
     this.gasPrice.destroy()
+    this.#hwCleanup()
     this.gasPrices = undefined
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
@@ -2000,6 +2001,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // by changing the status to InProgress. Check update() for more info
     this.status = { type: SigningStatus.InProgress }
 
+    this.#hwCleanup()
+
     if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
@@ -2650,6 +2653,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
 
     await this.signAndBroadcastPromise
+  }
+
+  #hwCleanup() {
+    const paidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType
+    const uniqueSigningKeys = [...new Set([this.accountOp.signingKeyType, paidByKeyType])]
+
+    // Call the cleanup method for each unique signing key type
+    uniqueSigningKeys.forEach((keyType) => {
+      if (!keyType || keyType === 'internal') return
+
+      this.#externalSignerControllers[keyType]?.signingCleanup?.()
+    })
   }
 
   get isSignInProgress() {

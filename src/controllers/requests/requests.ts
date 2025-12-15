@@ -1,12 +1,6 @@
-import {
-  OnBroadcastFailed,
-  OnBroadcastSuccess,
-  SignAccountOpController
-} from 'controllers/signAccountOp/signAccountOp'
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
-import { getAccountOpsForSimulation } from 'libs/main/main'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
@@ -51,6 +45,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import { getAccountOpBanners, getDappUserRequestsBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
+import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
@@ -74,6 +69,11 @@ import {
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import {
+  OnBroadcastFailed,
+  OnBroadcastSuccess,
+  SignAccountOpController
+} from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -135,8 +135,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #getDapp: (id: string) => Promise<Dapp | undefined>
 
   #getMainStatuses: () => StatusesWithCustom
-
-  #destroySignAccountOp: () => void
 
   #updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
 
@@ -208,7 +206,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ui,
     autoLogin,
     getDapp,
-    destroySignAccountOp,
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
     guardHWSigning,
@@ -239,7 +236,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ui: IUiController
     autoLogin: IAutoLoginController
     getDapp: (id: string) => Promise<Dapp | undefined>
-    destroySignAccountOp: () => void
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
@@ -268,7 +264,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#autoLogin = autoLogin
     this.#getDapp = getDapp
     this.#getMainStatuses = getMainStatuses
-    this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
     this.#guardHWSigning = guardHWSigning
@@ -365,8 +360,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       })
     })
 
-    const signAccountOpController = this.#getSignAccountOp()
-    const signStatus = this.#getMainStatuses().signAndBroadcastAccountOp
     let hasTxInProgressErrorShown = false
 
     // eslint-disable-next-line no-restricted-syntax
@@ -381,6 +374,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       if (kind === 'calls') {
+        const accountOpRequest = this.userRequests.find(
+          (r) => r.kind === 'calls' && r.id === `${meta.accountAddr}-${meta.chainId}`
+        ) as CallsUserRequest | undefined
         // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
         //
         // Why? When a transaction is being signed and broadcast, its calls are still unresolved.
@@ -389,11 +385,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // To avoid this, we block new requests until the current process is complete.
         //
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
-        if (
-          signStatus === 'LOADING' &&
-          signAccountOpController?.accountOp.accountAddr === meta.accountAddr &&
-          signAccountOpController?.accountOp.chainId === meta.chainId
-        ) {
+        if (accountOpRequest?.signAccountOp.signAndBroadcastPromise) {
           // Make sure to show the error once
           if (!hasTxInProgressErrorShown) {
             const errorMessage =
@@ -454,18 +446,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         userRequestsToAdd.push(req)
 
-        const signAccountOp = this.#getSignAccountOp()
-        if (signAccountOp) {
-          if (signAccountOp.fromRequestId === req.id) {
-            this.#updateSignAccountOp({ accountOpData: { calls: req.accountOp.calls } })
-          }
-        } else {
-          const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
-          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
-          // It's necessary to continue operating with the token `amountPostSimulation` amount.
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-        }
+        const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
+        // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+        // It's necessary to continue operating with the token `amountPostSimulation` amount.
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
       } else if (req.kind === 'typedMessage' || req.kind === 'message') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
@@ -658,7 +643,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const callsCount = this.userRequests.reduce((acc, request) => {
         if (request.kind !== 'calls') return acc
 
-        return acc + (request.accountOp.calls?.length || 0)
+        return acc + (request.signAccountOp.accountOp.calls?.length || 0)
       }, 0)
 
       if (this.visibleUserRequests.length) {
@@ -697,24 +682,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  async onSignAccountOpUpdate(accountOp: AccountOp) {
-    const { accountAddr, chainId } = accountOp
-
-    const request = this.userRequests.find(
-      (r) => r.kind === 'calls' && r.id === `${accountAddr}-${chainId}`
-    ) as CallsUserRequest | undefined
-
-    if (!request) return
-    // The RequestsController is responsible for managing the calls array of each request.
-    // When a signAccountOp update arrives, only the *non-call* fields of accountOp should
-    // be applied to the existing userRequest. The calls themselves must remain unchanged
-    // and continue to be managed exclusively by the controller.
-    const { calls, ...rest } = accountOp
-
-    Object.assign(request.accountOp, rest)
-    this.emitUpdate()
-  }
-
   async rejectCalls({
     callIds = [],
     activeRouteIds = [],
@@ -727,35 +694,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!callIds.length && !activeRouteIds.length) return
 
     const findRequestByCall = (predicate: (c: Call) => boolean) =>
-      this.userRequests.find((r) => r.kind === 'calls' && r.accountOp.calls.some(predicate)) as
-        | CallsUserRequest
-        | undefined
+      this.userRequests.find(
+        (r) => r.kind === 'calls' && r.signAccountOp.accountOp.calls.some(predicate)
+      ) as CallsUserRequest | undefined
 
     const rejectAndCleanup = async (request: CallsUserRequest, callIdsToRemove: Call['id'][]) => {
-      request.accountOp.calls = request.accountOp.calls.filter((c) => {
-        const shouldRemove = callIdsToRemove.some((id) => id === c.id)
+      request.signAccountOp.update({
+        accountOpData: {
+          calls: request.signAccountOp.accountOp.calls.filter((c) => {
+            const shouldRemove = callIdsToRemove.some((id) => id === c.id)
 
-        if (shouldRemove) {
-          if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
+            if (shouldRemove) {
+              if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
 
-          if (c.dappPromiseId) {
-            request.dappPromises
-              .find((p) => p.id === c.dappPromiseId)
-              ?.reject(ethErrors.provider.userRejectedRequest<any>(errorMessage))
-            request.dappPromises = request.dappPromises.filter((p) => p.id !== c.dappPromiseId)
-          }
+              if (c.dappPromiseId) {
+                request.dappPromises
+                  .find((p) => p.id === c.dappPromiseId)
+                  ?.reject(ethErrors.provider.userRejectedRequest<any>(errorMessage))
+                request.dappPromises = request.dappPromises.filter((p) => p.id !== c.dappPromiseId)
+              }
+            }
+
+            return !shouldRemove
+          })
         }
-
-        return !shouldRemove
       })
 
-      const signAccountOp = this.#getSignAccountOp()
-
-      if (signAccountOp && signAccountOp.fromRequestId === request.id) {
-        signAccountOp.update({ accountOpData: { calls: request.accountOp.calls } })
-      }
-
-      if (!request.accountOp.calls.length) {
+      if (!request.signAccountOp.accountOp.calls.length) {
         await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
           shouldOpenNextRequest: true
         })
@@ -770,7 +735,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // eslint-disable-next-line no-continue
       if (!request) continue
 
-      const call = request.accountOp.calls.find((c) => c.id === callId)
+      const call = request.signAccountOp.accountOp.calls.find((c) => c.id === callId)
 
       // eslint-disable-next-line no-continue
       if (!call) continue
@@ -792,7 +757,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // eslint-disable-next-line no-continue
       if (!request) continue
 
-      const callIdsToRemove = request.accountOp.calls
+      const callIdsToRemove = request.signAccountOp.accountOp.calls
         .filter((c) => c.activeRouteId === activeRouteId)
         .map((c) => c.id)
         .filter(Boolean) as string[]
@@ -838,20 +803,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
           )
 
-        if (shouldUpdateAccount)
+        if (shouldUpdateAccount) {
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
+        }
 
         if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
-          req.accountOp.calls.forEach((c) => {
+          req.signAccountOp.accountOp.calls.forEach((c) => {
             if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
           })
         }
 
-        const signAccountOp = this.#getSignAccountOp()
-
-        if (signAccountOp && signAccountOp.fromRequestId === req.id) {
-          this.#destroySignAccountOp()
-        }
+        req.signAccountOp.destroy()
         return
       }
       if (kind === 'switchAccount') {
@@ -943,8 +905,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'calls') {
       const { userRequestParams, ...rest } = params
-      const userRequest = await this.#createCallsUserRequest(userRequestParams)
-      await this.addUserRequests([userRequest], { ...rest })
+      const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
+      if (userRequest) await this.addUserRequests([userRequest], { ...rest })
     }
 
     if (type === 'transferRequest') {
@@ -1047,16 +1009,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].version ?? '1.0.0'
         : undefined
 
-      userRequest = await this.#createCallsUserRequest({
-        calls,
-        meta: {
-          accountAddr,
-          chainId: network.chainId,
-          walletSendCallsVersion,
-          paymasterService
-        },
-        dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }]
-      })
+      userRequest =
+        (await this.#createOrUpdateCallsUserRequest({
+          calls,
+          meta: {
+            accountAddr,
+            chainId: network.chainId,
+            walletSendCallsVersion,
+            paymasterService
+          },
+          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }]
+        })) ?? null
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -1340,8 +1303,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createCallsUserRequest({ ...requestParams, dappPromises: [] })
-    await this.addUserRequests([userRequest], { executionType, position: 'last' })
+    const userRequest = await this.#createOrUpdateCallsUserRequest({
+      ...requestParams,
+      dappPromises: []
+    })
+    if (userRequest) await this.addUserRequests([userRequest], { executionType, position: 'last' })
   }
 
   async #buildTransferUserRequest({
@@ -1406,8 +1372,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createCallsUserRequest(callsRequestParams)
-    await this.addUserRequests([userRequest], { position: 'last', executionType })
+    const userRequest = await this.#createOrUpdateCallsUserRequest(callsRequestParams)
+    if (userRequest) await this.addUserRequests([userRequest], { position: 'last', executionType })
     this.#transfer.resetForm() // reset the transfer form after adding a req
   }
 
@@ -1473,11 +1439,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
 
-        const userRequest = await this.#createCallsUserRequest(swapAndBridgeRequestParams)
-        await this.addUserRequests([userRequest], {
-          position: 'last',
-          executionType: openActionWindow ? 'open-request-window' : 'queue'
-        })
+        const userRequest = await this.#createOrUpdateCallsUserRequest(swapAndBridgeRequestParams)
+        if (userRequest) {
+          await this.addUserRequests([userRequest], {
+            position: 'last',
+            executionType: openActionWindow ? 'open-request-window' : 'queue'
+          })
+        }
 
         if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           this.#swapAndBridge.addActiveRoute({
@@ -1516,8 +1484,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       selectedToken: token,
       claimableRewardsData
     })
-    const userRequest = await this.#createCallsUserRequest(userRequestParams)
-    await this.addUserRequests([userRequest])
+    const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
+    if (userRequest) await this.addUserRequests([userRequest])
   }
 
   async #buildMintVestingUserRequest({ token }: { token: TokenResult }) {
@@ -1533,8 +1501,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       selectedToken: token,
       addrVestingData
     })
-    const userRequest = await this.#createCallsUserRequest(userRequestParams)
-    await this.addUserRequests([userRequest])
+    const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
+    if (userRequest) await this.addUserRequests([userRequest])
   }
 
   #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
@@ -1790,7 +1758,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   removeAccountData(address: Account['addr']) {
     this.userRequests = this.userRequests.filter((r) => {
       if (r.kind === 'calls') {
-        return r.accountOp.accountAddr !== address
+        return r.signAccountOp.accountOp.accountAddr !== address
       }
       if (
         r.kind === 'message' ||

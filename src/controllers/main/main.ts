@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
-import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import {
@@ -40,7 +39,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { ISignAccountOpController, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
+import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
@@ -48,7 +47,7 @@ import { ITransactionManagerController } from '../../interfaces/transactionManag
 import { ITransferController } from '../../interfaces/transfer'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '../../interfaces/userRequest'
-import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount } from '../../libs/account/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
@@ -57,7 +56,6 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
-import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 /* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
@@ -89,7 +87,7 @@ import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpType } from '../signAccountOp/helper'
-import { OnboardingSuccessProps, SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { OnboardingSuccessProps } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
@@ -477,7 +475,6 @@ export class MainController extends EventEmitter implements IMainController {
         return this.dapps.getDapp(id)
       },
       getMainStatuses: () => this.statuses,
-      destroySignAccountOp: this.destroySignAccOp.bind(this),
       updateSelectedAccountPortfolio: async (networks) => {
         await this.updateSelectedAccountPortfolio({ networks })
       },
@@ -714,89 +711,6 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
   }
 
-  initSignAccOp(requestId: CallsUserRequest['id']): null | void {
-    const callsRequest = this.requests.userRequests.find((r) => r.id === requestId)
-    if (!callsRequest || callsRequest.kind !== 'calls') {
-      this.signAccOpInitError =
-        'We cannot initiate the signing process because no transaction has been found for the specified account and network.'
-      return null
-    }
-
-    const { accountOp } = callsRequest
-
-    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
-
-    if (
-      !this.selectedAccount.account ||
-      this.selectedAccount.account.addr !== accountOp.accountAddr
-    ) {
-      this.signAccOpInitError =
-        'Attempting to initialize an accountOp for an account other than the currently selected one.'
-      return null
-    }
-
-    if (!network) {
-      this.signAccOpInitError =
-        'We cannot initiate the signing process as we are unable to locate the specified network.'
-      return null
-    }
-
-    // on init, set the accountOp nonce to the latest one we know
-    // it could happen that the user inits a userRequest with an old
-    // accountState and therefore caching the old nonce in the accountOp.
-    // we make sure the latest nonce is set when initing signAccountOp
-    const state =
-      this.accounts.accountStates?.[accountOp.accountAddr]?.[accountOp.chainId.toString()]
-    if (state) accountOp.nonce = state.nonce
-
-    this.signAccOpInitError = null
-
-    // if there's no signAccountOp OR
-    // there is but there's a new requestId requested, rebuild it
-    if (!this.signAccountOp || this.signAccountOp.fromRequestId !== requestId) {
-      this.destroySignAccOp()
-      this.signAccountOp = new SignAccountOpController({
-        callRelayer: this.callRelayer,
-        accounts: this.accounts,
-        networks: this.networks,
-        keystore: this.keystore,
-        portfolio: this.portfolio,
-        externalSignerControllers: this.#externalSignerControllers,
-        activity: this.activity,
-        account: this.selectedAccount.account,
-        network,
-        provider: this.providers.providers[network.chainId.toString()],
-        phishing: this.phishing,
-        fromRequestId: requestId,
-        accountOp: structuredClone(accountOp),
-        isSignRequestStillActive: () => {
-          return this.isSignRequestStillActive
-        },
-        shouldSimulate: true,
-        onAccountOpUpdate: (updatedAccountOp: AccountOp) => {
-          this.requests.onSignAccountOpUpdate(updatedAccountOp)
-        },
-        traceCall: (ctrl: ISignAccountOpController) => {
-          this.traceCall(ctrl)
-        },
-        onBroadcastSuccess: async (props) => {
-          const { submittedAccountOp, fromRequestId } = props
-          this.portfolio.markSimulationAsBroadcasted(
-            submittedAccountOp.accountAddr,
-            submittedAccountOp.chainId
-          )
-          await this.#commonHandlerForBroadcastSuccess(props)
-          // resolve dapp requests, open benzin and etc only if the main sign accountOp
-          this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
-          this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
-        },
-        onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-      })
-    }
-
-    this.forceEmitUpdate()
-  }
-
   async #commonHandlerForBroadcastSuccess({
     submittedAccountOp,
     accountOp,
@@ -945,48 +859,6 @@ export class MainController extends EventEmitter implements IMainController {
         )
       }
     })
-
-    this.emitUpdate()
-  }
-
-  #abortHWTransactionSign(signAccountOp: ISignAccountOpController) {
-    if (!signAccountOp) return
-
-    const paidByKeyType = this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType
-    const isAwaitingHWSignature =
-      signAccountOp.accountOp.signingKeyType !== 'internal' &&
-      this.statuses.signAndBroadcastAccountOp === 'LOADING'
-
-    // Reset these flags only if we were awaiting a HW signature
-    // to broadcast a transaction.
-    // If the user is using a hot wallet we can sign the transaction immediately
-    // and once its signed there is no way to cancel the broadcast. Once the user
-    // On the other hand HWs can be in 'SIGNING' or 'BROADCASTING' state
-    // and be able to 'cancel' the broadcast.
-    if (isAwaitingHWSignature) {
-      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-    }
-
-    const uniqueSigningKeys = [...new Set([signAccountOp.accountOp.signingKeyType, paidByKeyType])]
-
-    // Call the cleanup method for each unique signing key type
-    uniqueSigningKeys.forEach((keyType) => {
-      if (!keyType || keyType === 'internal') return
-
-      this.#externalSignerControllers[keyType]?.signingCleanup?.()
-    })
-  }
-
-  destroySignAccOp() {
-    if (!this.signAccountOp) return
-
-    this.#abortHWTransactionSign(this.signAccountOp)
-    this.signAccountOp.destroy()
-    this.signAccountOp = null
-    this.signAccOpInitError = null
-
-    // NOTE: no need to update the portfolio here as an update is
-    // fired upon removeUserRequest
 
     this.emitUpdate()
   }
@@ -1520,27 +1392,11 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
-  async rejectAccountOpAction(
-    err: string,
-    requestId: CallsUserRequest['id'],
-    shouldOpenNextRequest: boolean
-  ) {
-    const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
-    if (!accountOpRequest) return
-
-    const { id } = accountOpRequest as CallsUserRequest
-
-    if (this.signAccountOp && this.signAccountOp.fromRequestId === id) this.destroySignAccOp()
-    await this.requests.rejectUserRequests(err, [requestId] as string[], { shouldOpenNextRequest })
-
-    this.emitUpdate()
-  }
-
   onOneClickSwapClose() {
-    const signAccountOp = this.swapAndBridge.signAccountOpController
-
     // Always unload the screen when the request window is closed
     this.swapAndBridge.unloadScreen('request-window', true)
+
+    const signAccountOp = this.swapAndBridge.signAccountOpController
 
     if (!signAccountOp) return
 
@@ -1549,27 +1405,21 @@ export class MainController extends EventEmitter implements IMainController {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    this.#abortHWTransactionSign(signAccountOp)
-
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio({
-      networks: network ? [network] : undefined
-    })
+    this.updateSelectedAccountPortfolio({ networks: network ? [network] : undefined })
     this.emitUpdate()
   }
 
   onOneClickTransferClose() {
-    const signAccountOp = this.transfer.signAccountOpController
-
     // Always unload the screen when the request window is closed
     this.transfer.unloadScreen(true)
 
-    if (!signAccountOp) return
+    const signAccountOp = this.transfer.signAccountOpController
 
-    this.#abortHWTransactionSign(signAccountOp)
+    if (!signAccountOp) return
 
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
