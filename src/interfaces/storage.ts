@@ -11,7 +11,6 @@ import { ControllerInterface } from './controller'
 import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network } from './network'
-import { BlacklistedStatuses } from './phishing'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 export type IStorageController = ControllerInterface<
