@@ -1730,8 +1730,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   // TODO: Prob move somewhere else?
-  getEncryptionPublicKey = async ({ signingKeyAddr, signingKeyType }) => {
-    const signer = await this.keystore.getSigner(signingKeyAddr, signingKeyType)
+  handleGetEncryptionPublicKey = async ({
+    keyAddr,
+    keyType
+  }: {
+    keyAddr: Key['addr']
+    keyType: Key['type']
+  }) => {
+    const signer = await this.keystore.getSigner(keyAddr, keyType)
 
     if (!signer.getEncryptionPublicKey) throw new Error('not supported')
 

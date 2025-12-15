@@ -13,6 +13,7 @@ import {
 import { ecdsaSign } from 'secp256k1'
 
 import {
+  getEncryptionPublicKey,
   signTypedData as signTypedDataWithMetaMaskSigUtil,
   SignTypedDataVersion
 } from '@metamask/eth-sig-util'
@@ -20,6 +21,7 @@ import {
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { TypedMessageUserRequest } from '../../interfaces/userRequest'
+import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getAuthorizationHash
@@ -182,19 +184,10 @@ export class KeystoreSigner implements KeystoreSignerInterface {
    * X25519_XSalsa20_Poly1305 algorithm.
    */
   getEncryptionPublicKey: KeystoreSignerInterface['getEncryptionPublicKey'] = async () => {
-    const privateKeyHash = keccak256(this.#signer.privateKey)
+    const encryptionPublicKeyBase64 = getEncryptionPublicKey(
+      stripHexPrefix(this.#signer.privateKey)
+    )
 
-    // TODO: Prob with external package like 'tweetnacl' (import nacl from 'tweetnacl')
-    // TODO: Check if we can do that with metamask sig util lib, which we have
-    // take first 32 bytes
-    // const curvePrivateKey = nacl.hash(privateKeyHash).slice(0, 32)
-    // clamp for curve25519
-    // curvePrivateKey[0]  &= 248
-    // curvePrivateKey[31] &= 127
-    // curvePrivateKey[31] |= 64
-    // const curvePublicKey = nacl.scalarMult.base(curvePrivateKey)
-    // return curvePublicKey
-
-    return '0xNotImplementedYet'
+    return encryptionPublicKeyBase64
   }
 }
