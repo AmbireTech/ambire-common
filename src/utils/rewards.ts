@@ -34,7 +34,7 @@ export const calculateRewardsStats = (
 
   const balanceScore = Math.round(seasonAverageBalance / 1000)
   const stkWALLETScore = Math.round((seasonStkWalletBalanceAverage / 1000) * 20)
-  const swapVolumeScore = Math.round((swapVolume / 1000) * 10)
+  const swapVolumeScore = Math.round((swapVolume / 2000) * 10)
   const liquidityScore = Math.round((seasonLiquidityAverage / 1000) * 30)
   const governanceWeight = governanceVotes.reduce((acc, vote) => {
     const weight = vote.weight * vote.walletPrice
