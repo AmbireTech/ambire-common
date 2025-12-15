@@ -150,6 +150,9 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     let latestUpdatedAt: number | undefined
 
     const accountState = Object.values(this.#state[accountAddr])
+
+    if (accountState.some((n) => !n.updatedAt)) return false
+
     // eslint-disable-next-line no-restricted-syntax
     for (const network of accountState) {
       if (typeof network.updatedAt === 'number') {
@@ -575,7 +578,9 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
           const value = getAssetValue(asset.amount, asset.decimals, priceIn) || 0
 
-          positionInUSD += value
+          if (!position.additionalData.positionInUSD) {
+            positionInUSD += value
+          }
 
           return { ...asset, value, priceIn: priceIn[0] }
         })
@@ -664,8 +669,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     }, {} as AccountState)
   }
 
-  getNetworksWithPositions(accountAddr: string) {
-    return this.#networksWithPositionsByAccounts[accountAddr] || []
+  getNetworksWithPositions(accountAddr: string): NetworksWithPositionsByAccounts[string] {
+    return this.#networksWithPositionsByAccounts[accountAddr] || {}
   }
 
   removeAccountData(accountAddr: string) {

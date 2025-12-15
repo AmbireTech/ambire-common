@@ -86,11 +86,11 @@ const account: Account = {
 }
 
 const messageToSign: Message = {
-  fromActionId: 1,
+  fromRequestId: 1,
   content: { kind: 'message', message: '0x74657374' },
   accountAddr: account.addr,
-  signature: null,
-  chainId: 1n
+  chainId: 1n,
+  signature: null
 }
 
 describe('SignMessageController', () => {
@@ -127,7 +127,7 @@ describe('SignMessageController', () => {
         providersCtrl.removeProvider(id)
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
     providersCtrl.providers = providers
 
     accountsCtrl = new AccountsController(
@@ -219,9 +219,7 @@ describe('SignMessageController', () => {
     await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
-    await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest', [
-      messageToSign.chainId
-    ])
+    await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest')
 
     await signMessageController.sign()
 

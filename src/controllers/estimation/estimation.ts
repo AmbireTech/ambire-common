@@ -12,7 +12,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -53,6 +53,12 @@ export class EstimationController extends EventEmitter {
   #notFatalBundlerError?: Error
 
   #activity: IActivityController
+
+  /**
+   * Used to prevent slow estimations for a past accountOp overwriting
+   * the latest estimation results
+   */
+  private lastAccountOpId: string | null = null
 
   constructor(
     keystore: IKeystoreController,
@@ -100,7 +106,7 @@ export class EstimationController extends EventEmitter {
     )
   }
 
-  async estimate(op: AccountOp) {
+  async estimate(op: AccountOpWithId) {
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 
@@ -110,6 +116,16 @@ export class EstimationController extends EventEmitter {
       op.accountAddr,
       op.chainId
     )
+    if (!accountState) {
+      this.error = new Error(
+        'During the preparation step, required transaction information was found missing (account state). Please try again later or contact support.'
+      )
+      this.status = EstimationStatus.Error
+      this.hasEstimated = true
+      this.emitUpdate()
+      return
+    }
+
     const baseAcc = getBaseAccount(
       account,
       accountState,
@@ -165,6 +181,8 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
+    this.lastAccountOpId = op.id
+
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -174,17 +192,29 @@ export class EstimationController extends EventEmitter {
       feeTokens,
       nativeToCheck,
       this.#bundlerSwitcher,
-      (e: ErrorRef) => {
-        if (!this) return
-        this.estimationRetryError = e
-        this.emitUpdate()
-      },
       (this.#activity.broadcastedButNotConfirmed[account.addr] || []).find(
         (accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation
       )
-    ).catch((e) => e)
+    ).catch((e) => {
+      console.error(e)
+      return e
+    })
 
-    const isSuccess = !(estimation instanceof Error)
+    // Done to prevent race conditions
+    if (op.id !== this.lastAccountOpId) {
+      const error = new Error(
+        `Estimation race condition prevented. Op id: ${op.id}. Expected: ${this.lastAccountOpId}`
+      )
+
+      this.emitError({
+        message: 'Estimation race condition prevented',
+        error,
+        level: 'silent'
+      })
+      return
+    }
+
+    const isSuccess = !(estimation instanceof Error) && !estimation.criticalError
     if (isSuccess) {
       this.estimation = getEstimationSummary(estimation)
       this.error = null
@@ -195,7 +225,7 @@ export class EstimationController extends EventEmitter {
         estimation.bundler instanceof Error ? estimation.bundler : undefined
     } else {
       this.estimation = null
-      this.error = estimation
+      this.error = estimation instanceof Error ? estimation : estimation.criticalError
       this.status = EstimationStatus.Error
       this.availableFeeOptions = []
     }
@@ -206,8 +236,11 @@ export class EstimationController extends EventEmitter {
       this.estimation &&
       (this.estimation.flags.hasNonceDiscrepancy || this.estimation.flags.has4337NonceDiscrepancy)
     ) {
-      // silenly continuing on error here as the flags are more like app helpers
-      this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.chainId]).catch((e) => e)
+      // continue on error here as the flags are more like app helpers
+      this.#accounts
+        .updateAccountState(op.accountAddr, 'pending', [op.chainId])
+        // eslint-disable-next-line no-console
+        .catch((e) => console.error(e))
     }
 
     this.hasEstimated = true
@@ -293,14 +326,5 @@ export class EstimationController extends EventEmitter {
     }
 
     return errors
-  }
-
-  reset() {
-    this.estimation = null
-    this.error = null
-    this.hasEstimated = false
-    this.status = EstimationStatus.Initial
-    this.estimationRetryError = null
-    this.availableFeeOptions = []
   }
 }

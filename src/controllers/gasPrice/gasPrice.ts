@@ -1,4 +1,4 @@
-import { BUNDLER } from '../../consts/bundlers'
+import { getAvailableBunlders } from '../../services/bundlers/getBundler'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
@@ -6,8 +6,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
-import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
-import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { gasPriceToBundlerFormat, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { GasSpeeds } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
@@ -21,21 +20,13 @@ export class GasPriceController extends EventEmitter {
 
   #baseAccount: BaseAccount
 
-  #bundlerSwitcher: BundlerSwitcher
-
   #getSignAccountOpState: () => {
     estimation: EstimationController
     readyToSign: boolean
     isSignRequestStillActive: Function
   }
 
-  // network => GasRecommendation[]
-  gasPrices: { [key: string]: GasRecommendation[] } = {}
-
-  // network => BundlerGasPrice
-  bundlerGasPrices: { [key: string]: { speeds: GasSpeeds; bundler: BUNDLER } } = {}
-
-  blockGasLimit: bigint | undefined = undefined
+  gasPrices?: GasSpeeds
 
   stopRefetching: boolean = false
 
@@ -43,7 +34,6 @@ export class GasPriceController extends EventEmitter {
     network: Network,
     provider: RPCProvider,
     baseAccount: BaseAccount,
-    bundlerSwitcher: BundlerSwitcher,
     getSignAccountOpState: () => {
       estimation: EstimationController
       readyToSign: boolean
@@ -54,7 +44,6 @@ export class GasPriceController extends EventEmitter {
     this.#network = network
     this.#provider = provider
     this.#baseAccount = baseAccount
-    this.#bundlerSwitcher = bundlerSwitcher
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
@@ -75,75 +64,80 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
-    const bundler = this.#bundlerSwitcher.getBundler()
-
-    const [gasPriceData, bundlerGas] = await Promise.all([
-      getGasPriceRecommendations(this.#provider, this.#network).catch((e) => {
-        const signAccountOpState = this.#getSignAccountOpState()
-        const estimation = signAccountOpState.estimation as EstimationController
-
-        // if the gas price data has been fetched once successfully OR an estimation error
-        // is currently being displayed, do not emit another error
-        if (this.gasPrices[this.#network.chainId.toString()] || estimation.estimationRetryError)
-          return
-
-        const { type } = decodeError(e)
-
-        let message = "We couldn't retrieve the latest network fee information."
-
-        if (type === ErrorType.ConnectivityError) {
-          message = 'Network connection issue prevented us from retrieving the current network fee.'
-        }
-
-        this.emitError({
-          level: emitLevelOnFailure,
-          message,
-          error: new Error(`Failed to fetch gas price on ${this.#network.name}: ${e?.message}`)
+    // give priority to the bundler as it's faster and more accurate
+    // we ask the bundler only when the estimation is not supported by the account
+    // it is counter intuitive but the logic if the account supports the bundler
+    // estimate, it would fetch the gas price from the bundler estimation itself,
+    // therefore not being required here
+    const availableBundlers = getAvailableBunlders(this.#network)
+    if (availableBundlers.length && !this.#baseAccount.supportsBundlerEstimation()) {
+      let timeoutId
+      const bundlerGasPrices = await Promise.race([
+        // Promise.any because we want the first success, ignoring errors
+        // basically, call all the available bundlers on the network for
+        // gas prices and take the results from the quickest one.
+        // Also, limit it to 6s - if slower than that, we should fallback
+        // to our own mechanism
+        Promise.any(availableBundlers.map((bundler) => bundler.fetchGasPrices(this.#network))),
+        new Promise((_resolve, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('bundler gas price fetch fail, request too slow')),
+            6000
+          )
         })
+      ]).catch(() => {
+        console.error('Failed fetching bundler gas prices from the gasPrice lib')
         return null
-      }),
-      // if the account cannot broadcast on the given network using the 4337 model,
-      // we ask for gas prices from the bundler as bundler gas prices tend to be
-      // generally better than our own
-      //
-      // If it can broadcast using 4337, then bundler gas prices will be pulled and
-      // updated in signAccountOp during bundlerEstimate() in estimateBundler.ts
-      !this.#baseAccount.supportsBundlerEstimation()
-        ? Promise.race([
-            bundler.fetchGasPrices(this.#network, () => {}),
-            new Promise((_resolve, reject) => {
-              setTimeout(
-                () => reject(new Error('bundler gas price fetch fail, request too slow')),
-                4000
-              )
-            })
-          ]).catch(() => {
-            // eslint-disable-next-line no-console
-            console.error(
-              `fetchGasPrices for ${bundler.getName()} failed, fallbacking to getGasPriceRecommendations`
-            )
-            return null
-          })
-        : null
-    ])
+      })
+      clearTimeout(timeoutId)
+      if (bundlerGasPrices) {
+        this.gasPrices = bundlerGasPrices as GasSpeeds
 
-    if (gasPriceData) {
-      if (gasPriceData.gasPrice)
-        this.gasPrices[this.#network.chainId.toString()] = gasPriceData.gasPrice
-      this.blockGasLimit = gasPriceData.blockGasLimit
+        this.emitUpdate()
+        this.refetch()
+        return
+      }
     }
-    if (bundlerGas)
-      this.bundlerGasPrices[this.#network.chainId.toString()] = {
-        speeds: bundlerGas as GasSpeeds,
-        bundler: bundler.getName()
+
+    // fallback to our gas price fetch if:
+    // * all bundlers on the networks are not working or there are no bundlers
+    // * we're doing a bundler estimate so we'd have a fallback option
+    const gasPriceData = await getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
+      return !this.stopRefetching
+    }).catch((e) => {
+      const signAccountOpState = this.#getSignAccountOpState()
+      // null because the estimation is destroyed with signAccountOp
+      const estimation = signAccountOpState.estimation as EstimationController | null
+
+      // if the gas price data has been fetched once successfully OR an estimation error
+      // is currently being displayed, do not emit another error
+      if (this.gasPrices || !estimation || estimation.estimationRetryError) return
+
+      const { type } = decodeError(e)
+
+      let message = "We couldn't retrieve the latest network fee information."
+
+      if (type === ErrorType.ConnectivityError) {
+        message = 'Network connection issue prevented us from retrieving the current network fee.'
       }
 
-    this.emitUpdate()
+      this.emitError({
+        level: emitLevelOnFailure,
+        message,
+        error: new Error(`Failed to fetch gas price on ${this.#network.name}: ${e?.message}`)
+      })
+      return null
+    })
 
+    if (gasPriceData && gasPriceData.gasPrice)
+      this.gasPrices = gasPriceToBundlerFormat(gasPriceData.gasPrice)
+
+    this.emitUpdate()
     this.refetch()
   }
 
-  reset() {
+  destroy() {
+    super.destroy()
     this.stopRefetching = true
   }
 }

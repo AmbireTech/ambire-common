@@ -79,13 +79,13 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
 } {
   // get the first BroadcastedButNotConfirmed call if any
   for (let i = 0; i < op.calls.length; i++) {
-    const currentCall = op.calls[i]
+    const currentCall = op.calls[i]!
     if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
       return { call: currentCall, callIndex: i }
   }
 
   // if no BroadcastedButNotConfirmed, get the last one
-  return { call: op.calls[op.calls.length - 1], callIndex: op.calls.length - 1 }
+  return { call: op.calls[op.calls.length - 1]!, callIndex: op.calls.length - 1 }
 }
 
 export async function fetchFrontRanTxnId(

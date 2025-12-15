@@ -43,5 +43,9 @@ jobs:
       - name: JEST Tests 🧑‍🔬
         env:
           SEED: ${{ secrets.SEED }}
+          IS_TESTING: 'true'
           REACT_APP_PIMLICO_API_KEY: ${{ secrets.REACT_APP_PIMLICO_API_KEY }}
+          REACT_APP_CANDIDE_API_KEY: ${{ secrets.REACT_APP_CANDIDE_API_KEY }}
+          REACT_APP_ETHERSPOT_API_KEY: ${{ secrets.REACT_APP_ETHERSPOT_API_KEY }}
+          
         run: npm run jest

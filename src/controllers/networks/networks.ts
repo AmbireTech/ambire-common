@@ -314,8 +314,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
           // If RPC is flagged there might be an issue with the RPC
           // this information will fail to return
           // and we dont want to update lastUpdatedNetworkInfo
-          if (info.flagged) return
           const chainId = network.chainId.toString()
+          if (info.flagged || !this.#networks[chainId]) return
           this.#networks[chainId] = {
             ...this.#networks[chainId],
             ...(info as NetworkInfo),
@@ -397,7 +397,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       has7702: false
     }
 
-    this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]])
+    this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]!])
 
     await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
@@ -429,7 +429,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       ...changedNetwork
     }
 
-    if (!skipUpdate) this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]])
+    if (!skipUpdate) this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]!])
     await this.#storage.set('networks', this.#networks)
 
     const checkRPC = async (
@@ -440,6 +440,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
       } | null
     ) => {
       if (changedNetwork.selectedRpcUrl) {
+        const stringChainId = chainId.toString()
+        if (!this.#networks[stringChainId]) return
+
         if (
           networkToAddOrUpdate?.info &&
           Object.values(networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
@@ -449,8 +452,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
           // eslint-disable-next-line no-param-reassign
           delete (info as any).feeOptions
-          this.#networks[chainId.toString()] = {
-            ...this.#networks[chainId.toString()],
+          this.#networks[stringChainId] = {
+            ...this.#networks[stringChainId],
             ...info,
             ...feeOptions
           }
@@ -465,7 +468,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
         getNetworkInfo(
           this.#fetch,
           changedNetwork.selectedRpcUrl,
-          this.#networks[chainId.toString()].chainId!,
+          this.#networks[chainId.toString()]!.chainId!,
           async (info) => {
             if (Object.values(info).some((prop) => prop === 'LOADING')) {
               return
@@ -475,8 +478,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
             // eslint-disable-next-line no-param-reassign
             delete (info as any).feeOptions
-            this.#networks[chainId.toString()] = {
-              ...this.#networks[chainId.toString()],
+            this.#networks[stringChainId] = {
+              ...(this.#networks[stringChainId] as Network),
               ...(info as NetworkInfo),
               ...feeOptions
             }
@@ -485,7 +488,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
             this.emitUpdate()
           },
-          this.#networks[chainId.toString()]
+          this.#networks[stringChainId]
         )
       }
     }

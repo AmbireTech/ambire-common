@@ -11,7 +11,12 @@ import { networks } from '../../consts/networks'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
-import { UserRequest } from '../../interfaces/userRequest'
+import {
+  BenzinUserRequest,
+  CallsUserRequest,
+  DappConnectRequest,
+  UserRequest
+} from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
@@ -34,7 +39,7 @@ import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { RequestsController } from './requests'
 
-const uiManager = mockUiManager().uiManager
+const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
@@ -92,11 +97,11 @@ const prepareTest = async () => {
       providersCtrl.removeProvider(id)
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   const providers: RPCProviders = {}
   networks.forEach((network) => {
     providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-    providers[network.chainId.toString()].isWorking = true
+    providers[network.chainId.toString()]!.isWorking = true
   })
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
@@ -177,7 +182,8 @@ const prepareTest = async () => {
     providersCtrl,
     phishingCtrl,
     relayerUrl,
-    () => Promise.resolve()
+    () => Promise.resolve(),
+    uiCtrl
   )
 
   const requestsController: IRequestsController = {} as IRequestsController
@@ -200,8 +206,8 @@ const prepareTest = async () => {
     getUserRequests: () => {
       return requestsController?.userRequests || []
     },
-    getVisibleActionsQueue: () => {
-      return requestsController?.actions?.visibleActionsQueue || []
+    getVisibleUserRequests: () => {
+      return requestsController?.visibleUserRequests || []
     },
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {}
@@ -226,10 +232,68 @@ const prepareTest = async () => {
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
       guardHWSigning: () => Promise.resolve(false),
-      onSetCurrentAction: () => {},
+      onSetCurrentUserRequest: () => {},
       autoLogin: autoLoginCtrl
-    })
+    }),
+    selectedAccountCtrl
   }
+}
+
+const createAccountOp = (addr: string, chainId: bigint = 1n) => {
+  return {
+    accountAddr: addr,
+    signingKeyAddr: null,
+    signingKeyType: null,
+    gasLimit: null,
+    gasFeePayment: null,
+    chainId,
+    nonce: 0n, // does not matter when estimating
+    calls: [
+      {
+        id: 'testID',
+        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        value: BigInt(0),
+        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+      }
+    ],
+    signature: null
+  }
+}
+
+const DAPP_CONNECT_REQUEST: DappConnectRequest = {
+  id: 1,
+  kind: 'dappConnect',
+  meta: {},
+  dappPromises: [
+    {
+      id: 'testID',
+      resolve: () => {},
+      reject: () => {},
+      session: MOCK_SESSION,
+      meta: {}
+    }
+  ]
+}
+
+const SIGN_ACCOUNT_OP_REQUEST: CallsUserRequest = {
+  id: 2,
+  kind: 'calls',
+  accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 10n),
+  meta: {
+    accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    isWalletSendCalls: false,
+    chainId: 10n,
+    paymasterService: undefined
+  },
+  dappPromises: [
+    {
+      id: 'testID',
+      resolve: () => {},
+      reject: () => {},
+      session: MOCK_SESSION,
+      meta: {}
+    }
+  ]
 }
 
 describe('RequestsController ', () => {
@@ -245,32 +309,23 @@ describe('RequestsController ', () => {
   test('Add and then remove a user request', async () => {
     const { controller } = await prepareTest()
     const req: UserRequest = {
-      id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      session: new Session(),
+      id: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8-1',
+      kind: 'calls',
+      accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 1n),
       meta: {
-        isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         chainId: 1n
-      }
+      },
+      dappPromises: []
     }
 
     await controller.addUserRequests([req])
-    expect(controller.actions.actionsQueue.length).toBe(1)
-    expect(controller.actions.visibleActionsQueue.length).toBe(1)
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.visibleUserRequests.length).toBe(1)
 
     await controller.removeUserRequests([req.id])
-    expect(controller.actions.actionsQueue.length).toBe(0)
-    expect(controller.actions.visibleActionsQueue.length).toBe(0)
+    expect(controller.userRequests.length).toBe(0)
+    expect(controller.visibleUserRequests.length).toBe(0)
   })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
@@ -283,12 +338,12 @@ describe('RequestsController ', () => {
           params: {},
           session: MOCK_SESSION
         },
-        dappPromise: { resolve: () => {}, reject: () => {}, session: MOCK_SESSION }
+        dappPromise: { id: 'testID', resolve: () => {}, reject: () => {}, session: MOCK_SESSION }
       }
     })
 
     expect(controller.userRequests.length).toBe(1)
-    expect(controller.userRequests[0].action.kind).toBe('dappConnect')
+    expect(controller.userRequests[0]!.kind).toBe('dappConnect')
   })
   test('build transfer request', async () => {
     const { controller } = await prepareTest()
@@ -313,13 +368,13 @@ describe('RequestsController ', () => {
         },
         amount: '1',
         amountInFiat: 100000n,
-        actionExecutionType: 'open-action-window',
+        executionType: 'open-request-window',
         recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }
     })
 
     expect(controller.userRequests.length).toBe(1)
-    expect(controller.userRequests[0].action.kind).toBe('calls')
+    expect(controller.userRequests[0]!.kind).toBe('calls')
   })
   test('resolve user request', async () => {
     const { controller } = await prepareTest()
@@ -329,32 +384,24 @@ describe('RequestsController ', () => {
 
     const req: UserRequest = {
       id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      session: new Session(),
+      kind: 'calls',
+      accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 1n),
       meta: {
-        isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         chainId: 1n
       },
-      dappPromise: { resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION }
+      dappPromises: [
+        { id: 'testID', resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION, meta: {} }
+      ]
     }
 
     await controller.addUserRequests([req])
-    expect(controller.actions.actionsQueue.length).toBe(1)
-    expect(controller.actions.visibleActionsQueue.length).toBe(1)
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.visibleUserRequests.length).toBe(1)
 
     await controller.resolveUserRequest(null, req.id)
     expect(controller.userRequests.length).toBe(0)
-    expect(controller.actions.visibleActionsQueue.length).toBe(0)
+    expect(controller.visibleUserRequests.length).toBe(0)
     expect(resolveMock).toHaveBeenCalled()
     expect(rejectMock).not.toHaveBeenCalled()
   })
@@ -366,33 +413,166 @@ describe('RequestsController ', () => {
 
     const req: UserRequest = {
       id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      session: new Session(),
+      kind: 'calls',
+      accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 1n),
       meta: {
-        isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         chainId: 1n
       },
-      dappPromise: { resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION }
+      dappPromises: [
+        { id: 'testID', resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION, meta: {} }
+      ]
     }
 
     await controller.addUserRequests([req])
-    expect(controller.actions.actionsQueue.length).toBe(1)
-    expect(controller.actions.visibleActionsQueue.length).toBe(1)
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.visibleUserRequests.length).toBe(1)
 
     await controller.rejectUserRequests('User rejected', [req.id])
     expect(controller.userRequests.length).toBe(0)
-    expect(controller.actions.visibleActionsQueue.length).toBe(0)
+    expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
+  })
+  test('add multiple user requests', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+    expect(controller.userRequests.length).toBe(2)
+    expect(controller.visibleUserRequests.length).toBe(2)
+    expect(controller.currentUserRequest).not.toBe(null)
+    expect(controller.currentUserRequest!.kind).toBe(SIGN_ACCOUNT_OP_REQUEST.kind)
+  })
+  test('should set window loaded', async () => {
+    const { controller } = await prepareTest()
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    expect(controller.currentUserRequest).not.toBe(null)
+    controller.setWindowLoaded()
+    expect(controller.requestWindow.loaded).toEqual(true)
+  })
+  test('should reject calls and remove the user request', async () => {
+    const { controller } = await prepareTest()
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+    expect(controller.currentUserRequest).not.toBe(null)
+    expect((controller.currentUserRequest as CallsUserRequest).accountOp.calls.length).toBe(1)
+    await controller.rejectCalls({ callIds: ['testID'] })
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(0)
+  })
+  test('should add request with priority', async () => {
+    const { controller } = await prepareTest()
+    const BENZIN_REQUEST: BenzinUserRequest = {
+      id: 'test',
+      kind: 'benzin',
+      meta: {
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        chainId: 10n,
+        txnId: 'id',
+        userOpHash: 'hash'
+      },
+      dappPromises: []
+    }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.addUserRequests([BENZIN_REQUEST], { position: 'first' })
+    expect(controller.visibleUserRequests[0]).not.toBe(null)
+    expect(controller.visibleUserRequests[0]!.kind).toBe('benzin')
+  })
+  test('should have banners', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+
+    expect(controller.banners).toHaveLength(2)
+  })
+  test('should update visible requests on account change', async () => {
+    const { controller, selectedAccountCtrl } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+
+    expect(controller.visibleUserRequests).toHaveLength(2)
+    await selectedAccountCtrl.setAccount(accounts[0]! as any)
+    expect(controller.visibleUserRequests).toHaveLength(1)
+  })
+  test('should select request by id', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+
+    expect(controller.currentUserRequest).toBe(SIGN_ACCOUNT_OP_REQUEST)
+    await controller.setCurrentUserRequestById(DAPP_CONNECT_REQUEST.id)
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+  })
+  test('should select request by index', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+
+    expect(controller.currentUserRequest).toBe(SIGN_ACCOUNT_OP_REQUEST)
+    await controller.setCurrentUserRequestByIndex(0)
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+  })
+  test('should focus out and then focus on the current request window', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    event.emit('windowFocusChange', 'random-window-id')
+    let emitCounter = 0
+    const finishPromise = new Promise((resolve) => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(controller.requestWindow.windowProps).not.toBe(null)
+        expect(controller.requestWindow.windowProps?.focused).toEqual(false)
+        event.emit('windowFocusChange', getWindowId())
+      }
+      if (emitCounter === 1) {
+        expect(controller.requestWindow.windowProps).not.toBe(null)
+        expect(controller.requestWindow.windowProps?.focused).toEqual(true)
+        resolve(null)
+      }
+    })
+    await finishPromise
+  })
+  test('should close the request window', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+    await controller.closeRequestWindow()
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('removeAccountData', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST], {
+      position: 'last',
+      executionType: 'queue'
+    })
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST], {
+      position: 'last',
+      executionType: 'open-request-window'
+    })
+
+    expect(controller.userRequests.length).toBeGreaterThanOrEqual(2)
+
+    // Remove account data
+    controller.removeAccountData('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+
+    const globalActions = controller.userRequests.filter((a) => !['calls'].includes(a?.kind))
+
+    expect(controller.userRequests).toHaveLength(globalActions.length)
+  })
+  test('should toJSON()', async () => {
+    const { controller } = await prepareTest()
+
+    const json = controller.toJSON()
+    expect(json).toBeDefined()
   })
 })

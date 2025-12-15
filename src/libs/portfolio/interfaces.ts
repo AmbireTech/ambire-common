@@ -11,7 +11,7 @@ export interface GetOptionsSimulation {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
-export type SuspectedType = 'no-latin-symbol' | 'no-latin-name' | 'suspected' | null
+export type SuspectedType = 'suspected' | null
 
 export type TokenResult = {
   symbol: string
@@ -41,10 +41,6 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
 }
 
-export type ProjectedRewardsTokenResult = TokenResult & {
-  userXp: number
-}
-
 export interface CollectionResult extends TokenResult {
   name: string
   collectibles: bigint[]
@@ -54,6 +50,10 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
+/**
+ * Cache for prices, used to avoid redundant price fetches
+ * Map<tokenAddress, [timestamp, prices]>
+ */
 export type PriceCache = Map<string, [number, Price[]]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
@@ -191,8 +191,6 @@ interface Total {
   [currency: string]: number
 }
 
-type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
-
 export type ClaimableRewardsData = {
   addr: string
   fromBalanceClaimable: number
@@ -211,46 +209,94 @@ export type AddrVestingData = {
   end: string
 }
 
-// Create the final type with some properties optional
-export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
-  Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
-    lastSuccessfulUpdate: number
-    total: Total
+type CommonResultProps = Pick<PortfolioLibGetResult, 'tokens' | 'updateStarted'> & {
+  lastSuccessfulUpdate: number
+  total: Total
+}
+
+export type PortfolioNetworkResult = CommonResultProps &
+  Pick<
+    PortfolioLibGetResult,
+    | 'collections'
+    | 'tokenErrors'
+    | 'errors'
+    | 'blockNumber'
+    | 'priceCache'
+    | 'lastExternalApiUpdateData'
+    | 'toBeLearned'
+    | 'feeTokens'
+  >
+
+export type PortfolioRewardsResult = CommonResultProps &
+  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
+    xWalletClaimableBalance?: Pick<TokenResult, 'decimals' | 'address' | 'priceIn' | 'symbol'> & {
+      amount: string
+      chainId: number
+    }
   }
 
-type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
-
-export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
+export type PortfolioGasTankResult = CommonResultProps & {
   gasTankTokens: GasTankTokenResult[]
 }
 
-export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
-  currentSeasonSnapshots: { week: number; balance: number }[]
-  currentWeek: number
-  supportedChainIds: number[]
-  numberOfWeeksSinceStartOfSeason: number
-  totalRewardsPool: number
-  totalWeightNonUser: number
-  userLevel: number
+export type PortfolioProjectedRewardsResult = {
+  weeksWithData: {
+    week: number
+    balance: number
+    liquidityUsd: number
+    stkWalletUsd: number
+  }[]
+  swapVolume: number
+  poolSize: number
+  rank: number
   walletPrice: number
-  apy: number
-  minLvl: number
-  minBalance: number
-  userXp: number
+  pointsOfOtherUsers: number
+  numberOfWeeksSinceStartOfSeason: number
+  multiplier: number
+  weeklyTx: number
+  frozenRewardSeason1: number
+  governanceVotes: {
+    weight: number
+    walletPrice: number
+  }[]
+  supportedChainIds: number[]
 }
 
-export type NetworkState = {
+export type ProjectedRewardsStats = {
+  // Scores
+  balanceScore: number
+  stkWALLETScore: number
+  liquidityScore: number
+  swapVolumeScore: number
+  governanceScore: number
+  // Average
+  averageBalance: number
+  averageLiquidity: number
+  averageStkWalletBalance: number
+  // Other
+  governanceWeight: number
+  swapVolume: number
+  poolSize: number
+  rank: number
+  totalScore: number
+  multiplier: number
+  estimatedRewards: number
+  estimatedRewardsUSD: number
+}
+
+export type PortfolioKeyResult =
+  | PortfolioRewardsResult
+  | PortfolioGasTankResult
+  | PortfolioNetworkResult
+
+export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  result?:
-    | PortfolioNetworkResult
-    | AdditionalPortfolioNetworkResult
-    | PortfolioGasTankResult
-    | PortfolioProjectedRewardsResult
+  result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
@@ -258,7 +304,11 @@ export type NetworkState = {
 }
 
 export type AccountState = {
-  [chainId: string]: NetworkState | undefined
+  rewards?: NetworkState<PortfolioRewardsResult>
+  gasTank?: NetworkState<PortfolioGasTankResult>
+  projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+} & {
+  [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
 
 export type PortfolioControllerState = {

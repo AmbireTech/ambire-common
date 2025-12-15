@@ -84,7 +84,7 @@ let messageTemplate: Message
 describe('typed message tests', () => {
   beforeEach(() => {
     messageTemplate = {
-      fromActionId: 'randomActionId',
+      fromRequestId: 'randomActionId',
       accountAddr: address1,
       chainId: 1n,
       signature: null,
@@ -113,7 +113,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
-    messageTemplate.content.message = typedMessages.erc20[0]
+    messageTemplate.content.message = typedMessages.erc20[0]!
     const { fullVisualization } = erc20Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
@@ -127,7 +127,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
-    messageTemplate.content.message = typedMessages.erc721[0]
+    messageTemplate.content.message = typedMessages.erc721[0]!
     ;(messageTemplate.content as TypedMessage).domain.verifyingContract = NFT_ADDRESS
     const { fullVisualization } = erc721Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
@@ -148,7 +148,7 @@ describe('typed message tests', () => {
     }
     ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
       '0x000000000022d473030f116ddee9f6b43ac78ba3'
-    messageTemplate.content.message = typedMessages.permit2[0]
+    messageTemplate.content.message = typedMessages.permit2[0]!
     const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedSingleVisualization)
@@ -172,14 +172,14 @@ describe('typed message tests', () => {
     }
     ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
       '0x000000000022d473030f116ddee9f6b43ac78ba3'
-    messageTemplate.content.message = typedMessages.permit2[1]
+    messageTemplate.content.message = typedMessages.permit2[1]!
     const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
   })
 
   test('Entry point module', () => {
-    messageTemplate.fromActionId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+    messageTemplate.fromRequestId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
     const { fullVisualization: received } = entryPointModule(messageTemplate)
     const expected = [
       getAction('Authorize entry point'),

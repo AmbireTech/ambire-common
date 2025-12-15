@@ -1,9 +1,10 @@
 import { AccountId } from '../../interfaces/account'
-import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { AccountState } from '../defiPositions/types'
+import { HumanizerVisualization } from '../humanizer/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -53,15 +54,15 @@ const getBridgeBannerText = (
 
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  accountOpActions: AccountOpAction[]
+  callsUserRequests: CallsUserRequest[]
 ): Banner[] => {
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
-    return accountOpActions.some((action) => {
-      return action.accountOp.calls.some(
+    return callsUserRequests.some((req) => {
+      return req.accountOp.calls.some(
         (call) =>
-          call.fromUserRequestId === route.activeRouteId ||
-          call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
-          call.fromUserRequestId === `${route.activeRouteId}-approval`
+          call.id === route.activeRouteId ||
+          call.id === `${route.activeRouteId}-revoke-approval` ||
+          call.id === `${route.activeRouteId}-approval`
       )
     })
   }
@@ -146,8 +147,10 @@ export const getBridgeBanners = (
   return banners
 }
 
-export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
+export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[] => {
+  const requests = userRequests.filter(
+    (r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind)
+  )
   if (!requests.length) return []
 
   return [
@@ -198,28 +201,28 @@ const getAccountOpBannerText = (
 }
 
 export const getAccountOpBanners = ({
-  accountOpActionsByNetwork,
+  callsUserRequestsByNetwork,
   selectedAccount,
   networks,
   swapAndBridgeRoutesPendingSignature
 }: {
-  accountOpActionsByNetwork: {
-    [key: string]: AccountOpAction[]
+  callsUserRequestsByNetwork: {
+    [key: string]: CallsUserRequest[]
   }
 
   selectedAccount: string
   networks: Network[]
   swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
-  if (!accountOpActionsByNetwork) return []
+  if (!callsUserRequestsByNetwork) return []
   const txnBanners: Banner[] = []
 
-  Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
+  Object.entries(callsUserRequestsByNetwork).forEach(([netId, actions]) => {
     actions.forEach((action) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]
       const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
         const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-          (route) => route.activeRouteId === call.fromUserRequestId
+          (route) => route.activeRouteId === call.id
         )
 
         if (isSwapAndBridge) return prev
@@ -248,14 +251,14 @@ export const getAccountOpBanners = ({
             actionName: 'reject-accountOp',
             meta: {
               err: 'User rejected the transaction request.',
-              actionId: action.id,
+              requestId: action.id,
               shouldOpenNextAction: false
             }
           },
           {
             label: 'Open',
             actionName: 'open-accountOp',
-            meta: { actionId: action.id }
+            meta: { requestId: action.id }
           }
         ]
       })
@@ -348,4 +351,31 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   })
 
   return banners
+}
+
+export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) {
+  const blacklistedItemsCount = blacklistedItems.length
+  const hasScamAddress = blacklistedItems.some((i) => i.type === 'address')
+  const hasScamToken = blacklistedItems.some((i) => i.type === 'token')
+
+  const isSingle = blacklistedItemsCount === 1
+
+  let label = ''
+
+  if (hasScamAddress && hasScamToken) {
+    label = blacklistedItemsCount === 2 ? 'address or token' : 'addresses or tokens'
+  } else if (hasScamAddress) {
+    label = isSingle ? 'address' : 'addresses'
+  } else if (hasScamToken) {
+    label = isSingle ? 'token' : 'tokens'
+  }
+
+  // eslint-disable-next-line no-nested-ternary
+  const prefix = isSingle
+    ? `The destination ${label}`
+    : `${blacklistedItemsCount} of the destination ${label}`
+
+  return `${prefix} in this transaction ${
+    isSingle ? 'was' : 'were'
+  } flagged as dangerous. Proceed at your own risk.`
 }

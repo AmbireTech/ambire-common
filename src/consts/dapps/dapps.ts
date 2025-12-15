@@ -72,13 +72,13 @@ export const dappIdsToBeRemoved = new Set([
 export const featuredDapps = new Set([
   'rewards.ambire.com',
   'snapshot.box/#/s:ambire.eth',
-  'aave.com',
   'lido.fi',
-  'uniswap.org',
   'bitrefill.com',
-  'altitude.fi'
+  'altitude.fi',
+  'drops.bot'
 ])
 
+// NOTE: The final dApp list sorting preserves the order of this list
 export const predefinedDapps = [
   {
     id: 'rewards.ambire.com',
@@ -98,6 +98,15 @@ export const predefinedDapps = [
     chainIds: [1],
     category: 'Services',
     twitter: 'ambire'
+  },
+  {
+    id: 'drops.bot',
+    url: 'https://www.drops.bot/?r=ambire',
+    name: 'Drops',
+    icon: 'https://avatars.githubusercontent.com/u/175563563?v=4',
+    description: 'Check any crypto wallet address for unclaimed airdrops with Drops.',
+    twitter: 'DropsBotHQ',
+    category: 'Analytics'
   },
   {
     id: 'bitrefill.com',
@@ -408,3 +417,64 @@ export const defiLlamaProtocolIdsToExclude: string[] = [
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const categoriesToExclude = ['CEX', 'Developer Tools']
 export const dappsNotToFilterOutByDomain = ['snapshot.box']
+
+export const CATEGORY_MAP: Record<string, string> = {
+  'AI Agents': 'AI Agents',
+  'Algo-Stables': 'Stablecoins',
+  Analytics: 'Analytics',
+  'Anchor BTC': 'BTC Derivatives',
+  'Basis Trading': 'Derivatives',
+  Bridge: 'Bridges',
+  CDP: 'CDP',
+  'CDP Manager': 'CDP',
+  'Canonical Bridge': 'Bridges',
+  CeDeFi: 'CeDeFi',
+  Chain: 'Chains',
+  'Collateral Management': 'CDP',
+  'Cross Chain Bridge': 'Bridges',
+  'Cross-Chain': 'Bridges',
+  'DAO Tooling': 'DAO Tooling',
+  'DEX Aggregator': 'DEXs',
+  DOR: 'DOR',
+  'Decentralized BTC': 'BTC Derivatives',
+  Derivatives: 'Derivatives',
+  Dexes: 'DEXs',
+  'Domain Services': 'Domains',
+  Domains: 'Domains',
+  'Dual-Token Stablecoin': 'Stablecoins',
+  Farm: 'Yield',
+  'Growth / Social Indexes': 'Growth & Social',
+  Insurance: 'Insurance',
+  Launchpad: 'Launchpads',
+  Lending: 'Lending',
+  'Leveraged Farming': 'Yield',
+  'Liquid Restaking': 'Staking',
+  'Liquid Staking': 'Staking',
+  'Liquidity manager': 'Liquidity Manager',
+  'Modular / Rollups': 'Chains',
+  'NFT Marketplace': 'NFT Marketplace',
+  'OTC Marketplace': 'OTC Marketplace',
+  'Onchain Capital Allocator': 'Onchain Capital Allocator',
+  Options: 'Options',
+  'Options Vault': 'Options',
+  'Partially Algorithmic Stablecoin': 'Stablecoins',
+  Payments: 'Payments',
+  'Prediction Market': 'Prediction Markets',
+  RWA: 'RWA',
+  'RWA Lending': 'RWA',
+  'Reserve Currency': 'Reserve Currency',
+  'Restaked BTC': 'BTC Derivatives',
+  Restaking: 'Staking',
+  'Risk Curators': 'Risk Curators',
+  'Security Tools': 'Security Tools',
+  Services: 'Services',
+  SoFi: 'Hybrid Finance',
+  Social: 'Growth & Social',
+  'Staking Pool': 'Staking Pool',
+  Synthetics: 'Synthetics',
+  'Token Locker': 'Token Locker',
+  'Uncollateralized Lending': 'Lending',
+  Yield: 'Yield',
+  'Yield Aggregator': 'Yield',
+  'Yield Lottery': 'Yield'
+}

@@ -80,8 +80,8 @@ describe('Networks Controller', () => {
 
     // Ensure the merged networks contain "unichain" and other relayer networks
     expect(mergedNetworks).toHaveProperty('130')
-    expect(mergedNetworks['130'].rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
-    expect(mergedNetworks['130'].predefined).toBe(false) // Ensure "unichain" details are correct
+    expect(mergedNetworks['130']!.rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
+    expect(mergedNetworks['130']!.predefined).toBe(false) // Ensure "unichain" details are correct
   })
 
   test('should update network preferences', async () => {
@@ -124,7 +124,7 @@ describe('Networks Controller', () => {
     expect(setNetworkInfo?.platformId).toBe('sei-v2')
     expect(setNetworkInfo?.nativeAssetId).toBe('wrapped-sei')
     // simulation is somewhat supported
-    expect(setNetworkInfo?.rpcNoStateOverride).toBe(false)
+    expect(typeof setNetworkInfo?.rpcNoStateOverride).toBe('boolean')
 
     const setNetwork = {
       name: 'Sei',

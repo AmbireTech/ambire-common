@@ -2,9 +2,9 @@ import { UserRequest } from '../interfaces/userRequest'
 
 const getCallsCount = (userRequests: UserRequest[]) => {
   return userRequests.reduce((acc, req) => {
-    if (req.action.kind !== 'calls' || !('calls' in req.action)) return acc
+    if (req.kind !== 'calls' || !('calls' in req.accountOp)) return acc
 
-    return acc + req.action.calls.length
+    return acc + req.accountOp.calls.length
   }, 0)
 }
 

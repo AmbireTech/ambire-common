@@ -67,7 +67,7 @@ describe('wrapping', () => {
     const expectedHumanization = [
       [
         getAction('Wrap'),
-        getToken('0x0000000000000000000000000000000000000000', transactions.weth[0].value)
+        getToken('0x0000000000000000000000000000000000000000', transactions.weth[0]!.value)
       ],
       [
         getAction('Unwrap'),

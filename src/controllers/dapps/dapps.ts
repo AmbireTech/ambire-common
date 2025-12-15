@@ -1,4 +1,5 @@
-/* eslint-disable no-continue */
+import { getDomain } from 'tldts'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -7,13 +8,13 @@ import { getSessionId, Session, SessionInitProps, SessionProp } from '../../clas
 import {
   categoriesNotToFilterOut,
   categoriesToExclude,
+  CATEGORY_MAP,
   dappIdsToBeRemoved,
   dappsNotToFilterOutByDomain,
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
   predefinedDapps
-} from '../../consts/dapps'
-import { Action } from '../../interfaces/actions'
+} from '../../consts/dapps/dapps'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
@@ -22,6 +23,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
+import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
   getDappIdFromUrl,
@@ -32,6 +34,8 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+/* eslint-disable no-continue */
+import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // The DappsController is responsible for the following tasks:
@@ -58,7 +62,9 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   dappToConnect: Dapp | null = null
 
-  isFetchingAndUpdatingDapps: boolean = false
+  isReadyToDisplayDapps: boolean = true
+
+  fetchAndUpdatePromise?: Promise<void>
 
   #shouldRetryFetchAndUpdate: boolean = false
 
@@ -67,6 +73,18 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateAttempts: number = 0
 
   #retryFetchAndUpdateMaxAttempts: number = 3
+
+  get shouldRetryFetchAndUpdate() {
+    return this.#shouldRetryFetchAndUpdate
+  }
+
+  get retryFetchAndUpdateInterval() {
+    return this.#retryFetchAndUpdateInterval
+  }
+
+  get retryFetchAndUpdateAttempts() {
+    return this.#retryFetchAndUpdateAttempts
+  }
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -139,7 +157,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
       const hasNoNetworks = d.chainIds.length === 0
-      const hasLowTVL = !d.tvl || d.tvl <= 5_000_000
+      const hasLowTVL = !d.tvl || d.tvl <= 15_000_000
 
       // Remove dapps that are not in excluded categories and either have no networks or low TVL
       if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
@@ -170,36 +188,55 @@ export class DappsController extends EventEmitter implements IDappsController {
   async #load() {
     await this.#networks.initialLoadPromise
 
-    const storedDapps = await this.#storage.get('dappsV2', [])
+    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
 
     this.fetchAndUpdateDapps()
   }
 
   async fetchAndUpdateDapps() {
-    if (this.isFetchingAndUpdatingDapps) return
+    if (!this.isReadyToDisplayDapps) return
 
-    this.isFetchingAndUpdatingDapps = true
+    this.isReadyToDisplayDapps = false
     this.emitUpdate()
-    try {
-      await this.#fetchAndUpdateDapps()
-    } catch (err: any) {
-      this.emitError({
-        message: 'Failed to fetch the app catalog.',
-        error: err,
-        level: 'silent'
+
+    this.fetchAndUpdatePromise = this.#fetchAndUpdateDapps()
+    await this.fetchAndUpdatePromise
+      .catch((err: any) => {
+        this.#shouldRetryFetchAndUpdate = true
+
+        // run the interval if the initial fetch failed while the extension is not in use
+        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+          this.#retryFetchAndUpdateInterval.start()
+        } else {
+          this.#retryFetchAndUpdateInterval.stop()
+        }
+        this.emitError({
+          message: 'Failed to fetch the app catalog.',
+          error: err,
+          level: 'silent'
+        })
       })
-    } finally {
-      this.isFetchingAndUpdatingDapps = false
-      this.emitUpdate()
-    }
+      .finally(() => {
+        this.fetchAndUpdatePromise = undefined
+        this.isReadyToDisplayDapps = true
+        this.emitUpdate()
+      })
   }
 
   async #fetchAndUpdateDapps() {
+    // NOTE: For debugging purposes — uncomment to force a fetch and update every time
+    // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
-    // NOTE: For debugging, you can comment out this line
-    // to fetch and update dapps on every extension restart.
-    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
+      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter((d) =>
+        ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
+      )
+      // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
+      return
+    }
 
     if (this.#shouldRetryFetchAndUpdate) this.#retryFetchAndUpdateAttempts += 1
 
@@ -209,8 +246,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     let fetchedChainsList: DefiLlamaChain[] = []
 
     const [res, chainsRes] = await Promise.all([
-      this.#fetch('https://api.llama.fi/protocols'),
-      this.#fetch('https://api.llama.fi/v2/chains')
+      fetchWithTimeout(
+        this.#fetch,
+        'https://api.llama.fi/protocols',
+        {},
+        this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+      ),
+      fetchWithTimeout(
+        this.#fetch,
+        'https://api.llama.fi/v2/chains',
+        {},
+        this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+      )
     ])
 
     if (!res.ok || !chainsRes.ok) {
@@ -220,18 +267,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     ;[fetchedDappsList, fetchedChainsList] = await Promise.all([res.json(), chainsRes.json()])
 
     if (!fetchedDappsList.length || !fetchedChainsList.length) {
-      this.#shouldRetryFetchAndUpdate = true
-
-      // run the interval if the initial fetch failed while the extension is not in use
-      if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
-        this.#retryFetchAndUpdateInterval.start()
-      } else {
-        this.#retryFetchAndUpdateInterval.stop()
-      }
-      return
+      throw new Error('Fetch completed, but no apps or chains were returned')
     }
 
-    const chainNamesToIds = new Map<string, number>()
+    const chainNamesToIds = new Map<string, number | null>()
     for (const c of fetchedChainsList) {
       chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
     }
@@ -273,7 +312,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         description: dapp.description,
         url: unifyDefiLlamaDappUrl(dapp.url),
         icon: dapp.logo,
-        category: dapp.category,
+        category: CATEGORY_MAP[dapp.category] || dapp.category,
         tvl: dapp.tvl,
         chainIds,
         isConnected: prevStoredDapp?.isConnected || false,
@@ -292,7 +331,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         dappsMap.set(id, modifiedDapp)
       })
 
-      if (!dappsMap.has(id)) dappsMap.set(id, updatedDapp)
+      if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url)!)) {
+        dappsMap.set(id, updatedDapp)
+      }
     }
 
     // Add predefined
@@ -308,7 +349,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           description: pd.description,
           url: pd.url,
           icon: pd.icon,
-          category: pd.category || null,
+          category: pd.category ? CATEGORY_MAP[pd.category] || pd.category : null,
           tvl: null,
           chainIds: pd.chainIds || [],
           isConnected: prevStoredDapp?.isConnected ?? false,
@@ -336,6 +377,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           d.description = existingByDomain.description
           d.tvl = existingByDomain.tvl
           d.icon = existingByDomain.icon
+          d.isFeatured = existingByDomain.isFeatured
           d.twitter = existingByDomain.twitter
           d.geckoId = existingByDomain.geckoId
           d.chainIds = existingByDomain.chainIds
@@ -349,9 +391,19 @@ export class DappsController extends EventEmitter implements IDappsController {
     const unverifiedDappsArray = Array.from(dappsMap.values())
 
     this.#dapps = dappsMap
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#phishing.updateDomainsBlacklistedStatus(
-      unverifiedDappsArray.map((d) => d.url),
+    this.isReadyToDisplayDapps = true
+    this.#shouldRetryFetchAndUpdate = false
+    this.#retryFetchAndUpdateInterval.stop()
+    this.emitUpdate()
+
+    await this.#updateDappsBlacklistedStatus(unverifiedDappsArray)
+    await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
+    await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
+  }
+
+  async #updateDappsBlacklistedStatus(dapps: Dapp[]) {
+    await this.#phishing.updateDomainsBlacklistedStatus(
+      dapps.map((d) => d.url),
       (blacklistedStatus) => {
         Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
           const dapp = this.#dapps.get(dappId)
@@ -362,11 +414,6 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.emitUpdate()
       }
     )
-
-    await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
-    await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
-    this.#shouldRetryFetchAndUpdate = false
-    this.#retryFetchAndUpdateInterval.stop()
   }
 
   async #createDappSession(initProps: SessionInitProps) {
@@ -390,7 +437,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
-    this.dappSessions[sessionId].setMessenger(messenger, isAmbireNext)
+    this.dappSessions[sessionId]?.setMessenger(messenger, isAmbireNext)
   }
 
   setSessionLastHandledRequestsId = (
@@ -401,7 +448,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   ) => {
     if (!this.dappSessions[sessionId]) return
 
-    if (id > this.dappSessions[sessionId].lastHandledRequestIds[providerId]) {
+    if (id > this.dappSessions[sessionId].lastHandledRequestIds[providerId]!) {
       this.dappSessions[sessionId].lastHandledRequestIds[providerId] = id
       if (isWeb3AppRequest && !this.dappSessions[sessionId].isWeb3App) {
         this.dappSessions[sessionId].isWeb3App = true
@@ -412,16 +459,16 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   resetSessionLastHandledRequestsId = (sessionId: string, providerId?: number) => {
     if (providerId) {
-      this.dappSessions[sessionId].lastHandledRequestIds[providerId] = -1
+      this.dappSessions[sessionId]!.lastHandledRequestIds[providerId] = -1
     } else {
-      Object.keys(this.dappSessions[sessionId].lastHandledRequestIds).forEach((key) => {
-        this.dappSessions[sessionId].lastHandledRequestIds[key] = -1
+      Object.keys(this.dappSessions[sessionId]!.lastHandledRequestIds).forEach((key) => {
+        this.dappSessions[sessionId]!.lastHandledRequestIds[key] = -1
       })
     }
   }
 
   setSessionProp = (sessionId: string, props: SessionProp) => {
-    this.dappSessions[sessionId].setProp(props)
+    this.dappSessions[sessionId]?.setProp(props)
   }
 
   deleteDappSession = (sessionId: string) => {
@@ -441,7 +488,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     let dappSessions: { sessionId: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
-        skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId].id)
+        skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId]!.id)
       if (this.dappSessions[sessionId] && hasPermissionToBroadcast) {
         dappSessions.push({ sessionId, data: this.dappSessions[sessionId] })
       }
@@ -612,41 +659,37 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
-  async setDappToConnectIfNeeded(currentAction: Action | null) {
+  async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
-      if (
-        currentAction &&
-        currentAction.type === 'dappRequest' &&
-        currentAction.userRequest.action.kind === 'dappConnect'
-      ) {
-        const { session } = currentAction.userRequest
+      if (currentRequest && currentRequest.kind === 'dappConnect') {
+        const { dappPromises } = currentRequest
         const dapp = await this.#buildDapp({
-          id: session.id,
-          name: session.name,
-          url: session.origin,
-          icon: session.icon,
+          id: getDappIdFromUrl(dappPromises[0].session.origin),
+          name: dappPromises[0].session.name,
+          url: dappPromises[0].session.origin,
+          icon: dappPromises[0].session.icon,
           chainId: 1,
           isConnected: false
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
+          this.emitUpdate()
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
             if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
               const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.dappToConnect.blacklisted = status
-              this.emitUpdate()
             }
 
             const existingDapp = this.#dapps.get(dapp.id)
             if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
               const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
-              this.emitUpdate()
             }
+
+            this.emitUpdate()
           })
-          this.emitUpdate()
         }
 
         return
@@ -671,7 +714,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps: this.dapps,
       categories: this.categories,
-      isReady: this.isReady
+      isReady: this.isReady,
+      shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
+      retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
+      retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts
     }
   }
 }

@@ -1,6 +1,6 @@
 import { getDomain } from 'tldts'
 
-import { predefinedDapps } from '../../consts/dapps'
+import { predefinedDapps } from '../../consts/dapps/dapps'
 import { Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url?: string): string => {

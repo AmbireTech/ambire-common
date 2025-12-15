@@ -9,7 +9,6 @@ import {
 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { Session } from '../../classes/session'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -24,7 +23,7 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
-import { UserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
@@ -329,12 +328,14 @@ const buildRevokeApprovalIfNeeded = async (
   if (!fails) return
 
   return {
+    id: `${userTx.activeRouteId}-revoke-approval`,
     to: userTx.approvalData.approvalTokenAddress,
     value: BigInt('0'),
     data: erc20Contract.interface.encodeFunctionData('approve', [
       userTx.approvalData.allowanceTarget,
       BigInt(0)
-    ])
+    ]),
+    activeRouteId: userTx.activeRouteId
   }
 }
 
@@ -352,53 +353,49 @@ const getSwapAndBridgeCalls = async (
     if (revokeApproval) calls.push(revokeApproval)
 
     calls.push({
+      id: `${userTx.activeRouteId}-approval`,
       to: userTx.approvalData.approvalTokenAddress,
       value: BigInt('0'),
       data: erc20Interface.encodeFunctionData('approve', [
         userTx.approvalData.allowanceTarget,
         BigInt(userTx.approvalData.minimumApprovalAmount)
       ]),
-      fromUserRequestId: userTx.activeRouteId
+      activeRouteId: userTx.activeRouteId
     } as Call)
   }
 
   calls.push({
+    id: userTx.activeRouteId,
     to: userTx.txTarget,
     value: BigInt(userTx.value),
     data: userTx.txData,
-    fromUserRequestId: userTx.activeRouteId
+    activeRouteId: userTx.activeRouteId
   })
 
   return calls
 }
 
-const buildSwapAndBridgeUserRequests = async (
+const getSwapAndBridgeRequestParams = async (
   userTx: SwapAndBridgeSendTxRequest,
   chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState,
-  paymasterService?: PaymasterService,
-  windowId?: number
-): Promise<UserRequest[]> => {
-  return [
-    {
-      id: userTx.activeRouteId,
-      action: {
-        kind: 'calls' as const,
-        calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
-      },
-      session: new Session({ windowId }),
-      meta: {
-        isSignAction: true as true,
-        chainId,
-        accountAddr: account.addr,
-        activeRouteId: userTx.activeRouteId,
-        isSwapAndBridgeCall: true,
-        paymasterService
-      }
+  paymasterService?: PaymasterService
+): Promise<{
+  calls: CallsUserRequest['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+}> => {
+  return {
+    calls: await getSwapAndBridgeCalls(userTx, account, provider, state),
+    meta: {
+      chainId,
+      accountAddr: account.addr,
+      activeRouteId: userTx.activeRouteId,
+      isSwapAndBridgeCall: true,
+      paymasterService
     }
-  ]
+  }
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
@@ -618,7 +615,7 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
 
 export {
   addCustomTokensIfNeeded,
-  buildSwapAndBridgeUserRequests,
+  getSwapAndBridgeRequestParams,
   convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,

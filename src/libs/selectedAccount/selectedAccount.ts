@@ -1,6 +1,5 @@
 import { getAddress } from 'ethers'
 
-import { WALLET_TOKEN } from '../../consts/addresses'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks,
@@ -9,7 +8,6 @@ import {
   SelectedAccountPortfolioTokenResult
 } from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
-import { calculateRewardsForSeason } from '../../utils/rewards'
 import {
   AccountState as DefiPositionsAccountState,
   AssetType,
@@ -21,8 +19,6 @@ import {
   CollectionResult,
   NetworkSimulatedAccountOp,
   NetworkState,
-  PortfolioProjectedRewardsResult,
-  ProjectedRewardsTokenResult,
   TokenResult
 } from '../portfolio/interfaces'
 
@@ -264,15 +260,8 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const {
-      tokens,
-      collections,
-      tokenErrors,
-      priceCache,
-      toBeLearned,
-      lastExternalApiUpdateData,
-      ...result
-    } = networkState.result
+    const { tokens, collections, tokenErrors, toBeLearned, lastExternalApiUpdateData, ...result } =
+      networkState.result
 
     strippedState[chainId] = { ...networkState, result }
   })
@@ -342,7 +331,12 @@ const recalculateNetworkPortfolio = (
   defiPositionsAccountState: DefiPositionsAccountState,
   simulatedAccountOp: NetworkSimulatedAccountOp[string] | undefined
 ) => {
-  const collectionsArray: CollectionResult[] = portfolioState.result?.collections || []
+  const collectionsArray: CollectionResult[] =
+    portfolioState.result &&
+    'collections' in portfolioState.result &&
+    portfolioState.result?.collections
+      ? portfolioState.result.collections
+      : []
   let tokensArray = portfolioState.result?.tokens || []
   let networkTotal = portfolioState.result?.total?.usd || 0
   const hasTokensWithAmountOnNetwork = tokensArray.some(({ amount }) => amount > 0n)
@@ -544,7 +538,8 @@ export function calculateSelectedAccountPortfolio(
     isAllReady,
     shouldShowPartialResult,
     networkSimulatedAccountOp: {},
-    portfolioState: stripPortfolioState(portfolioAccountState)
+    portfolioState: stripPortfolioState(portfolioAccountState),
+    projectedRewardsStats: null
   }
 
   Object.keys(selectedAccountPortfolioByNetworks).forEach((chainId) => {
@@ -567,89 +562,5 @@ export function calculateSelectedAccountPortfolio(
   return {
     selectedAccountPortfolio,
     selectedAccountPortfolioByNetworks
-  }
-}
-
-export const calculateAndSetProjectedRewards = (
-  projectedRewards: NetworkState | undefined,
-  latestBalances: { [chainId: string]: number },
-  walletOrStkWalletTokenPrice: number | undefined
-): ProjectedRewardsTokenResult | undefined => {
-  if (!projectedRewards) return
-
-  const result = projectedRewards?.result as PortfolioProjectedRewardsResult
-  const {
-    currentSeasonSnapshots,
-    supportedChainIds,
-    numberOfWeeksSinceStartOfSeason,
-    totalRewardsPool,
-    totalWeightNonUser,
-    userLevel,
-    walletPrice,
-    minLvl,
-    minBalance,
-    userXp
-  } = result
-
-  const currentTotalBalanceOnSupportedChains = supportedChainIds
-    .map((chainId: number) => latestBalances[chainId] || 0)
-    .reduce((a: number, b: number) => a + b, 0)
-
-  const parsedSnapshotsBalance = currentSeasonSnapshots.map(
-    (snapshot: { week: number; balance: number }) => snapshot.balance
-  )
-
-  // If the user never participated in Ambire Rewards, we assume they are at level 0.
-  // If they have participated, but are below the minimum level, we assume they are at the minimum level because we need to calculate the APY.
-  // For that purpose, we assume they are at the minimum level with minimum balance.
-  // This means that their projected rewards will be 0, but we will be able to calculate the APY.
-  const level = userLevel < minLvl ? minLvl : userLevel
-  const currentBalance =
-    currentTotalBalanceOnSupportedChains < minBalance
-      ? minBalance
-      : currentTotalBalanceOnSupportedChains
-
-  // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
-  const walletTokenPrice = walletOrStkWalletTokenPrice || walletPrice
-
-  const projectedAmount = calculateRewardsForSeason(
-    level,
-    parsedSnapshotsBalance,
-    currentBalance,
-    numberOfWeeksSinceStartOfSeason,
-    totalWeightNonUser,
-    totalRewardsPool,
-    minLvl,
-    minBalance
-  )
-
-  // If the user is below the minimum level or did not have a single week with balance >$500, they get 0 projected rewards
-  const hasLowBalance = [...parsedSnapshotsBalance, currentTotalBalanceOnSupportedChains].every(
-    (b) => b < minBalance
-  )
-
-  // Final projected amount after checks.
-  // If the user is below min level or has low balance, it's 0.
-  // If projected amount < 1, it's also 0.
-  const shouldZeroRewards = userLevel < minLvl || hasLowBalance || projectedAmount < 1
-  const finalProjectedAmount = shouldZeroRewards ? 0 : projectedAmount
-
-  const projectedAmountFormatted = Math.round(finalProjectedAmount * 1e18)
-
-  return {
-    chainId: BigInt(1),
-    amount: BigInt(projectedAmountFormatted || 0),
-    address: WALLET_TOKEN,
-    symbol: 'WALLET',
-    name: '$WALLET',
-    decimals: 18,
-    priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
-    userXp,
-    flags: {
-      onGasTank: false,
-      rewardsType: 'wallet-projected-rewards' as const,
-      canTopUpGasTank: false,
-      isFeeToken: false
-    }
   }
 }

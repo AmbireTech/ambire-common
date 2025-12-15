@@ -1,5 +1,5 @@
 {
-  "version": "2.81.1",
+  "version": "2.83.1",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -86,7 +86,7 @@
     "eslint-plugin-react-hooks": "4.3.0",
     "hardhat": "^2.14.0",
     "hardhat-gas-reporter": "^1.0.9",
-    "jest": "^30.0.5",
+    "jest": "30.0.5",
     "node-fetch": "^2.7.0",
     "node-rsa": "^1.0.6",
     "prettier": "^2.5.0",
