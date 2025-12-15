@@ -1143,11 +1143,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.defiPositions.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr)
-      }
-
-      if (this.signAccountOp?.account.addr === address) {
-        this.destroySignAccOp()
+        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
       }
 
       this.emitUpdate()
@@ -1288,16 +1284,12 @@ export class MainController extends EventEmitter implements IMainController {
   async removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
     const userRequest = this.requests.userRequests.find(
       (r) =>
-        r.kind === 'calls' && !!r.accountOp.calls.find((c) => c.activeRouteId === activeRouteId)
+        r.kind === 'calls' &&
+        !!r.signAccountOp.accountOp.calls.find((c) => c.activeRouteId === activeRouteId)
     ) as CallsUserRequest | undefined
 
     if (userRequest) {
-      userRequest.accountOp.calls = userRequest.accountOp.calls.filter(
-        (c) => c.activeRouteId !== activeRouteId
-      )
-      await this.requests.rejectUserRequests('User rejected the transaction request.', [
-        userRequest.id
-      ])
+      await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] })
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
@@ -1334,13 +1326,15 @@ export class MainController extends EventEmitter implements IMainController {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
 
-    const { accountOp, dappPromises } = accountOpRequest as CallsUserRequest
-    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
+    const { signAccountOp, dappPromises } = accountOpRequest as CallsUserRequest
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
 
     if (!network) return
 
     const meta: BenzinUserRequest['meta'] = {
-      accountAddr: accountOp.accountAddr,
+      accountAddr: signAccountOp.accountOp.accountAddr,
       chainId: network.chainId,
       txnId: null,
       userOpHash: null

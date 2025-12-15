@@ -455,7 +455,9 @@ describe('RequestsController ', () => {
     const { controller } = await prepareTest()
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
     expect(controller.currentUserRequest).not.toBe(null)
-    expect((controller.currentUserRequest as CallsUserRequest).accountOp.calls.length).toBe(1)
+    expect(
+      (controller.currentUserRequest as CallsUserRequest).signAccountOp.accountOp.calls.length
+    ).toBe(1)
     await controller.rejectCalls({ callIds: ['testID'] })
     expect(controller.currentUserRequest).toBe(null)
     expect(controller.userRequests.length).toBe(0)

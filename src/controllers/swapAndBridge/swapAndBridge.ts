@@ -43,7 +43,6 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { batchCallsFromUserRequests } from '../../libs/requests/requests'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -2302,11 +2301,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
 
     // check if we have an accountOp in main
-    const userRequestCalls = batchCallsFromUserRequests({
-      accountAddr: this.#selectedAccount.account.addr,
-      chainId: network.chainId,
-      userRequests: this.#getUserRequests()
-    })
+    const userRequestCalls =
+      (
+        this.#getUserRequests().find(
+          (r) =>
+            r.kind === 'calls' &&
+            r.id === `${this.#selectedAccount.account!.addr}-${network.chainId}`
+        ) as CallsUserRequest
+      ).signAccountOp.accountOp.calls || []
+
     const swapOrBridgeCalls = await getSwapAndBridgeCalls(
       userTxn,
       this.#selectedAccount.account,

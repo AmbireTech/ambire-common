@@ -208,8 +208,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #accounts: IAccountsController
 
-  #networks: INetworksController
-
   #keystore: IKeystoreController
 
   #portfolio: IPortfolioController
@@ -378,7 +376,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#accounts = accounts
-    this.#networks = networks
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers

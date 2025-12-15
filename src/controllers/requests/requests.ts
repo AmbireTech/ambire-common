@@ -800,7 +800,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account)
           throw new Error(
-            `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
+            `removeUserRequests: tried to run for non-existent account ${meta.accountAddr}`
           )
 
         if (shouldUpdateAccount) {
@@ -1758,7 +1758,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   removeAccountData(address: Account['addr']) {
     this.userRequests = this.userRequests.filter((r) => {
       if (r.kind === 'calls') {
-        return r.signAccountOp.accountOp.accountAddr !== address
+        const shouldRemove = r.signAccountOp.accountOp.accountAddr === address
+        if (shouldRemove) r.signAccountOp.destroy()
+
+        return !shouldRemove
       }
       if (
         r.kind === 'message' ||
