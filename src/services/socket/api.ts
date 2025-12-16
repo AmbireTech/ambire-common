@@ -444,7 +444,11 @@ export class SocketAPI implements SwapProvider {
         ? {
             allowanceTarget: response.approvalData.spenderAddress,
             approvalTokenAddress: response.approvalData.tokenAddress,
-            minimumApprovalAmount: response.approvalData.amount,
+            // we're using route.fromAmount instead of response.approvalData.amount
+            // because the API wrongly returns the substracted approval amount
+            // (meaning the amount after the swap&bridge fee) and it causes the
+            // estimation to fail with a TRANSFER_FROM_FAILED
+            minimumApprovalAmount: route.fromAmount,
             owner: response.approvalData.userAddress
           }
         : null,

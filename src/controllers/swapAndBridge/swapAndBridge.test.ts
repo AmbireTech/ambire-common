@@ -528,6 +528,38 @@ describe('SwapAndBridge Controller', () => {
         userTxIndex: 1
       }
     )
+    // dummy submittedAccountOp - just the txnId is important here, used in checkForActiveRoutesStatusUpdate
+    const SUBMITTED_ACCOUNT_OP = {
+      accountAddr: accounts[0]!.addr,
+      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      gasLimit: null,
+      gasFeePayment: {
+        isGasTank: false,
+        paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        inToken: '0x0000000000000000000000000000000000000000',
+        amount: 1n,
+        simulatedGasLimit: 1n,
+        gasPrice: 1n
+      },
+      chainId: 1n,
+      nonce: 225n,
+      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+      calls: [
+        {
+          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+          value: BigInt(0),
+          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+        }
+      ],
+      txnId: swapAndBridgeController.activeRoutes[0]?.userTxHash,
+      status: 'broadcasted-but-not-confirmed',
+      identifiedBy: {
+        type: 'Transaction',
+        identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+      }
+    }
+    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP as any)
+
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
   })
