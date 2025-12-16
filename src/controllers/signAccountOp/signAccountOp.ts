@@ -529,6 +529,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #load(shouldSimulate: boolean) {
+    this.#setDefaults()
     this.humanize()
     this.learnTokens()
 

@@ -2308,7 +2308,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             r.kind === 'calls' &&
             r.id === `${this.#selectedAccount.account!.addr}-${network.chainId}`
         ) as CallsUserRequest
-      ).signAccountOp.accountOp.calls || []
+      )?.signAccountOp.accountOp.calls || []
 
     const swapOrBridgeCalls = await getSwapAndBridgeCalls(
       userTxn,
