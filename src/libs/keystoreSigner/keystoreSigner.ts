@@ -13,6 +13,7 @@ import {
 import { ecdsaSign } from 'secp256k1'
 
 import {
+  decrypt,
   getEncryptionPublicKey,
   signTypedData as signTypedDataWithMetaMaskSigUtil,
   SignTypedDataVersion
@@ -189,5 +190,17 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     )
 
     return encryptionPublicKeyBase64
+  }
+
+  /**
+   * Decrypt a message (encrypted by the encryption public key).
+   */
+  decrypt: KeystoreSignerInterface['decrypt'] = (encryptedData: string) => {
+    const plaintext = decrypt({
+      encryptedData: JSON.parse(encryptedData),
+      privateKey: stripHexPrefix(this.#signer.privateKey)
+    })
+
+    return plaintext
   }
 }
