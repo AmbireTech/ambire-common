@@ -292,8 +292,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   gasPrice: GasPriceController
 
-  #onAccountOpUpdate: (updatedAccountOp: AccountOp) => void
-
   shouldSignAuth: {
     type: 'V2Deploy' | '7702'
     text: string
@@ -346,7 +344,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     isSignRequestStillActive,
     shouldSimulate,
     onUpdateAfterTraceCallSuccess,
-    onAccountOpUpdate,
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
@@ -367,7 +364,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     isSignRequestStillActive: Function
     shouldSimulate: boolean
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
-    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
   }) {
@@ -412,9 +408,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.bundlerSwitcher,
       this.#activity
     )
-    const emptyFunc = () => {}
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
-    this.#onAccountOpUpdate = onAccountOpUpdate ?? emptyFunc
     this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
       estimation: this.estimation,
       readyToSign: this.readyToSign,
@@ -446,8 +440,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
-
-    this.#onAccountOpUpdate(this.#accountOp)
   }
 
   #validateAccountOp(): SignAccountOpError | null {
@@ -1344,6 +1336,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               }
             }
           : undefined
+      console.log(
+        this.account,
+        this.accountOp,
+        this.#network,
+        state,
+        !this.#network.rpcNoStateOverride,
+        stateOverride
+      )
       const { tokens, nfts } = await debugTraceCall(
         this.account,
         this.accountOp,
@@ -1352,6 +1352,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         !this.#network.rpcNoStateOverride,
         stateOverride
       )
+      console.log('2', tokens, nfts)
       const learnedNewTokens = this.#portfolio.addTokensToBeLearned(tokens, this.#network.chainId)
       const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
         nfts,
@@ -1369,7 +1370,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       this.emitError({
         level: 'silent',
-        message: 'Error in main.traceCall',
+        message: 'Error in signAccountOp.traceCall',
         error: e
       })
     }

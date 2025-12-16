@@ -150,8 +150,6 @@ export class MainController extends EventEmitter implements IMainController {
 
   transfer: ITransferController
 
-  signAccountOp: ISignAccountOpController | null = null
-
   signAccOpInitError: string | null = null
 
   activity: IActivityController
@@ -395,14 +393,15 @@ export class MainController extends EventEmitter implements IMainController {
         fromChainId: number | null,
         toChainId: number | null
       ) => {
-        return (
-          this.signAccountOp &&
-          fromChainId &&
-          toChainId &&
-          this.signAccountOp.estimation.status === EstimationStatus.Error &&
-          this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
-          fromChainId === toChainId
-        )
+        return false
+        // return (
+        //   this.signAccountOp &&
+        //   fromChainId &&
+        //   toChainId &&
+        //   this.signAccountOp.estimation.status === EstimationStatus.Error &&
+        //   this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
+        //   fromChainId === toChainId
+        // )
       },
       getUserRequests: () => this.requests.userRequests || [],
       getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
@@ -529,7 +528,7 @@ export class MainController extends EventEmitter implements IMainController {
       })
     })
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
-      if (!this.signAccountOp) return
+      if (this.requests.currentUserRequest?.kind !== 'calls') return
       this.emitError(e)
     })
 
@@ -775,14 +774,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
-    let signAccountOp: ISignAccountOpController | null
+    let signAccountOp: ISignAccountOpController | null = null
 
     if (type === 'one-click-swap-and-bridge') {
       signAccountOp = this.swapAndBridge.signAccountOpController
     } else if (type === 'one-click-transfer') {
       signAccountOp = this.transfer.signAccountOpController
-    } else {
-      signAccountOp = this.signAccountOp
+    } else if (this.requests.currentUserRequest?.kind === 'calls') {
+      signAccountOp = this.requests.currentUserRequest.signAccountOp
     }
 
     if (!signAccountOp) {
@@ -804,7 +803,7 @@ export class MainController extends EventEmitter implements IMainController {
         level: 'major',
         message: 'Please wait while the previous transaction is being processed.',
         error: new Error(
-          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
         )
       })
     }
@@ -1258,7 +1257,11 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
-    const canUpdateSignAccountOp = !this.signAccountOp || this.signAccountOp.canUpdate()
+    let signAccountOp = null
+    if (this.requests.currentUserRequest && this.requests.currentUserRequest.kind === 'calls') {
+      signAccountOp = this.requests.currentUserRequest.signAccountOp
+    }
+    const canUpdateSignAccountOp = !signAccountOp || signAccountOp.canUpdate()
     if (!canUpdateSignAccountOp) return
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
@@ -1425,12 +1428,6 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
-  get isSignRequestStillActive(): boolean {
-    if (!this.signAccountOp) return false
-
-    return !!this.requests.userRequests.find((r) => r.id === this.signAccountOp!.fromRequestId)
-  }
-
   /**
    * Don't allow the user to open new request windows
    * if there's a pending to sign action (swap and bridge or transfer)
@@ -1499,8 +1496,7 @@ export class MainController extends EventEmitter implements IMainController {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      isSignRequestStillActive: this.isSignRequestStillActive
+      ...super.toJSON()
     }
   }
 }

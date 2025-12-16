@@ -134,8 +134,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #getDapp: (id: string) => Promise<Dapp | undefined>
 
-  #getMainStatuses: () => StatusesWithCustom
-
   #updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
 
   #addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
@@ -209,7 +207,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
     guardHWSigning,
-    getMainStatuses,
     onSetCurrentUserRequest,
     onBroadcastSuccess,
     onBroadcastFailed
@@ -263,7 +260,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#ui = ui
     this.#autoLogin = autoLogin
     this.#getDapp = getDapp
-    this.#getMainStatuses = getMainStatuses
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
     this.#guardHWSigning = guardHWSigning
@@ -1604,6 +1600,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       })
       existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
+      this.emitUpdate()
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountStateBefore =
