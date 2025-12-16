@@ -389,19 +389,22 @@ export class MainController extends EventEmitter implements IMainController {
           this.updateSelectedAccountPortfolio({ networks })
         }
       },
-      isMainSignAccountOpThrowingAnEstimationError: (
+      isCurrentSignAccountOpThrowingAnEstimationError: (
         fromChainId: number | null,
         toChainId: number | null
       ) => {
-        return false
-        // return (
-        //   this.signAccountOp &&
-        //   fromChainId &&
-        //   toChainId &&
-        //   this.signAccountOp.estimation.status === EstimationStatus.Error &&
-        //   this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
-        //   fromChainId === toChainId
-        // )
+        const signAccountOp =
+          this.requests.currentUserRequest?.kind === 'calls'
+            ? this.requests.currentUserRequest.signAccountOp
+            : undefined
+        return (
+          signAccountOp &&
+          fromChainId &&
+          toChainId &&
+          signAccountOp.estimation.status === EstimationStatus.Error &&
+          signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
+          fromChainId === toChainId
+        )
       },
       getUserRequests: () => this.requests.userRequests || [],
       getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
