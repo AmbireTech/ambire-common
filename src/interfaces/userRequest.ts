@@ -173,6 +173,11 @@ export interface GetEncryptionPublicKeyRequest extends UserRequestBase<[DappProm
   meta: UserRequestBase['meta'] & { params: [address: string] }
 }
 
+export interface DecryptRequest extends UserRequestBase<[DappPromise]> {
+  kind: 'ethDecrypt'
+  meta: UserRequestBase['meta'] & { params: [encryptedData: string, address: string] }
+}
+
 export type UserRequest =
   | UnlockRequest
   | DappConnectRequest
@@ -188,6 +193,7 @@ export type UserRequest =
   | SwapAndBridgeRequest
   | TransferRequest
   | GetEncryptionPublicKeyRequest
+  | DecryptRequest
 
 export type SignUserRequest =
   | CallsUserRequest
