@@ -900,8 +900,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     if (type === 'calls') {
-      const { userRequestParams, ...rest } = params
-      const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
+      const { userRequestParams, executionType, ...rest } = params
+      const userRequest = await this.#createOrUpdateCallsUserRequest(
+        userRequestParams,
+        executionType
+      )
       if (userRequest) await this.addUserRequests([userRequest], { ...rest })
     }
 
@@ -1299,10 +1302,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createOrUpdateCallsUserRequest({
-      ...requestParams,
-      dappPromises: []
-    })
+    const userRequest = await this.#createOrUpdateCallsUserRequest(
+      {
+        ...requestParams,
+        dappPromises: []
+      },
+      executionType
+    )
     if (userRequest) await this.addUserRequests([userRequest], { executionType, position: 'last' })
   }
 
@@ -1368,7 +1374,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createOrUpdateCallsUserRequest(callsRequestParams)
+    const userRequest = await this.#createOrUpdateCallsUserRequest(
+      callsRequestParams,
+      executionType
+    )
     if (userRequest) await this.addUserRequests([userRequest], { position: 'last', executionType })
     this.#transfer.resetForm() // reset the transfer form after adding a req
   }
@@ -1435,7 +1444,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
 
-        const userRequest = await this.#createOrUpdateCallsUserRequest(swapAndBridgeRequestParams)
+        const userRequest = await this.#createOrUpdateCallsUserRequest(
+          swapAndBridgeRequestParams,
+          openActionWindow ? 'open-request-window' : 'queue'
+        )
         if (userRequest) {
           await this.addUserRequests([userRequest], {
             position: 'last',
@@ -1563,15 +1575,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ]
   }
 
-  async #createOrUpdateCallsUserRequest({
-    calls,
-    meta,
-    dappPromises = []
-  }: {
-    calls: Call[]
-    meta: CallsUserRequest['meta']
-    dappPromises?: CallsUserRequest['dappPromises']
-  }) {
+  async #createOrUpdateCallsUserRequest(
+    {
+      calls,
+      meta,
+      dappPromises = []
+    }: {
+      calls: Call[]
+      meta: CallsUserRequest['meta']
+      dappPromises?: CallsUserRequest['dappPromises']
+    },
+    executionType: RequestExecutionType = 'open-request-window'
+  ) {
     let callUserRequest: CallsUserRequest | undefined
     const existingUserRequest = this.userRequests.find(
       (r) =>
@@ -1600,7 +1615,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       })
       existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
-      this.emitUpdate()
+      let currentUserRequest = null
+      if (executionType === 'open-request-window') {
+        currentUserRequest =
+          this.visibleUserRequests.find((r) => r.id === existingUserRequest.id) ||
+          this.currentUserRequest
+      } else if (executionType === 'queue-but-open-request-window') {
+        this.sendNewRequestMessage(existingUserRequest, 'queued')
+        currentUserRequest = this.currentUserRequest || this.visibleUserRequests[0] || null
+      }
+      await this.#setCurrentUserRequest(currentUserRequest)
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountStateBefore =
