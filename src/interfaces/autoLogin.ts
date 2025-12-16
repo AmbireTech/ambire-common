@@ -59,11 +59,11 @@ type AutoLoginSettings = {
  * The status of the SIWE message validity.
  * - `valid`: The SIWE message is valid and meets all criteria.
  * - `invalid`: The SIWE message is invalid due to non-critical issues (e.g., expired).
- * - `invalid-critical`: The SIWE message is invalid due to critical issues (e.g., malformed, domain mismatch). In this
+ * - `malformed`: The SIWE message does not adhere to the specification.
  * case the app may be trying to trick the user into signing something dangerous.
  * - `domain-mismatch`: The SIWE message domain does not match the expected domain.
  */
-type SiweValidityStatus = 'valid' | 'invalid' | 'invalid-critical' | 'domain-mismatch'
+type SiweValidityStatus = 'valid' | 'invalid' | 'malformed' | 'domain-mismatch'
 
 type AutoLoginStatus = 'active' | 'unsupported' | 'expired' | 'no-policy'
 
