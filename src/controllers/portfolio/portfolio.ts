@@ -408,7 +408,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   async updateTokenValidationByStandard(
     token: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
-    accountId: AccountId
+    accountId: AccountId,
+    allNetworks: boolean = false
   ) {
     await this.#initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
@@ -425,11 +426,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       token,
       accountId,
       provider,
-      {
-        allNetworks: this.#networks.networks,
-        allProviders: this.#providers.providers,
-        enableNetworkDetection: true
-      }
+      allNetworks
+        ? {
+            allNetworks: this.#networks.networks,
+            allProviders: this.#providers.providers,
+            enableNetworkDetection: true
+          }
+        : undefined
     )
 
     this.validTokens[standard] = {
