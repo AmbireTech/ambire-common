@@ -429,7 +429,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    const dappId = getDappIdFromUrl(url)
+    const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
@@ -489,6 +489,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
         skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId]!.id)
+
       if (this.dappSessions[sessionId] && hasPermissionToBroadcast) {
         dappSessions.push({ sessionId, data: this.dappSessions[sessionId] })
       }
@@ -664,7 +665,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
         const { dappPromises } = currentRequest
         const dapp = await this.#buildDapp({
-          id: getDappIdFromUrl(dappPromises[0].session.origin),
+          id: dappPromises[0].session.id,
           name: dappPromises[0].session.name,
           url: dappPromises[0].session.origin,
           icon: dappPromises[0].session.icon,

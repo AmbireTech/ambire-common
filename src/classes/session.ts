@@ -2,9 +2,9 @@ import { Messenger } from '../interfaces/messenger'
 import { getDappIdFromUrl } from '../libs/dapps/helpers'
 
 export interface SessionInitProps {
-  tabId?: number
+  url: string
+  tabId: number
   windowId?: number
-  url?: string
 }
 export interface SessionProp {
   icon?: string
@@ -72,13 +72,9 @@ export class Session {
     )
   }
 
-  constructor({ tabId, windowId, url }: SessionInitProps = {}) {
-    if (url) {
-      this.origin = new URL(url).origin
-    } else {
-      this.origin = 'internal'
-    }
-    this.id = getDappIdFromUrl(url)
+  constructor({ tabId, windowId, url }: SessionInitProps) {
+    this.origin = new URL(url).origin
+    this.id = getDappIdFromUrl(this.origin)
     this.tabId = tabId || Date.now()
     this.windowId = windowId
 
