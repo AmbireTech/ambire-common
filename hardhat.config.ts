@@ -102,6 +102,10 @@ const config: HardhatUserConfig = {
     celo: {
       url: 'https://forno.celo.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    etherlink: {
+      url: 'https://rpc.ankr.com/etherlink_mainnet',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -128,6 +132,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.basescan.org/api',
           browserURL: 'https://api.basescan.org/api'
+        }
+      },
+      {
+        network: 'etherlink',
+        chainId: 42793,
+        urls: {
+          apiURL: 'https://explorer.etherlink.com/api',
+          browserURL: 'https://explorer.etherlink.com/api'
         }
       },
       {
