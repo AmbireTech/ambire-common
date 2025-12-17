@@ -302,6 +302,30 @@ const isNetworkError = (error: any): boolean => {
 }
 
 /**
+ * Executes async functions with limited concurrency to prevent overwhelming RPC providers
+ */
+const limitConcurrency = async <T>(
+  items: T[],
+  asyncFn: (item: T) => Promise<any>,
+  limit: number = 5
+): Promise<any[]> => {
+  const results: any[] = []
+
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit)
+    const batchPromises = batch.map(asyncFn)
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.allSettled(batchPromises)
+
+    results.push(
+      ...batchResults.map((result) => (result.status === 'fulfilled' ? result.value : null))
+    )
+  }
+
+  return results
+}
+
+/**
  * Validates whether a token address represents a valid ERC20 token on the specified network.
  * Optionally suggests alternative networks where the token is found if validation fails.
  *
@@ -314,9 +338,17 @@ export const validateERC20Token = async (
     allNetworks?: Network[]
     allProviders?: { [chainId: string]: RPCProvider }
     enableNetworkDetection?: boolean
+    maxNetworksToCheck?: number
+    concurrencyLimit?: number
   }
 ): Promise<TokenValidationResult> => {
-  const { allNetworks, allProviders, enableNetworkDetection = false } = options || {}
+  const {
+    allNetworks,
+    allProviders,
+    enableNetworkDetection = false,
+    maxNetworksToCheck = 10,
+    concurrencyLimit = 3
+  } = options || {}
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
   const type = 'erc20'
@@ -376,32 +408,37 @@ export const validateERC20Token = async (
   // If validation failed and network detection is enabled, check other networks
   if (!isValid && !hasNetworkError && enableNetworkDetection && allNetworks && allProviders) {
     try {
-      // Check each network directly here instead of calling getValidERC20Networks()
-      // to avoid circular dependency (getValidERC20Networks calls this function)
-      const validationPromises = allNetworks
+      // Get candidate networks and limit the number to check
+      const candidateNetworks = allNetworks
         .filter((network) => allProviders[network.chainId.toString()]?.isWorking !== false)
         .filter((network) => network.chainId !== token.chainId) // Skip the current network
-        .map(async (network) => {
-          try {
-            const networkProvider = allProviders[network.chainId.toString()]
-            if (!networkProvider) return null
+        .slice(0, maxNetworksToCheck) // Limit the number of networks to check
 
-            // Use validateERC20Token without network detection to avoid circular dependency
-            const validation = await validateERC20Token(
-              { address: token.address, chainId: network.chainId },
-              accountId,
-              networkProvider,
-              { enableNetworkDetection: false }
-            )
+      // Use concurrency-limited validation to prevent overwhelming RPC providers
+      const validationFunction = async (network: Network) => {
+        try {
+          const networkProvider = allProviders[network.chainId.toString()]
+          if (!networkProvider) return null
 
-            const [networkIsValid] = validation
-            return networkIsValid ? network : null
-          } catch (error) {
-            return null
-          }
-        })
+          // Use validateERC20Token without network detection to avoid circular dependency
+          const validation = await validateERC20Token(
+            { address: token.address, chainId: network.chainId },
+            accountId,
+            networkProvider,
+            { enableNetworkDetection: false }
+          )
 
-      const results = await Promise.all(validationPromises)
+          return validation.isValid ? network : null
+        } catch (error) {
+          return null
+        }
+      }
+
+      const results = await limitConcurrency(
+        candidateNetworks,
+        validationFunction,
+        concurrencyLimit
+      )
       const validNetworks = results.filter((network): network is Network => network !== null)
 
       if (validNetworks.length > 0) {
@@ -415,34 +452,14 @@ export const validateERC20Token = async (
     }
   }
 
-  return [
+  return {
     isValid,
-    type,
-    {
+    standard: type,
+    error: {
       message: errorMessage || null,
       type: errorType
     }
-  ]
-}
-
-/**
- * Validates an ERC20 token and suggests alternative networks if validation fails.
- * This is a convenience wrapper around validateERC20Token with network detection enabled.
- *
- */
-export const validateERC20TokenWithNetworkDetection = async (
-  address: string,
-  chainId: bigint,
-  accountId: string,
-  provider: RPCProvider,
-  allNetworks: Network[],
-  allProviders: { [chainId: string]: RPCProvider }
-): Promise<TokenValidationResult> => {
-  return validateERC20Token({ address, chainId }, accountId, provider, {
-    allNetworks,
-    allProviders,
-    enableNetworkDetection: true
-  })
+  }
 }
 
 // fetch the amountPostSimulation for the token if set

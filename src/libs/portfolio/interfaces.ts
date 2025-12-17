@@ -480,8 +480,8 @@ export type KnownTokenInfo = {
   chainIds?: number[]
 }
 
-export type TokenValidationResult = [
-  boolean,
-  string,
-  { message: string | null; type: 'network' | 'validation' | null }
-]
+export type TokenValidationResult = {
+  isValid: boolean
+  standard: string
+  error: { message: string | null; type: 'network' | 'validation' | null }
+}

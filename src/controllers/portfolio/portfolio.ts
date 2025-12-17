@@ -422,7 +422,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       return
     }
 
-    const [isValid, standard, error]: TokenValidationResult = await validateERC20Token(
+    const result: TokenValidationResult = await validateERC20Token(
       token,
       accountId,
       provider,
@@ -434,12 +434,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           }
         : undefined
     )
+    const { isValid, standard, error } = result
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
       [`${token.address}-${token.chainId}`]: {
         isValid,
-        error: error.message || error.type ? error : null
+        error
       }
     }
 
