@@ -66,7 +66,12 @@ import {
 } from '../../interfaces/signAccountOp'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
-import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import {
+  canBecomeSmarter,
+  isAmbireV1LinkedAccount,
+  isBasicAccount,
+  isSmartAccount
+} from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import {
@@ -116,6 +121,7 @@ import {
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
@@ -543,9 +549,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // use the gas prices from the controller.
       // otherwise, we're good as gas price also come from the bundlerEstimation
       if (!this.gasPrices || !this.estimation.estimation?.bundlerEstimation) {
-        this.update({
-          gasPrices: this.gasPrice.gasPrices
-        })
+        this.update({ gasPrices: this.gasPrice.gasPrices })
       }
     })
 
@@ -634,7 +638,39 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         signingKeyType: this.accountKeyStoreKeys[0]!.type
       })
     }
-    // we can set a default paidBy and feeToken here if they aren't any set
+
+    if (this.estimation.status === EstimationStatus.Success) {
+      const payOptionsPaidByUsOrGasTank = this.estimation.availableFeeOptions.filter(
+        (feeOption) => feeOption.paidBy === this.accountOp.accountAddr
+      )
+
+      const payOptionsPaidByEOA = this.estimation.availableFeeOptions.filter(
+        (feeOption) => feeOption.paidBy !== this.accountOp.accountAddr
+      )
+
+      // Set default feeToken and paidBy
+      if (!this.feeTokenResult && !this.#paidBy) {
+        if (
+          payOptionsPaidByUsOrGasTank.length > 0 &&
+          !this.#getIsFeeOptionDisabled(payOptionsPaidByUsOrGasTank[0]!)
+        ) {
+          this.feeTokenResult = payOptionsPaidByUsOrGasTank[0]!.token
+          this.#paidBy = payOptionsPaidByUsOrGasTank[0]!.paidBy
+        } else if (
+          payOptionsPaidByEOA.length > 0 &&
+          !this.#getIsFeeOptionDisabled(payOptionsPaidByEOA[0]!)
+        ) {
+          this.feeTokenResult = payOptionsPaidByEOA[0]!.token
+          this.#paidBy = payOptionsPaidByEOA[0]!.paidBy
+        } else if (payOptionsPaidByUsOrGasTank.length) {
+          this.feeTokenResult = payOptionsPaidByUsOrGasTank[0]!.token
+          this.#paidBy = payOptionsPaidByUsOrGasTank[0]!.paidBy
+        } else if (payOptionsPaidByEOA.length) {
+          this.feeTokenResult = payOptionsPaidByEOA[0]!.token
+          this.#paidBy = payOptionsPaidByEOA[0]!.paidBy
+        }
+      }
+    }
   }
 
   #setGasFeePayment(paidByKeyType?: Key['type']) {
@@ -1075,10 +1111,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (signingKeyAddr && signingKeyType && this.isInitialized) {
-        this.#updateAccountOp({
-          signingKeyAddr,
-          signingKeyType
-        })
+        this.#updateAccountOp({ signingKeyAddr, signingKeyType })
 
         // If the fee is paid by the signer, then we should set the fee payer
         // key type to the signing key type (so the user doesn't have to select
@@ -1227,6 +1260,28 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   resetStatus() {
     this.status = null
     this.emitUpdate()
+  }
+
+  #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
+    const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
+    const speeds = this.feeSpeeds[id] ?? []
+
+    const coversSlow = speeds.some(
+      (speed: SpeedCalc) =>
+        speed.type === FeeSpeed.Slow && feeOption.availableAmount >= speed.amount
+    )
+
+    if (!coversSlow) return true
+
+    const isExternal = this.accountKeyStoreKeys.some(
+      (keyStoreKey) => keyStoreKey.addr === feeOption.paidBy && keyStoreKey.isExternallyStored
+    )
+
+    const canNotBecomeSmarter = !canBecomeSmarter(this.account, this.accountKeyStoreKeys)
+
+    if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
+
+    return false
   }
 
   /**
