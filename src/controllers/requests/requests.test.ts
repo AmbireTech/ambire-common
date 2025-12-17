@@ -225,13 +225,8 @@ const prepareTest = async () => {
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
       getDapp: async () => undefined,
-      getSignAccountOp: () => null,
-      getMainStatuses: () => STATUS_WRAPPED_METHODS,
-      updateSignAccountOp: () => {},
-      destroySignAccountOp: () => {},
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
-      guardHWSigning: () => Promise.resolve(false),
       onSetCurrentUserRequest: () => {},
       autoLogin: autoLoginCtrl
     }),

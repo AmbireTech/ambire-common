@@ -31,7 +31,7 @@ import {
   Key,
   KeystoreSignerType
 } from '../../interfaces/keystore'
-import { IMainController, STATUS_WRAPPED_METHODS, StatusesWithCustom } from '../../interfaces/main'
+import { IMainController, STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
@@ -176,7 +176,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses: StatusesWithCustom = STATUS_WRAPPED_METHODS
+  statuses = STATUS_WRAPPED_METHODS
 
   ui: IUiController
 
@@ -185,8 +185,6 @@ export class MainController extends EventEmitter implements IMainController {
   get continuousUpdates() {
     return this.#continuousUpdates
   }
-
-  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
     appVersion,
@@ -476,12 +474,10 @@ export class MainController extends EventEmitter implements IMainController {
         await this.dapps.initialLoadPromise
         return this.dapps.getDapp(id)
       },
-      getMainStatuses: () => this.statuses,
       updateSelectedAccountPortfolio: async (networks) => {
         await this.updateSelectedAccountPortfolio({ networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
-      guardHWSigning: this.#guardHWSigning.bind(this),
       onSetCurrentUserRequest: (currentRequest) => {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.dapps.setDappToConnectIfNeeded(currentRequest)
@@ -798,36 +794,49 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
+    let isSignAndBroadcastInProgressOnThisAccountAndChain = false
+
     if (
-      signAccountOp.isSignAndBroadcastInProgress ||
-      this.statuses.signAndBroadcastAccountOp !== 'INITIAL'
+      this.requests.visibleUserRequests.some(
+        (r) =>
+          r.kind === 'calls' &&
+          r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
+          r.signAccountOp.isSignAndBroadcastInProgress
+      )
     ) {
+      isSignAndBroadcastInProgressOnThisAccountAndChain = true
+    } else if (
+      type !== 'one-click-swap-and-bridge' &&
+      this.swapAndBridge.signAccountOpController &&
+      this.swapAndBridge.signAccountOpController.accountOp.accountAddr ===
+        signAccountOp.accountOp.accountAddr &&
+      this.swapAndBridge.signAccountOpController.accountOp.chainId ===
+        signAccountOp.accountOp.chainId &&
+      this.swapAndBridge.signAccountOpController.isSignAndBroadcastInProgress
+    ) {
+      isSignAndBroadcastInProgressOnThisAccountAndChain = true
+    } else if (
+      type !== 'one-click-transfer' &&
+      this.transfer.signAccountOpController &&
+      this.transfer.signAccountOpController.accountOp.accountAddr ===
+        signAccountOp.accountOp.accountAddr &&
+      this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
+      this.transfer.signAccountOpController.isSignAndBroadcastInProgress
+    ) {
+      isSignAndBroadcastInProgressOnThisAccountAndChain = true
+    }
+
+    if (isSignAndBroadcastInProgressOnThisAccountAndChain) {
       return this.emitError({
         level: 'major',
         message: 'Please wait while the previous transaction is being processed.',
         error: new Error(
-          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Signing key: ${signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
         )
       })
     }
 
-    this.statuses.signAndBroadcastAccountOp = 'LOADING'
-    this.forceEmitUpdate()
-
-    await signAccountOp
-      .signAndBroadcast()
-      .then(async () => {
-        this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-        await this.forceEmitUpdate()
-      })
-      .catch(async () => {
-        this.statuses.signAndBroadcastAccountOp = 'ERROR'
-        await this.forceEmitUpdate()
-      })
-      .finally(async () => {
-        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-        await this.forceEmitUpdate()
-      })
+    await signAccountOp.signAndBroadcast()
   }
 
   async resolveDappBroadcast(
@@ -1429,70 +1438,6 @@ export class MainController extends EventEmitter implements IMainController {
       networks: network ? [network] : undefined
     })
     this.emitUpdate()
-  }
-
-  /**
-   * Don't allow the user to open new request windows
-   * if there's a pending to sign action (swap and bridge or transfer)
-   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an request window).
-   * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
-   * @returns {boolean} - true if an error was thrown
-   * @throws {Error} - if throwRpcError is true
-   */
-  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
-    const pendingRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge' || kind === 'transfer'
-    )
-
-    if (!pendingRequest) return false
-
-    const isSigningOrBroadcasting = this.statuses.signAndBroadcastAccountOp === 'LOADING'
-
-    // The swap and bridge or transfer is done/forgotten so we can remove the request
-    if (!isSigningOrBroadcasting) {
-      await this.requests.removeUserRequests([pendingRequest.id])
-
-      if (pendingRequest.kind === 'swapAndBridge') {
-        this.swapAndBridge.reset()
-      } else {
-        this.transfer.resetForm()
-      }
-
-      return false
-    }
-
-    const errors = {
-      swapAndBridge: {
-        message: 'Please complete the pending swap action.',
-        error: 'Pending swap action',
-        rpcError: 'You have a pending swap action. Please complete it before signing.'
-      },
-      transfer: {
-        message: 'Please complete the pending transfer action.',
-        error: 'Pending transfer action',
-        rpcError: 'You have a pending transfer action. Please complete it before signing.'
-      }
-    }
-
-    const error = errors[pendingRequest.kind as keyof typeof errors]
-
-    // Don't reopen the request window if focusing it fails
-    // because closing it will abort the signing process
-    await this.requests.focusRequestWindow({ reopenIfNeeded: false })
-    this.emitError({
-      level: 'expected',
-      message: error.message,
-      error: new Error(error.error)
-    })
-
-    if (throwRpcError) {
-      throw ethErrors.rpc.transactionRejected({
-        message: error.rpcError
-      })
-    }
-
-    return true
   }
 
   // includes the getters in the stringified instance

@@ -13,7 +13,6 @@ import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
-import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -36,6 +35,8 @@ import {
   RequestPosition,
   SignUserRequest,
   SiweMessageUserRequest,
+  SwapAndBridgeRequest,
+  TransferRequest,
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
@@ -138,8 +139,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
 
-  #guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
-
   #onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
 
   #onBroadcastSuccess: OnBroadcastSuccess
@@ -206,7 +205,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     getDapp,
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
-    guardHWSigning,
     onSetCurrentUserRequest,
     onBroadcastSuccess,
     onBroadcastFailed
@@ -235,8 +233,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     getDapp: (id: string) => Promise<Dapp | undefined>
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
-    guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
-    getMainStatuses: () => StatusesWithCustom
     onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
@@ -262,7 +258,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#getDapp = getDapp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
-    this.#guardHWSigning = guardHWSigning
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
@@ -1715,6 +1710,72 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     return callUserRequest
+  }
+
+  /**
+   * Don't allow the user to open new request windows
+   * if there's a pending to sign action (swap and bridge or transfer)
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an request window).
+   * This is done to prevent complications with the signing process- e.g. a new request
+   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
+   * @returns {boolean} - true if an error was thrown
+   * @throws {Error} - if throwRpcError is true
+   */
+  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
+    const pendingRequest = this.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge' || kind === 'transfer'
+    ) as SwapAndBridgeRequest | TransferRequest | undefined
+
+    if (!pendingRequest) return false
+
+    const isSigningOrBroadcasting = this.visibleUserRequests.some(
+      (r) => r.kind === 'calls' && r.signAccountOp.isSignAndBroadcastInProgress
+    )
+
+    // The swap and bridge or transfer is done/forgotten so we can remove the request
+    if (!isSigningOrBroadcasting) {
+      await this.removeUserRequests([pendingRequest.id])
+
+      if (pendingRequest.kind === 'swapAndBridge') {
+        this.#swapAndBridge.reset()
+      } else {
+        this.#transfer.resetForm()
+      }
+
+      return false
+    }
+
+    const errors = {
+      swapAndBridge: {
+        message: 'Please complete the pending swap action.',
+        error: 'Pending swap action',
+        rpcError: 'You have a pending swap action. Please complete it before signing.'
+      },
+      transfer: {
+        message: 'Please complete the pending transfer action.',
+        error: 'Pending transfer action',
+        rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      }
+    }
+
+    const error = errors[pendingRequest.kind as keyof typeof errors]
+
+    // Don't reopen the request window if focusing it fails
+    // because closing it will abort the signing process
+    await this.focusRequestWindow({ reopenIfNeeded: false })
+    this.emitError({
+      level: 'expected',
+      message: error.message,
+      error: new Error(error.error)
+    })
+
+    if (throwRpcError) {
+      throw ethErrors.rpc.transactionRejected({
+        message: error.rpcError
+      })
+    }
+
+    return true
   }
 
   async setCurrentUserRequestById(requestId: UserRequest['id'], params?: OpenRequestWindowParams) {
