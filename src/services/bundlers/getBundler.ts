@@ -65,17 +65,10 @@ export function getDefaultBundlerName(
       : PIMLICO
   }
 
-  // use the defaultBundler on ethereum if defined OR PIMLICO on ethereum, not loterry
-  if (network.chainId === 1n) {
-    return network.erc4337.defaultBundler && allBundlers.includes(network.erc4337.defaultBundler)
-      ? network.erc4337.defaultBundler
-      : PIMLICO
-  }
-
   // loterry system
   // pick one bundler between the available and return it
   const index = Math.floor(Math.random() * availableBundlers.length)
-  return availableBundlers[index]
+  return availableBundlers[index]!
 }
 
 /**
@@ -90,6 +83,7 @@ export function getDefaultBundler(
 }
 
 export function getAvailableBundlerNames(network: Network): BUNDLER[] {
+  if (!network.erc4337.hasBundlerSupport) return []
   if (!network.erc4337.bundlers) return [getDefaultBundlerName(network)]
 
   // the bundler may not be implemented in the codebase
