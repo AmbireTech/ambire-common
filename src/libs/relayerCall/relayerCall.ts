@@ -85,8 +85,13 @@ export async function relayerCall(
   headers: any = null,
   timeoutMs: number = 20000
 ): Promise<any> {
-  if (!this.fetch) {
-    console.error('No fetch available for relayerCall. Called with', path)
+  if (!this.url || !this.fetch) {
+    throw new RelayerError(
+      'Unable to connect to the Ambire relayer. Please try again later. Error code: RELAYERCALL_NOT_BINDED',
+      { url: this.url, path, method, body, headers },
+      {},
+      true
+    )
   }
   const res = await relayerCallUncaught(
     this.url + path,
