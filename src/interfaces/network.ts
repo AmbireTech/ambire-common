@@ -172,6 +172,7 @@ export type RelayerNetwork = {
   rpcUrls: string[]
   selectedRpcUrl: string
   selectedRpcBatchCount?: number
+  rpcNoStateOverride?: boolean
   native: {
     symbol: string
     name: string
