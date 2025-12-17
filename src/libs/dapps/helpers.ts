@@ -3,8 +3,8 @@ import { getDomain } from 'tldts'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import { Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
 
-const getDappIdFromUrl = (url?: string): string => {
-  if (!url) return 'internal'
+const getDappIdFromUrl = (url: string): string => {
+  if (!url || url === 'internal') return 'internal'
 
   const predefinedDapp = predefinedDapps.find((d) => d.url === url)
   if (predefinedDapp) return predefinedDapp.id
@@ -56,13 +56,14 @@ const modifyDappPropsIfNeeded = (
   protocol: DefiLlamaProtocol,
   onModify: (modifiedDapp: Dapp) => void
 ) => {
-  if (id === 'uniswap.org') {
+  if (id === 'uniswap.org' || id === 'app.uniswap.org') {
     const uniswap = dappsMap.get(id)
     if (uniswap) {
+      uniswap.id = 'app.uniswap.org'
+      uniswap.icon = 'https://icons.llama.fi/uniswap-v4.png'
       uniswap.tvl = (uniswap.tvl || 0) + (protocol.tvl || 0)
       uniswap.description =
         'Swap, earn, and build on the leading decentralized crypto trading protocol.'
-      if (protocol.id === '5690') uniswap.icon = protocol.logo
       onModify(uniswap)
     }
   }

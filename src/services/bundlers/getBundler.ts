@@ -3,6 +3,7 @@ import {
   BICONOMY,
   BUNDLER,
   CANDIDE,
+  CUSTOM,
   ETHERSPOT,
   GELATO,
   PIMLICO
@@ -11,6 +12,7 @@ import { Network } from '../../interfaces/network'
 import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'
 import { Candide } from './candide'
+import { CustomBundler } from './customBundler'
 import { Etherspot } from './etherspot'
 import { Gelato } from './gelato'
 import { Pimlico } from './pimlico'
@@ -32,6 +34,9 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
     case CANDIDE:
       return new Candide()
 
+    case CUSTOM:
+      return new CustomBundler()
+
     default:
       throw new Error('Bundler settings error')
   }
@@ -41,6 +46,10 @@ export function getDefaultBundlerName(
   network: Network,
   opts: { canDelegate: boolean } = { canDelegate: false }
 ): BUNDLER {
+  // if the network has a custom bundler URL,
+  // it should take precedence over anything else
+  if (network.customBundlerUrl && network.customBundlerUrl.trim()) return CUSTOM
+
   // use pimlico on all 7702 accounts that don't have a set delegation
   if (opts.canDelegate) return PIMLICO
 
@@ -56,17 +65,10 @@ export function getDefaultBundlerName(
       : PIMLICO
   }
 
-  // use the defaultBundler on ethereum if defined OR PIMLICO on ethereum, not loterry
-  if (network.chainId === 1n) {
-    return network.erc4337.defaultBundler && allBundlers.includes(network.erc4337.defaultBundler)
-      ? network.erc4337.defaultBundler
-      : PIMLICO
-  }
-
   // loterry system
   // pick one bundler between the available and return it
   const index = Math.floor(Math.random() * availableBundlers.length)
-  return availableBundlers[index]
+  return availableBundlers[index]!
 }
 
 /**
@@ -81,6 +83,8 @@ export function getDefaultBundler(
 }
 
 export function getAvailableBundlerNames(network: Network): BUNDLER[] {
+  if (network.customBundlerUrl && network.customBundlerUrl.trim()) return [CUSTOM]
+  if (!network.erc4337.hasBundlerSupport) return []
   if (!network.erc4337.bundlers) return [getDefaultBundlerName(network)]
 
   // the bundler may not be implemented in the codebase

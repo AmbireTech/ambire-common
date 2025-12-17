@@ -514,7 +514,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#awaitPendingPromises()
 
     if (this.requestWindow.windowProps) {
-      if (!skipFocus) await this.focusRequestWindow()
+      if (!skipFocus) {
+        // Force-emitting here updates currentUserRequest on the FE before the window regains focus,
+        // preventing the user from briefly seeing the previous request.
+        await this.forceEmitUpdate()
+        await this.focusRequestWindow()
+      }
     } else {
       let customSize
 
@@ -1044,7 +1049,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
       const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
         rawMessage,
-        request.session.origin
+        request.session.origin,
+        msgAddress
       )
 
       // Handle valid and invalid SIWE messages

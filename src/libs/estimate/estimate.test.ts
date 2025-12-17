@@ -10,6 +10,7 @@ import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
@@ -1060,6 +1061,7 @@ describe('estimate', () => {
   })
 
   it('[ERC-4337]:Optimism | deployed account | corrupt the account info with incorrect 4337 nonce | should work regardless', async () => {
+    const { restore } = suppressConsole()
     const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
     const nonce = await (ambAcc as any).nonce()
     const opOptimism = {
@@ -1109,6 +1111,7 @@ describe('estimate', () => {
     // make sure the flag was raised
     expect(bundlerGas.flags.has4337NonceDiscrepancy).toBe(true)
     expect(res.flags.has4337NonceDiscrepancy).toBe(true)
+    restore()
   })
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
