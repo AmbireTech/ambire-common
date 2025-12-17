@@ -4,6 +4,8 @@ import { predefinedDapps } from '../../consts/dapps/dapps'
 import { Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url: string): string => {
+  if (!url) return 'internal'
+
   const predefinedDapp = predefinedDapps.find((d) => d.url === url)
   if (predefinedDapp) return predefinedDapp.id
 

@@ -2,8 +2,8 @@ import { Messenger } from '../interfaces/messenger'
 import { getDappIdFromUrl } from '../libs/dapps/helpers'
 
 export interface SessionInitProps {
-  url: string
-  tabId: number
+  url?: string
+  tabId?: number
   windowId?: number
 }
 export interface SessionProp {
@@ -73,7 +73,11 @@ export class Session {
   }
 
   constructor({ tabId, windowId, url }: SessionInitProps) {
-    this.origin = new URL(url).origin
+    if (url) {
+      this.origin = new URL(url).origin
+    } else {
+      this.origin = 'internal'
+    }
     this.id = getDappIdFromUrl(this.origin)
     this.tabId = tabId || Date.now()
     this.windowId = windowId
