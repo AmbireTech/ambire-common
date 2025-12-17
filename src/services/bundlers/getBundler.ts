@@ -74,6 +74,7 @@ export function getDefaultBundler(
 }
 
 export function getAvailableBundlerNames(network: Network): BUNDLER[] {
+  if (!network.erc4337.hasBundlerSupport) return []
   if (!network.erc4337.bundlers) return [getDefaultBundlerName(network)]
 
   // the bundler may not be implemented in the codebase
