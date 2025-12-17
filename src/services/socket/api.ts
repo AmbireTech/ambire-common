@@ -116,10 +116,12 @@ export class SocketAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
+      let timeoutPromise
+
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
-          setTimeout(() => {
+          timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
                 'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
@@ -128,6 +130,8 @@ export class SocketAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
+
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
@@ -440,7 +444,11 @@ export class SocketAPI implements SwapProvider {
         ? {
             allowanceTarget: response.approvalData.spenderAddress,
             approvalTokenAddress: response.approvalData.tokenAddress,
-            minimumApprovalAmount: response.approvalData.amount,
+            // we're using route.fromAmount instead of response.approvalData.amount
+            // because the API wrongly returns the substracted approval amount
+            // (meaning the amount after the swap&bridge fee) and it causes the
+            // estimation to fail with a TRANSFER_FROM_FAILED
+            minimumApprovalAmount: route.fromAmount,
             owner: response.approvalData.userAddress
           }
         : null,

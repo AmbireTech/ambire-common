@@ -23,7 +23,7 @@ describe('MagicLink', () => {
     try {
       await requestMagicLink(playstationEmail, relayerUrl, fetch)
     } catch (e: any) {
-      expect(e.message).toBe('magicLink: error getting magic link: invalid email')
+      expect(e.message).toBe('invalid email')
     }
   })
 
@@ -31,7 +31,7 @@ describe('MagicLink', () => {
     try {
       await requestMagicLink(exMagicLinkKey, relayerUrl, fetch)
     } catch (e: any) {
-      expect(e.message).toBe('magicLink: error getting magic link: invalid email')
+      expect(e.message).toBe('invalid email')
     }
   })
 })

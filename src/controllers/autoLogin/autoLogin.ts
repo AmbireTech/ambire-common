@@ -1,5 +1,6 @@
 import { isHexString, toUtf8String } from 'ethers'
 import { SiweMessage } from 'siwe'
+import { getAddress } from 'viem'
 import { parseSiweMessage, SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { IAccountsController } from '../../interfaces/account'
@@ -18,7 +19,7 @@ import { ExternalSignerControllers, IKeystoreController, Key } from '../../inter
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { PlainTextMessage } from '../../interfaces/userRequest'
+import { PlainTextMessageUserRequest } from '../../interfaces/userRequest'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignMessageController } from '../signMessage/signMessage'
 
@@ -142,7 +143,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static getParsedSiweMessage(
     message: string | `0x${string}`,
-    requestOrigin: string
+    requestOrigin: string,
+    signerAddress?: string
   ): null | {
     parsedSiwe: SiweMessageType
     status: SiweValidityStatus
@@ -162,6 +164,16 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     try {
       const requestDomain = new URL(requestOrigin).host
+
+      // Some dApps don't use checksum addresses in the SIWE message
+      // Which makes verification by the 'siwe' package fail (as it's very strict)
+      if (signerAddress) {
+        messageString = messageString.replace(
+          signerAddress.toLowerCase(),
+          getAddress(signerAddress)
+        )
+      }
+
       const parsedSiweMessage = new SiweMessage(messageString)
 
       if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
@@ -200,14 +212,14 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         status: 'valid'
       }
     } catch (e: any) {
-      console.error('Error parsing message:', e)
+      console.error('Error parsing message:', e, 'Original message:', messageString)
 
       // Parse it again with viem to get as much info as possible
       // so we can display it to the user
       try {
         return {
           parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
-          status: 'invalid-critical'
+          status: 'malformed'
         }
       } catch {
         return null
@@ -392,7 +404,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   async autoLogin(messageToSign: {
     accountAddr: string
     chainId: bigint
-    message: PlainTextMessage['message']
+    message: PlainTextMessageUserRequest['meta']['params']['message']
   }) {
     await this.initialLoadPromise
 
@@ -413,7 +425,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
           kind: 'message',
           message: messageToSign.message
         },
-        fromActionId: 'siwe-auto-login',
+        fromRequestId: 'siwe-auto-login',
         signature: null
       }
     })

@@ -4,17 +4,21 @@ import { expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { IProvidersController } from '../../interfaces/provider'
+import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
-import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -25,8 +29,10 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from './swapAndBridge'
@@ -90,7 +96,7 @@ const networksCtrl = new NetworksController({
   }
 })
 
-providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 providersCtrl.providers = providers
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
@@ -127,12 +133,6 @@ const selectedAccountCtrl = new SelectedAccountController({
 })
 
 const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
-
-const actionsCtrl = new ActionsController({
-  selectedAccount: selectedAccountCtrl,
-  ui: uiCtrl,
-  onActionWindowClose: () => Promise.resolve()
-})
 
 const inviteCtrl = new InviteController({
   relayerUrl: '',
@@ -207,6 +207,8 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
+let requestsCtrl: IRequestsController | undefined
+
 const swapAndBridgeController = new SwapAndBridgeController({
   callRelayer: () => {},
   selectedAccount: selectedAccountCtrl,
@@ -223,9 +225,50 @@ const swapAndBridgeController = new SwapAndBridgeController({
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
-  getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue,
+  getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
   onBroadcastSuccess: () => Promise.resolve(),
   onBroadcastFailed: () => {}
+})
+
+const transferCtrl = new TransferController(
+  () => {},
+  storageCtrl,
+  humanizerInfo as HumanizerMeta,
+  selectedAccountCtrl,
+  networksCtrl,
+  addressBookCtrl,
+  accountsCtrl,
+  keystore,
+  portfolioCtrl,
+  activityCtrl,
+  {},
+  providersCtrl,
+  phishingCtrl,
+  relayerUrl,
+  () => Promise.resolve(),
+  uiCtrl
+)
+
+requestsCtrl = new RequestsController({
+  relayerUrl,
+  accounts: accountsCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl,
+  selectedAccount: selectedAccountCtrl,
+  keystore,
+  transfer: transferCtrl,
+  swapAndBridge: swapAndBridgeController,
+  ui: uiCtrl,
+  getDapp: async () => undefined,
+  getSignAccountOp: () => null,
+  getMainStatuses: () => STATUS_WRAPPED_METHODS,
+  updateSignAccountOp: () => {},
+  destroySignAccountOp: () => {},
+  updateSelectedAccountPortfolio: () => Promise.resolve(),
+  addTokensToBeLearned: () => {},
+  guardHWSigning: () => Promise.resolve(false),
+  onSetCurrentUserRequest: () => {},
+  autoLogin: autoLoginCtrl
 })
 
 describe('SwapAndBridge Controller', () => {
@@ -257,7 +300,7 @@ describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(accounts[0])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
 
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
@@ -364,7 +407,7 @@ describe('SwapAndBridge Controller', () => {
   })
   it('should continuously update the quote', async () => {
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+    const { restore } = suppressConsole()
 
     const updateQuoteSpy = jest
       .spyOn(swapAndBridgeController, 'updateQuote')
@@ -404,7 +447,7 @@ describe('SwapAndBridge Controller', () => {
     expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restore()
   })
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
@@ -431,8 +474,8 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
   })
   it('should continuously update active routes', async () => {
+    const { restore } = suppressConsole()
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
 
     const checkForActiveRoutesStatusUpdateSpy = jest
       .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
@@ -473,7 +516,7 @@ describe('SwapAndBridge Controller', () => {
     expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restore()
   })
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
@@ -485,6 +528,38 @@ describe('SwapAndBridge Controller', () => {
         userTxIndex: 1
       }
     )
+    // dummy submittedAccountOp - just the txnId is important here, used in checkForActiveRoutesStatusUpdate
+    const SUBMITTED_ACCOUNT_OP = {
+      accountAddr: accounts[0]!.addr,
+      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      gasLimit: null,
+      gasFeePayment: {
+        isGasTank: false,
+        paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        inToken: '0x0000000000000000000000000000000000000000',
+        amount: 1n,
+        simulatedGasLimit: 1n,
+        gasPrice: 1n
+      },
+      chainId: 1n,
+      nonce: 225n,
+      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+      calls: [
+        {
+          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+          value: BigInt(0),
+          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+        }
+      ],
+      txnId: swapAndBridgeController.activeRoutes[0]?.userTxHash,
+      status: 'broadcasted-but-not-confirmed',
+      identifiedBy: {
+        type: 'Transaction',
+        identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+      }
+    }
+    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP as any)
+
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
   })

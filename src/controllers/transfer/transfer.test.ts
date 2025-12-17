@@ -176,7 +176,7 @@ const prepareTest = async () => {
     }
   })
 
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
 
   const uiCtrl = new UiController({ uiManager })
@@ -263,7 +263,8 @@ const prepareTest = async () => {
     providersCtrl,
     phishing,
     relayerUrl,
-    () => Promise.resolve()
+    () => Promise.resolve(),
+    uiCtrl
   )
 
   await selectedAccountCtrl.initialLoadPromise

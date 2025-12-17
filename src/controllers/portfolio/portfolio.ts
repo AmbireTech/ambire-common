@@ -642,7 +642,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isLoading: false,
       errors: [],
       result: {
-        ...res.data.rewardsProjectionData
+        ...res.data.rewardsProjectionDataV2,
+        frozenRewardSeason1: res.data.frozenRewardSeason1 ? res.data.frozenRewardSeason1 : 0
       }
     }
 
@@ -1207,7 +1208,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         // Chain the new updatePromise to the current queue
         this.#queue[accountId][network.chainId.toString()] = this.#queue?.[accountId]?.[
           network.chainId.toString()
-        ]!.then(updatePromise).catch(() => updatePromise())
+        ]!.then(updatePromise).catch((error) => {
+          // eslint-disable-next-line no-console
+          console.error(error)
+          return updatePromise()
+        })
 
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.chainId.toString()]

@@ -1,15 +1,8 @@
-import { WALLET_TOKEN } from '../../consts/addresses'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
-import { calculateRewardsForSeason } from '../../utils/rewards'
-import {
-  AccountState,
-  NetworkState,
-  PortfolioProjectedRewardsResult,
-  ProjectedRewardsTokenResult
-} from '../portfolio/interfaces'
+import { AccountState, NetworkState } from '../portfolio/interfaces'
 
 // const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
 //   const diff = Math.abs(price1 - price2)
@@ -330,100 +323,13 @@ export function calculateSelectedAccountPortfolio(
       isReloading: false,
       shouldShowPartialResult: prevShouldShowPartialResult,
       balancePerNetwork: {},
-      networkSimulatedAccountOp: {}
+      networkSimulatedAccountOp: {},
+      projectedRewardsStats: null
     } as Omit<SelectedAccountPortfolio, 'portfolioState'>
   )
 
   return {
     portfolioState: strippedPortfolioState,
     ...newPortfolio
-  }
-}
-
-export const calculateAndSetProjectedRewards = (
-  projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
-  latestBalances: { [chainId: string]: number },
-  walletOrStkWalletTokenPrice: number | undefined
-): ProjectedRewardsTokenResult | undefined => {
-  if (!projectedRewards) return
-
-  const result = projectedRewards?.result
-  if (!result) return
-
-  const {
-    currentSeasonSnapshots,
-    supportedChainIds,
-    numberOfWeeksSinceStartOfSeason,
-    totalRewardsPool,
-    totalWeightNonUser,
-    userLevel,
-    walletPrice,
-    minLvl,
-    minBalance,
-    userXp,
-    reasonToNotDisplayProjectedRewards
-  } = result
-  if (reasonToNotDisplayProjectedRewards) return
-
-  const currentTotalBalanceOnSupportedChains = supportedChainIds
-    .map((chainId: number) => latestBalances[chainId] || 0)
-    .reduce((a: number, b: number) => a + b, 0)
-
-  const parsedSnapshotsBalance = currentSeasonSnapshots.map(
-    (snapshot: { week: number; balance: number }) => snapshot.balance
-  )
-
-  // If the user never participated in Ambire Rewards, we assume they are at level 0.
-  // If they have participated, but are below the minimum level, we assume they are at the minimum level because we need to calculate the APY.
-  // For that purpose, we assume they are at the minimum level with minimum balance.
-  // This means that their projected rewards will be 0, but we will be able to calculate the APY.
-  const level = userLevel < minLvl ? minLvl : userLevel
-  const currentBalance =
-    currentTotalBalanceOnSupportedChains < minBalance
-      ? minBalance
-      : currentTotalBalanceOnSupportedChains
-
-  // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
-  const walletTokenPrice = walletOrStkWalletTokenPrice || walletPrice
-
-  const projectedAmount = calculateRewardsForSeason(
-    level,
-    parsedSnapshotsBalance,
-    currentBalance,
-    numberOfWeeksSinceStartOfSeason,
-    totalWeightNonUser,
-    totalRewardsPool,
-    minLvl,
-    minBalance
-  )
-
-  // If the user is below the minimum level or did not have a single week with balance >$500, they get 0 projected rewards
-  const hasLowBalance = [...parsedSnapshotsBalance, currentTotalBalanceOnSupportedChains].every(
-    (b) => b < minBalance
-  )
-
-  // Final projected amount after checks.
-  // If the user is below min level or has low balance, it's 0.
-  // If projected amount < 1, it's also 0.
-  const shouldZeroRewards = userLevel < minLvl || hasLowBalance || projectedAmount < 1
-  const finalProjectedAmount = shouldZeroRewards ? 0 : projectedAmount
-
-  const projectedAmountFormatted = Math.round(finalProjectedAmount * 1e18)
-
-  return {
-    chainId: BigInt(1),
-    amount: BigInt(projectedAmountFormatted || 0),
-    address: WALLET_TOKEN,
-    symbol: 'WALLET',
-    name: '$WALLET',
-    decimals: 18,
-    priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
-    userXp,
-    flags: {
-      onGasTank: false,
-      rewardsType: 'wallet-projected-rewards' as const,
-      canTopUpGasTank: false,
-      isFeeToken: false
-    }
   }
 }

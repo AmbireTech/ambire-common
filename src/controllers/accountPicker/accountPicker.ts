@@ -410,7 +410,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   async init() {
-    if (!this.initParams) return
+    if (!this.initParams) {
+      this.emitError({
+        level: 'silent',
+        message: 'AccountPickerController init failed: missing initParams.',
+        error: new Error('AccountPickerController init failed: missing initParams.')
+      })
+      return
+    }
 
     const {
       keyIterator,
@@ -530,14 +537,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const isSmartAccountAndNotLinked =
       isSmartAccount(account) &&
       accountsOnPageWithThisAcc.length === 1 &&
-      accountsOnPageWithThisAcc[0].isLinked === false
+      accountsOnPageWithThisAcc[0]?.isLinked === false
 
     if (isSmartAccountAndNotLinked) {
       // The key of the smart account is the EOA on the same slot
       // that is explicitly derived for a smart account key only.
       const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find(
         (a) =>
-          a.slot === accountsOnPageWithThisAcc[0].slot &&
+          a.slot === accountsOnPageWithThisAcc[0]?.slot &&
           !isSmartAccount(a.account) &&
           isDerivedForSmartAccountKeyOnly(a.index)
       )
@@ -713,12 +720,39 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     try {
-      this.#derivedAccounts = await this.#deriveAccounts()
+      const derivedAccounts = await this.#deriveAccounts()
+
+      if (this.page !== page) return
+
+      this.#derivedAccounts = derivedAccounts
+
+      // The used on information is not critical. Allow the user to proceed after
+      // 1 second. It will get popuplated in the background.
+      const minWaitTimeout = setTimeout(() => {
+        if (this.page !== page) return
+
+        this.accountsLoading = false
+        this.emitUpdate()
+      }, 1000)
+
+      const derivedAccountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
+        accounts: this.#derivedAccounts,
+        page
+      })
+
+      if (this.page !== page) return
+
+      this.#derivedAccounts = derivedAccountsWithUsedOn
+
+      if (minWaitTimeout) clearTimeout(minWaitTimeout)
+
+      this.accountsLoading = false
+      this.emitUpdate()
 
       if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
         const usedAccounts = accountsOnPageWithoutTheLinked.filter(
-          (acc) => acc.account.usedOnNetworks.length
+          (acc) => acc.account.usedOnNetworks?.length
         )
 
         // If at least one account is used - preselect all accounts on the page
@@ -729,11 +763,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         }
       }
     } catch (e: any) {
+      if (this.page !== page) return
       const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`
+      this.accountsLoading = false
       this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage
+      this.emitUpdate()
     }
-    this.accountsLoading = false
-    this.emitUpdate()
+
+    if (this.page !== page) return
 
     await this.findAndSetLinkedAccounts()
   }
@@ -962,12 +999,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    const keyPublicAddress: string = (await this.keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
+    const keyPublicAddress: string | undefined = (
+      await this.keyIterator.retrieve([{ from: 0, to: 1 }])
+    )[0]
+
+    if (!keyPublicAddress) {
+      const message =
+        'accountPicker: createAndAddEmailAccount called, but failed to derive the public key address.'
+      this.emitError({ message, level: 'silent', error: new Error(message) })
+      return
+    }
 
     const emailSmartAccount = await getEmailAccount(
       {
         emailFrom: email!,
-        secondaryKey: recoveryKey.addr
+        secondaryKey: recoveryKey!.addr
       },
       keyPublicAddress
     )
@@ -1086,20 +1132,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
-    const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({ accounts })
-
-    return accountsWithNetworks
+    return accounts
   }
 
   // inner func
-  // eslint-disable-next-line class-methods-use-this
   async #getAccountsUsedOnNetworks({
-    accounts
+    accounts,
+    page
   }: {
     accounts: DerivedAccountWithoutNetworkMeta[]
+    page: number
   }): Promise<DerivedAccount[]> {
     if (!this.shouldGetAccountsUsedOnNetworks) {
-      return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: [] } }))
+      return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: null } }))
     }
 
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
@@ -1118,10 +1163,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const network = networkLookup[chainId]
       if (network) {
         const accountState = await getAccountState(
-          this.#providers.providers[chainId],
+          this.#providers.providers[chainId]!,
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
+          if (this.page !== page) return
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
           this.networksWithAccountStateError.push(BigInt(chainId))
         })
@@ -1148,8 +1194,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
                 // but the account is deployed. So the 'isDeployed' check is the
                 // only reliable way to detect if account is used on network.
                 acc.isDeployed)
-          if (isUsedOnThisNetwork) {
-            accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
+
+          const accObj = accountsObj[acc.accountAddr]
+          if (isUsedOnThisNetwork && accObj) {
+            if (!accObj.account.usedOnNetworks) accObj.account.usedOnNetworks = []
+
+            accObj.account.usedOnNetworks.push(network)
           }
         })
       }
@@ -1161,8 +1211,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     // Preserve the original order of networks based on usedOnNetworks
     const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
-      const chainIdsA = a.account.usedOnNetworks.map((network) => network.chainId)
-      const chainIdsB = b.account.usedOnNetworks.map((network) => network.chainId)
+      const chainIdsA = (a.account.usedOnNetworks || []).map((network) => network.chainId)
+      const chainIdsB = (b.account.usedOnNetworks || []).map((network) => network.chainId)
       const networkIndexA = this.#networks.networks.findIndex((network) =>
         chainIdsA.includes(network.chainId)
       )
@@ -1179,6 +1229,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (!this.shouldSearchForLinkedAccounts) return
 
     if (accounts.length === 0) return
+
+    const calledForPage = this.page
 
     this.linkedAccountsLoading = true
     this.linkedAccountsError = ''
@@ -1261,17 +1313,31 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     })
 
     // in case the page is changed or the ctrl is reset do not continue with the logic
-    if (!this.linkedAccountsLoading) return
+    if (calledForPage !== this.page) return
 
-    const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
-      accounts: linkedAccounts as any
-    })
+    this.#linkedAccounts = linkedAccounts
 
-    if (!this.linkedAccountsLoading) return
-
-    this.#linkedAccounts = linkedAccountsWithNetworks
     this.#verifyLinkedAccounts()
 
+    // The used on information is not critical. Allow the user to proceed after
+    // 1 second. It will get popuplated in the background.
+    const minWaitTimeout = setTimeout(() => {
+      this.linkedAccountsLoading = false
+      this.emitUpdate()
+    }, 1000)
+
+    const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
+      accounts: linkedAccounts as any,
+      page: calledForPage
+    })
+
+    if (minWaitTimeout) {
+      clearTimeout(minWaitTimeout)
+    }
+
+    if (calledForPage !== this.page) return
+
+    this.#linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
     this.emitUpdate()
   }

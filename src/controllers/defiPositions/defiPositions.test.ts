@@ -72,7 +72,7 @@ const prepareTest = async () => {
       providersCtrl.removeProvider(id)
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
 
   const accountsCtrl = new AccountsController(
@@ -461,7 +461,7 @@ describe('DefiPositionsController', () => {
 
   it('should continuously update the defi positions', async () => {
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+    const { restore } = suppressConsole()
 
     const { controller, ui } = await prepareTest()
     controller.updatePositions = jest.fn().mockResolvedValue(undefined)
@@ -498,7 +498,7 @@ describe('DefiPositionsController', () => {
     jest.clearAllTimers()
     jest.useRealTimers()
     jest.clearAllMocks()
-    ;(console.error as jest.Mock).mockRestore()
+    restore()
   })
 })
 

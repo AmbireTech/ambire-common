@@ -195,7 +195,10 @@ export class EstimationController extends EventEmitter {
       (this.#activity.broadcastedButNotConfirmed[account.addr] || []).find(
         (accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation
       )
-    ).catch((e) => e)
+    ).catch((e) => {
+      console.error(e)
+      return e
+    })
 
     // Done to prevent race conditions
     if (op.id !== this.lastAccountOpId) {
@@ -211,7 +214,7 @@ export class EstimationController extends EventEmitter {
       return
     }
 
-    const isSuccess = !(estimation instanceof Error)
+    const isSuccess = !(estimation instanceof Error) && !estimation.criticalError
     if (isSuccess) {
       this.estimation = getEstimationSummary(estimation)
       this.error = null
@@ -222,7 +225,7 @@ export class EstimationController extends EventEmitter {
         estimation.bundler instanceof Error ? estimation.bundler : undefined
     } else {
       this.estimation = null
-      this.error = estimation
+      this.error = estimation instanceof Error ? estimation : estimation.criticalError
       this.status = EstimationStatus.Error
       this.availableFeeOptions = []
     }
@@ -233,8 +236,11 @@ export class EstimationController extends EventEmitter {
       this.estimation &&
       (this.estimation.flags.hasNonceDiscrepancy || this.estimation.flags.has4337NonceDiscrepancy)
     ) {
-      // silenly continuing on error here as the flags are more like app helpers
-      this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.chainId]).catch((e) => e)
+      // continue on error here as the flags are more like app helpers
+      this.#accounts
+        .updateAccountState(op.accountAddr, 'pending', [op.chainId])
+        // eslint-disable-next-line no-console
+        .catch((e) => console.error(e))
     }
 
     this.hasEstimated = true

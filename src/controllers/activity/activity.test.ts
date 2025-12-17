@@ -99,7 +99,7 @@ const SUBMITTED_ACCOUNT_OP = {
 } as submittedAccountOp.SubmittedAccountOp
 
 const SIGNED_MESSAGE: SignedMessage = {
-  fromActionId: 1,
+  fromRequestId: 1,
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   dapp: {
     icon: '',
@@ -196,7 +196,7 @@ describe('Activity Controller ', () => {
         providersCtrl.removeProvider(id)
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 
     const { uiManager } = mockUiManager()
     const uiCtrl = new UiController({ uiManager })
@@ -686,6 +686,64 @@ describe('Activity Controller ', () => {
     //   })
     // })
 
+    test('Filtered account ops include account ops only on enabled networks', async () => {
+      const { controller, sessionId } = await prepareTest()
+
+      const accountsOps = Array.from(Array(20).keys()).map((index) => {
+        let chainId = 1n
+
+        if (index >= 15) {
+          chainId = 56n
+        } else if (index > 8) {
+          chainId = 10n
+        }
+
+        return {
+          ...SUBMITTED_ACCOUNT_OP,
+          chainId,
+          timestamp: Date.now() + Math.random() * 100,
+          nonce: BigInt(index)
+        }
+      })
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const ao of accountsOps) {
+        // eslint-disable-next-line no-await-in-loop
+        await controller.addAccountOp(ao)
+      }
+
+      await controller.filterAccountsOps(
+        sessionId,
+        {
+          account: SUBMITTED_ACCOUNT_OP.accountAddr
+        },
+        {
+          fromPage: 0,
+          itemsPerPage: 20
+        }
+      )
+
+      const controllerAccountsOps1 = controller.accountsOps[sessionId]?.result.items
+
+      expect(controllerAccountsOps1!.filter(({ chainId }) => chainId === 56n).length).toBe(5)
+
+      await networksCtrl.updateNetwork({ disabled: true }, 56n)
+
+      await controller.filterAccountsOps(sessionId, INIT_PARAMS, {
+        fromPage: 0,
+        itemsPerPage: 20
+      })
+
+      const controllerAccountsOps2 = controller.accountsOps
+
+      expect(
+        controllerAccountsOps2[sessionId]?.result.items.filter(({ chainId }) => chainId === 56n)
+          .length
+      ).toBe(0)
+
+      await networksCtrl.updateNetwork({ disabled: false }, 56n)
+    })
+
     test('Keeps no more than 1000 items', async () => {
       const { controller, sessionId } = await prepareTest()
 
@@ -748,7 +806,7 @@ describe('Activity Controller ', () => {
       const { controller, sessionId } = await prepareSignedMessagesTest()
 
       const signedMessage: SignedMessage = {
-        fromActionId: 1,
+        fromRequestId: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         dapp: {
           icon: '',

@@ -27,6 +27,7 @@ import {
   Hints,
   LearnedAssets,
   PortfolioGasTankResult,
+  PortfolioNetworkResult,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
@@ -294,7 +295,7 @@ const prepareTest = async (
       providersCtrl.removeProvider(id)
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
     storageCtrl,
@@ -324,7 +325,7 @@ const prepareTest = async (
     await wait(500)
   }
 
-  return { storageCtrl, controller }
+  return { storageCtrl, controller, networksCtrl }
 }
 
 describe('Portfolio Controller ', () => {
@@ -1074,11 +1075,11 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Native tokens are fetched for all networks', async () => {
-      const { controller } = await prepareTest()
+      const { controller, networksCtrl } = await prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
 
-      networks.forEach((network) => {
+      networksCtrl.networks.forEach((network) => {
         const nativeToken = controller
           .getAccountPortfolioState(account.addr)
           [network.chainId.toString()]?.result?.tokens.find(
@@ -1280,7 +1281,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(account.addr)
       const tokens1 = Object.values(
         controller.getAccountPortfolioState(account.addr) || {}
-      ).flatMap((res) => res?.result?.tokens || [])
+      ).flatMap((res) => (res?.result as PortfolioNetworkResult)?.tokens || [])
 
       const latestHintsUpdate = controller.getAccountPortfolioState(account.addr)['1']?.result
         ?.lastExternalApiUpdateData?.lastUpdate
@@ -1292,7 +1293,7 @@ describe('Portfolio Controller ', () => {
 
       const tokens2 = Object.values(
         controller.getAccountPortfolioState(account.addr) || {}
-      ).flatMap((res) => res?.result?.tokens || [])
+      ).flatMap((res) => (res?.result as PortfolioNetworkResult)?.tokens || [])
 
       const latestHintsUpdate2 = controller.getAccountPortfolioState(account.addr)['1']?.result
         ?.lastExternalApiUpdateData?.lastUpdate
@@ -1647,6 +1648,6 @@ describe('Portfolio Controller ', () => {
 
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
-    expect(controller.getNetworksWithAssets(account.addr).length).toEqual(0)
+    expect(Object.keys(controller.getNetworksWithAssets(account.addr)).length).toEqual(0)
   })
 })

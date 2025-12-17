@@ -364,7 +364,9 @@ export class DefiPositionsController {
 
           const value = getAssetValue(asset.amount, asset.decimals, priceIn) || 0
 
-          positionInUSD += value
+          if (!position.additionalData.positionInUSD) {
+            positionInUSD += value
+          }
 
           return { ...asset, value, priceIn: priceIn[0] }
         })

@@ -16,7 +16,7 @@ export interface GetOptionsSimulation {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
-export type SuspectedType = 'no-latin-symbol' | 'no-latin-name' | 'suspected' | null
+export type SuspectedType = 'suspected' | null
 
 export type TokenResult = {
   symbol: string
@@ -44,10 +44,6 @@ export type TokenResult = {
 
 export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
-}
-
-export type ProjectedRewardsTokenResult = TokenResult & {
-  userXp: number
 }
 
 export interface CollectionResult extends TokenResult {
@@ -253,6 +249,10 @@ export type PortfolioRewardsResult = CommonResultProps &
   Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
+    xWalletClaimableBalance?: Pick<TokenResult, 'decimals' | 'address' | 'priceIn' | 'symbol'> & {
+      amount: string
+      chainId: number
+    }
   }
 
 export type PortfolioGasTankResult = CommonResultProps & {
@@ -260,19 +260,48 @@ export type PortfolioGasTankResult = CommonResultProps & {
 }
 
 export type PortfolioProjectedRewardsResult = {
-  currentSeasonSnapshots: { week: number; balance: number }[]
-  currentWeek: number
-  supportedChainIds: number[]
-  numberOfWeeksSinceStartOfSeason: number
-  totalRewardsPool: number
-  totalWeightNonUser: number
-  userLevel: number
+  weeksWithData: {
+    week: number
+    balance: number
+    liquidityUsd: number
+    stkWalletUsd: number
+  }[]
+  swapVolume: number
+  poolSize: number
+  rank: number
   walletPrice: number
-  apy: number
-  minLvl: number
-  minBalance: number
-  userXp: number
-  reasonToNotDisplayProjectedRewards?: string
+  pointsOfOtherUsers: number
+  numberOfWeeksSinceStartOfSeason: number
+  multiplier: number
+  weeklyTx: number
+  frozenRewardSeason1: number
+  governanceVotes: {
+    weight: number
+    walletPrice: number
+  }[]
+  supportedChainIds: number[]
+}
+
+export type ProjectedRewardsStats = {
+  // Scores
+  balanceScore: number
+  stkWALLETScore: number
+  liquidityScore: number
+  swapVolumeScore: number
+  governanceScore: number
+  // Average
+  averageBalance: number
+  averageLiquidity: number
+  averageStkWalletBalance: number
+  // Other
+  governanceWeight: number
+  swapVolume: number
+  poolSize: number
+  rank: number
+  totalScore: number
+  multiplier: number
+  estimatedRewards: number
+  estimatedRewardsUSD: number
 }
 
 export type PortfolioKeyResult =
