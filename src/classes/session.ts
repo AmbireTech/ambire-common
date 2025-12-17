@@ -75,7 +75,6 @@ export class Session {
   constructor({ tabId, windowId, url }: SessionInitProps) {
     this.origin = new URL(url).origin
     this.id = getDappIdFromUrl(this.origin)
-    this.id = getDappIdFromUrl(url)
     this.tabId = tabId || Date.now()
     this.windowId = windowId
 
