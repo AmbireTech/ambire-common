@@ -429,7 +429,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    const dappId = getDappIdFromUrl(url)
+    const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
@@ -668,7 +668,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ) {
         const { session } = currentAction.userRequest
         const dapp = await this.#buildDapp({
-          id: getDappIdFromUrl(session.origin),
+          id: session.id,
           name: session.name,
           url: session.origin,
           icon: session.icon,
