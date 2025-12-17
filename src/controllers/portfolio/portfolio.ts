@@ -1,5 +1,7 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
+import { AssetType } from 'libs/defiPositions/types'
+import { safeTokenAmountAndNumberMultiplication } from 'utils/numbers/formatters'
 
 import { STK_WALLET } from '../../consts/addresses'
 import {
@@ -416,7 +418,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       return rest
     })
 
-    networkState.result.total = getTotal(networkState.result.tokens)
+    networkState.result.total = getTotal(
+      networkState.result.tokens,
+      networkState.result.defiPositions
+    )
 
     this.emitUpdate()
   }
@@ -633,7 +638,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         lastSuccessfulUpdate: Date.now(),
         updateStarted: start,
         tokens: rewardsTokens,
-        total: getTotal(rewardsTokens)
+        total: getTotal(rewardsTokens, null)
       }
     }
 
@@ -664,7 +669,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         lastSuccessfulUpdate: Date.now(),
         tokens: [],
         gasTankTokens,
-        total: getTotal(gasTankTokens)
+        total: getTotal(gasTankTokens, null)
       }
     }
 
@@ -727,7 +732,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         forceUpdateDefi: !canSkipDefiUpdate
       })
     } catch (error: any) {
-      // Hints and defi error handling
+      // @TODO: Hints and defi error handling
     }
 
     if (!response) return null
@@ -791,14 +796,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const networkPriceCache = this.#priceCache[network.chainId.toString()] || new Map()
 
+      // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(accountId, {
           priceRecency: 60000 * 5,
           priceCache: networkPriceCache,
           blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
-          // @TODO: Pass defi positions to the portfolio so it can:
-          // Assign the proper flags to the tokens
           ...portfolioProps
         }),
         this.#defiPositionsController.getCustomProviderPositions(
@@ -822,6 +826,87 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           network.chainId
         )
       )
+
+      const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
+        const diff = Math.abs(price1 - price2)
+        const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2))
+        return diff <= threshold
+      }
+
+      const defiAssets = newDefiState.positionsByProvider
+        .map((p) =>
+          p.positions.flatMap((pos) =>
+            pos.assets.map((asset) => ({
+              ...asset,
+              additionalData: {
+                ...pos.additionalData,
+                positionId: pos.id
+              }
+            }))
+          )
+        )
+        .flat()
+
+      defiAssets.forEach((asset) => {
+        const protocolAsset = asset.protocolAsset || null
+        if (!protocolAsset) return
+
+        const tokenCorrespondingToProtocolAsset = portfolioResult.tokens.find((t) => {
+          const isSameAddress = t.address === protocolAsset.address
+
+          if (isSameAddress) return true
+
+          const priceUSD = t.priceIn.find(
+            ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+          )?.price
+
+          const tokenBalanceUSD = priceUSD
+            ? Number(
+                safeTokenAmountAndNumberMultiplication(
+                  BigInt(t.amountPostSimulation || t.amount),
+                  t.decimals,
+                  priceUSD
+                )
+              )
+            : undefined
+
+          if (protocolAsset.symbol && protocolAsset.address) {
+            return (
+              !t.flags.rewardsType &&
+              !t.flags.onGasTank &&
+              t.address === getAddress(protocolAsset.address)
+            )
+          }
+
+          // If the token or asset don't have a value we MUST! not compare them
+          // by value as that would lead to false positives
+          if (!tokenBalanceUSD || !asset.value) return false
+
+          // If there is no protocol asset we have to fallback to finding the token
+          // by symbol and chainId. In that case we must ensure that the value of the two
+          // assets is similar
+          return (
+            !t.flags.rewardsType &&
+            !t.flags.onGasTank &&
+            // the portfolio token should contain the original asset symbol
+            t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
+            // but should be a different token symbol
+            t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
+            // and prices should have no more than 0.5% diff
+            isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
+          )
+        })
+
+        if (tokenCorrespondingToProtocolAsset) {
+          if (asset.type === AssetType.Borrow) {
+            tokenCorrespondingToProtocolAsset.priceIn = []
+          }
+
+          tokenCorrespondingToProtocolAsset.flags.defiPositionId = asset.additionalData.positionId
+
+          tokenCorrespondingToProtocolAsset.flags.defiTokenType = asset.type
+        }
+      })
 
       this.#priceCache[network.chainId.toString()] = portfolioResult.priceCache
 
@@ -850,8 +935,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           ...portfolioResult,
           lastSuccessfulUpdate,
           tokens: portfolioResult.tokens,
-          // @TODO: Make this accept defi positions and calculate the total balance accordingly
-          total: getTotal(portfolioResult.tokens),
+          total: getTotal(portfolioResult.tokens, newDefiState),
           defiPositions: newDefiState
         }
       }

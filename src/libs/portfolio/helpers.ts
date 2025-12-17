@@ -13,17 +13,17 @@ import {
   AccountState,
   ERC721s,
   ExternalHintsAPIResponse,
-  ExternalPortfolioDiscoveryResponse,
   FormattedExternalHintsAPIResponse,
-  FormattedPortfolioDiscoveryResponse,
   GetOptions,
   Hints,
   KnownTokenInfo,
   NetworkState,
   PortfolioGasTankResult,
+  PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  Total
 } from './interfaces'
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
@@ -40,7 +40,7 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
   if (
     usdcEMapping[chainId.toString()] &&
-    usdcEMapping[chainId.toString()].toLowerCase() === address.toLowerCase()
+    usdcEMapping[chainId.toString()]!.toLowerCase() === address.toLowerCase()
   ) {
     return 'USDC.E'
   }
@@ -276,13 +276,13 @@ export const validateERC20Token = async (
   let hasError = false
 
   const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch(() => {
+    erc20.balanceOf!(accountId).catch(() => {
       hasError = true
     }),
-    erc20.symbol().catch(() => {
+    erc20.symbol!().catch(() => {
       hasError = true
     }),
-    erc20.decimals().catch(() => {
+    erc20.decimals!().catch(() => {
       hasError = true
     })
   ]).catch(() => {
@@ -322,11 +322,15 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
 
 export const getTotal = (
   t: TokenResult[],
-  opts?: { includeHiddenTokens?: boolean; beforeSimulation?: boolean }
+  defiState: PortfolioNetworkResult['defiPositions'] | null,
+  opts?: {
+    includeHiddenTokens?: boolean
+    beforeSimulation?: boolean
+  }
 ) => {
   const { includeHiddenTokens = false, beforeSimulation = false } = opts || {}
 
-  return t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+  const tokensTotal = t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
     if (token.flags.isHidden && !includeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
@@ -339,6 +343,37 @@ export const getTotal = (
 
     return localCur
   }, {})
+
+  let defiTotal: Total = {
+    usd: 0
+  }
+
+  if (defiState) {
+    const positionsToExclude: string[] = t
+      .filter((token) => token.flags.defiPositionId)
+      .map((token) => token.flags.defiPositionId!)
+
+    defiTotal = defiState.positionsByProvider.reduce(
+      (cur, position) => {
+        const positionsFlat = position.positions.flat()
+
+        positionsFlat.forEach((p) => {
+          if (positionsToExclude.includes(p.id)) return
+
+          cur.usd += p.additionalData.positionInUSD || 0
+        })
+
+        return cur
+      },
+      { usd: 0 }
+    )
+  }
+
+  return Object.keys(tokensTotal).reduce((cur, key) => {
+    // eslint-disable-next-line no-param-reassign
+    cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0)
+    return cur
+  }, {} as Total)
 }
 
 export const addHiddenTokenValueToTotal = (
@@ -475,6 +510,8 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
   keys.forEach((key) => {
     const [collectionAddress, tokenId] = key.split(':')
 
+    if (!collectionAddress) return
+
     if (tokenId === 'enumerable') {
       hints[collectionAddress] = []
 
@@ -486,6 +523,8 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
     if (keys.includes(`${collectionAddress}:enumerable`)) {
       return
     }
+
+    if (typeof tokenId !== 'string') return
 
     if (!hints[collectionAddress]) {
       hints[collectionAddress] = []

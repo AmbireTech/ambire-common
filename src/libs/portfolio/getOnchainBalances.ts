@@ -245,7 +245,7 @@ export async function getNFTs(
 export async function getTokens(
   network: Network,
   deployless: Deployless,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints'>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints' | 'defiData'>,
   accountAddr: string,
   tokenAddrs: string[],
   pageIndex?: number
@@ -320,7 +320,7 @@ export async function getTokens(
         mapToken(
           token,
           network,
-          tokenAddrs[i],
+          tokenAddrs[i]!,
           opts,
           undefined,
           Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
@@ -374,7 +374,7 @@ export async function getTokens(
           ...mapToken(
             token,
             network,
-            tokenAddrs[i],
+            tokenAddrs[i]!,
             opts,
             !!simulationAmount,
             Array.isArray(latestBalances) ? latestBalances[i].amount : undefined

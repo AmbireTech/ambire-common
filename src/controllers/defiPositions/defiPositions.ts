@@ -13,12 +13,8 @@ import {
   getAAVEPositions,
   getDebankEnhancedUniV3Positions
 } from '../../libs/defiPositions/providers'
-import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
-  AccountState,
   DeFiPositionsError,
-  DeFiPositionsState,
-  NetworkState,
   NetworksWithPositionsByAccounts,
   PositionsByProvider,
   ProviderError
@@ -26,9 +22,7 @@ import {
 import { fetchWithTimeout } from '../../utils/fetch'
 /* eslint-disable no-restricted-syntax */
 import shortenAddress from '../../utils/shortenAddress'
-import EventEmitter from '../eventEmitter/eventEmitter'
 
-const ONE_MINUTE = 60000
 export class DefiPositionsController {
   // #state: DeFiPositionsState = {}
 

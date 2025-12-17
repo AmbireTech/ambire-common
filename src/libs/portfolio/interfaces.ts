@@ -1,4 +1,3 @@
-import { ProviderError } from '../../classes/ProviderError'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { AccountOp } from '../accountOp/accountOp'
@@ -34,6 +33,7 @@ export type TokenResult = {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
+    defiPositionId?: string
     canTopUpGasTank: boolean
     isFeeToken: boolean
     isHidden?: boolean
@@ -129,7 +129,8 @@ export interface Hints {
 }
 
 /**
- * The raw response, returned by the Velcro API
+ * The raw response, returned by the Velcro API.
+ * Currently only called by the portfolio lib to fetch hints only.
  */
 export type ExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
@@ -138,6 +139,10 @@ export type ExternalHintsAPIResponse = {
   error?: string
 })
 
+/**
+ * The raw response, returned by Velcro for portfolio discovery.
+ * It contains hints and defi positions. Used by the controller.
+ */
 export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
   chainId: number
@@ -200,7 +205,7 @@ export interface PortfolioLibGetResult {
   afterNonce: bigint
 }
 
-interface Total {
+export interface Total {
   [currency: string]: number
 }
 
