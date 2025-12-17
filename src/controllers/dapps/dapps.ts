@@ -1,3 +1,5 @@
+import { getDomain } from 'tldts'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -329,7 +331,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         dappsMap.set(id, modifiedDapp)
       })
 
-      if (!dappsMap.has(id)) dappsMap.set(id, updatedDapp)
+      if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url)!)) {
+        dappsMap.set(id, updatedDapp)
+      }
     }
 
     // Add predefined
@@ -373,6 +377,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           d.description = existingByDomain.description
           d.tvl = existingByDomain.tvl
           d.icon = existingByDomain.icon
+          d.isFeatured = existingByDomain.isFeatured
           d.twitter = existingByDomain.twitter
           d.geckoId = existingByDomain.geckoId
           d.chainIds = existingByDomain.chainIds
@@ -424,7 +429,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    const dappId = getDappIdFromUrl(url)
+    const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
@@ -663,7 +668,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ) {
         const { session } = currentAction.userRequest
         const dapp = await this.#buildDapp({
-          id: getDappIdFromUrl(session.origin),
+          id: session.id,
           name: session.name,
           url: session.origin,
           icon: session.icon,

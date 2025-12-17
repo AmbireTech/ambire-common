@@ -5,7 +5,7 @@ const networks: Network[] = [
   {
     name: 'Ethereum',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/ethereum'],
     selectedRpcUrl: 'https://invictus.ambire.com/ethereum',
@@ -28,7 +28,7 @@ const networks: Network[] = [
   {
     name: 'Polygon',
     nativeAssetSymbol: 'POL',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Polygon',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
@@ -58,7 +58,7 @@ const networks: Network[] = [
   {
     name: 'OP Mainnet',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/optimism'],
     selectedRpcUrl: 'https://invictus.ambire.com/optimism',
@@ -123,7 +123,7 @@ const networks: Network[] = [
   {
     name: 'Arbitrum',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/arbitrum'],
     selectedRpcUrl: 'https://invictus.ambire.com/arbitrum',
@@ -154,7 +154,7 @@ const networks: Network[] = [
   {
     name: 'Base',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/base'],
     selectedRpcUrl: 'https://invictus.ambire.com/base',

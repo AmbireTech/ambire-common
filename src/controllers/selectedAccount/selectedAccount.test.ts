@@ -48,7 +48,7 @@ const networksCtrl = new NetworksController({
   }
 })
 
-providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 providersCtrl.providers = providers
 
 const { uiManager } = mockUiManager()

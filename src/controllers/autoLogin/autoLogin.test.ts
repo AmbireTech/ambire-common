@@ -43,7 +43,7 @@ const networksCtrl = new NetworksController({
   }
 })
 
-providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
 providersCtrl.providers = providers
 
 const { uiManager } = mockUiManager()
@@ -279,7 +279,7 @@ URI: https://docs.fileverse.io
 
       expect(message?.status).toBe('invalid')
     })
-    it('invalid resource uri in resources - should return status invalid-critical', async () => {
+    it('invalid resource uri in resources - should return status malformed', async () => {
       const malformedMessage = generateSiweMessage(undefined, (message) =>
         message.replace(/Resources:\n- https:\/\/privy.io/, 'Resources:\n- invaliduri')
       )
@@ -288,7 +288,7 @@ URI: https://docs.fileverse.io
         'https://docs.fileverse.io'
       )
 
-      expect(message?.status).toBe('invalid-critical')
+      expect(message?.status).toBe('malformed')
     })
     it('expired siwe - should return status invalid', async () => {
       const expiredSiwe = generateSiweMessage({
