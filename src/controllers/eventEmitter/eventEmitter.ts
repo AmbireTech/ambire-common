@@ -51,6 +51,7 @@ export default class EventEmitter {
     for (const i of this.#callbacksWithId) i.cb(true)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb(true)
+    await wait(1)
   }
 
   protected emitUpdate() {

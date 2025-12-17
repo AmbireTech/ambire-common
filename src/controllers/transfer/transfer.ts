@@ -888,14 +888,19 @@ export class TransferController extends EventEmitter implements ITransferControl
           this.latestBroadcastedToken = this.selectedToken
           this.latestBroadcastedAccountOp = submittedAccountOp
         }
-
-        this.resetForm()
       }
     })
 
     this.signAccountOpController.onUpdate(() => {
       this.emitUpdate()
-    })
+
+      if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        setTimeout(() => {
+          this.resetForm()
+        }, 0)
+      }
+    }, 'transfer')
+
     this.signAccountOpController.onError((error) => {
       if (this.signAccountOpController)
         this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
