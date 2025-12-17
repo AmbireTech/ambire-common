@@ -2662,8 +2662,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
 
     // Allow the user to broadcast a new transaction;
-    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the request is resolved:
-    // `await this.resolveAccountOpAction(submittedAccountOp, requestId)`
+    // Important: Update broadcastStatus to SUCCESS/INITIAL only after the onBroadcastSuccess completes.
     // Otherwise, new calls could be added to a previously broadcast request that will resolve shortly,
     // leaving the new request 'orphaned' in the background without being attached to any action.
     this.broadcastStatus = 'SUCCESS'

@@ -116,7 +116,13 @@ export class ContinuousUpdatesController extends EventEmitter {
     )
 
     this.#main.onUpdate(() => {
-      if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
+      if (
+        this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS' ||
+        this.#main.transfer.signAccountOpController?.broadcastStatus === 'SUCCESS' ||
+        (this.#main.requests.currentUserRequest &&
+          this.#main.requests.currentUserRequest.kind === 'calls' &&
+          this.#main.requests.currentUserRequest.signAccountOp.broadcastStatus === 'SUCCESS')
+      ) {
         this.#accountStateLatestInterval.restart()
       }
     }, 'continuous-update')
