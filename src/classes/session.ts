@@ -72,7 +72,7 @@ export class Session {
     )
   }
 
-  constructor({ tabId, windowId, url }: SessionInitProps) {
+  constructor({ tabId, windowId, url }: SessionInitProps = {}) {
     if (url) {
       this.origin = new URL(url).origin
     } else {
