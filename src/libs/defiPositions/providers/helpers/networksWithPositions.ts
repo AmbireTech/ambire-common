@@ -1,6 +1,7 @@
 import { AccountId } from '../../../../interfaces/account'
 import { RPCProviders } from '../../../../interfaces/provider'
-import { AccountState, NetworksWithPositions, NetworksWithPositionsByAccounts } from '../../types'
+import { AccountState } from '../../../portfolio/interfaces'
+import { NetworksWithPositions, NetworksWithPositionsByAccounts } from '../../types'
 
 const getAccountNetworksWithPositions = (
   accountId: AccountId,
@@ -13,10 +14,11 @@ const getAccountNetworksWithPositions = (
   }
 
   Object.keys(accountState).forEach((chainId) => {
-    if (!providers[chainId]) return
+    const state = accountState[chainId]?.result?.defiPositions
+    if (!providers[chainId] || !state) return
 
     const isRPCDown = !providers[chainId].isWorking
-    const { positionsByProvider, error, providerErrors } = accountState[chainId]
+    const { positionsByProvider, error, providerErrors } = state
 
     // RPC is down or an error occurred
     if (error || isRPCDown || providerErrors?.length) return

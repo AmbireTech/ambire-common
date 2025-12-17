@@ -9,6 +9,7 @@ import {
   IAccountsController
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -106,7 +107,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #batchedPortfolioDiscovery: Function
 
-  #defiPositionsController: DefiPositionsController
+  defiPositions: IDefiPositionsController
 
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
@@ -206,7 +207,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
-    this.#defiPositionsController = new DefiPositionsController(this.#fetch)
+    this.defiPositions = new DefiPositionsController(this.#fetch, this.#storage)
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -361,6 +362,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountId,
       accountState,
       storageStateByAccount,
+      this.#providers.providers
+    )
+    await this.defiPositions.updateNetworksWithPositions(
+      accountId,
+      accountState,
       this.#providers.providers
     )
     this.hasFundedHotAccount = this.#getHasFundedHotAccount()
@@ -690,21 +696,25 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   private async getPortfolioFromApiDiscovery(opts: {
     chainId: bigint
     accountAddr: string
+    hasKeys: boolean
     baseCurrency: string
     externalApiHintsResponse: {
       lastUpdate: number
       hasHints: boolean
     } | null
-    isForceDefiUpdate?: boolean
+    defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
     const {
       chainId,
       accountAddr,
       baseCurrency,
+      // Set to 6 hours by default. That is because we are making a lot of
+      // portfolio updates, most of which shouldn't update the defi positions.
+      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      hasKeys,
       externalApiHintsResponse,
-      isManualUpdate,
-      isForceDefiUpdate
+      isManualUpdate
     } = opts
 
     const defiState = this.#state[accountAddr]?.[chainId.toString()]?.result?.defiPositions
@@ -713,11 +723,16 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       !isManualUpdate &&
       Date.now() - externalApiHintsResponse.lastUpdate <
         EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
-    const canSkipDefiUpdate =
-      defiState &&
-      defiState.updatedAt &&
-      !isForceDefiUpdate &&
-      Date.now() - defiState.updatedAt < 5 * 60 * 1000
+
+    const canSkipDefiUpdate = !this.defiPositions.getCanSkipUpdate(
+      defiState,
+      this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId),
+      hasKeys,
+      {
+        isManualUpdate,
+        maxDataAgeMs: defiMaxDataAgeMs
+      }
+    )
 
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
       return null
@@ -737,6 +752,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (!response) return null
 
+    // @TODO: Handle price caching from the response
     return {
       defi: {
         ...response.defi,
@@ -805,7 +821,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           fetchPinned: !hasNonZeroTokens,
           ...portfolioProps
         }),
-        this.#defiPositionsController.getCustomProviderPositions(
+        this.defiPositions.getCustomProviderPositions(
           accountId,
           portfolioLib.provider,
           network,
@@ -856,64 +872,77 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         )
         .flat()
 
+      // @TODO: Tokens in pool.controller aren't handled (e.g. AdEx)
+
       defiAssets.forEach((asset) => {
         const protocolAsset = asset.protocolAsset || null
-        if (!protocolAsset) return
 
-        const tokenCorrespondingToProtocolAsset = portfolioResult.tokens.find((t) => {
-          const isSameAddress = t.address === protocolAsset.address
-
-          if (isSameAddress) return true
-
-          const priceUSD = t.priceIn.find(
-            ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-          )?.price
-
-          const tokenBalanceUSD = priceUSD
-            ? Number(
-                safeTokenAmountAndNumberMultiplication(
-                  BigInt(t.amountPostSimulation || t.amount),
-                  t.decimals,
-                  priceUSD
-                )
-              )
-            : undefined
-
-          if (protocolAsset.symbol && protocolAsset.address) {
-            return (
-              !t.flags.rewardsType &&
-              !t.flags.onGasTank &&
-              t.address === getAddress(protocolAsset.address)
-            )
-          }
-
-          // If the token or asset don't have a value we MUST! not compare them
-          // by value as that would lead to false positives
-          if (!tokenBalanceUSD || !asset.value) return false
-
-          // If there is no protocol asset we have to fallback to finding the token
-          // by symbol and chainId. In that case we must ensure that the value of the two
-          // assets is similar
-          return (
-            !t.flags.rewardsType &&
-            !t.flags.onGasTank &&
-            // the portfolio token should contain the original asset symbol
-            t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
-            // but should be a different token symbol
-            t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
-            // and prices should have no more than 0.5% diff
-            isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
-          )
+        const tokenCorrespondingToAsset = portfolioResult.tokens.find((t) => {
+          return t.address === asset.address
         })
+
+        const tokenCorrespondingToProtocolAsset = protocolAsset
+          ? portfolioResult.tokens.find((t) => {
+              const isSameAddress = t.address === protocolAsset.address
+
+              if (isSameAddress) return true
+
+              const priceUSD = t.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
+
+              const tokenBalanceUSD = priceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(t.amountPostSimulation || t.amount),
+                      t.decimals,
+                      priceUSD
+                    )
+                  )
+                : undefined
+
+              if (protocolAsset.symbol && protocolAsset.address) {
+                return (
+                  !t.flags.rewardsType &&
+                  !t.flags.onGasTank &&
+                  t.address === getAddress(protocolAsset.address)
+                )
+              }
+
+              // If the token or asset don't have a value we MUST! not compare them
+              // by value as that would lead to false positives
+              if (!tokenBalanceUSD || !asset.value) return false
+
+              // If there is no protocol asset we have to fallback to finding the token
+              // by symbol and chainId. In that case we must ensure that the value of the two
+              // assets is similar
+              return (
+                !t.flags.rewardsType &&
+                !t.flags.onGasTank &&
+                // the portfolio token should contain the original asset symbol
+                t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
+                // but should be a different token symbol
+                t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
+                // and prices should have no more than 0.5% diff
+                isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
+              )
+            })
+          : null
 
         if (tokenCorrespondingToProtocolAsset) {
           if (asset.type === AssetType.Borrow) {
             tokenCorrespondingToProtocolAsset.priceIn = []
+          } else if (!tokenCorrespondingToAsset?.priceIn.length) {
+            tokenCorrespondingToProtocolAsset.priceIn = [asset.priceIn]
           }
 
           tokenCorrespondingToProtocolAsset.flags.defiPositionId = asset.additionalData.positionId
 
           tokenCorrespondingToProtocolAsset.flags.defiTokenType = asset.type
+        }
+
+        if (tokenCorrespondingToAsset && !tokenCorrespondingToAsset.priceIn.length) {
+          tokenCorrespondingToAsset.priceIn = [asset.priceIn]
         }
       })
 
@@ -1086,6 +1115,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
     }
 
+    const defiHints = DefiPositionsController.getAllAssetsAsHints(
+      this.#state[accountId]?.[chainId.toString()]?.result?.defiPositions
+    )
+
+    learnedTokensHints.push(...defiHints)
+
     return {
       specialErc20Hints,
       specialErc721Hints,
@@ -1158,9 +1193,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     },
     opts?: {
       maxDataAgeMs?: number
+      defiMaxDataAgeMs?: number
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
-      isForceDefiUpdate?: boolean
     }
   ) {
     const {
@@ -1231,7 +1266,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             baseCurrency: 'usd',
             externalApiHintsResponse: hintsResponse || null,
             isManualUpdate,
-            isForceDefiUpdate: opts?.isForceDefiUpdate
+            defiMaxDataAgeMs: opts?.defiMaxDataAgeMs,
+            hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
           })
           const allHints = this.getAllHints(
             accountId,

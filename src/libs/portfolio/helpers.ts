@@ -349,6 +349,8 @@ export const getTotal = (
   }
 
   if (defiState) {
+    // The portfolio handles at least one collateral token,
+    // thus we must exclude them from the defi total to avoid double counting
     const positionsToExclude: string[] = t
       .filter((token) => token.flags.defiPositionId)
       .map((token) => token.flags.defiPositionId!)
@@ -358,8 +360,10 @@ export const getTotal = (
         const positionsFlat = position.positions.flat()
 
         positionsFlat.forEach((p) => {
-          if (positionsToExclude.includes(p.id)) return
+          // stkWallet is an internal position, created from the stkWallet token
+          if (positionsToExclude.includes(p.id) || p.id === 'stk-wallet') return
 
+          // eslint-disable-next-line no-param-reassign
           cur.usd += p.additionalData.positionInUSD || 0
         })
 
@@ -372,6 +376,7 @@ export const getTotal = (
   return Object.keys(tokensTotal).reduce((cur, key) => {
     // eslint-disable-next-line no-param-reassign
     cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0)
+
     return cur
   }, {} as Total)
 }

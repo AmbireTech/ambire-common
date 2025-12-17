@@ -245,7 +245,7 @@ export async function getNFTs(
 export async function getTokens(
   network: Network,
   deployless: Deployless,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints' | 'defiData'>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints'>,
   accountAddr: string,
   tokenAddrs: string[],
   pageIndex?: number

@@ -148,6 +148,9 @@ export type ExternalPortfolioDiscoveryResponse = {
   chainId: number
   accountAddr: string
   hints: ExternalHintsAPIResponse
+  prices: {
+    [addr: string]: Price
+  }
   defi: {
     positions: Omit<PositionsByProvider, 'source'>[]
     updatedAt: number

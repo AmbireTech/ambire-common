@@ -1,126 +1,74 @@
-import { TokenResult } from 'libs/portfolio'
-
+import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { RPCProvider } from '../../interfaces/provider'
+import { RPCProvider, RPCProviders } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import { getAssetValue, getProviderId } from '../../libs/defiPositions/helpers'
 import {
   getAAVEPositions,
   getDebankEnhancedUniV3Positions,
   getStakedWalletPositions
 } from '../../libs/defiPositions/providers'
+import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
   DeFiPositionsError,
   NetworksWithPositionsByAccounts,
   PositionsByProvider,
   ProviderError
 } from '../../libs/defiPositions/types'
+import { TokenResult } from '../../libs/portfolio'
+import { AccountState, PortfolioNetworkResult } from '../../libs/portfolio/interfaces'
 import { fetchWithTimeout } from '../../utils/fetch'
 /* eslint-disable no-restricted-syntax */
 import shortenAddress from '../../utils/shortenAddress'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
-export class DefiPositionsController {
-  // #state: DeFiPositionsState = {}
-
+export class DefiPositionsController extends EventEmitter {
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  // sessionIds: string[] = []
+  sessionIds: string[] = []
 
   #fetch: any
 
-  // #positionsContinuousUpdateInterval: IRecurringTimeout
+  #storage: IStorageController
 
-  #updatePositionsPromise: Promise<void> | undefined
-
-  // get positionsContinuousUpdateInterval() {
-  //   return this.#positionsContinuousUpdateInterval
-  // }
-
-  constructor(fetch: any) {
+  constructor(fetch: any, storage: IStorageController) {
+    super()
     this.#fetch = fetch
-    // this.#positionsContinuousUpdateInterval = new RecurringTimeout(
-    //   async () => this.positionsContinuousUpdate(),
-    //   ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
-    //   this.emitError.bind(this)
-    // )
-
-    // this.#ui.uiEvent.on('addView', () => {
-    //   this.#positionsContinuousUpdateInterval.start()
-    // })
-
-    // this.#ui.uiEvent.on('removeView', () => {
-    //   if (!this.#ui.views.length) this.#positionsContinuousUpdateInterval.stop()
-    // })
+    this.#storage = storage
   }
 
-  // async #load() {
-  //   try {
-  //     this.#networksWithPositionsByAccounts = await this.#storage.get(
-  //       'networksWithPositionsByAccounts',
-  //       {}
-  //     )
+  async #load() {
+    try {
+      this.#networksWithPositionsByAccounts = await this.#storage.get(
+        'networksWithPositionsByAccounts',
+        {}
+      )
+    } catch (e: any) {
+      this.emitError({
+        message: 'Failed to load DeFi positions data from storage.',
+        error: e,
+        level: 'silent'
+      })
+    }
+  }
 
-  //     this.emitUpdate()
-  //   } catch (e: any) {
-  //     this.emitError({
-  //       message: 'Failed to load DeFi positions data from storage.',
-  //       error: e,
-  //       level: 'silent'
-  //     })
-  //   }
-  // }
+  async updateNetworksWithPositions(
+    accountId: AccountId,
+    accountState: AccountState,
+    providers: RPCProviders
+  ) {
+    this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
+      accountId,
+      accountState,
+      this.#networksWithPositionsByAccounts,
+      providers
+    )
 
-  // #getShouldSkipUpdate(
-  //   accountAddr: string,
-  //   _maxDataAgeMs = ONE_MINUTE,
-  //   forceUpdate: boolean = false
-  // ) {
-  //   const hasKeys = this.#keystore.keys.some(({ addr }) =>
-  //     this.#selectedAccount.account!.associatedKeys.includes(addr)
-  //   )
-  //   let maxDataAgeMs = _maxDataAgeMs
-
-  //   // force update the positions if forceUpdate is passed,
-  //   // the account has keys and a session with the DeFi tab is opened
-  //   const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
-  //   if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
-
-  //   let latestUpdatedAt: number | undefined
-
-  //   const accountState = Object.values(this.#state[accountAddr])
-  //   // eslint-disable-next-line no-restricted-syntax
-  //   for (const network of accountState) {
-  //     if (typeof network.updatedAt === 'number') {
-  //       if (latestUpdatedAt === undefined || network.updatedAt > latestUpdatedAt) {
-  //         latestUpdatedAt = network.updatedAt
-  //       }
-  //     }
-  //   }
-
-  //   if (!latestUpdatedAt) return false
-
-  //   if (!forceUpdate && accountState.some((n) => n.providerErrors?.length || n.error)) {
-  //     maxDataAgeMs = ONE_MINUTE
-  //   }
-
-  //   const isWithinMinUpdateInterval = Date.now() - latestUpdatedAt < maxDataAgeMs
-
-  //   return isWithinMinUpdateInterval || accountState.some((n) => n.isLoading)
-  // }
-
-  // @TODO: Reimplement
-  // async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
-  //   this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
-  //     accountId,
-  //     accountState,
-  //     this.#networksWithPositionsByAccounts,
-  //     this.#providers.providers
-  //   )
-
-  //   await this.#storage.set(
-  //     'networksWithPositionsByAccounts',
-  //     this.#networksWithPositionsByAccounts
-  //   )
-  // }
+    await this.#storage.set(
+      'networksWithPositionsByAccounts',
+      this.#networksWithPositionsByAccounts
+    )
+  }
 
   /**
    * Fetches the defi positions of certain protocols using RPC calls and custom logic.
@@ -223,7 +171,8 @@ export class DefiPositionsController {
    */
   static getUniqueMergedPositions(
     debankNetworkPositionsByProvider: PositionsByProvider[],
-    customPositions: PositionsByProvider[]
+    customPositions: PositionsByProvider[],
+    stkWalletPosition: PositionsByProvider | null
   ): PositionsByProvider[] {
     const debankPositionMap = new Map(
       debankNetworkPositionsByProvider.map((p) => [getProviderId(p.providerName), p])
@@ -234,6 +183,11 @@ export class DefiPositionsController {
 
       debankPositionMap.set(key, custom)
     })
+
+    if (stkWalletPosition) {
+      const key = getProviderId(stkWalletPosition.providerName)
+      debankPositionMap.set(key, stkWalletPosition)
+    }
 
     let positionsArray = Array.from(debankPositionMap.values())
 
@@ -255,6 +209,25 @@ export class DefiPositionsController {
     return positionsArray
   }
 
+  static getAllAssetsAsHints(portfolioState: PortfolioNetworkResult['defiPositions'] | undefined) {
+    if (!portfolioState) return []
+    const hints: string[] = []
+
+    portfolioState.positionsByProvider.forEach((providerPositions) => {
+      providerPositions.positions.forEach((position) => {
+        position.assets.forEach((asset) => {
+          hints.push(asset.address.toLowerCase())
+
+          if (asset.protocolAsset) {
+            hints.push(asset.protocolAsset.address)
+          }
+        })
+      })
+    })
+
+    return hints
+  }
+
   /**
    * Updates an account's positions for a single network.
    */
@@ -269,18 +242,16 @@ export class DefiPositionsController {
   ) {
     const isDebankCallSuccessful = !!debankPositionsByProvider
 
+    const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
+
     const uniqueAndMerged = DefiPositionsController.getUniqueMergedPositions(
       isDebankCallSuccessful
         ? debankPositionsByProvider
         : previousPositionsByProvider.filter((p) => p.source === 'debank'),
-      customPositionsByProvider
+      customPositionsByProvider,
+      // Ethereum-specific. Add the Staked Wallet token as a defi position
+      stkWalletPosition
     )
-    // Ethereum-specific. Add the Staked Wallet token as a defi position
-    const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
-
-    if (stkWalletPosition) {
-      uniqueAndMerged.unshift(stkWalletPosition)
-    }
 
     return {
       nonceId,
@@ -406,90 +377,59 @@ export class DefiPositionsController {
     return positionsByProviderWithPrices
   }
 
-  // #getShouldSkipUpdateOnAccountWithNoDefiPositions(acc: Account, forceUpdate?: boolean) {
-  //   if (forceUpdate) return false
-  //   if (!this.#accounts.accountStates[acc.addr]) return false
-  //   if (!this.#state[acc.addr]) return false
-  //   // Don't skip if the account has any DeFi positions or the account has never been updated
-  //   if (
-  //     Object.values(this.#state[acc.addr]).some(
-  //       (network) => network.positionsByProvider.length || !network.updatedAt
-  //     )
-  //   )
-  //     return false
-  //   const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
-  //     (chainId: string) => {
-  //       const posNonceId = this.#state[acc.addr][chainId]?.nonceId
-  //       const nonceId = this.#getNonceId(acc, chainId)
+  /**
+   * Whether the portfolio defi positions data should be cached server-side
+   * or the latest should be retrieved.
+   */
+  getCanSkipUpdate(
+    previousState: PortfolioNetworkResult['defiPositions'] | undefined,
+    nonceId: string | undefined,
+    hasKeys: boolean,
+    opts?: {
+      maxDataAgeMs?: number
+      isManualUpdate?: boolean
+    }
+  ) {
+    if (!previousState || !previousState.updatedAt) return false
 
-  //       if (!nonceId || !posNonceId) return false
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    const { maxDataAgeMs: _maxDataAgeMs = 60000, isManualUpdate = false } = opts || {}
+    let maxDataAgeMs = _maxDataAgeMs
 
-  //       return nonceId !== posNonceId
-  //     }
-  //   )
+    // force update the positions if forceUpdate is passed,
+    // the account has keys and a session with the DeFi tab is opened
+    const shouldForceUpdatePositions = isManualUpdate && this.sessionIds.length && hasKeys
 
-  //   // Return false (don’t skip) if any nonceId has changed
-  //   return !someNonceIdChanged
-  // }
+    if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
-  // removeNetworkData(chainId: bigint) {
-  //   Object.keys(this.#state).forEach((accountId) => {
-  //     delete this.#state[accountId][chainId.toString()]
-  //   })
-  //   this.emitUpdate()
-  // }
+    const isWithinMinUpdateInterval = Date.now() - previousState.updatedAt < maxDataAgeMs
 
-  // getDefiPositionsStateForAllNetworks(accountAddr: string) {
-  //   // return defi positions for enabled and disabled networks
-  //   return this.#state[accountAddr] || {}
-  // }
+    const canSkip = isWithinMinUpdateInterval || previousState.isLoading
 
-  // getDefiPositionsState(accountAddr: string) {
-  //   // return defi positions only for enabled networks
-  //   return Object.entries(this.#state[accountAddr] || {}).reduce((acc, [chainId, networkState]) => {
-  //     if (this.#networks.networks.find((n) => n.chainId.toString() === chainId)) {
-  //       acc[chainId] = networkState
-  //     }
-  //     return acc
-  //   }, {} as AccountState)
-  // }
+    if (canSkip) return true
 
-  // getNetworksWithPositions(accountAddr: string) {
-  //   return this.#networksWithPositionsByAccounts[accountAddr] || []
-  // }
+    // Don't skip if the account has any DeFi positions or the account has never been updated
+    if (
+      Object.values(previousState).some(
+        (network) => network.positionsByProvider.length || !network.updatedAt
+      )
+    )
+      return false
 
-  // removeAccountData(accountAddr: string) {
-  //   delete this.#state[accountAddr]
-  //   delete this.#networksWithPositionsByAccounts[accountAddr]
-  //   this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts)
+    if (!nonceId) return false
 
-  //   this.emitUpdate()
-  // }
+    return nonceId !== previousState.nonceId
+  }
 
-  // addSession(sessionId: string) {
-  //   this.sessionIds = [...new Set([...this.sessionIds, sessionId])]
-  //   this.emitUpdate()
-  // }
+  getNetworksWithPositions(accountAddr: string) {
+    return this.#networksWithPositionsByAccounts[accountAddr] || []
+  }
 
-  // removeSession(sessionId: string) {
-  //   this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
-  //   this.emitUpdate()
-  // }
+  addSession(sessionId: string) {
+    this.sessionIds = [...new Set([...this.sessionIds, sessionId])]
+  }
 
-  // async positionsContinuousUpdate() {
-  //   if (!this.#ui.views.length) {
-  //     this.#positionsContinuousUpdateInterval.stop()
-  //     return
-  //   }
-
-  //   const FIVE_MINUTES = 1000 * 60 * 5
-  //   await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
-  // }
-
-  // toJSON() {
-  //   return {
-  //     ...this,
-  //     ...super.toJSON()
-  //   }
-  // }
+  removeSession(sessionId: string) {
+    this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
+  }
 }
