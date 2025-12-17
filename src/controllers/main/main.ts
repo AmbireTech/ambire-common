@@ -363,7 +363,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.networks,
       this.portfolio,
-      this.ui,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }

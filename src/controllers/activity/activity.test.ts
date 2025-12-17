@@ -145,7 +145,6 @@ const prepareTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
-    uiCtrl,
     () => Promise.resolve()
   )
 
@@ -170,7 +169,6 @@ const prepareSignedMessagesTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
-    uiCtrl,
     () => Promise.resolve()
   )
 
@@ -925,7 +923,6 @@ describe('Activity Controller ', () => {
       providersCtrl,
       networksCtrl,
       portfolioCtrl,
-      uiCtrl,
       () => Promise.resolve()
     )
 

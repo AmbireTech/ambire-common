@@ -9,7 +9,6 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController } from '../../interfaces/ui'
 import {
   AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
@@ -46,6 +45,7 @@ interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 export interface Filters {
   account: string
   chainId?: bigint
+  identifiedBy?: AccountOpIdentifiedBy
 }
 
 export interface InternalAccountsOps {
@@ -136,8 +136,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #portfolio: IPortfolioController
 
-  #ui: IUiController
-
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #callRelayer: Function
@@ -165,7 +163,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,
-    ui: IUiController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
@@ -177,7 +174,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#providers = providers
     this.#networks = networks
     this.#portfolio = portfolio
-    this.#ui = ui
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -283,6 +279,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
       // However, when the network filter is omitted, #accountsOps from different networks are mixed,
       // requiring additional sorting to ensure they are also in descending order.
       filteredItems.sort((a, b) => b.timestamp - a.timestamp)
+    }
+
+    // for benzin fetching
+    if (filters.identifiedBy) {
+      filteredItems.filter((i) => i.identifiedBy.identifier === filters.identifiedBy!.identifier)
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
@@ -918,26 +919,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
       .flat()
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(from, from + numberOfItems)
-  }
-
-  /**
-   * Send one time data back to benzina when using it in-app to avoid
-   * making multiple requests for data we already have
-   */
-  async getBenzinaInfo(identifiedBy: AccountOpIdentifiedBy, accountAddr: string, chainId: bigint) {
-    const accOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
-    if (
-      !accOp ||
-      accOp.status === AccountOpStatus.BroadcastedButNotConfirmed ||
-      accOp.status === AccountOpStatus.Pending
-    )
-      return
-
-    this.#ui.message.sendUiMessage({
-      status: accOp.status,
-      blockNumber: accOp.blockNumber,
-      txnId: accOp.txnId
-    })
   }
 
   toJSON() {
