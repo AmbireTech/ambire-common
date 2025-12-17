@@ -83,6 +83,7 @@ export function getDefaultBundler(
 }
 
 export function getAvailableBundlerNames(network: Network): BUNDLER[] {
+  if (network.customBundlerUrl && network.customBundlerUrl.trim()) return [CUSTOM]
   if (!network.erc4337.hasBundlerSupport) return []
   if (!network.erc4337.bundlers) return [getDefaultBundlerName(network)]
 
