@@ -1,20 +1,6 @@
 import { Price } from '../../interfaces/assets'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
-const sortByValue = (aValue?: number, bValue?: number) => {
-  if (aValue && bValue) {
-    return bValue - aValue
-  }
-  if (aValue && !bValue) {
-    return -1
-  }
-  if (!aValue && bValue) {
-    return 1
-  }
-
-  return 0
-}
-
 const getAssetValue = (amount: bigint, decimals: number, priceIn: Price[]): number | undefined => {
   if (!priceIn.length) return undefined
 
@@ -30,4 +16,4 @@ export const getProviderId = (providerName: string): string => {
   return providerName.toLowerCase()
 }
 
-export { sortByValue, getAssetValue }
+export { getAssetValue }

@@ -1,7 +1,5 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
-import { AssetType } from 'libs/defiPositions/types'
-import { safeTokenAmountAndNumberMultiplication } from 'utils/numbers/formatters'
 
 import { STK_WALLET } from '../../consts/addresses'
 import {
@@ -22,6 +20,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AssetType } from '../../libs/defiPositions/types'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -56,6 +55,7 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -815,12 +815,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         )
       ])
 
+      const stkWalletToken =
+        portfolioResult.tokens.find(
+          (t) =>
+            t.chainId === 1n &&
+            t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
+            !t.flags.rewardsType
+        ) ?? null
+
       const newDefiState = DefiPositionsController.getNewDefiState(
         defiData?.positions,
         state.result?.defiPositions.positionsByProvider || [],
         customPositionsResult.positionsByProvider,
         customPositionsResult.error || null,
         customPositionsResult.providerErrors,
+        stkWalletToken,
         this.#getNonceId(
           this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
           network.chainId

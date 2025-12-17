@@ -81,8 +81,12 @@ export function calculateSelectedAccountPortfolio(
       return {
         ...acc,
         shouldShowPartialResult: false, // @TODO
-        tokens: [...acc.tokens, ...networkResult.tokens],
-        collections: [...acc.collections, ...networkResult.collections],
+        defiPositions: [
+          ...acc.defiPositions,
+          ...(networkResult?.defiPositions?.positionsByProvider || [])
+        ],
+        tokens: [...acc.tokens, ...(networkResult?.tokens || [])],
+        collections: [...acc.collections, ...(networkResult?.collections || [])],
         totalBalance:
           acc.totalBalance + (chainId !== 'projectedRewards' ? networkResult.total?.usd || 0 : 0),
         balancePerNetwork: {
@@ -95,6 +99,7 @@ export function calculateSelectedAccountPortfolio(
     {
       tokens: [],
       collections: [],
+      defiPositions: [],
       totalBalance: 0,
       isReadyToVisualize: true,
       isAllReady: true,
@@ -107,7 +112,13 @@ export function calculateSelectedAccountPortfolio(
   )
 
   return {
+    ...newPortfolio,
     portfolioState: strippedPortfolioState,
-    ...newPortfolio
+    defiPositions: newPortfolio.defiPositions.sort((a, b) => {
+      if (b.providerName === 'Ambire' && a.providerName !== 'Ambire') return 1
+      if (a.providerName === 'Ambire' && b.providerName !== 'Ambire') return -1
+
+      return (b.positionInUSD || 0) - (a.positionInUSD || 0)
+    })
   }
 }

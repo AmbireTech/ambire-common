@@ -1,3 +1,4 @@
+import { PositionsByProvider } from '../libs/defiPositions/types'
 import {
   CollectionResult as CollectionResultInterface,
   NetworkSimulatedAccountOp,
@@ -55,6 +56,7 @@ export interface SelectedAccountPortfolio {
   balancePerNetwork: {
     [chainId: string]: number
   }
+  defiPositions: PositionsByProvider[]
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
   projectedRewardsStats: ProjectedRewardsStats | null

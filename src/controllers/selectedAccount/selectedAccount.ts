@@ -17,9 +17,8 @@ import {
 import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
-import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
-import { PositionsByProvider } from '../../libs/defiPositions/types'
 import {
+  getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
@@ -30,6 +29,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
   collections: [],
+  defiPositions: [],
   tokenAmounts: [],
   totalBalance: 0,
   balancePerNetwork: {},
@@ -86,31 +86,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   initialLoadPromise?: Promise<void>
 
   dismissedBannerIds: { [key: string]: string[] } = {}
-
-  #_defiPositions: PositionsByProvider[] = []
-
-  set defiPositions(val: PositionsByProvider[]) {
-    this.#_defiPositions = val
-  }
-
-  // @TODO: Get rid of this and get ambire's staked wallet position from cena, like all other positions
-  // Currently, if you hide the stkWallet token, its balance will be deducted from the total balance,
-  // unlike other positions (which isn't desired).
-  get defiPositions() {
-    const stkWalletToken = this.portfolio.tokens.find(
-      (t) =>
-        t.chainId === 1n &&
-        t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
-        !t.flags.rewardsType
-    )
-    const ambireStakedWalletDefiPosition = getStakedWalletPositions(stkWalletToken)
-
-    if (ambireStakedWalletDefiPosition) {
-      return [ambireStakedWalletDefiPosition, ...this.#_defiPositions]
-    }
-
-    return this.#_defiPositions
-  }
 
   constructor({
     storage,
@@ -173,7 +148,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }, 'selectedAccount')
 
     this.#providers.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsErrors', () => {
+      this.#debounceFunctionCallsOnSameTick('updateErrors', () => {
         this.#updatePortfolioErrors(true)
       })
     })
@@ -200,7 +175,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.account = account
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
-    this.defiPositions = []
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
 
     const isStateWithOutdatedNetworks =
@@ -327,41 +301,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  // @TODO: Implement sorting of defi positions in the portfolio
-  // #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
-  //   if (!this.#defiPositions || !this.account) return
-
-  //   const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
-
-  //   const positionsByProvider = Object.values(defiPositionsAccountState).flatMap(
-  //     (n) => n.positionsByProvider
-  //   )
-
-  //   const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
-  //     const positions = provider.positions
-  //       .map((position) => {
-  //         const assets = position.assets
-  //           .filter(Boolean)
-  //           .sort((a, b) => sortByValue(a.value, b.value))
-
-  //         return { ...position, assets }
-  //       })
-  //       .sort((a, b) => sortByValue(a.additionalData.positionInUSD, b.additionalData.positionInUSD))
-
-  //     return { ...provider, positions }
-  //   })
-
-  //   const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) =>
-  //     sortByValue(a.positionInUSD, b.positionInUSD)
-  //   )
-
-  //   this.defiPositions = sortedPositionsByProvider
-
-  //   if (!skipUpdate) {
-  //     this.emitUpdate()
-  //   }
-  // }
-
   #debounceFunctionCallsOnSameTick(funcName: string, func: () => void) {
     if (this.#shouldDebounceFlags[funcName]) return
     this.#shouldDebounceFlags[funcName] = true
@@ -372,6 +311,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       try {
         func()
       } catch (error: any) {
+        console.error(error)
         this.emitError({
           level: 'silent',
           message: `The execution of ${funcName} in SelectedAccountController failed`,
@@ -380,37 +320,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       }
     }, 0)
   }
-
-  // @TODO: The defi positions will still have some sort of error state, consider that
-  // #updateDefiPositionsErrors(skipUpdate?: boolean) {
-  //   if (
-  //     !this.account ||
-  //     !this.#networks ||
-  //     !this.#providers ||
-  //     this.areDefiPositionsLoading
-  //   ) {
-  //     this.#defiPositionsErrors = []
-  //     if (!skipUpdate) {
-  //       this.emitUpdate()
-  //     }
-  //     return
-  //   }
-
-  //   const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
-
-  //   const errorBanners = getNetworksWithDeFiPositionsErrorErrors({
-  //     networks: this.#networks.networks,
-  //     currentAccountState: defiPositionsAccountState,
-  //     providers: this.#providers.providers,
-  //     networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
-  //   })
-
-  //   this.#defiPositionsErrors = errorBanners
-
-  //   if (!skipUpdate) {
-  //     this.emitUpdate()
-  //   }
-  // }
 
   #updatePortfolioErrors(skipUpdate?: boolean) {
     if (
@@ -427,6 +336,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       return
     }
 
+    this.#defiPositionsErrors = getNetworksWithDeFiPositionsErrorErrors({
+      networks: this.#networks.networks,
+      portfolioState: this.portfolio.portfolioState,
+      providers: this.#providers.providers,
+      networksWithPositions: [] as any
+      // @TODO: Get from the portfolio
+      // networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
+    })
     this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
       shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
@@ -569,7 +486,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       banners: this.banners,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
-      defiPositions: this.defiPositions,
       autoLoginPolicies: this.autoLoginPolicies
     }
   }

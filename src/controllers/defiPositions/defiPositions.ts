@@ -1,17 +1,12 @@
-import {
-  IRecurringTimeout,
-  RecurringTimeout
-} from '../../classes/recurringTimeout/recurringTimeout'
-import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/intervals'
-import { Account, AccountId } from '../../interfaces/account'
-import { IDefiPositionsController } from '../../interfaces/defiPositions'
+import { TokenResult } from 'libs/portfolio'
+
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue, getProviderId } from '../../libs/defiPositions/helpers'
 import {
   getAAVEPositions,
-  getDebankEnhancedUniV3Positions
+  getDebankEnhancedUniV3Positions,
+  getStakedWalletPositions
 } from '../../libs/defiPositions/providers'
 import {
   DeFiPositionsError,
@@ -240,7 +235,24 @@ export class DefiPositionsController {
       debankPositionMap.set(key, custom)
     })
 
-    return Array.from(debankPositionMap.values())
+    let positionsArray = Array.from(debankPositionMap.values())
+
+    // Sort the assets, positions by provider and provider positions by their value in USD descending
+    positionsArray = positionsArray.map((providerPositions) => ({
+      ...providerPositions,
+      positions: providerPositions.positions
+        .map((position) => ({
+          ...position,
+          assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
+        }))
+        .sort(
+          (a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0)
+        )
+    }))
+
+    positionsArray = positionsArray.sort((a, b) => (b.positionInUSD || 0) - (a.positionInUSD || 0))
+
+    return positionsArray
   }
 
   /**
@@ -252,6 +264,7 @@ export class DefiPositionsController {
     customPositionsByProvider: PositionsByProvider[],
     customPositionsError: DeFiPositionsError | null,
     customProvidersErrors: ProviderError[],
+    stkWalletToken: TokenResult | null,
     nonceId: string | undefined
   ) {
     const isDebankCallSuccessful = !!debankPositionsByProvider
@@ -262,6 +275,12 @@ export class DefiPositionsController {
         : previousPositionsByProvider.filter((p) => p.source === 'debank'),
       customPositionsByProvider
     )
+    // Ethereum-specific. Add the Staked Wallet token as a defi position
+    const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
+
+    if (stkWalletPosition) {
+      uniqueAndMerged.unshift(stkWalletPosition)
+    }
 
     return {
       nonceId,
@@ -362,7 +381,7 @@ export class DefiPositionsController {
             positionInUSD += value
           }
 
-          return { ...asset, value, priceIn: priceIn[0] }
+          return { ...asset, value, priceIn: priceIn[0]! }
         })
 
         return {

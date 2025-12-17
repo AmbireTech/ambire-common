@@ -18,7 +18,6 @@ import { IAutoLoginController } from '../../interfaces/autoLogin'
 import { IBannerController } from '../../interfaces/banner'
 import { IContractNamesController } from '../../interfaces/contractNames'
 import { IDappsController } from '../../interfaces/dapp'
-import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -74,7 +73,6 @@ import { BannerController } from '../banner/banner'
 import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
 import { ContractNamesController } from '../contractNames/contractNames'
 import { DappsController } from '../dapps/dapps'
-import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { EstimationStatus } from '../estimation/types'
@@ -135,8 +133,6 @@ export class MainController extends EventEmitter implements IMainController {
   accountPicker: IAccountPickerController
 
   portfolio: IPortfolioController
-
-  defiPositions: IDefiPositionsController
 
   dapps: IDappsController
 
@@ -293,16 +289,6 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner
     )
-    this.defiPositions = new DefiPositionsController({
-      fetch: this.fetch,
-      storage: this.storage,
-      selectedAccount: this.selectedAccount,
-      keystore: this.keystore,
-      accounts: this.accounts,
-      networks: this.networks,
-      providers: this.providers,
-      ui: this.ui
-    })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
         this.storage,
@@ -348,7 +334,6 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
-      defiPositions: this.defiPositions,
       networks: this.networks,
       providers: this.providers
     })
@@ -572,7 +557,6 @@ export class MainController extends EventEmitter implements IMainController {
           maxDataAgeMs: FIVE_MINUTES,
           maxDataAgeMsUnused: ONE_HOUR
         })
-        this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
 
       if (!this.accounts.areAccountStatesLoading) {
@@ -595,7 +579,6 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    this.defiPositions.updatePositions()
     this.updateSelectedAccountPortfolio()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
@@ -1346,7 +1329,6 @@ export class MainController extends EventEmitter implements IMainController {
       await this.activity.removeAccountData(address)
       this.requests.removeAccountData(address)
       this.signMessage.removeAccountData(address)
-      this.defiPositions.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
         await this.#selectAccount(this.accounts.accounts[0]?.addr)
@@ -1404,8 +1386,7 @@ export class MainController extends EventEmitter implements IMainController {
         isManualUpdate: isManualReload,
         maxDataAgeMsUnused,
         maxDataAgeMs
-      }),
-      this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
+      })
     ])
   }
 
@@ -1527,10 +1508,6 @@ export class MainController extends EventEmitter implements IMainController {
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity
     // this.activity.removeNetworkData(chainId)
-
-    // Don't remove the defi positions state data because we keep track of the defi positions
-    // on the disabled networks so we can suggest enabling them from a dashboard banner
-    // this.defiPositions.removeNetworkData(chainId)
   }
 
   async resolveAccountOpRequest(

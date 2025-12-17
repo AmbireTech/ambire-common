@@ -2,12 +2,8 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
-import {
-  AccountState as DefiPositionsAccountState,
-  DeFiPositionsError,
-  NetworksWithPositions
-} from '../defiPositions/types'
-import { AccountAssetsState } from '../portfolio/interfaces'
+import { DeFiPositionsError, NetworksWithPositions } from '../defiPositions/types'
+import { AccountAssetsState, PortfolioNetworkResult } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
 const TEN_MINUTES = 10 * 60 * 1000
@@ -284,42 +280,36 @@ export const getNetworksWithErrors = ({
 
 export const getNetworksWithDeFiPositionsErrorErrors = ({
   networks,
-  currentAccountState,
+  portfolioState,
   providers,
   networksWithPositions
 }: {
   networks: Network[]
-  currentAccountState: DefiPositionsAccountState
+  portfolioState: SelectedAccountPortfolioState
   providers: RPCProviders
   networksWithPositions: NetworksWithPositions
 }) => {
-  const isLoading = Object.keys(currentAccountState).some((chainId) => {
-    const networkState = currentAccountState[chainId]
-    return networkState.isLoading
-  })
-
-  if (isLoading) return []
-
   const networkNamesWithUnknownCriticalError: string[] = []
   const networkNamesWithAssetPriceCriticalError: string[] = []
   const providersWithErrors: {
     [providerName: string]: string[]
   } = {}
 
-  Object.keys(currentAccountState).forEach((chainId) => {
+  Object.keys(portfolioState).forEach((chainId) => {
     const providersWithPositions = networksWithPositions[chainId]
     // Ignore networks that don't have positions
     // but ensure that we have a successful response stored (the network key is present)
     if (providersWithPositions && !providersWithPositions.length) return
 
-    const networkState = currentAccountState[chainId]
+    const networkState = portfolioState[chainId]
     const network = networks.find((n) => n.chainId.toString() === chainId)
     const rpcProvider: RPCProvider | undefined = providers[chainId]
-    const lastSuccessfulUpdate = networkState.updatedAt
 
+    if (!network || !networkState || !('defiPositions' in networkState)) return
+
+    const defiState = (networkState.result as PortfolioNetworkResult).defiPositions
+    const lastSuccessfulUpdate = defiState.updatedAt
     if (
-      !network ||
-      !networkState ||
       (typeof lastSuccessfulUpdate === 'number' &&
         Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||
       // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
@@ -327,16 +317,16 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
     )
       return
 
-    if (networkState.error) {
-      if (networkState.error === DeFiPositionsError.AssetPriceError) {
+    if (defiState.error) {
+      if (defiState.error === DeFiPositionsError.AssetPriceError) {
         networkNamesWithAssetPriceCriticalError.push(network.name)
-      } else if (networkState.error === DeFiPositionsError.CriticalError) {
+      } else if (defiState.error === DeFiPositionsError.CriticalError) {
         networkNamesWithUnknownCriticalError.push(network.name)
       }
     }
 
     const providerNamesWithErrors =
-      networkState.providerErrors
+      defiState.providerErrors
         ?.filter(({ providerName }) => {
           // Display all errors if there hasn't been a successful update
           // for the network.
