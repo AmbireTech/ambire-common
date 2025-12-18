@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: agpl-3.0
-pragma solidity 0.8.19;
+pragma solidity ^0.8.19;
 
 library UserOpHelper {
 	uint256 public constant PAYMASTER_ADDR_OFFSET = 20;

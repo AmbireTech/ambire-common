@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: agpl-3.0
-pragma solidity 0.8.19;
+pragma solidity ^0.8.19;
 
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
@@ -295,7 +295,7 @@ contract AmbireAccount is IAmbireAccount {
 	 * address aggregator, uint48 validUntil, uint48 validAfter
 	 */
 	function validateUserOp(PackedUserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
-	external payable returns (uint256)
+	public virtual payable returns (uint256)
 	{
 		require(privileges(msg.sender) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
