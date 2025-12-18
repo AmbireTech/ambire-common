@@ -1,3 +1,5 @@
+import { getAddress } from 'viem'
+
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
@@ -10,6 +12,7 @@ import {
 } from '../../libs/defiPositions/providers'
 import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
+  AssetType,
   DeFiPositionsError,
   NetworksWithPositionsByAccounts,
   PositionsByProvider,
@@ -18,9 +21,16 @@ import {
 import { TokenResult } from '../../libs/portfolio'
 import { AccountState, PortfolioNetworkResult } from '../../libs/portfolio/interfaces'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 /* eslint-disable no-restricted-syntax */
 import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
+  const diff = Math.abs(price1 - price2)
+  const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2))
+  return diff <= threshold
+}
 
 export class DefiPositionsController extends EventEmitter {
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
@@ -31,10 +41,15 @@ export class DefiPositionsController extends EventEmitter {
 
   #storage: IStorageController
 
+  initialLoadPromise?: Promise<void>
+
   constructor(fetch: any, storage: IStorageController) {
     super()
     this.#fetch = fetch
     this.#storage = storage
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {
@@ -290,6 +305,160 @@ export class DefiPositionsController extends EventEmitter {
         }
       })
     }))
+  }
+
+  enhancePortfolioTokensWithDefiPositions(
+    portfolioTokens: TokenResult[],
+    defiPositionsState: PortfolioNetworkResult['defiPositions'] | undefined
+  ): TokenResult[] {
+    if (!defiPositionsState) return portfolioTokens
+
+    try {
+      const defiAssetsMap = new Map<
+        string,
+        {
+          assetType?: AssetType
+          priceIn?: TokenResult['priceIn']
+          positionId: string
+        }
+      >()
+      const notYetHandledTokensToAdd: TokenResult[] = []
+
+      defiPositionsState.positionsByProvider.forEach((posByProvider) => {
+        posByProvider.positions.forEach((pos) => {
+          const controllerAddress = pos.additionalData?.pool?.controller
+
+          if (controllerAddress) {
+            defiAssetsMap.set(controllerAddress, {
+              positionId: pos.id,
+              priceIn: []
+            })
+          }
+
+          pos.assets.forEach((asset) => {
+            const protocolAsset = asset.protocolAsset || null
+
+            if (!protocolAsset) return
+
+            const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
+              const isSameAddress = t.address === protocolAsset.address
+
+              if (isSameAddress) return true
+
+              const priceUSD = t.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
+
+              const tokenBalanceUSD = priceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(t.amountPostSimulation || t.amount),
+                      t.decimals,
+                      priceUSD
+                    )
+                  )
+                : undefined
+
+              if (protocolAsset.symbol && protocolAsset.address) {
+                return (
+                  !t.flags.rewardsType &&
+                  !t.flags.onGasTank &&
+                  t.address === getAddress(protocolAsset.address)
+                )
+              }
+
+              // If the token or asset don't have a value we MUST! not compare them
+              // by value as that would lead to false positives
+              if (!tokenBalanceUSD || !asset.value) return false
+
+              // If there is no protocol asset we have to fallback to finding the token
+              // by symbol and chainId. In that case we must ensure that the value of the two
+              // assets is similar
+              return (
+                !t.flags.rewardsType &&
+                !t.flags.onGasTank &&
+                // the portfolio token should contain the original asset symbol
+                t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
+                // but should be a different token symbol
+                t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
+                // and prices should have no more than 0.5% diff
+                isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
+              )
+            })
+
+            if (tokenCorrespondingToProtocolAsset) {
+              defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address, {
+                assetType: asset.type,
+                positionId: pos.id,
+                priceIn: asset.priceIn ? [asset.priceIn] : []
+              })
+            } else {
+              notYetHandledTokensToAdd.push({
+                amount: asset.amount,
+                latestAmount: asset.amount,
+                // Only list the borrowed asset with no price
+                priceIn:
+                  asset.type === AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
+                decimals: Number(protocolAsset.decimals),
+                address: protocolAsset.address,
+                symbol: protocolAsset.symbol,
+                name: protocolAsset.name,
+                chainId: BigInt(posByProvider.chainId),
+                flags: {
+                  canTopUpGasTank: false,
+                  isFeeToken: false,
+                  onGasTank: false,
+                  rewardsType: null,
+                  defiTokenType: asset.type,
+                  defiPositionId: pos.id
+                }
+              })
+            }
+          })
+        })
+      })
+
+      const enhancedTokenList = portfolioTokens.map((token) => {
+        const defiAssetData = defiAssetsMap.get(token.address)
+
+        if (!defiAssetData) return token
+
+        let priceIn = token.priceIn
+
+        if (defiAssetData?.assetType === AssetType.Borrow) {
+          priceIn = []
+        } else if (
+          defiAssetData.priceIn &&
+          (!token.priceIn.length || token.priceIn[0]!.price <= 0)
+        ) {
+          priceIn = defiAssetData.priceIn
+        }
+
+        const newToken = {
+          ...token,
+          priceIn,
+          flags: {
+            ...token.flags,
+            defiPositionId: defiAssetData?.positionId,
+            defiTokenType: defiAssetData?.assetType
+          }
+        }
+
+        defiAssetsMap.delete(token.address)
+
+        return newToken
+      })
+
+      return [...enhancedTokenList, ...notYetHandledTokensToAdd]
+    } catch (e: any) {
+      this.emitError({
+        message: 'Failed to enhance portfolio tokens with DeFi positions.',
+        error: e,
+        level: 'silent'
+      })
+
+      return portfolioTokens
+    }
   }
 
   /**

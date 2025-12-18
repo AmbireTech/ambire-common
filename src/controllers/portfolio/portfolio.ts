@@ -21,7 +21,6 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { AssetType } from '../../libs/defiPositions/types'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -56,7 +55,6 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
-import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -180,7 +178,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accountAddrs.map((accountAddr, index) => ({
               baseCurrency,
               accountAddr,
-              forceUpdateDefi: queue[index].data.forceUpdateDefi
+              forceUpdateDefi: queue[index]?.data.forceUpdateDefi
             }))
           )
           .flat()
@@ -218,6 +216,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
+      await this.defiPositions.initialLoadPromise
 
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.customTokens = await this.#storage.get('customTokens', [])
@@ -752,7 +751,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (!response) return null
 
-    // @TODO: Handle price caching from the response
+    // Update the price cache so the lib can use the latest prices from velcro
+    if (response.prices) {
+      const networkPriceCache = this.#priceCache[chainId.toString()] || new Map()
+
+      for (const [key, priceData] of Object.entries(response.prices)) {
+        networkPriceCache.set(key, priceData)
+      }
+
+      this.#priceCache[chainId.toString()] = networkPriceCache
+    }
+
     return {
       defi: {
         ...response.defi,
@@ -852,99 +861,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         )
       )
 
-      const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
-        const diff = Math.abs(price1 - price2)
-        const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2))
-        return diff <= threshold
-      }
-
-      const defiAssets = newDefiState.positionsByProvider
-        .map((p) =>
-          p.positions.flatMap((pos) =>
-            pos.assets.map((asset) => ({
-              ...asset,
-              additionalData: {
-                ...pos.additionalData,
-                positionId: pos.id
-              }
-            }))
-          )
-        )
-        .flat()
-
-      // @TODO: Tokens in pool.controller aren't handled (e.g. AdEx)
-
-      defiAssets.forEach((asset) => {
-        const protocolAsset = asset.protocolAsset || null
-
-        const tokenCorrespondingToAsset = portfolioResult.tokens.find((t) => {
-          return t.address === asset.address
-        })
-
-        const tokenCorrespondingToProtocolAsset = protocolAsset
-          ? portfolioResult.tokens.find((t) => {
-              const isSameAddress = t.address === protocolAsset.address
-
-              if (isSameAddress) return true
-
-              const priceUSD = t.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
-
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(t.amountPostSimulation || t.amount),
-                      t.decimals,
-                      priceUSD
-                    )
-                  )
-                : undefined
-
-              if (protocolAsset.symbol && protocolAsset.address) {
-                return (
-                  !t.flags.rewardsType &&
-                  !t.flags.onGasTank &&
-                  t.address === getAddress(protocolAsset.address)
-                )
-              }
-
-              // If the token or asset don't have a value we MUST! not compare them
-              // by value as that would lead to false positives
-              if (!tokenBalanceUSD || !asset.value) return false
-
-              // If there is no protocol asset we have to fallback to finding the token
-              // by symbol and chainId. In that case we must ensure that the value of the two
-              // assets is similar
-              return (
-                !t.flags.rewardsType &&
-                !t.flags.onGasTank &&
-                // the portfolio token should contain the original asset symbol
-                t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
-                // but should be a different token symbol
-                t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
-                // and prices should have no more than 0.5% diff
-                isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
-              )
-            })
-          : null
-
-        if (tokenCorrespondingToProtocolAsset) {
-          if (asset.type === AssetType.Borrow) {
-            tokenCorrespondingToProtocolAsset.priceIn = []
-          } else if (!tokenCorrespondingToAsset?.priceIn.length) {
-            tokenCorrespondingToProtocolAsset.priceIn = [asset.priceIn]
-          }
-
-          tokenCorrespondingToProtocolAsset.flags.defiPositionId = asset.additionalData.positionId
-
-          tokenCorrespondingToProtocolAsset.flags.defiTokenType = asset.type
-        }
-
-        if (tokenCorrespondingToAsset && !tokenCorrespondingToAsset.priceIn.length) {
-          tokenCorrespondingToAsset.priceIn = [asset.priceIn]
-        }
-      })
+      portfolioResult.tokens = this.defiPositions.enhancePortfolioTokensWithDefiPositions(
+        portfolioResult.tokens,
+        newDefiState
+      )
 
       this.#priceCache[network.chainId.toString()] = portfolioResult.priceCache
 
@@ -1133,7 +1053,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     if (!this.#accounts.accountStates) return undefined
     if (!this.#accounts.accountStates[acc.addr]) return undefined
 
-    const networkState = this.#accounts.accountStates[acc.addr][chainId.toString()]
+    const networkState = this.#accounts.accountStates[acc.addr]?.[chainId.toString()]
     if (!networkState) return undefined
 
     const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
