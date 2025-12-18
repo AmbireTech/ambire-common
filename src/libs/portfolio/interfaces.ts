@@ -7,6 +7,9 @@ import {
   PositionsByProvider
 } from '../defiPositions/types'
 
+// @TODO: Move most of these interfaces to src/interfaces and
+// figure out how to restructure portfolio/defiPositions types
+
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account

@@ -3,8 +3,8 @@ import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { AccountState } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
+import { AccountState } from '../portfolio/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -291,11 +291,10 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
 
 export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
-  defiPositionsAccountState,
   networks,
   accountAddr
 }: {
-  defiPositionsAccountState: AccountState
+  portfolioState?: AccountState
   networks: Network[]
   accountAddr: string
 }) => {
@@ -308,14 +307,15 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   const defiPositionsOnDisabledNetworks = []
   const disabledNetworksWithDefiPos = new Set<Network>()
 
-  disabledNetworks.forEach((n) => {
-    if (defiPositionsAccountState[n.chainId.toString()]) {
-      defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
-        defiPositionsOnDisabledNetworks.push(p)
-        disabledNetworksWithDefiPos.add(n)
-      })
-    }
-  })
+  // @TODO: Reimplement
+  // disabledNetworks.forEach((n) => {
+  //   if (defiPositionsAccountState[n.chainId.toString()]) {
+  //     defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
+  //       defiPositionsOnDisabledNetworks.push(p)
+  //       disabledNetworksWithDefiPos.add(n)
+  //     })
+  //   }
+  // })
 
   if (!defiPositionsOnDisabledNetworks.length) return []
 

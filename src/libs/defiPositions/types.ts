@@ -1,5 +1,8 @@
 import { Price } from '../../interfaces/assets'
 
+// @TODO: Move these interfaces to src/interfaces and
+// figure out how to restructure portfolio/defiPositions types
+
 export enum AssetType {
   Liquidity,
   Collateral,
@@ -39,14 +42,6 @@ export interface PositionAsset {
     name: string
     decimals: number
   }
-}
-
-export interface DeFiPositionsState {
-  [accountId: string]: AccountState
-}
-
-export interface AccountState {
-  [chainId: string]: NetworkState
 }
 
 export interface ProviderError {

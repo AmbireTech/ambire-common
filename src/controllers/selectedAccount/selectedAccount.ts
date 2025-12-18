@@ -16,7 +16,10 @@ import {
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
-import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
+import {
+  defiPositionsOnDisabledNetworksBannerId,
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
+} from '../../libs/banners/banners'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
@@ -340,9 +343,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       networks: this.#networks.networks,
       portfolioState: this.portfolio.portfolioState,
       providers: this.#providers.providers,
-      networksWithPositions: [] as any
-      // @TODO: Get from the portfolio
-      // networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
+      networksWithPositions: this.#portfolio.defiPositions.getNetworksWithPositions(
+        this.account.addr
+      )
     })
     this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
@@ -430,12 +433,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     action.meta.networkChainIds.forEach((chainId) => {
       if (
-        this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
+        this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]!.includes(
           `${this.account!.addr}-${chainId}`
         )
       )
         return
-      this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].push(
+      this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]!.push(
         `${this.account!.addr}-${chainId}`
       )
     })
@@ -453,30 +456,29 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     if (
       !this.account ||
       !this.#networks ||
+      !this.#portfolio ||
       !this.#networks.isInitialized ||
       !this.portfolio.isAllReady
     )
       return []
 
-    // @TODO: Read from the portfolio's defi positions state when available
-    return []
-    // const defiPositionsAccountState = this.#defiPositions.getDefiPositionsStateForAllNetworks(
-    //   this.account.addr
-    // )
+    const portfolioState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
-    // const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
-    //   ? this.#networks.allNetworks.filter(
-    //       (n) =>
-    //         !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
-    //           `${this.account!.addr}-${n.chainId}`
-    //         )
-    //     )
-    //   : this.#networks.allNetworks
-    // return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
-    //   defiPositionsAccountState,
-    //   networks: notDismissedNetworks,
-    //   accountAddr: this.account.addr
-    // })
+    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+      ? this.#networks.allNetworks.filter(
+          (n) =>
+            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
+              `${this.account!.addr}-${n.chainId}`
+            )
+        )
+      : this.#networks.allNetworks
+
+    // @TODO: Reimplement
+    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+      portfolioState,
+      networks: notDismissedNetworks,
+      accountAddr: this.account.addr
+    })
   }
 
   toJSON() {

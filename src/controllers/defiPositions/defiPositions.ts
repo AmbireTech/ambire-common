@@ -15,6 +15,7 @@ import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/
 import {
   AssetType,
   DeFiPositionsError,
+  NetworksWithPositions,
   NetworksWithPositionsByAccounts,
   PositionsByProvider,
   ProviderError
@@ -609,8 +610,8 @@ export class DefiPositionsController extends EventEmitter {
     return nonceId !== previousState.nonceId
   }
 
-  getNetworksWithPositions(accountAddr: string) {
-    return this.#networksWithPositionsByAccounts[accountAddr] || []
+  getNetworksWithPositions(accountAddr: string): NetworksWithPositions {
+    return this.#networksWithPositionsByAccounts[accountAddr] || {}
   }
 
   addSession(sessionId: string) {
