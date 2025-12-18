@@ -1,4 +1,5 @@
-import { getAddress } from 'viem'
+import { ZeroAddress } from 'ethers'
+import { getAddress, isHex } from 'viem'
 
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -296,12 +297,14 @@ export class DefiPositionsController extends EventEmitter {
             ...pos,
             assets: pos.assets.map((asset) => ({
               ...asset,
-              address: getAddress(asset.address),
+              address: isHex(asset.address) ? getAddress(asset.address) : ZeroAddress,
               amount: BigInt(asset.amount),
               protocolAsset: asset.protocolAsset
                 ? {
                     ...asset.protocolAsset,
-                    address: getAddress(asset.protocolAsset.address)
+                    address: isHex(asset.protocolAsset.address)
+                      ? getAddress(asset.protocolAsset.address)
+                      : ZeroAddress
                   }
                 : undefined
             }))
@@ -334,10 +337,10 @@ export class DefiPositionsController extends EventEmitter {
       defiPositionsState.positionsByProvider.forEach((posByProvider) => {
         posByProvider.positions.forEach((pos) => {
           try {
-            const controllerAddress = pos.additionalData?.pool?.controller
+            const controllerAddress = pos.additionalData?.pool?.controller as string | undefined
 
             if (controllerAddress) {
-              defiAssetsMap.set(getAddress(controllerAddress), {
+              defiAssetsMap.set(controllerAddress.toLowerCase(), {
                 positionId: pos.id,
                 priceIn: []
               })
@@ -372,7 +375,7 @@ export class DefiPositionsController extends EventEmitter {
                   return (
                     !t.flags.rewardsType &&
                     !t.flags.onGasTank &&
-                    t.address === getAddress(protocolAsset.address)
+                    t.address.toLowerCase() === protocolAsset.address.toLowerCase()
                   )
                 }
 
@@ -396,7 +399,7 @@ export class DefiPositionsController extends EventEmitter {
               })
 
               if (tokenCorrespondingToProtocolAsset) {
-                defiAssetsMap.set(getAddress(tokenCorrespondingToProtocolAsset.address), {
+                defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {
                   assetType: asset.type,
                   positionId: pos.id,
                   priceIn: asset.priceIn ? [asset.priceIn] : []
@@ -435,7 +438,7 @@ export class DefiPositionsController extends EventEmitter {
       })
 
       const enhancedTokenList = portfolioTokens.map((token) => {
-        const defiAssetData = defiAssetsMap.get(token.address)
+        const defiAssetData = defiAssetsMap.get(token.address.toLowerCase())
 
         if (!defiAssetData) return token
 
