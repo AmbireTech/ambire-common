@@ -640,13 +640,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     if (this.estimation.status === EstimationStatus.Success) {
-      const payOptionsPaidByUsOrGasTank = this.estimation.availableFeeOptions.filter(
-        (feeOption) => feeOption.paidBy === this.accountOp.accountAddr
-      )
+      this.#updateFeeSpeeds() // needed for the logic below
 
-      const payOptionsPaidByEOA = this.estimation.availableFeeOptions.filter(
-        (feeOption) => feeOption.paidBy !== this.accountOp.accountAddr
-      )
+      const payOptionsPaidByUsOrGasTank = this.estimation.availableFeeOptions
+        .filter((feeOption) => feeOption.paidBy === this.accountOp.accountAddr)
+        .sort(this.#sortFeeOptions.bind(this))
+
+      const payOptionsPaidByEOA = this.estimation.availableFeeOptions
+        .filter((feeOption) => feeOption.paidBy !== this.accountOp.accountAddr)
+        .sort(this.#sortFeeOptions.bind(this))
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
@@ -1262,6 +1264,44 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
+  #sortFeeOptions(a: FeePaymentOption, b: FeePaymentOption) {
+    const aId = getFeeSpeedIdentifier(a, this.accountOp.accountAddr)
+    const aSlow = this.feeSpeeds[aId]?.find((speed) => speed.type === 'slow')
+    if (!aSlow) return 1
+    const aCanCoverFee = a.availableAmount >= aSlow.amount
+
+    const bId = getFeeSpeedIdentifier(b, this.accountOp.accountAddr)
+    const bSlow = this.feeSpeeds[bId]?.find((speed) => speed.type === 'slow')
+    if (!bSlow) return -1
+    const bCanCoverFee = b.availableAmount >= bSlow.amount
+
+    if (aCanCoverFee && !bCanCoverFee) return -1
+    if (!aCanCoverFee && bCanCoverFee) return 1
+
+    // gas tank first
+    if (a.token.flags.onGasTank && !b.token.flags.onGasTank) return -1
+    if (!a.token.flags.onGasTank && b.token.flags.onGasTank) return 1
+
+    // native second
+    if (a.token.address === ZERO_ADDRESS && b.token.address !== ZERO_ADDRESS) return -1
+    if (a.token.address !== ZERO_ADDRESS && b.token.address === ZERO_ADDRESS) return 1
+
+    if (!a || !b) return 0
+
+    const aPrice = a.token?.priceIn?.[0]?.price
+    const bPrice = b.token?.priceIn?.[0]?.price
+
+    if (!aPrice || !bPrice) return 0
+    const aBalance = formatUnits(a.availableAmount, a.token.decimals)
+    const bBalance = formatUnits(b.availableAmount, b.token.decimals)
+    const aValue = parseFloat(aBalance) * aPrice
+    const bValue = parseFloat(bBalance) * bPrice
+
+    if (aValue > bValue) return -1
+    if (aValue < bValue) return 1
+    return 0
+  }
+
   #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
     const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
     const speeds = this.feeSpeeds[id] ?? []
@@ -1390,14 +1430,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               }
             }
           : undefined
-      console.log(
-        this.account,
-        this.accountOp,
-        this.#network,
-        state,
-        !this.#network.rpcNoStateOverride,
-        stateOverride
-      )
+
       const { tokens, nfts } = await debugTraceCall(
         this.account,
         this.accountOp,
@@ -1406,7 +1439,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         !this.#network.rpcNoStateOverride,
         stateOverride
       )
-      console.log('2', tokens, nfts)
+
       const learnedNewTokens = this.#portfolio.addTokensToBeLearned(tokens, this.#network.chainId)
       const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
         nfts,
