@@ -836,7 +836,9 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    await signAccountOp.signAndBroadcast()
+    await signAccountOp.signAndBroadcast().catch(() => {
+      // intentionally ignored - handled inside signAccountOp
+    })
   }
 
   async resolveDappBroadcast(
