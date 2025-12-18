@@ -94,11 +94,19 @@ export class EstimationController extends EventEmitter {
       return native ? [native] : []
     }
 
+    const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
+    // pass the fee payment options:
+    // 1. If ambire estimate success, from it
+    // 2. If network doesn't have state override, from the bundler if success
+    // 3. provider or empty
     return baseAcc.getAvailableFeeOptions(
       estimation,
       // eslint-disable-next-line no-nested-ternary
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
+        : // eslint-disable-next-line no-nested-ternary
+        network.rpcNoStateOverride && estimation.bundlerEstimation
+        ? estimation.bundlerEstimation.feePaymentOptions
         : estimation.providerEstimation
         ? estimation.providerEstimation.feePaymentOptions
         : [],

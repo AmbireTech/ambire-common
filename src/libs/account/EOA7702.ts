@@ -46,6 +46,13 @@ export class EOA7702 extends BaseAccount {
       return null
     }
 
+    // if the EOA account hasn't become 77702 and the network
+    // does not support state overriding, we rely on the bundler as
+    // the ambire estimation will always fail
+    if (!this.accountState.isSmarterEoa && this.network.rpcNoStateOverride) {
+      return estimation.bundler instanceof Error ? estimation.bundler : null
+    }
+
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
   }
@@ -137,6 +144,10 @@ export class EOA7702 extends BaseAccount {
     if (options.op.meta && options.op.meta.setDelegation !== undefined)
       return BROADCAST_OPTIONS.delegation
     if (options.isSponsored) return BROADCAST_OPTIONS.byBundler
+
+    // always use the bundler if the network doesn't support state override
+    // as we don't do great gas estimates on a batch
+    if (this.network.rpcNoStateOverride) return BROADCAST_OPTIONS.byBundler
 
     const feeToken = feeOption.token
     if (isNative(feeToken)) {

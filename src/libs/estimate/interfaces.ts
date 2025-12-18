@@ -36,6 +36,7 @@ export interface Erc4337GasLimits {
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
   flags: EstimationFlags
+  feePaymentOptions: FeePaymentOption[]
   feeCallType?: string
   // put here errors that are not fatal to the signing process
   // but reactable if known

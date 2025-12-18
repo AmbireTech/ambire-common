@@ -195,6 +195,13 @@ export async function bundlerEstimate(
         paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
         gasPrice: latestGasPrice,
+        feePaymentOptions: feeTokens.map((t) => ({
+          availableAmount: t.amount,
+          paidBy: account.addr,
+          gasUsed: 0n,
+          addedNative: 0n,
+          token: t
+        })),
         paymaster,
         flags,
         feeCallType
