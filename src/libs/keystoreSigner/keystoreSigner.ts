@@ -195,9 +195,12 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   /**
    * Decrypt a message (encrypted by the encryption public key).
    */
-  decrypt: KeystoreSignerInterface['decrypt'] = (encryptedData: string) => {
+  decrypt: KeystoreSignerInterface['decrypt'] = (encryptedDataHex: string) => {
+    const jsonString = Buffer.from(encryptedDataHex, 'hex').toString('utf8')
+    const encryptedData = JSON.parse(jsonString)
+
     const plaintext = decrypt({
-      encryptedData: JSON.parse(encryptedData),
+      encryptedData,
       privateKey: stripHexPrefix(this.#signer.privateKey)
     })
 
