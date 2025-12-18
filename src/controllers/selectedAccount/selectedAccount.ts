@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { getAddress } from 'ethers'
+import { formatEther, getAddress } from 'ethers'
 
 import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -320,7 +320,32 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const walletORStkWalletToken = portfolioAccountState['1']?.result?.tokens.find(
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
+    const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(
+      ({ address }) => address === STK_WALLET
+    )
+    const stkBalanceUsd = stkTokenInPortfolio
+      ? Number(formatEther(stkTokenInPortfolio.amount)) *
+        (stkTokenInPortfolio.priceIn[0]?.price || 0)
+      : 0
 
+    const walletEthProvidedLiquidityInUsd = defiPositionsAccountState['1']?.positionsByProvider
+      .find((p) => p.providerName === 'Uniswap V3')
+      ?.positions.filter(
+        (p) =>
+          p.additionalData.inRange &&
+          p.additionalData.pool.id === '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66'
+      )
+      .map((p) => p.additionalData.positionInUSD)
+      .reduce((a, b) => a + b, 0)
+
+    const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
+      .filter(([k]) =>
+        portfolioAccountState.projectedRewards?.result?.supportedChainIds
+          .map((n) => n.toString())
+          .includes(k)
+      )
+      .map(([, v]): number => v)
+      .reduce((a, b) => a + b, 0)
     // Try catch this just in case the relayer sends unexpected data
     try {
       if (portfolioAccountState.projectedRewards) {
@@ -328,7 +353,10 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
         const projectedRewardsData = getProjectedRewardsStatsAndToken(
           portfolioAccountState.projectedRewards,
-          walletOrStkWalletTokenPrice
+          walletOrStkWalletTokenPrice,
+          currentBalance,
+          stkBalanceUsd,
+          walletEthProvidedLiquidityInUsd
         )
 
         // Calculate and add projected rewards token
