@@ -296,7 +296,14 @@ export class DefiPositionsController extends EventEmitter {
             ...pos,
             assets: pos.assets.map((asset) => ({
               ...asset,
-              amount: BigInt(asset.amount)
+              address: getAddress(asset.address),
+              amount: BigInt(asset.amount),
+              protocolAsset: asset.protocolAsset
+                ? {
+                    ...asset.protocolAsset,
+                    address: getAddress(asset.protocolAsset.address)
+                  }
+                : undefined
             }))
           }
         } catch (error) {
@@ -326,95 +333,104 @@ export class DefiPositionsController extends EventEmitter {
 
       defiPositionsState.positionsByProvider.forEach((posByProvider) => {
         posByProvider.positions.forEach((pos) => {
-          const controllerAddress = pos.additionalData?.pool?.controller
+          try {
+            const controllerAddress = pos.additionalData?.pool?.controller
 
-          if (controllerAddress) {
-            defiAssetsMap.set(controllerAddress, {
-              positionId: pos.id,
-              priceIn: []
-            })
-          }
+            if (controllerAddress) {
+              defiAssetsMap.set(getAddress(controllerAddress), {
+                positionId: pos.id,
+                priceIn: []
+              })
+            }
 
-          pos.assets.forEach((asset) => {
-            const protocolAsset = asset.protocolAsset || null
+            pos.assets.forEach((asset) => {
+              const protocolAsset = asset.protocolAsset || null
 
-            if (!protocolAsset) return
+              if (!protocolAsset) return
 
-            const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
-              const isSameAddress = t.address === protocolAsset.address
+              const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
+                const isSameAddress = t.address === protocolAsset.address
 
-              if (isSameAddress) return true
+                if (isSameAddress) return true
 
-              const priceUSD = t.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
+                const priceUSD = t.priceIn.find(
+                  ({ baseCurrency }: { baseCurrency: string }) =>
+                    baseCurrency.toLowerCase() === 'usd'
+                )?.price
 
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(t.amountPostSimulation || t.amount),
-                      t.decimals,
-                      priceUSD
+                const tokenBalanceUSD = priceUSD
+                  ? Number(
+                      safeTokenAmountAndNumberMultiplication(
+                        BigInt(t.amountPostSimulation || t.amount),
+                        t.decimals,
+                        priceUSD
+                      )
                     )
-                  )
-                : undefined
+                  : undefined
 
-              if (protocolAsset.symbol && protocolAsset.address) {
+                if (protocolAsset.symbol && protocolAsset.address) {
+                  return (
+                    !t.flags.rewardsType &&
+                    !t.flags.onGasTank &&
+                    t.address === getAddress(protocolAsset.address)
+                  )
+                }
+
+                // If the token or asset don't have a value we MUST! not compare them
+                // by value as that would lead to false positives
+                if (!tokenBalanceUSD || !asset.value) return false
+
+                // If there is no protocol asset we have to fallback to finding the token
+                // by symbol and chainId. In that case we must ensure that the value of the two
+                // assets is similar
                 return (
                   !t.flags.rewardsType &&
                   !t.flags.onGasTank &&
-                  t.address === getAddress(protocolAsset.address)
+                  // the portfolio token should contain the original asset symbol
+                  t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
+                  // but should be a different token symbol
+                  t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
+                  // and prices should have no more than 0.5% diff
+                  isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
                 )
+              })
+
+              if (tokenCorrespondingToProtocolAsset) {
+                defiAssetsMap.set(getAddress(tokenCorrespondingToProtocolAsset.address), {
+                  assetType: asset.type,
+                  positionId: pos.id,
+                  priceIn: asset.priceIn ? [asset.priceIn] : []
+                })
+              } else {
+                notYetHandledTokensToAdd.push({
+                  amount: asset.amount,
+                  latestAmount: asset.amount,
+                  // Only list the borrowed asset with no price
+                  priceIn:
+                    asset.type === AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
+                  decimals: Number(protocolAsset.decimals),
+                  address: protocolAsset.address,
+                  symbol: protocolAsset.symbol,
+                  name: protocolAsset.name,
+                  chainId: BigInt(posByProvider.chainId),
+                  flags: {
+                    canTopUpGasTank: false,
+                    isFeeToken: false,
+                    onGasTank: false,
+                    rewardsType: null,
+                    defiTokenType: asset.type,
+                    defiPositionId: pos.id
+                  }
+                })
               }
-
-              // If the token or asset don't have a value we MUST! not compare them
-              // by value as that would lead to false positives
-              if (!tokenBalanceUSD || !asset.value) return false
-
-              // If there is no protocol asset we have to fallback to finding the token
-              // by symbol and chainId. In that case we must ensure that the value of the two
-              // assets is similar
-              return (
-                !t.flags.rewardsType &&
-                !t.flags.onGasTank &&
-                // the portfolio token should contain the original asset symbol
-                t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
-                // but should be a different token symbol
-                t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
-                // and prices should have no more than 0.5% diff
-                isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
-              )
             })
-
-            if (tokenCorrespondingToProtocolAsset) {
-              defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address, {
-                assetType: asset.type,
-                positionId: pos.id,
-                priceIn: asset.priceIn ? [asset.priceIn] : []
-              })
-            } else {
-              notYetHandledTokensToAdd.push({
-                amount: asset.amount,
-                latestAmount: asset.amount,
-                // Only list the borrowed asset with no price
-                priceIn:
-                  asset.type === AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
-                decimals: Number(protocolAsset.decimals),
-                address: protocolAsset.address,
-                symbol: protocolAsset.symbol,
-                name: protocolAsset.name,
-                chainId: BigInt(posByProvider.chainId),
-                flags: {
-                  canTopUpGasTank: false,
-                  isFeeToken: false,
-                  onGasTank: false,
-                  rewardsType: null,
-                  defiTokenType: asset.type,
-                  defiPositionId: pos.id
-                }
-              })
-            }
-          })
+          } catch (e: any) {
+            this.emitError({
+              message: 'Failed to enhance a portfolio token with DeFi position data.',
+              error: e,
+              level: 'silent'
+            })
+          }
         })
       })
 
