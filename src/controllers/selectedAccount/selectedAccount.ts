@@ -323,10 +323,10 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(
       ({ address }) => address === STK_WALLET
     )
-    const stkBalanceUsd = stkTokenInPortfolio
-      ? Number(formatEther(stkTokenInPortfolio.amount)) *
-        (stkTokenInPortfolio.priceIn[0]?.price || 0)
-      : 0
+    const stkBalanceUsd =
+      stkTokenInPortfolio === undefined || stkTokenInPortfolio.priceIn[0]?.price === undefined
+        ? undefined
+        : Number(formatEther(stkTokenInPortfolio.amount)) * stkTokenInPortfolio.priceIn[0].price
 
     const walletEthProvidedLiquidityInUsd = defiPositionsAccountState['1']?.positionsByProvider
       .find((p) => p.providerName === 'Uniswap V3')
