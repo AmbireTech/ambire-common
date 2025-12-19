@@ -1,10 +1,16 @@
 /* eslint-disable no-restricted-syntax */
-import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
+import { v4 as uuidv4 } from 'uuid'
+
+import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
 export default class EventEmitter {
+  id: string
+
+  #registry: IEventEmitterRegistryController | null = null
+
   #callbacksWithId: {
     id: string | null
     cb: (forceEmit?: true) => void
@@ -22,6 +28,25 @@ export default class EventEmitter {
   #errors: ErrorRef[] = []
 
   statuses: Statuses<string> = {}
+
+  constructor(registry?: IEventEmitterRegistryController) {
+    this.id = uuidv4()
+
+    if (registry) {
+      this.#registry = registry
+    }
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#load()
+  }
+
+  async #load() {
+    await wait(1) // wait to construct before using this
+    this.#registry?.set(this.id, this)
+  }
+
+  get name(): string {
+    return this.constructor.name
+  }
 
   get onUpdateIds() {
     return this.#callbacksWithId.map((item) => item.id)
@@ -185,6 +210,7 @@ export default class EventEmitter {
   }
 
   destroy() {
+    this.#registry?.delete(this.id)
     this.#callbacks = []
     this.#callbacksWithId = []
     this.#errorCallbacks = []
@@ -195,6 +221,7 @@ export default class EventEmitter {
   toJSON() {
     return {
       ...this,
+      name: this.name,
       emittedErrors: this.emittedErrors // includes the getter in the stringified instance
     }
   }

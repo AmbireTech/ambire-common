@@ -3,7 +3,7 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Dapp } from '../../interfaces/dapp'
 /* eslint-disable no-restricted-syntax */
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
@@ -34,8 +34,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  constructor(storage: Storage) {
-    super()
+  constructor(eventEmitterRegistry: IEventEmitterRegistryController, storage: Storage) {
+    super(eventEmitterRegistry)
 
     this.#storage = storage
     // eslint-disable-next-line @typescript-eslint/no-floating-promises

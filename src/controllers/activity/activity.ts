@@ -3,6 +3,7 @@ import { Interface, isAddress } from 'ethers'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -155,6 +156,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   } = {}
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     fetch: Fetch,
     callRelayer: Function,
@@ -165,7 +167,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     portfolio: IPortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer

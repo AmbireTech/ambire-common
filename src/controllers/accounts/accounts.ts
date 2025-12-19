@@ -20,7 +20,7 @@ import {
   AmbireSmartAccountIdentityCreateResponse,
   IAccountsController
 } from '../../interfaces/account'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -91,6 +91,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   accountStateInitialLoadPromise?: Promise<void>
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     providers: IProvidersController,
     networks: INetworksController,
@@ -101,7 +102,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     relayerUrl: string,
     fetch: Fetch
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#providers = providers
     this.#networks = networks

@@ -1,4 +1,5 @@
 import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -11,8 +12,11 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export class FeatureFlagsController extends EventEmitter implements IFeatureFlagsController {
   #flags: FeatureFlags
 
-  constructor(featureFlags: Partial<FeatureFlags>) {
-    super()
+  constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
+    featureFlags: Partial<FeatureFlags>
+  ) {
+    super(eventEmitterRegistry)
 
     this.#flags = { ...defaultFeatureFlags, ...(featureFlags || {}) }
   }

@@ -24,7 +24,7 @@ export class TransactionManagerController
   #chainMap = [sepolia, arbitrumSepolia, baseSepolia]
 
   constructor(deps: TransactionDependencies) {
-    super()
+    super(deps.eventEmitterRegistry)
 
     // TODO: intialize interopSDK here
     this.#dependencies = { ...deps, interopSDK: null }

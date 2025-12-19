@@ -1,5 +1,6 @@
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -11,6 +12,7 @@ import { LiFiAPI } from '../../services/lifi/api'
 import { SocketAPI } from '../../services/socket/api'
 
 export type TransactionDependencies = {
+  eventEmitterRegistry: IEventEmitterRegistryController
   accounts: IAccountsController
   keystore: IKeystoreController
   portfolio: IPortfolioController

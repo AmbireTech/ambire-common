@@ -6,7 +6,7 @@ import {
 import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -70,6 +70,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
   #updateWithRelayerNetworksInterval: IRecurringTimeout
 
   constructor({
+    eventEmitterRegistry,
     defaultNetworksMode,
     storage,
     fetch,
@@ -77,6 +78,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     onAddOrUpdateNetworks,
     onRemoveNetwork
   }: {
+    eventEmitterRegistry: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
     storage: IStorageController
     fetch: Fetch
@@ -84,7 +86,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     onAddOrUpdateNetworks: (networks: Network[]) => void
     onRemoveNetwork: (chainId: bigint) => void
   }) {
-    super()
+    super(eventEmitterRegistry)
     if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#fetch = fetch
