@@ -273,7 +273,7 @@ export const mapToken = (
 const isNetworkError = (error: any): boolean => {
   if (!error) return false
 
-  const errorMessage = error.message?.toLowerCase() || ''
+  const message = error.message?.toLowerCase() || ''
   const errorCode = error.code
 
   // Common network error patterns
@@ -296,7 +296,7 @@ const isNetworkError = (error: any): boolean => {
   const networkErrorCodes = ['NETWORK_ERROR', 'TIMEOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']
 
   return (
-    networkErrorPatterns.some((pattern) => errorMessage.includes(pattern)) ||
+    networkErrorPatterns.some((pattern) => message.includes(pattern)) ||
     networkErrorCodes.includes(errorCode)
   )
 }
@@ -351,24 +351,23 @@ export const validateERC20Token = async (
   } = options || {}
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
-  const type = 'erc20'
   let isValid = true
   let hasNetworkError = false
-  let errorMessage = ''
-  let errorType: 'network' | 'validation' | null = null
+  let message = ''
+  let type: 'network' | 'validation' | null = null
 
   const handleERC20Error = (e: any, operation: string) => {
     if (isNetworkError(e)) {
       hasNetworkError = true
       isValid = false
-      errorType = 'network'
-      errorMessage = `Network error validating token: ${
+      type = 'network'
+      message = `Network error validating token: ${
         e.message || `Network error while fetching token ${operation}`
       }`
     } else {
       isValid = false
-      errorType = 'validation'
-      errorMessage = 'This token type is not supported'
+      type = 'validation'
+      message = 'This token type is not supported'
     }
   }
 
@@ -393,16 +392,16 @@ export const validateERC20Token = async (
     // Only mark as invalid if it's not a network error
     if (!hasNetworkError) {
       isValid = false
-      if (!errorMessage) {
-        errorMessage = 'Token validation failed: unable to fetch required token data'
-        errorType = 'validation'
+      if (!message) {
+        message = 'Token validation failed: unable to fetch required token data'
+        type = 'validation'
       }
     }
   } else if (!hasNetworkError) {
     // Reset error state only if validation succeeded AND there was no network error
     isValid = true
-    errorMessage = ''
-    errorType = null
+    message = ''
+    type = null
   }
 
   // If validation failed and network detection is enabled, check other networks
@@ -443,8 +442,8 @@ export const validateERC20Token = async (
 
       if (validNetworks.length > 0) {
         const networkNames = validNetworks.map((net) => net.name).join(', ')
-        errorMessage = `This token is found on ${networkNames}. Is the correct network selected?`
-        errorType = 'validation'
+        message = `This token is found on ${networkNames}. Is the correct network selected?`
+        type = 'validation'
       }
     } catch (networkDetectionError) {
       // Network detection failed, but don't override the original error
@@ -454,10 +453,10 @@ export const validateERC20Token = async (
 
   return {
     isValid,
-    standard: type,
+    standard: 'erc20',
     error: {
-      message: errorMessage || null,
-      type: errorType
+      message: message || null,
+      type
     }
   }
 }
