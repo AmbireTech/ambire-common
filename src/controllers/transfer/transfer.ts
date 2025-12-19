@@ -110,6 +110,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   isRecipientHumanizerKnownTokenOrSmartContract = false
 
+  isRecipientAddressViewOnly = false
+
   isTopUp: boolean = false
 
   #shouldSkipTransactionQueuedModal: boolean = false
@@ -527,7 +529,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     addressState,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
-    isTopUp,
     amountFieldMode
   }: TransferUpdate) {
     this.shouldTrackLatestBroadcastedAccountOp = true
@@ -619,6 +620,18 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.emitUpdate()
   }
 
+  checkIsRecipientAddressViewOnly() {
+    const recipientAccount = this.#accounts.accounts.find(
+      ({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase()
+    )
+
+    if (recipientAccount) {
+      this.isRecipientAddressViewOnly = recipientAccount.initialPrivileges.length === 0
+    } else {
+      this.isRecipientAddressViewOnly = false
+    }
+  }
+
   #onRecipientAddressChange() {
     if (!isAddress(this.recipientAddress)) {
       this.isRecipientAddressUnknown = false
@@ -628,6 +641,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.lastSentToRecipientAt = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
+      this.isRecipientAddressViewOnly = false
 
       return
     }
@@ -638,6 +652,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
+    this.checkIsRecipientAddressViewOnly()
     this.checkIsRecipientAddressUnknown()
   }
 
@@ -943,7 +958,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       maxAmount: this.maxAmount,
       maxAmountInFiat: this.maxAmountInFiat,
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
-      hasPersistedState: this.hasPersistedState
+      hasPersistedState: this.hasPersistedState,
+      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly
     }
   }
 }
