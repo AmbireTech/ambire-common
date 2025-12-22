@@ -24,7 +24,7 @@ import {
 } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
-import { PositionsByProvider } from '../../libs/defiPositions/types'
+import { AssetType, PositionsByProvider } from '../../libs/defiPositions/types'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
@@ -335,7 +335,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
           p.additionalData.inRange &&
           p.additionalData.pool.id === '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66'
       )
-      .map((p) => p.additionalData.positionInUSD)
+      .map((p) => p.assets)
+      .flat()
+      // assets in the uniswap positions can have asset type of liquidity or rewards
+      // we remove the latter because the rewards app does not fetch anything
+      // from debank, and is only able to et the assets with liquidity type for the
+      // uniswap liquidity position. To achieve minimal discrepancy between the
+      // extension and the app, we will not include assets with type Reward for the
+      // uniswap liquidity position
+      .filter((a) => a.type === AssetType.Liquidity)
+      .map((a) => a.priceIn.price * Number(formatEther(a.amount)))
       .reduce((a, b) => a + b, 0)
 
     const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
