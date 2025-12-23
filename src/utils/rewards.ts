@@ -42,8 +42,7 @@ export const calculateRewardsStats = (
     return acc + weight
   }, 0)
   const governanceScore = Math.floor(governanceWeight / 2000)
-  const totalMultiplier =
-    projectedRewardsResult.multiplier === 1 ? 1 : 1.06 ** projectedRewardsResult.multiplier
+  const totalMultiplier = 1.06 ** projectedRewardsResult.multiplier
   const totalScore = Math.floor(
     (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
       totalMultiplier
