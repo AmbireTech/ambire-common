@@ -1360,10 +1360,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // The used on information is not critical. Allow the user to proceed after
     // 1 second. It will get popuplated in the background.
     const minWaitTimeout = setTimeout(() => {
-      if (!this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
-        this.linkedAccountsLoading = false
-        this.emitUpdate()
-      }
+      this.linkedAccountsLoading = false
+      this.emitUpdate()
     }, 1000)
 
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
