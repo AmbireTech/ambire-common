@@ -150,6 +150,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
 
+  /**
+   * Needed in order to cancel the ongoing findAndSetLinkedAccounts operation
+   * when reset() is called (usually when the user navigates away/closes the Account Picker).
+   * This prevents the operation from continuing after the controller state has been
+   * cleared, avoiding errors in #verifyLinkedAccounts when #derivedAccounts is empty.
+   */
   #findAndSetLinkedAccountsAbortController?: AbortController
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
@@ -1232,18 +1238,27 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return sortedAccountsWithNetworksArray
   }
 
-  async #findAndSetLinkedAccounts({
-    accounts,
-    abortSignal
-  }: {
-    accounts: Account[]
-    abortSignal?: AbortSignal
-  }) {
+  /**
+   * Guard to ensure we only proceed with data that matches the current page and
+   * that the operation hasn't been cancelled via reset().
+   * Similar to #isQuoteIdObsoleteAfterAsyncOperation in SwapAndBridgeController.
+   */
+  #isFindAndSetLinkedAccountsCancelled(
+    calledForPage: number,
+    calledForAbortController: AbortController | undefined
+  ): boolean {
+    return calledForAbortController?.signal.aborted || calledForPage !== this.page
+  }
+
+  async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
     if (!this.shouldSearchForLinkedAccounts) return
 
     if (accounts.length === 0) return
 
+    // Cache the page and the abort controller at the start to use throughout
+    // the operation, even if reset() clears them mid-process
     const calledForPage = this.page
+    const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
     this.linkedAccountsLoading = true
     this.linkedAccountsError = ''
@@ -1264,8 +1279,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.linkedAccountsError = errorMessage
     }
 
-    // Check if operation was aborted or page changed
-    if (abortSignal?.aborted || calledForPage !== this.page) {
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
       this.linkedAccountsLoading = false
       return
     }
@@ -1332,7 +1346,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     })
 
     // Check if operation was aborted or page changed
-    if (abortSignal?.aborted || calledForPage !== this.page) {
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
       this.linkedAccountsLoading = false
       return
     }
@@ -1344,7 +1358,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // The used on information is not critical. Allow the user to proceed after
     // 1 second. It will get popuplated in the background.
     const minWaitTimeout = setTimeout(() => {
-      if (!abortSignal?.aborted && calledForPage === this.page) {
+      if (!this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
         this.linkedAccountsLoading = false
         this.emitUpdate()
       }
@@ -1360,7 +1374,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     // Check if operation was aborted or page changed
-    if (abortSignal?.aborted || calledForPage !== this.page) {
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
       this.linkedAccountsLoading = false
       return
     }
@@ -1389,8 +1403,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             // Account with this key is used (with identity) or not).
             !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
         )
-        .map((acc) => acc.account),
-      abortSignal: this.#findAndSetLinkedAccountsAbortController.signal
+        .map((acc) => acc.account)
     }).finally(() => {
       this.findAndSetLinkedAccountsPromise = undefined
       this.#findAndSetLinkedAccountsAbortController = undefined
