@@ -1281,6 +1281,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
       this.linkedAccountsLoading = false
+      this.emitUpdate()
       return
     }
 
@@ -1348,6 +1349,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // Check if operation was aborted or page changed
     if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
       this.linkedAccountsLoading = false
+      this.emitUpdate()
       return
     }
 
@@ -1376,6 +1378,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // Check if operation was aborted or page changed
     if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
       this.linkedAccountsLoading = false
+      this.emitUpdate()
       return
     }
 
