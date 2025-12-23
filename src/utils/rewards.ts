@@ -42,7 +42,8 @@ export const calculateRewardsStats = (
     return acc + weight
   }, 0)
   const governanceScore = Math.floor(governanceWeight / 2000)
-  const totalMultiplier = 1.06 ** projectedRewardsResult.multiplier
+  const multiplierCount = projectedRewardsResult.multipliers.filter((m) => m.activated).length
+  const totalMultiplier = 1.06 ** multiplierCount
   const totalScore = Math.floor(
     (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
       totalMultiplier
@@ -67,10 +68,11 @@ export const calculateRewardsStats = (
     swapVolume,
     governanceScore,
     governanceWeight,
-    multiplierCount: projectedRewardsResult.multiplier,
+    multiplierCount,
     multiplier: totalMultiplier,
     estimatedRewards,
-    estimatedRewardsUSD
+    estimatedRewardsUSD,
+    multipliers: projectedRewardsResult.multipliers
   }
 }
 
