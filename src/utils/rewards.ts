@@ -67,6 +67,7 @@ export const calculateRewardsStats = (
     swapVolume,
     governanceScore,
     governanceWeight,
+    multiplierCount: projectedRewardsResult.multiplier,
     multiplier: totalMultiplier,
     estimatedRewards,
     estimatedRewardsUSD

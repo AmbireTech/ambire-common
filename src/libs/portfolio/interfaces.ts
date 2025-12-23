@@ -281,6 +281,7 @@ export type ProjectedRewardsStats = {
   poolSize: number
   rank: number
   totalScore: number
+  multiplierCount: number
   multiplier: number
   estimatedRewards: number
   estimatedRewardsUSD: number
