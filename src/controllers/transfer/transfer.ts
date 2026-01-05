@@ -312,7 +312,9 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setDefaultSelectedToken(tokenData?: { address: string; chainId: string | number }) {
-    if (!this.#tokens.length) return
+    const enabledTokens = this.#tokens.filter((t) => !t.flags.isHidden)
+
+    if (!enabledTokens.length) return
 
     const tokenAddress = tokenData?.address.toLowerCase() || ''
     const tokenChainId = tokenData?.chainId.toString() || ''
@@ -321,7 +323,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // 1. If a valid address is provided → try to match it
     if (tokenAddress) {
-      newSelectedToken = this.#tokens.find(
+      newSelectedToken = enabledTokens.find(
         (t: TokenResult) =>
           t.address.toLowerCase() === tokenAddress &&
           tokenChainId === t.chainId.toString() &&
@@ -330,7 +332,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // 2. If no valid address or no match → fallback to first token
-    if (!newSelectedToken) newSelectedToken = this.#tokens[0]
+    if (!newSelectedToken) newSelectedToken = enabledTokens[0]
 
     // 3. Only update if changed
     if (
@@ -404,7 +406,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get tokens() {
-    return this.#tokens
+    return this.#tokens.filter((t) => !t.flags.isHidden)
   }
 
   get maxAmount(): string {
