@@ -833,7 +833,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       routePriority
     } = props
 
-    let fromSelectedToken = props.fromSelectedToken
+    const fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
       this.#emitSilentErrorIfNullAddress(fromSelectedToken.address)
       // if the provider is socket, convert the null addresses
@@ -845,12 +845,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         Number(fromSelectedToken.chainId),
         fromSelectedToken.address
       )
-      if (validAddr !== fromSelectedToken.address) {
-        const validToken = this.portfolioTokenList.find(
-          (t) => t.address === validAddr && t.chainId === fromSelectedToken!.chainId
-        )
-        if (validToken) fromSelectedToken = validToken
-      }
+      if (validAddr !== fromSelectedToken.address) fromSelectedToken.address = validAddr
     }
 
     const {
