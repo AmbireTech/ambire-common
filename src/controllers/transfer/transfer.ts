@@ -622,7 +622,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     )
 
     this.isRecipientAddressUnknown =
-      !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+      !isAddressInAddressBook &&
+      this.recipientAddress.toLowerCase() !== this.#selectedAccount.account?.addr.toLowerCase() &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.isRecipientAddressUnknownAgreed = false
     this.#setSWWarningVisibleIfNeeded()
 

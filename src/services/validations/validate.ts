@@ -13,7 +13,8 @@ type ValidateReturnType = {
   // 'error' - Critical validation failures that block the transaction (success: false)
   // 'warning' - Important information user should know but transaction can proceed (success: true)
   // 'info' - Neutral informational messages (success: true)
-  severity?: 'info' | 'warning' | 'error'
+  // 'success' - Green confirmation message
+  severity?: 'info' | 'warning' | 'error' | 'success'
   errorType?: 'insufficient_amount'
 }
 
@@ -102,15 +103,16 @@ const validateSendTransferAddress = (
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
       success: true,
-      message: ''
+      message: '',
+      severity: 'success'
     }
   }
 
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
-      success: false,
-      message: "You can't send to the same address you're sending from.",
-      severity: 'error'
+      success: true,
+      message: '',
+      severity: 'success'
     }
   }
 
