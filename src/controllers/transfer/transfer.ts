@@ -297,6 +297,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#tokens = tokens
 
     if (this.selectedToken) {
+      // while broadcasting DO NOT update/reset the selectedToken to prevent displaying
+      // a different token from the already broadcasted one in the "Transfer done" screen
+      //
+      // this can happen when the full token amount is sent and the token is filtered
+      // out on the next tokens update, forcing selectedToken to be updated to
+      // the first token from the updated tokens list
+      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
+
       this.selectedToken =
         this.#tokens.find(
           (t) =>
