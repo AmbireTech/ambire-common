@@ -312,6 +312,8 @@ describe('SelectedAccount Controller', () => {
       updateCount++
     })
 
+    updateCount = 0 // reset after initial sync
+
     await portfolioCtrl.forceEmitUpdate()
 
     await new Promise((resolve) => {
