@@ -91,7 +91,7 @@ const prepareTest = async (
     () => {},
     () => {},
     relayerUrl,
-    global.fetch as any
+    fetch
   )
 
   await networksCtrl.initialLoadPromise
