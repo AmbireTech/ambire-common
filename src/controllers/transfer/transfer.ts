@@ -271,6 +271,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const tokens = this.#selectedAccount.portfolio.tokens
       .filter((token) => {
         const hasAmount = Number(getTokenAmount(token)) > 0
+        const isVisible = !token.flags.isHidden
 
         if (this.isTopUp) {
           const tokenNetwork = this.#networks.networks.find(
@@ -279,13 +280,14 @@ export class TransferController extends EventEmitter implements ITransferControl
 
           return (
             hasAmount &&
+            isVisible &&
             tokenNetwork?.hasRelayer &&
             token.flags.canTopUpGasTank &&
             !token.flags.onGasTank
           )
         }
 
-        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+        return hasAmount && isVisible && !token.flags.onGasTank && !token.flags.rewardsType
       })
       .sort((a, b) => {
         const tokenAinUSD = getTokenBalanceInUSD(a)
