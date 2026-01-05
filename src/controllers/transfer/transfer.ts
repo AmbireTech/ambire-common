@@ -273,6 +273,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const tokens = this.#selectedAccount.portfolio.tokens
       .filter((token) => {
         const hasAmount = Number(getTokenAmount(token)) > 0
+        const isVisible = !token.flags.isHidden
 
         if (this.isTopUp) {
           const tokenNetwork = this.#networks.networks.find(
@@ -281,13 +282,14 @@ export class TransferController extends EventEmitter implements ITransferControl
 
           return (
             hasAmount &&
+            isVisible &&
             tokenNetwork?.hasRelayer &&
             token.flags.canTopUpGasTank &&
             !token.flags.onGasTank
           )
         }
 
-        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+        return hasAmount && isVisible && !token.flags.onGasTank && !token.flags.rewardsType
       })
       .sort((a, b) => {
         const tokenAinUSD = getTokenBalanceInUSD(a)
@@ -312,9 +314,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setDefaultSelectedToken(tokenData?: { address: string; chainId: string | number }) {
-    const enabledTokens = this.#tokens.filter((t) => !t.flags.isHidden)
-
-    if (!enabledTokens.length) return
+    if (!this.#tokens.length) return
 
     const tokenAddress = tokenData?.address.toLowerCase() || ''
     const tokenChainId = tokenData?.chainId.toString() || ''
@@ -323,7 +323,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // 1. If a valid address is provided → try to match it
     if (tokenAddress) {
-      newSelectedToken = enabledTokens.find(
+      newSelectedToken = this.#tokens.find(
         (t: TokenResult) =>
           t.address.toLowerCase() === tokenAddress &&
           tokenChainId === t.chainId.toString() &&
@@ -332,7 +332,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // 2. If no valid address or no match → fallback to first token
-    if (!newSelectedToken) newSelectedToken = enabledTokens[0]
+    if (!newSelectedToken) newSelectedToken = this.#tokens[0]
 
     // 3. Only update if changed
     if (
@@ -406,7 +406,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get tokens() {
-    return this.#tokens.filter((t) => !t.flags.isHidden)
+    return this.#tokens
   }
 
   get maxAmount(): string {
