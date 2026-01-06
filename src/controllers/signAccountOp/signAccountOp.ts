@@ -459,15 +459,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return { title: invalidAccountOpError, code: 'NO_CALLS' }
     }
 
-    if (
-      this.accountOp.calls.some(
-        (c) => isAddress(c.to) && getAddress(c.to) === getAddress(this.accountOp.accountAddr)
-      )
-    )
-      return {
-        title: 'A malicious transaction found in this batch.',
-        code: 'CALL_TO_SELF'
-      }
     const warnings: HumanizerWarning[] = this.humanization
       .map((h) => h.warnings)
       .filter((w): w is HumanizerWarning[] => !!w)
