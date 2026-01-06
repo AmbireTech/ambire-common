@@ -461,7 +461,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (
       this.accountOp.calls.some(
-        (c) => isAddress(c.to) && getAddress(c.to) === getAddress(this.accountOp.accountAddr)
+        (c) =>
+          isAddress(c.to) &&
+          getAddress(c.to) === getAddress(this.accountOp.accountAddr) &&
+          c.data !== '0x'
       )
     )
       return {
