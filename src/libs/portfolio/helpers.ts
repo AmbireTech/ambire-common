@@ -12,6 +12,7 @@ import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   ERC721s,
+  ExtendedErrorWithLevel,
   ExternalHintsAPIResponse,
   FormattedExternalHintsAPIResponse,
   GetOptions,
@@ -26,6 +27,7 @@ import {
   TokenValidationResult,
   Total
 } from './interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
@@ -747,3 +749,33 @@ export const isPortfolioGasTankResult = (
 
 export const isNative = (token: TokenResult) =>
   token.address === ZeroAddress && !token.flags.onGasTank
+
+export const getHintsError = (
+  errorMessage: string,
+  lastExternalApiHintsData: {
+    lastUpdate: number
+    hasHints: boolean
+  } | null
+): ExtendedErrorWithLevel => {
+  if (!lastExternalApiHintsData) {
+    return {
+      name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+      message: errorMessage,
+      level: 'critical'
+    }
+  }
+
+  const TEN_MINUTES = 10 * 60 * 1000
+
+  const lastUpdate = lastExternalApiHintsData.lastUpdate
+
+  const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
+
+  return {
+    name: isLastUpdateTooOld
+      ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+      : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+    message: errorMessage,
+    level: isLastUpdateTooOld ? 'critical' : 'silent'
+  }
+}

@@ -30,6 +30,7 @@ import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getFlags,
+  getHintsError,
   getSpecialHints,
   getTotal,
   learnedErc721sToHints,
@@ -39,6 +40,7 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  ExtendedErrorWithLevel,
   ExternalPortfolioDiscoveryResponse,
   FormattedPortfolioDiscoveryResponse,
   GasTankTokenResult,
@@ -54,6 +56,7 @@ import {
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
@@ -717,6 +720,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
+    const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
       accountAddr,
@@ -759,7 +763,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         forceUpdateDefi: !canSkipDefiUpdate
       })
     } catch (error: any) {
-      // @TODO: Hints and defi error handling
+      if (!canSkipDefiUpdate) {
+        const defiError: ExtendedErrorWithLevel = {
+          name: PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError,
+          message: error.message,
+          level: 'critical'
+        }
+
+        errors.push(defiError)
+      }
+      if (!canSkipExternalApiHintsUpdate) {
+        const hintsError = getHintsError(error.message, externalApiHintsResponse)
+
+        errors.push(hintsError)
+      }
     }
 
     if (!response) return null

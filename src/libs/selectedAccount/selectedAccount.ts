@@ -34,6 +34,22 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
+export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
+  tokens: [],
+  collections: [],
+  defiPositions: [],
+  tokenAmounts: [],
+  totalBalance: 0,
+  balancePerNetwork: {},
+  isReadyToVisualize: false,
+  isAllReady: false,
+  shouldShowPartialResult: false,
+  isReloading: false,
+  networkSimulatedAccountOp: {},
+  portfolioState: {},
+  projectedRewardsStats: null
+}
+
 /**
  * Calculates the selected account portfolio that is used by the UI
  */
@@ -43,6 +59,10 @@ export function calculateSelectedAccountPortfolio(
   isManualUpdate: boolean
 ): SelectedAccountPortfolio {
   const strippedPortfolioState = stripPortfolioState(portfolioState)
+
+  if (Object.keys(portfolioState).length === 0) {
+    return DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+  }
 
   const newPortfolio = Object.keys(portfolioState).reduce(
     (acc: Omit<SelectedAccountPortfolio, 'portfolioState'>, chainId) => {
@@ -60,8 +80,6 @@ export function calculateSelectedAccountPortfolio(
       const networkResult = networkData.result
       const accountOp = networkData.accountOps?.[0]
 
-      // Reloading means that the data is ready, but loading and not fresh
-      // If the portfolio is loading while the data is fresh, we don't notify the user
       if (!acc.isReloading && networkData?.isLoading) {
         // We are only checking the portfolio data timestamp as defi positions are being
         // updated more rarely
@@ -77,38 +95,39 @@ export function calculateSelectedAccountPortfolio(
       }
 
       if (!networkResult) return acc
+      acc.tokens = [...acc.tokens, ...(networkResult?.tokens || [])]
+
+      if (
+        (!acc.isReadyToVisualize &&
+          acc.tokens.some((t) => t.amount > 0n && !t.flags.isHidden) &&
+          !acc.isAllReady) ||
+        acc.isAllReady
+      ) {
+        acc.isReadyToVisualize = true
+      }
 
       return {
         ...acc,
-        shouldShowPartialResult: false, // @TODO
+        shouldShowPartialResult: acc.isAllReady ? false : prevShouldShowPartialResult,
         defiPositions: [
           ...acc.defiPositions,
           ...(networkResult?.defiPositions?.positionsByProvider || [])
         ],
-        tokens: [...acc.tokens, ...(networkResult?.tokens || [])],
         collections: [...acc.collections, ...(networkResult?.collections || [])],
         totalBalance:
           acc.totalBalance + (chainId !== 'projectedRewards' ? networkResult.total?.usd || 0 : 0),
         balancePerNetwork: {
           ...acc.balancePerNetwork,
           [chainId]: networkResult.total?.usd || 0
-        },
-        isReadyToVisualize: acc.isReadyToVisualize // @TODO
+        }
       }
     },
     {
-      tokens: [],
-      collections: [],
-      defiPositions: [],
-      totalBalance: 0,
-      isReadyToVisualize: true,
+      ...structuredClone(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO),
       isAllReady: true,
-      isReloading: false,
-      shouldShowPartialResult: prevShouldShowPartialResult,
-      balancePerNetwork: {},
-      networkSimulatedAccountOp: {},
-      projectedRewardsStats: null
-    } as Omit<SelectedAccountPortfolio, 'portfolioState'>
+      isReadyToVisualize: true,
+      shouldShowPartialResult: prevShouldShowPartialResult
+    }
   )
 
   return {

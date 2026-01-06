@@ -183,7 +183,7 @@ export interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
-type ExtendedErrorWithLevel = ExtendedError & {
+export type ExtendedErrorWithLevel = ExtendedError & {
   level: 'critical' | 'warning' | 'silent'
 }
 

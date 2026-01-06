@@ -25,25 +25,12 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import {
+  calculateSelectedAccountPortfolio,
+  DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+} from '../../libs/selectedAccount/selectedAccount'
 import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
-  tokens: [],
-  collections: [],
-  defiPositions: [],
-  tokenAmounts: [],
-  totalBalance: 0,
-  balancePerNetwork: {},
-  isReadyToVisualize: false,
-  isAllReady: false,
-  shouldShowPartialResult: false,
-  isReloading: false,
-  networkSimulatedAccountOp: {},
-  portfolioState: {},
-  projectedRewardsStats: null
-}
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController

@@ -63,6 +63,7 @@ export const LIMITS: Limits = {
   }
 }
 
+// @TODO: Move this somewhere else
 export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** External hints API (Velcro) request failed but fallback is sufficient */
   NonCriticalApiHintsError: 'NonCriticalApiHintsError',
@@ -71,7 +72,9 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** No external API (Velcro) hints are available- the request failed without fallback */
   NoApiHintsError: 'NoApiHintsError',
   /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError'
+  PriceFetchError: 'PriceFetchError',
+  /** Defi discovery failed */
+  DefiDiscoveryError: 'DefiDiscoveryError'
 }
 
 export const getEmptyHints = (): Hints => ({
