@@ -910,6 +910,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.emitUpdate()
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        // Reset the form on the next tick so the FE receives the final
+        // signAccountOpController update before resetForm destroys it
         setTimeout(() => {
           this.resetForm()
         }, 0)
