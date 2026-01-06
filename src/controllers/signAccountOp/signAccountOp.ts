@@ -474,7 +474,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       .map((h) => h.warnings)
       .filter((w): w is HumanizerWarning[] => !!w)
       .flat()
-    if (warnings.length)
+
+    if (warnings.some((w) => w.blocking))
       return {
         title: 'A malicious transaction found in this batch.',
         code: warnings.map((w) => w.code).join(', ')

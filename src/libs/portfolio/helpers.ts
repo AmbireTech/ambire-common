@@ -21,7 +21,8 @@ import {
   PortfolioGasTankResult,
   SuspectedType,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult
 } from './interfaces'
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
@@ -262,42 +263,202 @@ export const mapToken = (
   }
 }
 
+/**
+ * Determines whether an error is related to network connectivity issues rather than validation failures.
+ *
+ * This function helps distinguish between temporary network problems (which should allow retries)
+ * and actual token validation errors (which indicate the token is genuinely invalid).
+ *
+ */
+const isNetworkError = (error: any): boolean => {
+  if (!error) return false
+
+  const message = error.message?.toLowerCase() || ''
+  const errorCode = error.code
+
+  // Common network error patterns
+  const networkErrorPatterns = [
+    'network error',
+    'network request failed',
+    'fetch failed',
+    'connection refused',
+    'timeout',
+    'econnrefused',
+    'enotfound',
+    'etimedout',
+    'socket hang up',
+    'request timeout',
+    'failed to fetch',
+    'networkerror'
+  ]
+
+  // Common network error codes
+  const networkErrorCodes = ['NETWORK_ERROR', 'TIMEOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']
+
+  return (
+    networkErrorPatterns.some((pattern) => message.includes(pattern)) ||
+    networkErrorCodes.includes(errorCode)
+  )
+}
+
+/**
+ * Executes async functions with limited concurrency to prevent overwhelming RPC providers
+ */
+const limitConcurrency = async <T>(
+  items: T[],
+  asyncFn: (item: T) => Promise<any>,
+  limit: number = 5
+): Promise<any[]> => {
+  const results: any[] = []
+
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit)
+    const batchPromises = batch.map(asyncFn)
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.allSettled(batchPromises)
+
+    results.push(
+      ...batchResults.map((result) => (result.status === 'fulfilled' ? result.value : null))
+    )
+  }
+
+  return results
+}
+
+/**
+ * Validates whether a token address represents a valid ERC20 token on the specified network.
+ * Optionally suggests alternative networks where the token is found if validation fails.
+ *
+ */
 export const validateERC20Token = async (
   token: { address: string; chainId: bigint },
   accountId: string,
-  provider: RPCProvider
-) => {
+  provider: RPCProvider,
+  options?: {
+    allNetworks?: Network[]
+    allProviders?: { [chainId: string]: RPCProvider }
+    enableNetworkDetection?: boolean
+    maxNetworksToCheck?: number
+    concurrencyLimit?: number
+  }
+): Promise<TokenValidationResult> => {
+  const {
+    allNetworks,
+    allProviders,
+    enableNetworkDetection = false,
+    maxNetworksToCheck = 10,
+    concurrencyLimit = 3
+  } = options || {}
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
-  const type = 'erc20'
   let isValid = true
-  let hasError = false
+  let hasNetworkError = false
+  let message = ''
+  let type: 'network' | 'validation' | null = null
 
-  const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch(() => {
-      hasError = true
-    }),
-    erc20.symbol().catch(() => {
-      hasError = true
-    }),
-    erc20.decimals().catch(() => {
-      hasError = true
-    })
-  ]).catch(() => {
-    hasError = true
-    isValid = false
-  })) || [undefined, undefined, undefined]
+  const handleERC20Error = (e: any, operation: string) => {
+    if (isNetworkError(e)) {
+      hasNetworkError = true
+      isValid = false
+      type = 'network'
+      message = `Network error validating token: ${
+        e.message || `Network error while fetching token ${operation}`
+      }`
+    } else {
+      isValid = false
+      type = 'validation'
+      message = 'This token type is not supported'
+    }
+  }
+
+  let balance
+  let symbol
+  let decimals
+  try {
+    ;[balance, symbol, decimals] = await Promise.all([
+      erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
+      erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
+      erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+    ])
+  } catch (e) {
+    handleERC20Error(e, 'token validation')
+  }
 
   if (
     typeof balance === 'undefined' ||
     typeof symbol === 'undefined' ||
     typeof decimals === 'undefined'
   ) {
-    isValid = false
+    // Only mark as invalid if it's not a network error
+    if (!hasNetworkError) {
+      isValid = false
+      if (!message) {
+        message = 'Token validation failed: unable to fetch required token data'
+        type = 'validation'
+      }
+    }
+  } else if (!hasNetworkError) {
+    // Reset error state only if validation succeeded AND there was no network error
+    isValid = true
+    message = ''
+    type = null
   }
 
-  isValid = isValid && !hasError
-  return [isValid, type]
+  // If validation failed and network detection is enabled, check other networks
+  if (!isValid && !hasNetworkError && enableNetworkDetection && allNetworks && allProviders) {
+    try {
+      // Get candidate networks and limit the number to check
+      const candidateNetworks = allNetworks
+        .filter((network) => allProviders[network.chainId.toString()]?.isWorking !== false)
+        .filter((network) => network.chainId !== token.chainId) // Skip the current network
+        .slice(0, maxNetworksToCheck) // Limit the number of networks to check
+
+      // Use concurrency-limited validation to prevent overwhelming RPC providers
+      const validationFunction = async (network: Network) => {
+        try {
+          const networkProvider = allProviders[network.chainId.toString()]
+          if (!networkProvider) return null
+
+          // Use validateERC20Token without network detection to avoid circular dependency
+          const validation = await validateERC20Token(
+            { address: token.address, chainId: network.chainId },
+            accountId,
+            networkProvider,
+            { enableNetworkDetection: false }
+          )
+
+          return validation.isValid ? network : null
+        } catch (error) {
+          return null
+        }
+      }
+
+      const results = await limitConcurrency(
+        candidateNetworks,
+        validationFunction,
+        concurrencyLimit
+      )
+      const validNetworks = results.filter((network): network is Network => network !== null)
+
+      if (validNetworks.length > 0) {
+        const networkNames = validNetworks.map((net) => net.name).join(', ')
+        message = `This token is found on ${networkNames}. Is the correct network selected?`
+        type = 'validation'
+      }
+    } catch (networkDetectionError) {
+      // Network detection failed, but don't override the original error
+      console.warn('Network detection failed:', networkDetectionError)
+    }
+  }
+
+  return {
+    isValid,
+    standard: 'erc20',
+    error: {
+      message: message || null,
+      type
+    }
+  }
 }
 
 // fetch the amountPostSimulation for the token if set

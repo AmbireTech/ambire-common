@@ -1374,7 +1374,7 @@ export class MainController extends EventEmitter implements IMainController {
       skipFocus: true
     })
 
-    await this.requests.removeUserRequests([requestId])
+    await this.requests.removeUserRequests([requestId], { shouldUpdateAccount: false })
 
     const dappHandlers: any[] = []
 
