@@ -3,6 +3,7 @@ import {
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
 import { AccountState, NetworkState } from '../portfolio/interfaces'
+import PortfolioViewBuilder from './portfolioView'
 
 export const isInternalChain = (chainId: string) => {
   return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards'
@@ -55,7 +56,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
  */
 export function calculateSelectedAccountPortfolio(
   portfolioState: AccountState,
-  prevShouldShowPartialResult: boolean,
+  shouldShowPartialResult: boolean,
   isManualUpdate: boolean
 ): SelectedAccountPortfolio {
   const strippedPortfolioState = stripPortfolioState(portfolioState)
@@ -64,79 +65,20 @@ export function calculateSelectedAccountPortfolio(
     return DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
   }
 
-  const newPortfolio = Object.keys(portfolioState).reduce(
-    (acc: Omit<SelectedAccountPortfolio, 'portfolioState'>, chainId) => {
-      const networkData = portfolioState[chainId]
+  const portfolioViewBuilder = new PortfolioViewBuilder()
 
-      // Don't do anything if the network data is not ready
-      if (!portfolioState[chainId] || !networkData || !isNetworkReady(networkData)) {
-        acc.isAllReady = false
+  Object.entries(portfolioState).forEach(([chainId, networkData]) => {
+    portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)
+  })
 
-        return acc
-      }
-      // Either the first update or a manual one
-      const isLoadingFromScratch =
-        (!isNetworkReady(networkData) || isManualUpdate) && networkData?.isLoading
-      const networkResult = networkData.result
-      const accountOp = networkData.accountOps?.[0]
-
-      if (!acc.isReloading && networkData?.isLoading) {
-        // We are only checking the portfolio data timestamp as defi positions are being
-        // updated more rarely
-        acc.isReloading =
-          !!networkData?.result?.lastSuccessfulUpdate &&
-          Date.now() - networkData.result.lastSuccessfulUpdate > 60 * 60 * 1000
-      }
-
-      if (isLoadingFromScratch) acc.isAllReady = false
-
-      if (accountOp) {
-        acc.networkSimulatedAccountOp[chainId] = accountOp
-      }
-
-      if (!networkResult) return acc
-      acc.tokens = [...acc.tokens, ...(networkResult?.tokens || [])]
-
-      if (
-        (!acc.isReadyToVisualize &&
-          acc.tokens.some((t) => t.amount > 0n && !t.flags.isHidden) &&
-          !acc.isAllReady) ||
-        acc.isAllReady
-      ) {
-        acc.isReadyToVisualize = true
-      }
-
-      return {
-        ...acc,
-        shouldShowPartialResult: acc.isAllReady ? false : prevShouldShowPartialResult,
-        defiPositions: [
-          ...acc.defiPositions,
-          ...(networkResult?.defiPositions?.positionsByProvider || [])
-        ],
-        collections: [...acc.collections, ...(networkResult?.collections || [])],
-        totalBalance:
-          acc.totalBalance + (chainId !== 'projectedRewards' ? networkResult.total?.usd || 0 : 0),
-        balancePerNetwork: {
-          ...acc.balancePerNetwork,
-          [chainId]: networkResult.total?.usd || 0
-        }
-      }
-    },
-    {
-      ...structuredClone(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO),
-      isAllReady: true,
-      isReadyToVisualize: true,
-      shouldShowPartialResult: prevShouldShowPartialResult
-    }
-  )
+  const portfolio = portfolioViewBuilder.build(shouldShowPartialResult)
 
   return {
-    ...newPortfolio,
+    ...portfolio,
     portfolioState: strippedPortfolioState,
-    defiPositions: newPortfolio.defiPositions.sort((a, b) => {
+    defiPositions: portfolio.defiPositions.sort((a, b) => {
       if (b.providerName === 'Ambire' && a.providerName !== 'Ambire') return 1
       if (a.providerName === 'Ambire' && b.providerName !== 'Ambire') return -1
-
       return (b.positionInUSD || 0) - (a.positionInUSD || 0)
     })
   }

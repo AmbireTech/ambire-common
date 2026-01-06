@@ -320,6 +320,7 @@ export type ProjectedRewardsStats = {
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
+  | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
 
 export type NetworkState<T = PortfolioKeyResult> = {
