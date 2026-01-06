@@ -206,6 +206,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ui.uiEvent.on('removeView', (view: View) => {
       if (!isTransfer(view.currentRoute)) return
 
+      // Don't reset if we are in the middle of signing and broadcasting
+      // This is especially important for trezor's signing flow, where the extension popup is closed
+      // and an action window is opened for signing. If this check ever breaks we will reset
+      // transfer the moment the popup is closed, losing all the transfer state.
+      if (this.hasProceeded && this.signAccountOpController?.isSignAndBroadcastInProgress) return
+
       this.#leaveTransfer()
     })
 
