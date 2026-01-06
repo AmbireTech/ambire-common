@@ -196,6 +196,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', (view: View) => {
+      // while broadcasting DO NOT update/reset the selectedToken to prevent displaying
+      // a different token from the already broadcasted one in the "Transfer done" screen
+      //
+      // this can happen when the full token amount is sent and the token is filtered
+      // out on the next tokens update, forcing selectedToken to be updated to
+      // the first token from the updated tokens list
+      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
+
       if (isTransfer(view.currentRoute)) {
         this.#enterTransfer(view)
       } else if (isTransfer(view.previousRoute)) {
@@ -205,6 +213,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
       if (!isTransfer(view.currentRoute)) return
+
+      // Don't reset if we are in the middle of signing and broadcasting
+      // This is especially important for trezor's signing flow, where the extension popup is closed
+      // and an action window is opened for signing. If this check ever breaks we will reset
+      // transfer the moment the popup is closed, losing all the transfer state.
+      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
 
       this.#leaveTransfer()
     })
@@ -299,14 +313,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#tokens = tokens
 
     if (this.selectedToken) {
-      // while broadcasting DO NOT update/reset the selectedToken to prevent displaying
-      // a different token from the already broadcasted one in the "Transfer done" screen
-      //
-      // this can happen when the full token amount is sent and the token is filtered
-      // out on the next tokens update, forcing selectedToken to be updated to
-      // the first token from the updated tokens list
-      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
-
       this.selectedToken =
         this.#tokens.find(
           (t) =>
@@ -537,7 +543,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     addressState,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
-    isTopUp,
     amountFieldMode
   }: TransferUpdate) {
     this.shouldTrackLatestBroadcastedAccountOp = true
