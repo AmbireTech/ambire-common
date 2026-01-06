@@ -111,8 +111,8 @@ const validateSendTransferAddress = (
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: true,
-      message: '',
-      severity: 'success'
+      message: "You're about to send funds back to yourself.",
+      severity: 'warning'
     }
   }
 
