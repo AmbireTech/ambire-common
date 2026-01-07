@@ -270,7 +270,10 @@ const getAllAssetsAsHints = (
 }
 
 /**
- * Updates an account's positions for a single network.
+ * Calculates the new DeFi positions state based on the latest fetched data
+ * from Debank and custom providers and the previous state.
+ * It ensures that positions are unique, merged correctly and that if the
+ * latest Debank call failed, the previous positions are retained.
  */
 const getNewDefiState = (
   debankPositionsByProvider: PositionsByProvider[] | undefined,

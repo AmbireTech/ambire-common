@@ -724,6 +724,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return isWithinMinUpdateInterval || networkState.isLoading
   }
 
+  /**
+   * Fetches portfolio asset hints and defi positions from the external API (Velcro)
+   * and formats the response. If both hints and defi positions can be skipped, returns null data.
+   * If the defi position update can be skipped, but hints have to be refetched it makes a request
+   * to Velcro but passes a flag to signal to the server that it can returned cached defi data.
+   */
   private async getPortfolioFromApiDiscovery(opts: {
     chainId: bigint
     accountAddr: string
@@ -783,6 +789,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         forceUpdateDefi: !canSkipDefiUpdate
       })
     } catch (error: any) {
+      // Add errors only if the respective updates could not be skipped. As if the user
+      // is not expecting a defi update and it fails, it should not be reported.
       if (!canSkipDefiUpdate) {
         const defiError: ExtendedErrorWithLevel = {
           name: PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError,
