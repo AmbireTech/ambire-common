@@ -547,8 +547,10 @@ const getCanSkipUpdate = (
   if (canSkip) return true
 
   // Don't skip if the account has any DeFi positions or the account has never been updated
-  if (previousState.positionsByProvider.length || !previousState.updatedAt) return false
+  if (previousState.positionsByProvider.length) return false
 
+  // If the account has positions we compare the nonce. That is because the user cannot
+  // acquire new positions without a nonce change.
   if (!nonceId) return false
 
   return nonceId !== previousState.nonceId
