@@ -283,7 +283,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter((i) => i.identifiedBy.identifier === filters.identifiedBy!.identifier)
+      filteredItems.filter((i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier)
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
@@ -775,7 +775,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     return this.#accountsOps[accountAddr]?.[chainId.toString()]?.find(
-      (op) => op.identifiedBy.identifier === identifiedBy.identifier
+      (op) => op.identifiedBy && op.identifiedBy.identifier === identifiedBy.identifier
     )
   }
 

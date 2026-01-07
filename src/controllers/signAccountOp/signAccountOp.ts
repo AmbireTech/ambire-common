@@ -461,18 +461,23 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (
       this.accountOp.calls.some(
-        (c) => isAddress(c.to) && getAddress(c.to) === getAddress(this.accountOp.accountAddr)
+        (c) =>
+          isAddress(c.to) &&
+          getAddress(c.to) === getAddress(this.accountOp.accountAddr) &&
+          c.data !== '0x'
       )
     )
       return {
         title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
       }
+
     const warnings: HumanizerWarning[] = this.humanization
       .map((h) => h.warnings)
       .filter((w): w is HumanizerWarning[] => !!w)
       .flat()
-    if (warnings.length)
+
+    if (warnings.some((w) => w.blocking))
       return {
         title: 'A malicious transaction found in this batch.',
         code: warnings.map((w) => w.code).join(', ')

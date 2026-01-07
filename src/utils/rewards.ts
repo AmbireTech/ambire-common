@@ -8,29 +8,43 @@ import {
 
 export const calculateRewardsStats = (
   projectedRewardsResult: PortfolioProjectedRewardsResult | undefined,
-  walletOrStkWalletTokenPrice: number | undefined
+  walletOrStkWalletTokenPrice: number | undefined,
+  currentBalance: number | undefined,
+  stkBalanceUsd: number | undefined,
+  walletEthProvidedLiquidityInUsd: number | undefined
 ): ProjectedRewardsStats | null => {
   if (!projectedRewardsResult || !walletOrStkWalletTokenPrice) return null
 
   const { weeksWithData, governanceVotes, rank, poolSize, pointsOfOtherUsers, swapVolume } =
     projectedRewardsResult
 
-  const { averageBalance, liquidityAverage, stkWalletBalanceAverage } = weeksWithData.reduce(
-    (acc, week) => {
-      acc.averageBalance += week.balance
-      acc.liquidityAverage += week.liquidityUsd || 0
-      acc.stkWalletBalanceAverage += week.stkWalletUsd || 0
+  const { sumBalanceSnapshots, sumLiquiditySnapshots, sumStkBalanceSnapshots } =
+    weeksWithData.reduce(
+      (acc, week) => {
+        acc.sumBalanceSnapshots += week.balance
+        acc.sumLiquiditySnapshots += week.liquidityUsd || 0
+        acc.sumStkBalanceSnapshots += week.stkWalletUsd || 0
 
-      return acc
-    },
-    { averageBalance: 0, liquidityAverage: 0, stkWalletBalanceAverage: 0 }
-  )
-
+        return acc
+      },
+      { sumBalanceSnapshots: 0, sumLiquiditySnapshots: 0, sumStkBalanceSnapshots: 0 }
+    )
   const numberOfWeeksSinceStartOfSeason =
     projectedRewardsResult.numberOfWeeksSinceStartOfSeason || 1
-  const seasonAverageBalance = averageBalance / numberOfWeeksSinceStartOfSeason
-  const seasonLiquidityAverage = liquidityAverage / numberOfWeeksSinceStartOfSeason
-  const seasonStkWalletBalanceAverage = stkWalletBalanceAverage / numberOfWeeksSinceStartOfSeason
+
+  const seasonAverageBalance =
+    typeof currentBalance !== 'undefined'
+      ? (sumBalanceSnapshots + currentBalance) / (numberOfWeeksSinceStartOfSeason + 1)
+      : sumBalanceSnapshots / numberOfWeeksSinceStartOfSeason
+  const seasonLiquidityAverage =
+    typeof walletEthProvidedLiquidityInUsd !== 'undefined'
+      ? (sumLiquiditySnapshots + walletEthProvidedLiquidityInUsd) /
+        (numberOfWeeksSinceStartOfSeason + 1)
+      : sumLiquiditySnapshots / numberOfWeeksSinceStartOfSeason
+  const seasonStkWalletBalanceAverage =
+    typeof stkBalanceUsd !== 'undefined'
+      ? (sumStkBalanceSnapshots + stkBalanceUsd) / (numberOfWeeksSinceStartOfSeason + 1)
+      : sumStkBalanceSnapshots / numberOfWeeksSinceStartOfSeason
 
   const balanceScore = Math.floor(seasonAverageBalance / 1000)
   const stkWALLETScore = Math.floor((seasonStkWalletBalanceAverage / 1000) * 20)
@@ -42,7 +56,8 @@ export const calculateRewardsStats = (
     return acc + weight
   }, 0)
   const governanceScore = Math.floor(governanceWeight / 2000)
-  const totalMultiplier = 1.06 ** projectedRewardsResult.multiplier
+  const multiplierCount = projectedRewardsResult.multipliers.filter((m) => m.activated).length
+  const totalMultiplier = 1.06 ** multiplierCount
   const totalScore = Math.floor(
     (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
       totalMultiplier
@@ -67,15 +82,20 @@ export const calculateRewardsStats = (
     swapVolume,
     governanceScore,
     governanceWeight,
+    multiplierCount,
     multiplier: totalMultiplier,
     estimatedRewards,
-    estimatedRewardsUSD
+    estimatedRewardsUSD,
+    multipliers: projectedRewardsResult.multipliers
   }
 }
 
 export const getProjectedRewardsStatsAndToken = (
   projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
-  walletOrStkWalletTokenPrice: number | undefined
+  walletOrStkWalletTokenPrice: number | undefined,
+  currentBalance: number | undefined,
+  stkBalanceUsd: number | undefined,
+  walletEthProvidedLiquidityInUsd: number | undefined
 ):
   | {
       token: TokenResult
@@ -91,7 +111,13 @@ export const getProjectedRewardsStatsAndToken = (
   // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
   const walletTokenPrice = walletOrStkWalletTokenPrice || result.walletPrice
 
-  const data = calculateRewardsStats(result, walletTokenPrice)
+  const data = calculateRewardsStats(
+    result,
+    walletTokenPrice,
+    currentBalance,
+    stkBalanceUsd,
+    walletEthProvidedLiquidityInUsd
+  )
 
   if (!data) return
 
