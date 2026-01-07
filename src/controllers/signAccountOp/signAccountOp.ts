@@ -471,6 +471,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
       }
+
     const warnings: HumanizerWarning[] = this.humanization
       .map((h) => h.warnings)
       .filter((w): w is HumanizerWarning[] => !!w)
