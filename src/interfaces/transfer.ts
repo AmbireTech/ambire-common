@@ -13,7 +13,6 @@ export interface TransferUpdate {
   amount?: string
   shouldSetMaxAmount?: boolean
   addressState?: AddressStateOptional
-  isSWWarningAgreed?: boolean
   isRecipientAddressUnknownAgreed?: boolean
   amountFieldMode?: 'token' | 'fiat'
 }
