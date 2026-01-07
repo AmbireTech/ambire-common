@@ -47,6 +47,10 @@ const EXCLUDED_TOKENS: Record<string, string[]> = {
   // Hyper EVM
   '999': [
     '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE. Only stHYPE should be displayed (following Rabby's approach)
+  ],
+  // Andromeda
+  '1088': [
+    '0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000' // METIS as a token - Excluded because it's a duplicate of METIS, the native token
   ]
 }
 

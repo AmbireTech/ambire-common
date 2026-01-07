@@ -19,7 +19,7 @@ import { ExternalSignerControllers, IKeystoreController, Key } from '../../inter
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { PlainTextMessage } from '../../interfaces/userRequest'
+import { PlainTextMessageUserRequest } from '../../interfaces/userRequest'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignMessageController } from '../signMessage/signMessage'
 
@@ -404,7 +404,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   async autoLogin(messageToSign: {
     accountAddr: string
     chainId: bigint
-    message: PlainTextMessage['message']
+    message: PlainTextMessageUserRequest['meta']['params']['message']
   }) {
     await this.initialLoadPromise
 
@@ -425,7 +425,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
           kind: 'message',
           message: messageToSign.message
         },
-        fromActionId: 'siwe-auto-login',
+        fromRequestId: 'siwe-auto-login',
         signature: null
       }
     })

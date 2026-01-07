@@ -62,6 +62,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#cleanObsoleteNewlyCreatedFlagOnAccounts() // As of version 5.30.0
       await this.#cleanupCashbackStatus() // As of version 5.32.0
       await this.#removeLegacyPhishingDetection() // As of version 5.32.0
+      await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
     } catch (error) {
       console.error('Storage migration error: ', error)
@@ -644,7 +645,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     ])
   }
 
-  // As of version 5.32.0 we no longer need the dappSessions in the storage so this migration removes them
+  // As of version 5.32.0 we no longer need the phishingDetection prop in the storage so this migration removes it
   async #removeLegacyPhishingDetection() {
     const passedMigrations = await this.#storage.get('passedMigrations', [])
     if (passedMigrations.includes('removePhishingDetection')) return
@@ -652,6 +653,18 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.remove('phishingDetection')
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'removePhishingDetection'])
+    ])
+  }
+
+  // As of version 5.34.0 we no longer need the domainsBlacklistedStatus and addressesBlacklistedStatus props in the storage so this migration removes them
+  async #removeLegacyPhishingDetectionV2() {
+    const passedMigrations = await this.#storage.get('passedMigrations', [])
+    if (passedMigrations.includes('removePhishingDetectionV2')) return
+
+    await this.#storage.remove('domainsBlacklistedStatus')
+    await this.#storage.remove('addressesBlacklistedStatus')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'removePhishingDetectionV2'])
     ])
   }
 

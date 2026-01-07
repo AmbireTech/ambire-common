@@ -99,7 +99,7 @@ const SUBMITTED_ACCOUNT_OP = {
 } as submittedAccountOp.SubmittedAccountOp
 
 const SIGNED_MESSAGE: SignedMessage = {
-  fromActionId: 1,
+  fromRequestId: 1,
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   dapp: {
     icon: '',
@@ -806,7 +806,7 @@ describe('Activity Controller ', () => {
       const { controller, sessionId } = await prepareSignedMessagesTest()
 
       const signedMessage: SignedMessage = {
-        fromActionId: 1,
+        fromRequestId: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         dapp: {
           icon: '',

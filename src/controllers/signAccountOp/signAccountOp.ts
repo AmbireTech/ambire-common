@@ -41,7 +41,6 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
-import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -64,6 +63,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
+import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -192,7 +192,7 @@ export type OnboardingSuccessProps = {
   submittedAccountOp: SubmittedAccountOp
   accountOp: AccountOp
   type: SignAccountOpType
-  fromActionId: string | number
+  fromRequestId: string | number
 }
 
 export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void>
@@ -221,7 +221,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #phishing: IPhishingController
 
   // this is not used in the controller directly but it's being read outside
-  fromActionId: AccountOpAction['id']
+  fromRequestId: UserRequest['id']
 
   /**
    * Never modify this directly, use #updateAccountOp instead.
@@ -337,7 +337,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     activity,
     provider,
     phishing,
-    fromActionId,
+    fromRequestId,
     accountOp,
     isSignRequestStillActive,
     shouldSimulate,
@@ -358,7 +358,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     activity: IActivityController
     provider: RPCProvider
     phishing: IPhishingController
-    fromActionId: AccountOpAction['id']
+    fromRequestId: UserRequest['id']
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean
@@ -385,7 +385,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#network = network
     this.#activity = activity
     this.#phishing = phishing
-    this.fromActionId = fromActionId
+    this.fromRequestId = fromRequestId
     this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
     this.#isSignRequestStillActive = isSignRequestStillActive
 
@@ -461,13 +461,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (
       this.accountOp.calls.some(
-        (c) => isAddress(c.to) && getAddress(c.to) === getAddress(this.accountOp.accountAddr)
+        (c) =>
+          isAddress(c.to) &&
+          getAddress(c.to) === getAddress(this.accountOp.accountAddr) &&
+          c.data !== '0x'
       )
     )
       return {
         title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
       }
+
     const warnings: HumanizerWarning[] = this.humanization
       .map((h) => h.warnings)
       .filter((w): w is HumanizerWarning[] => !!w)
@@ -1036,12 +1040,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             // if they are with the same length, check if some of
             // their properties differ. If they do, we should update
             this.accountOp.calls.forEach((call, i) => {
-              const newCall = calls[i]
+              const newCall = calls[i]!
               if (
                 call.to !== newCall?.to ||
                 call.data !== newCall?.data ||
                 call.value !== newCall?.value ||
-                call.fromUserRequestId !== newCall?.fromUserRequestId
+                call.id !== newCall?.id
               )
                 shouldUpdate = true
             })
@@ -2059,9 +2063,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
         }
-        this.#updateAccountOp({
-          signature: '0x'
-        })
+        this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
@@ -2236,14 +2238,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
     const accountOp = this.accountOp
     const estimation = this.estimation.estimation
-    const actionId = this.fromActionId
+    const requestId = this.fromRequestId
     const bundlerSwitcher = this.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
     if (
       !accountOp ||
       !estimation ||
-      !actionId ||
+      !requestId ||
       !accountOp.signingKeyAddr ||
       !accountOp.signingKeyType ||
       !accountOp.signature ||
@@ -2529,13 +2531,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       submittedAccountOp,
       accountOp: this.accountOp,
       type: this.#type,
-      fromActionId: this.fromActionId
+      fromRequestId: this.fromRequestId
     })
 
     // Allow the user to broadcast a new transaction;
-    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
-    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
-    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
+    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the request is resolved:
+    // `await this.resolveAccountOpAction(submittedAccountOp, requestId)`
+    // Otherwise, new calls could be added to a previously broadcast request that will resolve shortly,
     // leaving the new request 'orphaned' in the background without being attached to any action.
     this.broadcastStatus = 'SUCCESS'
     await this.forceEmitUpdate()

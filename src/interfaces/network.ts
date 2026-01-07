@@ -65,7 +65,7 @@ export interface Network {
   nativeAssetSymbol: string
   nativeAssetName: string
   rpcUrls: string[]
-  explorerUrl: string
+  explorerUrl?: string
   /**
    * The currently selected RPC URL for this network.
    */
@@ -114,6 +114,7 @@ export interface Network {
   has7702: boolean
   allowForce4337?: boolean
   disabled?: boolean
+  customBundlerUrl?: string
 }
 
 export interface AddNetworkRequestParams {
@@ -123,8 +124,9 @@ export interface AddNetworkRequestParams {
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
   nativeAssetName: Network['nativeAssetName']
-  explorerUrl: Network['explorerUrl']
+  explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
+  customBundlerUrl?: Network['customBundlerUrl']
 }
 
 export interface ChainlistNetwork {

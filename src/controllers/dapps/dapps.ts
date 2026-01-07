@@ -15,7 +15,6 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps/dapps'
-import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
@@ -24,6 +23,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
+import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
   getDappIdFromUrl,
@@ -437,7 +437,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
-    this.dappSessions[sessionId].setMessenger(messenger, isAmbireNext)
+    this.dappSessions[sessionId]?.setMessenger(messenger, isAmbireNext)
   }
 
   setSessionLastHandledRequestsId = (
@@ -448,7 +448,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   ) => {
     if (!this.dappSessions[sessionId]) return
 
-    if (id > this.dappSessions[sessionId].lastHandledRequestIds[providerId]) {
+    if (id > this.dappSessions[sessionId].lastHandledRequestIds[providerId]!) {
       this.dappSessions[sessionId].lastHandledRequestIds[providerId] = id
       if (isWeb3AppRequest && !this.dappSessions[sessionId].isWeb3App) {
         this.dappSessions[sessionId].isWeb3App = true
@@ -459,16 +459,16 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   resetSessionLastHandledRequestsId = (sessionId: string, providerId?: number) => {
     if (providerId) {
-      this.dappSessions[sessionId].lastHandledRequestIds[providerId] = -1
+      this.dappSessions[sessionId]!.lastHandledRequestIds[providerId] = -1
     } else {
-      Object.keys(this.dappSessions[sessionId].lastHandledRequestIds).forEach((key) => {
-        this.dappSessions[sessionId].lastHandledRequestIds[key] = -1
+      Object.keys(this.dappSessions[sessionId]!.lastHandledRequestIds).forEach((key) => {
+        this.dappSessions[sessionId]!.lastHandledRequestIds[key] = -1
       })
     }
   }
 
   setSessionProp = (sessionId: string, props: SessionProp) => {
-    this.dappSessions[sessionId].setProp(props)
+    this.dappSessions[sessionId]?.setProp(props)
   }
 
   deleteDappSession = (sessionId: string) => {
@@ -488,7 +488,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     let dappSessions: { sessionId: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
-        skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId].id)
+        skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId]!.id)
       if (this.dappSessions[sessionId] && hasPermissionToBroadcast) {
         dappSessions.push({ sessionId, data: this.dappSessions[sessionId] })
       }
@@ -659,19 +659,15 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
-  async setDappToConnectIfNeeded(currentAction: Action | null) {
+  async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
-      if (
-        currentAction &&
-        currentAction.type === 'dappRequest' &&
-        currentAction.userRequest.action.kind === 'dappConnect'
-      ) {
-        const { session } = currentAction.userRequest
+      if (currentRequest && currentRequest.kind === 'dappConnect') {
+        const { dappPromises } = currentRequest
         const dapp = await this.#buildDapp({
-          id: session.id,
-          name: session.name,
-          url: session.origin,
-          icon: session.icon,
+          id: dappPromises[0].session.id,
+          name: dappPromises[0].session.name,
+          url: dappPromises[0].session.origin,
+          icon: dappPromises[0].session.icon,
           chainId: 1,
           isConnected: false
         })
