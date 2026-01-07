@@ -107,7 +107,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #velcroUrl: string
 
-  #batchedPortfolioDiscovery: Function
+  protected batchedPortfolioDiscovery: Function
 
   defiPositions: IDefiPositionsController
 
@@ -165,14 +165,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#velcroUrl = velcroUrl
+    this.#velcroUrl = 'http://localhost:5555' // @TODO: Revert
     this.#providers = providers
     this.#networks = networks
     this.#accounts = accounts
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#banner = banner
-    this.#batchedPortfolioDiscovery = batcher(
+    this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
         const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
@@ -190,7 +190,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
-          const url = `${velcroUrl}/portfolio?networks=${queueSegment
+          const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
             .join(',')}&accounts=${queueSegment
             .map((x) => x.data.accountAddr)
@@ -702,7 +702,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (!maxDataAgeMs || !networkState || networkState.criticalError || hasImportantErrors)
       return false
-    const updateStarted = networkState.result?.updateStarted || 0
+
+    const updateStarted =
+      networkState.result && 'updateStarted' in networkState.result
+        ? networkState.result?.updateStarted || 0
+        : 0
     const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < maxDataAgeMs
 
     return isWithinMinUpdateInterval || networkState.isLoading
@@ -719,7 +723,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } | null
     defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
-  }): Promise<FormattedPortfolioDiscoveryResponse | null> {
+  }): Promise<FormattedPortfolioDiscoveryResponse> {
     const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
@@ -740,7 +744,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       Date.now() - externalApiHintsResponse.lastUpdate <
         EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
 
-    const canSkipDefiUpdate = !this.defiPositions.getCanSkipUpdate(
+    const canSkipDefiUpdate = this.defiPositions.getCanSkipUpdate(
       defiState,
       this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId),
       hasKeys,
@@ -751,12 +755,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     )
 
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
-      return null
+      return {
+        data: null,
+        errors
+      }
     }
     let response: ExternalPortfolioDiscoveryResponse | null = null
 
     try {
-      response = await this.#batchedPortfolioDiscovery({
+      response = await this.batchedPortfolioDiscovery({
         chainId,
         accountAddr,
         baseCurrency,
@@ -779,7 +786,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
 
-    if (!response) return null
+    if (!response)
+      return {
+        data: null,
+        errors
+      }
 
     // Update the price cache so the lib can use the latest prices from velcro
     if (response.prices) {
@@ -792,12 +803,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#priceCache[chainId.toString()] = networkPriceCache
     }
 
+    response.hints.lastUpdate = Date.now()
+
     return {
-      defi: {
-        ...response.defi,
-        positions: DefiPositionsController.getFormattedApiPositions(response.defi.positions)
+      data: {
+        defi: {
+          ...response.defi,
+          positions: DefiPositionsController.getFormattedApiPositions(response.defi.positions)
+        },
+        hints: response ? formatExternalHintsAPIResponse(response.hints) : null
       },
-      hints: response ? formatExternalHintsAPIResponse(response.hints) : null
+      errors
     }
   }
 
@@ -812,7 +828,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isManualUpdate?: boolean
       isForceDefiUpdate?: boolean
     },
-    defiData?: FormattedPortfolioDiscoveryResponse['defi']
+    discoveryData: FormattedPortfolioDiscoveryResponse
   ): Promise<boolean> {
     const { maxDataAgeMs, isManualUpdate } = portfolioProps
     const accountState = this.#state[accountId]
@@ -865,8 +881,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           portfolioLib.provider,
           network,
           state.result?.defiPositions.positionsByProvider || [],
-          defiData?.positions || [],
-          !!defiData
+          discoveryData.data?.defi?.positions || [],
+          !!discoveryData.data?.defi
         )
       ])
 
@@ -879,7 +895,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         ) ?? null
 
       const newDefiState = DefiPositionsController.getNewDefiState(
-        defiData?.positions,
+        discoveryData.data?.defi?.positions,
         state.result?.defiPositions.positionsByProvider || [],
         customPositionsResult.positionsByProvider,
         customPositionsResult.error || null,
@@ -891,14 +907,16 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         )
       )
 
-      portfolioResult.tokens = this.defiPositions.enhancePortfolioTokensWithDefiPositions(
+      const combinedTokens = this.defiPositions.enhancePortfolioTokensWithDefiPositions(
         portfolioResult.tokens,
         newDefiState
       )
 
+      const combinedErrors = [...portfolioResult.errors, ...discoveryData.errors]
+
       this.#priceCache[network.chainId.toString()] = portfolioResult.priceCache
 
-      const hasError = portfolioResult.errors.some((e) => e.level !== 'silent')
+      const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate =
         accountState[network.chainId.toString()]?.result?.lastSuccessfulUpdate || 0
 
@@ -918,12 +936,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         accountOps: portfolioProps?.simulation?.accountOps,
         isReady: true,
         isLoading: false,
-        errors: portfolioResult.errors,
+        errors: combinedErrors,
         result: {
           ...portfolioResult,
+          lastExternalApiUpdateData: discoveryData.data?.hints
+            ? {
+                hasHints: discoveryData.data.hints.hasHints,
+                lastUpdate: discoveryData.data.hints.lastUpdate
+              }
+            : state.result?.lastExternalApiUpdateData ?? null,
           lastSuccessfulUpdate,
-          tokens: portfolioResult.tokens,
-          total: getTotal(portfolioResult.tokens, newDefiState),
+          tokens: combinedTokens,
+          total: getTotal(combinedTokens, newDefiState),
           defiPositions: newDefiState
         }
       }
@@ -1210,7 +1234,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
           const hintsResponse =
             this.#state[accountId]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
-          const discovery = await this.getPortfolioFromApiDiscovery({
+          const discoveryResponse = await this.getPortfolioFromApiDiscovery({
             chainId: network.chainId,
             accountAddr: accountId,
             baseCurrency: 'usd',
@@ -1223,7 +1247,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accountId,
             network.chainId,
             isManualUpdate,
-            discovery?.hints
+            discoveryResponse?.data?.hints
           )
 
           const isSuccessful = await this.updatePortfolioState(
@@ -1245,7 +1269,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               disableAutoDiscovery: true,
               ...allHints
             },
-            discovery?.defi
+            discoveryResponse
           )
 
           // Learn tokens and nfts from the portfolio lib

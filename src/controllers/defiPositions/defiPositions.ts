@@ -34,6 +34,10 @@ const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean 
   return diff <= threshold
 }
 
+/**
+ * A lean controller with almost no state. It's used by the portfolio controller to handle
+ * defi positions related operations.
+ */
 export class DefiPositionsController extends EventEmitter {
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
@@ -318,6 +322,17 @@ export class DefiPositionsController extends EventEmitter {
     }))
   }
 
+  /**
+   * Enhances the portfolio tokens with Defi position data.
+   * Examples:
+   * - Marks tokens that are part of a DeFi position with the position ID.
+   * - Sets the defiTokenType flag based on the asset type in the DeFi position.
+   * - Adjusts token prices for borrowed assets.
+   * - Adds missing tokens that are part of DeFi positions but not in the portfolio tokens. This is a very rare
+   * case in which the token is not found by Cena/Debank but is part of a custom defi position. Because they are fetched
+   * after the portfolio tokens we need to add them here. This is needed only the first time as subsequent requests receive
+   * the tokens as hints. (See `getAllAssetsAsHints`)
+   */
   enhancePortfolioTokensWithDefiPositions(
     portfolioTokens: TokenResult[],
     defiPositionsState: PortfolioNetworkResult['defiPositions'] | undefined
@@ -445,9 +460,12 @@ export class DefiPositionsController extends EventEmitter {
 
         let priceIn = token.priceIn
 
+        // Remove the prices of borrowed assets
         if (defiAssetData?.assetType === AssetType.Borrow) {
           priceIn = []
         } else if (
+          // If the token doesn't have a price in the portfolio but has in the defi state
+          // we add it
           defiAssetData.priceIn &&
           (!token.priceIn.length || token.priceIn[0]!.price <= 0)
         ) {
@@ -598,12 +616,7 @@ export class DefiPositionsController extends EventEmitter {
     if (canSkip) return true
 
     // Don't skip if the account has any DeFi positions or the account has never been updated
-    if (
-      Object.values(previousState).some(
-        (network) => network.positionsByProvider.length || !network.updatedAt
-      )
-    )
-      return false
+    if (previousState.positionsByProvider.length || !previousState.updatedAt) return false
 
     if (!nonceId) return false
 

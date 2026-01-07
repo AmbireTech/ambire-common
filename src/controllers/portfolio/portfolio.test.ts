@@ -17,6 +17,9 @@ import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { getProviderId } from '../../libs/defiPositions/helpers'
+import * as defiProviders from '../../libs/defiPositions/providers'
+import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { Portfolio } from '../../libs/portfolio'
 import {
   erc721CollectionToLearnedAssetKeys,
@@ -34,6 +37,7 @@ import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
+import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -186,6 +190,27 @@ const accountWithManyAssets = {
   }
 }
 
+// If the account ever has to be replaced:
+// 1. Go to https://debank.com/protocols
+// 2. Find an Account that has both Aave v3 and Uniswap v3 positions on mainnet
+// 3. Replace the address below with that account's address
+// 4. Update the static MOCK_DEBANK_RESPONSE_DATA below with a fresh call to cena
+const DEFI_TEST_ACCOUNT = {
+  addr: '0x96c122e9c968e8246288c724838b1924410807fb',
+  initialPrivileges: [],
+  associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+  creation: {
+    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+    salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+  },
+  preferences: {
+    label: 'Test account',
+    pfp: '0x96c122e9c968e8246288c724838b1924410807fb'
+  }
+}
+
 const generateRandomAddresses = (count: number): string[] => {
   const addresses = []
 
@@ -276,7 +301,8 @@ const prepareTest = async (
     account4,
     emptyAccount,
     ambireV2Account,
-    accountWithManyAssets
+    accountWithManyAssets,
+    DEFI_TEST_ACCOUNT
   ])
   if (initialSetStorage) await initialSetStorage(storageCtrl)
 
@@ -1176,7 +1202,7 @@ describe('Portfolio Controller ', () => {
     test('Learned assets are fetched from storage', async () => {
       const STETH = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0'
       const CHAINLINK = '0x514910771af9ca656af840dff83e8264ecf986ca'
-      const LILPUDGIS_COLLECTION = '0x524cab2ec69124574082676e6f654a18df49a048'
+      const LILPUDGIS_COLLECTION = getAddress('0x524cab2ec69124574082676e6f654a18df49a048')
       const initialLearnedAssets: LearnedAssets = {
         erc20s: {
           [`${1}:${account.addr}`]: {
@@ -1320,8 +1346,14 @@ describe('Portfolio Controller ', () => {
 
       tokens
         ?.filter(({ amount }) => amount > 0)
-        .forEach(({ address }) => {
+        .forEach(({ address, flags }) => {
           if (address === ZeroAddress) return
+          if (flags.defiTokenType) {
+            console.warn(`Skipping defi token ${address} from learned assets check`)
+            // Defi tokens are learned in a different way. Warning just in case someone debugs
+            // this test in the future if the behaviour changes
+            return
+          }
           expect(learnedAssets.erc20s[key]).toHaveProperty(address)
           // Has a timestamp
           expect(learnedAssets.erc20s[key]![address]).toBeDefined()
@@ -1450,6 +1482,282 @@ describe('Portfolio Controller ', () => {
 
       // Collectibles are merged correctly for the same collection
       expect(hints.additionalErc721Hints[firstNftAddr]).toHaveLength(6)
+    })
+  })
+
+  describe('Defi positions', () => {
+    const ethereum = networks.find((n) => n.chainId === 1n)!
+    beforeEach(() => {
+      jest.restoreAllMocks()
+      jest.clearAllMocks()
+    })
+    it('should update positions correctly', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.updatedAt).toBeDefined()
+      expect(result?.defiPositions.positionsByProvider.length).toBeGreaterThan(0)
+    })
+
+    it('should handle errors in update positions', async () => {
+      const consoleSuppressor = suppressConsole()
+      jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('AAVE error'))
+          })
+      )
+      jest.spyOn(defiProviders, 'getDebankEnhancedUniV3Positions').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('Uniswap error'))
+          })
+      )
+      const { controller } = await prepareTest()
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.providerErrors).toEqual([
+        { providerName: 'AAVE v3', error: 'AAVE error' },
+        { providerName: 'Uniswap V3', error: 'Uniswap error' }
+      ])
+
+      consoleSuppressor.restore()
+    })
+
+    it('should set asset prices correctly', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const positions = result?.defiPositions.positionsByProvider!
+      expect(positions.length).toBeGreaterThan(0)
+      positions.forEach((provider) => {
+        provider.positions.forEach((position) => {
+          position.assets.forEach((asset) => {
+            expect(asset.value).toBeDefined()
+            expect(asset.priceIn).toEqual({ baseCurrency: 'usd', price: expect.any(Number) })
+          })
+        })
+      })
+    })
+
+    it('should update networksWithPositionsByAccounts properly', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const networksWithPositions = controller.defiPositions.getNetworksWithPositions(
+        DEFI_TEST_ACCOUNT.addr
+      )
+
+      expect(networksWithPositions['1']).toContain('AAVE v3')
+    })
+    it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
+      const consoleSuppressor = suppressConsole()
+
+      jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('AAVE error'))
+          })
+      )
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.providerErrors!.length).toBeGreaterThan(0)
+
+      const networksWithPositions = controller.defiPositions.getNetworksWithPositions(
+        DEFI_TEST_ACCOUNT.addr
+      )
+
+      // Undefined because there is a provider has an error, so we
+      // can't be certain if the account has positions on that network
+      expect(networksWithPositions['137']).toBeUndefined()
+      expect(networksWithPositions['1']).toBeUndefined()
+
+      consoleSuppressor.restore()
+    })
+
+    it('should add a critical defi error if the portfolio discovery fails, despite custom positions being fetched properly', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+
+      jest
+        // @ts-ignore
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-ignore
+        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const state = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
+      const result = state!.result
+
+      expect(result?.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
+      expect(state?.errors.length).toBeGreaterThan(0)
+      // Custom positions are still fetched and present
+      expect(result?.defiPositions.positionsByProvider.length).toBeGreaterThan(0)
+
+      restore()
+    })
+
+    it('uniswap v3 positions are added from the discovery and enhanced with custom positions', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const state = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
+
+      const uniswapV3Positions = state?.result?.defiPositions.positionsByProvider.find(
+        (p) => p.providerName === 'Uniswap V3'
+      )
+
+      expect(uniswapV3Positions).toBeDefined()
+      expect(uniswapV3Positions!.positions.length).toBeGreaterThan(0)
+
+      uniswapV3Positions!.positions.forEach((position) => {
+        expect(position.additionalData.positionIndex).toBeDefined()
+      })
+
+      // It's not guaranteed that all positions will have inRange defined, but only in the tests
+      // That is because the call to debank returns static data that is defined below. If the position
+      // no longer exists, deployless will not return it and there is no way for it to be inRange
+      // It's enough for us to check that one is being enhanced with the custom data
+      expect(
+        uniswapV3Positions?.positions.some((p) => typeof p.additionalData.inRange === 'boolean')
+      ).toBe(true)
+    })
+    it('aave v3 is coming from custom positions', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const aaveV3Positions = result?.defiPositions.positionsByProvider.find(
+        (p) => getProviderId(p.providerName) === 'aave v3'
+      )
+
+      expect(aaveV3Positions).toBeDefined()
+      expect(aaveV3Positions!.positions.length).toBeGreaterThan(0)
+      expect(aaveV3Positions!.source).toBe('custom')
+      aaveV3Positions!.positions.forEach((position) => {
+        expect(position.additionalData.healthRate).toBeDefined()
+      })
+    })
+
+    it('portfolio discovery critical error is prioritized over price errors', async () => {
+      const { restore } = suppressConsole()
+
+      jest
+        // @ts-ignore
+        .spyOn(DefiPositionsController.prototype, 'updatePositionsByProviderAssetPrices')
+        // @ts-ignore
+        .mockRejectedValue(new Error('Price fetch failed'))
+
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.error).toBe(DeFiPositionsError.AssetPriceError)
+
+      jest
+        // @ts-ignore
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-ignore
+        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0
+      })
+
+      const result2 = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result2?.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
+      restore()
+    })
+
+    it('custom positions are persisted after a failure', async () => {
+      const { restore } = suppressConsole()
+      const spy = jest.spyOn(defiProviders, 'getAAVEPositions')
+
+      const { controller } = await prepareTest()
+
+      // First, do a successful update to have positions stored
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const hasPosition = result?.defiPositions.positionsByProvider.some(
+        (p) => getProviderId(p.providerName) === 'aave v3'
+      )
+
+      expect(hasPosition).toBe(true)
+
+      // Mock getAAVEPositions to throw
+      spy.mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('AAVE error'))
+          })
+      )
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+
+      const result2 = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result!
+
+      const hasPosition2 = result2?.defiPositions.positionsByProvider.some(
+        (p) => getProviderId(p.providerName) === 'aave v3'
+      )
+
+      expect(hasPosition2).toBe(true)
+
+      expect(result2.defiPositions.providerErrors).toBeDefined()
+      expect(result2.defiPositions.providerErrors?.length).toBeGreaterThan(0)
+
+      restore()
+    })
+
+    it('positions from portfolio discovery are persisted after a call failure', async () => {
+      const { restore } = suppressConsole()
+
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const hasDebankPositions = result?.defiPositions.positionsByProvider.some(
+        (p) => p.source === 'debank'
+      )
+      expect(hasDebankPositions).toBe(true)
+
+      jest
+        // @ts-ignore
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-ignore
+        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+      const state2 = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
+      const result2 = state2!.result!
+
+      const hasDebankPositions2 = result2.defiPositions.positionsByProvider.some(
+        (p) => p.source === 'debank'
+      )
+      expect(hasDebankPositions2).toBe(true)
+
+      expect(result2.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
+      expect(state2!.errors.length).toBeGreaterThan(0)
+      restore()
     })
   })
 

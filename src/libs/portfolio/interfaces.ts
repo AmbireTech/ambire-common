@@ -162,10 +162,13 @@ export type ExternalPortfolioDiscoveryResponse = {
 }
 
 export type FormattedPortfolioDiscoveryResponse = {
-  hints: FormattedExternalHintsAPIResponse | null
-  defi: {
-    positions: PositionsByProvider[]
-  } & Pick<ExternalPortfolioDiscoveryResponse['defi'], 'updatedAt' | 'error'>
+  data: {
+    hints: FormattedExternalHintsAPIResponse | null
+    defi: {
+      positions: PositionsByProvider[]
+    } & Pick<ExternalPortfolioDiscoveryResponse['defi'], 'updatedAt' | 'error'>
+  } | null
+  errors: ExtendedErrorWithLevel[]
 }
 
 /**
@@ -241,13 +244,7 @@ type CommonResultProps = Pick<PortfolioLibGetResult, 'tokens' | 'updateStarted'>
 export type PortfolioNetworkResult = CommonResultProps &
   Pick<
     PortfolioLibGetResult,
-    | 'collections'
-    | 'tokenErrors'
-    | 'errors'
-    | 'blockNumber'
-    | 'priceCache'
-    | 'toBeLearned'
-    | 'feeTokens'
+    'collections' | 'tokenErrors' | 'blockNumber' | 'priceCache' | 'toBeLearned' | 'feeTokens'
   > & {
     defiPositions: DefiNetworkState
     lastExternalApiUpdateData?: {
