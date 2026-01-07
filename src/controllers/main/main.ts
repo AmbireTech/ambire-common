@@ -20,7 +20,7 @@ import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef } from '../../interfaces/eventEmitter'
+import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -176,7 +176,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses = STATUS_WRAPPED_METHODS
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   ui: IUiController
 
