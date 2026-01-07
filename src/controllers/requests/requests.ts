@@ -619,7 +619,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return acc + (request.accountOp.calls?.length || 0)
       }, 0)
 
-      if (this.visibleUserRequests.length) {
+      if (callsCount) {
         await this.#ui.notification.create({
           title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
           message: 'Queued pending transactions are available on your Dashboard.'

@@ -15,6 +15,5 @@ export interface TransferUpdate {
   addressState?: AddressStateOptional
   isSWWarningAgreed?: boolean
   isRecipientAddressUnknownAgreed?: boolean
-  isTopUp?: boolean
   amountFieldMode?: 'token' | 'fiat'
 }
