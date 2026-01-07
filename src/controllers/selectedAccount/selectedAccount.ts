@@ -371,9 +371,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       networks: this.#networks.networks,
       portfolioState: this.portfolio.portfolioState,
       providers: this.#providers.providers,
-      networksWithPositions: this.#portfolio.defiPositions.getNetworksWithPositions(
-        this.account.addr
-      )
+      networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
     })
     this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,

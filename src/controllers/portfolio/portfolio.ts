@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
+import { NetworksWithPositions, NetworksWithPositionsByAccounts } from 'libs/defiPositions/types'
 
 import { STK_WALLET } from '../../consts/addresses'
 import {
@@ -9,18 +10,26 @@ import {
   IAccountsController
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
-import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import {
+  enhancePortfolioTokensWithDefiPositions,
+  getAccountNetworksWithPositions,
+  getAllAssetsAsHints,
+  getCanSkipUpdate,
+  getCustomProviderPositions,
+  getFormattedApiPositions,
+  getNewDefiState
+} from '../../libs/defiPositions/defiPositions'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -59,7 +68,6 @@ import {
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
-import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -109,11 +117,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   protected batchedPortfolioDiscovery: Function
 
-  defiPositions: IDefiPositionsController
-
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
   } = {}
+
+  #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
   /**
    * @deprecated - see #learnedAssets
@@ -146,6 +154,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
+
+  defiSessionIds: string[] = []
 
   constructor(
     storage: IStorageController,
@@ -209,8 +219,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
-    this.defiPositions = new DefiPositionsController(this.#fetch, this.#storage)
-
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
@@ -220,7 +228,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
-      await this.defiPositions.initialLoadPromise
 
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.customTokens = await this.#storage.get('customTokens', [])
@@ -229,6 +236,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#previousHints = await this.#storage.get('previousHints', {})
       // Don't load fromExternalAPI hints in memory as they are no longer used
       this.#previousHints.fromExternalAPI = {}
+      this.#networksWithPositionsByAccounts = await this.#storage.get(
+        'networksWithPositionsByAccounts',
+        {}
+      )
+
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
@@ -367,11 +379,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       storageStateByAccount,
       this.#providers.providers
     )
-    await this.defiPositions.updateNetworksWithPositions(
-      accountId,
-      accountState,
-      this.#providers.providers
-    )
+    await this.updateNetworksWithDefiPositions(accountId, accountState, this.#providers.providers)
     this.hasFundedHotAccount = this.#getHasFundedHotAccount()
 
     this.emitUpdate()
@@ -744,10 +752,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       Date.now() - externalApiHintsResponse.lastUpdate <
         EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
 
-    const canSkipDefiUpdate = this.defiPositions.getCanSkipUpdate(
+    const canSkipDefiUpdate = getCanSkipUpdate(
       defiState,
       this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId),
       hasKeys,
+      this.defiSessionIds,
       {
         isManualUpdate,
         maxDataAgeMs: defiMaxDataAgeMs
@@ -809,7 +818,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       data: {
         defi: {
           ...response.defi,
-          positions: DefiPositionsController.getFormattedApiPositions(response.defi.positions)
+          positions: getFormattedApiPositions(response.defi.positions)
         },
         hints: response ? formatExternalHintsAPIResponse(response.hints) : null
       },
@@ -876,10 +885,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           fetchPinned: !hasNonZeroTokens,
           ...portfolioProps
         }),
-        this.defiPositions.getCustomProviderPositions(
+        getCustomProviderPositions(
           accountId,
           portfolioLib.provider,
           network,
+          this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData.data?.defi?.positions || [],
           !!discoveryData.data?.defi
@@ -894,7 +904,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             !t.flags.rewardsType
         ) ?? null
 
-      const newDefiState = DefiPositionsController.getNewDefiState(
+      const newDefiState = getNewDefiState(
         discoveryData.data?.defi?.positions,
         state.result?.defiPositions.positionsByProvider || [],
         customPositionsResult.positionsByProvider,
@@ -907,7 +917,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         )
       )
 
-      const combinedTokens = this.defiPositions.enhancePortfolioTokensWithDefiPositions(
+      const combinedTokens = enhancePortfolioTokensWithDefiPositions(
         portfolioResult.tokens,
         newDefiState
       )
@@ -1089,7 +1099,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
     }
 
-    const defiHints = DefiPositionsController.getAllAssetsAsHints(
+    const defiHints = getAllAssetsAsHints(
       this.#state[accountId]?.[chainId.toString()]?.result?.defiPositions
     )
 
@@ -1643,6 +1653,36 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       : undefined
 
     return this.updateSelectedAccount(op.accountAddr, [network], simulation)
+  }
+
+  async updateNetworksWithDefiPositions(
+    accountId: AccountId,
+    accountState: AccountState,
+    providers: RPCProviders
+  ) {
+    this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
+      accountId,
+      accountState,
+      this.#networksWithPositionsByAccounts,
+      providers
+    )
+
+    await this.#storage.set(
+      'networksWithPositionsByAccounts',
+      this.#networksWithPositionsByAccounts
+    )
+  }
+
+  getNetworksWithDefiPositions(accountAddr: string): NetworksWithPositions {
+    return this.#networksWithPositionsByAccounts[accountAddr] || {}
+  }
+
+  addDefiSession(sessionId: string) {
+    this.defiSessionIds = [...new Set([...this.defiSessionIds, sessionId])]
+  }
+
+  removeDefiSession(sessionId: string) {
+    this.defiSessionIds = this.defiSessionIds.filter((id) => id !== sessionId)
   }
 
   toJSON() {

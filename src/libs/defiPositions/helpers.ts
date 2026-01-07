@@ -12,8 +12,14 @@ const getAssetValue = (amount: bigint, decimals: number, priceIn: Price[]): numb
   return Number(assetValueString)
 }
 
-export const getProviderId = (providerName: string): string => {
+const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
+  const diff = Math.abs(price1 - price2)
+  const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2))
+  return diff <= threshold
+}
+
+const getProviderId = (providerName: string): string => {
   return providerName.toLowerCase()
 }
 
-export { getAssetValue }
+export { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent }

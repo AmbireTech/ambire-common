@@ -108,9 +108,6 @@ const prepareTest = async () => {
     uiManager,
     velcroUrl
   })
-  mainCtrl.defiPositions.updatePositions = jest.fn().mockImplementation(async () => {
-    await wait(500)
-  })
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
   mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockImplementation(async () => {
     await wait(500)
