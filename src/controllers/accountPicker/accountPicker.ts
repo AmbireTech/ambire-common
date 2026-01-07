@@ -1279,11 +1279,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.linkedAccountsError = errorMessage
     }
 
-    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
-      this.linkedAccountsLoading = false
-      this.emitUpdate()
-      return
-    }
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
       relayerLinkedAccounts
@@ -1347,11 +1343,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     })
 
     // Check if operation was aborted or page changed
-    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
-      this.linkedAccountsLoading = false
-      this.emitUpdate()
-      return
-    }
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     this.#linkedAccounts = linkedAccounts
 
@@ -1374,11 +1366,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     // Check if operation was aborted or page changed
-    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) {
-      this.linkedAccountsLoading = false
-      this.emitUpdate()
-      return
-    }
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     this.#linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
