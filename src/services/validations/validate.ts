@@ -94,8 +94,6 @@ const validateSendTransferAddress = (
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
-  isSWWarningVisible?: boolean,
-  isSWWarningAgreed?: boolean,
   isRecipientAddressFirstTimeSend?: boolean,
   lastRecipientTransactionDate?: Date | null
 ): ValidateReturnType => {
@@ -162,14 +160,6 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-      severity: 'error'
-    }
-  }
-
-  if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
-    return {
-      success: false,
-      message: 'Please confirm that the recipient address is not an exchange.',
       severity: 'error'
     }
   }
