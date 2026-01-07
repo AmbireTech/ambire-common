@@ -488,7 +488,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     )
       return []
 
-    const portfolioState = this.#portfolio.getAccountPortfolioState(this.account.addr)
+    const defiPositionsCountOnDisabledNetworks =
+      this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
 
     const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
       ? this.#networks.allNetworks.filter(
@@ -499,9 +500,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         )
       : this.#networks.allNetworks
 
-    // @TODO: Reimplement
     return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
-      portfolioState,
+      defiPositionsCountOnDisabledNetworks,
       networks: notDismissedNetworks,
       accountAddr: this.account.addr
     })

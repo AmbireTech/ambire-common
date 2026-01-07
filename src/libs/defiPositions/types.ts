@@ -62,6 +62,15 @@ export type NetworksWithPositions = {
   [chainId: string]: ProviderName[]
 }
 
+/**
+ * The count of defi positions on disabled networks for each account.
+ */
+export type PositionCountOnDisabledNetworks = {
+  [accountId: string]: {
+    [chainId: string]: number
+  }
+}
+
 export type NetworksWithPositionsByAccounts = {
   [accountId: string]: NetworksWithPositions
 }

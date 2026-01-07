@@ -159,6 +159,13 @@ export type ExternalPortfolioDiscoveryResponse = {
     updatedAt: number
     error?: string
   }
+  /**
+   * The count of defi positions on networks that weren't requested.
+   * Used to inform the user about positions on disabled networks.
+   */
+  otherNetworksDefiCounts: {
+    [chainId: string]: number
+  }
 }
 
 export type FormattedPortfolioDiscoveryResponse = {
@@ -167,6 +174,13 @@ export type FormattedPortfolioDiscoveryResponse = {
     defi: {
       positions: PositionsByProvider[]
     } & Pick<ExternalPortfolioDiscoveryResponse['defi'], 'updatedAt' | 'error'>
+    /**
+     * The count of defi positions on networks that weren't requested.
+     * Used to inform the user about positions on disabled networks.
+     */
+    otherNetworksDefiCounts: {
+      [chainId: string]: number
+    }
   } | null
   errors: ExtendedErrorWithLevel[]
 }

@@ -1,6 +1,5 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
-import { NetworksWithPositions, NetworksWithPositionsByAccounts } from 'libs/defiPositions/types'
 
 import { STK_WALLET } from '../../consts/addresses'
 import {
@@ -30,6 +29,11 @@ import {
   getFormattedApiPositions,
   getNewDefiState
 } from '../../libs/defiPositions/defiPositions'
+import {
+  NetworksWithPositions,
+  NetworksWithPositionsByAccounts,
+  PositionCountOnDisabledNetworks
+} from '../../libs/defiPositions/types'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -156,6 +160,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #initialLoadPromise?: Promise<void>
 
   defiSessionIds: string[] = []
+
+  defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
 
   constructor(
     storage: IStorageController,
@@ -818,6 +824,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           ...response.defi,
           positions: getFormattedApiPositions(response.defi.positions)
         },
+        otherNetworksDefiCounts: response.otherNetworksDefiCounts,
         hints: response ? formatExternalHintsAPIResponse(response.hints) : null
       },
       errors
@@ -1308,6 +1315,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               // (same as erc20 hints, see the comment above)
               this.#learnedAssets.erc721s[key] = {}
               shouldUpdateLearnedInStorage = true
+            }
+
+            // Only update this if all networks where updated so we know for sure that the user
+            // has disabled the ones in otherNetworksDefiCounts
+            if (!networks && discoveryResponse.data) {
+              this.defiPositionsCountOnDisabledNetworks[accountId] =
+                discoveryResponse.data.otherNetworksDefiCounts || {}
             }
 
             if (shouldUpdateLearnedInStorage) {
