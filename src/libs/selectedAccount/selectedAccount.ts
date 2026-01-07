@@ -71,15 +71,5 @@ export function calculateSelectedAccountPortfolio(
     portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)
   })
 
-  const portfolio = portfolioViewBuilder.build(shouldShowPartialResult)
-
-  return {
-    ...portfolio,
-    portfolioState: strippedPortfolioState,
-    defiPositions: portfolio.defiPositions.sort((a, b) => {
-      if (b.providerName === 'Ambire' && a.providerName !== 'Ambire') return 1
-      if (a.providerName === 'Ambire' && b.providerName !== 'Ambire') return -1
-      return (b.positionInUSD || 0) - (a.positionInUSD || 0)
-    })
-  }
+  return portfolioViewBuilder.build(shouldShowPartialResult, strippedPortfolioState)
 }

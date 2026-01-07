@@ -1,4 +1,7 @@
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
+import {
+  SelectedAccountPortfolio,
+  SelectedAccountPortfolioState
+} from '../../interfaces/selectedAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
@@ -28,6 +31,14 @@ export default class PortfolioViewBuilder {
   private isAllReady = true
 
   private isReloading = false
+
+  /**
+   * If there is an emit update from the portfolio where only the additional
+   * portfolio has loaded (gasTank, rewards etc.) we shouldn't flip isAllReady to true
+   * as regular networks are not loaded yet. When there is at least one non-internal
+   * network, we start calculating isAllReady normally.
+   */
+  private isNonInternalNetworkAdded = false
 
   private static isNetworkReady = (networkData: NetworkState | undefined) => {
     return networkData && (networkData.isReady || networkData?.criticalError)
@@ -96,6 +107,9 @@ export default class PortfolioViewBuilder {
     if (chainId === 'projectedRewards') {
       return
     }
+    if (chainId !== 'gasTank' && chainId !== 'rewards') {
+      this.isNonInternalNetworkAdded = true
+    }
 
     if (!networkData) {
       this.isAllReady = false
@@ -138,14 +152,20 @@ export default class PortfolioViewBuilder {
     }
   }
 
-  build(shouldShowPartialResult: boolean): Omit<SelectedAccountPortfolio, 'portfolioState'> {
+  build(
+    shouldShowPartialResult: boolean,
+    strippedPortfolioState: SelectedAccountPortfolioState
+  ): SelectedAccountPortfolio {
+    if (!this.isNonInternalNetworkAdded) {
+      this.isAllReady = false
+    }
+
     const hasVisibleTokens = PortfolioViewBuilder.hasVisibleTokens(this.tokens)
     const isReadyToVisualize =
       this.isAllReady || (shouldShowPartialResult && hasVisibleTokens && !this.isAllReady)
 
     return {
       tokens: this.tokens,
-      defiPositions: this.defiPositions,
       collections: this.collections,
       totalBalance: this.totalBalance,
       balancePerNetwork: this.balancePerNetwork,
@@ -154,7 +174,13 @@ export default class PortfolioViewBuilder {
       isReloading: this.isReloading,
       isReadyToVisualize,
       shouldShowPartialResult: this.isAllReady ? false : shouldShowPartialResult,
-      projectedRewardsStats: null
+      projectedRewardsStats: null,
+      portfolioState: strippedPortfolioState,
+      defiPositions: this.defiPositions.sort((a, b) => {
+        if (b.providerName === 'Ambire' && a.providerName !== 'Ambire') return 1
+        if (a.providerName === 'Ambire' && b.providerName !== 'Ambire') return -1
+        return (b.positionInUSD || 0) - (a.positionInUSD || 0)
+      })
     }
   }
 }
