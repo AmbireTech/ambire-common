@@ -202,9 +202,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
-            .join(',')}&accounts=${queueSegment
-            .map((x) => x.data.accountAddr)
-            .join(',')}&baseCurrency=${baseCurrency}${
+            .join(',')}&account=${accountAddr}&baseCurrency=${baseCurrency}${
             forceUpdateDefi ? '&forceUpdateDefi=true' : ''
           }`
 
