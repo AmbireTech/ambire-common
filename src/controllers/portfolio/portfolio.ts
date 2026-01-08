@@ -181,7 +181,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#velcroUrl = 'http://localhost:5555' // @TODO: Revert
+    this.#velcroUrl = velcroUrl
     this.#providers = providers
     this.#networks = networks
     this.#accounts = accounts
