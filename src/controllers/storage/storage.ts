@@ -2,6 +2,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Dapp } from '../../interfaces/dapp'
+import { EmailVaultData } from '../../interfaces/emailVault'
 /* eslint-disable no-restricted-syntax */
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
@@ -62,6 +63,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#cleanupCashbackStatus() // As of version 5.32.0
       await this.#removeLegacyPhishingDetection() // As of version 5.32.0
       await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
+      await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -663,6 +665,58 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.remove('addressesBlacklistedStatus')
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'removePhishingDetectionV2'])
+    ])
+  }
+
+  /**
+   * In previous versions the email vault storage contained values
+   * that should be in-memory only. They did not need to be persisted.
+   * Accessing them in memory when needed was sufficient.
+   */
+  async #cleanUpEmailVaultStorage() {
+    const passedMigrations = await this.#storage.get('passedMigrations', [])
+    if (passedMigrations.includes('cleanUpEmailVaultStorage')) return
+
+    const EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP = 'emailVault' // storage key name as of v5.33.5
+    const emailVaultStorage: { email: { [email: string]: EmailVaultData } } =
+      await this.#storage.get(EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP, null)
+
+    if (emailVaultStorage?.email) {
+      // Create a cleaned version of the email vault storage by removing sensitive 'value' properties
+      // from keyStore-type secrets. This uses several JS tricks to immutably transform nested objects:
+      const cleanEmailVaultStorage = {
+        ...emailVaultStorage,
+        email: Object.fromEntries(
+          // Convert emailVaultStorage.email object to entries, map over them, convert back
+          Object.entries(emailVaultStorage.email).map(([email, entry]) => [
+            email,
+            {
+              ...entry,
+              availableSecrets: Object.fromEntries(
+                // Convert availableSecrets object to entries, map over them, convert back
+                Object.entries(entry.availableSecrets).map(([secretKey, secret]) => [
+                  secretKey,
+                  secret.type === 'keyStore'
+                    ? (() => {
+                        // IIFE executes inline, destructuring with rest operator -
+                        // extracts 'value' and collects all other properties into 'rest' object.
+                        // This removes 'value' from the secret.
+                        const { value, ...rest } = secret
+                        return rest
+                      })()
+                    : secret // keep non-keyStore secrets unchanged
+                ])
+              )
+            }
+          ])
+        )
+      }
+
+      await this.#storage.set(EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP, cleanEmailVaultStorage)
+    }
+
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'cleanUpEmailVaultStorage'])
     ])
   }
 

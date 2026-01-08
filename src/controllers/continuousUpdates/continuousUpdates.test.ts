@@ -13,6 +13,7 @@ import * as accountStateLib from '../../libs/accountState/accountState'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { MainController } from '../main/main'
 
 const accounts = [
@@ -238,30 +239,35 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
   })
 
-  // TODO: find a way to test the force restart of the interval because mocking the signAccountOp data is not that straightforward in this test
-  // test('should run updateAccountStateLatest and updateAccountStatePending', async () => {
-  //   const { mainCtrl } = await prepareTest()
+  test('should run updateAccountStateLatest and updateAccountStatePending', async () => {
+    const { mainCtrl } = await prepareTest()
 
-  //   jest.spyOn(mainCtrl.continuousUpdates.accountStateLatestInterval, 'restart')
+    jest.spyOn(mainCtrl.continuousUpdates.accountStateLatestInterval, 'restart')
 
-  //   await waitForContinuousUpdatesCtrlReady(mainCtrl)
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
-  //   const initialAccountStateLatestFnExecutionsCount =
-  //     mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount
+    const initialAccountStateLatestFnExecutionsCount =
+      mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount
 
-  //   expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
+    expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
 
-  //   await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStateLatestInterval)
-  //   expect(mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount).toBe(
-  //     initialAccountStateLatestFnExecutionsCount + 1
-  //   )
-  //   mainCtrl.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-  //   // @ts-ignore
-  //   mainCtrl.emitUpdate()
-  //   await jest.advanceTimersByTimeAsync(0)
-  //   expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
-  //   expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
-  // })
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStateLatestInterval)
+    expect(mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount).toBe(
+      initialAccountStateLatestFnExecutionsCount + 1
+    )
+    const mockAccountOp = new EventEmitter() as any
+    mockAccountOp.signAndBroadcastPromise = new Promise(() => {})
+    mockAccountOp.broadcastStatus = 'SUCCESS'
+    ;(mainCtrl.requests.currentUserRequest as any) = {
+      kind: 'calls',
+      signAccountOp: mockAccountOp
+    }
+    ;(mainCtrl.requests as any).emitUpdate()
+    ;(mockAccountOp as any).emitUpdate()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
+    expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
+  })
 
   test('should run fastAccountStateReFetchTimeout', async () => {
     const { mainCtrl } = await prepareTest()

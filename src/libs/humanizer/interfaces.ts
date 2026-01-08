@@ -1,5 +1,4 @@
 import { Account } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
 import { BlacklistedStatus } from '../../interfaces/phishing'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -49,7 +48,7 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
-  level: 'info' | 'warning' | 'danger'
+  blocking?: boolean
   code: string
 }
 export interface Ir {

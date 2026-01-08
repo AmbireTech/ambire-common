@@ -16,7 +16,6 @@ import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
 import { IUiController, View } from '../../interfaces/ui'
-import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -80,10 +79,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   // session / debounce
   #currentTransferSessionId: string | null = null
-
-  isSWWarningVisible = false
-
-  isSWWarningAgreed = false
 
   /**
    * The field value for the amount input. Not sanitized and can contain
@@ -200,6 +195,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', (view: View) => {
+      // while broadcasting DO NOT update/reset the selectedToken to prevent displaying
+      // a different token from the already broadcasted one in the "Transfer done" screen
+      //
+      // this can happen when the full token amount is sent and the token is filtered
+      // out on the next tokens update, forcing selectedToken to be updated to
+      // the first token from the updated tokens list
+      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
+
       if (isTransfer(view.currentRoute)) {
         this.#enterTransfer(view)
       } else if (isTransfer(view.previousRoute)) {
@@ -209,6 +212,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
       if (!isTransfer(view.currentRoute)) return
+
+      // Don't reset if we are in the middle of signing and broadcasting
+      // This is especially important for trezor's signing flow, where the extension popup is closed
+      // and an action window is opened for signing. If this check ever breaks we will reset
+      // transfer the moment the popup is closed, losing all the transfer state.
+      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
 
       this.#leaveTransfer()
     })
@@ -275,6 +284,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const tokens = this.#selectedAccount.portfolio.tokens
       .filter((token) => {
         const hasAmount = Number(getTokenAmount(token)) > 0
+        const isVisible = !token.flags.isHidden
 
         if (this.isTopUp) {
           const tokenNetwork = this.#networks.networks.find(
@@ -283,13 +293,14 @@ export class TransferController extends EventEmitter implements ITransferControl
 
           return (
             hasAmount &&
+            isVisible &&
             tokenNetwork?.hasRelayer &&
             token.flags.canTopUpGasTank &&
             !token.flags.onGasTank
           )
         }
 
-        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+        return hasAmount && isVisible && !token.flags.onGasTank && !token.flags.rewardsType
       })
       .sort((a, b) => {
         const tokenAinUSD = getTokenBalanceInUSD(a)
@@ -397,7 +408,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
-      this.#setSWWarningVisibleIfNeeded()
     }
   }
 
@@ -470,8 +480,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientHumanizerKnownTokenOrSmartContract,
         isEnsAddress,
         this.addressState.isDomainResolving,
-        this.isSWWarningVisible,
-        this.isSWWarningAgreed,
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt
       )
@@ -504,11 +512,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const areFormFieldsValid =
       this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
 
-    const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
-
-    return (
-      areFormFieldsValid && isSWWarningMissingOrAccepted && !this.addressState.isDomainResolving
-    )
+    return areFormFieldsValid && !this.addressState.isDomainResolving
   }
 
   get isInitialized() {
@@ -529,7 +533,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     amount,
     shouldSetMaxAmount,
     addressState,
-    isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
     amountFieldMode
   }: TransferUpdate) {
@@ -574,11 +577,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
     // We can do a regular check here, because the property defines if it should be updated
     // and not the actual value
-    if (isSWWarningAgreed) {
-      this.isSWWarningAgreed = !this.isSWWarningAgreed
-    }
-    // We can do a regular check here, because the property defines if it should be updated
-    // and not the actual value
     if (isRecipientAddressUnknownAgreed) {
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
@@ -615,9 +613,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     )
 
     this.isRecipientAddressUnknown =
-      !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+      !isAddressInAddressBook &&
+      this.recipientAddress.toLowerCase() !== this.#selectedAccount.account?.addr.toLowerCase() &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.isRecipientAddressUnknownAgreed = false
-    this.#setSWWarningVisibleIfNeeded()
 
     this.emitUpdate()
   }
@@ -641,8 +640,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
-      this.isSWWarningVisible = false
-      this.isSWWarningAgreed = false
       this.isRecipientAddressViewOnly = false
 
       return
@@ -731,23 +728,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.decimals + tokenPriceDecimals
       )
     }
-  }
-
-  #setSWWarningVisibleIfNeeded() {
-    if (!this.#selectedAccount.account?.addr) return
-
-    this.isSWWarningVisible =
-      this.isRecipientAddressUnknown &&
-      isSmartAccount(this.#selectedAccount.account) &&
-      !this.isTopUp &&
-      !!this.selectedToken?.address &&
-      Number(this.selectedToken?.address) === 0 &&
-      this.#networks.networks
-        .filter((n) => n.chainId !== 1n)
-        .map(({ chainId }) => chainId)
-        .includes(this.selectedToken.chainId || 1n)
-
-    this.emitUpdate()
   }
 
   get hasPersistedState() {
@@ -912,6 +892,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.emitUpdate()
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        // Reset the form on the next tick so the FE receives the final
+        // signAccountOpController update before resetForm destroys it
         setTimeout(() => {
           this.resetForm()
         }, 0)

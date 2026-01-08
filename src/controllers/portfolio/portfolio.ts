@@ -47,7 +47,8 @@ import {
   PriceCache,
   TemporaryTokens,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
@@ -410,10 +411,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   async updateTokenValidationByStandard(
     token: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
-    accountId: AccountId
+    accountId: AccountId,
+    allNetworks: boolean = false
   ) {
     await this.#initialLoadPromise
-    if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
+    if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
     if (!provider) {
@@ -423,15 +425,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       return
     }
 
-    const [isValid, standard]: [boolean, string] = (await validateERC20Token(
+    const result: TokenValidationResult = await validateERC20Token(
       token,
       accountId,
-      provider
-    )) as [boolean, string]
+      provider,
+      allNetworks
+        ? {
+            allNetworks: this.#networks.networks,
+            allProviders: this.#providers.providers,
+            enableNetworkDetection: true
+          }
+        : undefined
+    )
+    const { isValid, standard, error } = result
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
-      [`${token.address}-${token.chainId}`]: isValid
+      [`${token.address}-${token.chainId}`]: {
+        isValid,
+        error
+      }
     }
 
     this.emitUpdate()

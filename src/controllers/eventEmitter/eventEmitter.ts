@@ -76,6 +76,11 @@ export default class EventEmitter {
     for (const i of this.#callbacksWithId) i.cb(true)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb(true)
+
+    // TODO: This is a temporary workaround for a bug; a proper solution should be implemented.
+    // This `await` fixes an issue with event bubbling of force updates. When a parent ctrl
+    // subscribes to a child ctrl to propagate its updates, and the child ctrl emits two
+    // consecutive force updates, the parent's onUpdate listener receives only the last one, skipping one of the updates.
     await wait(1)
   }
 

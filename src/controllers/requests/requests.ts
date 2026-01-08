@@ -642,7 +642,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return acc + (request.signAccountOp.accountOp.calls?.length || 0)
       }, 0)
 
-      if (this.visibleUserRequests.length) {
+      if (callsCount) {
         await this.#ui.notification.create({
           title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
           message: 'Queued pending transactions are available on your Dashboard.'
@@ -1714,6 +1714,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         dappPromises
       } as CallsUserRequest
+
+      callUserRequest.signAccountOp.onUpdate(() => {
+        const callsReq = this.userRequests.find(
+          (r) => r.kind === 'calls' && r.signAccountOp.fromRequestId === requestId
+        ) as CallsUserRequest | undefined
+
+        if (!callsReq) return
+
+        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.emitUpdate()
+      }, 'requests-ctrl')
     }
 
     return callUserRequest

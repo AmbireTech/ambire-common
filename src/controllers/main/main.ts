@@ -20,7 +20,7 @@ import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -179,7 +179,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses = STATUS_WRAPPED_METHODS
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   ui: IUiController
 
@@ -812,14 +812,25 @@ export class MainController extends EventEmitter implements IMainController {
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
-  async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
+  async handleSignAndBroadcastAccountOp(type: SignAccountOpType, fromRequestId: string | number) {
     let signAccountOp: ISignAccountOpController | null = null
 
-    if (type === 'one-click-swap-and-bridge') {
+    if (
+      type === 'one-click-swap-and-bridge' &&
+      this.swapAndBridge.signAccountOpController &&
+      this.swapAndBridge.signAccountOpController.fromRequestId === fromRequestId
+    ) {
       signAccountOp = this.swapAndBridge.signAccountOpController
-    } else if (type === 'one-click-transfer') {
+    } else if (
+      type === 'one-click-transfer' &&
+      this.transfer.signAccountOpController &&
+      this.transfer.signAccountOpController.fromRequestId === fromRequestId
+    ) {
       signAccountOp = this.transfer.signAccountOpController
-    } else if (this.requests.currentUserRequest?.kind === 'calls') {
+    } else if (
+      this.requests.currentUserRequest?.kind === 'calls' &&
+      this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId
+    ) {
       signAccountOp = this.requests.currentUserRequest.signAccountOp
     }
 
@@ -1414,7 +1425,7 @@ export class MainController extends EventEmitter implements IMainController {
       skipFocus: true
     })
 
-    await this.requests.removeUserRequests([requestId])
+    await this.requests.removeUserRequests([requestId], { shouldUpdateAccount: false })
 
     const dappHandlers: any[] = []
 

@@ -13,7 +13,8 @@ type ValidateReturnType = {
   // 'error' - Critical validation failures that block the transaction (success: false)
   // 'warning' - Important information user should know but transaction can proceed (success: true)
   // 'info' - Neutral informational messages (success: true)
-  severity?: 'info' | 'warning' | 'error'
+  // 'success' - Green confirmation message
+  severity?: 'info' | 'warning' | 'error' | 'success'
   errorType?: 'insufficient_amount'
 }
 
@@ -93,8 +94,6 @@ const validateSendTransferAddress = (
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
-  isSWWarningVisible?: boolean,
-  isSWWarningAgreed?: boolean,
   isRecipientAddressFirstTimeSend?: boolean,
   lastRecipientTransactionDate?: Date | null
 ): ValidateReturnType => {
@@ -102,15 +101,16 @@ const validateSendTransferAddress = (
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
       success: true,
-      message: ''
+      message: '',
+      severity: 'success'
     }
   }
 
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
-      success: false,
-      message: "You can't send to the same address you're sending from.",
-      severity: 'error'
+      success: true,
+      message: "You're about to send funds back to yourself.",
+      severity: 'warning'
     }
   }
 
@@ -132,7 +132,7 @@ const validateSendTransferAddress = (
     return {
       success: true,
       message,
-      severity: lastRecipientTransactionDate ? 'warning' : 'info'
+      severity: lastRecipientTransactionDate ? 'warning' : 'success'
     }
   }
 
@@ -164,19 +164,11 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
-    return {
-      success: false,
-      message: 'Please confirm that the recipient address is not an exchange.',
-      severity: 'error'
-    }
-  }
-
   if (lastRecipientTransactionDate) {
     return {
       success: true,
       message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
-      severity: 'warning'
+      severity: 'success'
     }
   }
 
