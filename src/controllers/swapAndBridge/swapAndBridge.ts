@@ -2422,6 +2422,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }, 0)
       }
     }, 'swap-and-bridge')
+
     this.#signAccountOpController.onError((error) => {
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
