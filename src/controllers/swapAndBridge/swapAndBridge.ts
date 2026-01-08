@@ -2413,7 +2413,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#signAccountOpController.onUpdate(() => {
       this.emitUpdate()
-    })
+
+      if (this.#signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        // Reset the form on the next tick so the FE receives the final
+        // signAccountOpController update before resetForm destroys it
+        setTimeout(() => {
+          this.resetForm()
+        }, 0)
+      }
+    }, 'swap-and-bridge')
+
     this.#signAccountOpController.onError((error) => {
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
