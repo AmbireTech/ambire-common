@@ -26,7 +26,7 @@ describe('Selected Account lib', () => {
         true
       )
 
-      expect(selectedAccountPortfolio.tokens.length).toBe(9)
+      expect(selectedAccountPortfolio.tokens.length).toBe(8)
       expect(selectedAccountPortfolio.collections.length).toBe(1)
       // 10 from tokens on Ethereum, 10 from tokens on Base, 5 from gas tank and 250 from defi positions
       expect(selectedAccountPortfolio.totalBalance).toBe(260 + 10 + 5)

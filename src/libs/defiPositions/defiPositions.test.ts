@@ -1,12 +1,16 @@
+import { NetworkState, PortfolioNetworkResult, TokenResult } from 'libs/portfolio/interfaces'
+
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
+import { PORTFOLIO_STATE } from '../portfolio/testData'
+import { enhancePortfolioTokensWithDefiPositions } from './defiPositions'
 import { getAAVEPositions, getDebankEnhancedUniV3Positions, getUniV3Positions } from './providers'
-import { PositionsByProvider } from './types'
+import { AssetType, PositionsByProvider } from './types'
 
-describe('DeFi positions', () => {
+describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
   // 1. Go to https://debank.com/protocols/matic_uniswap3/holders
   // 2. Find an account that has the required positions and use it in the test
@@ -115,6 +119,89 @@ describe('DeFi positions', () => {
       expect(pos.additionalData.healthRate).toBeGreaterThan(0)
       expect(pos.additionalData.collateralInUSD).toBeGreaterThan(0)
     })
+  })
+})
+
+describe('Defi positions helper and portfolio functions', () => {
+  it('should add positions to the portfolio', () => {
+    const clonedPortfolioEthereumState = structuredClone(
+      PORTFOLIO_STATE['1']
+    ) as NetworkState<PortfolioNetworkResult>
+    const originalTokenCount = clonedPortfolioEthereumState!.result!.tokens.length
+
+    const tokens = enhancePortfolioTokensWithDefiPositions(
+      clonedPortfolioEthereumState.result!.tokens,
+      clonedPortfolioEthereumState.result!.defiPositions
+    )
+
+    // -- Defi positions are added to the portfolio
+
+    // 5 portfolio tokens + 4 defi tokens
+    expect(tokens?.length).toBe(originalTokenCount + 1)
+
+    // -- Protocol representations of borrowed tokens don't have prices
+    const variableDebtBasGHO = tokens!.find(
+      ({ address }) => address === '0x38e59ADE183BbEb94583d44213c8f3297e9933e9'
+    )
+
+    expect(variableDebtBasGHO?.priceIn.length).toBe(0)
+
+    // Tokens added from defi positions have flags
+
+    // -- Defi tokens have the respective flag
+    const aBasWETH = tokens!.find(
+      ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
+    )
+    // Tokens added from defi positions have flags
+    const aaveCbtc = tokens!.find(
+      ({ address }) => address === '0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6'
+    )
+
+    expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
+    expect(aaveCbtc?.flags.defiTokenType).toBe(AssetType.Collateral)
+    expect(variableDebtBasGHO?.flags.defiTokenType).toBe(AssetType.Borrow)
+  })
+  it('should add a price to portfolio defi tokens if the price is defined in the defi state', () => {
+    const clonedPortfolioEthereumState = structuredClone(
+      PORTFOLIO_STATE['1']
+    ) as NetworkState<PortfolioNetworkResult>
+    const secondPosition =
+      clonedPortfolioEthereumState?.result?.defiPositions.positionsByProvider[2]?.positions[0]
+    const secondPositionAsset = secondPosition?.assets[0]
+    const aBasWETHWithoutPrice: TokenResult = {
+      ...structuredClone(secondPositionAsset),
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        isFeeToken: false,
+        isCustom: false,
+        canTopUpGasTank: false
+      },
+      priceIn: [],
+      chainId: 1n,
+      // Ensure required fields are present and not undefined
+      address: secondPositionAsset?.address ?? '',
+      symbol: secondPositionAsset?.symbol ?? '',
+      name: secondPositionAsset?.name ?? '',
+      decimals: secondPositionAsset?.decimals ?? 18,
+      amount: secondPositionAsset?.amount ?? 0n
+    }
+
+    expect(aBasWETHWithoutPrice.priceIn.length).toBe(0)
+
+    clonedPortfolioEthereumState.result?.tokens.push(aBasWETHWithoutPrice)
+
+    const tokens = enhancePortfolioTokensWithDefiPositions(
+      clonedPortfolioEthereumState.result!.tokens,
+      clonedPortfolioEthereumState.result!.defiPositions
+    )
+
+    const aBasWETH = tokens!.findLast(
+      ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
+    )
+
+    expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
+    expect(aBasWETH?.priceIn.length).toBe(1)
   })
 })
 

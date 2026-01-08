@@ -145,24 +145,25 @@ const PORTFOLIO_STATE: AccountState = {
           },
           priceIn: [{ baseCurrency: 'usd', price: 100 }]
         },
-        {
-          address: '0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6',
-          symbol: 'aBascbBTC',
-          name: 'Aave Base cbBTC',
-          chainId: 1n,
-          decimals: 8,
-          amount: 10n ** 8n,
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            isFeeToken: false,
-            isCustom: false,
-            canTopUpGasTank: false,
-            defiTokenType: AssetType.Collateral,
-            defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 100 }]
-        },
+        // Removed on purpose so it can be added when enhancing with defi positions
+        // {
+        //   address: '0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6',
+        //   symbol: 'aBascbBTC',
+        //   name: 'Aave Base cbBTC',
+        //   chainId: 1n,
+        //   decimals: 8,
+        //   amount: 10n ** 8n,
+        //   flags: {
+        //     onGasTank: false,
+        //     rewardsType: null,
+        //     isFeeToken: false,
+        //     isCustom: false,
+        //     canTopUpGasTank: false,
+        //     defiTokenType: AssetType.Collateral,
+        //     defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
+        //   },
+        //   priceIn: [{ baseCurrency: 'usd', price: 100 }]
+        // },
         {
           address: '0x38e59ADE183BbEb94583d44213c8f3297e9933e9',
           symbol: 'variableDebtBasGHO',
