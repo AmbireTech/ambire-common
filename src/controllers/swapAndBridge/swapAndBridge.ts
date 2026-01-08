@@ -43,7 +43,6 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { batchCallsFromUserRequests } from '../../libs/requests/requests'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -236,7 +235,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
 
-  #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
+  #isCurrentSignAccountOpThrowingAnEstimationError: Function | undefined
 
   #getUserRequests: () => UserRequest[]
 
@@ -281,7 +280,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     invite,
     portfolioUpdate,
     relayerUrl,
-    isMainSignAccountOpThrowingAnEstimationError,
+    isCurrentSignAccountOpThrowingAnEstimationError,
     getUserRequests,
     getVisibleUserRequests,
     swapProvider,
@@ -302,7 +301,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
-    isMainSignAccountOpThrowingAnEstimationError?: Function
+    isCurrentSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
     getVisibleUserRequests: () => UserRequest[]
     swapProvider: SwapProvider
@@ -317,8 +316,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#portfolioUpdate = portfolioUpdate
-    this.#isMainSignAccountOpThrowingAnEstimationError =
-      isMainSignAccountOpThrowingAnEstimationError
+    this.#isCurrentSignAccountOpThrowingAnEstimationError =
+      isCurrentSignAccountOpThrowingAnEstimationError
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -2303,11 +2302,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
 
     // check if we have an accountOp in main
-    const userRequestCalls = batchCallsFromUserRequests({
-      accountAddr: this.#selectedAccount.account.addr,
-      chainId: network.chainId,
-      userRequests: this.#getUserRequests()
-    })
+    const userRequestCalls =
+      (
+        this.#getUserRequests().find(
+          (r) =>
+            r.kind === 'calls' &&
+            r.id === `${this.#selectedAccount.account!.addr}-${network.chainId}`
+        ) as CallsUserRequest
+      )?.signAccountOp.accountOp.calls || []
+
     const swapOrBridgeCalls = await getSwapAndBridgeCalls(
       userTxn,
       this.#selectedAccount.account,
@@ -2402,9 +2405,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           })
 
         await this.#onBroadcastSuccess(props)
-        // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
-        // visualize the success page on the FE instead of resetting the form
-        this.resetForm()
       },
       onBroadcastFailed: this.#onBroadcastFailed
     })
@@ -2413,7 +2413,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#signAccountOpController.onUpdate(() => {
       this.emitUpdate()
-    })
+
+      if (this.#signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        // Reset the form on the next tick so the FE receives the final
+        // signAccountOpController update before resetForm destroys it
+        setTimeout(() => {
+          this.resetForm()
+        }, 0)
+      }
+    }, 'swap-and-bridge')
     this.#signAccountOpController.onError((error) => {
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
@@ -2468,8 +2476,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // This prevents proceeding with a swap/bridge if there are estimation errors
     // in the pending batch of transactions
     if (
-      this.#isMainSignAccountOpThrowingAnEstimationError &&
-      this.#isMainSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
+      this.#isCurrentSignAccountOpThrowingAnEstimationError &&
+      this.#isCurrentSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
     ) {
       errors.push({
         title: 'Error detected in the pending batch. Please review it before proceeding'

@@ -4,13 +4,13 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
-import { AccountOp } from '../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
+import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
@@ -59,7 +59,7 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
   }
-  accountOp: AccountOp
+  signAccountOp: ISignAccountOpController
 }
 
 export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromise]> {
