@@ -2402,9 +2402,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           })
 
         await this.#onBroadcastSuccess(props)
-        // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
-        // visualize the success page on the FE instead of resetting the form
-        this.resetForm()
       },
       onBroadcastFailed: this.#onBroadcastFailed
     })
