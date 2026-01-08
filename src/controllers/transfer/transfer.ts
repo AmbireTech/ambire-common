@@ -26,6 +26,7 @@ import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpe
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
+import { getIsViewOnly } from '../../utils/accounts'
 import { getAddressFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
@@ -625,7 +626,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     )
 
     if (recipientAccount) {
-      this.isRecipientAddressViewOnly = recipientAccount.initialPrivileges.length === 0
+      const isViewOnly = getIsViewOnly(this.#keystore.keys, recipientAccount.associatedKeys)
+      this.isRecipientAddressViewOnly = isViewOnly
     } else {
       this.isRecipientAddressViewOnly = false
     }
