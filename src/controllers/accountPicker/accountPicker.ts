@@ -4,6 +4,7 @@ import { getCreate2Address, keccak256 } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { MAX_UINT256 } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -1194,9 +1195,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             // fail to detect that the account was used on this network.
             acc.balance > BigInt(0) ||
             (acc.isEOA
-              ? [acc.nonce, acc.eoaNonce, acc.erc4337Nonce].some(
-                  (nonce) => (nonce || BigInt(0)) > BigInt(0)
-                )
+              ? [acc.nonce, acc.eoaNonce].some((nonce) => (nonce || BigInt(0)) > BigInt(0)) ||
+                (acc.erc4337Nonce !== MAX_UINT256 && acc.erc4337Nonce !== BigInt(0))
               : // For smart accounts, check for 'isDeployed' instead because in
                 // the erc-4337 scenario many cases might be missed with checking
                 // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
