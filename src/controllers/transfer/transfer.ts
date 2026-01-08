@@ -867,8 +867,6 @@ export class TransferController extends EventEmitter implements ITransferControl
           this.latestBroadcastedToken = this.selectedToken
           this.latestBroadcastedAccountOp = submittedAccountOp
         }
-
-        this.resetForm()
       }
     })
 
