@@ -16,7 +16,7 @@ let email2: String
 // Wrapper around fetch that adds x-app-version header to every request
 const fetchWithAppVersion: Fetch = (input: RequestInfo, init?: RequestInitWithCustomHeaders) => {
   const headers = {
-    'x-app-version': 'extension-5.35.0-webkit',
+    'x-app-version': 'extension-5.34.4-webkit', // since this v, req towards email vault API are supported
     ...(init?.headers || {})
   }
   return fetch(input, { ...init, headers })
