@@ -1729,6 +1729,38 @@ export class MainController extends EventEmitter implements IMainController {
     return true
   }
 
+  // TODO: Prob move somewhere else?
+  handleGetEncryptionPublicKey = async ({
+    keyAddr,
+    keyType
+  }: {
+    keyAddr: Key['addr']
+    keyType: Key['type']
+  }) => {
+    const signer = await this.keystore.getSigner(keyAddr, keyType)
+
+    if (!signer.getEncryptionPublicKey) throw new Error('not supported')
+
+    return signer.getEncryptionPublicKey()
+  }
+
+  // TODO: Prob move somewhere else?
+  handleDecrypt = async ({
+    encryptedData,
+    keyAddr,
+    keyType
+  }: {
+    encryptedData: string
+    keyAddr: Key['addr']
+    keyType: Key['type']
+  }) => {
+    const signer = await this.keystore.getSigner(keyAddr, keyType)
+
+    if (!signer.decrypt) throw new Error('not supported')
+
+    return signer.decrypt(encryptedData)
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
