@@ -61,12 +61,7 @@ export default class PortfolioViewBuilder {
    * Checks if network should be marked as reloading based on last update timestamp
    */
   private static shouldMarkAsReloading(networkData: NetworkState | undefined): boolean {
-    if (
-      !networkData?.result ||
-      !networkData?.isLoading ||
-      !('lastSuccessfulUpdate' in networkData.result) ||
-      !networkData?.result?.lastSuccessfulUpdate
-    ) {
+    if (!networkData?.result || !networkData?.isLoading || !networkData?.lastSuccessfulUpdate) {
       return false
     }
 

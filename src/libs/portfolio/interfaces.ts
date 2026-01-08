@@ -36,6 +36,13 @@ export type TokenResult = {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
+    /**
+     * A property used to link a token to a specific defi position. It's used
+     * to prevent double counting of balances in the portfolio total.
+     * As collateral tokens are part of the defi positions, but also held
+     * as regular tokens in the portfolio, we use this property to identify
+     * which token is used as collateral in which position.
+     */
     defiPositionId?: string
     canTopUpGasTank: boolean
     isFeeToken: boolean

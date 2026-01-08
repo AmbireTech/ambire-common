@@ -4,12 +4,14 @@ import { networks } from '../../consts/networks'
 import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
+  getTotal,
   isSuspectedToken,
   learnedErc721sToHints,
   mapToken,
   mergeERC721s
 } from './helpers'
 import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
+import { PORTFOLIO_STATE } from './testData'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const optimism = networks.find((x) => x.chainId === 10n)!
@@ -228,6 +230,49 @@ describe('Portfolio helpers', () => {
       expect(token).toBeDefined()
       expect(token?.flags.isCustom).toBe(true)
       expect(token?.flags.isHidden).toBe(true)
+    })
+  })
+  describe('getTotal', () => {
+    const firstToken = PORTFOLIO_STATE['1']?.result?.tokens[0]!
+    const mockHiddenToken = {
+      ...firstToken,
+      address: '0xHiddenTokenAddress',
+      amount: 10n * 10n ** 6n,
+      decimals: 6,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      flags: {
+        ...firstToken.flags,
+        isHidden: true
+      }
+    }
+    it('Calculates total', () => {
+      const ethereumState = PORTFOLIO_STATE['1']
+
+      const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
+
+      expect(total.usd).toBe(240.05)
+    })
+    it('Calculates total excluding hidden tokens', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
+
+      ethereumState?.result?.tokens.push(mockHiddenToken)
+
+      const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
+
+      expect(total.usd).toBe(240.05)
+    })
+    it('Calculates total and includes hidden tokens if specified', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
+
+      ethereumState?.result?.tokens.push(mockHiddenToken)
+
+      const total = getTotal(
+        ethereumState?.result?.tokens!,
+        ethereumState?.result?.defiPositions!,
+        { includeHiddenTokens: true }
+      )
+
+      expect(total.usd).toBe(250.05)
     })
   })
 })
