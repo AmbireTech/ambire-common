@@ -666,9 +666,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isReady: true,
       isLoading: false,
       errors: [],
+      lastSuccessfulUpdate: Date.now(),
       result: {
         ...res.data.rewards,
-        lastSuccessfulUpdate: Date.now(),
         updateStarted: start,
         tokens: rewardsTokens,
         total: getTotal(rewardsTokens, null)
@@ -679,6 +679,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isReady: true,
       isLoading: false,
       errors: [],
+      lastSuccessfulUpdate: Date.now(),
       result: {
         ...res.data.rewardsProjectionDataV2,
         frozenRewardSeason1: res.data.frozenRewardSeason1 ? res.data.frozenRewardSeason1 : 0
@@ -697,9 +698,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isReady: true,
       isLoading: false,
       errors: [],
+      lastSuccessfulUpdate: Date.now(),
       result: {
         updateStarted: start,
-        lastSuccessfulUpdate: Date.now(),
         tokens: [],
         gasTankTokens,
         total: getTotal(gasTankTokens, null)
@@ -940,8 +941,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#priceCache[network.chainId.toString()] = portfolioResult.priceCache
 
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
-      let lastSuccessfulUpdate =
-        accountState[network.chainId.toString()]?.result?.lastSuccessfulUpdate || 0
+      let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
 
       // Reset lastSuccessfulUpdate on isManualUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
@@ -960,6 +960,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         isReady: true,
         isLoading: false,
         errors: combinedErrors,
+        lastSuccessfulUpdate,
         result: {
           ...portfolioResult,
           lastExternalApiUpdateData: discoveryData.data?.hints
@@ -968,7 +969,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                 lastUpdate: discoveryData.data.hints.lastUpdate
               }
             : state.result?.lastExternalApiUpdateData ?? null,
-          lastSuccessfulUpdate,
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
           defiPositions: newDefiState
@@ -997,7 +997,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       if (isManualUpdate && state.result) {
         // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
         // is likely expecting a change in the portfolio.
-        state.result.lastSuccessfulUpdate = 0
+        state.lastSuccessfulUpdate = 0
       }
       this.emitUpdate()
 

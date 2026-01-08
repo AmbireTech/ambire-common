@@ -251,14 +251,21 @@ export type AddrVestingData = {
 }
 
 type CommonResultProps = Pick<PortfolioLibGetResult, 'tokens' | 'updateStarted'> & {
-  lastSuccessfulUpdate: number
   total: Total
 }
 
 export type PortfolioNetworkResult = CommonResultProps &
   Pick<
     PortfolioLibGetResult,
-    'collections' | 'tokenErrors' | 'blockNumber' | 'priceCache' | 'toBeLearned' | 'feeTokens'
+    | 'collections'
+    | 'tokenErrors'
+    | 'blockNumber'
+    | 'priceCache'
+    | 'toBeLearned'
+    | 'feeTokens'
+    | 'priceUpdateTime'
+    | 'oracleCallTime'
+    | 'discoveryTime'
   > & {
     defiPositions: DefiNetworkState
     lastExternalApiUpdateData?: {
@@ -268,7 +275,7 @@ export type PortfolioNetworkResult = CommonResultProps &
   }
 
 export type PortfolioRewardsResult = CommonResultProps &
-  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
+  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted'> & {
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
     xWalletClaimableBalance?: Pick<TokenResult, 'decimals' | 'address' | 'priceIn' | 'symbol'> & {
@@ -339,6 +346,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
+  lastSuccessfulUpdate: number
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.

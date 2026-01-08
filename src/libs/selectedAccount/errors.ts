@@ -213,7 +213,7 @@ export const getNetworksWithErrors = ({
     const accountStateForNetwork = accountState?.[chainId]
     const criticalPortfolioError = portfolioForNetwork?.criticalError
     const isRpcWorking = providers[chainId]?.isWorking !== false
-    const lastSuccessfulPortfolioUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+    const lastSuccessfulPortfolioUpdate = portfolioForNetwork?.lastSuccessfulUpdate
     const accountStateUpdatedAt = accountStateForNetwork?.updatedAt
     const networkName = getNetworkName(networks, chainId)
     const isLoadingFromScratch = portfolioForNetwork?.isLoading && !isAllReady

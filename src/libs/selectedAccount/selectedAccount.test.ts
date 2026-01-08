@@ -6,12 +6,7 @@ import {
 } from '../defiPositions/types'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { AccountState, NetworkState, TokenResult } from '../portfolio/interfaces'
-import {
-  calculateDefiPositions,
-  calculateSelectedAccountPortfolio,
-  getIsRecalculationNeeded,
-  stripPortfolioState
-} from './selectedAccount'
+import { calculateSelectedAccountPortfolio, stripPortfolioState } from './selectedAccount'
 
 describe('Selected Account lib', () => {
   it('stripPortfolioState works as expected', () => {
@@ -388,8 +383,7 @@ describe('Selected Account lib', () => {
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isLoading = true
-        clonedPortfolioLatestState[chainId]!.result!.lastSuccessfulUpdate =
-          sixtyMinutesAndOneSecondAgo
+        clonedPortfolioLatestState[chainId]!.lastSuccessfulUpdate = sixtyMinutesAndOneSecondAgo
       })
 
       const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
@@ -411,7 +405,7 @@ describe('Selected Account lib', () => {
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isLoading = true
-        clonedPortfolioLatestState[chainId]!.result!.lastSuccessfulUpdate = fiveMinutesAgo
+        clonedPortfolioLatestState[chainId]!.lastSuccessfulUpdate = fiveMinutesAgo
       })
 
       const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
@@ -451,6 +445,7 @@ const PORTFOLIO_STATE: AccountState = {
     isReady: true,
     isLoading: false,
     errors: [],
+    lastSuccessfulUpdate: 1753192920665,
     result: {
       lastExternalApiUpdateData: {
         hasHints: true,
@@ -545,7 +540,6 @@ const PORTFOLIO_STATE: AccountState = {
           priceIn: []
         }
       ],
-      lastSuccessfulUpdate: 1753192920665,
       total: { usd: 10 }
     }
   },
@@ -553,6 +547,7 @@ const PORTFOLIO_STATE: AccountState = {
     isReady: true,
     isLoading: false,
     errors: [],
+    lastSuccessfulUpdate: 1753192920665,
     result: {
       lastExternalApiUpdateData: {
         hasHints: true,
@@ -585,7 +580,6 @@ const PORTFOLIO_STATE: AccountState = {
       blockNumber: 22975182,
       tokenErrors: [],
       collections: [],
-      lastSuccessfulUpdate: 1753192920665,
       total: { usd: 10 }
     }
   },
@@ -593,9 +587,9 @@ const PORTFOLIO_STATE: AccountState = {
     isReady: true,
     isLoading: false,
     errors: [],
+    lastSuccessfulUpdate: 1753193545311,
     result: {
       updateStarted: 1753193544309,
-      lastSuccessfulUpdate: 1753193545311,
       tokens: [],
       gasTankTokens: [
         {

@@ -12,11 +12,11 @@ import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { stringify } from '../../libs/richJson/richJson'
+import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
-import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -25,7 +25,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
-import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
+import { SelectedAccountController } from './selectedAccount'
 
 const accounts = [
   {
@@ -171,17 +171,6 @@ const prepareTest = async () => {
     new BannerController(storageCtrl)
   )
 
-  const defiPositionsCtrl = new DefiPositionsController({
-    fetch,
-    storage: storageCtrl,
-    selectedAccount: selectedAccountCtrl,
-    keystore,
-    networks: networksCtrl,
-    providers: providersCtrl,
-    accounts: accountsCtrl,
-    ui: uiCtrl
-  })
-
   await accountsCtrl.initialLoadPromise
   await accountsCtrl.accountStateInitialLoadPromise
   await networksCtrl.initialLoadPromise
@@ -191,7 +180,6 @@ const prepareTest = async () => {
 
   selectedAccountCtrl.initControllers({
     portfolio: portfolioCtrl,
-    defiPositions: defiPositionsCtrl,
     networks: networksCtrl,
     providers: providersCtrl
   })
@@ -199,7 +187,6 @@ const prepareTest = async () => {
   return {
     selectedAccountCtrl,
     portfolioCtrl,
-    defiPositionsCtrl,
     providersCtrl,
     autoLoginCtrl,
     accountsCtrl,
@@ -234,12 +221,11 @@ describe('SelectedAccount Controller', () => {
   })
   test('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
-    const { selectedAccountCtrl, portfolioCtrl, defiPositionsCtrl } = await prepareTest()
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
     await selectedAccountCtrl.setAccount(accounts[1]!)
 
     await portfolioCtrl.updateSelectedAccount('0xC2E6dFcc2C6722866aD65F211D5757e1D2879337')
-    await defiPositionsCtrl.updatePositions({ forceUpdate: true })
     const PORTFOLIO_STATE_BEFORE = stringify(
       portfolioCtrl.getAccountPortfolioState('0xC2E6dFcc2C6722866aD65F211D5757e1D2879337')
     )
@@ -417,7 +403,7 @@ describe('SelectedAccount Controller', () => {
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
         .mockImplementation(() => ({ '137': true, '1': false }))
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -438,7 +424,7 @@ describe('SelectedAccount Controller', () => {
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -474,13 +460,13 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
       // There is a critical error and lastSuccessfulUpdate is more than 10 minutes ago
-      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       await forceBannerRecalculation(providersCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
     })
     it('Defi error banner is displayed when there is a critical network error and the user has positions on that network/provider', async () => {
-      const { selectedAccountCtrl, defiPositionsCtrl } = await prepareTest()
+      const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
       jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
@@ -512,7 +498,7 @@ describe('SelectedAccount Controller', () => {
     })
     it('Defi error banner is not displayed when there is a critical network error but the user has no positions', async () => {
       const { selectedAccountCtrl, defiPositionsCtrl } = await prepareTest()
-      selectedAccountCtrl.defiPositions = []
+      selectedAccountCtrl.portfolio.defiPositions = []
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
       await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
@@ -542,7 +528,7 @@ describe('SelectedAccount Controller', () => {
     })
     it("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
       const { selectedAccountCtrl, defiPositionsCtrl } = await prepareTest()
-      selectedAccountCtrl.defiPositions = []
+      selectedAccountCtrl.portfolio.defiPositions = []
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
       await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })

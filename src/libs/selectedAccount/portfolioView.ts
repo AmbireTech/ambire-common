@@ -72,7 +72,7 @@ export default class PortfolioViewBuilder {
 
     const ONE_HOUR_MS = 60 * 60 * 1000
     const oneHourAgo = Date.now() - ONE_HOUR_MS
-    return networkData.result.lastSuccessfulUpdate < oneHourAgo
+    return networkData.lastSuccessfulUpdate < oneHourAgo
   }
 
   /**

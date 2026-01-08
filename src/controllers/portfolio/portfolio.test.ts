@@ -37,7 +37,6 @@ import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
-import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -1549,9 +1548,7 @@ describe('Portfolio Controller ', () => {
       const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
-      const networksWithPositions = controller.defiPositions.getNetworksWithPositions(
-        DEFI_TEST_ACCOUNT.addr
-      )
+      const networksWithPositions = controller.getNetworksWithDefiPositions(DEFI_TEST_ACCOUNT.addr)
 
       expect(networksWithPositions['1']).toContain('AAVE v3')
     })
@@ -1571,9 +1568,7 @@ describe('Portfolio Controller ', () => {
 
       expect(result?.defiPositions.providerErrors!.length).toBeGreaterThan(0)
 
-      const networksWithPositions = controller.defiPositions.getNetworksWithPositions(
-        DEFI_TEST_ACCOUNT.addr
-      )
+      const networksWithPositions = controller.getNetworksWithDefiPositions(DEFI_TEST_ACCOUNT.addr)
 
       // Undefined because there is a provider has an error, so we
       // can't be certain if the account has positions on that network
@@ -1906,7 +1901,7 @@ describe('Portfolio Controller ', () => {
 
     await controller.updateSelectedAccount(account.addr, ethereum)
 
-    const lastSuccessfulUpdate = controller.getAccountPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate = controller.getAccountPortfolioState(account.addr)['1']
       ?.lastSuccessfulUpdate
 
     expect(lastSuccessfulUpdate).toBeTruthy()
@@ -1918,7 +1913,7 @@ describe('Portfolio Controller ', () => {
       .mockRejectedValueOnce(new Error('Simulated error'))
 
     await controller.updateSelectedAccount(account.addr, ethereum)
-    const lastSuccessfulUpdate2 = controller.getAccountPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate2 = controller.getAccountPortfolioState(account.addr)['1']
       ?.lastSuccessfulUpdate
 
     // Last successful update should not change if the update fails
@@ -1935,7 +1930,7 @@ describe('Portfolio Controller ', () => {
       isManualUpdate: true
     })
 
-    const lastSuccessfulUpdate3 = controller.getAccountPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate3 = controller.getAccountPortfolioState(account.addr)['1']
       ?.lastSuccessfulUpdate
     // Last successful update should reset on a manual update (passing maxDataAgeMs: 0)
     expect(lastSuccessfulUpdate2).not.toEqual(lastSuccessfulUpdate3)

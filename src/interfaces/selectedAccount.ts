@@ -3,6 +3,7 @@ import {
   CollectionResult as CollectionResultInterface,
   NetworkSimulatedAccountOp,
   NetworkState,
+  PortfolioKeyResult,
   ProjectedRewardsStats,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
@@ -19,7 +20,7 @@ export type SelectedAccountPortfolioState = {
   [chainId: string]:
     | (Omit<NetworkState, 'result'> & {
         result?: Omit<
-          NonNullable<NetworkState['result']>,
+          PortfolioKeyResult,
           'tokens' | 'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache' | 'total'
         >
       })
