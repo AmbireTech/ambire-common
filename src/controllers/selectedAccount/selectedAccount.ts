@@ -65,9 +65,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  #portfolioErrors: SelectedAccountBalanceError[] = []
-
-  #defiPositionsErrors: SelectedAccountBalanceError[] = []
+  balanceAffectingErrors: SelectedAccountBalanceError[] = []
 
   isReady: boolean = false
 
@@ -140,14 +138,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateErrors', () => {
-        this.#updatePortfolioErrors(true)
+        this.#updatePortfolioErrors()
       })
     })
 
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount(true)
-        this.#updatePortfolioErrors(true)
+        this.#updatePortfolioErrors()
       })
     })
 
@@ -164,8 +162,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   async setAccount(account: Account | null) {
     this.account = account
-    this.#portfolioErrors = []
-    this.#defiPositionsErrors = []
+    this.balanceAffectingErrors = []
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
 
     const isStateWithOutdatedNetworks =
@@ -213,7 +210,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
 
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
-    this.#portfolioErrors = []
+    this.balanceAffectingErrors = []
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -360,42 +357,37 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#portfolio ||
       (!this.portfolio.isAllReady && !this.portfolio.shouldShowPartialResult)
     ) {
-      this.#portfolioErrors = []
+      this.balanceAffectingErrors = []
       if (!skipUpdate) {
         this.emitUpdate()
       }
       return
     }
 
-    this.#defiPositionsErrors = getNetworksWithDeFiPositionsErrorErrors({
-      networks: this.#networks.networks,
-      portfolioState: this.portfolio.portfolioState,
-      providers: this.#providers.providers,
-      networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
-    })
-    this.#portfolioErrors = getNetworksWithErrors({
-      networks: this.#networks.networks,
-      shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
-      selectedAccountPortfolioState: this.portfolio.portfolioState,
-      isAllReady: this.portfolio.isAllReady,
-      accountState: this.#accounts.accountStates[this.account.addr] || {},
-      providers: this.#providers.providers,
-      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
+    this.balanceAffectingErrors = [
+      ...getNetworksWithErrors({
+        networks: this.#networks.networks,
+        shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
+        selectedAccountPortfolioState: this.portfolio.portfolioState,
+        isAllReady: this.portfolio.isAllReady,
+        accountState: this.#accounts.accountStates[this.account.addr] || {},
+        providers: this.#providers.providers,
+        networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
+      }),
+      ...getNetworksWithDeFiPositionsErrorErrors({
+        networks: this.#networks.networks,
+        portfolioState: this.portfolio.portfolioState,
+        providers: this.#providers.providers,
+        networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
+      })
+    ].sort((a, b) => {
+      const order = { error: 0, warning: 1 } as const
+      return order[a.type] - order[b.type]
     })
 
     if (!skipUpdate) {
       this.emitUpdate()
     }
-  }
-
-  get balanceAffectingErrors() {
-    // Sort errors so that errors are shown before warnings
-    const sorted = [...this.#portfolioErrors, ...this.#defiPositionsErrors].sort((a, b) => {
-      const order = { error: 0, warning: 1 } as const
-      return order[a.type] - order[b.type]
-    })
-
-    return sorted
   }
 
   get deprecatedSmartAccountBanner(): Banner[] {
@@ -513,7 +505,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ...super.toJSON(),
       banners: this.banners,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
-      balanceAffectingErrors: this.balanceAffectingErrors,
       autoLoginPolicies: this.autoLoginPolicies
     }
   }

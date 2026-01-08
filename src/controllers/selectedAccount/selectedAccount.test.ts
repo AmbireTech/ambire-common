@@ -11,6 +11,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
 import { getRpcProvider } from '../../services/provider'
@@ -340,7 +341,7 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(false)
   })
   it('portfolio isAllReady remains true in subsequent portfolio and defi updates', async () => {
-    const { selectedAccountCtrl, portfolioCtrl, defiPositionsCtrl } = await prepareTest()
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
     await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
@@ -355,8 +356,10 @@ describe('SelectedAccount Controller', () => {
       }
     })
 
-    await defiPositionsCtrl.updatePositions({ forceUpdate: true })
-    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr, [ethereum], undefined, {
+      isManualUpdate: true,
+      defiMaxDataAgeMs: 0
+    })
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
     expect(didSetToFalse).toBe(false)
@@ -369,6 +372,45 @@ describe('SelectedAccount Controller', () => {
       jest.clearAllMocks()
       jest.restoreAllMocks()
     })
+
+    const mockEthereumDefiErrorState = {
+      isLoading: false,
+      isReady: true,
+      errors: [
+        {
+          name: PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError,
+          message: 'Damn, another defi error',
+          level: 'critical' as const
+        }
+      ],
+      lastSuccessfulUpdate: 0,
+      result: {
+        tokens: [],
+        total: {
+          usd: 0
+        },
+        discoveryTime: 0,
+        priceCache: new Map(),
+        tokenErrors: [],
+        collections: [],
+        blockNumber: 0,
+        toBeLearned: {
+          erc20s: [],
+          erc721s: {}
+        },
+        feeTokens: [],
+        priceUpdateTime: 0,
+        oracleCallTime: 0,
+        lastExternalApiUpdateData: null,
+        updateStarted: 0,
+        defiPositions: {
+          positionsByProvider: [],
+          isLoading: false,
+          updatedAt: 0,
+          error: DeFiPositionsError.CriticalError
+        }
+      }
+    }
 
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       const { selectedAccountCtrl, portfolioCtrl, providersCtrl } = await prepareTest()
@@ -467,89 +509,89 @@ describe('SelectedAccount Controller', () => {
     })
     it('Defi error banner is displayed when there is a critical network error and the user has positions on that network/provider', async () => {
       const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
-      jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        '1': { positionsByProvider: [], isLoading: false, updatedAt: 0 }
-      }))
-      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
+      await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum], undefined, {
+        isManualUpdate: true,
+        defiMaxDataAgeMs: 0
+      })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
-      jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        '1': {
-          positionsByProvider: [],
-          isLoading: false,
-          updatedAt: 0,
-          error: DeFiPositionsError.CriticalError
-        }
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation(() => ({
+        '1': mockEthereumDefiErrorState
       }))
-      jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({
+      jest.spyOn(portfolioCtrl, 'getNetworksWithDefiPositions').mockImplementation(() => ({
         '1': ['AAVE v3', 'Uniswap V3']
       }))
-      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Bypass the cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
-      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
-
+      await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum], undefined, {
+        isManualUpdate: true,
+        defiMaxDataAgeMs: 0
+      })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
     })
     it('Defi error banner is not displayed when there is a critical network error but the user has no positions', async () => {
-      const { selectedAccountCtrl, defiPositionsCtrl } = await prepareTest()
+      const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
       selectedAccountCtrl.portfolio.defiPositions = []
-      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Bypass the cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
-      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
+      await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum], undefined, {
+        isManualUpdate: true,
+        defiMaxDataAgeMs: 0
+      })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
-      jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        '1': {
-          positionsByProvider: [],
-          isLoading: false,
-          updatedAt: 0,
-          error: DeFiPositionsError.CriticalError
-        }
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation(() => ({
+        '1': mockEthereumDefiErrorState
       }))
       // This mocks the case where we have fetched the positions but the user has none
       // and there is a critical error but we don't want to show the banner
-      jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({
+      jest.spyOn(portfolioCtrl, 'getNetworksWithDefiPositions').mockImplementation(() => ({
         '1': []
       }))
-      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Bypass the cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
-      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
+      await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum], undefined, {
+        isManualUpdate: true,
+        defiMaxDataAgeMs: 0
+      })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
     })
     it("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
-      const { selectedAccountCtrl, defiPositionsCtrl } = await prepareTest()
+      const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
       selectedAccountCtrl.portfolio.defiPositions = []
-      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Bypass the cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
-      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
+      await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum], undefined, {
+        isManualUpdate: true,
+        defiMaxDataAgeMs: 0
+      })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
-      jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        '1': {
-          positionsByProvider: [],
-          isLoading: false,
-          updatedAt: 0,
-          error: DeFiPositionsError.CriticalError
-        }
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation(() => ({
+        '1': mockEthereumDefiErrorState
       }))
       // This mocks the case where we have never fetched the positions
       // and there is a critical error but we don't want to show the banner
-      jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({}))
-      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      jest.spyOn(portfolioCtrl, 'getNetworksWithDefiPositions').mockImplementation(() => ({}))
+      // Bypass thecache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
-      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
+      await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum], undefined, {
+        isManualUpdate: true,
+        defiMaxDataAgeMs: 0
+      })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)

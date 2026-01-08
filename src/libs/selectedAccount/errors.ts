@@ -305,7 +305,13 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
     const network = networks.find((n) => n.chainId.toString() === chainId)
     const rpcProvider: RPCProvider | undefined = providers[chainId]
 
-    if (!network || !networkState || !('defiPositions' in networkState)) return
+    if (
+      !network ||
+      !networkState ||
+      !networkState.result ||
+      !('defiPositions' in networkState.result)
+    )
+      return
 
     const defiState = (networkState.result as PortfolioNetworkResult).defiPositions
     const lastSuccessfulUpdate = defiState.updatedAt
