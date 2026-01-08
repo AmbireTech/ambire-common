@@ -8,6 +8,7 @@ import {
   getBundlerByName,
   getDefaultBundler
 } from '../../services/bundlers/getBundler'
+import { BundlerTransactionReceipt, UserOpStatus } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
@@ -156,17 +157,57 @@ export async function fetchTxnId(
       ? getBundlerByName(identifiedBy.bundler)
       : getDefaultBundler(network)
 
-    let bundlerResult = await bundler.getStatus(network, userOpHash)
-    if (bundlerResult.status === 'rejected') {
+    // leave a 10s window to fetch the status from the broadcasting bundler
+    let timeoutId
+    const bundlerStatus = await Promise.race([
+      bundler.getStatus(network, userOpHash),
+      new Promise((_resolve, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('bundler gas price fetch fail, request too slow')),
+          10000
+        )
+      })
+    ]).catch(() => {
+      // upon error or timeout, we return not_found and we fallback to receipt
+      // from all our available bundlers
+      return {
+        status: 'not_found'
+      }
+    })
+    clearTimeout(timeoutId)
+    let bundlerResult = bundlerStatus as UserOpStatus
+
+    // upon reject or failure to find/fetch, take the receipt from all available bundlers
+    if (bundlerResult.status === 'rejected' || bundlerResult.status === 'not_found') {
       // sometimes the bundlers return rejected by mistake
       // if that's the case, make the user wait a bit longer, but then query
       // all bundlers for the user op receipt to make sure it's really not mined
-      await wait(15000)
+      if (bundlerResult.status === 'rejected') await wait(10000)
       const bundlers = getAvailableBunlders(network)
       const bundlerResults = await Promise.all(
-        bundlers.map((b) => b.getReceipt(userOpHash, network))
+        bundlers.map((b) => {
+          let innerTimeoutId: any
+          const result = Promise.race([
+            b.getReceipt(userOpHash, network),
+            new Promise((_resolve, reject) => {
+              innerTimeoutId = setTimeout(
+                () => reject(new Error('bundler gas price fetch fail, request too slow')),
+                10000
+              )
+            })
+          ])
+            .catch(() => {
+              // upon timeout or error, just return null and let the logic continue
+              return null
+            })
+            .finally(() => {
+              clearTimeout(innerTimeoutId)
+            })
+          return result
+        })
       )
-      bundlerResults.forEach((res) => {
+      bundlerResults.forEach((bundlerResponse) => {
+        const res = bundlerResponse as BundlerTransactionReceipt | null
         if (res && res.receipt && res.receipt.transactionHash) {
           bundlerResult = {
             status: 'found',
@@ -189,19 +230,6 @@ export async function fetchTxnId(
         status: 'success',
         txnId: bundlerResult.transactionHash
       }
-
-    // anytime after 3 mins past broadcast, check the receipt
-    // as bundlers return "not found" if the status is searched for
-    // after more than 30 mins
-    if (op && hasTimePassedSinceBroadcast(op, 3)) {
-      const receipt = await bundler.getReceipt(userOpHash, network)
-      if (receipt) {
-        return {
-          status: 'success',
-          txnId: receipt.receipt.transactionHash
-        }
-      }
-    }
 
     return {
       status: 'not_found',
