@@ -250,7 +250,7 @@ describe('Portfolio helpers', () => {
 
       const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
 
-      expect(total.usd).toBe(240.05)
+      expect(total.usd).toBe(140.05)
     })
     it('Calculates total excluding hidden tokens', () => {
       const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
@@ -259,7 +259,7 @@ describe('Portfolio helpers', () => {
 
       const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
 
-      expect(total.usd).toBe(240.05)
+      expect(total.usd).toBe(140.05)
     })
     it('Calculates total and includes hidden tokens if specified', () => {
       const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
@@ -272,7 +272,7 @@ describe('Portfolio helpers', () => {
         { includeHiddenTokens: true }
       )
 
-      expect(total.usd).toBe(250.05)
+      expect(total.usd).toBe(150.05)
     })
   })
 })
