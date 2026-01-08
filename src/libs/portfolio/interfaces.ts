@@ -157,7 +157,7 @@ export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
   chainId: number
   accountAddr: string
-  hints: ExternalHintsAPIResponse
+  hints: Omit<ExternalHintsAPIResponse, 'prices'>
   prices: {
     [addr: string]: Price
   }
@@ -353,7 +353,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  lastSuccessfulUpdate: number
+  lastSuccessfulUpdate?: number
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.

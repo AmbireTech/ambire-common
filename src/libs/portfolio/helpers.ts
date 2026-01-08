@@ -581,7 +581,7 @@ export const getAccountPortfolioTotal = (
  * Formats and strips the original velcro response
  */
 export const formatExternalHintsAPIResponse = (
-  response: ExternalHintsAPIResponse | null
+  response: Omit<ExternalHintsAPIResponse, 'prices'> | null
 ): FormattedExternalHintsAPIResponse | null => {
   if (!response) return null
 
