@@ -1597,25 +1597,48 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {
-      existingUserRequest.signAccountOp.update({
-        accountOpData: {
-          calls: [
-            ...existingUserRequest.signAccountOp.accountOp.calls,
-            ...calls.map((call) => ({
-              ...call,
-              id: uuidv4(),
-              to: call.to,
-              data: call.data || '0x',
-              value: call.value ? getBigInt(call.value) : 0n
-            }))
-          ],
-          meta: {
-            ...existingUserRequest.signAccountOp.accountOp.meta,
-            ...meta
-          }
+      // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.
+      if (existingUserRequest.signAccountOp.signAndBroadcastPromise) {
+        const errorMessage =
+          'Please wait until the previous transaction is fully processed before adding a new one.'
+
+        this.emitError({
+          level: 'major',
+          message: errorMessage,
+          error: new Error(
+            'requestsController: Cannot add a new request (addUserRequests) while a signing or broadcasting process is still running.'
+          )
+        })
+
+        dappPromises.forEach((p) => {
+          p.reject(ethErrors.rpc.transactionRejected({ message: errorMessage }))
+        })
+
+        if (dappPromises.length) {
+          await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
         }
-      })
-      existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
+      } else {
+        existingUserRequest.signAccountOp.update({
+          accountOpData: {
+            calls: [
+              ...existingUserRequest.signAccountOp.accountOp.calls,
+              ...calls.map((call) => ({
+                ...call,
+                id: uuidv4(),
+                to: call.to,
+                data: call.data || '0x',
+                value: call.value ? getBigInt(call.value) : 0n
+              }))
+            ],
+            meta: {
+              ...existingUserRequest.signAccountOp.accountOp.meta,
+              ...meta
+            }
+          }
+        })
+        existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
+      }
+
       let currentUserRequest = null
       if (executionType === 'open-request-window') {
         currentUserRequest =
