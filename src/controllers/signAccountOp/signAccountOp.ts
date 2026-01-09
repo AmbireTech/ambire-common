@@ -354,7 +354,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
     callRelayer: Function
     accounts: IAccountsController
