@@ -467,7 +467,10 @@ export class MainController extends EventEmitter implements IMainController {
       defaultNetworksMode: this.networks.defaultNetworksMode
     })
 
-    this.contractNames = new ContractNamesController(this.eventEmitterRegistry, this.fetch)
+    this.contractNames = new ContractNamesController({
+      eventEmitterRegistry: this.eventEmitterRegistry,
+      fetch: this.fetch
+    })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.

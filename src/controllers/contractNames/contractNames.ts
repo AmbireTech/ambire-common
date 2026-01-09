@@ -58,11 +58,15 @@ export class ContractNamesController extends EventEmitter implements IContractNa
 
   #contractsPendingToBeFetched: { address: string; chainId: bigint }[] = []
 
-  constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
-    fetch: Fetch,
-    debounceTime: number = 100
-  ) {
+  constructor({
+    eventEmitterRegistry,
+    fetch,
+    debounceTime = 100
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    fetch: Fetch
+    debounceTime?: number
+  }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
