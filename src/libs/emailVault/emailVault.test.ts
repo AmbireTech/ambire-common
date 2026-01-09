@@ -1,11 +1,10 @@
 import { Wallet } from 'ethers'
-import fetch, { RequestInfo } from 'node-fetch'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
+import { fetchWithAppVersion as fetch } from '../../../test/helpers'
 import { OperationRequestType } from '../../interfaces/emailVault'
-import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
@@ -13,17 +12,8 @@ import { EmailVault } from './emailVault'
 let email: String
 let email2: String
 
-// Wrapper around fetch that adds x-app-version header to every request
-const fetchWithAppVersion: Fetch = (input: RequestInfo, init?: RequestInitWithCustomHeaders) => {
-  const headers = {
-    'x-app-version': 'extension-5.34.4-webkit', // since this v, req towards email vault API are supported
-    ...(init?.headers || {})
-  }
-  return fetch(input, { ...init, headers })
-}
-
-const callRelayer = relayerCall.bind({ url: relayerUrl, fetch: fetchWithAppVersion })
-const emailVault = new EmailVault(fetchWithAppVersion, relayerUrl)
+const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+const emailVault = new EmailVault(fetch, relayerUrl)
 let authKey: String
 let authSecret: String // this will not be return in prod mode
 let recoveryKey: String
@@ -35,10 +25,10 @@ const keyStoreSecret = 'keyStoreSecretHere'
 const initEmailVaultTest = async () => {
   email = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
   email2 = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
-  const keys1 = await requestMagicLink(email, relayerUrl, fetchWithAppVersion)
+  const keys1 = await requestMagicLink(email, relayerUrl, fetch)
   authKey = keys1.key
   authSecret = keys1.secret!
-  const keys2 = await requestMagicLink(email2, relayerUrl, fetchWithAppVersion)
+  const keys2 = await requestMagicLink(email2, relayerUrl, fetch)
   authKey2 = keys2.key
   authSecret2 = keys2.secret!
   try {
@@ -52,7 +42,7 @@ const initEmailVaultTest = async () => {
 describe.skip('happy cases email vault', () => {
   beforeAll(async () => {
     email = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
-    const result = await requestMagicLink(email, relayerUrl, fetchWithAppVersion)
+    const result = await requestMagicLink(email, relayerUrl, fetch)
     authKey = result.key
     authSecret = result.secret!
     try {
