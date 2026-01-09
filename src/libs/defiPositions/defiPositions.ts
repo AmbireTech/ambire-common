@@ -20,6 +20,7 @@ import {
   DeFiPositionsError,
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
+  Position,
   PositionsByProvider,
   ProviderError
 } from './types'
@@ -248,6 +249,10 @@ const getUniqueMergedPositions = (
   return positionsArray
 }
 
+/**
+ * Returns the addresses of all assets and their protocolAssets (if applicable) as an
+ * array of addresses. These addresses can be used as hints by the portfolio controller.
+ */
 const getAllAssetsAsHints = (
   portfolioState: PortfolioNetworkResult['defiPositions'] | undefined
 ) => {
@@ -257,10 +262,12 @@ const getAllAssetsAsHints = (
   portfolioState.positionsByProvider.forEach((providerPositions) => {
     providerPositions.positions.forEach((position) => {
       position.assets.forEach((asset) => {
+        if (!isHex(asset.address)) return
         hints.push(asset.address.toLowerCase())
 
         if (asset.protocolAsset) {
-          hints.push(asset.protocolAsset.address)
+          if (!isHex(asset.protocolAsset.address)) return
+          hints.push(asset.protocolAsset.address.toLowerCase())
         }
       })
     })
@@ -282,7 +289,8 @@ const getNewDefiState = (
   customPositionsError: DeFiPositionsError | null,
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
-  nonceId: string | undefined
+  nonceId: string | undefined,
+  lastUpdatedAt: number | undefined
 ) => {
   const isDebankCallSuccessful = !!debankPositionsByProvider
 
@@ -301,48 +309,54 @@ const getNewDefiState = (
     nonceId,
     isLoading: false,
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
-    updatedAt: isDebankCallSuccessful && !customPositionsError ? Date.now() : undefined,
+    updatedAt: isDebankCallSuccessful && !customPositionsError ? Date.now() : lastUpdatedAt,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
   }
 }
 
+/**
+ * Formats the response from Debank in a format that is expected by the extension.
+ * Invalid positions are excluded from the formatted response.
+ */
 const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[]) => {
   return result.map((p) => ({
     ...p,
     source: 'debank' as const,
     chainId: BigInt(p.chainId),
-    positions: p.positions.map((pos) => {
-      try {
-        if (pos.additionalData.name === 'Deposit') {
-          // eslint-disable-next-line no-param-reassign
-          pos.additionalData.name = 'Deposit pool'
-          // eslint-disable-next-line no-param-reassign
-          pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
-        }
+    positions: p.positions
+      .map((pos) => {
+        try {
+          if (pos.additionalData.name === 'Deposit') {
+            // eslint-disable-next-line no-param-reassign
+            pos.additionalData.name = 'Deposit pool'
+            // eslint-disable-next-line no-param-reassign
+            pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+          }
 
-        return {
-          ...pos,
-          assets: pos.assets.map((asset) => ({
-            ...asset,
-            // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
-            address: isHex(asset.address) ? getAddress(asset.address) : ZeroAddress,
-            amount: BigInt(asset.amount),
-            protocolAsset: asset.protocolAsset
-              ? {
-                  ...asset.protocolAsset,
-                  address: isHex(asset.protocolAsset.address)
-                    ? getAddress(asset.protocolAsset.address)
-                    : ZeroAddress
-                }
-              : undefined
-          }))
+          return {
+            ...pos,
+            assets: pos.assets.map((asset) => ({
+              ...asset,
+              // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
+              address: isHex(asset.address) ? getAddress(asset.address) : ZeroAddress,
+              amount: BigInt(asset.amount),
+              protocolAsset: asset.protocolAsset
+                ? {
+                    ...asset.protocolAsset,
+                    address: isHex(asset.protocolAsset.address)
+                      ? getAddress(asset.protocolAsset.address)
+                      : ZeroAddress
+                  }
+                : undefined
+            }))
+          }
+        } catch (error) {
+          console.error('DeFi error when mapping positions: ', error, 'position', pos)
+          return null
         }
-      } catch (error) {
-        console.error('DeFi error: ', error)
-        return pos
-      }
-    })
+      })
+      .filter(Boolean) as Position[]
   }))
 }
 
@@ -534,28 +548,26 @@ const getCanSkipUpdate = (
   const { maxDataAgeMs: _maxDataAgeMs = 60000, isManualUpdate = false } = opts || {}
   let maxDataAgeMs = _maxDataAgeMs
 
-  // force update the positions if forceUpdate is passed,
-  // the account has keys and a session with the DeFi tab is opened
+  const hasNonceChanged = nonceId && previousState.nonceId && nonceId !== previousState.nonceId
+
+  // Always update if the nonce has changed
+  if (hasNonceChanged) return false
+
   const shouldForceUpdatePositions = isManualUpdate && sessionIds.length && hasKeys
 
+  // If the user manually triggered an update, we limit the max data age to 30s
+  // if they have keys and session IDs
   if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
   const isWithinMinUpdateInterval = Date.now() - previousState.updatedAt < maxDataAgeMs
 
-  const canSkip = isWithinMinUpdateInterval || previousState.isLoading
-
-  if (canSkip) return true
-
-  // Don't skip if the account has any DeFi positions or the account has never been updated
-  if (previousState.positionsByProvider.length) return false
-
-  // If the account has positions we compare the nonce. That is because the user cannot
-  // acquire new positions without a nonce change.
-  if (!nonceId) return false
-
-  return nonceId !== previousState.nonceId
+  return isWithinMinUpdateInterval || previousState.isLoading
 }
 
+/**
+ * Returns the networks where the account has positions with certainty.
+ * Certainty - there are no errors and the rpc is working.
+ */
 const getAccountNetworksWithPositions = (
   accountId: AccountId,
   accountState: AccountState,

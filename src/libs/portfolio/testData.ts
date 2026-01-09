@@ -409,6 +409,7 @@ const PORTFOLIO_STATE: AccountState = {
             positionInUSD: 18985.66497510702
           }
         ],
+        nonceId: 'nonce-1',
         updatedAt: 1753258959994
       },
       total: { usd: 260 }
