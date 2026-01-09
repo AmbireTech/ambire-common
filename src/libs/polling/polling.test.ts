@@ -30,8 +30,8 @@ describe('Polling', () => {
     const polling = new Polling()
     const magicLinkKey = await requestMagicLink(email, relayerUrl, fetch, { autoConfirm: true })
 
-    // Wait until the next tick, otherwise the polling req hits Relayer before the above get executed
-    await wait(1)
+    // Wait a bit, otherwise the polling req hits Relayer before the above get acknowledged
+    await wait(1000)
 
     const result: EmailVaultData | null = await polling.exec(
       ev.getEmailVaultInfo.bind(ev),
