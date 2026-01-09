@@ -40,7 +40,8 @@ export default class EventEmitter {
   }
 
   async #load() {
-    await wait(1) // wait to construct before using this
+    // wait for the next tick after construction so the registry methods become accessible
+    await wait(1)
     this.#registry?.set(this.id, this)
   }
 
