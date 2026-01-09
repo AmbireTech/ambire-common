@@ -115,9 +115,34 @@ export class ContinuousUpdatesController extends EventEmitter {
       'fastAccountStateReFetchTimeout'
     )
 
-    this.#main.onUpdate(() => {
-      if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
+    this.#main.swapAndBridge.onUpdate(() => {
+      if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
+      }
+    }, 'continuous-update')
+
+    this.#main.transfer.onUpdate(() => {
+      if (this.#main.transfer.signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        this.#accountStateLatestInterval.restart()
+      }
+    }, 'continuous-update')
+
+    this.#main.requests.onUpdate(() => {
+      if (this.#main.requests.currentUserRequest?.kind === 'calls') {
+        if (
+          !this.#main.requests.currentUserRequest.signAccountOp.onUpdateIds.includes(
+            'continuous-update'
+          )
+        ) {
+          this.#main.requests.currentUserRequest.signAccountOp.onUpdate(() => {
+            if (
+              this.#main.requests.currentUserRequest?.kind === 'calls' &&
+              this.#main.requests.currentUserRequest.signAccountOp.broadcastStatus === 'SUCCESS'
+            ) {
+              this.#accountStateLatestInterval.restart()
+            }
+          }, 'continuous-update')
+        }
       }
     }, 'continuous-update')
 

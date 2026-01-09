@@ -4,6 +4,7 @@ import { getCreate2Address, keccak256 } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { MAX_UINT256 } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -149,6 +150,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   // Used in order to expose the ongoing "find linked accounts" task, so other
   // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
+
+  /**
+   * Needed in order to cancel the ongoing findAndSetLinkedAccounts operation
+   * when reset() is called (usually when the user navigates away/closes the Account Picker).
+   * This prevents the operation from continuing after the controller state has been
+   * cleared, avoiding errors in #verifyLinkedAccounts when #derivedAccounts is empty.
+   */
+  #findAndSetLinkedAccountsAbortController?: AbortController
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -459,6 +468,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   async reset(resetInitParams: boolean = true) {
     await this.addAccountsPromise
+    // Abort any ongoing findAndSetLinkedAccounts operation
+    if (this.#findAndSetLinkedAccountsAbortController) {
+      this.#findAndSetLinkedAccountsAbortController.abort()
+      this.#findAndSetLinkedAccountsAbortController = undefined
+    }
     if (resetInitParams) this.initParams = null
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
@@ -1181,9 +1195,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             // fail to detect that the account was used on this network.
             acc.balance > BigInt(0) ||
             (acc.isEOA
-              ? [acc.nonce, acc.eoaNonce, acc.erc4337Nonce].some(
-                  (nonce) => (nonce || BigInt(0)) > BigInt(0)
-                )
+              ? [acc.nonce, acc.eoaNonce].some((nonce) => (nonce || BigInt(0)) > BigInt(0)) ||
+                (acc.erc4337Nonce !== MAX_UINT256 && acc.erc4337Nonce !== BigInt(0))
               : // For smart accounts, check for 'isDeployed' instead because in
                 // the erc-4337 scenario many cases might be missed with checking
                 // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
@@ -1225,12 +1238,27 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return sortedAccountsWithNetworksArray
   }
 
+  /**
+   * Guard to ensure we only proceed with data that matches the current page and
+   * that the operation hasn't been cancelled via reset().
+   * Similar to #isQuoteIdObsoleteAfterAsyncOperation in SwapAndBridgeController.
+   */
+  #isFindAndSetLinkedAccountsCancelled(
+    calledForPage: number,
+    calledForAbortController: AbortController | undefined
+  ): boolean {
+    return calledForAbortController?.signal.aborted || calledForPage !== this.page
+  }
+
   async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
     if (!this.shouldSearchForLinkedAccounts) return
 
     if (accounts.length === 0) return
 
+    // Cache the page and the abort controller at the start to use throughout
+    // the operation, even if reset() clears them mid-process
     const calledForPage = this.page
+    const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
     this.linkedAccountsLoading = true
     this.linkedAccountsError = ''
@@ -1250,6 +1278,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       errorMessage += upstreamError ? ` Error details: <${upstreamError}>` : ''
       this.linkedAccountsError = errorMessage
     }
+
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
       relayerLinkedAccounts
@@ -1312,8 +1342,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       ]
     })
 
-    // in case the page is changed or the ctrl is reset do not continue with the logic
-    if (calledForPage !== this.page) return
+    // Check if operation was aborted or page changed
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     this.#linkedAccounts = linkedAccounts
 
@@ -1335,7 +1365,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       clearTimeout(minWaitTimeout)
     }
 
-    if (calledForPage !== this.page) return
+    // Check if operation was aborted or page changed
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     this.#linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
@@ -1343,6 +1374,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   async findAndSetLinkedAccounts() {
+    // Abort any previous operation
+    if (this.#findAndSetLinkedAccountsAbortController) {
+      this.#findAndSetLinkedAccountsAbortController.abort()
+    }
+
+    // Create a new AbortController for this operation
+    this.#findAndSetLinkedAccountsAbortController = new AbortController()
+
     this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
@@ -1356,6 +1395,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         .map((acc) => acc.account)
     }).finally(() => {
       this.findAndSetLinkedAccountsPromise = undefined
+      this.#findAndSetLinkedAccountsAbortController = undefined
     })
     await this.findAndSetLinkedAccountsPromise
   }

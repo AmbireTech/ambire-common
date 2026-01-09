@@ -43,7 +43,6 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { batchCallsFromUserRequests } from '../../libs/requests/requests'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -236,7 +235,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
 
-  #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
+  #isCurrentSignAccountOpThrowingAnEstimationError: Function | undefined
 
   #getUserRequests: () => UserRequest[]
 
@@ -281,7 +280,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     invite,
     portfolioUpdate,
     relayerUrl,
-    isMainSignAccountOpThrowingAnEstimationError,
+    isCurrentSignAccountOpThrowingAnEstimationError,
     getUserRequests,
     getVisibleUserRequests,
     swapProvider,
@@ -302,7 +301,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
-    isMainSignAccountOpThrowingAnEstimationError?: Function
+    isCurrentSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
     getVisibleUserRequests: () => UserRequest[]
     swapProvider: SwapProvider
@@ -317,8 +316,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#portfolioUpdate = portfolioUpdate
-    this.#isMainSignAccountOpThrowingAnEstimationError =
-      isMainSignAccountOpThrowingAnEstimationError
+    this.#isCurrentSignAccountOpThrowingAnEstimationError =
+      isCurrentSignAccountOpThrowingAnEstimationError
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -467,7 +466,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
         if (this.#selectedAccount.portfolio.isReadyToVisualize && this.sessionIds.length) {
           this.isTokenListLoading = false
-          await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+          await this.updatePortfolioTokenList(
+            structuredClone(this.#selectedAccount.portfolio.tokens)
+          )
           // To token list includes selected account portfolio tokens, it should get an update too
           await this.updateToTokenList(false)
         }
@@ -642,14 +643,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // if the provider is socket, convert the null addresses
     if (preselectedFromToken) {
       this.#emitSilentErrorIfNullAddress(preselectedFromToken.address)
-      preselectedFromToken.address = convertNullAddressToZeroAddressIfNeeded(
-        preselectedFromToken.address
+      preselectedFromToken.address = mapBannedToValidAddr(
+        Number(preselectedFromToken.chainId),
+        convertNullAddressToZeroAddressIfNeeded(preselectedFromToken.address)
       )
     }
     if (preselectedToToken) {
       this.#emitSilentErrorIfNullAddress(preselectedToToken.address)
-      preselectedToToken.address = convertNullAddressToZeroAddressIfNeeded(
-        preselectedToToken.address
+      preselectedToToken.address = mapBannedToValidAddr(
+        Number(preselectedToToken.chainId),
+        convertNullAddressToZeroAddressIfNeeded(preselectedToToken.address)
       )
     }
 
@@ -683,7 +686,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // do not await the health status check to prevent UI freeze while fetching
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#serviceProviderAPI.updateHealth()
-    await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens, {
+    await this.updatePortfolioTokenList(structuredClone(this.#selectedAccount.portfolio.tokens), {
       preselectedToken: preselectedFromToken,
       preselectedToToken,
       fromAmount
@@ -833,24 +836,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       routePriority
     } = props
 
-    let fromSelectedToken = props.fromSelectedToken
+    const fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
       this.#emitSilentErrorIfNullAddress(fromSelectedToken.address)
       // if the provider is socket, convert the null addresses
       fromSelectedToken.address = convertNullAddressToZeroAddressIfNeeded(fromSelectedToken.address)
-
-      // set the correct fromSelectedToken as the user might have selected
-      // a duplicate from his portfolio instead
-      const validAddr = mapBannedToValidAddr(
-        Number(fromSelectedToken.chainId),
-        fromSelectedToken.address
-      )
-      if (validAddr !== fromSelectedToken.address) {
-        const validToken = this.portfolioTokenList.find(
-          (t) => t.address === validAddr && t.chainId === fromSelectedToken!.chainId
-        )
-        if (validToken) fromSelectedToken = validToken
-      }
     }
 
     const {
@@ -866,9 +856,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#emitSilentErrorIfNullAddress(props.toSelectedTokenAddr)
       // if the provider is socket, convert the null addresses
       toSelectedTokenAddr = convertNullAddressToZeroAddressIfNeeded(props.toSelectedTokenAddr)
-
-      // map the token back
-      toSelectedTokenAddr = mapBannedToValidAddr(Number(chainId), getAddress(toSelectedTokenAddr))
     }
 
     // when we init the form by using the retry button
@@ -1022,17 +1009,22 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
-    const tokens = nextPortfolioTokenList.filter((token) =>
-      getIsTokenEligibleForSwapAndBridge(token)
-    )
-    this.portfolioTokenList = sortPortfolioTokenList(
-      // Filtering out hidden tokens here means: 1) They won't be displayed in
-      // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
-      // added to the "Receive" token list as additional tokens from portfolio,
-      // BUT 3) They will appear in the "Receive" if they are present in service
-      // provider's to token list. This is the desired behavior.
-      tokens.filter((t) => !t.flags.isHidden)
-    )
+    const tokens = nextPortfolioTokenList
+      .filter(
+        (token) =>
+          // Filtering out hidden tokens here means: 1) They won't be displayed in
+          // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
+          // added to the "Receive" token list as additional tokens from portfolio,
+          // BUT 3) They will appear in the "Receive" if they are present in service
+          // provider's to token list. This is the desired behavior.
+          getIsTokenEligibleForSwapAndBridge(token) && !token.flags.isHidden
+      )
+      .map((token) => ({
+        ...token,
+        address: mapBannedToValidAddr(Number(token.chainId), token.address)
+      }))
+
+    this.portfolioTokenList = sortPortfolioTokenList(tokens)
 
     const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find((t) => {
       if (preselectedToken) {
@@ -1380,6 +1372,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const { exactMatches, partialMatches } = tokens.reduce(
       (result, token) => {
+        // Filter out the from token if swapping on the same chain
+        if (
+          this.toChainId &&
+          this.fromChainId === this.toChainId &&
+          token.address === this.fromSelectedToken?.address
+        )
+          return result
+
         const fieldsToSearch = [
           token.address.toLowerCase(),
           token.symbol.toLowerCase(),
@@ -1431,8 +1431,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       )!
       const tokenInPortfolio = this.portfolioTokenList.find(
         (token: TokenResult) =>
-          token.address === this.toSelectedToken?.address &&
-          token.chainId === toSelectedTokenNetwork.chainId
+          token.chainId === toSelectedTokenNetwork.chainId &&
+          token.address === this.toSelectedToken?.address
       )
 
       const price = Number(this.quote?.selectedRoute?.toToken?.priceUSD || 0)
@@ -2302,11 +2302,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
 
     // check if we have an accountOp in main
-    const userRequestCalls = batchCallsFromUserRequests({
-      accountAddr: this.#selectedAccount.account.addr,
-      chainId: network.chainId,
-      userRequests: this.#getUserRequests()
-    })
+    const userRequestCalls =
+      (
+        this.#getUserRequests().find(
+          (r) =>
+            r.kind === 'calls' &&
+            r.id === `${this.#selectedAccount.account!.addr}-${network.chainId}`
+        ) as CallsUserRequest
+      )?.signAccountOp.accountOp.calls || []
+
     const swapOrBridgeCalls = await getSwapAndBridgeCalls(
       userTxn,
       this.#selectedAccount.account,
@@ -2401,9 +2405,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           })
 
         await this.#onBroadcastSuccess(props)
-        // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
-        // visualize the success page on the FE instead of resetting the form
-        this.resetForm()
       },
       onBroadcastFailed: this.#onBroadcastFailed
     })
@@ -2412,7 +2413,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#signAccountOpController.onUpdate(() => {
       this.emitUpdate()
-    })
+
+      if (this.#signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        // Reset the form on the next tick so the FE receives the final
+        // signAccountOpController update before resetForm destroys it
+        setTimeout(() => {
+          this.resetForm()
+        }, 0)
+      }
+    }, 'swap-and-bridge')
+
     this.#signAccountOpController.onError((error) => {
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
@@ -2467,8 +2477,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // This prevents proceeding with a swap/bridge if there are estimation errors
     // in the pending batch of transactions
     if (
-      this.#isMainSignAccountOpThrowingAnEstimationError &&
-      this.#isMainSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
+      this.#isCurrentSignAccountOpThrowingAnEstimationError &&
+      this.#isCurrentSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
     ) {
       errors.push({
         title: 'Error detected in the pending batch. Please review it before proceeding'
