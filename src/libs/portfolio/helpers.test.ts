@@ -4,6 +4,7 @@ import { networks } from '../../consts/networks'
 import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
+  getHintsError,
   getTotal,
   isSuspectedToken,
   learnedErc721sToHints,
@@ -11,6 +12,7 @@ import {
   mergeERC721s
 } from './helpers'
 import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 import { PORTFOLIO_STATE } from './testData'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -273,6 +275,39 @@ describe('Portfolio helpers', () => {
       )
 
       expect(total.usd).toBe(150.05)
+    })
+  })
+  describe('getHintsError', () => {
+    it('NoApiHintsError is returned if there are no previous hints', () => {
+      const error = getHintsError('some error', null)
+
+      expect(error.message).toBe('some error')
+      expect(error.level).toBe('critical')
+      expect(error.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
+    })
+    it('StaleApiHintsError is returned if the update is older than 10 minutes', () => {
+      const tenMinutesAgo = Date.now() - 10 * 60 * 1000 - 1
+
+      const error = getHintsError('some error', {
+        lastUpdate: tenMinutesAgo,
+        hasHints: true
+      })
+
+      expect(error.message).toBe('some error')
+      expect(error.level).toBe('critical')
+      expect(error.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError)
+    })
+    it('NonCriticalApiHintsError is returned if the update is fresher than 10 minutes', () => {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+
+      const error = getHintsError('some error', {
+        lastUpdate: fiveMinutesAgo,
+        hasHints: true
+      })
+
+      expect(error.message).toBe('some error')
+      expect(error.level).toBe('silent')
+      expect(error.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError)
     })
   })
 })
