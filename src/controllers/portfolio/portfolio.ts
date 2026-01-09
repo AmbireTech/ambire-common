@@ -85,6 +85,38 @@ const EXTERNAL_API_HINTS_TTL = {
   static: 60 * 60 * 1000
 }
 
+/**
+ * The portfolio controller is responsible for managing and updating the portfolio state.
+ * The portfolio state is divided by account and network. Every network's state
+ * contains the tokens, NFTs and DeFi positions for the account on that network.
+ *
+ * Short glossary:
+ * - Deployless - a library used by the portfolio library to fetch token and NFT information. It's
+ * also used to fetch custom defi positions, account state etc. (in other places)
+ * - Portfolio library - fetches tokens and NFTs using deployless and also makes a call for
+ * prices.
+ * - Hints - list of token and NFT addresses that are likely to be owned by the user.
+ *
+ * How it works:
+ * - A call is made to Velcro to fetch hints and defi positions.
+ * - Using the hints, the portfolio library is called to fetch tokens and NFTs.
+ * - Parallel with the portfolio library call, deployless is used to fetch custom defi positions.
+ * - Once all data is fetched, it's combined and the state is updated.
+ * - As the custom defi positions may contain tokens that weren't in the hints and weren't fetched
+ * by the portfolio library we add them in a hackish way to the state. On subsequent updates
+ * the portfolio library receives them as hints and they are learned properly.
+ *
+ * Other concepts:
+ * - Temporary tokens - tokens that are fetched on demand so they can be displayed in the UI.
+ * As the name suggests, they are temporary and used for things like displaying a token's information
+ * before being added as custom.
+ * - To be learned tokens - tokens added from sources like swapAndBridge, activity, the humanizer. Some of them
+ * may be owned by the user in the near future (e.g. the user swapped a token and will receive it soon).
+ *
+ * Hints sources:
+ * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
+ * - On manual updates, learned tokens of other accounts are also used to discover new assets
+ */
 export class PortfolioController extends EventEmitter implements IPortfolioController {
   #state: PortfolioControllerState
 
