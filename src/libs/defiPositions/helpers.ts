@@ -1,20 +1,6 @@
 import { Price } from '../../interfaces/assets'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
-const sortByValue = (aValue?: number, bValue?: number) => {
-  if (aValue && bValue) {
-    return bValue - aValue
-  }
-  if (aValue && !bValue) {
-    return -1
-  }
-  if (!aValue && bValue) {
-    return 1
-  }
-
-  return 0
-}
-
 const getAssetValue = (amount: bigint, decimals: number, priceIn: Price[]): number | undefined => {
   if (!priceIn.length) return undefined
 
@@ -26,8 +12,14 @@ const getAssetValue = (amount: bigint, decimals: number, priceIn: Price[]): numb
   return Number(assetValueString)
 }
 
-export const getProviderId = (providerName: string): string => {
+const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
+  const diff = Math.abs(price1 - price2)
+  const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2))
+  return diff <= threshold
+}
+
+const getProviderId = (providerName: string): string => {
   return providerName.toLowerCase()
 }
 
-export { sortByValue, getAssetValue }
+export { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent }

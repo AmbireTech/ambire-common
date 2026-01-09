@@ -1,17 +1,7 @@
-import { SelectedAccountPortfolioByNetworksNetworkState } from '../../interfaces/selectedAccount'
-import {
-  AccountState as DefiAccountState,
-  AssetType,
-  NetworkState as DefiNetworkState
-} from '../defiPositions/types'
+import { AccountState } from '../portfolio/interfaces'
 /* eslint-disable @typescript-eslint/no-use-before-define */
-import { AccountState, NetworkState, TokenResult } from '../portfolio/interfaces'
-import {
-  calculateDefiPositions,
-  calculateSelectedAccountPortfolio,
-  getIsRecalculationNeeded,
-  stripPortfolioState
-} from './selectedAccount'
+import { PORTFOLIO_STATE } from '../portfolio/testData'
+import { calculateSelectedAccountPortfolio, stripPortfolioState } from './selectedAccount'
 
 describe('Selected Account lib', () => {
   it('stripPortfolioState works as expected', () => {
@@ -26,304 +16,42 @@ describe('Selected Account lib', () => {
     expect('collections' in result).toBe(false)
     expect('lastExternalApiUpdateData' in result).toBe(false)
   })
-  describe('getIsRecalculationNeeded', () => {
-    it('should return false if the portfolio or defi positions state is loading', () => {
-      const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
-      const clonedDefiEthereumState = structuredClone(DEFI_STATE['1']) as DefiNetworkState
-      clonedPortfolioEthereumState.isLoading = true
-
-      const result = getIsRecalculationNeeded(
-        { totalBalance: 0, collections: [], tokens: [] },
-        clonedPortfolioEthereumState,
-        DEFI_STATE['1']
-      )
-
-      expect(result).toBe(false)
-
-      clonedDefiEthereumState.isLoading = true
-
-      const result2 = getIsRecalculationNeeded(
-        { totalBalance: 0, collections: [], tokens: [] },
-        clonedPortfolioEthereumState,
-        clonedDefiEthereumState
-      )
-
-      expect(result2).toBe(false)
-    })
-    it('should return true if the portfolio or defi positions state has been updated', () => {
-      const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
-
-      const mockPastState: SelectedAccountPortfolioByNetworksNetworkState = {
-        totalBalance: 0,
-        collections: [],
-        tokens: [],
-        defiPositionsUpdatedAt: DEFI_STATE['1']?.updatedAt,
-        portfolioUpdateStarted: clonedPortfolioEthereumState?.result?.updateStarted
-      }
-
-      clonedPortfolioEthereumState.accountOps = []
-
-      const result = getIsRecalculationNeeded(
-        mockPastState,
-        clonedPortfolioEthereumState,
-        DEFI_STATE['1']
-      )
-
-      expect(result).toBe(false)
-
-      // Update defiPositionsUpdatedAt to be older than the new state
-      mockPastState.defiPositionsUpdatedAt = (DEFI_STATE['1'] as any).updatedAt - 1000
-
-      const result2 = getIsRecalculationNeeded(
-        mockPastState,
-        clonedPortfolioEthereumState,
-        DEFI_STATE['1']
-      )
-
-      expect(result2).toBe(true)
-    })
-  })
-  describe('updatePortfolioNetworkWithDefiPositions', () => {
-    it('should return null if the defi positions are loading/not initialized', () => {
-      const result = calculateDefiPositions(
-        '1',
-        PORTFOLIO_STATE['1']?.result?.tokens || [],
-        undefined
-      )
-
-      expect(result).toBe(null)
-    })
-    it('should return null if an internal chain is passed', () => {
-      const result = calculateDefiPositions(
-        'gasTank',
-        PORTFOLIO_STATE['1']?.result?.tokens || [],
-        undefined
-      )
-
-      expect(result).toEqual(null)
-    })
-    it('should add positions to the portfolio', () => {
-      const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
-      const originalTokenCount = clonedPortfolioEthereumState!.result!.tokens.length
-      const { tokens, defiPositionsBalance } =
-        calculateDefiPositions(
-          '1',
-          clonedPortfolioEthereumState?.result?.tokens || [],
-          DEFI_STATE
-        ) || {}
-
-      // -- Defi positions are added to the portfolio
-
-      // 5 portfolio tokens + 4 defi tokens
-      expect(tokens?.length).toBe(originalTokenCount + 4)
-      expect(defiPositionsBalance).toBe(250)
-
-      // -- Protocol representations of borrowed tokens don't have prices
-      const variableDebtBasGHO = tokens!.find(
-        ({ address }) => address === '0x38e59ADE183BbEb94583d44213c8f3297e9933e9'
-      )
-
-      expect(variableDebtBasGHO?.priceIn.length).toBe(0)
-      // Tokens added from the defi positions have latestAmount
-      expect(variableDebtBasGHO?.latestAmount).toBeDefined()
-
-      // -- Defi tokens have the respective flag
-      const aBasWETH = tokens!.find(
-        ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
-      )
-
-      expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
-      expect(variableDebtBasGHO?.flags.defiTokenType).toBe(AssetType.Borrow)
-    })
-    it('should add a price to portfolio defi tokens if the price is defined in the defi state', () => {
-      const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
-      const aBasWETHWithoutPrice: TokenResult = {
-        ...structuredClone(DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]),
-        flags: {
-          onGasTank: false,
-          rewardsType: null,
-          isFeeToken: false,
-          isCustom: false,
-          canTopUpGasTank: false
-        },
-        priceIn: [],
-        chainId: 1n,
-        // Ensure required fields are present and not undefined
-        address: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.address ?? '',
-        symbol: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.symbol ?? '',
-        name: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.name ?? '',
-        decimals: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.decimals ?? 18,
-        amount: DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]?.amount ?? 0n
-      }
-
-      expect(aBasWETHWithoutPrice.priceIn.length).toBe(0)
-
-      clonedPortfolioEthereumState.result?.tokens.push(aBasWETHWithoutPrice)
-
-      const { tokens } =
-        calculateDefiPositions(
-          '1',
-          clonedPortfolioEthereumState?.result?.tokens || [],
-          DEFI_STATE
-        ) || {}
-
-      const aBasWETH = tokens!.findLast(
-        ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
-      )
-
-      expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
-      expect(aBasWETH?.priceIn.length).toBe(1)
-    })
-    it('should add the value of hidden collateral tokens to the total balance', () => {
-      const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
-      const originalToken = structuredClone(
-        DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]!
-      )
-      if (!originalToken) throw new Error('Original token not found')
-
-      const hiddenCollateralToken: TokenResult = {
-        ...originalToken,
-        flags: {
-          onGasTank: false,
-          rewardsType: null,
-          isFeeToken: false,
-          isCustom: false,
-          canTopUpGasTank: false,
-          isHidden: true
-        },
-        priceIn: [originalToken.priceIn],
-        chainId: 1n
-      }
-
-      clonedPortfolioEthereumState.result?.tokens.push(hiddenCollateralToken)
-
-      const { tokens, defiPositionsBalance } =
-        calculateDefiPositions(
-          '1',
-          clonedPortfolioEthereumState?.result?.tokens || [],
-          DEFI_STATE
-        ) || {}
-
-      const aBasWETH = tokens!.findLast(
-        ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
-      )
-
-      expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
-      expect(aBasWETH?.priceIn.length).toBe(1)
-      expect(defiPositionsBalance).toBe(250) // 10 is the original total balance
-    })
-  })
   describe('calculateSelectedAccountPortfolio', () => {
     it('should calculate tokens, collections and total balance correctly', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
 
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+      const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
         false,
         true
       )
 
-      expect(selectedAccountPortfolio.tokens.length).toBe(10)
+      expect(selectedAccountPortfolio.tokens.length).toBe(8)
       expect(selectedAccountPortfolio.collections.length).toBe(1)
       // 10 from tokens on Ethereum, 10 from tokens on Base, 5 from gas tank and 250 from defi positions
-      expect(selectedAccountPortfolio.totalBalance).toBe(10 + 10 + 5 + 250)
+      expect(selectedAccountPortfolio.totalBalance).toBe(260 + 10 + 5)
       expect(selectedAccountPortfolio.isAllReady).toBe(true)
       expect(selectedAccountPortfolio.networkSimulatedAccountOp['1']).toBeDefined()
     })
     it('should flip isReadyToVisualize to true if the portfolio has been loading for more than 5 seconds', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
 
       clonedPortfolioLatestState['1']!.isLoading = true
 
-      const result = calculateSelectedAccountPortfolio(
-        clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
-        true,
-        true
-      )
+      const result = calculateSelectedAccountPortfolio(clonedPortfolioLatestState, true, true)
 
-      expect(result.selectedAccountPortfolio.isReadyToVisualize).toBe(true)
-      expect(result.selectedAccountPortfolio.isAllReady).toBe(false)
-    })
-    it('should cache the portfolio state if pastAccountPortfolioWithDefiPositions is passed and nothing has changed', () => {
-      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
-
-      // Remove the account ops. Otherwise getIsRecalculationNeeded will return true
-      clonedPortfolioLatestState['1']!.accountOps = []
-
-      const { selectedAccountPortfolioByNetworks } = calculateSelectedAccountPortfolio(
-        clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
-        false,
-        true
-      )
-
-      if (!selectedAccountPortfolioByNetworks['1']) throw new Error('Network state missing')
-
-      expect(
-        getIsRecalculationNeeded(
-          selectedAccountPortfolioByNetworks['1'],
-          // @ts-ignore
-          clonedPortfolioLatestState['1'],
-          clonedDefiAccountState['1']
-        )
-      ).toBe(false)
-    })
-    it("Portfolio state state is ready, defi positions are loading, shouldn't be ready", () => {
-      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
-
-      clonedDefiAccountState['1']!.isLoading = true
-      clonedDefiAccountState['1']!.updatedAt = undefined
-
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
-        clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
-        false,
-        false
-      )
-
-      expect(selectedAccountPortfolio.isAllReady).toBe(false)
-      expect(selectedAccountPortfolio.isReloading).toBe(false)
-    })
-    it("Portfolio state is loading, defi positions are ready, shouldn't be ready", () => {
-      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
-
-      clonedPortfolioLatestState['1']!.isLoading = true
-      clonedPortfolioLatestState['1']!.isReady = false
-
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
-        clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
-        false,
-        false
-      )
-
-      expect(selectedAccountPortfolio.isAllReady).toBe(false)
-      expect(selectedAccountPortfolio.isReloading).toBe(false)
+      expect(result.isReadyToVisualize).toBe(true)
+      expect(result.isAllReady).toBe(false)
     })
     it('Portfolio state is not ready - should be isAllReady false', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isReady = false
       })
 
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+      const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
         false,
         false
       )
@@ -331,35 +59,16 @@ describe('Selected Account lib', () => {
       expect(selectedAccountPortfolio.isAllReady).toBe(false)
       expect(selectedAccountPortfolio.isReloading).toBe(false)
     })
-    it('Defi network state is missing, portfolio is ready - should be isAllReady true', () => {
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
-
-      delete clonedDefiAccountState['8453']
-
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
-        PORTFOLIO_STATE,
-        {},
-        clonedDefiAccountState,
-        false,
-        false
-      )
-
-      expect(selectedAccountPortfolio.isAllReady).toBe(true)
-      expect(selectedAccountPortfolio.isReloading).toBe(false)
-    })
-    it('Manual update: both states are ready, but loading - should be isAllReady false', () => {
+    it('Manual update: the state is ready, but loading - should be isAllReady false', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isLoading = true
       })
 
       // Not a manual update
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+      const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
         false,
         false
       )
@@ -368,34 +77,27 @@ describe('Selected Account lib', () => {
       expect(selectedAccountPortfolio.isAllReady).toBe(true)
 
       // Manual update
-      const { selectedAccountPortfolio: selectedAccountPortfolio2 } =
-        calculateSelectedAccountPortfolio(
-          clonedPortfolioLatestState,
-          {},
-          clonedDefiAccountState,
-          false,
-          true
-        )
+      const selectedAccountPortfolio2 = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        false,
+        true
+      )
 
       // isAllReady should be false because it's a manual update
       expect(selectedAccountPortfolio2.isAllReady).toBe(false)
     })
-    it('Portfolio and defi are ready, state is older than 60min and loading - isReloading should be true', () => {
+    it('Portfolio is ready, state is older than 60min and loading - isReloading should be true', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
 
       const sixtyMinutesAndOneSecondAgo = Date.now() - 60 * 60 * 1000 - 1000
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isLoading = true
-        clonedPortfolioLatestState[chainId]!.result!.lastSuccessfulUpdate =
-          sixtyMinutesAndOneSecondAgo
+        clonedPortfolioLatestState[chainId]!.lastSuccessfulUpdate = sixtyMinutesAndOneSecondAgo
       })
 
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+      const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
         false,
         false
       )
@@ -403,21 +105,18 @@ describe('Selected Account lib', () => {
       expect(selectedAccountPortfolio.isReloading).toBe(true)
       expect(selectedAccountPortfolio.isAllReady).toBe(true)
     })
-    it('Portfolio and defi are ready, state is fresh and loading - isReloading should be false', () => {
+    it('Portfolio is ready, state is fresh and loading - isReloading should be false', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
-      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
 
       const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isLoading = true
-        clonedPortfolioLatestState[chainId]!.result!.lastSuccessfulUpdate = fiveMinutesAgo
+        clonedPortfolioLatestState[chainId]!.lastSuccessfulUpdate = fiveMinutesAgo
       })
 
-      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+      const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
-        {},
-        clonedDefiAccountState,
         false,
         false
       )
@@ -427,410 +126,3 @@ describe('Selected Account lib', () => {
     })
   })
 })
-
-const DEFI_TOKEN_CBTC = {
-  amount: 200n,
-  chainId: 8453n,
-  decimals: 8,
-  name: 'Aave Base cbBTC',
-  symbol: 'aBascbBTC',
-  address: '0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6',
-  flags: {
-    onGasTank: false,
-    rewardsType: null,
-    isFeeToken: false,
-    isCustom: false,
-    defiTokenType: 1,
-    canTopUpGasTank: false
-  },
-  priceIn: [{ baseCurrency: 'usd', price: 119160.33359345 }]
-}
-
-const PORTFOLIO_STATE: AccountState = {
-  '1': {
-    isReady: true,
-    isLoading: false,
-    errors: [],
-    result: {
-      lastExternalApiUpdateData: {
-        hasHints: true,
-        lastUpdate: 1753192918712
-      },
-      errors: [],
-      updateStarted: 1753192918299,
-      discoveryTime: 415,
-      oracleCallTime: 364,
-      priceUpdateTime: 1585,
-      tokens: [
-        {
-          amount: 100n,
-          chainId: 1n,
-          decimals: 18,
-          name: 'Ether',
-          symbol: 'ETH',
-          address: '0x0000000000000000000000000000000000000000',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true,
-            isCustom: false
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 3701.67 }]
-        },
-        {
-          amount: 0n,
-          chainId: 1n,
-          decimals: 18,
-          name: 'Render Token',
-          symbol: 'RNDR',
-          address: '0x6De037ef9aD2725EB40118Bb1702EBb27e4Aeb24',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            isFeeToken: false,
-            isCustom: false,
-            canTopUpGasTank: false
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 4.46 }]
-        },
-        {
-          amount: 50000n,
-          chainId: 1n,
-          decimals: 6,
-          name: 'USD Coin',
-          symbol: 'USDC',
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true,
-            isCustom: false
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 0.999879 }]
-        },
-        {
-          amount: 0n,
-          chainId: 1n,
-          decimals: 18,
-          name: 'Staked Aave',
-          symbol: 'stkAAVE',
-          address: '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            isFeeToken: false,
-            isCustom: false,
-            canTopUpGasTank: false
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 310.44 }]
-        },
-        // Defi token
-        DEFI_TOKEN_CBTC
-      ],
-      feeTokens: [],
-      blockNumber: 22975182,
-      tokenErrors: [],
-      collections: [
-        {
-          name: 'Ambire Rewards',
-          chainId: 1n,
-          symbol: 'AMR',
-          amount: 0n,
-          flags: {} as TokenResult['flags'],
-          decimals: 1,
-          collectibles: [],
-          address: '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272',
-          priceIn: []
-        }
-      ],
-      lastSuccessfulUpdate: 1753192920665,
-      total: { usd: 10 }
-    }
-  },
-  '8453': {
-    isReady: true,
-    isLoading: false,
-    errors: [],
-    result: {
-      lastExternalApiUpdateData: {
-        hasHints: true,
-        lastUpdate: 1753192918712
-      },
-      errors: [],
-      updateStarted: 1753192918299,
-      discoveryTime: 415,
-      oracleCallTime: 364,
-      priceUpdateTime: 1585,
-      tokens: [
-        {
-          amount: 10n ** 18n,
-          chainId: 8453n,
-          decimals: 18,
-          name: 'Ether',
-          symbol: 'ETH',
-          address: '0x0000000000000000000000000000000000000000',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true,
-            isCustom: false
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 10 }]
-        }
-      ],
-      feeTokens: [],
-      blockNumber: 22975182,
-      tokenErrors: [],
-      collections: [],
-      lastSuccessfulUpdate: 1753192920665,
-      total: { usd: 10 }
-    }
-  },
-  gasTank: {
-    isReady: true,
-    isLoading: false,
-    errors: [],
-    result: {
-      updateStarted: 1753193544309,
-      lastSuccessfulUpdate: 1753193545311,
-      tokens: [],
-      gasTankTokens: [
-        {
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-          symbol: 'USDC',
-          name: 'USD Coin',
-          amount: 5n * 10n ** 6n,
-          availableAmount: 5n * 10n ** 6n,
-          decimals: 6,
-          chainId: 1n,
-          priceIn: [{ baseCurrency: 'usd', price: 1 }],
-          flags: { onGasTank: true, rewardsType: null, isFeeToken: true, canTopUpGasTank: false }
-        }
-      ],
-      total: { usd: 5 }
-    }
-  }
-}
-
-const DEFI_STATE: DefiAccountState = {
-  '1': {
-    providerErrors: [],
-    isLoading: false,
-    positionsByProvider: [
-      {
-        providerName: 'LIDO',
-        chainId: 1n,
-        source: 'debank',
-        iconUrl:
-          'https://static.debank.com/image/project/logo_url/lido/081388ebc44fa042561749bd5338d49e.png',
-        siteUrl: 'https://stake.lido.fi',
-        type: 'common',
-        positions: [
-          {
-            id: '51ee679b-3fc4-4736-9a30-661175777122',
-            assets: [
-              {
-                address: 'eth',
-                symbol: 'ETH',
-                name: 'ETH',
-                decimals: 18,
-                amount: 10n ** 18n,
-                priceIn: { price: 10, baseCurrency: 'usd' },
-                value: 10,
-                type: 1,
-                iconUrl:
-                  'https://static.debank.com/image/coin/logo_url/eth/6443cdccced33e204d90cb723c632917.png'
-              }
-            ],
-            additionalData: {
-              positionInUSD: 10,
-              collateralInUSD: 10,
-              name: 'Staked',
-              detailTypes: ['common'],
-              updateAt: 1753088424,
-              pool: {
-                id: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
-                chain: 'eth',
-                project_id: 'lido',
-                adapter_id: 'lido_staked',
-                controller: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
-                index: null,
-                time_at: 1608242396
-              }
-            }
-          }
-        ],
-        positionInUSD: 10
-      },
-      {
-        providerName: 'Uniswap V2',
-        chainId: 1n,
-        source: 'debank',
-
-        iconUrl:
-          'https://static.debank.com/image/project/logo_url/uniswap2/87a541b3b83b041c8d12119e5a0d19f0.png',
-        siteUrl: 'https://app.uniswap.org',
-        type: 'common',
-        positions: [
-          {
-            id: '34d6f8a9-f125-4223-9e39-763103009671',
-            assets: [
-              {
-                address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-                symbol: 'WALLET',
-                name: 'Ambire Wallet',
-                decimals: 18,
-                amount: 20n ** 18n,
-                priceIn: { price: 20, baseCurrency: 'usd' },
-                value: 40,
-                type: 1,
-                iconUrl:
-                  'https://static.debank.com/image/eth_token/logo_url/0x88800092ff476844f74dc2fc427974bbee2794ae/6d920bb617173a2c6d5e4d8d91febeeb.png'
-              }
-            ],
-            additionalData: {
-              positionInUSD: 40,
-              collateralInUSD: 40,
-              name: 'Liquidity Pool',
-              detailTypes: ['common'],
-              updateAt: 1753242105,
-              pool: {
-                id: '0x3cd6f8781ae6293cb1e1da7a0dde2f627b31ab49',
-                chain: 'eth',
-                project_id: 'uniswap2',
-                adapter_id: 'uniswap2_liquidity_proxy',
-                controller: '0x3cd6f8781ae6293cb1e1da7a0dde2f627b31ab49',
-                index: null,
-                time_at: 1751111543
-              }
-            }
-          }
-        ],
-        positionInUSD: 40
-      },
-      {
-        providerName: 'AAVE v3',
-        chainId: 8453n,
-        source: 'debank',
-        type: 'lending',
-        positions: [
-          {
-            id: '50901a6f-5c4b-4447-98d8-1eed1b7db67a',
-            additionalData: {
-              healthRate: 5,
-              positionInUSD: 170,
-              deptInUSD: -30,
-              collateralInUSD: 200,
-              availableBorrowInUSD: 120,
-              name: 'Lending'
-            },
-            assets: [
-              {
-                address: '0x4200000000000000000000000000000000000006',
-                symbol: 'WETH',
-                name: 'Wrapped Ether',
-                iconUrl: '',
-                decimals: 18,
-                amount: 10n ** 18n,
-                priceIn: { baseCurrency: 'usd', price: 100 },
-                value: 100,
-                type: 1,
-                additionalData: { APY: 2.3947434847108195 },
-                protocolAsset: {
-                  address: '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7',
-                  symbol: 'aBasWETH',
-                  name: 'Aave Base WETH',
-                  decimals: 18
-                }
-              },
-              {
-                address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
-                symbol: 'cbBTC',
-                name: 'Coinbase Wrapped BTC',
-                iconUrl: '',
-                decimals: 8,
-                amount: 10n ** 8n,
-                priceIn: { baseCurrency: 'usd', price: 100 },
-                value: 100,
-                type: 1,
-                additionalData: { APY: 0.05634346614514422 },
-                protocolAsset: {
-                  address: '0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6',
-                  symbol: 'aBascbBTC',
-                  name: 'Aave Base cbBTC',
-                  decimals: 8
-                }
-              },
-              {
-                address: '0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee',
-                symbol: 'GHO',
-                name: 'Gho Token',
-                iconUrl: '',
-                decimals: 18,
-                amount: 20n ** 18n,
-                priceIn: { baseCurrency: 'usd', price: 1 },
-                value: 20,
-                type: 2,
-                additionalData: { APY: 6.512766261896412 },
-                protocolAsset: {
-                  address: '0x38e59ADE183BbEb94583d44213c8f3297e9933e9',
-                  symbol: 'variableDebtBasGHO',
-                  name: 'Gho Token',
-                  decimals: 18
-                }
-              },
-              {
-                address: '0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42',
-                symbol: 'EURC',
-                name: 'EURC',
-                iconUrl: '',
-                decimals: 6,
-                amount: 10n ** 6n,
-                priceIn: { baseCurrency: 'usd', price: 1 },
-                value: 10,
-                type: 2,
-                additionalData: { APY: 5.6437973314138095 },
-                protocolAsset: {
-                  address: '0x03D01595769333174036832e18fA2f17C74f8161',
-                  symbol: 'variableDebtBasEURC',
-                  name: 'EURC',
-                  decimals: 6
-                }
-              }
-            ]
-          }
-        ],
-        iconUrl: '',
-        siteUrl: 'https://app.aave.com/',
-        positionInUSD: 18985.66497510702
-      }
-    ],
-    updatedAt: 1753258959994
-  },
-  '8453': {
-    providerErrors: [],
-    isLoading: false,
-    positionsByProvider: [],
-    updatedAt: 1753258959994
-  }
-}
-
-if (PORTFOLIO_STATE['1']?.result?.tokens?.[0]) {
-  PORTFOLIO_STATE['1'].result.tokens[0]!.amount = 10n
-}
-PORTFOLIO_STATE['1']!.accountOps = [
-  {
-    accountAddr: '0x',
-    chainId: 1n,
-    signingKeyAddr: '0x',
-    signingKeyType: 'internal',
-    nonce: 10n,
-    calls: [],
-    gasLimit: null,
-    signature: '0x',
-    gasFeePayment: null
-  }
-]

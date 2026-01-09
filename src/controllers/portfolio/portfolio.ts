@@ -13,12 +13,27 @@ import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import {
+  enhancePortfolioTokensWithDefiPositions,
+  getAccountNetworksWithPositions,
+  getAllAssetsAsHints,
+  getCanSkipUpdate,
+  getCustomProviderPositions,
+  getFormattedApiPositions,
+  getNewDefiState
+} from '../../libs/defiPositions/defiPositions'
+import {
+  NetworksWithPositions,
+  NetworksWithPositionsByAccounts,
+  PositionCountOnDisabledNetworks
+} from '../../libs/defiPositions/types'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -26,7 +41,9 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   erc721CollectionToLearnedAssetKeys,
+  formatExternalHintsAPIResponse,
   getFlags,
+  getHintsError,
   getSpecialHints,
   getTotal,
   learnedErc721sToHints,
@@ -36,6 +53,9 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  ExtendedErrorWithLevel,
+  ExternalPortfolioDiscoveryResponse,
+  FormattedPortfolioDiscoveryResponse,
   GasTankTokenResult,
   GetOptions,
   Hints,
@@ -49,6 +69,7 @@ import {
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -98,11 +119,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #velcroUrl: string
 
-  #batchedVelcroDiscovery: Function
+  protected batchedPortfolioDiscovery: Function
 
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
   } = {}
+
+  #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
   /**
    * @deprecated - see #learnedAssets
@@ -136,6 +159,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
 
+  defiSessionIds: string[] = []
+
+  defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -161,23 +188,29 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#banner = banner
-    this.#batchedVelcroDiscovery = batcher(
+    this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
         const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
         const accountAddrs = [...new Set(queue.map((x) => x.data.accountAddr))]
         const pairs = baseCurrencies
-          .map((baseCurrency) => accountAddrs.map((accountAddr) => ({ baseCurrency, accountAddr })))
+          .map((baseCurrency) =>
+            accountAddrs.map((accountAddr, index) => ({
+              baseCurrency,
+              accountAddr,
+              forceUpdateDefi: queue[index]?.data.forceUpdateDefi
+            }))
+          )
           .flat()
-        return pairs.map(({ baseCurrency, accountAddr }) => {
+        return pairs.map(({ baseCurrency, accountAddr, forceUpdateDefi }) => {
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
-          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+          const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
-            .join(',')}&accounts=${queueSegment
-            .map((x) => x.data.accountAddr)
-            .join(',')}&baseCurrency=${baseCurrency}`
+            .join(',')}&account=${accountAddr}&baseCurrency=${baseCurrency}${
+            forceUpdateDefi ? '&forceUpdateDefi=true' : ''
+          }`
 
           return { url, queueSegment }
         })
@@ -190,7 +223,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
-
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
@@ -208,6 +240,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#previousHints = await this.#storage.get('previousHints', {})
       // Don't load fromExternalAPI hints in memory as they are no longer used
       this.#previousHints.fromExternalAPI = {}
+      this.#networksWithPositionsByAccounts = await this.#storage.get(
+        'networksWithPositionsByAccounts',
+        {}
+      )
+
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
@@ -346,6 +383,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       storageStateByAccount,
       this.#providers.providers
     )
+    await this.updateNetworksWithDefiPositions(accountId, accountState, this.#providers.providers)
     this.hasFundedHotAccount = this.#getHasFundedHotAccount()
 
     this.emitUpdate()
@@ -401,7 +439,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       return rest
     })
 
-    networkState.result.total = getTotal(networkState.result.tokens)
+    networkState.result.total = getTotal(
+      networkState.result.tokens,
+      networkState.result.defiPositions
+    )
 
     this.emitUpdate()
   }
@@ -471,16 +512,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(
-          key,
-          new Portfolio(
-            this.#fetch,
-            provider,
-            network,
-            this.#velcroUrl,
-            this.#batchedVelcroDiscovery
-          )
-        )
+        this.#portfolioLibs.set(key, new Portfolio(this.#fetch, provider, network, this.#velcroUrl))
       } catch (e: any) {
         this.emitError({
           level: 'silent',
@@ -634,12 +666,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isReady: true,
       isLoading: false,
       errors: [],
+      lastSuccessfulUpdate: Date.now(),
       result: {
         ...res.data.rewards,
-        lastSuccessfulUpdate: Date.now(),
         updateStarted: start,
         tokens: rewardsTokens,
-        total: getTotal(rewardsTokens)
+        total: getTotal(rewardsTokens, null)
       }
     }
 
@@ -647,6 +679,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isReady: true,
       isLoading: false,
       errors: [],
+      lastSuccessfulUpdate: Date.now(),
       result: {
         ...res.data.rewardsProjectionDataV2,
         frozenRewardSeason1: res.data.frozenRewardSeason1 ? res.data.frozenRewardSeason1 : 0
@@ -665,12 +698,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isReady: true,
       isLoading: false,
       errors: [],
+      lastSuccessfulUpdate: Date.now(),
       result: {
         updateStarted: start,
-        lastSuccessfulUpdate: Date.now(),
         tokens: [],
         gasTankTokens,
-        total: getTotal(gasTankTokens)
+        total: getTotal(gasTankTokens, null)
       }
     }
 
@@ -682,10 +715,129 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (!maxDataAgeMs || !networkState || networkState.criticalError || hasImportantErrors)
       return false
-    const updateStarted = networkState.result?.updateStarted || 0
+
+    const updateStarted =
+      networkState.result && 'updateStarted' in networkState.result
+        ? networkState.result?.updateStarted || 0
+        : 0
     const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < maxDataAgeMs
 
     return isWithinMinUpdateInterval || networkState.isLoading
+  }
+
+  /**
+   * Fetches portfolio asset hints and defi positions from the external API (Velcro)
+   * and formats the response. If both hints and defi positions can be skipped, returns null data.
+   * If the defi position update can be skipped, but hints have to be refetched it makes a request
+   * to Velcro but passes a flag to signal to the server that it can returned cached defi data.
+   */
+  private async getPortfolioFromApiDiscovery(opts: {
+    chainId: bigint
+    accountAddr: string
+    hasKeys: boolean
+    baseCurrency: string
+    externalApiHintsResponse: {
+      lastUpdate: number
+      hasHints: boolean
+    } | null
+    defiMaxDataAgeMs?: number
+    isManualUpdate?: boolean
+  }): Promise<FormattedPortfolioDiscoveryResponse> {
+    const errors: ExtendedErrorWithLevel[] = []
+    const {
+      chainId,
+      accountAddr,
+      baseCurrency,
+      // Set to 6 hours by default. That is because we are making a lot of
+      // portfolio updates, most of which shouldn't update the defi positions.
+      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      hasKeys,
+      externalApiHintsResponse,
+      isManualUpdate
+    } = opts
+
+    const defiState = this.#state[accountAddr]?.[chainId.toString()]?.result?.defiPositions
+    const canSkipExternalApiHintsUpdate =
+      !!externalApiHintsResponse &&
+      !isManualUpdate &&
+      Date.now() - externalApiHintsResponse.lastUpdate <
+        EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
+
+    const canSkipDefiUpdate = getCanSkipUpdate(
+      defiState,
+      this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId),
+      hasKeys,
+      this.defiSessionIds,
+      {
+        isManualUpdate,
+        maxDataAgeMs: defiMaxDataAgeMs
+      }
+    )
+
+    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
+      return {
+        data: null,
+        errors
+      }
+    }
+    let response: ExternalPortfolioDiscoveryResponse | null = null
+
+    try {
+      response = await this.batchedPortfolioDiscovery({
+        chainId,
+        accountAddr,
+        baseCurrency,
+        forceUpdateDefi: !canSkipDefiUpdate
+      })
+    } catch (error: any) {
+      // Add errors only if the respective updates could not be skipped. As if the user
+      // is not expecting a defi update and it fails, it should not be reported.
+      if (!canSkipDefiUpdate) {
+        const defiError: ExtendedErrorWithLevel = {
+          name: PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError,
+          message: error.message,
+          level: 'critical'
+        }
+
+        errors.push(defiError)
+      }
+      if (!canSkipExternalApiHintsUpdate) {
+        const hintsError = getHintsError(error.message, externalApiHintsResponse)
+
+        errors.push(hintsError)
+      }
+    }
+
+    if (!response)
+      return {
+        data: null,
+        errors
+      }
+
+    // Update the price cache so the lib can use the latest prices from velcro
+    if (response.prices) {
+      const networkPriceCache = this.#priceCache[chainId.toString()] || new Map()
+
+      for (const [key, priceData] of Object.entries(response.prices)) {
+        networkPriceCache.set(key, priceData)
+      }
+
+      this.#priceCache[chainId.toString()] = networkPriceCache
+    }
+
+    response.hints.lastUpdate = Date.now()
+
+    return {
+      data: {
+        defi: {
+          ...response.defi,
+          positions: getFormattedApiPositions(response.defi.positions)
+        },
+        otherNetworksDefiCounts: response.otherNetworksDefiCounts,
+        hints: response ? formatExternalHintsAPIResponse(response.hints) : null
+      },
+      errors
+    }
   }
 
   // By our convention, we always stick with private (#) instead of protected methods.
@@ -697,7 +849,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     portfolioProps: Partial<GetOptions> & {
       maxDataAgeMs?: number
       isManualUpdate?: boolean
-    }
+      isForceDefiUpdate?: boolean
+    },
+    discoveryData: FormattedPortfolioDiscoveryResponse
   ): Promise<boolean> {
     const { maxDataAgeMs, isManualUpdate } = portfolioProps
     const accountState = this.#state[accountId]
@@ -736,19 +890,58 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const networkPriceCache = this.#priceCache[network.chainId.toString()] || new Map()
 
-      const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000 * 5,
-        priceCache: networkPriceCache,
-        blockTag: 'both',
-        fetchPinned: !hasNonZeroTokens,
-        ...portfolioProps
-      })
+      // Fetch the portfolio and custom defi positions in parallel
+      const [portfolioResult, customPositionsResult] = await Promise.all([
+        portfolioLib.get(accountId, {
+          priceRecency: 60000 * 5,
+          priceCache: networkPriceCache,
+          blockTag: 'both',
+          fetchPinned: !hasNonZeroTokens,
+          ...portfolioProps
+        }),
+        getCustomProviderPositions(
+          accountId,
+          portfolioLib.provider,
+          network,
+          this.#fetch,
+          state.result?.defiPositions.positionsByProvider || [],
+          discoveryData.data?.defi?.positions || [],
+          !!discoveryData.data?.defi
+        )
+      ])
 
-      this.#priceCache[network.chainId.toString()] = result.priceCache
+      const stkWalletToken =
+        portfolioResult.tokens.find(
+          (t) =>
+            t.chainId === 1n &&
+            t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
+            !t.flags.rewardsType
+        ) ?? null
 
-      const hasError = result.errors.some((e) => e.level !== 'silent')
-      let lastSuccessfulUpdate =
-        accountState[network.chainId.toString()]?.result?.lastSuccessfulUpdate || 0
+      const newDefiState = getNewDefiState(
+        discoveryData.data?.defi?.positions,
+        state.result?.defiPositions.positionsByProvider || [],
+        customPositionsResult.positionsByProvider,
+        customPositionsResult.error || null,
+        customPositionsResult.providerErrors,
+        stkWalletToken,
+        this.#getNonceId(
+          this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
+          network.chainId
+        )
+      )
+
+      const combinedTokens = enhancePortfolioTokensWithDefiPositions(
+        portfolioResult.tokens,
+        newDefiState
+      )
+
+      const combinedErrors = [...portfolioResult.errors, ...discoveryData.errors]
+
+      this.#priceCache[network.chainId.toString()] = portfolioResult.priceCache
+
+      const hasError = combinedErrors.some((e) => e.level !== 'silent')
+      let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
 
       // Reset lastSuccessfulUpdate on isManualUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
@@ -766,12 +959,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         accountOps: portfolioProps?.simulation?.accountOps,
         isReady: true,
         isLoading: false,
-        errors: result.errors,
+        errors: combinedErrors,
+        lastSuccessfulUpdate,
         result: {
-          ...result,
-          lastSuccessfulUpdate,
-          tokens: result.tokens,
-          total: getTotal(result.tokens)
+          ...portfolioResult,
+          lastExternalApiUpdateData: discoveryData.data?.hints
+            ? {
+                hasHints: discoveryData.data.hints.hasHints,
+                lastUpdate: discoveryData.data.hints.lastUpdate
+              }
+            : state.result?.lastExternalApiUpdateData ?? null,
+          tokens: combinedTokens,
+          total: getTotal(combinedTokens, newDefiState),
+          defiPositions: newDefiState
         }
       }
 
@@ -797,7 +997,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       if (isManualUpdate && state.result) {
         // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
         // is likely expecting a change in the portfolio.
-        state.result.lastSuccessfulUpdate = 0
+        state.lastSuccessfulUpdate = 0
       }
       this.emitUpdate()
 
@@ -849,7 +1049,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   protected getAllHints(
     accountId: AccountId,
     chainId: Network['chainId'],
-    isManualUpdate?: boolean
+    isManualUpdate?: boolean,
+    velcroHints?: Hints | null
   ): Pick<
     Required<GetOptions>,
     'specialErc20Hints' | 'specialErc721Hints' | 'additionalErc20Hints' | 'additionalErc721Hints'
@@ -858,10 +1059,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const isKeyNotMigrated =
       typeof this.#learnedAssets.erc20s[key] === 'undefined' ||
       typeof this.#learnedAssets.erc721s[key] === 'undefined'
-    let learnedTokensHints: Hints['erc20s'] = Object.keys(this.#learnedAssets.erc20s[key] || {})
-    let learnedNftsHints: Hints['erc721s'] = learnedErc721sToHints(
-      Object.keys(this.#learnedAssets.erc721s[key] || {})
-    )
+    let learnedTokensHints: Hints['erc20s'] = [
+      ...Object.keys(this.#learnedAssets.erc20s[key] || {}),
+      ...(velcroHints?.erc20s || [])
+    ]
+    let learnedNftsHints: Hints['erc721s'] = mergeERC721s([
+      learnedErc721sToHints(Object.keys(this.#learnedAssets.erc721s[key] || {})),
+      velcroHints?.erc721s || {}
+    ])
 
     // Add learned assets from all imported accounts on manual updates.
     // This is done to handle the case where an account sends a token to another imported account
@@ -907,12 +1112,32 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
     }
 
+    const defiHints = getAllAssetsAsHints(
+      this.#state[accountId]?.[chainId.toString()]?.result?.defiPositions
+    )
+
+    learnedTokensHints.push(...defiHints)
+
     return {
       specialErc20Hints,
       specialErc721Hints,
       additionalErc20Hints: learnedTokensHints,
       additionalErc721Hints: learnedNftsHints
     }
+  }
+
+  #getNonceId(acc: Account, chainId: bigint | string) {
+    if (!this.#accounts.accountStates) return undefined
+    if (!this.#accounts.accountStates[acc.addr]) return undefined
+
+    const networkState = this.#accounts.accountStates[acc.addr]?.[chainId.toString()]
+    if (!networkState) return undefined
+
+    const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
+    if (!network) return undefined
+
+    const baseAcc = getBaseAccount(acc, networkState, this.#keystore.getAccountKeys(acc), network)
+    return baseAcc.getNonceId()
   }
 
   /**
@@ -963,7 +1188,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
     },
-    opts?: { maxDataAgeMs?: number; maxDataAgeMsUnused?: number; isManualUpdate?: boolean }
+    opts?: {
+      maxDataAgeMs?: number
+      defiMaxDataAgeMs?: number
+      maxDataAgeMsUnused?: number
+      isManualUpdate?: boolean
+    }
   ) {
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
@@ -1026,33 +1256,44 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
 
           const hintsResponse =
-            this.#state[accountId]?.[network.chainId.toString()]?.result
-              ?.lastExternalApiUpdateData ?? undefined
-
-          const canSkipExternalApiHintsUpdate =
-            !!hintsResponse &&
-            !isManualUpdate &&
-            Date.now() - hintsResponse.lastUpdate <
-              EXTERNAL_API_HINTS_TTL[!hintsResponse.hasHints ? 'static' : 'dynamic']
-
-          const allHints = this.getAllHints(accountId, network.chainId, isManualUpdate)
-
-          const isSuccessful = await this.updatePortfolioState(accountId, network, portfolioLib, {
-            maxDataAgeMs,
+            this.#state[accountId]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
+          const discoveryResponse = await this.getPortfolioFromApiDiscovery({
+            chainId: network.chainId,
+            accountAddr: accountId,
+            baseCurrency: 'usd',
+            externalApiHintsResponse: hintsResponse || null,
             isManualUpdate,
-            blockTag: 'both',
-            lastExternalApiUpdateData: hintsResponse,
-            ...(currentAccountOps &&
-              state && {
-                simulation: {
-                  account: selectedAccount,
-                  accountOps: currentAccountOps,
-                  state
-                }
-              }),
-            disableAutoDiscovery: canSkipExternalApiHintsUpdate,
-            ...allHints
+            defiMaxDataAgeMs: opts?.defiMaxDataAgeMs,
+            hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
           })
+          const allHints = this.getAllHints(
+            accountId,
+            network.chainId,
+            isManualUpdate,
+            discoveryResponse?.data?.hints
+          )
+
+          const isSuccessful = await this.updatePortfolioState(
+            accountId,
+            network,
+            portfolioLib,
+            {
+              maxDataAgeMs,
+              isManualUpdate,
+              blockTag: 'both',
+              ...(currentAccountOps &&
+                state && {
+                  simulation: {
+                    account: selectedAccount,
+                    accountOps: currentAccountOps,
+                    state
+                  }
+                }),
+              disableAutoDiscovery: true,
+              ...allHints
+            },
+            discoveryResponse
+          )
 
           // Learn tokens and nfts from the portfolio lib
           if (isSuccessful && accountState[network.chainId.toString()]?.result) {
@@ -1082,6 +1323,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               // (same as erc20 hints, see the comment above)
               this.#learnedAssets.erc721s[key] = {}
               shouldUpdateLearnedInStorage = true
+            }
+
+            // Only update this if all networks where updated so we know for sure that the user
+            // has disabled the ones in otherNetworksDefiCounts
+            if (!networks && discoveryResponse.data) {
+              this.defiPositionsCountOnDisabledNetworks[accountId] =
+                discoveryResponse.data.otherNetworksDefiCounts || {}
             }
 
             if (shouldUpdateLearnedInStorage) {
@@ -1425,6 +1673,36 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       : undefined
 
     return this.updateSelectedAccount(op.accountAddr, [network], simulation)
+  }
+
+  async updateNetworksWithDefiPositions(
+    accountId: AccountId,
+    accountState: AccountState,
+    providers: RPCProviders
+  ) {
+    this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
+      accountId,
+      accountState,
+      this.#networksWithPositionsByAccounts,
+      providers
+    )
+
+    await this.#storage.set(
+      'networksWithPositionsByAccounts',
+      this.#networksWithPositionsByAccounts
+    )
+  }
+
+  getNetworksWithDefiPositions(accountAddr: string): NetworksWithPositions {
+    return this.#networksWithPositionsByAccounts[accountAddr] || {}
+  }
+
+  addDefiSession(sessionId: string) {
+    this.defiSessionIds = [...new Set([...this.defiSessionIds, sessionId])]
+  }
+
+  removeDefiSession(sessionId: string) {
+    this.defiSessionIds = this.defiSessionIds.filter((id) => id !== sessionId)
   }
 
   toJSON() {

@@ -1,5 +1,8 @@
 import { Price } from '../../interfaces/assets'
 
+// @TODO: Move these interfaces to src/interfaces and
+// figure out how to restructure portfolio/defiPositions types
+
 export enum AssetType {
   Liquidity,
   Collateral,
@@ -41,14 +44,6 @@ export interface PositionAsset {
   }
 }
 
-export interface DeFiPositionsState {
-  [accountId: string]: AccountState
-}
-
-export interface AccountState {
-  [chainId: string]: NetworkState
-}
-
 export interface ProviderError {
   providerName: ProviderName
   error: string
@@ -65,6 +60,15 @@ export interface NetworkState {
 
 export type NetworksWithPositions = {
   [chainId: string]: ProviderName[]
+}
+
+/**
+ * The count of defi positions on disabled networks for each account.
+ */
+export type PositionCountOnDisabledNetworks = {
+  [accountId: string]: {
+    [chainId: string]: number
+  }
 }
 
 export type NetworksWithPositionsByAccounts = {

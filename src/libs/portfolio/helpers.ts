@@ -12,6 +12,7 @@ import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   ERC721s,
+  ExtendedErrorWithLevel,
   ExternalHintsAPIResponse,
   FormattedExternalHintsAPIResponse,
   GetOptions,
@@ -19,11 +20,14 @@ import {
   KnownTokenInfo,
   NetworkState,
   PortfolioGasTankResult,
+  PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
   TokenResult,
-  TokenValidationResult
+  TokenValidationResult,
+  Total
 } from './interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
@@ -39,7 +43,7 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
   if (
     usdcEMapping[chainId.toString()] &&
-    usdcEMapping[chainId.toString()].toLowerCase() === address.toLowerCase()
+    usdcEMapping[chainId.toString()]!.toLowerCase() === address.toLowerCase()
   ) {
     return 'USDC.E'
   }
@@ -481,11 +485,15 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
 
 export const getTotal = (
   t: TokenResult[],
-  opts?: { includeHiddenTokens?: boolean; beforeSimulation?: boolean }
+  defiState: PortfolioNetworkResult['defiPositions'] | null,
+  opts?: {
+    includeHiddenTokens?: boolean
+    beforeSimulation?: boolean
+  }
 ) => {
   const { includeHiddenTokens = false, beforeSimulation = false } = opts || {}
 
-  return t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+  const tokensTotal = t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
     if (token.flags.isHidden && !includeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
@@ -498,6 +506,42 @@ export const getTotal = (
 
     return localCur
   }, {})
+
+  let defiTotal: Total = {
+    usd: 0
+  }
+
+  if (defiState) {
+    // The portfolio handles at least one collateral token,
+    // thus we must exclude them from the defi total to avoid double counting
+    const positionsToExclude: string[] = t
+      .filter((token) => token.flags.defiPositionId)
+      .map((token) => token.flags.defiPositionId!)
+
+    defiTotal = defiState.positionsByProvider.reduce(
+      (cur, position) => {
+        const positionsFlat = position.positions.flat()
+
+        positionsFlat.forEach((p) => {
+          // stkWallet is an internal position, created from the stkWallet token
+          if (positionsToExclude.includes(p.id) || p.id === 'stk-wallet') return
+
+          // eslint-disable-next-line no-param-reassign
+          cur.usd += p.additionalData.positionInUSD || 0
+        })
+
+        return cur
+      },
+      { usd: 0 }
+    )
+  }
+
+  return Object.keys(tokensTotal).reduce((cur, key) => {
+    // eslint-disable-next-line no-param-reassign
+    cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0)
+
+    return cur
+  }, {} as Total)
 }
 
 export const addHiddenTokenValueToTotal = (
@@ -634,6 +678,8 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
   keys.forEach((key) => {
     const [collectionAddress, tokenId] = key.split(':')
 
+    if (!collectionAddress) return
+
     if (tokenId === 'enumerable') {
       hints[collectionAddress] = []
 
@@ -645,6 +691,8 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
     if (keys.includes(`${collectionAddress}:enumerable`)) {
       return
     }
+
+    if (typeof tokenId !== 'string') return
 
     if (!hints[collectionAddress]) {
       hints[collectionAddress] = []
@@ -701,3 +749,33 @@ export const isPortfolioGasTankResult = (
 
 export const isNative = (token: TokenResult) =>
   token.address === ZeroAddress && !token.flags.onGasTank
+
+export const getHintsError = (
+  errorMessage: string,
+  lastExternalApiHintsData: {
+    lastUpdate: number
+    hasHints: boolean
+  } | null
+): ExtendedErrorWithLevel => {
+  if (!lastExternalApiHintsData) {
+    return {
+      name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+      message: errorMessage,
+      level: 'critical'
+    }
+  }
+
+  const TEN_MINUTES = 10 * 60 * 1000
+
+  const lastUpdate = lastExternalApiHintsData.lastUpdate
+
+  const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
+
+  return {
+    name: isLastUpdateTooOld
+      ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+      : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+    message: errorMessage,
+    level: isLastUpdateTooOld ? 'critical' : 'silent'
+  }
+}
