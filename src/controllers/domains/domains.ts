@@ -36,11 +36,15 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
-  constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
-    providers: RPCProviders,
+  constructor({
+    eventEmitterRegistry,
+    providers,
+    defaultNetworksMode
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    providers: RPCProviders
     defaultNetworksMode?: 'mainnet' | 'testnet'
-  ) {
+  }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers

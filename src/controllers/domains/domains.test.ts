@@ -27,7 +27,7 @@ const ENS2 = {
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
 describe('Domains', () => {
-  const domainsController = new DomainsController(providers)
+  const domainsController = new DomainsController({ providers })
 
   it('should reverse lookup (ENS)', async () => {
     await domainsController.reverseLookup(ENS.address)

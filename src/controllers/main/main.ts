@@ -461,11 +461,11 @@ export class MainController extends EventEmitter implements IMainController {
       this.#commonHandlerForBroadcastSuccess.bind(this),
       this.ui
     )
-    this.domains = new DomainsController(
-      this.eventEmitterRegistry,
-      this.providers.providers,
-      this.networks.defaultNetworksMode
-    )
+    this.domains = new DomainsController({
+      eventEmitterRegistry: this.eventEmitterRegistry,
+      providers: this.providers.providers,
+      defaultNetworksMode: this.networks.defaultNetworksMode
+    })
 
     this.contractNames = new ContractNamesController(this.eventEmitterRegistry, this.fetch)
 
