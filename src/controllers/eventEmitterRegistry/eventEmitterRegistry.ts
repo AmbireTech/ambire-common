@@ -1,5 +1,7 @@
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// The EventEmitterRegistry controller maintains a map of all controllers
+// for which onUpdate and onError listeners are registered to propagate FE state updates
 export class EventEmitterRegistryController {
   #map = new Map<string, EventEmitter>()
 
