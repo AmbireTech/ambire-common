@@ -8,6 +8,7 @@ import {
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
@@ -49,8 +50,14 @@ export class ContinuousUpdatesController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
 
-  constructor({ main }: { main: IMainController }) {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    main
+  }: {
+    eventEmitterRegistry: IEventEmitterRegistryController
+    main: IMainController
+  }) {
+    super(eventEmitterRegistry)
 
     this.#main = main
 

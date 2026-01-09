@@ -13,7 +13,7 @@ import {
   IAutoLoginController,
   SiweValidityStatus
 } from '../../interfaces/autoLogin'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController, Key } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -88,6 +88,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     keystore: IKeystoreController,
     providers: IProvidersController,
@@ -96,12 +97,13 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks
     this.#signMessage = new SignMessageController(
+      undefined,
       keystore,
       providers,
       networks,

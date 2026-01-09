@@ -20,7 +20,7 @@ describe('Contract Names', () => {
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
-    const contractNamesController = new ContractNamesController(mockedFetch)
+    const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress = Wallet.createRandom().address
 
     // request multiple
@@ -71,7 +71,7 @@ describe('Contract Names', () => {
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
-    const contractNamesController = new ContractNamesController(mockedFetch)
+    const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress = Wallet.createRandom().address
 
     // request a non contract address that will fail
@@ -121,7 +121,7 @@ describe('Contract Names', () => {
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
-    const contractNamesController = new ContractNamesController(mockedFetch)
+    const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress1 = Wallet.createRandom().address
     const randomAddress2 = Wallet.createRandom().address
 
@@ -178,7 +178,7 @@ describe('Contract Names', () => {
     const { restore } = suppressConsole()
     const badCheckSum = '0x026224a2940bfe258D0dbE947919B62fE321F042'
     const randomAddress = Wallet.createRandom().address
-    const contractNamesController = new ContractNamesController(fetch)
+    const contractNamesController = new ContractNamesController({ fetch })
     errorPromise = new Promise((resolve) => {
       // expected error for wrong address format
       contractNamesController.onError(resolve)

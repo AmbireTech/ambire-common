@@ -5,6 +5,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -152,6 +153,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   #tokens: TokenResult[] = []
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
     callRelayer: Function,
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
@@ -169,7 +171,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController
   ) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#callRelayer = callRelayer
     this.#storage = storage

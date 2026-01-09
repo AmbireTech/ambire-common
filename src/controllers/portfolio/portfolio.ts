@@ -9,6 +9,7 @@ import {
   IAccountsController
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -137,6 +138,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #initialLoadPromise?: Promise<void>
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     fetch: Fetch,
     providers: IProvidersController,
@@ -147,7 +149,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     velcroUrl: string,
     banner: IBannerController
   ) {
-    super()
+    super(eventEmitterRegistry)
+
     this.#state = {}
     this.#queue = {}
     this.#portfolioLibs = new Map()

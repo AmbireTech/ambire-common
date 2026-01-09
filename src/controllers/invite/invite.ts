@@ -1,3 +1,4 @@
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IInviteController } from '../../interfaces/invite'
 import { IStorageController } from '../../interfaces/storage'
@@ -50,15 +51,17 @@ export class InviteController extends EventEmitter implements IInviteController 
   #initialLoadPromise?: Promise<void>
 
   constructor({
+    eventEmitterRegistry,
     relayerUrl,
     fetch,
     storage
   }: {
+    eventEmitterRegistry: IEventEmitterRegistryController
     relayerUrl: string
     fetch: Fetch
     storage: IStorageController
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })

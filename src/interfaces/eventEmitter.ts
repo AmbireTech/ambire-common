@@ -1,3 +1,5 @@
+import { ControllerInterfaceWithoutEventEmitter } from './controller'
+
 export type ErrorRef = {
   /**
    * User-friendly message, ideally containing call to action
@@ -24,3 +26,9 @@ export type ErrorRef = {
 export type Statuses<T extends string> = {
   [key in T]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' | string
 }
+
+export type IEventEmitterRegistryController = ControllerInterfaceWithoutEventEmitter<
+  InstanceType<
+    typeof import('../controllers/eventEmitterRegistry/eventEmitterRegistry').EventEmitterRegistryController
+  >
+>

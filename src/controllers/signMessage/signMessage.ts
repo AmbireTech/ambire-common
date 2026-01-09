@@ -1,7 +1,7 @@
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import {
   ExternalSignerControllers,
@@ -61,6 +61,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   signedMessage: SignedMessage | null = null
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController | undefined,
     keystore: IKeystoreController,
     providers: IProvidersController,
     networks: INetworksController,
@@ -68,7 +69,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController
   ) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#keystore = keystore
     this.#providers = providers

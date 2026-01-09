@@ -11,7 +11,7 @@ import {
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
@@ -20,9 +20,9 @@ import { EmailVault } from '../../libs/emailVault/emailVault'
 import { classifyEmailVaultError, friendlyEmailVaultMessage } from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
+import { RELAYER_DOWN_MESSAGE } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { RELAYER_DOWN_MESSAGE } from '../../libs/relayerCall/relayerCall'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -114,13 +114,14 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
+    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     fetch: Fetch,
     relayerUrl: string,
     keyStore: IKeystoreController,
     options?: { autoConfirmMagicLink?: boolean }
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.#storage = storage
