@@ -161,11 +161,19 @@ export type ExternalPortfolioDiscoveryResponse = {
   prices: {
     [addr: string]: Price
   }
-  defi: {
-    positions: Omit<PositionsByProvider, 'source'>[]
-    updatedAt: number
-    error?: string
-  }
+  defi:
+    | {
+        success: true
+        data: Omit<PositionsByProvider, 'source'>[]
+        timestamp: number
+      }
+    | {
+        success: false
+        errorState: {
+          message: string
+          level: 'fatal'
+        }[]
+      }
   /**
    * The count of defi positions on networks that weren't requested.
    * Used to inform the user about positions on disabled networks.
@@ -180,7 +188,8 @@ export type FormattedPortfolioDiscoveryResponse = {
     hints: FormattedExternalHintsAPIResponse | null
     defi: {
       positions: PositionsByProvider[]
-    } & Pick<ExternalPortfolioDiscoveryResponse['defi'], 'updatedAt' | 'error'>
+      updatedAt: number
+    } | null
     /**
      * The count of defi positions on networks that weren't requested.
      * Used to inform the user about positions on disabled networks.

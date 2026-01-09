@@ -821,7 +821,22 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         baseCurrency,
         forceUpdateDefi: !canSkipDefiUpdate
       })
+
+      // Throw the error after assigning the response so we can still use the returned hints
+      if (response && !response?.defi.success)
+        throw new Error(
+          `Defi discovery failed. Error: ${
+            'errorState' in response.defi
+              ? response.defi.errorState[0]?.message || 'Unknown error (2)'
+              : 'Unknown error'
+          }`
+        )
     } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Error while fetching portfolio discovery data from Velcro for account ${accountAddr} on chainId ${chainId}.`,
+        error
+      })
       // Add errors only if the respective updates could not be skipped. As if the user
       // is not expecting a defi update and it fails, it should not be reported.
       if (!canSkipDefiUpdate) {
@@ -833,7 +848,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
         errors.push(defiError)
       }
-      if (!canSkipExternalApiHintsUpdate) {
+
+      // An error is added only if there is no response
+      if (!canSkipExternalApiHintsUpdate && !response) {
         const hintsError = getHintsError(error.message, externalApiHintsResponse)
 
         errors.push(hintsError)
@@ -861,10 +878,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     return {
       data: {
-        defi: {
-          ...response.defi,
-          positions: getFormattedApiPositions(response.defi.positions)
-        },
+        defi: response.defi.success
+          ? {
+              updatedAt: response.defi.timestamp,
+              positions: getFormattedApiPositions(response.defi.data)
+            }
+          : null,
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
         hints: response ? formatExternalHintsAPIResponse(response.hints) : null
       },
@@ -960,7 +979,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.#getNonceId(
           this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
           network.chainId
-        )
+        ),
+        state.result?.defiPositions.updatedAt
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(
