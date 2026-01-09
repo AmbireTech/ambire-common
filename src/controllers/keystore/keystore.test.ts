@@ -526,40 +526,8 @@ describe('import/export with pub key test', () => {
     await keystore.unlockWithSecret('a', 'b')
   })
 
-  // FIXME:
-  test.skip('import Key With Public Key Encryption', (done) => {
-    let exported: Encrypted
-    const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.statuses.addKeys === 'SUCCESS') {
-        expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
-
-        exported = await keystore.exportKeyWithPublicKeyEncryption(wallet.address, uid2)
-        await keystore2.importKeyWithPublicKeyEncryption(exported, true)
-        unsubscribe()
-      }
-    })
-    const getImportedKeyOnUpdate = () => {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      keystore2.getSigner(wallet.address, 'internal').then((signer) => {
-        expect(signer.key).toEqual(
-          expect.objectContaining({
-            addr: wallet.address,
-            isExternallyStored: false,
-            label: 'Key 1',
-            type: 'internal'
-          })
-        )
-
-        done()
-      })
-    }
-    const unsubscribe2 = keystore2.onUpdate(async () => {
-      if (exported && keystore2.statuses.addKeys === 'SUCCESS') {
-        getImportedKeyOnUpdate()
-        unsubscribe2()
-      }
-    })
-    keystore.addKeys([
+  test('import Key With Public Key Encryption', async () => {
+    await keystore.addKeys([
       {
         addr: wallet.address,
         label: 'Key 1',
@@ -569,5 +537,20 @@ describe('import/export with pub key test', () => {
         meta: { createdAt: new Date().getTime() }
       }
     ])
+
+    expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
+
+    const exported = await keystore.exportKeyWithPublicKeyEncryption(wallet.address, uid2)
+    await keystore2.importKeyWithPublicKeyEncryption(exported, true)
+
+    const signer = await keystore2.getSigner(wallet.address, 'internal')
+    expect(signer.key).toEqual(
+      expect.objectContaining({
+        addr: wallet.address,
+        isExternallyStored: false,
+        label: 'Key 1',
+        type: 'internal'
+      })
+    )
   })
 })
