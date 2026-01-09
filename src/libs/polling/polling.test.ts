@@ -30,7 +30,7 @@ describe('Polling', () => {
     const polling = new Polling()
     const magicLinkKey = await requestMagicLink(email, relayerUrl, fetch, { autoConfirm: true })
 
-    // Wait a bit for the auto-confirm to click (it gets triggered in 2s, wait 1 more and fire)
+    // Wait a bit for the auto-confirm to click (it gets triggered in 2s, wait 2 more and fire)
     await wait(4000)
 
     const result: EmailVaultData | null = await polling.exec(
