@@ -994,7 +994,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const atomicRequired = isWalletSendCalls && !!request.params[0].atomicRequired
       if (isWalletSendCalls && atomicRequired && baseAcc.getAtomicStatus() === 'unsupported') {
         throw ethErrors.provider.custom({
-          code: 5700,
+          code: 4999, // the custom code should be in the required range by the lib
           message: 'Transaction failed - atomicity is not supported for this account'
         })
       }
