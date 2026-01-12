@@ -24,7 +24,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignMessageController } from '../signMessage/signMessage'
 
 export const STATUS_WRAPPED_METHODS = {
-  revokePolicy: 'INITIAL'
+  revokePolicy: 'INITIAL',
+  revokeAllPoliciesForDomain: 'INITIAL'
 } as const
 
 // Taken from viem's parseSiweMessage.ts
@@ -349,6 +350,24 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       this.#policiesByAccount[accountAddress] = accountPolicies.filter(
         (p) => !(p.domain === policyDomain && p.uriPrefix === policyUriPrefix)
       )
+
+      await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
+    })
+  }
+
+  async revokeAllPoliciesForDomain(policyDomain: string, policyUriPrefix: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus('revokeAllPoliciesForDomain', async () => {
+      Object.keys(this.#policiesByAccount).forEach((accountAddress) => {
+        const accountPolicies = this.#policiesByAccount[accountAddress] || []
+
+        if (accountPolicies.length === 0) return
+
+        this.#policiesByAccount[accountAddress] = accountPolicies.filter(
+          (p) => !(p.domain === policyDomain && p.uriPrefix === policyUriPrefix)
+        )
+      })
 
       await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
     })
