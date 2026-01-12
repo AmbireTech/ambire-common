@@ -13,6 +13,7 @@ import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { stringify } from '../../libs/richJson/richJson'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
@@ -75,6 +76,9 @@ const forceBannerRecalculation = async (providersCtrl: IProvidersController) => 
   // Portfolio and DeFi positions banners are recalculated on every emitUpdate
   // of the providers controller.
   await providersCtrl.forceEmitUpdate()
+  // Subcontroller updates are debounced on the next tick. We must await 1second
+  // to account for that
+  await wait(1)
 }
 
 const waitNextControllerUpdate = (ctrl: EventEmitter) => {
@@ -468,13 +472,13 @@ describe('SelectedAccount Controller', () => {
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
       // There is a critical error but lastSuccessfulUpdate is less than 10 minutes ago
-      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['137']!.criticalError = new Error('Mock error')
       await forceBannerRecalculation(providersCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
       // There is a critical error and lastSuccessfulUpdate is more than 10 minutes ago
-      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['137']!.result!.lastSuccessfulUpdate = 0
       await forceBannerRecalculation(providersCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
