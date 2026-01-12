@@ -511,7 +511,18 @@ export const getTotal = (
       const currentAmount = localCur[x.baseCurrency] || 0
 
       const tokenAmount = Number(getTokenAmount(token, beforeSimulation)) / 10 ** token.decimals
-      localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
+      const total = tokenAmount * x.price
+
+      // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
+      if (typeof total !== 'number' || Number.isNaN(total)) {
+        console.error(
+          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`
+        )
+        // eslint-disable-next-line no-continue
+        continue
+      }
+
+      localCur[x.baseCurrency] = currentAmount + total
     }
 
     return localCur

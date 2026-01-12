@@ -343,7 +343,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                   )
                 : undefined
 
-              if (protocolAsset.symbol && protocolAsset.address) {
+              if (protocolAsset.address) {
                 return (
                   !t.flags.rewardsType &&
                   !t.flags.onGasTank &&
@@ -376,7 +376,15 @@ const enhancePortfolioTokensWithDefiPositions = (
                 positionId: pos.id,
                 priceIn: asset.priceIn ? [asset.priceIn] : []
               })
-            } else {
+            } else if (
+              'address' in protocolAsset &&
+              'decimals' in protocolAsset &&
+              'symbol' in protocolAsset &&
+              'name' in protocolAsset &&
+              typeof protocolAsset.decimals === 'number' &&
+              typeof protocolAsset.symbol === 'string' &&
+              typeof protocolAsset.name === 'string'
+            ) {
               notYetHandledTokensToAdd.push({
                 amount: asset.amount,
                 latestAmount: asset.amount,

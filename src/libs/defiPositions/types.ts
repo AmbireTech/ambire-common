@@ -36,12 +36,16 @@ export interface PositionAsset {
    * The protocol asset is the protocol's representation of the asset.
    * For example, in Aave, the protocol asset is the aToken.
    */
-  protocolAsset?: {
-    address: string
-    symbol: string
-    name: string
-    decimals: number
-  }
+  protocolAsset?:
+    | {
+        address: string
+        symbol: string
+        name: string
+        decimals: number
+      }
+    | {
+        address: string
+      }
 }
 
 export interface ProviderError {
