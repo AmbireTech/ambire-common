@@ -114,6 +114,7 @@ const getCustomProviderPositions = async (
       error
     }
   } catch (e: any) {
+    console.error('Critical error fetching custom defi positions:', e)
     return {
       positionsByProvider: previousPositions.filter((p) => p.source === 'custom'),
       providerErrors: [],

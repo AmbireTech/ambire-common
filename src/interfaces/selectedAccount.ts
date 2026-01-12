@@ -21,7 +21,13 @@ export type SelectedAccountPortfolioState = {
     | (Omit<NetworkState, 'result'> & {
         result?: Omit<
           PortfolioKeyResult,
-          'tokens' | 'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache' | 'total'
+          | 'tokens'
+          | 'collections'
+          | 'tokenErrors'
+          | 'hintsFromExternalAPI'
+          | 'priceCache'
+          | 'total'
+          | 'defiPositions'
         >
       })
     | undefined

@@ -51,7 +51,6 @@ export interface ProviderError {
 
 export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
-  isLoading: boolean
   updatedAt?: number
   error?: string | null
   providerErrors?: ProviderError[]
