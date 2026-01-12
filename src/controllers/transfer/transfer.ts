@@ -153,7 +153,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   #tokens: TokenResult[] = []
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     callRelayer: Function,
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
@@ -169,7 +168,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 

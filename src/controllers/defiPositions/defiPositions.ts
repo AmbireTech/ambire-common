@@ -78,7 +78,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     providers,
     ui
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     selectedAccount: ISelectedAccountController

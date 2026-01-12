@@ -42,7 +42,7 @@ export default class EventEmitter {
   async #load() {
     // wait for the next tick after construction so the registry methods become accessible
     await wait(1)
-    this.#registry?.set(this.id, this)
+    if (this.#registry) this.#registry.set(this.id, this)
   }
 
   get name(): string {

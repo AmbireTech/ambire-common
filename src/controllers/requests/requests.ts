@@ -96,7 +96,7 @@ const SWAP_AND_BRIDGE_WINDOW_SIZE = {
  * After the request window is closed all pending/unresolved requests will be removed except for the requests of type 'calls' to allow batching to an already existing ones.
  */
 export class RequestsController extends EventEmitter implements IRequestsController {
-  #eventEmitterRegistry: IEventEmitterRegistryController
+  #eventEmitterRegistry?: IEventEmitterRegistryController
 
   #relayerUrl: string
 
@@ -212,7 +212,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
     callRelayer: Function
     portfolio: IPortfolioController

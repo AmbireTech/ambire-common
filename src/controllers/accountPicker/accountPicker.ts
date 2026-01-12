@@ -177,7 +177,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     onAddAccountsSuccessCallback
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
     keystore: IKeystoreController
     networks: INetworksController

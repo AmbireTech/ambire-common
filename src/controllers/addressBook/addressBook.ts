@@ -37,10 +37,10 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
   #selectedAccount: ISelectedAccountController
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     accounts: IAccountsController,
-    selectedAccount: ISelectedAccountController
+    selectedAccount: ISelectedAccountController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 

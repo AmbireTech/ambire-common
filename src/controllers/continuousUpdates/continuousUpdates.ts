@@ -54,7 +54,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     eventEmitterRegistry,
     main
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     main: IMainController
   }) {
     super(eventEmitterRegistry)

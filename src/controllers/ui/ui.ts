@@ -19,7 +19,7 @@ export class UiController extends EventEmitter implements IUiController {
     eventEmitterRegistry,
     uiManager
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     uiManager: UiManager
   }) {
     super(eventEmitterRegistry)

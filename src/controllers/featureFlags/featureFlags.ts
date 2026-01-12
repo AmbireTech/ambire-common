@@ -13,8 +13,8 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   #flags: FeatureFlags
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
-    featureFlags: Partial<FeatureFlags>
+    featureFlags: Partial<FeatureFlags>,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 

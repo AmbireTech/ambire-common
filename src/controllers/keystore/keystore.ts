@@ -133,11 +133,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #scryptAdapter: ScryptAdapter
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     platform: Platform,
     _storage: IStorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#storage = _storage

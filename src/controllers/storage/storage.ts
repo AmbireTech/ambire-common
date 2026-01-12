@@ -35,7 +35,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  constructor(eventEmitterRegistry: IEventEmitterRegistryController, storage: Storage) {
+  constructor(storage: Storage, eventEmitterRegistry?: IEventEmitterRegistryController) {
     super(eventEmitterRegistry)
 
     this.#storage = storage

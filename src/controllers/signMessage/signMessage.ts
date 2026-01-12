@@ -61,13 +61,13 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   signedMessage: SignedMessage | null = null
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController | undefined,
     keystore: IKeystoreController,
     providers: IProvidersController,
     networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: IInviteController
+    invite: IInviteController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 

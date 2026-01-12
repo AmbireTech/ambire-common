@@ -114,12 +114,12 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     fetch: Fetch,
     relayerUrl: string,
     keyStore: IKeystoreController,
-    options?: { autoConfirmMagicLink?: boolean }
+    options?: { autoConfirmMagicLink?: boolean },
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#fetch = fetch

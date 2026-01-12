@@ -78,7 +78,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     onAddOrUpdateNetworks,
     onRemoveNetwork
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
     storage: IStorageController
     fetch: Fetch

@@ -16,7 +16,7 @@ export class BannerController extends EventEmitter implements IBannerController 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  constructor(eventEmitterRegistry: IEventEmitterRegistryController, storage: IStorageController) {
+  constructor(storage: IStorageController, eventEmitterRegistry?: IEventEmitterRegistryController) {
     super(eventEmitterRegistry)
     this.#storage = storage
 

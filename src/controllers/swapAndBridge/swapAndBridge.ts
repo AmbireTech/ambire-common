@@ -288,7 +288,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     callRelayer: Function
     accounts: IAccountsController
     keystore: IKeystoreController

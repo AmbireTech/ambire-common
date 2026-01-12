@@ -99,7 +99,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     phishing,
     ui
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
     fetch: Fetch
     storage: IStorageController

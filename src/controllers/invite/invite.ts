@@ -56,7 +56,7 @@ export class InviteController extends EventEmitter implements IInviteController 
     fetch,
     storage
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
     fetch: Fetch
     storage: IStorageController

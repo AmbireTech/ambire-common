@@ -138,7 +138,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #initialLoadPromise?: Promise<void>
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     fetch: Fetch,
     providers: IProvidersController,
@@ -147,7 +146,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     keystore: IKeystoreController,
     relayerUrl: string,
     velcroUrl: string,
-    banner: IBannerController
+    banner: IBannerController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 

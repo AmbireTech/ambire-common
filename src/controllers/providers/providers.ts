@@ -30,9 +30,9 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     networks: INetworksController,
-    storage: IStorageController
+    storage: IStorageController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 

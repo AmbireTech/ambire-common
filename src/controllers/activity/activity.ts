@@ -156,7 +156,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
   } = {}
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     fetch: Fetch,
     callRelayer: Function,
@@ -165,7 +164,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,
-    onContractsDeployed: (network: Network) => Promise<void>
+    onContractsDeployed: (network: Network) => Promise<void>,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -285,7 +285,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter((i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier)
+      filteredItems.filter(
+        (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
+      )
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)

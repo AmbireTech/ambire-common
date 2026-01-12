@@ -54,7 +54,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     storage,
     addressBook
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController

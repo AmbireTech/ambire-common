@@ -12,7 +12,7 @@ import { LiFiAPI } from '../../services/lifi/api'
 import { SocketAPI } from '../../services/socket/api'
 
 export type TransactionDependencies = {
-  eventEmitterRegistry: IEventEmitterRegistryController
+  eventEmitterRegistry?: IEventEmitterRegistryController
   accounts: IAccountsController
   keystore: IKeystoreController
   portfolio: IPortfolioController

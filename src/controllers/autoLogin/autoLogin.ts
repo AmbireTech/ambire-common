@@ -88,14 +88,14 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
-    eventEmitterRegistry: IEventEmitterRegistryController,
     storage: IStorageController,
     keystore: IKeystoreController,
     providers: IProvidersController,
     networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: IInviteController
+    invite: IInviteController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage

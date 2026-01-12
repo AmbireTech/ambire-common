@@ -137,7 +137,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     keystore,
     autoLogin
   }: {
-    eventEmitterRegistry: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
