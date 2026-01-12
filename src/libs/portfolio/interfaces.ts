@@ -189,6 +189,7 @@ export type FormattedPortfolioDiscoveryResponse = {
     defi: {
       positions: PositionsByProvider[]
       updatedAt: number
+      isForceUpdate: boolean
     } | null
     /**
      * The count of defi positions on networks that weren't requested.

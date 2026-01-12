@@ -206,7 +206,9 @@ const getNewDefiState = (
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
   nonceId: string | undefined,
-  lastSuccessfulUpdate: number | undefined
+  lastSuccessfulUpdate: number | undefined,
+  isForceDefiUpdate: boolean,
+  lastForceApiUpdate: number | undefined
 ): NetworkState => {
   const isDebankCallSuccessful = !!debankPositionsByProvider
 
@@ -226,6 +228,7 @@ const getNewDefiState = (
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
     lastSuccessfulUpdate:
       isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
+    lastForceApiUpdate: isForceDefiUpdate ? Date.now() : lastForceApiUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
   }
@@ -445,39 +448,37 @@ const enhancePortfolioTokensWithDefiPositions = (
 }
 
 /**
- * Whether the portfolio defi positions data should be cached server-side
- * or the latest should be retrieved.
+ * Whether the portfolio defi positions data should be updated
  */
 const getCanSkipUpdate = (
   previousState: PortfolioNetworkResult['defiPositions'] | undefined,
   nonceId: string | undefined,
-  hasKeys: boolean,
-  sessionIds: string[],
-  opts?: {
-    maxDataAgeMs?: number
-    isManualUpdate?: boolean
-  }
+  maxDataAgeMs: number = 60000
 ): boolean => {
   if (!previousState || !previousState.lastSuccessfulUpdate) return false
-
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  const { maxDataAgeMs: _maxDataAgeMs = 60000, isManualUpdate = false } = opts || {}
-  let maxDataAgeMs = _maxDataAgeMs
 
   const hasNonceChanged = nonceId && previousState.nonceId && nonceId !== previousState.nonceId
 
   // Always update if the nonce has changed
   if (hasNonceChanged) return false
 
-  const shouldForceUpdatePositions = isManualUpdate && sessionIds.length && hasKeys
+  return Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs
+}
 
-  // If the user manually triggered an update, we limit the max data age to 30s
-  // if they have keys and session IDs
-  if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
+const getShouldBypassServerSideCache = (
+  previousState: PortfolioNetworkResult['defiPositions'] | undefined,
+  isManualUpdate: boolean,
+  hasKeys: boolean,
+  sessionIds: string[]
+): boolean => {
+  const hasForceApiUpdatePrerequisites = isManualUpdate && sessionIds.length && hasKeys
 
-  const isWithinMinUpdateInterval = Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs
+  if (!hasForceApiUpdatePrerequisites) return false
 
-  return isWithinMinUpdateInterval
+  // Bypass the server-side cache if the last force update was more than 30s ago
+  const HALF_MINUTE_MS = 30000
+
+  return Date.now() - (previousState?.lastForceApiUpdate || 0) >= HALF_MINUTE_MS
 }
 
 /**
@@ -530,5 +531,6 @@ export {
   getFormattedApiPositions,
   enhancePortfolioTokensWithDefiPositions,
   getCanSkipUpdate,
+  getShouldBypassServerSideCache,
   getAccountNetworksWithPositions
 }

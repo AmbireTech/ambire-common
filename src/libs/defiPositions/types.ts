@@ -54,8 +54,16 @@ export interface NetworkState {
   /**
    * Timestamp of the last successful update
    * (no custom provider errors and a successful external api call)
+   *
+   * Used to determine whether to update the positions and display
+   * errors on the UI
    */
   lastSuccessfulUpdate?: number
+  /**
+   * Timestamp of the last force external api call
+   * Used to determine if we should bypass the cache on next update
+   */
+  lastForceApiUpdate?: number
   error?: string | null
   providerErrors?: ProviderError[]
   nonceId?: string

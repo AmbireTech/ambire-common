@@ -14,6 +14,7 @@ import {
   getAllAssetsAsHints,
   getCanSkipUpdate,
   getFormattedApiPositions,
+  getShouldBypassServerSideCache,
   getUniqueMergedPositions
 } from './defiPositions'
 import {
@@ -221,47 +222,11 @@ describe('Defi positions helper and portfolio functions', () => {
   })
   describe('getCanSkipUpdate', () => {
     it("Should not skip if there is no previous state or there hasn't been a successful update", () => {
-      const canSkip = getCanSkipUpdate(undefined, undefined, true, [])
+      const canSkip = getCanSkipUpdate(undefined, undefined)
 
       expect(canSkip).toBe(false)
     })
-    it('Should not skip if the update is older than 30sec, there are keys, session ids and the update is manual', () => {
-      const portfolioState = structuredClone(
-        PORTFOLIO_STATE['1']
-      ) as NetworkState<PortfolioNetworkResult>
-
-      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 31000
-
-      const canSkip = getCanSkipUpdate(
-        portfolioState.result!.defiPositions,
-        portfolioState.result?.defiPositions.nonceId,
-        true,
-        ['session-id-1'],
-        {
-          isManualUpdate: true
-        }
-      )
-
-      expect(canSkip).toBe(false)
-    })
-    it('Should skip if the update is within 30sec, even if there are keys, session ids and the update is manual', () => {
-      const portfolioState = structuredClone(
-        PORTFOLIO_STATE['1']
-      ) as NetworkState<PortfolioNetworkResult>
-
-      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 20000
-
-      const canSkip = getCanSkipUpdate(
-        portfolioState.result!.defiPositions,
-        portfolioState.result?.defiPositions.nonceId,
-        true,
-        ['session-id-1'],
-        { isManualUpdate: true }
-      )
-
-      expect(canSkip).toBe(true)
-    })
-    it('Should not skip if the update is older than 60sec and the user has positions, even if there are no keys or session ids and the update is automatic', () => {
+    it('Should not skip if the update is older than 60sec and the user has position', () => {
       const portfolioState = structuredClone(
         PORTFOLIO_STATE['1']
       ) as NetworkState<PortfolioNetworkResult>
@@ -270,9 +235,7 @@ describe('Defi positions helper and portfolio functions', () => {
 
       const canSkip = getCanSkipUpdate(
         portfolioState.result!.defiPositions,
-        portfolioState.result?.defiPositions.nonceId,
-        false,
-        []
+        portfolioState.result?.defiPositions.nonceId
       )
 
       expect(canSkip).toBe(false)
@@ -284,9 +247,42 @@ describe('Defi positions helper and portfolio functions', () => {
 
       portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 10000
 
-      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, 'nonce-2', false, [])
+      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, 'nonce-2')
 
       expect(canSkip).toBe(false)
+    })
+  })
+  describe('getShouldBypassServerSideCache', () => {
+    it('Should bypass if the last force api update is older than 30sec, there are keys, session ids and the update is manual', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 31000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        true,
+        true,
+        ['session-id-1']
+      )
+      expect(shouldBypass).toBe(true)
+    })
+    it('Should not bypass if the last force api update is within 30sec, even if there are keys, session ids and the update is manual', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 20000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        true,
+        true,
+        ['session-id-1']
+      )
+
+      expect(shouldBypass).toBe(false)
     })
   })
   describe('getAllAssetsAsHints', () => {

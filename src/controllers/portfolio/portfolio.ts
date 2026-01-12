@@ -27,7 +27,8 @@ import {
   getCanSkipUpdate,
   getCustomProviderPositions,
   getFormattedApiPositions,
-  getNewDefiState
+  getNewDefiState,
+  getShouldBypassServerSideCache
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -807,12 +808,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const canSkipDefiUpdate = getCanSkipUpdate(
       defiState,
       this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId),
-      hasKeys,
-      this.defiSessionIds,
-      {
-        isManualUpdate,
-        maxDataAgeMs: defiMaxDataAgeMs
-      }
+      defiMaxDataAgeMs
     )
 
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
@@ -822,13 +818,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
     let response: ExternalPortfolioDiscoveryResponse | null = null
+    const shouldForceUpdateDefi = getShouldBypassServerSideCache(
+      defiState,
+      !!isManualUpdate,
+      hasKeys,
+      this.defiSessionIds
+    )
 
     try {
       response = await this.batchedPortfolioDiscovery({
         chainId,
         accountAddr,
         baseCurrency,
-        forceUpdateDefi: !canSkipDefiUpdate
+        forceUpdateDefi: shouldForceUpdateDefi
       })
 
       // Throw the error after assigning the response so we can still use the returned hints
@@ -894,7 +896,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           response.defi && !('errorState' in response.defi)
             ? {
                 updatedAt: response.defi.updatedAt,
-                positions: getFormattedApiPositions(response.defi.positions)
+                positions: getFormattedApiPositions(response.defi.positions),
+                isForceUpdate: shouldForceUpdateDefi
               }
             : null,
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
@@ -913,7 +916,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     portfolioProps: Partial<GetOptions> & {
       maxDataAgeMs?: number
       isManualUpdate?: boolean
-      isForceDefiUpdate?: boolean
     },
     discoveryData: FormattedPortfolioDiscoveryResponse
   ): Promise<boolean> {
@@ -993,7 +995,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
           network.chainId
         ),
-        state.result?.defiPositions.lastSuccessfulUpdate
+        state.result?.defiPositions.lastSuccessfulUpdate,
+        discoveryData.data?.defi?.isForceUpdate || false,
+        state.result?.defiPositions.lastForceApiUpdate
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(
