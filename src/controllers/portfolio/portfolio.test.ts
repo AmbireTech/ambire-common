@@ -1967,6 +1967,8 @@ describe('Portfolio Controller ', () => {
     expect(controller.priceCache['137'].size).toBeGreaterThan(0)
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
+    const { restore } = suppressConsole()
+
     const { controller } = await prepareTest()
     const ethereum = networks.find((n) => n.chainId === 1n)!
 
@@ -1991,8 +1993,10 @@ describe('Portfolio Controller ', () => {
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
     expect(formatted.data).toBe(null)
+    restore()
   })
   it('A defi error is returned if canSkipDefiUpdate=false', async () => {
+    const { restore } = suppressConsole()
     const { controller } = await prepareTest()
 
     jest
@@ -2013,8 +2017,10 @@ describe('Portfolio Controller ', () => {
 
     expect(formatted.errors.length).toBe(2)
     expect(formatted.data).toBe(null)
+    restore()
   })
   it('A hints error is not added if canSkipExternalApiHintsUpdate=true', async () => {
+    const { restore } = suppressConsole()
     const { controller } = await prepareTest()
 
     jest
@@ -2040,6 +2046,7 @@ describe('Portfolio Controller ', () => {
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)
     expect(formatted.data).toBe(null)
+    restore()
   })
   test('removeAccountData', async () => {
     const { controller } = await prepareTest()

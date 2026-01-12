@@ -157,15 +157,15 @@ export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
   chainId: number
   accountAddr: string
-  hints: Omit<ExternalHintsAPIResponse, 'prices'>
-  prices: {
-    [addr: string]: Price
-  }
+  erc20s: ExternalHintsAPIResponse['erc20s']
+  erc721s: ExternalHintsAPIResponse['erc721s']
+  hasHints: ExternalHintsAPIResponse['hasHints']
+  prices: ExternalHintsAPIResponse['prices']
+  lastUpdate: ExternalHintsAPIResponse['lastUpdate']
   defi:
     | {
-        success: true
-        data: Omit<PositionsByProvider, 'source'>[]
-        timestamp: number
+        positions: Omit<PositionsByProvider, 'source'>[]
+        updatedAt: number
       }
     | {
         success: false

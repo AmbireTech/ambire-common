@@ -823,7 +823,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
 
       // Throw the error after assigning the response so we can still use the returned hints
-      if (response && !response?.defi.success)
+      if (response && 'errorState' in response.defi)
         throw new Error(
           `Defi discovery failed. Error: ${
             'errorState' in response.defi
@@ -868,6 +868,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       const networkPriceCache = this.priceCache[chainId.toString()] || new Map()
 
       for (const [key, priceData] of Object.entries(response.prices)) {
+        // eslint-disable-next-line no-continue
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
         networkPriceCache.set(key, [Date.now(), [priceData]])
@@ -876,18 +877,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.priceCache[chainId.toString()] = networkPriceCache
     }
 
-    response.hints.lastUpdate = Date.now()
+    response.lastUpdate = Date.now()
 
     return {
       data: {
-        defi: response.defi.success
-          ? {
-              updatedAt: response.defi.timestamp,
-              positions: getFormattedApiPositions(response.defi.data)
-            }
-          : null,
+        defi:
+          response.defi && !('errorState' in response.defi)
+            ? {
+                updatedAt: response.defi.updatedAt,
+                positions: getFormattedApiPositions(response.defi.positions)
+              }
+            : null,
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
-        hints: response ? formatExternalHintsAPIResponse(response.hints) : null
+        hints: response ? formatExternalHintsAPIResponse(response) : null
       },
       errors
     }
