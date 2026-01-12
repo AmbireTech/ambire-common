@@ -77,7 +77,6 @@ import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -97,8 +96,6 @@ import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 
 export class MainController extends EventEmitter implements IMainController {
-  eventEmitterRegistry: IEventEmitterRegistryController
-
   #storageAPI: Storage
 
   #appVersion: string
@@ -190,6 +187,7 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   constructor({
+    eventEmitterRegistry,
     appVersion,
     platform,
     storageAPI,
@@ -203,6 +201,7 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager
   }: {
+    eventEmitterRegistry: IEventEmitterRegistryController
     appVersion: string
     platform: Platform
     storageAPI: Storage
@@ -216,24 +215,21 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
   }) {
-    super()
+    super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
     this.#appVersion = appVersion
     this.fetch = fetch
-    this.eventEmitterRegistry = new EventEmitterRegistryController(() => {
-      this.emitUpdate()
-    })
-    this.storage = new StorageController(this.eventEmitterRegistry, this.#storageAPI)
-    this.featureFlags = new FeatureFlagsController(this.eventEmitterRegistry, featureFlags)
-    this.ui = new UiController({ eventEmitterRegistry: this.eventEmitterRegistry, uiManager })
+    this.storage = new StorageController(eventEmitterRegistry, this.#storageAPI)
+    this.featureFlags = new FeatureFlagsController(eventEmitterRegistry, featureFlags)
+    this.ui = new UiController({ eventEmitterRegistry, uiManager })
     this.invite = new InviteController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       relayerUrl,
       fetch,
       storage: this.storage
     })
     this.keystore = new KeystoreController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       platform,
       this.storage,
       keystoreSigners,
@@ -241,7 +237,7 @@ export class MainController extends EventEmitter implements IMainController {
     )
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       defaultNetworksMode: this.featureFlags.isFeatureEnabled('testnetMode')
         ? 'testnet'
         : 'mainnet',
@@ -260,9 +256,9 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    this.providers = new ProvidersController(this.eventEmitterRegistry, this.networks, this.storage)
+    this.providers = new ProvidersController(eventEmitterRegistry, this.networks, this.storage)
     this.accounts = new AccountsController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.storage,
       this.providers,
       this.networks,
@@ -279,7 +275,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.fetch
     )
     this.autoLogin = new AutoLoginController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.storage,
       this.keystore,
       this.providers,
@@ -289,15 +285,15 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite
     )
     this.selectedAccount = new SelectedAccountController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       storage: this.storage,
       accounts: this.accounts,
       keystore: this.keystore,
       autoLogin: this.autoLogin
     })
-    this.banner = new BannerController(this.eventEmitterRegistry, this.storage)
+    this.banner = new BannerController(eventEmitterRegistry, this.storage)
     this.portfolio = new PortfolioController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.storage,
       this.fetch,
       this.providers,
@@ -309,7 +305,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.banner
     )
     this.defiPositions = new DefiPositionsController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       fetch: this.fetch,
       storage: this.storage,
       selectedAccount: this.selectedAccount,
@@ -321,7 +317,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
-        this.eventEmitterRegistry,
+        eventEmitterRegistry,
         this.storage,
         this.fetch,
         relayerUrl,
@@ -329,7 +325,7 @@ export class MainController extends EventEmitter implements IMainController {
       )
     }
     this.accountPicker = new AccountPickerController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       accounts: this.accounts,
       keystore: this.keystore,
       networks: this.networks,
@@ -350,13 +346,13 @@ export class MainController extends EventEmitter implements IMainController {
       onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
     })
     this.addressBook = new AddressBookController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.storage,
       this.accounts,
       this.selectedAccount
     )
     this.signMessage = new SignMessageController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.keystore,
       this.providers,
       this.networks,
@@ -365,7 +361,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite
     )
     this.phishing = new PhishingController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       fetch: this.fetch,
       storage: this.storage,
       addressBook: this.addressBook
@@ -380,7 +376,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.storage,
       this.fetch,
       this.callRelayer,
@@ -396,7 +392,7 @@ export class MainController extends EventEmitter implements IMainController {
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       callRelayer: this.callRelayer,
       accounts: this.accounts,
       keystore: this.keystore,
@@ -443,7 +439,7 @@ export class MainController extends EventEmitter implements IMainController {
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
     this.transfer = new TransferController(
-      this.eventEmitterRegistry,
+      eventEmitterRegistry,
       this.callRelayer,
       this.storage,
       humanizerInfo as HumanizerMeta,
@@ -462,20 +458,20 @@ export class MainController extends EventEmitter implements IMainController {
       this.ui
     )
     this.domains = new DomainsController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       providers: this.providers.providers,
       defaultNetworksMode: this.networks.defaultNetworksMode
     })
 
     this.contractNames = new ContractNamesController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       fetch: this.fetch
     })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
       this.transactionManager = new TransactionManagerController({
-        eventEmitterRegistry: this.eventEmitterRegistry,
+        eventEmitterRegistry,
         accounts: this.accounts,
         keystore: this.keystore,
         portfolio: this.portfolio,
@@ -493,7 +489,7 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.requests = new RequestsController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       relayerUrl,
       callRelayer: this.callRelayer,
       portfolio: this.portfolio,
@@ -537,7 +533,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.dapps = new DappsController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       appVersion: this.#appVersion,
       fetch: this.fetch,
       storage: this.storage,
@@ -551,7 +547,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.#continuousUpdates = new ContinuousUpdatesController({
-      eventEmitterRegistry: this.eventEmitterRegistry,
+      eventEmitterRegistry,
       // Pass a read-only proxy of the main instance to ContinuousUpdatesController.
       // This gives it full access to read main’s state and call its methods,
       // but prevents any direct modification to the main state.
@@ -579,7 +575,7 @@ export class MainController extends EventEmitter implements IMainController {
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           () =>
             new AccountPickerController({
-              eventEmitterRegistry: this.eventEmitterRegistry,
+              eventEmitterRegistry,
               accounts: this.accounts,
               keystore: this.keystore,
               networks: this.networks,
