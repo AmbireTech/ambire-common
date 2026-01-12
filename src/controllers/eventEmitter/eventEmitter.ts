@@ -35,11 +35,7 @@ export default class EventEmitter {
     if (registry) {
       this.#registry = registry
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#load()
-  }
 
-  async #load() {
     try {
       this.#registry?.set(this.id, this)
     } catch (error) {
