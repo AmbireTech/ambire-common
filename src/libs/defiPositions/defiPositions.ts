@@ -7,7 +7,11 @@ import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import shortenAddress from '../../utils/shortenAddress'
 import { TokenResult } from '../portfolio'
-import { AccountState, PortfolioNetworkResult } from '../portfolio/interfaces'
+import {
+  AccountState,
+  FormattedPortfolioDiscoveryResponse,
+  PortfolioNetworkResult
+} from '../portfolio/interfaces'
 import { updatePositionsByProviderAssetPrices } from './defiPrices'
 import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers'
 import {
@@ -26,6 +30,15 @@ import {
   ProviderError
 } from './types'
 
+export const getIsExternalApiDefiPositionsCallSuccessful = (
+  discoveryResponse: FormattedPortfolioDiscoveryResponse | null
+): boolean => {
+  // If the request was skipped (no data, no errors) consider it successful
+  if (!discoveryResponse) return true
+
+  return !!discoveryResponse.data?.defi
+}
+
 /**
  * Fetches the defi positions of certain protocols using RPC calls and custom logic.
  * Cena is used for most of the positions, but some protocols require additional data
@@ -41,7 +54,7 @@ const getCustomProviderPositions = async (
   network: Network,
   fetch: Function,
   previousPositions: PositionsByProvider[],
-  debankNetworkPositionsByProvider: PositionsByProvider[],
+  debankNetworkPositionsByProvider: PositionsByProvider[] | undefined,
   isDebankCallSuccessful: boolean
 ): Promise<{
   positionsByProvider: PositionsByProvider[]
@@ -74,7 +87,8 @@ const getCustomProviderPositions = async (
           provider,
           network,
           previousPositions,
-          debankNetworkPositionsByProvider,
+          debankNetworkPositionsByProvider ||
+            previousPositions.filter((p) => p.source !== 'custom'),
           isDebankCallSuccessful
         ).catch((e: any) => {
           providerErrors.push({
@@ -199,18 +213,19 @@ const getAllAssetsAsHints = (
  * latest Debank call failed, the previous positions are retained.
  */
 const getNewDefiState = (
-  debankPositionsByProvider: PositionsByProvider[] | undefined,
-  previousPositionsByProvider: PositionsByProvider[],
+  pastPortfolioState: PortfolioNetworkResult | undefined,
+  discoveryResponse: FormattedPortfolioDiscoveryResponse | null,
   customPositionsByProvider: PositionsByProvider[],
   customPositionsError: DeFiPositionsError | null,
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
-  nonceId: string | undefined,
-  lastSuccessfulUpdate: number | undefined,
-  isForceDefiUpdate: boolean,
-  lastForceApiUpdate: number | undefined
+  nonceId: string | undefined
 ): NetworkState => {
-  const isDebankCallSuccessful = !!debankPositionsByProvider
+  const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
+  const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
+  const debankPositionsByProvider = discoveryResponse?.data?.defi?.positions || []
+  const previousPositionsByProvider = pastPortfolioState?.defiPositions?.positionsByProvider || []
+  const { lastForceApiUpdate, lastSuccessfulUpdate } = pastPortfolioState?.defiPositions || {}
 
   const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
 
@@ -228,7 +243,7 @@ const getNewDefiState = (
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
     lastSuccessfulUpdate:
       isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
-    lastForceApiUpdate: isForceDefiUpdate ? Date.now() : lastForceApiUpdate,
+    lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
   }

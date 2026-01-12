@@ -27,6 +27,7 @@ import {
   getCanSkipUpdate,
   getCustomProviderPositions,
   getFormattedApiPositions,
+  getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getShouldBypassServerSideCache
 } from '../../libs/defiPositions/defiPositions'
@@ -784,7 +785,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } | null
     defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
-  }): Promise<FormattedPortfolioDiscoveryResponse> {
+  }): Promise<FormattedPortfolioDiscoveryResponse | null> {
     const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
@@ -812,11 +813,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     )
 
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
-      return {
-        data: null,
-        errors
-      }
+      // Request can be skipped altogether
+      return null
     }
+
     let response: ExternalPortfolioDiscoveryResponse | null = null
     const shouldForceUpdateDefi = getShouldBypassServerSideCache(
       defiState,
@@ -917,7 +917,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs?: number
       isManualUpdate?: boolean
     },
-    discoveryData: FormattedPortfolioDiscoveryResponse
+    discoveryData: FormattedPortfolioDiscoveryResponse | null
   ): Promise<boolean> {
     const { maxDataAgeMs, isManualUpdate } = portfolioProps
     const accountState = this.#state[accountId]
@@ -971,8 +971,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           network,
           this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
-          discoveryData.data?.defi?.positions || [],
-          !!discoveryData.data?.defi
+          discoveryData?.data?.defi?.positions || [],
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
         )
       ])
 
@@ -985,8 +985,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         ) ?? null
 
       const newDefiState = getNewDefiState(
-        discoveryData.data?.defi?.positions,
-        state.result?.defiPositions.positionsByProvider || [],
+        state.result,
+        discoveryData,
         customPositionsResult.positionsByProvider,
         customPositionsResult.error || null,
         customPositionsResult.providerErrors,
@@ -994,10 +994,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.#getNonceId(
           this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
           network.chainId
-        ),
-        state.result?.defiPositions.lastSuccessfulUpdate,
-        discoveryData.data?.defi?.isForceUpdate || false,
-        state.result?.defiPositions.lastForceApiUpdate
+        )
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(
@@ -1005,7 +1002,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         newDefiState
       )
 
-      const combinedErrors = [...portfolioResult.errors, ...discoveryData.errors]
+      const combinedErrors = [...portfolioResult.errors, ...(discoveryData?.errors || [])]
 
       this.priceCache[network.chainId.toString()] = portfolioResult.priceCache
 
@@ -1032,7 +1029,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         lastSuccessfulUpdate,
         result: {
           ...portfolioResult,
-          lastExternalApiUpdateData: discoveryData.data?.hints
+          lastExternalApiUpdateData: discoveryData?.data?.hints
             ? {
                 hasHints: discoveryData.data.hints.hasHints,
                 lastUpdate: discoveryData.data.hints.lastUpdate
@@ -1396,7 +1393,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
             // Only update this if all networks where updated so we know for sure that the user
             // has disabled the ones in otherNetworksDefiCounts
-            if (!networks && discoveryResponse.data) {
+            if (!networks && discoveryResponse?.data) {
               this.defiPositionsCountOnDisabledNetworks[accountId] =
                 discoveryResponse.data.otherNetworksDefiCounts || {}
             }
