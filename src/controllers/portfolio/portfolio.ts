@@ -1766,10 +1766,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   addDefiSession(sessionId: string) {
     this.defiSessionIds = [...new Set([...this.defiSessionIds, sessionId])]
+    this.emitUpdate()
   }
 
   removeDefiSession(sessionId: string) {
     this.defiSessionIds = this.defiSessionIds.filter((id) => id !== sessionId)
+    this.emitUpdate()
   }
 
   toJSON() {
