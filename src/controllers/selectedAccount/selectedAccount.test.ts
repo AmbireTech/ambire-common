@@ -410,7 +410,7 @@ describe('SelectedAccount Controller', () => {
         defiPositions: {
           positionsByProvider: [],
           isLoading: false,
-          updatedAt: 0,
+          updatedAt: undefined,
           error: DeFiPositionsError.CriticalError
         }
       }

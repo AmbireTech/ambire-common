@@ -3,7 +3,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
 import { DeFiPositionsError, NetworksWithPositions } from '../defiPositions/types'
-import { AccountAssetsState, PortfolioNetworkResult } from '../portfolio/interfaces'
+import { AccountAssetsState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
 const TEN_MINUTES = 10 * 60 * 1000
@@ -313,8 +313,11 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
     )
       return
 
-    const defiState = (networkState.result as PortfolioNetworkResult).defiPositions
-    const lastSuccessfulUpdate = defiState.lastSuccessfulUpdate
+    const defiState = networkState.result.defiPositions
+
+    if (!defiState) return
+
+    const lastSuccessfulUpdate = defiState?.lastSuccessfulUpdate
     if (
       (typeof lastSuccessfulUpdate === 'number' &&
         Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||

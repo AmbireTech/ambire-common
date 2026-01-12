@@ -4,6 +4,7 @@ import {
   NetworkSimulatedAccountOp,
   NetworkState,
   PortfolioKeyResult,
+  PortfolioNetworkResult,
   ProjectedRewardsStats,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
@@ -28,7 +29,13 @@ export type SelectedAccountPortfolioState = {
           | 'priceCache'
           | 'total'
           | 'defiPositions'
-        >
+        > & {
+          defiPositions?: {
+            providerErrors: PortfolioNetworkResult['defiPositions']['providerErrors']
+            lastSuccessfulUpdate: PortfolioNetworkResult['defiPositions']['lastSuccessfulUpdate']
+            error: PortfolioNetworkResult['defiPositions']['error']
+          }
+        }
       })
     | undefined
 }

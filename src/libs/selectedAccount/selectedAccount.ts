@@ -17,7 +17,10 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     if (!networkState) return
 
     if (!networkState.result) {
-      strippedState[chainId] = networkState
+      strippedState[chainId] = {
+        ...networkState,
+        result: undefined
+      }
       return
     }
 
@@ -28,11 +31,26 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       tokenErrors,
       toBeLearned,
       lastExternalApiUpdateData,
+      priceCache,
       defiPositions,
       ...result
     } = networkState.result
 
-    strippedState[chainId] = { ...networkState, result }
+    strippedState[chainId] = {
+      ...networkState,
+      result: {
+        ...result,
+        // Defi position state should be readable to allow for error handling
+        // and manual debugging. Positions are excluded to reduce size.
+        defiPositions: defiPositions
+          ? {
+              providerErrors: defiPositions.providerErrors,
+              error: defiPositions.error,
+              lastSuccessfulUpdate: defiPositions.lastSuccessfulUpdate
+            }
+          : undefined
+      }
+    }
   })
 
   return strippedState
