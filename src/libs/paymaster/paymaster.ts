@@ -10,7 +10,9 @@ import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
@@ -24,13 +26,14 @@ import {
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
+import { BundlerEstimateResult } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
 import { AbstractPaymaster } from './abstractPaymaster'
 
-type PaymasterType = 'Ambire' | 'ERC7677' | 'None'
+type PaymasterType = 'Ambire' | 'ERC7677' | 'SwapSponsorship' | 'None'
 
 export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
@@ -49,6 +52,8 @@ export class Paymaster extends AbstractPaymaster {
   callRelayer: Function
 
   type: PaymasterType = 'None'
+
+  op: AccountOp | null = null
 
   paymasterService: PaymasterService | null = null
 
@@ -75,6 +80,7 @@ export class Paymaster extends AbstractPaymaster {
     network: Network,
     provider: RPCProvider
   ) {
+    this.op = op
     this.network = network
     this.provider = provider
     this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
@@ -122,7 +128,7 @@ export class Paymaster extends AbstractPaymaster {
     // for custom networks, check if the paymaster there has balance
     if (!network.predefined || seenInsufficientFunds) {
       try {
-        const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+        const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider) as any
         const paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
 
         // if the network paymaster has failed because of insufficient funds,
@@ -177,7 +183,7 @@ export class Paymaster extends AbstractPaymaster {
     }
 
     // hardcode USDC gas tank 0 for sponsorships
-    if (this.type === 'ERC7677') {
+    if (this.type === 'ERC7677' || this.type === 'SwapSponsorship') {
       const abiCoder = new AbiCoder()
       return {
         to: FEE_COLLECTOR,
@@ -192,13 +198,14 @@ export class Paymaster extends AbstractPaymaster {
   getEstimationData(): PaymasterEstimationData | null {
     if (this.type === 'ERC7677') return this.sponsorDataEstimation as PaymasterEstimationData
 
-    if (this.type === 'Ambire') return getPaymasterDataForEstimate()
+    if (this.type === 'Ambire' || this.type === 'SwapSponsorship')
+      return getPaymasterDataForEstimate()
 
     return null
   }
 
   isSponsored(): boolean {
-    return this.type === 'ERC7677'
+    return this.type === 'ERC7677' || this.type === 'SwapSponsorship'
   }
 
   isUsable() {
@@ -316,7 +323,8 @@ export class Paymaster extends AbstractPaymaster {
     userOp: UserOperation,
     network: Network
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
-    if (this.type === 'Ambire') return this.#ambireCall(acc, op, userOp)
+    if (this.type === 'Ambire' || this.type === 'SwapSponsorship')
+      return this.#ambireCall(acc, op, userOp)
 
     if (this.type === 'ERC7677') return this.#erc7677Call(op, userOp, network)
 
@@ -324,7 +332,7 @@ export class Paymaster extends AbstractPaymaster {
   }
 
   canAutoRetryOnFailure(): boolean {
-    return this.type === 'Ambire'
+    return this.type === 'Ambire' || this.type === 'SwapSponsorship'
   }
 
   isEstimateBelowMin(localOp: UserOperation): boolean {
@@ -335,5 +343,19 @@ export class Paymaster extends AbstractPaymaster {
       localOp.paymasterVerificationGasLimit === undefined ||
       BigInt(localOp.paymasterVerificationGasLimit) < BigInt(min.paymasterVerificationGasLimit)
     )
+  }
+
+  upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void {
+    if (!this.op?.meta?.swapSponsorship) return
+
+    const gas =
+      BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
+    const amountInWei = gas * BigInt(gasPrices.medium.maxFeePerGas)
+    const cost = safeTokenAmountAndNumberMultiplication(
+      amountInWei,
+      18,
+      this.op.meta.swapSponsorship.nativePrice
+    )
+    if (Number(cost) < this.op.meta.swapSponsorship.swapFeeInUsd) this.type = 'SwapSponsorship'
   }
 }

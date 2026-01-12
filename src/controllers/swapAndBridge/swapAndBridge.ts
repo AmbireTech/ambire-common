@@ -17,6 +17,7 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 /* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
@@ -1957,11 +1958,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const currentActiveRoutes = [...this.activeRoutes]
     const activeRouteIndex = currentActiveRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
-    if (activeRouteIndex !== -1) {
+    if (activeRouteIndex !== -1 && currentActiveRoutes[activeRouteIndex]) {
       if (forceUpdateRoute) {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
-          const route = currentActiveRoutes[activeRouteIndex].route
+          const route = currentActiveRoutes[activeRouteIndex]!.route
           this.updateActiveRoute(activeRouteId, { route })
         })()
       }
@@ -2046,7 +2047,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // and select the next one
     const route = this.quote.routes[routeIndex]
     this.quote.routes.splice(routeIndex, 1)
-    this.quote.routes.push(route)
+    this.quote.routes.push(route!)
     await this.selectRoute(firstEnabledRoute)
   }
 
@@ -2062,8 +2063,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const routeId = this.quote.selectedRoute.routeId
     this.quote.routes.forEach((route, i) => {
       if (route.routeId === routeId) {
-        this.quote!.routes[i].disabled = true
-        this.quote!.routes[i].disabledReason = disabledReason
+        this.quote!.routes[i]!.disabled = true
+        this.quote!.routes[i]!.disabledReason = disabledReason
       }
     })
   }
@@ -2260,6 +2261,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!network) return
 
     const provider = this.#providers.providers[network.chainId.toString()]
+
+    // shouldn't happen ever
+    if (!provider) return
+
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       this.#selectedAccount.account.addr,
       network.chainId
@@ -2353,7 +2358,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       network
     )
-    const accountOp = {
+    const accountOp: AccountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
@@ -2384,7 +2389,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       activity: this.#activity,
       account: this.#selectedAccount.account,
       network,
-      provider: this.#providers.providers[network.chainId.toString()],
+      provider,
       phishing: this.#phishing,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,

@@ -565,7 +565,7 @@ export const calculateAmountWarnings = (
 
     // try to calculate the slippage
     const minAmountOutInWei = BigInt(
-      selectedRoute.userTxs[selectedRoute.userTxs.length - 1].minAmountOut
+      selectedRoute.userTxs[selectedRoute.userTxs.length - 1]?.minAmountOut || '0'
     )
     const minInUsd = safeTokenAmountAndNumberMultiplication(
       minAmountOutInWei,
@@ -615,7 +615,6 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
 
 export {
   addCustomTokensIfNeeded,
-  getSwapAndBridgeRequestParams,
   convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
@@ -624,6 +623,7 @@ export {
   getLink,
   getSlippage,
   getSwapAndBridgeCalls,
+  getSwapAndBridgeRequestParams,
   isNoFeeToken,
   isTxnBridge,
   lifiMapNativeToAddr,
