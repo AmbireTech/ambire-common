@@ -40,8 +40,6 @@ export default class EventEmitter {
   }
 
   async #load() {
-    // wait for the next tick after construction so the registry methods become accessible
-    await wait(1)
     try {
       this.#registry?.set(this.id, this)
     } catch (error) {
