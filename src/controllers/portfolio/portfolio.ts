@@ -34,6 +34,7 @@ import {
   NetworksWithPositionsByAccounts,
   PositionCountOnDisabledNetworks
 } from '../../libs/defiPositions/types'
+import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -238,11 +239,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
+          // As of v4.36.0, for metric purposes, pass the account keys count as an
+          // additional param for the batched velcro discovery requests.
+          const accountKeysCount = getAccountKeysCount({
+            accountAddr,
+            keys: this.#keystore.keys,
+            accounts: this.#accounts.accounts
+          })
+
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
             .join(',')}&account=${accountAddr}&baseCurrency=${baseCurrency}${
-            forceUpdateDefi ? '&forceUpdateDefi=true' : ''
-          }`
+            forceUpdateDefi ? '&update=true' : ''
+          }&sigs=${accountKeysCount}`
 
           return { url, queueSegment }
         })
