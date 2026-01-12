@@ -314,7 +314,7 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
       return
 
     const defiState = (networkState.result as PortfolioNetworkResult).defiPositions
-    const lastSuccessfulUpdate = defiState.updatedAt
+    const lastSuccessfulUpdate = defiState.lastSuccessfulUpdate
     if (
       (typeof lastSuccessfulUpdate === 'number' &&
         Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||

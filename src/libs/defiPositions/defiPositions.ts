@@ -1,7 +1,7 @@
 import { getAddress, ZeroAddress } from 'ethers'
-import { AccountId } from 'interfaces/account'
 import { isHex } from 'viem'
 
+import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
