@@ -1,9 +1,9 @@
 import { Wallet } from 'ethers'
-import fetch from 'node-fetch'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
+import { fetchWithAppVersion as fetch } from '../../../test/helpers'
 import { OperationRequestType } from '../../interfaces/emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
