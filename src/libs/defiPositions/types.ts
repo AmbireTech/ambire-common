@@ -51,7 +51,11 @@ export interface ProviderError {
 
 export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
-  updatedAt?: number
+  /**
+   * Timestamp of the last successful update
+   * (no custom provider errors and a successful external api call)
+   */
+  lastSuccessfulUpdate?: number
   error?: string | null
   providerErrors?: ProviderError[]
   nonceId?: string

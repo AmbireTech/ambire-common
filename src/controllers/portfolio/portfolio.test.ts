@@ -1506,7 +1506,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
       const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
 
-      expect(result?.defiPositions.updatedAt).toBeDefined()
+      expect(result?.defiPositions.lastSuccessfulUpdate).toBeDefined()
       expect(result?.defiPositions.positionsByProvider.length).toBeGreaterThan(0)
     })
 

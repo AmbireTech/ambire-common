@@ -993,7 +993,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
           network.chainId
         ),
-        state.result?.defiPositions.updatedAt
+        state.result?.defiPositions.lastSuccessfulUpdate
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(

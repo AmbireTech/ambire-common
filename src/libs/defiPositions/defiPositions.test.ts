@@ -230,7 +230,7 @@ describe('Defi positions helper and portfolio functions', () => {
         PORTFOLIO_STATE['1']
       ) as NetworkState<PortfolioNetworkResult>
 
-      portfolioState.result!.defiPositions.updatedAt = Date.now() - 31000
+      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 31000
 
       const canSkip = getCanSkipUpdate(
         portfolioState.result!.defiPositions,
@@ -249,7 +249,7 @@ describe('Defi positions helper and portfolio functions', () => {
         PORTFOLIO_STATE['1']
       ) as NetworkState<PortfolioNetworkResult>
 
-      portfolioState.result!.defiPositions.updatedAt = Date.now() - 20000
+      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 20000
 
       const canSkip = getCanSkipUpdate(
         portfolioState.result!.defiPositions,
@@ -266,7 +266,7 @@ describe('Defi positions helper and portfolio functions', () => {
         PORTFOLIO_STATE['1']
       ) as NetworkState<PortfolioNetworkResult>
 
-      portfolioState.result!.defiPositions.updatedAt = Date.now() - 61000
+      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 61000
 
       const canSkip = getCanSkipUpdate(
         portfolioState.result!.defiPositions,
@@ -282,7 +282,7 @@ describe('Defi positions helper and portfolio functions', () => {
         PORTFOLIO_STATE['1']
       ) as NetworkState<PortfolioNetworkResult>
 
-      portfolioState.result!.defiPositions.updatedAt = Date.now() - 10000
+      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 10000
 
       const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, 'nonce-2', false, [])
 

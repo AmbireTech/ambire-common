@@ -18,6 +18,7 @@ import {
 import {
   AssetType,
   DeFiPositionsError,
+  NetworkState,
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
   Position,
@@ -205,8 +206,8 @@ const getNewDefiState = (
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
   nonceId: string | undefined,
-  lastUpdatedAt: number | undefined
-) => {
+  lastSuccessfulUpdate: number | undefined
+): NetworkState => {
   const isDebankCallSuccessful = !!debankPositionsByProvider
 
   const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
@@ -222,9 +223,9 @@ const getNewDefiState = (
 
   return {
     nonceId,
-    isLoading: false,
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
-    updatedAt: isDebankCallSuccessful && !customPositionsError ? Date.now() : lastUpdatedAt,
+    lastSuccessfulUpdate:
+      isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
   }
@@ -457,7 +458,7 @@ const getCanSkipUpdate = (
     isManualUpdate?: boolean
   }
 ): boolean => {
-  if (!previousState || !previousState.updatedAt) return false
+  if (!previousState || !previousState.lastSuccessfulUpdate) return false
 
   // eslint-disable-next-line @typescript-eslint/naming-convention
   const { maxDataAgeMs: _maxDataAgeMs = 60000, isManualUpdate = false } = opts || {}
@@ -474,9 +475,9 @@ const getCanSkipUpdate = (
   // if they have keys and session IDs
   if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
-  const isWithinMinUpdateInterval = Date.now() - previousState.updatedAt < maxDataAgeMs
+  const isWithinMinUpdateInterval = Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs
 
-  return isWithinMinUpdateInterval || previousState.isLoading
+  return isWithinMinUpdateInterval
 }
 
 /**
