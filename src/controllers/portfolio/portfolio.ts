@@ -178,7 +178,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
 
-  #priceCache: { [chainId: string]: PriceCache } = {}
+  protected priceCache: { [chainId: string]: PriceCache } = {}
 
   #providers: IProvidersController
 
@@ -865,13 +865,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Update the price cache so the lib can use the latest prices from velcro
     if (response.prices) {
-      const networkPriceCache = this.#priceCache[chainId.toString()] || new Map()
+      const networkPriceCache = this.priceCache[chainId.toString()] || new Map()
 
       for (const [key, priceData] of Object.entries(response.prices)) {
-        networkPriceCache.set(key, priceData)
+        if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
+
+        networkPriceCache.set(key, [Date.now(), [priceData]])
       }
 
-      this.#priceCache[chainId.toString()] = networkPriceCache
+      this.priceCache[chainId.toString()] = networkPriceCache
     }
 
     response.hints.lastUpdate = Date.now()
@@ -939,7 +941,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
-      const networkPriceCache = this.#priceCache[network.chainId.toString()] || new Map()
+      const networkPriceCache = this.priceCache[network.chainId.toString()] || new Map()
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
@@ -990,7 +992,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const combinedErrors = [...portfolioResult.errors, ...discoveryData.errors]
 
-      this.#priceCache[network.chainId.toString()] = portfolioResult.priceCache
+      this.priceCache[network.chainId.toString()] = portfolioResult.priceCache
 
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
@@ -1579,6 +1581,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     key: `${string}:${string}`,
     chainId: bigint
   ): Promise<boolean> {
+    await this.#initialLoadPromise
     if (!tokensWithBalance) return false
 
     if (!this.#learnedAssets.erc20s[key]) this.#learnedAssets.erc20s[key] = {}
@@ -1634,6 +1637,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountAddr: string,
     chainId: bigint
   ): Promise<boolean> {
+    await this.#initialLoadPromise
     if (!nftsData?.length) return false
     const key = `${chainId.toString()}:${accountAddr}`
 

@@ -17,6 +17,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
@@ -33,6 +34,7 @@ import {
   PortfolioNetworkResult,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -195,7 +197,7 @@ const accountWithManyAssets = {
 // 3. Replace the address below with that account's address
 // 4. Update the static MOCK_DEBANK_RESPONSE_DATA below with a fresh call to cena
 const DEFI_TEST_ACCOUNT = {
-  addr: '0x96c122e9c968e8246288c724838b1924410807fb',
+  addr: '0x741aa7cfb2c7bf2a1e7d4da2e3df6a56ca4131f3',
   initialPrivileges: [],
   associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
   creation: {
@@ -206,7 +208,7 @@ const DEFI_TEST_ACCOUNT = {
   },
   preferences: {
     label: 'Test account',
-    pfp: '0x96c122e9c968e8246288c724838b1924410807fb'
+    pfp: '0x741aa7cfb2c7bf2a1e7d4da2e3df6a56ca4131f3'
   }
 }
 
@@ -344,6 +346,10 @@ const prepareTest = async (
     velcroUrl,
     new BannerController(storageCtrl)
   )
+
+  await accountsCtrl.initialLoadPromise
+  await providersCtrl.initialLoadPromise
+  await networksCtrl.initialLoadPromise
 
   if (initialSetStorage) {
     // The initial load promise is not exposed so we wait 500ms for the storage to be set
@@ -1111,6 +1117,10 @@ describe('Portfolio Controller ', () => {
             (token) => token.address === ZeroAddress
           )
 
+        if (!nativeToken) {
+          console.error('Native token not found for network:', network.name)
+        }
+
         expect(nativeToken).toBeTruthy()
       })
     })
@@ -1647,10 +1657,10 @@ describe('Portfolio Controller ', () => {
       const { restore } = suppressConsole()
 
       jest
-        // @ts-ignore
-        .spyOn(DefiPositionsController.prototype, 'updatePositionsByProviderAssetPrices')
-        // @ts-ignore
-        .mockRejectedValue(new Error('Price fetch failed'))
+        .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
+        .mockImplementationOnce(async () => {
+          throw new Error('Asset price error')
+        })
 
       const { controller } = await prepareTest()
 
@@ -1937,6 +1947,99 @@ describe('Portfolio Controller ', () => {
     expect(lastSuccessfulUpdate3).toBe(0)
 
     restore()
+  })
+  it('Price cache is updated after portfolio discovery', async () => {
+    const { controller } = await prepareTest()
+
+    // @ts-ignore
+    expect(controller.priceCache['137']).toBe(undefined)
+    // @ts-ignore
+    await controller.getPortfolioFromApiDiscovery({
+      chainId: 137n,
+      accountAddr: account.addr,
+      hasKeys: true,
+      baseCurrency: 'usd'
+    })
+
+    // @ts-ignore
+    expect(controller.priceCache['137']).toBeDefined()
+    // @ts-ignore
+    expect(controller.priceCache['137'].size).toBeGreaterThan(0)
+  })
+  it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
+    const { controller } = await prepareTest()
+    const ethereum = networks.find((n) => n.chainId === 1n)!
+
+    await controller.updateSelectedAccount(account.addr, [ethereum])
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Velcro error'))
+
+    // @ts-ignore
+    const formatted = await controller.getPortfolioFromApiDiscovery({
+      chainId: 1n,
+      accountAddr: account.addr,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      defiMaxDataAgeMs: 6000000,
+      isManualUpdate: false
+    })
+
+    expect(formatted.errors.length).toBe(1)
+    expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
+    expect(formatted.data).toBe(null)
+  })
+  it('A defi error is returned if canSkipDefiUpdate=false', async () => {
+    const { controller } = await prepareTest()
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Velcro error'))
+
+    // @ts-ignore
+    const formatted = await controller.getPortfolioFromApiDiscovery({
+      chainId: 1n,
+      accountAddr: account.addr,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      defiMaxDataAgeMs: 6000000,
+      isManualUpdate: false
+    })
+
+    expect(formatted.errors.length).toBe(2)
+    expect(formatted.data).toBe(null)
+  })
+  it('A hints error is not added if canSkipExternalApiHintsUpdate=true', async () => {
+    const { controller } = await prepareTest()
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Velcro error'))
+
+    // @ts-ignore
+    const formatted = await controller.getPortfolioFromApiDiscovery({
+      chainId: 1n,
+      accountAddr: account.addr,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      defiMaxDataAgeMs: 6000000,
+      isManualUpdate: false,
+      externalApiHintsResponse: {
+        lastUpdate: Date.now(),
+        hasHints: true
+      }
+    })
+
+    expect(formatted.errors.length).toBe(1)
+    expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)
+    expect(formatted.data).toBe(null)
   })
   test('removeAccountData', async () => {
     const { controller } = await prepareTest()

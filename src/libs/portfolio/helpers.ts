@@ -181,6 +181,16 @@ export function mergeERC721s(sources: ERC721s[]): ERC721s {
   addresses.forEach((address) => {
     try {
       const checksummed = getAddress(address)
+
+      const hasEnumerableHint = sources.some(
+        (source) => source[address] && source[address].length === 0
+      )
+
+      if (hasEnumerableHint) {
+        result[checksummed] = []
+        return
+      }
+
       // Merge arrays and remove duplicates
       const merged: bigint[] = Array.from(
         new Set(sources.flatMap((source) => source[checksummed] || []))
