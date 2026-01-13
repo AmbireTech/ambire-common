@@ -133,62 +133,51 @@ async function getNameFromResolver(
   resolver: EnsResolver,
   reverseName: string
 ): Promise<null | string> {
+  // Create a new resolver contract with the latest ABI
+  // as Ether's doesn't include the name(bytes32) function
+  const resolverContract = new Contract(
+    resolver.address,
+    [
+      'function supportsInterface(bytes4) view returns (bool)',
+      'function resolve(bytes, bytes) view returns (bytes)',
+      'function name(bytes32) view returns (string)'
+    ],
+    resolver.provider
+  )
+
+  const node = namehash(reverseName)
+
+  // Check if this is a wildcard resolver (EIP-2544)
+  let isWildcard = false
   try {
-    const resolverContract = new Contract(
-      resolver.address,
-      [
-        'function supportsInterface(bytes4) view returns (bool)',
-        'function resolve(bytes, bytes) view returns (bytes)',
-        'function name(bytes32) view returns (string)'
-      ],
-      resolver.provider
-    )
-
-    const node = namehash(reverseName)
-
-    // Check if this is a wildcard resolver (EIP-2544)
-    let isWildcard = false
-    try {
-      isWildcard = await resolverContract.supportsInterface!('0x9061b923')
-    } catch {
-      // If supportsInterface fails, assume it's not a wildcard resolver
-      isWildcard = false
-    }
-
-    let name: string
-    if (isWildcard) {
-      // For wildcard resolvers, use resolve(bytes,bytes)
-      const iface = new Interface(['function name(bytes32) view returns (string)'])
-      const calldata = iface.encodeFunctionData('name', [node])
-
-      const result = await resolverContract.resolve!(dnsEncode(reverseName), calldata, {
-        enableCcipRead: true
-      })
-
-      name = iface.decodeFunctionResult('name', result)[0]
-    } else {
-      // For regular resolvers, call name(bytes32) directly
-      name = await resolverContract.name!(node, {
-        enableCcipRead: true
-      })
-    }
-
-    if (name == null || name === '0x' || name === '') {
-      return null
-    }
-    return name
-  } catch (error) {
-    // If the resolver doesn't support name(), return null
-    if (isError(error, 'CALL_EXCEPTION')) {
-      return null
-    }
-    // No data returned
-    if (isError(error, 'BAD_DATA') && (error as any).value === '0x') {
-      return null
-    }
-
-    throw error
+    isWildcard = await resolverContract.supportsInterface!('0x9061b923')
+  } catch {
+    // If supportsInterface fails, assume it's not a wildcard resolver
+    isWildcard = false
   }
+
+  let name: string
+  if (isWildcard) {
+    // For wildcard resolvers, use resolve(bytes,bytes)
+    const iface = new Interface(['function name(bytes32) view returns (string)'])
+    const calldata = iface.encodeFunctionData('name', [node])
+
+    const result = await resolverContract.resolve!(dnsEncode(reverseName), calldata, {
+      enableCcipRead: true
+    })
+
+    name = iface.decodeFunctionResult('name', result)[0]
+  } else {
+    // For regular resolvers, call name(bytes32) directly
+    name = await resolverContract.name!(node, {
+      enableCcipRead: true
+    })
+  }
+
+  if (name == null || name === '0x' || name === '') {
+    return null
+  }
+  return name
 }
 
 async function reverseLookupEns(address: string, provider: RPCProvider) {
