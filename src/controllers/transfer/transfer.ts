@@ -456,7 +456,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.#onRecipientAddressChange()
-    this.programmaticUpdateCounter = 0
+    // This MUST be incremented and not reset to zero, because the UI relies on
+    // the change of this value. If the value was 0 and is reset to 0, the UI
+    // would not detect a change.
+    if (this.programmaticUpdateCounter === 0) {
+      this.programmaticUpdateCounter += 1
+    } else {
+      this.programmaticUpdateCounter = 0
+    }
 
     if (shouldDestroyAccountOp) {
       this.destroySignAccountOp()
