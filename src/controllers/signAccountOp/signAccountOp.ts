@@ -1164,21 +1164,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.estimation.estimation.bundlerEstimation &&
         this.estimation.estimation.bundlerEstimation.paymaster
       ) {
-        // if it was sponsored but it no longer is (fallback case),
-        // reset the selectedOption option as we use native for the sponsorship
-        // but the user might not actually have any native
-        const isSponsorshipFallback =
-          this.isSponsored && !this.estimation.estimation.bundlerEstimation.paymaster.isSponsored()
-
         this.isSponsored = this.estimation.estimation.bundlerEstimation.paymaster.isSponsored()
         this.sponsor =
           this.estimation.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
-
-        if (isSponsorshipFallback) {
-          this.selectedOption = this.estimation.availableFeeOptions.length
-            ? this.estimation.availableFeeOptions[0]
-            : undefined
-        }
       }
 
       // calculate the fee speeds if either there are no feeSpeeds
