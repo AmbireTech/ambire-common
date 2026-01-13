@@ -132,7 +132,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     iconUrls,
     platformId,
     has7702,
-    disabledByDefault
+    disabledByDefault,
+    rpcNoStateOverride
   } = relayerNetwork
   const {
     native: {
@@ -186,7 +187,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
 
   // Always fallback to these values for the "predefined" networks, coming from
   // the RPC for the custom networks.
-  const rpcNoStateOverride = false
   const isSAEnabled = !!smartAccounts
   const areContractsDeployed = !!smartAccounts
   const features: NetworkFeature[] = []
@@ -217,7 +217,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     oldNativeAssetSymbols,
     feeOptions,
     erc4337,
-    rpcNoStateOverride,
+    rpcNoStateOverride: rpcNoStateOverride !== undefined ? rpcNoStateOverride : false,
     isSAEnabled,
     predefined: !disabledByDefault,
     predefinedConfigVersion,

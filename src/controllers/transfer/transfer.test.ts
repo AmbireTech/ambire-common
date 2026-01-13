@@ -312,23 +312,6 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(true)
   })
-  test('should show SW warning', async () => {
-    const { transferController, tokens } = await prepareTest()
-
-    const polOnPolygon = tokens.find(
-      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 137n
-    )
-
-    await transferController.update({
-      selectedToken: polOnPolygon,
-      addressState: {
-        fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
-        isDomainResolving: false
-      }
-    })
-    expect(transferController.isSWWarningVisible).toBe(true)
-  })
   test('should change selected token', async () => {
     const { transferController, tokens } = await prepareTest()
 
@@ -348,14 +331,6 @@ describe('Transfer Controller', () => {
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
-  })
-  test('should set sw warning agreed', async () => {
-    const { transferController } = await prepareTest()
-
-    await transferController.update({
-      isSWWarningAgreed: true
-    })
-    expect(transferController.isSWWarningAgreed).toBe(true)
   })
   test('should set validation form messages', async () => {
     const { transferController, tokens } = await prepareTest()
@@ -454,8 +429,6 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(false)
-    expect(transferController.isSWWarningVisible).toBe(false)
-    expect(transferController.isSWWarningAgreed).toBe(false)
   })
 
   test('should toJSON()', async () => {

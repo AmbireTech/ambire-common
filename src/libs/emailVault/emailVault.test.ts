@@ -1,9 +1,9 @@
 import { Wallet } from 'ethers'
-import fetch from 'node-fetch'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
+import { fetchWithAppVersion as fetch } from '../../../test/helpers'
 import { OperationRequestType } from '../../interfaces/emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
@@ -149,7 +149,7 @@ describe('err cases', () => {
     test('vault not created', async () => {
       await expect(emailVault.getRecoveryKeyAddress(email, authKey)).rejects.toHaveProperty(
         ['output', 'res', 'message'],
-        'email vault does not exist'
+        'invalid key'
       )
     })
   })
@@ -230,7 +230,7 @@ describe('err cases', () => {
 
       await expect(
         emailVault.retrieveKeyStoreSecret(email2, authKey2, recoveryKey)
-      ).rejects.toHaveProperty(['output', 'res', 'message'], 'email vault does not exist')
+      ).rejects.toHaveProperty(['output', 'res', 'message'], 'invalid key')
     })
     test('no secret uploaded', async () => {
       try {

@@ -43,12 +43,16 @@ export class Etherspot extends Bundler {
   public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {
     const provider = this.getProvider(network)
 
-    const status = await provider.send('eth_getUserOperationByHash', [userOpHash]).catch((e) => {
-      // etherspot throws an error when the userOpHash is not found
+    const status = await provider.send('eth_getUserOperationReceipt', [userOpHash]).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.log('etherspot failed to find the status of the user op')
+      // eslint-disable-next-line no-console
+      console.log(e)
+
       return null
     })
 
-    if (!status) {
+    if (!status || !status.receipt) {
       return {
         status: 'not_found'
       }
@@ -56,7 +60,7 @@ export class Etherspot extends Bundler {
 
     return {
       status: 'found',
-      transactionHash: status.transactionHash
+      transactionHash: status.receipt.transactionHash
     }
   }
 

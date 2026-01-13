@@ -1,4 +1,5 @@
 import { ISelectedAccountController } from 'interfaces/selectedAccount'
+import { getDomain } from 'tldts'
 
 import {
   IRecurringTimeout,
@@ -16,6 +17,7 @@ import {
   predefinedDapps
 } from '../../consts/dapps/dapps'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
@@ -92,6 +94,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   initialLoadPromise?: Promise<void>
 
   constructor({
+    eventEmitterRegistry,
     appVersion,
     fetch,
     storage,
@@ -100,6 +103,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     selectedAccount,
     ui
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
     fetch: Fetch
     storage: IStorageController
@@ -108,7 +112,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     selectedAccount: ISelectedAccountController
     ui: IUiController
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#appVersion = appVersion
     this.#fetch = fetch
@@ -336,7 +340,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         dappsMap.set(id, modifiedDapp)
       })
 
-      if (!dappsMap.has(id)) dappsMap.set(id, updatedDapp)
+      if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url)!)) {
+        dappsMap.set(id, updatedDapp)
+      }
     }
 
     // Add predefined
@@ -380,6 +386,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           d.description = existingByDomain.description
           d.tvl = existingByDomain.tvl
           d.icon = existingByDomain.icon
+          d.isFeatured = existingByDomain.isFeatured
           d.twitter = existingByDomain.twitter
           d.geckoId = existingByDomain.geckoId
           d.chainIds = existingByDomain.chainIds
@@ -431,7 +438,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    const dappId = getDappIdFromUrl(url)
+    const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
@@ -673,7 +680,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
         const { dappPromises } = currentRequest
         const dapp = await this.#buildDapp({
-          id: getDappIdFromUrl(dappPromises[0].session.origin),
+          id: dappPromises[0].session.id,
           name: dappPromises[0].session.name,
           url: dappPromises[0].session.origin,
           icon: dappPromises[0].session.icon,

@@ -9,6 +9,7 @@ import {
   PHISHING_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
@@ -48,15 +49,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   initialLoadPromise?: Promise<void>
 
   constructor({
+    eventEmitterRegistry,
     fetch,
     storage,
     addressBook
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#fetch = fetch
     this.#storage = storage

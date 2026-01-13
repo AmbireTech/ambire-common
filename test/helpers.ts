@@ -1,7 +1,9 @@
 import { BaseContract, getBytes, hexlify, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
+import fetch, { RequestInfo } from 'node-fetch'
 import secp256k1 from 'secp256k1'
 
+import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import { Account, AccountStates, IAccountsController } from '../src/interfaces/account'
 import { Hex } from '../src/interfaces/hex'
 import { Key } from '../src/interfaces/keystore'
@@ -397,6 +399,17 @@ const mockInternalKeys = (accounts: Account[]) =>
     }
   }))
 
+/**
+ * Wrapper around fetch that adds x-app-version header to every request
+ */
+const fetchWithAppVersion: Fetch = (input: RequestInfo, init?: RequestInitWithCustomHeaders) => {
+  const headers = {
+    'x-app-version': 'extension-5.34.4-webkit', // since this v, req towards email vault API are supported
+    ...(init?.headers || {})
+  }
+  return fetch(input, { ...init, headers })
+}
+
 export {
   buildUserOp,
   getAccountGasLimits,
@@ -413,5 +426,6 @@ export {
   mockInternalKeys,
   produceMemoryStore,
   sendFunds,
-  waitForAccountsCtrlFirstLoad
+  waitForAccountsCtrlFirstLoad,
+  fetchWithAppVersion
 }

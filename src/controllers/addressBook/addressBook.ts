@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -38,9 +39,10 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
   constructor(
     storage: IStorageController,
     accounts: IAccountsController,
-    selectedAccount: ISelectedAccountController
+    selectedAccount: ISelectedAccountController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts

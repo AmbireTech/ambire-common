@@ -13,6 +13,7 @@ import * as accountStateLib from '../../libs/accountState/accountState'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { MainController } from '../main/main'
 
 const accounts = [
@@ -254,9 +255,15 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount).toBe(
       initialAccountStateLatestFnExecutionsCount + 1
     )
-    mainCtrl.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-    // @ts-ignore
-    mainCtrl.emitUpdate()
+    const mockAccountOp = new EventEmitter() as any
+    mockAccountOp.signAndBroadcastPromise = new Promise(() => {})
+    mockAccountOp.broadcastStatus = 'SUCCESS'
+    ;(mainCtrl.requests.currentUserRequest as any) = {
+      kind: 'calls',
+      signAccountOp: mockAccountOp
+    }
+    ;(mainCtrl.requests as any).emitUpdate()
+    ;(mockAccountOp as any).emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)

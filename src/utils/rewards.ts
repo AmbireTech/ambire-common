@@ -1,45 +1,148 @@
-/**
- * Returns the expected rewards and APY
- * @param {number} level - The level from the accumulated xp and the xp they will receive
- * after the 7702 bonus.
- * @param {number[]} balanceSnapshots - All balance snapshots from the relayer.
- * @param {number} currentBalance - The current balance of the user.
- * @param {number} passedWeeks - The number of weeks since the start of the season.
- * @param {number} totalWeightNoUser - The total weight of all users, excluding the weight of the
- * @param {number} minLvl - Minimum required level to get rewards
- * @param {number} minBalance -Minimum required balance in one snapshot o get rewards
- *  current user
- * @returns {Object} Rewards related data.
- * @returns {number} return.walletRewards - The number of $stkWALLET tokens the user will receive.
- * @returns {number } return.apy - The percentage return the user can expect on their current balance in
- * rewards. So if the expected rewards are $10 on $200 balance, then the APY is 5
- */
-export function calculateRewardsForSeason(
-  level: number,
-  balanceSnapshots: number[],
-  currentBalance: number,
-  passedWeeks: number,
-  totalWeightNoUser: number,
-  REWARDS_FOR_SEASON: number,
-  minLvl: number,
-  minBalance: number
-): number {
-  // required minimum level
-  if (level < minLvl) return 0
-  // the current balance acts as an additional week snapshot
-  // thats why we add it to the list and divide by (passedWeeks + 1)
-  const snapshotsAndCur = [...balanceSnapshots, currentBalance]
-  if (!snapshotsAndCur.some((x) => x >= minBalance)) return 0
+import { WALLET_TOKEN } from '../consts/addresses'
+import {
+  NetworkState,
+  PortfolioProjectedRewardsResult,
+  ProjectedRewardsStats,
+  TokenResult
+} from '../libs/portfolio/interfaces'
 
-  const sumOfBalances = snapshotsAndCur.reduce((a, b) => a + b, 0)
-  const averageBalance = sumOfBalances / (passedWeeks + 1)
+export const calculateRewardsStats = (
+  projectedRewardsResult: PortfolioProjectedRewardsResult | undefined,
+  walletOrStkWalletTokenPrice: number | undefined,
+  currentBalance: number | undefined,
+  stkBalanceUsd: number | undefined,
+  walletEthProvidedLiquidityInUsd: number | undefined
+): ProjectedRewardsStats | null => {
+  if (!projectedRewardsResult || !walletOrStkWalletTokenPrice) return null
 
-  // the weight is calculated with the normal formula
-  const weight = Math.sqrt(averageBalance) * level
-  // since the current user weight is not included in totalWeightNoUser
-  // we simply add it to the denominator and calculate the rewards from it
-  const fraction = weight / (weight + totalWeightNoUser)
-  const walletRewards = fraction * REWARDS_FOR_SEASON
+  const { weeksWithData, governanceVotes, rank, poolSize, pointsOfOtherUsers, swapVolume } =
+    projectedRewardsResult
 
-  return walletRewards
+  const { sumBalanceSnapshots, sumLiquiditySnapshots, sumStkBalanceSnapshots } =
+    weeksWithData.reduce(
+      (acc, week) => {
+        acc.sumBalanceSnapshots += week.balance
+        acc.sumLiquiditySnapshots += week.liquidityUsd || 0
+        acc.sumStkBalanceSnapshots += week.stkWalletUsd || 0
+
+        return acc
+      },
+      { sumBalanceSnapshots: 0, sumLiquiditySnapshots: 0, sumStkBalanceSnapshots: 0 }
+    )
+  const numberOfWeeksSinceStartOfSeason =
+    projectedRewardsResult.numberOfWeeksSinceStartOfSeason || 1
+
+  const seasonAverageBalance =
+    typeof currentBalance !== 'undefined'
+      ? (sumBalanceSnapshots + currentBalance) / (numberOfWeeksSinceStartOfSeason + 1)
+      : sumBalanceSnapshots / numberOfWeeksSinceStartOfSeason
+  const seasonLiquidityAverage =
+    typeof walletEthProvidedLiquidityInUsd !== 'undefined'
+      ? (sumLiquiditySnapshots + walletEthProvidedLiquidityInUsd) /
+        (numberOfWeeksSinceStartOfSeason + 1)
+      : sumLiquiditySnapshots / numberOfWeeksSinceStartOfSeason
+  const seasonStkWalletBalanceAverage =
+    typeof stkBalanceUsd !== 'undefined'
+      ? (sumStkBalanceSnapshots + stkBalanceUsd) / (numberOfWeeksSinceStartOfSeason + 1)
+      : sumStkBalanceSnapshots / numberOfWeeksSinceStartOfSeason
+
+  const balanceScore = Math.floor(seasonAverageBalance / 1000)
+  const stkWALLETScore = Math.floor((seasonStkWalletBalanceAverage / 1000) * 20)
+  const swapVolumeScore = Math.floor(swapVolume / 2000)
+  const liquidityScore = Math.floor((seasonLiquidityAverage / 1000) * 30)
+  const governanceWeight = governanceVotes.reduce((acc, vote) => {
+    const weight = vote.weight * vote.walletPrice
+
+    return acc + weight
+  }, 0)
+  const governanceScore = Math.floor(governanceWeight / 2000)
+  const multiplierCount = projectedRewardsResult.multipliers.filter((m) => m.activated).length
+  const totalMultiplier = 1.06 ** multiplierCount
+  const totalScore = Math.floor(
+    (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
+      totalMultiplier
+  )
+
+  const estimatedRewardsUSD = Math.floor(
+    (totalScore / (pointsOfOtherUsers + totalScore)) * poolSize
+  )
+  const estimatedRewards = Math.floor(estimatedRewardsUSD / walletOrStkWalletTokenPrice)
+
+  return {
+    balanceScore,
+    poolSize,
+    averageBalance: seasonAverageBalance,
+    averageLiquidity: seasonLiquidityAverage,
+    averageStkWalletBalance: seasonStkWalletBalanceAverage,
+    totalScore,
+    rank,
+    stkWALLETScore,
+    liquidityScore,
+    swapVolumeScore,
+    swapVolume,
+    governanceScore,
+    governanceWeight,
+    multiplierCount,
+    multiplier: totalMultiplier,
+    estimatedRewards,
+    estimatedRewardsUSD,
+    multipliers: projectedRewardsResult.multipliers
+  }
+}
+
+export const getProjectedRewardsStatsAndToken = (
+  projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
+  walletOrStkWalletTokenPrice: number | undefined,
+  currentBalance: number | undefined,
+  stkBalanceUsd: number | undefined,
+  walletEthProvidedLiquidityInUsd: number | undefined
+):
+  | {
+      token: TokenResult
+      data: ProjectedRewardsStats
+    }
+  | undefined => {
+  if (!projectedRewards) return
+
+  const result = projectedRewards?.result
+
+  if (!result) return
+
+  // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
+  const walletTokenPrice = walletOrStkWalletTokenPrice || result.walletPrice
+
+  const data = calculateRewardsStats(
+    result,
+    walletTokenPrice,
+    currentBalance,
+    stkBalanceUsd,
+    walletEthProvidedLiquidityInUsd
+  )
+
+  if (!data) return
+
+  let estimatedRewardsBothSeasons = data.estimatedRewards
+
+  if (result.frozenRewardSeason1) {
+    estimatedRewardsBothSeasons += Math.floor(result.frozenRewardSeason1)
+  }
+
+  return {
+    token: {
+      chainId: BigInt(1),
+      amount: BigInt(estimatedRewardsBothSeasons) * BigInt(10 ** 18),
+      address: WALLET_TOKEN,
+      symbol: 'WALLET',
+      name: '$WALLET',
+      decimals: 18,
+      priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
+      flags: {
+        onGasTank: false,
+        rewardsType: 'wallet-projected-rewards' as const,
+        canTopUpGasTank: false,
+        isFeeToken: false
+      }
+    },
+    data
+  }
 }

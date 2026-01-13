@@ -91,7 +91,7 @@ const prepareTest = async (
     () => {},
     () => {},
     relayerUrl,
-    global.fetch as any
+    fetch
   )
 
   await networksCtrl.initialLoadPromise
@@ -279,7 +279,7 @@ URI: https://docs.fileverse.io
 
       expect(message?.status).toBe('invalid')
     })
-    it('invalid resource uri in resources - should return status invalid-critical', async () => {
+    it('invalid resource uri in resources - should return status malformed', async () => {
       const malformedMessage = generateSiweMessage(undefined, (message) =>
         message.replace(/Resources:\n- https:\/\/privy.io/, 'Resources:\n- invaliduri')
       )
@@ -288,7 +288,7 @@ URI: https://docs.fileverse.io
         'https://docs.fileverse.io'
       )
 
-      expect(message?.status).toBe('invalid-critical')
+      expect(message?.status).toBe('malformed')
     })
     it('expired siwe - should return status invalid', async () => {
       const expiredSiwe = generateSiweMessage({
@@ -575,5 +575,112 @@ URI: https://docs.fileverse.io
     await controller.revokePolicy(EOA_ACC.addr, EXISTING_POLICY.domain, EXISTING_POLICY.uriPrefix)
 
     expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([])
+  })
+  it('revokeAllPoliciesForDomain works', async () => {
+    const POLICY_1: AutoLoginPolicy = {
+      domain: 'docs.fileverse.io',
+      uriPrefix: 'https://docs.fileverse.io/login',
+      allowedChains: [1],
+      allowedResources: ['https://privy.io'],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const POLICY_2: AutoLoginPolicy = {
+      domain: 'docs.fileverse.io',
+      uriPrefix: 'https://docs.fileverse.io/admin',
+      allowedChains: [1, 137],
+      allowedResources: ['https://privy.io'],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const OTHER_DOMAIN_POLICY: AutoLoginPolicy = {
+      domain: 'other-site.com',
+      uriPrefix: 'https://other-site.com/login',
+      allowedChains: [1],
+      allowedResources: [],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const { controller } = await prepareTest((s) => {
+      return s.set('autoLoginPolicies', {
+        [EOA_ACC.addr]: [POLICY_1, POLICY_2, OTHER_DOMAIN_POLICY]
+      })
+    })
+
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([
+      POLICY_1,
+      POLICY_2,
+      OTHER_DOMAIN_POLICY
+    ])
+
+    await controller.revokeAllPoliciesForDomain(
+      'docs.fileverse.io',
+      'https://docs.fileverse.io/login'
+    )
+    await controller.revokeAllPoliciesForDomain(
+      'docs.fileverse.io',
+      'https://docs.fileverse.io/admin'
+    )
+
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([OTHER_DOMAIN_POLICY])
+  })
+
+  it('revokeAllPoliciesForDomain removes policies across multiple accounts', async () => {
+    const SHARED_POLICY: AutoLoginPolicy = {
+      domain: 'docs.fileverse.io',
+      uriPrefix: 'https://docs.fileverse.io/login',
+      allowedChains: [1],
+      allowedResources: ['https://privy.io'],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const EOA_POLICY: AutoLoginPolicy = {
+      domain: 'eoa-only.com',
+      uriPrefix: 'https://eoa-only.com/login',
+      allowedChains: [1],
+      allowedResources: [],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const HW_POLICY: AutoLoginPolicy = {
+      domain: 'hw-only.com',
+      uriPrefix: 'https://hw-only.com/login',
+      allowedChains: [137],
+      allowedResources: [],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const { controller } = await prepareTest((s) => {
+      return s.set('autoLoginPolicies', {
+        [EOA_ACC.addr]: [SHARED_POLICY, EOA_POLICY],
+        [HW_ACC.addr]: [SHARED_POLICY, HW_POLICY]
+      })
+    })
+
+    // Verify initial state
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([SHARED_POLICY, EOA_POLICY])
+    expect(controller.getAccountPolicies(HW_ACC.addr)).toEqual([SHARED_POLICY, HW_POLICY])
+
+    // Remove the shared policy from all accounts
+    await controller.revokeAllPoliciesForDomain(
+      'docs.fileverse.io',
+      'https://docs.fileverse.io/login'
+    )
+
+    // Verify the shared policy is removed from both accounts, but other policies remain
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([EOA_POLICY])
+    expect(controller.getAccountPolicies(HW_ACC.addr)).toEqual([HW_POLICY])
   })
 })
