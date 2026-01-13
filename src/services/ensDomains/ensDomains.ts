@@ -6,7 +6,6 @@ import {
   dnsEncode,
   EnsResolver,
   getBigInt,
-  Interface,
   isAddress,
   isError,
   isHexString,
@@ -147,7 +146,7 @@ async function getNameFromResolver(
 
   const node = namehash(reverseName)
 
-  // Check if this is a wildcard resolver (EIP-2544)
+  // Check if this is a wildcard resolver (ENSIP-10) https://docs.ens.domains/ensip/10
   let isWildcard = false
   try {
     isWildcard = await resolverContract.supportsInterface!('0x9061b923')
@@ -159,14 +158,13 @@ async function getNameFromResolver(
   let name: string
   if (isWildcard) {
     // For wildcard resolvers, use resolve(bytes,bytes)
-    const iface = new Interface(['function name(bytes32) view returns (string)'])
-    const calldata = iface.encodeFunctionData('name', [node])
+    const calldata = resolverContract.interface.encodeFunctionData('name', [node])
 
     const result = await resolverContract.resolve!(dnsEncode(reverseName), calldata, {
       enableCcipRead: true
     })
 
-    name = iface.decodeFunctionResult('name', result)[0]
+    name = resolverContract.interface.decodeFunctionResult('name', result)[0]
   } else {
     // For regular resolvers, call name(bytes32) directly
     name = await resolverContract.name!(node, {
@@ -192,20 +190,18 @@ async function reverseLookupEns(address: string, provider: RPCProvider) {
 
     const name = await getNameFromResolver(revResolver, reverseName)
 
-    if (name) {
-      // Perform roundtrip check: name -> address should match original address
-      // As per https://docs.ens.domains/resolution#reverse-resolution
-      const resolver = await provider.getResolver(name)
-      if (resolver) {
-        const expect = await resolver.getAddress(60)
+    if (!name) return null
 
-        if (expect) {
-          if (expect.toLowerCase() !== address.toLowerCase()) {
-            return null
-          }
-          return name
-        }
-      }
+    // Perform roundtrip check: name -> address should match original address
+    // As per https://docs.ens.domains/resolution#reverse-resolution
+    const resolver = await provider.getResolver(name)
+
+    if (!resolver) return null
+
+    const expect = await resolver.getAddress(60)
+
+    if (expect && expect.toLowerCase() === address.toLowerCase()) {
+      return name
     }
 
     return null
