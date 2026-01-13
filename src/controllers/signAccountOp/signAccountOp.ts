@@ -624,7 +624,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get isInitialized(): boolean {
-    return this.estimation.isInitialized()
+    // The estimation becomes null when the signAccountOp controller
+    // is destroyed.
+    return this.estimation && this.estimation.isInitialized()
   }
 
   #setDefaults() {
@@ -887,6 +889,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   calculateWarnings() {
+    if (!this.isInitialized) return
+
     const warnings: Warning[] = []
 
     const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
