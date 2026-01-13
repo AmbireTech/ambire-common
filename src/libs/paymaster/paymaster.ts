@@ -346,7 +346,7 @@ export class Paymaster extends AbstractPaymaster {
   }
 
   upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void {
-    if (!this.op?.meta?.swapSponsorship) return
+    if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677') return
 
     const gas =
       BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
