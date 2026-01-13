@@ -28,6 +28,7 @@ import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  FEE_PERCENT,
   JPYC_TOKEN,
   NULL_ADDRESS,
   SOCKET_EXPLORER_URL,
@@ -613,6 +614,30 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
+/**
+ * Get the swap sponsorship details.
+ * We need the native price so we can later understand if the cost
+ * of the txn in USD is less than the swap fee to sponsor it.
+ * No sponsorships in og mode.
+ * Also, to calculate the fee in USD, we multiply the full from
+ * amount in USD to the fee percent
+ */
+const getSwapSponsorship = ({
+  isOg,
+  nativePrice,
+  fromAmountInUsd
+}: {
+  isOg: boolean
+  nativePrice: number | undefined
+  fromAmountInUsd: number | undefined
+}): { nativePrice: number; swapFeeInUsd: number } | undefined => {
+  if (isOg || !nativePrice || !fromAmountInUsd) return undefined
+  return {
+    nativePrice,
+    swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100
+  }
+}
+
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -624,6 +649,7 @@ export {
   getSlippage,
   getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,
+  getSwapSponsorship,
   isNoFeeToken,
   isTxnBridge,
   lifiMapNativeToAddr,

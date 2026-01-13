@@ -350,7 +350,7 @@ export class Paymaster extends AbstractPaymaster {
 
     const gas =
       BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
-    const amountInWei = gas * BigInt(gasPrices.medium.maxFeePerGas)
+    const amountInWei = gas * BigInt(gasPrices.ape.maxFeePerGas)
     const cost = safeTokenAmountAndNumberMultiplication(
       amountInWei,
       18,

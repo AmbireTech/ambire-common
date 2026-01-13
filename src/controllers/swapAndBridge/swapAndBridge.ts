@@ -53,6 +53,7 @@ import {
   getBannedToTokenList,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
+  getSwapSponsorship,
   isTxnBridge,
   mapBannedToValidAddr,
   sortPortfolioTokenList,
@@ -2352,6 +2353,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    const native = this.#portfolio
+      .getAccountPortfolioState(this.#selectedAccount.account.addr)
+      [network.chainId.toString()]?.result?.tokens.find(
+        (token) => token.address === '0x0000000000000000000000000000000000000000'
+      )
+    const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
@@ -2374,7 +2381,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       meta: {
         swapTxn: userTxn,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-        fromQuoteId: quoteIdGuard
+        fromQuoteId: quoteIdGuard,
+        swapSponsorship: getSwapSponsorship({
+          isOg: this.#invite.isOG,
+          nativePrice,
+          fromAmountInUsd: Number(this.fromAmountInFiat)
+        })
       }
     }
 
