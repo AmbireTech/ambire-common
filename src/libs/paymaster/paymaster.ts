@@ -159,7 +159,8 @@ export class Paymaster extends AbstractPaymaster {
   shouldIncludePayment(): boolean {
     return (
       this.type === 'Ambire' ||
-      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER)
+      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER) ||
+      this.type === 'SwapSponsorship'
     )
   }
 
@@ -176,7 +177,7 @@ export class Paymaster extends AbstractPaymaster {
       return 'erc20'
     }
 
-    if (this.type === 'ERC7677') return 'gasTank'
+    if (this.type === 'ERC7677' || this.type === 'SwapSponsorship') return 'gasTank'
     return undefined
   }
 
@@ -245,10 +246,11 @@ export class Paymaster extends AbstractPaymaster {
         })
       ])
 
+      const isAmbirePaymaster = this.type === 'Ambire' || this.type === 'SwapSponsorship'
       return {
         success: true,
-        paymaster: this.type === 'Ambire' ? AMBIRE_PAYMASTER : response.paymaster,
-        paymasterData: this.type === 'Ambire' ? response.data.paymasterData : response.paymasterData
+        paymaster: isAmbirePaymaster ? AMBIRE_PAYMASTER : response.paymaster,
+        paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData
       }
     } catch (e: any) {
       if (e.message === 'Ambire relayer error timeout') {
@@ -296,7 +298,8 @@ export class Paymaster extends AbstractPaymaster {
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,
-        bundler: userOp.bundler
+        bundler: userOp.bundler,
+        isSponsored: this.type === 'SwapSponsorship'
       })
     })
   }
