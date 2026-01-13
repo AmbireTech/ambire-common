@@ -22,6 +22,7 @@ import {
   SelectedAccountForImport
 } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -166,6 +167,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   } | null = null
 
   constructor({
+    eventEmitterRegistry,
     accounts,
     keystore,
     networks,
@@ -175,6 +177,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     onAddAccountsSuccessCallback
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
     keystore: IKeystoreController
     networks: INetworksController
@@ -184,7 +187,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
-    super()
+    super(eventEmitterRegistry)
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks

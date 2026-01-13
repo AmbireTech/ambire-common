@@ -5,6 +5,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -167,9 +168,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#callRelayer = callRelayer
     this.#storage = storage

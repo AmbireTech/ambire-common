@@ -20,7 +20,7 @@ import {
   AmbireSmartAccountIdentityCreateResponse,
   IAccountsController
 } from '../../interfaces/account'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -99,9 +99,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
     onAccountStateUpdate: () => void,
     relayerUrl: string,
-    fetch: Fetch
+    fetch: Fetch,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#providers = providers
     this.#networks = networks
