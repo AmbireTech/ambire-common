@@ -1,4 +1,3 @@
-import { ISelectedAccountController } from 'interfaces/selectedAccount'
 import { getDomain } from 'tldts'
 
 import {
@@ -23,6 +22,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 /* eslint-disable no-restricted-syntax */
 import { IPhishingController } from '../../interfaces/phishing'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
