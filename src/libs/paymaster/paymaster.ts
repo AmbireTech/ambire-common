@@ -360,11 +360,14 @@ export class Paymaster extends AbstractPaymaster {
     const gas =
       BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
     const amountInWei = gas * BigInt(gasPrices.ape.maxFeePerGas)
-    const cost = safeTokenAmountAndNumberMultiplication(
-      amountInWei,
-      18,
-      this.op.meta.swapSponsorship.nativePrice
+    const cost = Number(
+      safeTokenAmountAndNumberMultiplication(
+        amountInWei,
+        18,
+        this.op.meta.swapSponsorship.nativePrice
+      )
     )
-    if (Number(cost) < this.op.meta.swapSponsorship.swapFeeInUsd) this.type = 'SwapSponsorship'
+    const costPlusOverhead = cost + cost * 0.25
+    if (costPlusOverhead < this.op.meta.swapSponsorship.swapFeeInUsd) this.type = 'SwapSponsorship'
   }
 }
