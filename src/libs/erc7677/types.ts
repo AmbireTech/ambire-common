@@ -16,6 +16,7 @@ export interface PaymasterCapabilities {
 export interface Sponsor {
   name: string
   icon?: string
+  text?: string
 }
 
 export type PaymasterEstimationData = {

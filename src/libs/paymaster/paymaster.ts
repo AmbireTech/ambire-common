@@ -48,6 +48,14 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   }
 }
 
+function getSwapSponsorshipEstimationData(): PaymasterEstimationData {
+  const paymasterData = getPaymasterDataForEstimate()
+  return {
+    ...paymasterData,
+    sponsor: { name: '', text: 'No additional fees needed' }
+  }
+}
+
 export class Paymaster extends AbstractPaymaster {
   callRelayer: Function
 
@@ -198,8 +206,9 @@ export class Paymaster extends AbstractPaymaster {
   getEstimationData(): PaymasterEstimationData | null {
     if (this.type === 'ERC7677') return this.sponsorDataEstimation as PaymasterEstimationData
 
-    if (this.type === 'Ambire' || this.type === 'SwapSponsorship')
-      return getPaymasterDataForEstimate()
+    if (this.type === 'Ambire') return getPaymasterDataForEstimate()
+
+    if (this.type === 'SwapSponsorship') return getSwapSponsorshipEstimationData()
 
     return null
   }

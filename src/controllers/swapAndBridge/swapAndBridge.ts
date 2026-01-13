@@ -2328,6 +2328,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
+    const native = this.#portfolio
+      .getAccountPortfolioState(this.#selectedAccount.account.addr)
+      [network.chainId.toString()]?.result?.tokens.find(
+        (token) => token.address === '0x0000000000000000000000000000000000000000'
+      )
+    const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      this.#keystore.getAccountKeys(this.#selectedAccount.account),
+      network
+    )
 
     if (this.#signAccountOpController) {
       // if the chain id has changed, we need to destroy the sign account op
@@ -2345,7 +2357,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             meta: {
               ...(this.#signAccountOpController.accountOp.meta || {}),
               swapTxn: userTxn,
-              fromQuoteId: quoteIdGuard
+              fromQuoteId: quoteIdGuard,
+              swapSponsorship: getSwapSponsorship({
+                isOg: this.#invite.isOG,
+                nativePrice,
+                fromAmountInUsd: Number(this.fromAmountInFiat)
+              })
             }
           }
         })
@@ -2353,18 +2370,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    const native = this.#portfolio
-      .getAccountPortfolioState(this.#selectedAccount.account.addr)
-      [network.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === '0x0000000000000000000000000000000000000000'
-      )
-    const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
-    )
     const accountOp: AccountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
