@@ -34,12 +34,7 @@ export default class EventEmitter {
 
     if (registry) {
       this.#registry = registry
-
-      try {
-        this.#registry.set(this.id, this)
-      } catch (error) {
-        // silent fail
-      }
+      this.#registry.set(this.id, this)
     }
   }
 

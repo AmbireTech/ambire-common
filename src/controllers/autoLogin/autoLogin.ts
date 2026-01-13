@@ -103,7 +103,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     this.#keystore = keystore
     this.#networks = networks
     this.#signMessage = new SignMessageController(
-      undefined,
       keystore,
       providers,
       networks,
