@@ -299,7 +299,13 @@ export class Paymaster extends AbstractPaymaster {
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,
         bundler: userOp.bundler,
-        isSponsored: this.type === 'SwapSponsorship'
+        swapSponsorship:
+          this.type === 'SwapSponsorship' && this.op?.meta?.swapSponsorship
+            ? {
+                price: this.op.meta.swapSponsorship.fromTokenPriceInUsd,
+                decimals: this.op.meta.swapSponsorship.fromTokenDecimals
+              }
+            : undefined
       })
     })
   }

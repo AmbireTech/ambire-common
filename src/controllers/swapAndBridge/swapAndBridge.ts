@@ -2361,7 +2361,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
               swapSponsorship: getSwapSponsorship({
                 isOg: this.#invite.isOG,
                 nativePrice,
-                fromAmountInUsd: Number(this.fromAmountInFiat)
+                fromAmountInUsd: Number(this.fromAmountInFiat),
+                fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
+                fromTokenDecimals: this.quote?.fromAsset.decimals
               })
             }
           }
@@ -2390,7 +2392,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         swapSponsorship: getSwapSponsorship({
           isOg: this.#invite.isOG,
           nativePrice,
-          fromAmountInUsd: Number(this.fromAmountInFiat)
+          fromAmountInUsd: Number(this.fromAmountInFiat),
+          fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
+          fromTokenDecimals: this.quote?.fromAsset.decimals
         })
       }
     }
