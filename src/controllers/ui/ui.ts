@@ -1,5 +1,6 @@
 import { EventEmitter as UiEventEmitter } from 'events'
 
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -14,8 +15,14 @@ export class UiController extends EventEmitter implements IUiController {
 
   message: UiManager['message']
 
-  constructor({ uiManager }: { uiManager: UiManager }) {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    uiManager
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    uiManager: UiManager
+  }) {
+    super(eventEmitterRegistry)
 
     this.uiEvent = new UiEventEmitter()
     this.window = uiManager.window

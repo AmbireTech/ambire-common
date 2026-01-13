@@ -44,7 +44,7 @@ import {
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
-import { ErrorRef } from '../../interfaces/eventEmitter'
+import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import {
   ExternalKey,
@@ -333,6 +333,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
+    eventEmitterRegistry,
     type,
     callRelayer,
     accounts,
@@ -353,6 +354,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
     callRelayer: Function
     accounts: IAccountsController
@@ -373,7 +375,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
@@ -622,7 +624,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get isInitialized(): boolean {
-    return this.estimation.isInitialized()
+    // The estimation becomes null when the signAccountOp controller
+    // is destroyed.
+    return this.estimation && this.estimation.isInitialized()
   }
 
   #setDefaults() {
@@ -885,6 +889,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   calculateWarnings() {
+    if (!this.isInitialized) return
+
     const warnings: Warning[] = []
 
     const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)

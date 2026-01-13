@@ -1,4 +1,4 @@
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
@@ -29,8 +29,12 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  constructor(networks: INetworksController, storage: IStorageController) {
-    super()
+  constructor(
+    networks: INetworksController,
+    storage: IStorageController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
+  ) {
+    super(eventEmitterRegistry)
 
     this.#networks = networks
     this.#storage = storage

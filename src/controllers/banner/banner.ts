@@ -1,4 +1,5 @@
 import { Banner, IBannerController } from '../../interfaces/banner'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -15,8 +16,8 @@ export class BannerController extends EventEmitter implements IBannerController 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  constructor(storage: IStorageController) {
-    super()
+  constructor(storage: IStorageController, eventEmitterRegistry?: IEventEmitterRegistryController) {
+    super(eventEmitterRegistry)
     this.#storage = storage
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises

@@ -22,7 +22,7 @@ import {
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   ExternalKey,
@@ -136,9 +136,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     platform: Platform,
     _storage: IStorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
