@@ -479,7 +479,6 @@ export interface ProviderQuoteParams {
   fromAmount: bigint
   userAddress: string
   sort: 'time' | 'output'
-  isOG: boolean
   isWrapOrUnwrap: boolean
   accountNativeBalance: bigint
   nativeSymbol: string
@@ -522,7 +521,6 @@ export interface SwapProvider {
     fromAmount,
     userAddress,
     sort,
-    isOG,
     accountNativeBalance,
     nativeSymbol
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>
