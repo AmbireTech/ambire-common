@@ -536,7 +536,7 @@ export const getTotal = (
     // The portfolio handles at least one collateral token,
     // thus we must exclude them from the defi total to avoid double counting
     const positionsToExclude: string[] = t
-      .filter((token) => token.flags.defiPositionId)
+      .filter((token) => token.flags.defiPositionId && !token.flags.isHidden)
       .map((token) => token.flags.defiPositionId!)
 
     defiTotal = defiState.positionsByProvider.reduce(

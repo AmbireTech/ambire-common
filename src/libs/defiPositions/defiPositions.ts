@@ -223,16 +223,17 @@ const getNewDefiState = (
 ): NetworkState => {
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
   const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
-  const debankPositionsByProvider = discoveryResponse?.data?.defi?.positions || []
   const previousPositionsByProvider = pastPortfolioState?.defiPositions?.positionsByProvider || []
+  const debankPositionsByProvider =
+    discoveryResponse?.data?.defi?.positions ||
+    // Fallback to the old positions if the call failed or was skipped
+    previousPositionsByProvider.filter((p) => p.source !== 'custom')
   const { lastForceApiUpdate, lastSuccessfulUpdate } = pastPortfolioState?.defiPositions || {}
 
   const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
 
   const uniqueAndMerged = getUniqueMergedPositions(
-    isDebankCallSuccessful
-      ? debankPositionsByProvider
-      : previousPositionsByProvider.filter((p) => p.source === 'debank'),
+    debankPositionsByProvider,
     customPositionsByProvider,
     // Ethereum-specific. Add the Staked Wallet token as a defi position
     stkWalletPosition
