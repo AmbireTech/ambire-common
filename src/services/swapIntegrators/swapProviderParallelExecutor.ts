@@ -232,7 +232,6 @@ export class SwapProviderParallelExecutor {
     fromAmount,
     userAddress,
     sort,
-    isOG,
     accountNativeBalance,
     nativeSymbol,
     isWrapOrUnwrap
@@ -250,7 +249,6 @@ export class SwapProviderParallelExecutor {
             fromAmount,
             userAddress,
             sort,
-            isOG,
             accountNativeBalance,
             nativeSymbol,
             isWrapOrUnwrap

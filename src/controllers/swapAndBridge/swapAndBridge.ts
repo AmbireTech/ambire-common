@@ -10,7 +10,6 @@ import {
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Statuses } from '../../interfaces/eventEmitter'
-import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -130,8 +129,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #networks: INetworksController
 
   #activity: IActivityController
-
-  #invite: IInviteController
 
   #storage: IStorageController
 
@@ -278,7 +275,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity,
     storage,
     phishing,
-    invite,
     portfolioUpdate,
     relayerUrl,
     isMainSignAccountOpThrowingAnEstimationError,
@@ -299,7 +295,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity: IActivityController
     storage: IStorageController
     phishing: IPhishingController
-    invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isMainSignAccountOpThrowingAnEstimationError?: Function
@@ -325,7 +320,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
     this.#phishing = phishing
-    this.#invite = invite
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
@@ -1568,7 +1562,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           userAddress: this.#selectedAccount.account.addr,
           sort: this.routePriority,
           isWrapOrUnwrap,
-          isOG: this.#invite.isOG,
           accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
