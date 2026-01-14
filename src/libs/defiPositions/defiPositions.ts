@@ -331,6 +331,7 @@ const enhancePortfolioTokensWithDefiPositions = (
           if (controllerAddress) {
             defiAssetsMap.set(controllerAddress.toLowerCase(), {
               positionId: pos.id,
+              assetType: AssetType.Collateral,
               priceIn: []
             })
           }
