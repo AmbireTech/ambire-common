@@ -132,7 +132,7 @@ const validateSendTransferAddress = (
     return {
       success: true,
       message,
-      severity: lastRecipientTransactionDate ? 'warning' : 'success'
+      severity: lastRecipientTransactionDate ? 'success' : 'warning'
     }
   }
 
