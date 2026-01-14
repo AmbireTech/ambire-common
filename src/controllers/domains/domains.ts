@@ -1,6 +1,7 @@
 import { getAddress, isAddress } from 'ethers'
 
 import { IDomainsController } from '../../interfaces/domains'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { RPCProviders } from '../../interfaces/provider'
 import { getEnsAvatar, reverseLookupEns } from '../../services/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
@@ -35,8 +36,17 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
-  constructor(providers: RPCProviders, defaultNetworksMode?: 'mainnet' | 'testnet') {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    providers,
+    defaultNetworksMode
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    providers: RPCProviders
+    defaultNetworksMode?: 'mainnet' | 'testnet'
+  }) {
+    super(eventEmitterRegistry)
+
     this.#providers = providers
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
   }

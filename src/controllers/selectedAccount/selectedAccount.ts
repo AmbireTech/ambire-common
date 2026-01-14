@@ -6,6 +6,7 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -77,17 +78,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   dismissedBannerIds: { [key: string]: string[] } = {}
 
   constructor({
+    eventEmitterRegistry,
     storage,
     accounts,
     keystore,
     autoLogin
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
     autoLogin: IAutoLoginController
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts

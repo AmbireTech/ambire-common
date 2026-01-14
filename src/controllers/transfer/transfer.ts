@@ -5,6 +5,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -167,9 +168,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#callRelayer = callRelayer
     this.#storage = storage
@@ -454,7 +456,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.#onRecipientAddressChange()
-    this.programmaticUpdateCounter = 0
+    // This MUST be incremented and not reset to zero, because the UI relies on
+    // the change of this value. If the value was 0 and is reset to 0, the UI
+    // would not detect a change.
+    if (this.programmaticUpdateCounter === 0) {
+      this.programmaticUpdateCounter += 1
+    } else {
+      this.programmaticUpdateCounter = 0
+    }
 
     if (shouldDestroyAccountOp) {
       this.destroySignAccountOp()

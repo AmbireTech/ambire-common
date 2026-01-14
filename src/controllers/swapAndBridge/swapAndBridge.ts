@@ -9,7 +9,7 @@ import {
 } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -266,6 +266,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #onBroadcastFailed: OnBroadcastFailed
 
   constructor({
+    eventEmitterRegistry,
     callRelayer,
     accounts,
     keystore,
@@ -287,6 +288,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     callRelayer: Function
     accounts: IAccountsController
     keystore: IKeystoreController
@@ -308,7 +310,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
   }) {
-    super()
+    super(eventEmitterRegistry)
+
     this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
