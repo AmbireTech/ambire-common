@@ -1,5 +1,5 @@
 {
-  "version": "2.85.0",
+  "version": "2.85.1",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
