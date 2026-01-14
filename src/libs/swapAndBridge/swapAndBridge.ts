@@ -623,13 +623,13 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
  * amount in USD to the fee percent
  */
 const getSwapSponsorship = ({
-  isOg,
+  hasConvinienceFee,
   nativePrice,
   fromAmountInUsd,
   fromTokenPriceInUsd,
   fromTokenDecimals
 }: {
-  isOg: boolean
+  hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
   fromTokenPriceInUsd: number | undefined
@@ -642,7 +642,13 @@ const getSwapSponsorship = ({
       fromTokenDecimals: number
     }
   | undefined => {
-  if (isOg || !nativePrice || !fromAmountInUsd || !fromTokenPriceInUsd || !fromTokenDecimals)
+  if (
+    !hasConvinienceFee ||
+    !nativePrice ||
+    !fromAmountInUsd ||
+    !fromTokenPriceInUsd ||
+    !fromTokenDecimals
+  )
     return undefined
   return {
     nativePrice,

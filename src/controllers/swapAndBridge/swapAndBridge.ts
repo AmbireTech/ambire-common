@@ -1686,8 +1686,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             toChainId: quoteResult.toChainId,
             selectedRoute: quoteResult.selectedRoute,
             selectedRouteSteps: quoteResult.selectedRoute.steps,
-            routes,
-            withConvenienceFee: quoteResult.withConvenienceFee
+            routes
           }
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
@@ -2362,7 +2361,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
               swapTxn: userTxn,
               fromQuoteId: quoteIdGuard,
               swapSponsorship: getSwapSponsorship({
-                isOg: this.#invite.isOG,
+                hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
                 nativePrice,
                 fromAmountInUsd: Number(this.fromAmountInFiat),
                 fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
@@ -2393,7 +2392,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
         fromQuoteId: quoteIdGuard,
         swapSponsorship: getSwapSponsorship({
-          isOg: this.#invite.isOG,
+          hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
           nativePrice,
           fromAmountInUsd: Number(this.fromAmountInFiat),
           fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,

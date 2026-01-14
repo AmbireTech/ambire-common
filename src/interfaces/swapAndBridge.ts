@@ -51,11 +51,6 @@ export interface SwapAndBridgeQuote {
   selectedRoute?: SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
-  /**
-   * We don't charge a convenience fee for some operations
-   * @example - Wrapping and unwrapping natives
-   */
-  withConvenienceFee: boolean
 }
 
 export interface SocketAPIRoute {
@@ -122,6 +117,13 @@ export interface SwapAndBridgeRoute {
   // the socket auto route comes with approvalData & txData
   approvalData?: BungeeApprovalData
   txData?: BungeeTxData
+  /**
+   * We don't charge a convenience fee for some operations.
+   * Also, on some chains we have a fee with some providers while
+   * we don't have with others.
+   * @example - Wrapping and unwrapping natives
+   */
+  withConvenienceFee: boolean
 }
 
 export interface SocketAPISwapUserTx {
