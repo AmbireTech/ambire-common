@@ -52,7 +52,10 @@ function getSwapSponsorshipEstimationData(): PaymasterEstimationData {
   const paymasterData = getPaymasterDataForEstimate()
   return {
     ...paymasterData,
-    sponsor: { name: '', text: 'No additional fees needed' }
+    sponsor: {
+      name: 'Ambire Wallet',
+      icon: 'https://velcro.ambire.com/public/ambire-logos/symbol-color.svg'
+    }
   }
 }
 
