@@ -5,6 +5,7 @@ import {
 import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -67,6 +68,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }
 
   constructor({
+    eventEmitterRegistry,
     fetch,
     storage,
     selectedAccount,
@@ -76,6 +78,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     providers,
     ui
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     selectedAccount: ISelectedAccountController
@@ -85,7 +88,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     providers: IProvidersController
     ui: IUiController
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#fetch = fetch
     this.#storage = storage
