@@ -494,9 +494,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.emitUpdate()
   }
 
-  async generateTempSeed({ extraEntropy }: { extraEntropy: string }) {
+  async generateTempSeed({ extraEntropy }: { extraEntropy?: string }) {
     const entropyGenerator = new EntropyGenerator()
-    const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy).phrase
+    const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy || '').phrase
 
     this.#tempSeed = { seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE }
 
