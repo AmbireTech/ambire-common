@@ -34,23 +34,27 @@ import { flattenResults, paginate } from './pagination'
 const EXCLUDED_TOKENS: Record<string, string[]> = {
   // Gnosis Chain (xDAI)
   '100': [
-    '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe - Duplicate
   ],
   // Polygon
   '137': [
-    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' // EURe - Duplicate
   ],
   // Ethereum Mainnet
   '1': [
-    '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe - Duplicate
   ],
   // Hyper EVM
   '999': [
-    '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE. Only stHYPE should be displayed (following Rabby's approach)
+    '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE
   ],
   // Andromeda
   '1088': [
-    '0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000' // METIS as a token - Excluded because it's a duplicate of METIS, the native token
+    '0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000' // METIS as an ERC-20 token - Excluded because it's a duplicate of the native token
+  ],
+  // Optimism
+  '10': [
+    '0xDfA2d3a0d32F870D87f8A0d7AA6b9CdEB7bc5AdB' // sUSD - Duplicate of 0x8c6f28f2F1A3C87F0f938b96d27520d9751ec8d9
   ]
 }
 
