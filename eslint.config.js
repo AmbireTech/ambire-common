@@ -67,7 +67,7 @@ module.exports = [
   // Done to avoid false positives
   // and reduce performance impact
   {
-    files: ['src/controllers/**/*.ts'],
+    files: ['src/controllers/**/*.ts', 'src/ambire-common/src/controllers/**/*.ts'],
     plugins: {
       ambire: ambirePlugin
     },
