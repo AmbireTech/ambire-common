@@ -35,9 +35,6 @@ module.exports = [
       ambire: ambirePlugin
     },
     rules: {
-      // Custom rules
-      'ambire/no-emit-update-in-on-update': 'error',
-      // Custom rules end
       'prettier/prettier': [
         'error',
         {
@@ -64,6 +61,18 @@ module.exports = [
       'react/react-in-jsx-scope': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       semi: ['error', 'never']
+    }
+  },
+  // Custom rules for controllers only
+  // Done to avoid false positives
+  // and reduce performance impact
+  {
+    files: ['src/controllers/**/*.ts'],
+    plugins: {
+      ambire: ambirePlugin
+    },
+    rules: {
+      'ambire/no-emit-update-in-on-update': 'error'
     }
   }
 ]
