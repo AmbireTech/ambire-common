@@ -2407,8 +2407,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.emitUpdate()
 
-    this.#signAccountOpController.onUpdate(() => {
-      this.emitUpdate()
+    this.#signAccountOpController.onUpdate((forceEmit) => {
+      this.propagateUpdate(forceEmit)
 
       if (this.#signAccountOpController?.broadcastStatus === 'SUCCESS') {
         // Reset the form on the next tick so the FE receives the final

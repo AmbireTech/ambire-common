@@ -223,7 +223,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#leaveTransfer()
     })
 
-    this.#selectedAccount.onUpdate(async () => {
+    this.#selectedAccount.onUpdate(async (forceEmit) => {
       if (!this.#currentTransferSessionId) return
       this.#setTokens()
 
@@ -233,7 +233,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady) this.isReady = true
       }
 
-      this.emitUpdate()
+      this.propagateUpdate(forceEmit)
     })
 
     this.emitUpdate()
@@ -897,8 +897,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     })
 
-    this.signAccountOpController.onUpdate(() => {
-      this.emitUpdate()
+    this.signAccountOpController.onUpdate((forceEmit) => {
+      this.propagateUpdate(forceEmit)
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         // Reset the form on the next tick so the FE receives the final
