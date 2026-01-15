@@ -1738,14 +1738,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         dappPromises
       } as CallsUserRequest
 
-      callUserRequest.signAccountOp.onUpdate(() => {
+      callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(
           (r) => r.kind === 'calls' && r.signAccountOp.fromRequestId === requestId
         ) as CallsUserRequest | undefined
 
         if (!callsReq) return
 
-        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.emitUpdate()
+        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.propagateUpdate(forceEmit)
       }, 'requests-ctrl')
     }
 
