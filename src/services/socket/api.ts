@@ -265,7 +265,6 @@ export class SocketAPI implements SwapProvider {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isOG,
     isWrapOrUnwrap,
     accountNativeBalance,
     nativeSymbol
@@ -288,7 +287,7 @@ export class SocketAPI implements SwapProvider {
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
     const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isOG && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feeBps', (FEE_PERCENT * 100).toString())

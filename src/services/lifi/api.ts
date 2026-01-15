@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -448,8 +448,6 @@ export class LiFiAPI implements SwapProvider {
     userAddress,
     sort,
     isWrapOrUnwrap,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isOG,
     accountNativeBalance,
     nativeSymbol
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
@@ -507,8 +505,7 @@ export class LiFiAPI implements SwapProvider {
       }
     }
 
-    const shouldRemoveConvenienceFee =
-      isOG || isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
+    const shouldRemoveConvenienceFee = isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
