@@ -1469,9 +1469,10 @@ describe('Portfolio Controller ', () => {
 
     controller.onUpdate(() => {
       const tokenIsValid =
-        controller.validTokens.erc20[`${token.address}-${token.chainId}`] === true
+        controller.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true
       const tokenIsNotValid =
-        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.chainId}`] === false
+        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.chainId}`]?.isValid ===
+        false
       expect(tokenIsNotValid).toBeFalsy()
       expect(tokenIsValid).toBeTruthy()
     })

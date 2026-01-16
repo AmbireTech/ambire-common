@@ -68,36 +68,15 @@ export const getCallsUserRequestsByNetwork = (
 ): { [key: string]: CallsUserRequest[] } => {
   const callsUserRequests = (
     userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]
-  ).filter((req) => req.accountOp.accountAddr === accountAddr)
+  ).filter((req) => req.signAccountOp.accountOp.accountAddr === accountAddr)
 
   const requestsByNetwork = callsUserRequests.reduce((acc: any, req) => {
-    const { chainId } = req.accountOp
+    const { chainId } = req.signAccountOp.accountOp
     if (!acc[chainId.toString()]) acc[chainId.toString()] = []
     acc[chainId.toString()].push(req)
     return acc
   }, {})
   return requestsByNetwork
-}
-
-export const batchCallsFromUserRequests = ({
-  accountAddr,
-  chainId,
-  userRequests
-}: {
-  accountAddr: AccountId
-  chainId: bigint
-  userRequests: UserRequest[]
-}): Call[] => {
-  return (userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]).reduce(
-    (uCalls: Call[], req) => {
-      if (req.accountOp.chainId === chainId && req.accountOp.accountAddr === accountAddr) {
-        const { calls } = req.accountOp
-        calls.forEach((call) => uCalls.push({ ...call, dapp: req.meta.dapp }))
-      }
-      return uCalls
-    },
-    []
-  )
 }
 
 export const buildSwitchAccountUserRequest = ({
@@ -125,8 +104,8 @@ export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
   return (
     userRequests
       .filter((req) => req.kind === 'calls')
-      .filter((req) => req.accountOp?.meta?.topUpAmount)
-      .map((req) => req.accountOp.meta!.topUpAmount)
+      .filter((req) => req.signAccountOp.accountOp?.meta?.topUpAmount)
+      .map((req) => req.signAccountOp.accountOp.meta!.topUpAmount)
       .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
 }

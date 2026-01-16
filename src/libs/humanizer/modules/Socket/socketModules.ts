@@ -238,95 +238,23 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
       )?.selector
     }`]: (call: IrCall) => {
-      // eslint-disable-next-line prefer-const
-      let { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
-        iface.parseTransaction(call)!.args
-      let outAmount = 0n
-      if (
-        swapExtraData.startsWith(
-          iface.getFunction(
-            'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
-          )?.selector
-        )
-      ) {
-        outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
-      } else if (
-        swapExtraData.startsWith(
-          iface.getFunction(
-            'swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
-          )?.selector
-        )
-      ) {
-        const [
-          randAddress,
-          [token1, token2, randAddress2, recipient, amount1, amount2],
-          bytes1,
-          bytes2
-        ] = iface.parseTransaction({ data: swapExtraData })!.args
-        outAmount = amount2
-      } else if (
-        swapExtraData.startsWith(
-          iface.getFunction('transformERC20(address,address,uint256,uint256,(uint32,bytes)[])')!
-            .selector
-        )
-      ) {
-        const params = iface.parseTransaction({ data: swapExtraData })!.args
-        outAmount = params[3]
-      } else if (swapExtraData.startsWith(iface.getFunction('exec')?.selector)) {
-        const [, , , , extraData] = iface.parseTransaction({
-          data: swapExtraData
-        })!.args
-        if (extraData.startsWith(iface.getFunction('execute')?.selector)) {
-          // eslint-disable-next-line prefer-const
-          let [[, , minAmountOut], actions] = iface.parseTransaction({
-            data: extraData
-          })!.args
-          if (!minAmountOut) {
-            const uniswapData = actions.find((i: any) =>
-              i.startsWith(iface.getFunction('UNISWAPV3')?.selector)
-            )
-            if (uniswapData) {
-              ;[, , , minAmountOut] = iface.parseTransaction({ data: uniswapData })!.args
-            }
-          }
-          outAmount = minAmountOut
-        }
-      } else if (swapExtraData.startsWith(iface.getFunction('uniswapV3SwapTo')?.selector)) {
-        const [address, amount1, amount2] = iface.parseTransaction({
-          data: swapExtraData
-        })!.args
-        outAmount = amount2
-      } else if (
-        swapExtraData.startsWith(
-          iface.getFunction(
-            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls)'
-          )?.selector
-        )
-      ) {
-        const {
-          // caller,
-          desc: {
-            // srcToken,
-            // dstToken,
-            // srcReceiver,
-            // dstReceiver,
-            // amount: _amount,
-            minReturnAmount
-            // guaranteedAmount,
-            // flags,
-            // referrer,
-            // permit
-          }
-        } = iface.parseTransaction({
-          data: swapExtraData
-        })!.args
-        outAmount = minReturnAmount
-      }
+      const { fromToken, toToken, receiverAddress } = iface.parseTransaction(call)!.args
+
+      // We set 0n for from/to amounts so the Humanization does not show amounts.
+      // It will display only text like "Swap USDC for WALLET".
+      //
+      // This avoids confusion because Socket routes return `fromAmount` after the convenience fee is deducted.
+      // For example, when a user sends 1 USDC, Humanization would show 0.9975, while Simulation correctly shows 1 USDC.
+      //
+      // This happens because Socket contracts expect `fromAmount` to be fee-deducted,
+      // and the convenience fee is sent separately to the feeTaker in internal calls.
+      //
+      // Since Simulation already shows the correct in/out amounts, we keep amounts there and hide them in Humanization.
       return [
         getAction('Swap'),
-        getToken(eToNative(fromToken), amount),
-        getLabel(outAmount ? 'for at least' : 'for'),
-        getToken(eToNative(toToken), outAmount),
+        getToken(eToNative(fromToken), 0n),
+        getLabel('for'),
+        getToken(eToNative(toToken), 0n),
         ...getRecipientText(accountOp.accountAddr, receiverAddress)
       ]
     },
@@ -335,95 +263,23 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
       )?.selector
     }`]: (call: IrCall) => {
-      // eslint-disable-next-line prefer-const
-      let { fromToken, toToken, amount, metadata, swapExtraData } =
-        iface.parseTransaction(call)!.args
-      let outAmount = 0n
-      if (
-        swapExtraData.startsWith(
-          iface.getFunction(
-            'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
-          )?.selector
-        )
-      ) {
-        outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
-      } else if (
-        swapExtraData.startsWith(
-          iface.getFunction(
-            'swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
-          )?.selector
-        )
-      ) {
-        const [
-          randAddress,
-          [token1, token2, randAddress2, recipient, amount1, amount2],
-          bytes1,
-          bytes2
-        ] = iface.parseTransaction({ data: swapExtraData })!.args
-        outAmount = amount2
-      } else if (
-        swapExtraData.startsWith(
-          iface.getFunction('transformERC20(address,address,uint256,uint256,(uint32,bytes)[])')!
-            .selector
-        )
-      ) {
-        const params = iface.parseTransaction({ data: swapExtraData })!.args
-        outAmount = params[3]
-      } else if (swapExtraData.startsWith(iface.getFunction('exec')?.selector)) {
-        const [, , , , extraData] = iface.parseTransaction({
-          data: swapExtraData
-        })!.args
-        if (extraData.startsWith(iface.getFunction('execute')?.selector)) {
-          // eslint-disable-next-line prefer-const
-          let [[, , minAmountOut], actions] = iface.parseTransaction({
-            data: extraData
-          })!.args
-          if (!minAmountOut) {
-            const uniswapData = actions.find((i: any) =>
-              i.startsWith(iface.getFunction('UNISWAPV3')?.selector)
-            )
-            if (uniswapData) {
-              ;[, , , minAmountOut] = iface.parseTransaction({ data: uniswapData })!.args
-            }
-          }
-          outAmount = minAmountOut
-        }
-      } else if (swapExtraData.startsWith(iface.getFunction('uniswapV3SwapTo')?.selector)) {
-        const [address, amount1, amount2] = iface.parseTransaction({
-          data: swapExtraData
-        })!.args
-        outAmount = amount2
-      } else if (
-        swapExtraData.startsWith(
-          iface.getFunction(
-            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls)'
-          )?.selector
-        )
-      ) {
-        const {
-          // caller,
-          desc: {
-            // srcToken,
-            // dstToken,
-            // srcReceiver,
-            // dstReceiver,
-            // amount: _amount,
-            minReturnAmount
-            // guaranteedAmount,
-            // flags,
-            // referrer,
-            // permit
-          }
-        } = iface.parseTransaction({
-          data: swapExtraData
-        })!.args
-        outAmount = minReturnAmount
-      }
+      const { fromToken, toToken } = iface.parseTransaction(call)!.args
+
+      // We set 0n for from/to amounts so the Humanization does not show amounts.
+      // It will display only text like "Swap USDC for WALLET".
+      //
+      // This avoids confusion because Socket routes return `fromAmount` after the convenience fee is deducted.
+      // For example, when a user sends 1 USDC, Humanization would show 0.9975, while Simulation correctly shows 1 USDC.
+      //
+      // This happens because Socket contracts expect `fromAmount` to be fee-deducted,
+      // and the convenience fee is sent separately to the feeTaker in internal calls.
+      //
+      // Since Simulation already shows the correct in/out amounts, we keep amounts there and hide them in Humanization.
       return [
         getAction('Swap'),
-        getToken(eToNative(fromToken), amount),
-        getLabel(outAmount ? 'for at least' : 'for'),
-        getToken(eToNative(toToken), outAmount)
+        getToken(eToNative(fromToken), 0n),
+        getLabel('for'),
+        getToken(eToNative(toToken), 0n)
       ]
     },
     [`${

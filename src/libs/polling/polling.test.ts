@@ -1,9 +1,9 @@
-import fetch from 'node-fetch'
-
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
+import { fetchWithAppVersion as fetch } from '../../../test/helpers'
 import { EmailVaultData } from '../../interfaces/emailVault'
+import wait from '../../utils/wait'
 import { EmailVault } from '../emailVault/emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
@@ -30,11 +30,9 @@ describe('Polling', () => {
     const polling = new Polling()
     const magicLinkKey = await requestMagicLink(email, relayerUrl, fetch, { autoConfirm: true })
 
-    polling.onUpdate(() => {
-      if (polling.state.isError) {
-        // console.log('[onUpdate] last status:', polling.state.error.output.res.status)
-      }
-    })
+    // Wait a bit for the auto-confirm to click (it gets triggered in 2s, wait 2 more and fire)
+    await wait(4000)
+
     const result: EmailVaultData | null = await polling.exec(
       ev.getEmailVaultInfo.bind(ev),
       [email, magicLinkKey.key],
@@ -49,7 +47,6 @@ describe('Polling', () => {
       availableAccounts: {},
       operations: []
     })
-    // console.log({ result })
   })
 
   describe('cleanup', () => {

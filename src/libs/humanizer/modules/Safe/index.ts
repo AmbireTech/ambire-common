@@ -1,19 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { getAddress, Interface, ZeroAddress } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { SafeV2 } from '../../const/abis/Safe'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
-import {
-  eToNative,
-  getAction,
-  getAddressVisualization,
-  getLabel,
-  getRecipientText,
-  getToken,
-  getWarning,
-  uintToAddress
-} from '../../utils'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { getAction, getAddressVisualization, getLabel, getToken, getWarning } from '../../utils'
 
 const iface = new Interface(SafeV2)
 
@@ -48,17 +39,12 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         fullVisualization.push(
           ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, value)]
         )
-
-      if (operation === 1)
+      if (operation === 1n)
         return {
           ...call,
           fullVisualization,
           warnings: [
-            getWarning(
-              'Delegate call from Safe{WALLET} account',
-              'SAFE{WALLET}_DELEGATE_CALL',
-              'danger'
-            )
+            getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
           ]
         }
       return { ...call, fullVisualization }

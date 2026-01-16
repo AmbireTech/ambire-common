@@ -34,8 +34,12 @@ describe('Networks Controller', () => {
 
     const actualChainIds = networksController.networks.map((n) => n.chainId)
     const expectedChainIds = predefinedNetworks.map((n) => n.chainId)
+    const disabledNetworks = networksController.disabledNetworks.map((n) => n.chainId)
+    const expectedChainsWithoutDisabled = expectedChainIds.filter(
+      (id) => !disabledNetworks.includes(id)
+    )
 
-    expect(actualChainIds).toEqual(expect.arrayContaining(expectedChainIds))
+    expect(actualChainIds).toEqual(expect.arrayContaining(expectedChainsWithoutDisabled))
   })
 
   test('should merge relayer networks correctly, including custom "unichain" network', async () => {

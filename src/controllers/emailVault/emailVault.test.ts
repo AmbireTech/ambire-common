@@ -1,10 +1,8 @@
 /* eslint-disable class-methods-use-this */
-import fetch from 'node-fetch'
-
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
+import { fetchWithAppVersion as fetch, produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { IStorageController, Storage } from '../../interfaces/storage'

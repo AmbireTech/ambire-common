@@ -268,14 +268,14 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'estimation-retry',
         title: this.estimationRetryError.message,
-        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...'
+        text: 'You can proceed, but fee estimation is outdated - consider waiting for an updated estimation for a more optimal fee.'
       })
     }
 
     if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
       warnings.push({
         id: 'bundler-failure',
-        title: 'We are experiencing temporary issues and broadcasting options are limited'
+        title: 'You can proceed safely, but fee payment options are limited due to temporary provider issues'
       })
     }
 
@@ -283,7 +283,7 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'bundler-nonce-discrepancy',
         title:
-          'Pending transaction detected! Please wait for its confirmation to have more payment options available'
+          'You can proceed safely, but fee payment options are limited due to a pending transaction'
       })
     }
 

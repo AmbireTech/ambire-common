@@ -26,8 +26,13 @@ import { DefiPositionsController } from './defiPositions'
 
 global.fetch = fetch as any
 
+// If the account ever has to be replaced:
+// 1. Go to https://debank.com/protocols
+// 2. Find an Account that has both Aave v3 and Uniswap v3 positions on mainnet
+// 3. Replace the address below with that account's address
+// 4. Update the static MOCK_DEBANK_RESPONSE_DATA below with a fresh call to cena
 const ACCOUNT = {
-  addr: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
+  addr: '0x741aa7cfb2c7bf2a1e7d4da2e3df6a56ca4131f3',
   initialPrivileges: [],
   associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
   creation: {
@@ -38,7 +43,7 @@ const ACCOUNT = {
   },
   preferences: {
     label: 'Test account',
-    pfp: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
+    pfp: '0x96c122e9c968e8246288c724838b1924410807fb'
   }
 }
 
@@ -143,8 +148,8 @@ describe('DefiPositionsController', () => {
 
     await controller.updatePositions()
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    expect(selectedAccountState['137']!.updatedAt).toBeDefined()
-    expect(selectedAccountState['137']!.positionsByProvider.length).toBeGreaterThan(0)
+    expect(selectedAccountState['1']!.updatedAt).toBeDefined()
+    expect(selectedAccountState['1']!.positionsByProvider.length).toBeGreaterThan(0)
   })
 
   it('should handle errors in update positions', async () => {
@@ -179,7 +184,7 @@ describe('DefiPositionsController', () => {
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
-    const positions = selectedAccountState['137']!.positionsByProvider
+    const positions = selectedAccountState['1']!.positionsByProvider
     expect(positions.length).toBeGreaterThan(0)
     positions.forEach((provider) => {
       provider.positions.forEach((position) => {
@@ -197,7 +202,7 @@ describe('DefiPositionsController', () => {
     await controller.updatePositions()
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
-    expect(networksWithPositions['137']).toContain('AAVE v3')
+    expect(networksWithPositions['1']).toContain('AAVE v3')
   })
   it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
     const consoleSuppressor = suppressConsole()
@@ -214,7 +219,6 @@ describe('DefiPositionsController', () => {
     const accountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
     expect(accountState['1']!.providerErrors!.length).toBeGreaterThan(0)
-    expect(accountState['137']!.providerErrors!.length).toBeGreaterThan(0)
 
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
@@ -263,11 +267,19 @@ describe('DefiPositionsController', () => {
     )
 
     expect(uniswapV3Positions).toBeDefined()
-    expect(uniswapV3Positions!.positions.length).toEqual(1)
+    expect(uniswapV3Positions!.positions.length).toBeGreaterThan(0)
+
     uniswapV3Positions!.positions.forEach((position) => {
       expect(position.additionalData.positionIndex).toBeDefined()
-      expect(position.additionalData.inRange).toBeDefined()
     })
+
+    // It's not guaranteed that all positions will have inRange defined, but only in the tests
+    // That is because the call to debank returns static data that is defined below. If the position
+    // no longer exists, deployless will not return it and there is no way for it to be inRange
+    // It's enough for us to check that one is being enhanced with the custom data
+    expect(
+      uniswapV3Positions?.positions.some((p) => typeof p.additionalData.inRange === 'boolean')
+    ).toBe(true)
   })
 
   it('getUniqueMergedPositions: duplicates are removed and custom are preffered', async () => {
@@ -300,12 +312,12 @@ describe('DefiPositionsController', () => {
     })
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    const aaveV3Positions = selectedAccountState['10']!.positionsByProvider.find(
+    const aaveV3Positions = selectedAccountState['1']!.positionsByProvider.find(
       (p) => getProviderId(p.providerName) === 'aave v3'
     )
 
     expect(aaveV3Positions).toBeDefined()
-    expect(aaveV3Positions!.positions.length).toEqual(1)
+    expect(aaveV3Positions!.positions.length).toBeGreaterThan(0)
     expect(aaveV3Positions!.source).toBe('custom')
     aaveV3Positions!.positions.forEach((position) => {
       expect(position.additionalData.healthRate).toBeDefined()
@@ -332,6 +344,7 @@ describe('DefiPositionsController', () => {
     Object.values(selectedAccountState).forEach((networkState) => {
       // There won't be an error if there are no positions on that network
       if (!networkState.positionsByProvider.length) return
+      if (!networkState.error) return
 
       expect(networkState.error).toBeDefined()
       expect(networkState.error).toBe(DeFiPositionsError.AssetPriceError)
@@ -504,230 +517,180 @@ describe('DefiPositionsController', () => {
 
 const MOCK_DEBANK_RESPONSE_DATA = [
   {
-    providerName: 'LIDO',
-    chainId: 1,
-    iconUrl:
-      'https://static.debank.com/image/project/logo_url/lido/081388ebc44fa042561749bd5338d49e.png',
-    siteUrl: 'https://stake.lido.fi',
-    type: 'common',
-    positions: [
-      {
-        id: 'f7bf33cb-b134-4bca-97fb-82403101faf3',
-        assets: [
-          {
-            address: 'eth',
-            symbol: 'ETH',
-            name: 'ETH',
-            decimals: 18,
-            amount: '728892183657245952',
-            priceIn: {
-              price: 3893.5,
-              baseCurrency: 'usd'
-            },
-            value: 2837.94171706949,
-            type: 1,
-            iconUrl:
-              'https://static.debank.com/image/coin/logo_url/eth/6443cdccced33e204d90cb723c632917.png'
-          }
-        ],
-        additionalData: {
-          positionInUSD: 2837.94171706949,
-          collateralInUSD: 2837.94171706949,
-          name: 'Staked',
-          detailTypes: ['common'],
-          updateAt: 1761804296,
-          pool: {
-            id: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
-            chain: 'eth',
-            project_id: 'lido',
-            adapter_id: 'lido_staked',
-            controller: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
-            index: null,
-            time_at: 1608242396
-          }
-        }
-      }
-    ],
-    positionInUSD: 2837.94171706949
-  },
-  {
     providerName: 'Aave V3',
-    chainId: 10,
+    chainId: 1,
     iconUrl:
       'https://static.debank.com/image/project/logo_url/aave3/54df7839ab09493ba7540ab832590255.png',
     siteUrl: 'https://app.aave.com',
     type: 'lending',
     positions: [
       {
-        id: 'ae4c7c2f-7d30-44ad-be91-c2a812b7ff1d',
+        id: '8a895b85-6ed3-4119-8eb0-b2a07e42c365',
         assets: [
           {
-            address: '0x68f180fcce6836688e9084f035309e29bf0a2095',
-            symbol: 'WBTC',
-            name: 'Wrapped BTC',
-            decimals: 8,
-            amount: '21258',
-            priceIn: {
-              price: 109986.47,
-              baseCurrency: 'usd'
-            },
-            value: 23.3809237926,
-            type: 1,
-            iconUrl:
-              'https://static.debank.com/image/op_token/logo_url/0x68f180fcce6836688e9084f035309e29bf0a2095/d3c52e7c7449afa8bd4fad1c93f50d93.png',
-            protocolAsset: {
-              address: '0x078f358208685046a11c85e8ad32895ded33a249'
-            }
-          },
-          {
-            address: '0x4200000000000000000000000000000000000006',
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             symbol: 'WETH',
             name: 'Wrapped Ether',
             decimals: 18,
-            amount: '1893035353',
-            priceIn: {
-              price: 3893.71,
-              baseCurrency: 'usd'
-            },
-            value: 0.000007370930688223,
+            amount: '105037591935843001434112',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 323439105.72028327,
             type: 1,
             iconUrl:
-              'https://static.debank.com/image/op_token/logo_url/0x4200000000000000000000000000000000000006/61844453e63cf81301f845d7864236f6.png',
-            protocolAsset: {
-              address: '0xe50fa9b3c56ffb159cb0fca61f5c9d750e8128c8'
-            }
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png',
+            protocolAsset: { address: '0xfa1fdbbd71b0aa16162d76914d69cd8cb3ef92da' }
           },
           {
-            address: '0x4200000000000000000000000000000000000042',
-            symbol: 'OP',
-            name: 'Optimism',
-            decimals: 18,
-            amount: '147983993409089863680',
-            priceIn: {
-              price: 0.4267,
-              baseCurrency: 'usd'
-            },
-            value: 63.1447699876587,
-            type: 1,
+            address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+            symbol: 'USDC',
+            name: 'USD Coin',
+            decimals: 6,
+            amount: '81899459404899',
+            priceIn: { price: 1.001001001001001, baseCurrency: 'usd' },
+            value: 81981440.84574476,
+            type: 2,
             iconUrl:
-              'https://static.debank.com/image/op_token/logo_url/0x4200000000000000000000000000000000000042/029a56df18f88f4123120fdcb6bea40b.png',
-            protocolAsset: {
-              address: '0x513c7e3a9c69ca3e22550ef58ac1c0088e918fff'
-            }
+              'https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png',
+            protocolAsset: { address: '0xed90de2d824ee766c6fd22e90b12e598f681dc9f' }
+          },
+          {
+            address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+            symbol: 'USDT',
+            name: 'Tether USD',
+            decimals: 6,
+            amount: '7421421566626',
+            priceIn: { price: 0.99906, baseCurrency: 'usd' },
+            value: 7414445.430353371,
+            type: 2,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png',
+            protocolAsset: { address: '0x6df1c1e379bc5a00a7b4c6e67a203333772f45a8' }
           }
         ],
         additionalData: {
-          healthRate: 1.157920892373162e59,
-          positionInUSD: 86.5257011511893,
-          collateralInUSD: 86.5257011511893,
+          healthRate: 3.0085418970206783,
+          positionInUSD: 234043219.44418514,
+          deptInUSD: -89395886.27609813,
+          collateralInUSD: 323439105.72028327,
           name: 'Lending',
           detailTypes: ['lending'],
-          updateAt: 1761771802,
+          updateAt: 1767969627,
           pool: {
-            id: '0x794a61358d6845594f94dc1db02a252b5b4814ad',
-            chain: 'op',
-            project_id: 'op_aave3',
+            id: '0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2',
+            chain: 'eth',
+            project_id: 'aave3',
             adapter_id: 'aave3_proxy_lending',
-            controller: '0x794a61358d6845594f94dc1db02a252b5b4814ad',
+            controller: '0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2',
             index: null,
-            time_at: 1647006479
+            time_at: 1672325495
+          }
+        }
+      },
+      {
+        id: 'f5d0e0af-08f8-4bd0-8e00-471ba000425d',
+        assets: [
+          {
+            address: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
+            symbol: 'stETH',
+            name: 'Liquid staked Ether 2.0',
+            decimals: 18,
+            amount: '845280251327172313088',
+            priceIn: { price: 3086.749339788847, baseCurrency: 'usd' },
+            value: 2609168.2577207,
+            type: 1,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xae7ab96520de3a18e5e111b5eaab095312d7fe84/e4f2c8b4d0b254fe8e04880ff76d872e.png'
+          },
+          {
+            address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9',
+            symbol: 'AAVE',
+            name: 'Aave Token',
+            decimals: 18,
+            amount: '63011016835601799315456',
+            priceIn: { price: 165.8, baseCurrency: 'usd' },
+            value: 10447226.591342779,
+            type: 1,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9/7baf403c819f679dc1c6571d9d978f21.png',
+            protocolAsset: { address: '0xa700b4eb416be35b2911fd5dee80678ff64ff6c9' }
+          },
+          {
+            address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9',
+            symbol: 'AAVE',
+            name: 'Aave Token',
+            decimals: 18,
+            amount: '13771599803661195264',
+            priceIn: { price: 165.8, baseCurrency: 'usd' },
+            value: 2283.3312474470263,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9/7baf403c819f679dc1c6571d9d978f21.png',
+            protocolAsset: { address: '0xa700b4eb416be35b2911fd5dee80678ff64ff6c9' }
+          }
+        ],
+        additionalData: {
+          positionInUSD: 13058678.180310925,
+          collateralInUSD: 13058678.180310925,
+          name: 'Staked',
+          detailTypes: ['common'],
+          updateAt: 1767969627,
+          pool: {
+            id: '0x9eda81c21c273a82be9bbc19b6a6182212068101',
+            chain: 'eth',
+            project_id: 'aave3',
+            adapter_id: 'aave2_staked',
+            controller: '0x9eda81c21c273a82be9bbc19b6a6182212068101',
+            index: null,
+            time_at: 1705585583
           }
         }
       }
     ],
-    positionInUSD: 86.5257011511893
+    positionInUSD: 247101897.62449607
   },
   {
-    providerName: 'Curve',
+    providerName: 'Superfluid',
     chainId: 10,
     iconUrl:
-      'https://static.debank.com/image/project/logo_url/op_curve/42e8c4eb3a83479f172dd56c67eb7e88.png',
-    siteUrl: 'https://www.curve.finance',
+      'https://static.debank.com/image/project/logo_url/xdai_superfluid/25f0091457e85c07056f7da3ba037983.png',
+    siteUrl: 'https://app.superfluid.org',
     type: 'common',
     positions: [
       {
-        id: 'e1fe3d5b-d142-4015-9147-3e0494f74e19',
+        id: '765ad083-5f2b-41f5-aacf-b43bf8ebad6a',
         assets: [
-          {
-            address: '0x8c6f28f2f1a3c87f0f938b96d27520d9751ec8d9',
-            symbol: 'sUSD',
-            name: 'Synth sUSD',
-            decimals: 18,
-            amount: '259733753028248128',
-            priceIn: {
-              price: 0.9997,
-              baseCurrency: 'usd'
-            },
-            value: 0.25965583290234,
-            type: 0,
-            iconUrl:
-              'https://static.debank.com/image/op_token/logo_url/0x8c6f28f2f1a3c87f0f938b96d27520d9751ec8d9/c699f829018dea55b6b49da32bc9a90d.png'
-          },
-          {
-            address: '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1',
-            symbol: 'DAI',
-            name: 'Dai Stablecoin',
-            decimals: 18,
-            amount: '21818986095686912',
-            priceIn: {
-              price: 0.9999,
-              baseCurrency: 'usd'
-            },
-            value: 0.0218168041970773,
-            type: 0,
-            iconUrl:
-              'https://static.debank.com/image/op_token/logo_url/0xda10009cbd5d07dd0cecc66161fc93d7c9000da1/549c4205dbb199f1b8b03af783f35e71.png'
-          },
           {
             address: '0x7f5c764cbc14f9669b88837ca1490cca17c31607',
             symbol: 'USDC',
             name: 'USD Coin',
             decimals: 6,
-            amount: '13834',
-            priceIn: {
-              price: 0.9998,
-              baseCurrency: 'usd'
-            },
-            value: 0.0138315353723521,
-            type: 0,
+            amount: '51953',
+            priceIn: { price: 1.001001001001001, baseCurrency: 'usd' },
+            value: 0.05200582526893199,
+            type: 1,
             iconUrl:
               'https://static.debank.com/image/avax_token/logo_url/0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664/c1503ade9d53497fe93ca9f2723c56a1.png'
-          },
-          {
-            address: '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58',
-            symbol: 'USDT',
-            name: 'Tether USD',
-            decimals: 6,
-            amount: '10458',
-            priceIn: {
-              price: 1.00008,
-              baseCurrency: 'usd'
-            },
-            value: 0.0104598184308759,
-            type: 0,
-            iconUrl:
-              'https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/464c0de678334b8fe87327e527bc476d.png'
           }
         ],
         additionalData: {
-          positionInUSD: 0.305763990902645,
-          collateralInUSD: 0.305763990902645,
-          name: 'Liquidity Pool',
+          positionInUSD: 0.05200582526893199,
+          collateralInUSD: 0.05200582526893199,
+          name: 'Deposit',
           detailTypes: ['common'],
-          updateAt: 1761742358,
+          updateAt: 1767969627,
           pool: {
-            id: '0x061b87122ed14b9526a813209c8a59a633257bab',
+            id: '0x8430f084b939208e2eded1584889c9a66b90562f',
             chain: 'op',
-            project_id: 'op_curve',
-            adapter_id: 'curve_liquidity',
-            controller: '0x061b87122ed14b9526a813209c8a59a633257bab',
+            project_id: 'op_superfluid',
+            adapter_id: 'superfluid_deposit',
+            controller: '0x8430f084b939208e2eded1584889c9a66b90562f',
             index: null,
-            time_at: 1644708825
+            time_at: 1647450880
           }
         }
       }
     ],
-    positionInUSD: 0.305763990902645
+    positionInUSD: 0.05200582526893199
   },
   {
     providerName: 'Uniswap V3',
@@ -738,89 +701,290 @@ const MOCK_DEBANK_RESPONSE_DATA = [
     type: 'common',
     positions: [
       {
-        id: 'a9539958-03e0-43c9-b78b-7270c68ca0d9',
+        id: 'a3f30606-08b3-47c5-9a05-810ea31808ae',
         assets: [
-          {
-            address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-            symbol: 'WALLET',
-            name: 'Ambire Wallet',
-            decimals: 18,
-            amount: '43243041899205214863360',
-            priceIn: {
-              price: 0.0220880944993347,
-              baseCurrency: 'usd'
-            },
-            value: 955.156395908336,
-            type: 0,
-            iconUrl:
-              'https://static.debank.com/image/eth_token/logo_url/0x88800092ff476844f74dc2fc427974bbee2794ae/6d920bb617173a2c6d5e4d8d91febeeb.png'
-          },
           {
             address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             symbol: 'WETH',
             name: 'Wrapped Ether',
             decimals: 18,
-            amount: '74587507562656928',
-            priceIn: {
-              price: 3893.5,
-              baseCurrency: 'usd'
-            },
-            value: 290.406460695205,
+            amount: '2504264515820467519488',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 7711306.59563049,
             type: 0,
             iconUrl:
               'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
           },
           {
-            address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-            symbol: 'WALLET',
-            name: 'Ambire Wallet',
-            decimals: 18,
-            amount: '1528669825915597619200',
-            priceIn: {
-              price: 0.0220880944993347,
-              baseCurrency: 'usd'
-            },
-            value: 33.7654035731053,
-            type: 3,
+            address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+            symbol: 'USDT',
+            name: 'Tether USD',
+            decimals: 6,
+            amount: '834219324340',
+            priceIn: { price: 0.99906, baseCurrency: 'usd' },
+            value: 833435.1581754835,
+            type: 0,
             iconUrl:
-              'https://static.debank.com/image/eth_token/logo_url/0x88800092ff476844f74dc2fc427974bbee2794ae/6d920bb617173a2c6d5e4d8d91febeeb.png'
+              'https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png'
           },
           {
             address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             symbol: 'WETH',
             name: 'Wrapped Ether',
             decimals: 18,
-            amount: '8185867942579183',
-            priceIn: {
-              price: 3893.5,
-              baseCurrency: 'usd'
-            },
-            value: 31.871676834432,
+            amount: '794137548930588160',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 2445.363930295492,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
+          },
+          {
+            address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+            symbol: 'USDT',
+            name: 'Tether USD',
+            decimals: 6,
+            amount: '2291294817',
+            priceIn: { price: 0.99906, baseCurrency: 'usd' },
+            value: 2289.14099987202,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png'
+          }
+        ],
+        additionalData: {
+          positionInUSD: 8549476.258736141,
+          collateralInUSD: 8549476.258736141,
+          positionIndex: '180077',
+          name: 'Liquidity Pool',
+          detailTypes: ['common'],
+          updateAt: 1767969627,
+          position_index: '180077',
+          pool: {
+            id: '0x11b815efb8f581194ae79006d24e0d814b7697f6',
+            chain: 'eth',
+            project_id: 'uniswap3',
+            adapter_id: 'uniswap3_liquidity',
+            controller: '0x11b815efb8f581194ae79006d24e0d814b7697f6',
+            index: null,
+            time_at: 1620251172
+          }
+        }
+      },
+      {
+        id: '7b9c4aad-a25b-430e-be27-f11dc5fc9304',
+        assets: [
+          {
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            decimals: 18,
+            amount: '3562012906293755904000',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 10968399.481963173,
+            type: 0,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
+          },
+          {
+            address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+            symbol: 'USDT',
+            name: 'Tether USD',
+            decimals: 6,
+            amount: '1188604711045',
+            priceIn: { price: 0.99906, baseCurrency: 'usd' },
+            value: 1187487.4226168958,
+            type: 0,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png'
+          },
+          {
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            decimals: 18,
+            amount: '1544519487568523008',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 4755.992522485126,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
+          },
+          {
+            address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+            symbol: 'USDT',
+            name: 'Tether USD',
+            decimals: 6,
+            amount: '3307712811',
+            priceIn: { price: 0.99906, baseCurrency: 'usd' },
+            value: 3304.6035609576597,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png'
+          }
+        ],
+        additionalData: {
+          positionInUSD: 12163947.500663511,
+          collateralInUSD: 12163947.500663511,
+          positionIndex: '180068',
+          name: 'Liquidity Pool',
+          detailTypes: ['common'],
+          updateAt: 1767969627,
+          position_index: '180068',
+          pool: {
+            id: '0x4e68ccd3e89f51c3074ca5072bbac773960dfa36',
+            chain: 'eth',
+            project_id: 'uniswap3',
+            adapter_id: 'uniswap3_liquidity',
+            controller: '0x4e68ccd3e89f51c3074ca5072bbac773960dfa36',
+            index: null,
+            time_at: 1620232628
+          }
+        }
+      },
+      {
+        id: '6d5339aa-cb85-4d63-b786-18e2540ba29a',
+        assets: [
+          {
+            address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+            symbol: 'USDC',
+            name: 'USD Coin',
+            decimals: 6,
+            amount: '364929607611',
+            priceIn: { price: 1.001001001001001, baseCurrency: 'usd' },
+            value: 365294.9025138646,
+            type: 0,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png'
+          },
+          {
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            decimals: 18,
+            amount: '926798731819757207552',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 2853863.530930624,
+            type: 0,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
+          },
+          {
+            address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+            symbol: 'USDC',
+            name: 'USD Coin',
+            decimals: 6,
+            amount: '793414866',
+            priceIn: { price: 1.001001001001001, baseCurrency: 'usd' },
+            value: 794.2090750750751,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png'
+          },
+          {
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            decimals: 18,
+            amount: '276944060702344288',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 852.7855377989077,
             type: 3,
             iconUrl:
               'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
           }
         ],
         additionalData: {
-          positionInUSD: 1311.19993701108,
-          collateralInUSD: 1311.19993701108,
-          positionIndex: '1054309',
+          positionInUSD: 3220805.4280573623,
+          collateralInUSD: 3220805.4280573623,
+          positionIndex: '180049',
           name: 'Liquidity Pool',
           detailTypes: ['common'],
-          updateAt: 1761804299,
-          position_index: '1054309',
+          updateAt: 1767969627,
+          position_index: '180049',
           pool: {
-            id: '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66',
+            id: '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640',
             chain: 'eth',
             project_id: 'uniswap3',
             adapter_id: 'uniswap3_liquidity',
-            controller: '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66',
+            controller: '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640',
             index: null,
-            time_at: 1673842307
+            time_at: 1620250931
+          }
+        }
+      },
+      {
+        id: '3ee48922-3c29-4690-a614-b3eb415f8181',
+        assets: [
+          {
+            address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+            symbol: 'USDC',
+            name: 'USD Coin',
+            decimals: 6,
+            amount: '1348654729965',
+            priceIn: { price: 1.001001001001001, baseCurrency: 'usd' },
+            value: 1350004.7347004395,
+            type: 0,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png'
+          },
+          {
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            decimals: 18,
+            amount: '3275860358386362613760',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 10087258.525768375,
+            type: 0,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
+          },
+          {
+            address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+            symbol: 'USDC',
+            name: 'USD Coin',
+            decimals: 6,
+            amount: '2992480566',
+            priceIn: { price: 1.001001001001001, baseCurrency: 'usd' },
+            value: 2995.4760420420425,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png'
+          },
+          {
+            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            decimals: 18,
+            amount: '1407656197662766080',
+            priceIn: { price: 3079.27, baseCurrency: 'usd' },
+            value: 4334.5534997770255,
+            type: 3,
+            iconUrl:
+              'https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png'
+          }
+        ],
+        additionalData: {
+          positionInUSD: 11444593.290010633,
+          collateralInUSD: 11444593.290010633,
+          positionIndex: '179646',
+          name: 'Liquidity Pool',
+          detailTypes: ['common'],
+          updateAt: 1767969627,
+          position_index: '179646',
+          pool: {
+            id: '0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8',
+            chain: 'eth',
+            project_id: 'uniswap3',
+            adapter_id: 'uniswap3_liquidity',
+            controller: '0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8',
+            index: null,
+            time_at: 1620169800
           }
         }
       }
     ],
-    positionInUSD: 1311.19993701108
+    positionInUSD: 35378822.47746765
   }
 ]

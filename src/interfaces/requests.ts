@@ -25,7 +25,7 @@ export type BuildRequest =
       type: 'calls'
       params: {
         userRequestParams: {
-          calls: CallsUserRequest['accountOp']['calls']
+          calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
           meta: CallsUserRequest['meta']
         }
         position?: RequestPosition

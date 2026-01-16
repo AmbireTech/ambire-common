@@ -543,7 +543,6 @@ const init = async (
     accountOp: op,
     isSignRequestStillActive: () => true,
     shouldSimulate: false,
-    onAccountOpUpdate: () => {},
     // @ts-ignore
     onBroadcastSuccess: () => {},
     estimateController: estimationController,

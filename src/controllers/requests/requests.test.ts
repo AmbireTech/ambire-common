@@ -8,7 +8,6 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import {
@@ -32,6 +31,7 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from '../swapAndBridge/socketApiMock'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
@@ -75,6 +75,21 @@ const accounts = [
     }
   }
 ]
+
+const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) => {
+  return new Promise<void>((resolve) => {
+    const unsubscribe = accountsCtrl.onUpdate(() => {
+      if (
+        accountsCtrl.accounts.length &&
+        Object.keys(accountsCtrl.accountStates).length &&
+        !accountsCtrl.areAccountStatesLoading
+      ) {
+        unsubscribe()
+        resolve()
+      }
+    })
+  })
+}
 
 const prepareTest = async () => {
   const storage = produceMemoryStore()
@@ -213,9 +228,94 @@ const prepareTest = async () => {
     onBroadcastFailed: () => {}
   })
 
+  const getSignAccountOp = async ({
+    addr,
+    chainId,
+    requestId
+  }: {
+    addr: string
+    chainId: bigint
+    requestId: string
+  }) => {
+    await accountsCtrl.initialLoadPromise
+    await waitForAccountsCtrlFirstLoad(accountsCtrl)
+    await networksCtrl.initialLoadPromise
+    const account = accountsCtrl.accounts.find((a) => a.addr === addr)!
+    const network = networksCtrl.networks.find((n) => n.chainId === chainId)!
+
+    return new SignAccountOpController({
+      type: 'default',
+      callRelayer,
+      accounts: accountsCtrl,
+      networks: networksCtrl,
+      keystore: keystoreCtrl,
+      portfolio: portfolioCtrl,
+      externalSignerControllers: {},
+      activity: activityCtrl,
+      account,
+      network,
+      provider: providersCtrl.providers[network.chainId.toString()]!,
+      phishing: phishingCtrl,
+      fromRequestId: requestId,
+      accountOp: {
+        accountAddr: addr,
+        signingKeyAddr: null,
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        chainId,
+        nonce: 0n, // does not matter when estimating
+        calls: [
+          {
+            id: 'testID',
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ],
+        signature: null
+      },
+      isSignRequestStillActive: () => true,
+      shouldSimulate: false,
+      onUpdateAfterTraceCallSuccess: async () => {},
+      onBroadcastSuccess: async () => {},
+      onBroadcastFailed: () => {}
+    })
+  }
+
+  const getCallsRequest = async ({ addr, chainId }: { addr: string; chainId: bigint }) => {
+    const requestId = `${addr}-${chainId}`
+    return {
+      id: requestId,
+      kind: 'calls',
+      signAccountOp: await getSignAccountOp({ addr, chainId, requestId }),
+      meta: {
+        accountAddr: addr,
+        isWalletSendCalls: false,
+        chainId,
+        paymasterService: undefined
+      },
+      dappPromises: [
+        {
+          id: 'testID',
+          resolve: () => {},
+          reject: () => {},
+          session: MOCK_SESSION,
+          meta: {}
+        }
+      ]
+    } as CallsUserRequest
+  }
+
   return {
+    selectedAccountCtrl,
     controller: new RequestsController({
       relayerUrl,
+      callRelayer,
+      portfolio: portfolioCtrl,
+      externalSignerControllers: {},
+      activity: activityCtrl,
+      phishing: phishingCtrl,
       accounts: accountsCtrl,
       networks: networksCtrl,
       providers: providersCtrl,
@@ -224,39 +324,16 @@ const prepareTest = async () => {
       transfer: transferCtrl,
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
+      autoLogin: autoLoginCtrl,
       getDapp: async () => undefined,
-      getSignAccountOp: () => null,
-      getMainStatuses: () => STATUS_WRAPPED_METHODS,
-      updateSignAccountOp: () => {},
-      destroySignAccountOp: () => {},
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
-      guardHWSigning: () => Promise.resolve(false),
       onSetCurrentUserRequest: () => {},
-      autoLogin: autoLoginCtrl
+      onBroadcastSuccess: async () => {},
+      onBroadcastFailed: () => {}
     }),
-    selectedAccountCtrl
-  }
-}
-
-const createAccountOp = (addr: string, chainId: bigint = 1n) => {
-  return {
-    accountAddr: addr,
-    signingKeyAddr: null,
-    signingKeyType: null,
-    gasLimit: null,
-    gasFeePayment: null,
-    chainId,
-    nonce: 0n, // does not matter when estimating
-    calls: [
-      {
-        id: 'testID',
-        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        value: BigInt(0),
-        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-      }
-    ],
-    signature: null
+    getSignAccountOp,
+    getCallsRequest
   }
 }
 
@@ -264,27 +341,6 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
   id: 1,
   kind: 'dappConnect',
   meta: {},
-  dappPromises: [
-    {
-      id: 'testID',
-      resolve: () => {},
-      reject: () => {},
-      session: MOCK_SESSION,
-      meta: {}
-    }
-  ]
-}
-
-const SIGN_ACCOUNT_OP_REQUEST: CallsUserRequest = {
-  id: 2,
-  kind: 'calls',
-  accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 10n),
-  meta: {
-    accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-    isWalletSendCalls: false,
-    chainId: 10n,
-    paymasterService: undefined
-  },
   dappPromises: [
     {
       id: 'testID',
@@ -307,17 +363,11 @@ describe('RequestsController ', () => {
   })
 
   test('Add and then remove a user request', async () => {
-    const { controller } = await prepareTest()
-    const req: UserRequest = {
-      id: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8-1',
-      kind: 'calls',
-      accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 1n),
-      meta: {
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        chainId: 1n
-      },
-      dappPromises: []
-    }
+    const { controller, getCallsRequest } = await prepareTest()
+    const req: UserRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
 
     await controller.addUserRequests([req])
     expect(controller.userRequests.length).toBe(1)
@@ -377,23 +427,18 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
   test('resolve user request', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
 
     const resolveMock = jest.fn()
     const rejectMock = jest.fn()
+    const req: UserRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
 
-    const req: UserRequest = {
-      id: 1,
-      kind: 'calls',
-      accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 1n),
-      meta: {
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        chainId: 1n
-      },
-      dappPromises: [
-        { id: 'testID', resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION, meta: {} }
-      ]
-    }
+    req.dappPromises = [
+      { id: 'testID', resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION, meta: {} }
+    ]
 
     await controller.addUserRequests([req])
     expect(controller.userRequests.length).toBe(1)
@@ -406,23 +451,19 @@ describe('RequestsController ', () => {
     expect(rejectMock).not.toHaveBeenCalled()
   })
   test('reject user request', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
 
     const resolveMock = jest.fn()
     const rejectMock = jest.fn()
 
-    const req: UserRequest = {
-      id: 1,
-      kind: 'calls',
-      accountOp: createAccountOp('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', 1n),
-      meta: {
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        chainId: 1n
-      },
-      dappPromises: [
-        { id: 'testID', resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION, meta: {} }
-      ]
-    }
+    const req: UserRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+
+    req.dappPromises = [
+      { id: 'testID', resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION, meta: {} }
+    ]
 
     await controller.addUserRequests([req])
     expect(controller.userRequests.length).toBe(1)
@@ -435,8 +476,11 @@ describe('RequestsController ', () => {
     expect(resolveMock).not.toHaveBeenCalled()
   })
   test('add multiple user requests', async () => {
-    const { controller } = await prepareTest()
-
+    const { controller, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
     expect(controller.userRequests.length).toBe(2)
@@ -452,10 +496,16 @@ describe('RequestsController ', () => {
     expect(controller.requestWindow.loaded).toEqual(true)
   })
   test('should reject calls and remove the user request', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
     expect(controller.currentUserRequest).not.toBe(null)
-    expect((controller.currentUserRequest as CallsUserRequest).accountOp.calls.length).toBe(1)
+    expect(
+      (controller.currentUserRequest as CallsUserRequest).signAccountOp.accountOp.calls.length
+    ).toBe(1)
     await controller.rejectCalls({ callIds: ['testID'] })
     expect(controller.currentUserRequest).toBe(null)
     expect(controller.userRequests.length).toBe(0)
@@ -480,7 +530,11 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests[0]!.kind).toBe('benzin')
   })
   test('should have banners', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
@@ -488,7 +542,11 @@ describe('RequestsController ', () => {
     expect(controller.banners).toHaveLength(2)
   })
   test('should update visible requests on account change', async () => {
-    const { controller, selectedAccountCtrl } = await prepareTest()
+    const { controller, selectedAccountCtrl, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
@@ -498,7 +556,11 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests).toHaveLength(1)
   })
   test('should select request by id', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
@@ -508,7 +570,11 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
   })
   test('should select request by index', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
@@ -549,7 +615,11 @@ describe('RequestsController ', () => {
     expect(controller.requestWindow.windowProps).toBe(null)
   })
   test('removeAccountData', async () => {
-    const { controller } = await prepareTest()
+    const { controller, getCallsRequest } = await prepareTest()
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST], {
       position: 'last',

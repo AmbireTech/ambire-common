@@ -383,7 +383,7 @@ const getSwapAndBridgeRequestParams = async (
   state: AccountOnchainState,
   paymasterService?: PaymasterService
 ): Promise<{
-  calls: CallsUserRequest['accountOp']['calls']
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
 }> => {
   return {

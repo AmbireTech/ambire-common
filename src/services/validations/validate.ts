@@ -132,7 +132,7 @@ const validateSendTransferAddress = (
     return {
       success: true,
       message,
-      severity: lastRecipientTransactionDate ? 'warning' : 'info'
+      severity: lastRecipientTransactionDate ? 'warning' : 'success'
     }
   }
 
@@ -168,7 +168,7 @@ const validateSendTransferAddress = (
     return {
       success: true,
       message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
-      severity: 'warning'
+      severity: 'success'
     }
   }
 

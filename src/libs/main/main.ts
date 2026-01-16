@@ -14,7 +14,7 @@ export const getAccountOpsForSimulation = (
   const isSmart = isSmartAccount(account)
   const accountOps = visibleUserRequests
     .filter((r) => r.kind === 'calls')
-    .map((a) => a.accountOp)
+    .map((a) => a.signAccountOp.accountOp)
     .filter((op) => {
       if (op.accountAddr !== account.addr) return false
 

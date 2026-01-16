@@ -10,7 +10,6 @@ import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
@@ -251,6 +250,11 @@ const transferCtrl = new TransferController(
 
 requestsCtrl = new RequestsController({
   relayerUrl,
+  callRelayer,
+  portfolio: portfolioCtrl,
+  externalSignerControllers: {},
+  activity: activityCtrl,
+  phishing: phishingCtrl,
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
@@ -259,16 +263,13 @@ requestsCtrl = new RequestsController({
   transfer: transferCtrl,
   swapAndBridge: swapAndBridgeController,
   ui: uiCtrl,
+  autoLogin: autoLoginCtrl,
   getDapp: async () => undefined,
-  getSignAccountOp: () => null,
-  getMainStatuses: () => STATUS_WRAPPED_METHODS,
-  updateSignAccountOp: () => {},
-  destroySignAccountOp: () => {},
   updateSelectedAccountPortfolio: () => Promise.resolve(),
   addTokensToBeLearned: () => {},
-  guardHWSigning: () => Promise.resolve(false),
   onSetCurrentUserRequest: () => {},
-  autoLogin: autoLoginCtrl
+  onBroadcastSuccess: async () => {},
+  onBroadcastFailed: () => {}
 })
 
 describe('SwapAndBridge Controller', () => {

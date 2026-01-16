@@ -29,7 +29,6 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean
-    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void
     traceCall?: Function
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed

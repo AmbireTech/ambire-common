@@ -58,7 +58,7 @@ export const getBridgeBanners = (
 ): Banner[] => {
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return callsUserRequests.some((req) => {
-      return req.accountOp.calls.some(
+      return req.signAccountOp.accountOp.calls.some(
         (call) =>
           call.id === route.activeRouteId ||
           call.id === `${route.activeRouteId}-revoke-approval` ||
@@ -217,10 +217,10 @@ export const getAccountOpBanners = ({
   if (!callsUserRequestsByNetwork) return []
   const txnBanners: Banner[] = []
 
-  Object.entries(callsUserRequestsByNetwork).forEach(([netId, actions]) => {
-    actions.forEach((action) => {
-      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
-      const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
+  Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
+    requests.forEach((request) => {
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
+      const nonSwapAndBridgeTxns = request.signAccountOp.accountOp.calls.reduce((prev, call) => {
         const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
           (route) => route.activeRouteId === call.id
         )
@@ -229,7 +229,7 @@ export const getAccountOpBanners = ({
 
         return prev + 1
       }, 0)
-      const callCount = action.accountOp.calls.length
+      const callCount = request.signAccountOp.accountOp.calls.length
       const text = getAccountOpBannerText(
         swapAndBridgeRoutesPendingSignature,
         BigInt(network.chainId),
@@ -251,14 +251,14 @@ export const getAccountOpBanners = ({
             actionName: 'reject-accountOp',
             meta: {
               err: 'User rejected the transaction request.',
-              requestId: action.id,
+              requestId: request.id,
               shouldOpenNextAction: false
             }
           },
           {
             label: 'Open',
             actionName: 'open-accountOp',
-            meta: { requestId: action.id }
+            meta: { requestId: request.id }
           }
         ]
       })

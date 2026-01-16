@@ -29,11 +29,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
     return {
       fullVisualization,
       warnings: [
-        getWarning(
-          'Delegate call from Safe{WALLET} account',
-          'SAFE{WALLET}_DELEGATE_CALL',
-          'danger'
-        )
+        getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
       ]
     }
   }
