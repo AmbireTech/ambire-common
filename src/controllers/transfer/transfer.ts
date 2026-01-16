@@ -235,14 +235,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     const nextIsTopUp = view.currentRoute === 'top-up-gas-tank'
     const searchParams = view.searchParams
 
-    // The user closes the popup with the transfer form filled and then re-opens it.
-    if (
-      this.hasPersistedState &&
-      this.isReady &&
-      this.isTopUp === nextIsTopUp &&
-      !Object.keys(searchParams || {}).length
-    )
-      return
+    const isFormInitialized = this.hasPersistedState && this.isReady
+    const isSameMode = this.isTopUp === nextIsTopUp
+    const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
+
+    const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
+
+    if (shouldKeepExistingForm) return
 
     const tokenParams =
       searchParams && searchParams.address && searchParams.chainId
