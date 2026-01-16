@@ -916,6 +916,9 @@ export class TransferController extends EventEmitter implements ITransferControl
    * Finally, reset everything if there is no persisted state or the view isn't a popup
    */
   unloadScreen(viewType: View['type'], opts?: { isNavigateOut: boolean }) {
+    // Always reset the session id
+    this.#currentTransferSessionId = null
+
     const { isNavigateOut = false } = opts || {}
     const hasHWSigner =
       this.signAccountOpController &&
@@ -924,14 +927,13 @@ export class TransferController extends EventEmitter implements ITransferControl
           this.signAccountOpController.accountOp.gasFeePayment?.paidByKeyType !== 'internal'))
 
     const isBroadcastInProgress = this.signAccountOpController?.isBroadcastInProgress
-    const keepAllState = hasHWSigner && isBroadcastInProgress && viewType === 'popup'
-    const keepOnlyController = isBroadcastInProgress
+    const keepAllState =
+      (hasHWSigner && isBroadcastInProgress) || (this.hasPersistedState && !isNavigateOut)
+    const keepSignAccountOp = isBroadcastInProgress
 
-    this.#currentTransferSessionId = null
+    if (viewType === 'popup' && keepAllState) return
 
-    if ((this.hasPersistedState && viewType === 'popup' && !isNavigateOut) || keepAllState) return
-
-    this.reset({ destroyAccountOp: !keepOnlyController })
+    this.reset({ destroyAccountOp: !keepSignAccountOp })
   }
 
   reset(opts?: { destroyAccountOp: boolean }) {
