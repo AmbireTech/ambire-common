@@ -136,8 +136,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   latestBroadcastedToken: TokenResult | null = null
 
-  #shouldTrackLatestBroadcastedAccountOp: boolean = true
-
   hasProceeded: boolean = false
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -194,31 +192,19 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', (view: View) => {
-      // while broadcasting DO NOT update/reset the selectedToken to prevent displaying
-      // a different token from the already broadcasted one in the "Transfer done" screen
-      //
-      // this can happen when the full token amount is sent and the token is filtered
-      // out on the next tokens update, forcing selectedToken to be updated to
-      // the first token from the updated tokens list
-      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
-
       if (isTransfer(view.currentRoute)) {
         this.#enterTransfer(view)
       } else if (isTransfer(view.previousRoute)) {
-        this.#leaveTransfer()
+        // Update view is handled differently as it implies that the user has
+        // navigated out to another route, thus state persistence is irrelevant
+        this.unloadScreen(view.type, { isNavigateOut: true })
       }
     })
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
       if (!isTransfer(view.currentRoute)) return
 
-      // Don't reset if we are in the middle of signing and broadcasting
-      // This is especially important for trezor's signing flow, where the extension popup is closed
-      // and an action window is opened for signing. If this check ever breaks we will reset
-      // transfer the moment the popup is closed, losing all the transfer state.
-      if (this.signAccountOpController?.isSignAndBroadcastInProgress) return
-
-      this.#leaveTransfer()
+      this.unloadScreen(view.type)
     })
 
     this.#selectedAccount.onUpdate(async () => {
@@ -238,10 +224,19 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #enterTransfer(view: View) {
-    this.#ensureTransferSessionId()
-
-    this.isTopUp = view.currentRoute === 'top-up-gas-tank'
+    const nextIsTopUp = view.currentRoute === 'top-up-gas-tank'
     const searchParams = view.searchParams
+
+    // The user closes the popup with the transfer form filled and then re-opens it.
+    if (
+      this.hasPersistedState &&
+      this.isReady &&
+      this.isTopUp === nextIsTopUp &&
+      !Object.keys(searchParams || {}).length
+    )
+      return
+
+    this.#ensureTransferSessionId()
 
     const tokenParams =
       searchParams && searchParams.address && searchParams.chainId
@@ -251,28 +246,16 @@ export class TransferController extends EventEmitter implements ITransferControl
           }
         : undefined
 
+    this.isTopUp = nextIsTopUp
     this.#setTokens()
     this.#setDefaultSelectedToken(tokenParams)
     this.isReady = true
-  }
-
-  #leaveTransfer() {
-    this.#destroyTransferSession()
-
-    this.#tokens = []
-    this.selectedToken = null
-    this.isReady = false
-    this.emitUpdate()
   }
 
   #ensureTransferSessionId() {
     if (!this.#currentTransferSessionId) {
       this.#currentTransferSessionId = String(randomId())
     }
-  }
-
-  #destroyTransferSession() {
-    this.#currentTransferSessionId = null
   }
 
   get transferSessionId() {
@@ -376,14 +359,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('shouldSkipTransactionQueuedModal', value)
     this.emitUpdate()
-  }
-
-  get shouldTrackLatestBroadcastedAccountOp() {
-    return this.#shouldTrackLatestBroadcastedAccountOp
-  }
-
-  set shouldTrackLatestBroadcastedAccountOp(value: boolean) {
-    this.#shouldTrackLatestBroadcastedAccountOp = value
   }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
@@ -535,8 +510,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     isRecipientAddressUnknownAgreed,
     amountFieldMode
   }: TransferUpdate) {
-    this.shouldTrackLatestBroadcastedAccountOp = true
-
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -881,9 +854,14 @@ export class TransferController extends EventEmitter implements ITransferControl
 
         await this.#onBroadcastSuccess(props)
 
-        if (this.shouldTrackLatestBroadcastedAccountOp) {
-          this.latestBroadcastedToken = this.selectedToken
+        if (this.transferSessionId) {
+          this.latestBroadcastedToken = structuredClone(this.selectedToken)
           this.latestBroadcastedAccountOp = submittedAccountOp
+        } else {
+          // Do a complete reset if there is no transfer session
+          // as the user may have closed the transfer screen immediately after broadcasting
+          // which means that we won't reset the form there.
+          this.reset({ destroyAccountOp: true })
         }
       }
     })
@@ -921,16 +899,50 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.hasProceeded = false
   }
 
-  async destroyLatestBroadcastedAccountOp() {
+  destroyLatestBroadcastedAccountOp() {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
   }
 
-  async unloadScreen(forceUnload?: boolean) {
-    if (this.hasPersistedState && !forceUnload) return
+  /**
+   * If broadcasting:
+   * - Reset everything but keep the signAccountOp controller if there isn't a HW signer
+   * That is because we don't want to interrupt the broadcasting process. We reset the session now
+   * and once the broadcast is completed the signAccountOp controller will be destroyed automatically
+   * - Keep everything if there is a HW signer
+   * That is because the user may close the popup by mistake while operating with their HW wallet. If the user
+   * is not signing from a popup tho, reset.
+   *
+   * Finally, reset everything if there is no persisted state or the view isn't a popup
+   */
+  unloadScreen(viewType: View['type'], opts?: { isNavigateOut: boolean }) {
+    const { isNavigateOut = false } = opts || {}
+    const hasHWSigner =
+      this.signAccountOpController &&
+      (this.signAccountOpController.accountOp.signingKeyType !== 'internal' ||
+        (this.signAccountOpController.accountOp.gasFeePayment?.paidByKeyType &&
+          this.signAccountOpController.accountOp.gasFeePayment?.paidByKeyType !== 'internal'))
 
-    await this.destroyLatestBroadcastedAccountOp()
-    this.resetForm()
+    const isBroadcastInProgress = this.signAccountOpController?.isBroadcastInProgress
+    const keepAllState = hasHWSigner && isBroadcastInProgress && viewType === 'popup'
+    const keepOnlyController = isBroadcastInProgress
+
+    this.#currentTransferSessionId = null
+
+    if ((this.hasPersistedState && viewType === 'popup' && !isNavigateOut) || keepAllState) return
+
+    this.reset({ destroyAccountOp: !keepOnlyController })
+  }
+
+  reset(opts?: { destroyAccountOp: boolean }) {
+    const { destroyAccountOp = false } = opts || {}
+
+    this.#tokens = []
+    this.selectedToken = null
+    this.isReady = false
+
+    this.destroyLatestBroadcastedAccountOp()
+    this.resetForm(destroyAccountOp)
   }
 
   // includes the getters in the stringified instance
