@@ -172,7 +172,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  return { success: true, message: '', severity: 'warning' }
+  return { success: true, message: '' }
 }
 
 const validateSendTransferAmount = (
