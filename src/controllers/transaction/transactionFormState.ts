@@ -307,7 +307,6 @@ export class TransactionFormState extends EventEmitter {
     this.isRecipientAddressUnknown =
       !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.isRecipientAddressUnknownAgreed = false
-    // this.#setSWWarningVisibleIfNeeded()
 
     this.emitUpdate()
   }

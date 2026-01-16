@@ -8,6 +8,7 @@ import {
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
@@ -49,8 +50,14 @@ export class ContinuousUpdatesController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
 
-  constructor({ main }: { main: IMainController }) {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    main
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    main: IMainController
+  }) {
+    super(eventEmitterRegistry)
 
     this.#main = main
 
@@ -115,9 +122,34 @@ export class ContinuousUpdatesController extends EventEmitter {
       'fastAccountStateReFetchTimeout'
     )
 
-    this.#main.onUpdate(() => {
-      if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
+    this.#main.swapAndBridge.onUpdate(() => {
+      if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
+      }
+    }, 'continuous-update')
+
+    this.#main.transfer.onUpdate(() => {
+      if (this.#main.transfer.signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        this.#accountStateLatestInterval.restart()
+      }
+    }, 'continuous-update')
+
+    this.#main.requests.onUpdate(() => {
+      if (this.#main.requests.currentUserRequest?.kind === 'calls') {
+        if (
+          !this.#main.requests.currentUserRequest.signAccountOp.onUpdateIds.includes(
+            'continuous-update'
+          )
+        ) {
+          this.#main.requests.currentUserRequest.signAccountOp.onUpdate(() => {
+            if (
+              this.#main.requests.currentUserRequest?.kind === 'calls' &&
+              this.#main.requests.currentUserRequest.signAccountOp.broadcastStatus === 'SUCCESS'
+            ) {
+              this.#accountStateLatestInterval.restart()
+            }
+          }, 'continuous-update')
+        }
       }
     }, 'continuous-update')
 

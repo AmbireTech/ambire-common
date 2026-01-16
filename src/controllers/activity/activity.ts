@@ -3,6 +3,7 @@ import { Interface, isAddress } from 'ethers'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -163,9 +164,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,
-    onContractsDeployed: (network: Network) => Promise<void>
+    onContractsDeployed: (network: Network) => Promise<void>,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
@@ -283,7 +285,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter((i) => i.identifiedBy.identifier === filters.identifiedBy!.identifier)
+      filteredItems.filter(
+        (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
+      )
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
@@ -775,7 +779,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     return this.#accountsOps[accountAddr]?.[chainId.toString()]?.find(
-      (op) => op.identifiedBy.identifier === identifiedBy.identifier
+      (op) => op.identifiedBy && op.identifiedBy.identifier === identifiedBy.identifier
     )
   }
 

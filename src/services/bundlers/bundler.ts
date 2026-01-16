@@ -160,4 +160,22 @@ export abstract class Bundler {
     const error = new BundlerError(e.message, this.getName())
     return decodeError(error)
   }
+
+  /**
+   * Different bundlers return the success flag differently:
+   * - number, string (0,1), string (success)
+   * We make it one and the same here
+   */
+  static getReceiptSuccess(bundlerTransactionReceipt: BundlerTransactionReceipt): bigint {
+    const receipt = bundlerTransactionReceipt.receipt
+    if (receipt.status === undefined) return bundlerTransactionReceipt.success ? 1n : 0n
+
+    let statusAsNumber = 0n
+    try {
+      statusAsNumber = BigInt(receipt.status)
+    } catch (e: any) {
+      statusAsNumber = receipt.status === 'success' ? 1n : 0n
+    }
+    return statusAsNumber
+  }
 }

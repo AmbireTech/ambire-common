@@ -11,6 +11,7 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
 ) => {
   return irCalls.map((call: IrCall) => {
     if (!call.to) return call
+    if (call.data === '0x') return call
     if (call.to.toLowerCase() === accountOp.accountAddr.toLowerCase()) {
       return {
         ...call,
