@@ -224,6 +224,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #enterTransfer(view: View) {
+    this.#ensureTransferSessionId()
+
     const nextIsTopUp = view.currentRoute === 'top-up-gas-tank'
     const searchParams = view.searchParams
 
@@ -235,8 +237,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       !Object.keys(searchParams || {}).length
     )
       return
-
-    this.#ensureTransferSessionId()
 
     const tokenParams =
       searchParams && searchParams.address && searchParams.chainId
