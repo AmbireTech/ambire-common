@@ -149,6 +149,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #tokens: TokenResult[] = []
 
+  #getHasAnotherTransferViewOpen() {
+    const views = this.#ui.views.filter((view) => isTransfer(view.currentRoute))
+
+    return views.length >= 1
+  }
+
   constructor(
     callRelayer: Function,
     storage: IStorageController,
@@ -194,7 +200,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ui.uiEvent.on('updateView', (view: View) => {
       if (isTransfer(view.currentRoute)) {
         this.#enterTransfer(view)
-      } else if (isTransfer(view.previousRoute)) {
+      } else if (isTransfer(view.previousRoute) && !this.#getHasAnotherTransferViewOpen()) {
         // Update view is handled differently as it implies that the user has
         // navigated out to another route, thus state persistence is irrelevant
         this.unloadScreen(view.type, { isNavigateOut: true })
@@ -202,7 +208,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
-      if (!isTransfer(view.currentRoute)) return
+      if (!isTransfer(view.currentRoute) || this.#getHasAnotherTransferViewOpen()) return
 
       this.unloadScreen(view.type)
     })
@@ -904,36 +910,15 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.latestBroadcastedToken = null
   }
 
-  /**
-   * If broadcasting:
-   * - Reset everything but keep the signAccountOp controller if there isn't a HW signer
-   * That is because we don't want to interrupt the broadcasting process. We reset the session now
-   * and once the broadcast is completed the signAccountOp controller will be destroyed automatically
-   * - Keep everything if there is a HW signer
-   * That is because the user may close the popup by mistake while operating with their HW wallet. If the user
-   * is not signing from a popup tho, reset.
-   *
-   * Finally, reset everything if there is no persisted state or the view isn't a popup
-   */
   unloadScreen(viewType: View['type'], opts?: { isNavigateOut: boolean }) {
+    const { isNavigateOut = false } = opts || {}
+
     // Always reset the session id
     this.#currentTransferSessionId = null
 
-    const { isNavigateOut = false } = opts || {}
-    const hasHWSigner =
-      this.signAccountOpController &&
-      (this.signAccountOpController.accountOp.signingKeyType !== 'internal' ||
-        (this.signAccountOpController.accountOp.gasFeePayment?.paidByKeyType &&
-          this.signAccountOpController.accountOp.gasFeePayment?.paidByKeyType !== 'internal'))
+    if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
 
-    const isBroadcastInProgress = this.signAccountOpController?.isBroadcastInProgress
-    const keepAllState =
-      (hasHWSigner && isBroadcastInProgress) || (this.hasPersistedState && !isNavigateOut)
-    const keepSignAccountOp = isBroadcastInProgress
-
-    if (viewType === 'popup' && keepAllState) return
-
-    this.reset({ destroyAccountOp: !keepSignAccountOp })
+    this.reset({ destroyAccountOp: true })
   }
 
   reset(opts?: { destroyAccountOp: boolean }) {
