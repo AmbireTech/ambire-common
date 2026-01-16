@@ -105,7 +105,6 @@ export const isSuspectedRegardsKnownAddresses = (
 export const isSuspectedToken = (
   address: string,
   symbol: string,
-  name: string,
   chainId: bigint
 ): SuspectedType => {
   const normalizedAddr = normalizeAddress(address)
@@ -160,7 +159,7 @@ export function getFlags(
   let suspectedType: SuspectedType = null
 
   if (hasSimulationAmount && !isRewardsOrGasTank) {
-    suspectedType = isSuspectedToken(address, symbol, name, BigInt(chainId))
+    suspectedType = isSuspectedToken(address, symbol, BigInt(chainId))
   }
 
   return {

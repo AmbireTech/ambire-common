@@ -314,22 +314,22 @@ describe('Portfolio helpers', () => {
 
 describe('isSuspectedToken', () => {
   it('returns null for trusted token', () => {
-    const { address, symbol, name, chainId } = TOKENS.TRUSTED
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+    const { address, symbol, chainId } = TOKENS.TRUSTED
+    expect(isSuspectedToken(address, symbol, chainId)).toBeNull()
   })
 
   it('returns null for trusted token with non-Latin symbol', () => {
-    const { address, symbol, name, chainId } = TOKENS.TRUSTED_WITH_NON_LATIN_SYMBOL
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+    const { address, symbol, chainId } = TOKENS.TRUSTED_WITH_NON_LATIN_SYMBOL
+    expect(isSuspectedToken(address, symbol, chainId)).toBeNull()
   })
 
   it('returns null for legit token missing from trusted list', () => {
-    const { address, symbol, name, chainId } = TOKENS.LEGIT_BUT_NOT_TRUSTED
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+    const { address, symbol, chainId } = TOKENS.LEGIT_BUT_NOT_TRUSTED
+    expect(isSuspectedToken(address, symbol, chainId)).toBeNull()
   })
 
   it('returns "suspected" for spoofed token with same symbol but different address', () => {
-    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('suspected')
+    const { address, symbol, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
+    expect(isSuspectedToken(address, symbol, chainId)).toBe('suspected')
   })
 })

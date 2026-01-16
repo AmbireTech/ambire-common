@@ -387,7 +387,6 @@ export class MainController extends EventEmitter implements IMainController {
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,
-      invite: this.invite,
       storage: this.storage,
       phishing: this.phishing,
       swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
