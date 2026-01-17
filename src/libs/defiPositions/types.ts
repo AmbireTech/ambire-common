@@ -1,5 +1,8 @@
 import { Price } from '../../interfaces/assets'
 
+// @TODO: Move these interfaces to src/interfaces and
+// figure out how to restructure portfolio/defiPositions types
+
 export enum AssetType {
   Liquidity,
   Collateral,
@@ -33,20 +36,16 @@ export interface PositionAsset {
    * The protocol asset is the protocol's representation of the asset.
    * For example, in Aave, the protocol asset is the aToken.
    */
-  protocolAsset?: {
-    address: string
-    symbol: string
-    name: string
-    decimals: number
-  }
-}
-
-export interface DeFiPositionsState {
-  [accountId: string]: AccountState
-}
-
-export interface AccountState {
-  [chainId: string]: NetworkState
+  protocolAsset?:
+    | {
+        address: string
+        symbol: string
+        name: string
+        decimals: number
+      }
+    | {
+        address: string
+      }
 }
 
 export interface ProviderError {
@@ -56,8 +55,19 @@ export interface ProviderError {
 
 export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
-  isLoading: boolean
-  updatedAt?: number
+  /**
+   * Timestamp of the last successful update
+   * (no custom provider errors and a successful external api call)
+   *
+   * Used to determine whether to update the positions and display
+   * errors on the UI
+   */
+  lastSuccessfulUpdate?: number
+  /**
+   * Timestamp of the last force external api call
+   * Used to determine if we should bypass the cache on next update
+   */
+  lastForceApiUpdate?: number
   error?: string | null
   providerErrors?: ProviderError[]
   nonceId?: string
@@ -65,6 +75,15 @@ export interface NetworkState {
 
 export type NetworksWithPositions = {
   [chainId: string]: ProviderName[]
+}
+
+/**
+ * The count of defi positions on disabled networks for each account.
+ */
+export type PositionCountOnDisabledNetworks = {
+  [accountId: string]: {
+    [chainId: string]: number
+  }
 }
 
 export type NetworksWithPositionsByAccounts = {

@@ -2,7 +2,9 @@ import { TokenResult } from '../../portfolio'
 import { getAssetValue } from '../helpers'
 import { AssetType, Position, PositionAsset, PositionsByProvider } from '../types'
 
-export function getStakedWalletPositions(stkWallet?: TokenResult): PositionsByProvider | null {
+export function getStakedWalletPositions(
+  stkWallet?: TokenResult | null
+): PositionsByProvider | null {
   if (!stkWallet || !stkWallet.amount) return null
 
   const positionInUSD = getAssetValue(
@@ -44,6 +46,7 @@ export function getStakedWalletPositions(stkWallet?: TokenResult): PositionsByPr
   return {
     providerName: 'Ambire',
     chainId: 1n,
+    source: 'custom',
     iconUrl: '',
     siteUrl: 'https://rewards.ambire.com',
     type: 'common',

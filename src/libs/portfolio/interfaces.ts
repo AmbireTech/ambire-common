@@ -1,7 +1,14 @@
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { AccountOp } from '../accountOp/accountOp'
-import { AssetType } from '../defiPositions/types'
+import {
+  AssetType,
+  NetworkState as DefiNetworkState,
+  PositionsByProvider
+} from '../defiPositions/types'
+
+// @TODO: Move most of these interfaces to src/interfaces and
+// figure out how to restructure portfolio/defiPositions types
 
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
@@ -29,6 +36,14 @@ export type TokenResult = {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
+    /**
+     * A property used to link a token to a specific defi position. It's used
+     * to prevent double counting of balances in the portfolio total.
+     * As collateral tokens are part of the defi positions, but also held
+     * as regular tokens in the portfolio, we use this property to identify
+     * which token is used as collateral in which position.
+     */
+    defiPositionId?: string
     canTopUpGasTank: boolean
     isFeeToken: boolean
     isHidden?: boolean
@@ -124,17 +139,68 @@ export interface Hints {
 }
 
 /**
- * The raw response, returned by the Velcro API
+ * The raw response, returned by the Velcro API.
+ * Currently only called by the portfolio lib to fetch hints only.
  */
 export type ExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
   erc721s: VelcroERC721Hints
 } & (Required<Hints['externalApi']> & {
+  error?: string
+})
+
+/**
+ * The raw response, returned by Velcro for portfolio discovery.
+ * It contains hints and defi positions. Used by the controller.
+ */
+export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
   chainId: number
   accountAddr: string
-  error?: string
-})
+  erc20s: ExternalHintsAPIResponse['erc20s']
+  erc721s: ExternalHintsAPIResponse['erc721s']
+  hasHints: ExternalHintsAPIResponse['hasHints']
+  prices: ExternalHintsAPIResponse['prices']
+  lastUpdate: ExternalHintsAPIResponse['lastUpdate']
+  defi:
+    | {
+        positions: Omit<PositionsByProvider, 'source'>[]
+        updatedAt: number
+      }
+    | {
+        success: false
+        errorState: {
+          message: string
+          level: 'fatal'
+        }[]
+      }
+  /**
+   * The count of defi positions on networks that weren't requested.
+   * Used to inform the user about positions on disabled networks.
+   */
+  otherNetworksDefiCounts: {
+    [chainId: string]: number
+  }
+}
+
+export type FormattedPortfolioDiscoveryResponse = {
+  data: {
+    hints: FormattedExternalHintsAPIResponse | null
+    defi: {
+      positions: PositionsByProvider[]
+      updatedAt: number
+      isForceUpdate: boolean
+    } | null
+    /**
+     * The count of defi positions on networks that weren't requested.
+     * Used to inform the user about positions on disabled networks.
+     */
+    otherNetworksDefiCounts: {
+      [chainId: string]: number
+    }
+  } | null
+  errors: ExtendedErrorWithLevel[]
+}
 
 /**
  * A stripped version of `ExternalHintsAPIResponse`. Also, ERC-721 hints
@@ -151,7 +217,7 @@ export interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
-type ExtendedErrorWithLevel = ExtendedError & {
+export type ExtendedErrorWithLevel = ExtendedError & {
   level: 'critical' | 'warning' | 'silent'
 }
 
@@ -173,21 +239,13 @@ export interface PortfolioLibGetResult {
   }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  /**
-   * Metadata from the last external api hints call. It comes from the API
-   * if the request is successful and not cached, or from cache otherwise.
-   */
-  lastExternalApiUpdateData: {
-    lastUpdate: number
-    hasHints: boolean
-  } | null
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
   afterNonce: bigint
 }
 
-interface Total {
+export interface Total {
   [currency: string]: number
 }
 
@@ -210,7 +268,6 @@ export type AddrVestingData = {
 }
 
 type CommonResultProps = Pick<PortfolioLibGetResult, 'tokens' | 'updateStarted'> & {
-  lastSuccessfulUpdate: number
   total: Total
 }
 
@@ -219,16 +276,23 @@ export type PortfolioNetworkResult = CommonResultProps &
     PortfolioLibGetResult,
     | 'collections'
     | 'tokenErrors'
-    | 'errors'
     | 'blockNumber'
     | 'priceCache'
-    | 'lastExternalApiUpdateData'
     | 'toBeLearned'
     | 'feeTokens'
-  >
+    | 'priceUpdateTime'
+    | 'oracleCallTime'
+    | 'discoveryTime'
+  > & {
+    defiPositions: DefiNetworkState
+    lastExternalApiUpdateData?: {
+      lastUpdate: number
+      hasHints: boolean
+    } | null
+  }
 
 export type PortfolioRewardsResult = CommonResultProps &
-  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
+  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted'> & {
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
     xWalletClaimableBalance?: Pick<TokenResult, 'decimals' | 'address' | 'priceIn' | 'symbol'> & {
@@ -291,6 +355,7 @@ export type ProjectedRewardsStats = {
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
+  | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
 
 export type NetworkState<T = PortfolioKeyResult> = {
@@ -298,6 +363,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
+  lastSuccessfulUpdate?: number
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -360,10 +426,6 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   priceRecencyOnFailure?: number
-  lastExternalApiUpdateData?: {
-    lastUpdate: number
-    hasHints: boolean
-  } | null
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type
