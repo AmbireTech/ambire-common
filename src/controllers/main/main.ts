@@ -1493,21 +1493,6 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   // TODO: Prob move somewhere else?
-  handleGetEncryptionPublicKey = async ({
-    keyAddr,
-    keyType
-  }: {
-    keyAddr: Key['addr']
-    keyType: Key['type']
-  }) => {
-    const signer = await this.keystore.getSigner(keyAddr, keyType)
-
-    if (!signer.getEncryptionPublicKey) throw new Error('not supported')
-
-    return signer.getEncryptionPublicKey()
-  }
-
-  // TODO: Prob move somewhere else?
   handleDecrypt = async ({
     encryptedData,
     keyAddr,
