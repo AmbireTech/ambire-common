@@ -40,6 +40,13 @@ export class GasPriceController extends EventEmitter {
 
   stopRefetching: boolean = false
 
+  /**
+   * If the bundler estimation succeeds successfully, we don't want
+   * to use the estimation from the gas price controller unless
+   * explicitly called from the signAccountOp.
+   */
+  #disableResume: boolean = false
+
   constructor(
     network: Network,
     provider: RPCProvider,
@@ -158,11 +165,21 @@ export class GasPriceController extends EventEmitter {
   }
 
   resumeRefetching() {
+    if (this.#disableResume) return
+
     if (!this.stopRefetching) return
     this.stopRefetching = false
 
     if (!this.updatedAt || Date.now() - this.updatedAt > GAS_PRICE_UPDATE_INTERVAL) {
       this.fetch()
     }
+  }
+
+  enableResuming() {
+    this.#disableResume = false
+  }
+
+  disableResuming() {
+    this.#disableResume = true
   }
 }

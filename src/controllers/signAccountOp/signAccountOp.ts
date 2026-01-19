@@ -1053,13 +1053,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
       // if there's a bundler estimation and the gasPrice for it has resolved, update the UI
       if (this.estimation.estimation && this.estimation.estimation.bundlerGasPrices) {
-        // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
-        // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
-        // 2. we make sure we give priority to the bundler prices as they are generally better
-        this.gasPrices = this.estimation.estimation.bundlerGasPrices
-        // and we're stopping the gas price controller updates as
-        // the bundler will provide them
-        this.gasPrice.pauseRefetching()
+        if (this.estimation.estimation.bundlerGasPrices) {
+          // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
+          // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
+          // 2. we make sure we give priority to the bundler prices as they are generally better
+          this.gasPrices = this.estimation.estimation.bundlerGasPrices
+          // and we're stopping the gas price controller updates as
+          // the bundler will provide them
+          this.gasPrice.disableResuming()
+          this.gasPrice.pauseRefetching()
+        } else {
+          // if there's an estimate, but no bundlerGasPrices, resume the gas price
+          // controller refetch as there's no other way to fetch gas prices
+          this.gasPrice.enableResuming()
+          this.gasPrice.resumeRefetching()
+        }
       }
 
       if (accountOpData) {
