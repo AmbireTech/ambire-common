@@ -1158,6 +1158,24 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return signer.decrypt(encryptedMessage)
   }
 
+  sendDecryptedMessageToUi = async ({
+    encryptedMessage,
+    keyAddr,
+    keyType
+  }: {
+    encryptedMessage: string
+    keyAddr: Key['addr']
+    keyType: Key['type']
+  }) => {
+    const decryptedMessage = await this.decryptMessage({
+      encryptedMessage,
+      keyAddr,
+      keyType
+    })
+
+    this.#ui.message.sendUiMessage({ decryptedMessage })
+  }
+
   toJSON() {
     return {
       ...this,
