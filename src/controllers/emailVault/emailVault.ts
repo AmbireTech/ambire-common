@@ -217,10 +217,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     if (!newKey) return
 
     const polling = new Polling()
-    polling.onUpdate(async () => {
+    polling.onUpdate(async (forceEmit) => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
         this.#isWaitingEmailConfirmation = true
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       } else if (polling.state.isError) {
         this.emitError({
           message: `Can't request magic link for email ${email}: ${polling.state.error.message}`,
@@ -230,7 +230,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
           )
         })
         this.emailVaultStates.errors = [polling.state.error]
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       }
     })
 

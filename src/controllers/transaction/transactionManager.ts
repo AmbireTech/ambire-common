@@ -39,7 +39,7 @@ export class TransactionManagerController
 
   private registerControllerUpdates(): void {
     this.#controllers.forEach((controller) => {
-      controller.onUpdate(async () => {
+      controller.onUpdate(async (forceUpdate) => {
         // TODO: Better type than "any"
         if ((controller.toJSON() as any).name === 'TransactionFormState') {
           try {
@@ -49,7 +49,7 @@ export class TransactionManagerController
           }
         }
         // when any controller updates, propagate through the manager
-        this.emitUpdate()
+        this.propagateUpdate(forceUpdate)
       }, `${controller.constructor.name}-update`)
     })
   }
