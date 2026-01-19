@@ -1037,7 +1037,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                 hasHints: discoveryData.data.hints.hasHints,
                 lastUpdate: discoveryData.data.hints.lastUpdate
               }
-            : state.result?.lastExternalApiUpdateData ?? null,
+            : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
           defiPositions: newDefiState
@@ -1128,10 +1128,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const isKeyNotMigrated =
       typeof this.#learnedAssets.erc20s[key] === 'undefined' ||
       typeof this.#learnedAssets.erc721s[key] === 'undefined'
-    let learnedTokensHints: Hints['erc20s'] = [
-      ...Object.keys(this.#learnedAssets.erc20s[key] || {}),
-      ...(velcroHints?.erc20s || [])
-    ]
+    let learnedTokensHints: Hints['erc20s'] = Object.keys(this.#learnedAssets.erc20s[key] || {})
     let learnedNftsHints: Hints['erc721s'] = mergeERC721s([
       learnedErc721sToHints(Object.keys(this.#learnedAssets.erc721s[key] || {})),
       velcroHints?.erc721s || {}
@@ -1190,7 +1187,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return {
       specialErc20Hints,
       specialErc721Hints,
-      additionalErc20Hints: learnedTokensHints,
+      additionalErc20Hints: [...learnedTokensHints, ...(velcroHints?.erc20s || [])],
       additionalErc721Hints: learnedNftsHints
     }
   }
