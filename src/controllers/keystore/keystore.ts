@@ -1152,8 +1152,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     keyType: Key['type']
   }) => {
     const signer = await this.getSigner(keyAddr, keyType)
-
-    if (!signer.decrypt) throw new Error('not supported')
+    if (!signer.decrypt) throw new Error(`This account uses a key type (${keyType}) that does not support getting encryption public key.`)
 
     return signer.decrypt(encryptedMessage)
   }
