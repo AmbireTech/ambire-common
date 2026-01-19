@@ -1758,6 +1758,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         dappPromises
       } as CallsUserRequest
 
+      if (executionType !== 'open-request-window') {
+        // If the request doesn't open immediately we shouldn't
+        // update the estimation and gasPrice in the background,
+        // thus we pause the controller until the user opens the request window
+        callUserRequest.signAccountOp.pause()
+      }
+
       callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(
           (r) => r.kind === 'calls' && r.signAccountOp.fromRequestId === requestId

@@ -107,6 +107,7 @@ export class EstimationController extends EventEmitter {
   }
 
   async estimate(op: AccountOpWithId) {
+    console.log('Debug: estimating accountOp...')
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 

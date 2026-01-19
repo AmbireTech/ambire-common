@@ -70,6 +70,7 @@ export class GasPriceController extends EventEmitter {
   // @TODO: Refactor this to use recurringTimeout in order
   // to safeguard it from piling up multiple concurrent calls
   async refetch() {
+    console.log('Debug: GasPriceController refetching gas prices in 12s...')
     await wait(GAS_PRICE_UPDATE_INTERVAL)
     if (this.stopRefetching) return
     const signAccountOpState = this.#getSignAccountOpState()
@@ -85,6 +86,7 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
+    console.log('Debug: GasPriceController fetching gas prices...')
     // give priority to the bundler as it's faster and more accurate
     // we ask the bundler only when the estimation is not supported by the account
     // it is counter intuitive but the logic if the account supports the bundler
