@@ -693,7 +693,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
-    this.transfer.resetForm()
+    this.transfer.reset({ destroyAccountOp: true })
 
     // Don't await this as it's not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
@@ -1103,9 +1103,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
@@ -1476,7 +1475,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   onOneClickTransferClose() {
     // Always unload the screen when the request window is closed
-    this.transfer.unloadScreen(true)
+    this.transfer.reset({ destroyAccountOp: true })
 
     const signAccountOp = this.transfer.signAccountOpController
 
