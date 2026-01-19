@@ -275,7 +275,6 @@ const prepareTest = async () => {
         ],
         signature: null
       },
-      isSignRequestStillActive: () => true,
       shouldSimulate: false,
       onUpdateAfterTraceCallSuccess: async () => {},
       onBroadcastSuccess: async () => {},

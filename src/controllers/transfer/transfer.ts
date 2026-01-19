@@ -858,7 +858,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       phishing: this.#phishing,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
-      isSignRequestStillActive: () => true,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props

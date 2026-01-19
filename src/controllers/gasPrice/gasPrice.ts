@@ -1,5 +1,5 @@
-import { getAvailableBunlders } from '../../services/bundlers/getBundler'
 /* eslint-disable @typescript-eslint/no-floating-promises */
+import { GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -7,6 +7,7 @@ import { BaseAccount } from '../../libs/account/BaseAccount'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
 import { gasPriceToBundlerFormat, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { getAvailableBunlders } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
@@ -23,10 +24,19 @@ export class GasPriceController extends EventEmitter {
   #getSignAccountOpState: () => {
     estimation: EstimationController
     readyToSign: boolean
-    isSignRequestStillActive: Function
   }
 
   gasPrices?: GasSpeeds
+
+  /**
+   * Timestamp of the last successful gas price update
+   * TODO: Merge them into a single structure
+   * {
+   *  gasPrices: GasSpeeds
+   *  updatedAt: number
+   * }
+   */
+  updatedAt?: number
 
   stopRefetching: boolean = false
 
@@ -37,7 +47,6 @@ export class GasPriceController extends EventEmitter {
     getSignAccountOpState: () => {
       estimation: EstimationController
       readyToSign: boolean
-      isSignRequestStillActive: Function
     }
   ) {
     super()
@@ -47,11 +56,12 @@ export class GasPriceController extends EventEmitter {
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
+  // @TODO: Refactor this to use recurringTimeout in order
+  // to safeguard it from piling up multiple concurrent calls
   async refetch() {
-    await wait(12000)
+    await wait(GAS_PRICE_UPDATE_INTERVAL)
     if (this.stopRefetching) return
     const signAccountOpState = this.#getSignAccountOpState()
-    if (!signAccountOpState.isSignRequestStillActive()) return
 
     // no need to update the gas prices if the estimation status is Error
     // try again after 12s
@@ -92,6 +102,7 @@ export class GasPriceController extends EventEmitter {
       clearTimeout(timeoutId)
       if (bundlerGasPrices) {
         this.gasPrices = bundlerGasPrices as GasSpeeds
+        this.updatedAt = Date.now()
 
         this.emitUpdate()
         this.refetch()
@@ -131,6 +142,7 @@ export class GasPriceController extends EventEmitter {
 
     if (gasPriceData && gasPriceData.gasPrice)
       this.gasPrices = gasPriceToBundlerFormat(gasPriceData.gasPrice)
+    this.updatedAt = Date.now()
 
     this.emitUpdate()
     this.refetch()
@@ -139,5 +151,18 @@ export class GasPriceController extends EventEmitter {
   destroy() {
     super.destroy()
     this.stopRefetching = true
+  }
+
+  pauseRefetching() {
+    this.stopRefetching = true
+  }
+
+  resumeRefetching() {
+    if (!this.stopRefetching) return
+    this.stopRefetching = false
+
+    if (!this.updatedAt || Date.now() - this.updatedAt > GAS_PRICE_UPDATE_INTERVAL) {
+      this.fetch()
+    }
   }
 }
