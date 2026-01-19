@@ -150,7 +150,7 @@ export class GasPriceController extends EventEmitter {
 
   destroy() {
     super.destroy()
-    this.stopRefetching = true
+    this.pauseRefetching()
   }
 
   pauseRefetching() {

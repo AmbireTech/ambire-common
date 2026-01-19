@@ -252,6 +252,10 @@ export default class EventEmitter {
     }
   }
 
+  /**
+   * Destroys the controller, unregistering it from the EventEmitterRegistry and
+   * clearing all callbacks and errors.
+   */
   destroy() {
     this.unregisterFromRegistry()
     this.#callbacks = []
@@ -262,7 +266,8 @@ export default class EventEmitter {
   }
 
   /**
-   * Registers the controller into the registry (if set) to propagate its updates and errors to the front-end.
+   * Registers the controller into the EventEmitterRegistry (if set)
+   * to propagate its updates and errors to the front-end.
    */
   registerInRegistry() {
     if (!this.#registry) {
@@ -281,8 +286,8 @@ export default class EventEmitter {
   }
 
   /**
-   * Unregisters the controller from the registry (if set). Used when controllers are destroyed
-   * or by dynamic controllers.
+   * Unregisters the controller from the EventEmitterRegistry (if set).
+   * Used when controllers are destroyed or by dynamic controllers.
    */
   unregisterFromRegistry() {
     if (!this.#registry) return
