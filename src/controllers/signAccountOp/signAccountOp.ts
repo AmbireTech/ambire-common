@@ -1060,13 +1060,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.gasPrices = this.estimation.estimation.bundlerGasPrices
           // and we're stopping the gas price controller updates as
           // the bundler will provide them
-          this.gasPrice.disableResuming()
-          this.gasPrice.pauseRefetching()
+          this.gasPrice.pauseRefetching(true)
         } else {
           // if there's an estimate, but no bundlerGasPrices, resume the gas price
           // controller refetch as there's no other way to fetch gas prices
-          this.gasPrice.enableResuming()
-          this.gasPrice.resumeRefetching()
+          this.gasPrice.resumeRefetching(false)
         }
       }
 

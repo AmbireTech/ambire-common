@@ -38,14 +38,18 @@ export class GasPriceController extends EventEmitter {
    */
   updatedAt?: number
 
-  stopRefetching: boolean = false
+  /**
+   * When the signAccountOp is not active we want to avoid
+   * refetching the gas prices.
+   */
+  stopRefetching: boolean = true
 
   /**
    * If the bundler estimation succeeds successfully, we don't want
    * to use the estimation from the gas price controller unless
    * explicitly called from the signAccountOp.
-   */
-  #disableResume: boolean = false
+   * */
+  areGasPricesUsedFromBundlerEstimation: boolean = false
 
   constructor(
     network: Network,
@@ -160,26 +164,27 @@ export class GasPriceController extends EventEmitter {
     this.pauseRefetching()
   }
 
-  pauseRefetching() {
+  pauseRefetching(areGasPricesUsedFromBundlerEstimation?: boolean) {
     this.stopRefetching = true
+
+    if (areGasPricesUsedFromBundlerEstimation) this.areGasPricesUsedFromBundlerEstimation = true
   }
 
-  resumeRefetching() {
-    if (this.#disableResume) return
+  /**
+   * Resumes the refetching of gas prices if it was paused.
+   * Does nothing if there is a successful bundler estimation as the gas prices
+   * are used directly from there.
+   */
+  resumeRefetching(
+    areGasPricesUsedFromBundlerEstimation = this.areGasPricesUsedFromBundlerEstimation
+  ) {
+    if (!this.stopRefetching || areGasPricesUsedFromBundlerEstimation) return
 
-    if (!this.stopRefetching) return
+    this.areGasPricesUsedFromBundlerEstimation = false
     this.stopRefetching = false
 
     if (!this.updatedAt || Date.now() - this.updatedAt > GAS_PRICE_UPDATE_INTERVAL) {
       this.fetch()
     }
-  }
-
-  enableResuming() {
-    this.#disableResume = false
-  }
-
-  disableResuming() {
-    this.#disableResume = true
   }
 }
