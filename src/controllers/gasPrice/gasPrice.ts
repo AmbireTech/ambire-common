@@ -42,7 +42,7 @@ export class GasPriceController extends EventEmitter {
    * When the signAccountOp is not active we want to avoid
    * refetching the gas prices.
    */
-  stopRefetching: boolean = true
+  stopRefetching: boolean = false
 
   /**
    * If the bundler estimation succeeds successfully, we don't want
