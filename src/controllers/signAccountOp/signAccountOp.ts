@@ -761,7 +761,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
 
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
+      (token) => token.address === ZeroAddress
     )
     if (!this.isSponsored && !currentPortfolioNetworkNative)
       errors.push({
@@ -1338,7 +1338,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === '0x0000000000000000000000000000000000000000'
+        (token) => token.address === ZeroAddress
       )
     if (!native) return null
 
@@ -1815,7 +1815,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === '0x0000000000000000000000000000000000000000'
+        (token) => token.address === ZeroAddress
       )
     if (!native) return null
     const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
@@ -1879,7 +1879,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return
     }
 
-    if (this.accountOp.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp.gasFeePayment!.inToken === ZeroAddress) {
       // native payment
       this.#updateAccountOp({
         feeCall: {
@@ -2062,8 +2062,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         .catch((e) => console.error(e))
     }
 
-    // auto-retry once if it was the ambire paymaster
-    if (paymaster.canAutoRetryOnFailure() && counter === 0) {
+    if (paymaster.isAmbire() && counter === 0) {
       const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
       return this.#getPaymasterUserOp(reestimatedUserOp, paymaster, eip7702Auth, counter + 1)
     }

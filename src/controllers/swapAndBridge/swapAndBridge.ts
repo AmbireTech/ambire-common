@@ -16,7 +16,6 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 /* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
@@ -36,6 +35,7 @@ import {
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
@@ -1321,7 +1321,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     )
     const currentPortfolioNetwork = currentPortfolio[this.fromChainId.toString()]
     const native = currentPortfolioNetwork?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
+      (token) => token.address === ZeroAddress
     )
     if (!native) return 0n
 
@@ -2325,9 +2325,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
-      [network.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === '0x0000000000000000000000000000000000000000'
-      )
+      [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
@@ -2335,6 +2333,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       network
     )
+    const swapSponsorship = getSwapSponsorship({
+      hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
+      nativePrice,
+      fromAmountInUsd: Number(this.fromAmountInFiat),
+      fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
+      fromTokenDecimals: this.quote?.fromAsset.decimals
+    })
 
     if (this.#signAccountOpController) {
       // if the chain id has changed, we need to destroy the sign account op
@@ -2353,13 +2358,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
               ...(this.#signAccountOpController.accountOp.meta || {}),
               swapTxn: userTxn,
               fromQuoteId: quoteIdGuard,
-              swapSponsorship: getSwapSponsorship({
-                hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
-                nativePrice,
-                fromAmountInUsd: Number(this.fromAmountInFiat),
-                fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
-                fromTokenDecimals: this.quote?.fromAsset.decimals
-              })
+              swapSponsorship
             }
           }
         })
@@ -2384,13 +2383,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         swapTxn: userTxn,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
         fromQuoteId: quoteIdGuard,
-        swapSponsorship: getSwapSponsorship({
-          hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
-          nativePrice,
-          fromAmountInUsd: Number(this.fromAmountInFiat),
-          fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
-          fromTokenDecimals: this.quote?.fromAsset.decimals
-        })
+        swapSponsorship
       }
     }
 

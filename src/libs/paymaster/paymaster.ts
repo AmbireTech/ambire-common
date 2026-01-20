@@ -180,7 +180,7 @@ export class Paymaster extends AbstractPaymaster {
       return 'erc20'
     }
 
-    if (this.type === 'ERC7677' || this.type === 'SwapSponsorship') return 'gasTank'
+    if (this.isSponsored()) return 'gasTank'
     return undefined
   }
 
@@ -195,7 +195,7 @@ export class Paymaster extends AbstractPaymaster {
     }
 
     // hardcode USDC gas tank 0 for sponsorships
-    if (this.type === 'ERC7677' || this.type === 'SwapSponsorship') {
+    if (this.isSponsored()) {
       const abiCoder = new AbiCoder()
       return {
         to: FEE_COLLECTOR,
@@ -344,15 +344,14 @@ export class Paymaster extends AbstractPaymaster {
     userOp: UserOperation,
     network: Network
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
-    if (this.type === 'Ambire' || this.type === 'SwapSponsorship')
-      return this.#ambireCall(acc, op, userOp)
+    if (this.isAmbire()) return this.#ambireCall(acc, op, userOp)
 
     if (this.type === 'ERC7677') return this.#erc7677Call(op, userOp, network)
 
     throw new Error('Paymaster not configured. Please contact support')
   }
 
-  canAutoRetryOnFailure(): boolean {
+  isAmbire(): boolean {
     return this.type === 'Ambire' || this.type === 'SwapSponsorship'
   }
 
