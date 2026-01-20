@@ -86,8 +86,8 @@ export class EstimationController extends EventEmitter {
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
-        ? estimation.providerEstimation.feePaymentOptions
-        : [],
+          ? estimation.providerEstimation.feePaymentOptions
+          : [],
       op
     )
   }

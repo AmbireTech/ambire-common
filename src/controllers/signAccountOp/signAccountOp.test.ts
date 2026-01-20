@@ -524,8 +524,7 @@ const init = async (
     : estimationOrMock.providerEstimation!.feePaymentOptions
   const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
     estimation: estimationController,
-    readyToSign: true,
-    isSignRequestStillActive: () => true
+    readyToSign: true
   }))
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController({
@@ -541,7 +540,6 @@ const init = async (
     phishing,
     fromRequestId: 1,
     accountOp: op,
-    isSignRequestStillActive: () => true,
     shouldSimulate: false,
     // @ts-ignore
     onBroadcastSuccess: () => {},

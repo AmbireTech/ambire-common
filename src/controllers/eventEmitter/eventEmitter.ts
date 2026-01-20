@@ -29,12 +29,23 @@ export default class EventEmitter {
 
   statuses: Statuses<string> = {}
 
-  constructor(registry?: IEventEmitterRegistryController) {
+  /**
+   *
+   * @param registry - EventEmitterRegistryController instance to be used by this controller. Controllers
+   * added to the registry will have their updates and errors propagated to the front-end.
+   * @param registerImmediately - Most of the time we want to register the controller in the registry
+   * immediately upon construction. However, there are some dynamic controllers (like SignAccountOpController)
+   * that should be registered only after a condition is met (e.g. when the request is open)
+   */
+  constructor(registry?: IEventEmitterRegistryController, registerImmediately: boolean = true) {
     this.id = uuidv4()
 
     if (registry) {
       this.#registry = registry
-      this.#registry.set(this.id, this)
+
+      if (registerImmediately) {
+        this.registerInRegistry()
+      }
     }
   }
 
@@ -241,13 +252,46 @@ export default class EventEmitter {
     }
   }
 
+  /**
+   * Destroys the controller, unregistering it from the EventEmitterRegistry and
+   * clearing all callbacks and errors.
+   */
   destroy() {
-    this.#registry?.delete(this.id)
+    this.unregisterFromRegistry()
     this.#callbacks = []
     this.#callbacksWithId = []
     this.#errorCallbacks = []
     this.#errorCallbacksWithId = []
     this.#errors = []
+  }
+
+  /**
+   * Registers the controller into the EventEmitterRegistry (if set)
+   * to propagate its updates and errors to the front-end.
+   */
+  registerInRegistry() {
+    if (!this.#registry) {
+      this.emitError({
+        level: 'silent',
+        message: `EventEmitter: Trying to register a controller while the registry is not set. Controller: ${this.name}`,
+        error: new Error(
+          'EventEmitter: Trying to register a controller while the registry is not set.'
+        )
+      })
+      return
+    }
+
+    this.#registry.set(this.id, this)
+  }
+
+  /**
+   * Unregisters the controller from the EventEmitterRegistry (if set).
+   * Used when controllers are destroyed or by dynamic controllers.
+   */
+  unregisterFromRegistry() {
+    if (!this.#registry) return
+
+    this.#registry?.delete(this.id)
   }
 
   toJSON() {

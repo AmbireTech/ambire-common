@@ -478,7 +478,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.currentUserRequest &&
       !this.userRequests.find((r) => r.id === this.currentUserRequest!.id)
     ) {
-      this.currentUserRequest = null
+      await this.#setCurrentUserRequest(null)
     }
 
     userRequestsToAdd.forEach((newReq) => {
@@ -521,7 +521,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
+    // Pause the previously active signAccountOp request
+    if (
+      this.currentUserRequest &&
+      this.currentUserRequest.kind === 'calls' &&
+      this.currentUserRequest.signAccountOp
+    ) {
+      this.currentUserRequest.signAccountOp.pause()
+    }
+
+    // Resume the signAccountOp of the incoming request
+    if (nextRequest && nextRequest.kind === 'calls' && nextRequest.signAccountOp) {
+      nextRequest.signAccountOp.resume()
+    }
+
     this.currentUserRequest = nextRequest
+
     this.emitUpdate()
 
     if (nextRequest) {
@@ -634,7 +649,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
-      this.currentUserRequest = null
+      await this.#setCurrentUserRequest(null)
 
       const callsCount = this.userRequests.reduce((acc, request) => {
         if (request.kind !== 'calls') return acc
@@ -1005,7 +1020,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const walletSendCallsVersion = isWalletSendCalls
-        ? request.params[0].version ?? '1.0.0'
+        ? (request.params[0].version ?? '1.0.0')
         : undefined
 
       userRequest =
@@ -1710,8 +1725,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ],
             meta
           },
-          isSignRequestStillActive: () =>
-            this.currentUserRequest && this.currentUserRequest.id === requestId,
           shouldSimulate: true,
           onUpdateAfterTraceCallSuccess: async () => {
             const accountOpsForSimulation = getAccountOpsForSimulation(
@@ -1737,6 +1750,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         dappPromises
       } as CallsUserRequest
+
+      if (executionType !== 'open-request-window') {
+        // If the request doesn't open immediately we shouldn't
+        // update the estimation and gasPrice in the background,
+        // thus we pause the controller until the user opens the request window
+        callUserRequest.signAccountOp.pause()
+      }
 
       callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(

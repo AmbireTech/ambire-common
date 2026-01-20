@@ -2402,7 +2402,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       phishing: this.#phishing,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
-      isSignRequestStillActive: (): boolean => !!this.#signAccountOpController,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         this.#portfolio
