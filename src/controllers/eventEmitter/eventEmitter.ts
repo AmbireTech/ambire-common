@@ -280,7 +280,6 @@ export default class EventEmitter {
       })
       return
     }
-    console.log('Debug: EventEmitter registered in registry', this.name)
 
     this.#registry.set(this.id, this)
   }
@@ -291,7 +290,6 @@ export default class EventEmitter {
    */
   unregisterFromRegistry() {
     if (!this.#registry) return
-    console.log('Debug: EventEmitter unregistered from registry', this.name)
 
     this.#registry?.delete(this.id)
   }

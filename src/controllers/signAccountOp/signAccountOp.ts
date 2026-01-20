@@ -521,8 +521,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     )
       return
 
-    console.log('Debug: reestimating accountOp in 30s...')
-
     // stop the interval reestimate if the user has done it at least 20 times
     if (this.#reestimateCounter >= 20) this.#stopRefetching = true
 
@@ -955,7 +953,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (shouldTraceCall) this.#traceCall()
 
-    console.log('Debug: simulating and estimating accountOp...')
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
       this.estimation.estimate(this.accountOp).catch((e) => e)
@@ -1289,7 +1286,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.unregisterFromRegistry()
     // GasPrice may be destroyed at this point if the request was rejected
     this.gasPrice?.pauseRefetching()
-    console.log('Debug: SignAccountOpController paused', this.accountOp.chainId)
   }
 
   /**
@@ -1311,7 +1307,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.resumeRefetching()
 
     this.emitUpdate()
-    console.log('Debug: SignAccountOpController resumed', this.accountOp.chainId)
   }
 
   resetStatus() {

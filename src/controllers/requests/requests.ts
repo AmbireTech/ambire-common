@@ -521,13 +521,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
-    console.log(
-      'Debug: #setCurrentUserRequest called with',
-      nextRequest,
-      'Current:',
-      this.currentUserRequest
-    )
-
     // Pause the previously active signAccountOp request
     if (
       this.currentUserRequest &&
