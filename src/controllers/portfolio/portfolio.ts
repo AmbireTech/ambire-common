@@ -28,6 +28,7 @@ import {
   getCanSkipUpdate,
   getCustomProviderPositions,
   getFormattedApiPositions,
+  getHasNonceChangedSinceLastUpdate,
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getShouldBypassServerSideCache
@@ -252,10 +253,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accounts: this.#accounts.accounts
           })
 
+          // The relayer has internal cache for the defi positions. If we want to
+          // invalidate it, we need to pass this param.
+          // See `getShouldBypassServerSideCache` for more details.
+          const forceUpdateParam = forceUpdateDefi ? '&update=true' : ''
+
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
             .join(',')}&account=${accountAddr}&baseCurrency=${baseCurrency}${
-            forceUpdateDefi ? '&update=true' : ''
+            forceUpdateParam
           }&sigs=${accountKeysCount}`
 
           return { url, queueSegment }
@@ -809,9 +815,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       Date.now() - externalApiHintsResponse.lastUpdate <
         EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
 
+    const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
+      defiState,
+      this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId)
+    )
+
     const canSkipDefiUpdate = getCanSkipUpdate(
       defiState,
-      this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId),
+      hasNonceChangedSinceLastUpdate,
       defiMaxDataAgeMs
     )
 
@@ -825,7 +836,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       defiState,
       !!isManualUpdate,
       hasKeys,
-      this.defiSessionIds
+      this.defiSessionIds,
+      hasNonceChangedSinceLastUpdate
     )
 
     try {

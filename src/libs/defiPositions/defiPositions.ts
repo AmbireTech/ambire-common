@@ -472,20 +472,27 @@ const enhancePortfolioTokensWithDefiPositions = (
   }
 }
 
+const getHasNonceChangedSinceLastUpdate = (
+  previousState: PortfolioNetworkResult['defiPositions'] | undefined,
+  nonceId: string | undefined
+): boolean => {
+  if (!previousState || !previousState.nonceId) return true
+
+  return nonceId !== previousState.nonceId
+}
+
 /**
  * Whether the portfolio defi positions data should be updated
  */
 const getCanSkipUpdate = (
   previousState: PortfolioNetworkResult['defiPositions'] | undefined,
-  nonceId: string | undefined,
+  hasNonceChangedSinceLastUpdate: boolean,
   maxDataAgeMs: number = 60000
 ): boolean => {
   if (!previousState || !previousState.lastSuccessfulUpdate) return false
 
-  const hasNonceChanged = nonceId && previousState.nonceId && nonceId !== previousState.nonceId
-
   // Always update if the nonce has changed
-  if (hasNonceChanged) return false
+  if (hasNonceChangedSinceLastUpdate) return false
 
   return Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs
 }
@@ -494,8 +501,12 @@ const getShouldBypassServerSideCache = (
   previousState: PortfolioNetworkResult['defiPositions'] | undefined,
   isManualUpdate: boolean,
   hasKeys: boolean,
-  sessionIds: string[]
+  sessionIds: string[],
+  hasNonceChangedSinceLastUpdate: boolean
 ): boolean => {
+  // Always bypass cache if the nonce has changed
+  if (hasNonceChangedSinceLastUpdate) return true
+
   const hasForceApiUpdatePrerequisites = isManualUpdate && sessionIds.length && hasKeys
 
   if (!hasForceApiUpdatePrerequisites) return false
@@ -557,5 +568,6 @@ export {
   enhancePortfolioTokensWithDefiPositions,
   getCanSkipUpdate,
   getShouldBypassServerSideCache,
-  getAccountNetworksWithPositions
+  getAccountNetworksWithPositions,
+  getHasNonceChangedSinceLastUpdate
 }
