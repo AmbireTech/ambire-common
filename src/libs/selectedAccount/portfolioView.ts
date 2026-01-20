@@ -156,8 +156,7 @@ export default class PortfolioViewBuilder {
     }
 
     const hasVisibleTokens = PortfolioViewBuilder.hasVisibleTokens(this.tokens)
-    const isReadyToVisualize =
-      this.isAllReady || (shouldShowPartialResult && hasVisibleTokens && !this.isAllReady)
+    const isReadyToVisualize = this.isAllReady || (shouldShowPartialResult && hasVisibleTokens)
 
     return {
       tokens: this.tokens,
