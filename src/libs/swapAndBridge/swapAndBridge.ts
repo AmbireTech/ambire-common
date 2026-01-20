@@ -565,9 +565,10 @@ export const calculateAmountWarnings = (
     }
 
     // try to calculate the slippage
-    const minAmountOutInWei = BigInt(
-      selectedRoute.userTxs[selectedRoute.userTxs.length - 1]?.minAmountOut || '0'
-    )
+    const txn = selectedRoute.userTxs[selectedRoute.userTxs.length - 1]
+    if (!txn) throw new Error('no userTxs in selectedRoute')
+
+    const minAmountOutInWei = BigInt(txn.minAmountOut)
     const minInUsd = safeTokenAmountAndNumberMultiplication(
       minAmountOutInWei,
       selectedRoute.toToken.decimals,
