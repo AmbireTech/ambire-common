@@ -100,8 +100,8 @@ export class EstimationController extends EventEmitter {
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
-        ? estimation.providerEstimation.feePaymentOptions
-        : [],
+          ? estimation.providerEstimation.feePaymentOptions
+          : [],
       op
     )
   }
@@ -275,7 +275,8 @@ export class EstimationController extends EventEmitter {
     if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
       warnings.push({
         id: 'bundler-failure',
-        title: 'You can proceed safely, but fee payment options are limited due to temporary provider issues'
+        title:
+          'You can proceed safely, but fee payment options are limited due to temporary provider issues'
       })
     }
 

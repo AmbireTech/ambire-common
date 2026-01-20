@@ -858,7 +858,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       phishing: this.#phishing,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
-      isSignRequestStillActive: () => true,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
@@ -867,8 +866,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         })
 
         await this.#onBroadcastSuccess(props)
-
-        console.log('Debug: Broadcast success in TransferController')
 
         if (this.transferSessionId) {
           this.latestBroadcastedToken = structuredClone(this.selectedToken)

@@ -30,7 +30,7 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
 
   #storage: IStorageController
 
-  #initialLoadPromise?: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   #accounts: IAccountsController
 
@@ -48,8 +48,8 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
     this.#accounts = accounts
     this.#selectedAccount = selectedAccount
 
-    this.#initialLoadPromise = this.#load().finally(() => {
-      this.#initialLoadPromise = undefined
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
     })
   }
 
@@ -117,7 +117,7 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
   }
 
   async addContact(name: string, address: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
     const trimmedName = name.trim()
 
@@ -143,7 +143,7 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
   }
 
   async renameManuallyAddedContact(address: string, newName: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
     const trimmedNewName = newName.trim()
 
@@ -170,7 +170,7 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
   }
 
   async removeManuallyAddedContact(address: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
 
     if (!this.#findManuallyAddedContactWithAddress(checksummedAddress)) {
