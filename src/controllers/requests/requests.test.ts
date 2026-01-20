@@ -8,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import {
@@ -24,6 +25,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -43,7 +45,7 @@ const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
-const accounts = [
+const accounts: Account[] = [
   {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
     associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
@@ -52,7 +54,12 @@ const accounts = [
       bytecode:
         '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }
+    },
+    preferences: {
+      label: 'does-not-matter',
+      pfp: 'also-does-not-matter'
+    },
+    initialPrivileges: []
   },
   {
     addr: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
@@ -62,7 +69,12 @@ const accounts = [
       bytecode:
         '0x7f1e7646e4695bead8bb0596679b0caf3a7ff6c4e04d2ad79103c8fa61fb6337f47fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }
+    },
+    preferences: {
+      label: 'does-not-matter',
+      pfp: 'also-does-not-matter'
+    },
+    initialPrivileges: []
   },
   {
     addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -72,7 +84,12 @@ const accounts = [
       bytecode:
         '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-    }
+    },
+    preferences: {
+      label: 'does-not-matter',
+      pfp: 'also-does-not-matter'
+    },
+    initialPrivileges: []
   }
 ]
 
@@ -152,6 +169,8 @@ const prepareTest = async () => {
 
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
 
+  await addressBookCtrl.initialLoadPromise
+
   const phishingCtrl = new PhishingController({
     fetch,
     storage: storageCtrl,
@@ -211,7 +230,6 @@ const prepareTest = async () => {
     activity: activityCtrl,
     storage: storageCtrl,
     swapProvider: new SocketAPIMock({ fetch, apiKey: '' }) as any,
-    invite: new InviteController({ relayerUrl: '', fetch, storage: storageCtrl }),
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
@@ -227,6 +245,8 @@ const prepareTest = async () => {
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {}
   })
+
+  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
 
   const getSignAccountOp = async ({
     addr,
@@ -254,6 +274,7 @@ const prepareTest = async () => {
       activity: activityCtrl,
       account,
       network,
+      eventEmitterRegistry,
       provider: providersCtrl.providers[network.chainId.toString()]!,
       phishing: phishingCtrl,
       fromRequestId: requestId,
@@ -329,7 +350,8 @@ const prepareTest = async () => {
       addTokensToBeLearned: () => {},
       onSetCurrentUserRequest: () => {},
       onBroadcastSuccess: async () => {},
-      onBroadcastFailed: () => {}
+      onBroadcastFailed: () => {},
+      eventEmitterRegistry
     }),
     getSignAccountOp,
     getCallsRequest
