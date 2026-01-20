@@ -224,7 +224,7 @@ contract Estimation is FeeTokens, Spoof {
 
           // the upperLimit should be 3 times the raisedGasLimit unless
           // the upperLimit becomes bigger than the blockGasLimit
-          uint256 upperLimit = raisedGasLimit * 3;
+          uint256 upperLimit = blockGasLimit == 0 ? gasleft() : raisedGasLimit * 3;
           if (upperLimit > blockGasLimit) {
             upperLimit = blockGasLimit;
           }
