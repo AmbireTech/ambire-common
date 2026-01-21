@@ -15,6 +15,7 @@ import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -112,6 +113,7 @@ const prepareTest = async () => {
   await providersCtrl.initialLoadPromise
 
   await selectedAccountCtrl.setAccount(ACCOUNT)
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const controller = new DefiPositionsController({
     fetch: global.fetch as any,
     storage: storageCtrl,
@@ -120,7 +122,8 @@ const prepareTest = async () => {
     providers: providersCtrl,
     networks: networksCtrl,
     accounts: accountsCtrl,
-    ui: uiCtrl
+    ui: uiCtrl,
+    features: featureFlagsCtrl
   })
 
   // @ts-ignore

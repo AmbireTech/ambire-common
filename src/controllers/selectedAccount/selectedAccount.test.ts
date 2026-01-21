@@ -19,6 +19,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -174,7 +175,7 @@ const prepareTest = async () => {
     velcroUrl,
     new BannerController(storageCtrl)
   )
-
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const defiPositionsCtrl = new DefiPositionsController({
     fetch,
     storage: storageCtrl,
@@ -183,7 +184,8 @@ const prepareTest = async () => {
     networks: networksCtrl,
     providers: providersCtrl,
     accounts: accountsCtrl,
-    ui: uiCtrl
+    ui: uiCtrl,
+    features: featureFlagsCtrl
   })
 
   await accountsCtrl.initialLoadPromise
