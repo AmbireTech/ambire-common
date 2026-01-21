@@ -123,7 +123,7 @@ const prepareTest = async () => {
     networks: networksCtrl,
     accounts: accountsCtrl,
     ui: uiCtrl,
-    features: featureFlagsCtrl
+    featureFlags: featureFlagsCtrl
   })
 
   // @ts-ignore

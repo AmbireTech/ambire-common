@@ -314,7 +314,7 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       providers: this.providers,
       ui: this.ui,
-      features: this.featureFlags
+      featureFlags: this.featureFlags
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(

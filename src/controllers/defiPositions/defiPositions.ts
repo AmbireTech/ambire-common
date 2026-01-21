@@ -64,7 +64,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   #initialLoadPromise: Promise<void> | undefined
 
-  #features: IFeatureFlagsController
+  #featureFlags: IFeatureFlagsController
 
   get positionsContinuousUpdateInterval() {
     return this.#positionsContinuousUpdateInterval
@@ -80,7 +80,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     networks,
     providers,
     ui,
-    features
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
@@ -91,7 +91,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     networks: INetworksController
     providers: IProvidersController
     ui: IUiController
-    features: IFeatureFlagsController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -103,7 +103,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#networks = networks
     this.#providers = providers
     this.#ui = ui
-    this.#features = features
+    this.#featureFlags = featureFlags
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -125,7 +125,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }
 
   async #load() {
-    await this.#features.initialLoadPromise
+    await this.#featureFlags.initialLoadPromise
 
     try {
       this.#networksWithPositionsByAccounts = await this.#storage.get(
@@ -208,7 +208,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }) {
     await this.#initialLoadPromise
 
-    if (!this.#features.isFeatureEnabled('defiPositions')) return
+    if (!this.#featureFlags.isFeatureEnabled('defiPositions')) return
 
     // If a previous update is still in progress, exit early to avoid
     // running multiple overlapping executions of the func. This ensures that only

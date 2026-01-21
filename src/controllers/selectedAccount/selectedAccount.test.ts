@@ -185,7 +185,7 @@ const prepareTest = async () => {
     providers: providersCtrl,
     accounts: accountsCtrl,
     ui: uiCtrl,
-    features: featureFlagsCtrl
+    featureFlags: featureFlagsCtrl
   })
 
   await accountsCtrl.initialLoadPromise
