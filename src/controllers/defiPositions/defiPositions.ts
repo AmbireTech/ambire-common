@@ -6,6 +6,7 @@ import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/in
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -63,6 +64,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   #initialLoadPromise: Promise<void> | undefined
 
+  #features: IFeatureFlagsController
+
   get positionsContinuousUpdateInterval() {
     return this.#positionsContinuousUpdateInterval
   }
@@ -76,7 +79,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     accounts,
     networks,
     providers,
-    ui
+    ui,
+    features
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
@@ -87,6 +91,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     networks: INetworksController
     providers: IProvidersController
     ui: IUiController
+    features: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -98,6 +103,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#networks = networks
     this.#providers = providers
     this.#ui = ui
+    this.#features = features
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -152,6 +158,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     let latestUpdatedAt: number | undefined
 
+    if (!this.#state[accountAddr]) return false
+
     const accountState = Object.values(this.#state[accountAddr])
 
     if (accountState.some((n) => !n.updatedAt)) return false
@@ -196,6 +204,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     forceUpdate?: boolean
     forceDebankCall?: boolean
   }) {
+    if (!this.#features.isFeatureEnabled('defiPositions')) return
+
     // If a previous update is still in progress, exit early to avoid
     // running multiple overlapping executions of the func. This ensures that only
     // one update runs at a time, preventing race conditions and inconsistent state/storage writes
@@ -611,26 +621,27 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }
 
   #getShouldSkipUpdateOnAccountWithNoDefiPositions(acc: Account, forceUpdate?: boolean) {
+    const accountStateAllChains = this.#accounts.accountStates[acc.addr]
+    const defiState = this.#state[acc.addr]
+
     if (forceUpdate) return false
-    if (!this.#accounts.accountStates[acc.addr]) return false
-    if (!this.#state[acc.addr]) return false
+    if (!accountStateAllChains) return false
+    if (!defiState) return false
     // Don't skip if the account has any DeFi positions or the account has never been updated
     if (
-      Object.values(this.#state[acc.addr]).some(
+      Object.values(defiState).some(
         (network) => network.positionsByProvider.length || !network.updatedAt
       )
     )
       return false
-    const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
-      (chainId: string) => {
-        const posNonceId = this.#state[acc.addr][chainId]?.nonceId
-        const nonceId = this.#getNonceId(acc, chainId)
+    const someNonceIdChanged = Object.keys(accountStateAllChains).some((chainId: string) => {
+      const posNonceId = defiState[chainId]?.nonceId
+      const nonceId = this.#getNonceId(acc, chainId)
 
-        if (!nonceId || !posNonceId) return false
+      if (!nonceId || !posNonceId) return false
 
-        return nonceId !== posNonceId
-      }
-    )
+      return nonceId !== posNonceId
+    })
 
     // Return false (don’t skip) if any nonceId has changed
     return !someNonceIdChanged
@@ -640,7 +651,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     if (!this.#accounts.accountStates) return undefined
     if (!this.#accounts.accountStates[acc.addr]) return undefined
 
-    const networkState = this.#accounts.accountStates[acc.addr][chainId.toString()]
+    const networkState = this.#accounts.accountStates[acc.addr]![chainId.toString()]
     if (!networkState) return undefined
 
     const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
@@ -652,7 +663,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   removeNetworkData(chainId: bigint) {
     Object.keys(this.#state).forEach((accountId) => {
-      delete this.#state[accountId][chainId.toString()]
+      delete this.#state[accountId]![chainId.toString()]
     })
     this.emitUpdate()
   }

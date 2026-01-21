@@ -220,7 +220,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.#appVersion = appVersion
     this.fetch = fetch
     this.storage = new StorageController(this.#storageAPI, eventEmitterRegistry)
-    this.featureFlags = new FeatureFlagsController(featureFlags, eventEmitterRegistry)
+    this.featureFlags = new FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry)
     this.ui = new UiController({ eventEmitterRegistry, uiManager })
     this.invite = new InviteController({
       eventEmitterRegistry,
@@ -313,7 +313,8 @@ export class MainController extends EventEmitter implements IMainController {
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
-      ui: this.ui
+      ui: this.ui,
+      features: this.featureFlags
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -1103,8 +1104,9 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount =
-      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
