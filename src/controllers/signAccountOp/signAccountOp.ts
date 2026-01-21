@@ -246,10 +246,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #paidBy: string | null = null
 
+  /**
+   * The selected fee token the user is going to broadcast with.
+   * This probably exists in selectedOption as well and it could
+   * be refactored away someday
+   */
   feeTokenResult: TokenResult | null = null
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
+  /**
+   * The selected payment option for txn broadcasting.
+   * Depending on the account type, it could be various tokens,
+   * gas tank, or payment by another EOA
+   */
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null

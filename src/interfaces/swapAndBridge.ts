@@ -109,7 +109,10 @@ export interface SwapAndBridgeRoute {
   disabled: boolean
   disabledReason?: string
   isSelectedManually?: boolean
-  // put in a service fee only if it's not included in the quote
+  // applied only for bridges
+  // some bridges require a fee paid out in source chain native that we cannot
+  // abstract. That's why we put it here and display it to the user so he
+  // knows extra fee is going to leave his account
   serviceFee?: {
     amount: string
     amountUSD: string

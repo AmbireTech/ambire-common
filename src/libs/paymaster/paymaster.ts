@@ -33,6 +33,15 @@ import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
 import { AbstractPaymaster } from './abstractPaymaster'
 
+/**
+ * Available paymaster types:
+ * - Ambire: when using the standart Ambire paymaster, fee is expected
+ * in native, allowed tokens or the gas tank
+ * - ERC7677: when a dapp requests sponsorship via ERC-7677:
+ * https://eips.ethereum.org/EIPS/eip-7677
+ * - SwapSponsorship: used for inner swap & bridge. When the txn fee is lower
+ * than the swap fee, the paymaster sponsors the userOperation
+ */
 type PaymasterType = 'Ambire' | 'ERC7677' | 'SwapSponsorship' | 'None'
 
 export function getPaymasterDataForEstimate(): PaymasterEstimationData {
@@ -365,7 +374,16 @@ export class Paymaster extends AbstractPaymaster {
     )
   }
 
+  /**
+   * We use the upgrade method when we initially need to start with another
+   * paymaster type, e.g. Ambire, but then we understand we can use another
+   * one because special conditions apply.
+   * One such case is the swap&bridge where we first need to know the estimation
+   * from the bundler so we could calculate the txn fee. If the swap fee is
+   * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
+   */
   upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void {
+    // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
     if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677') return
 
     const gas =
