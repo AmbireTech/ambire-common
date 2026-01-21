@@ -2,6 +2,7 @@ import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import getRootDomain from '../../utils/getRootDomain'
+import { VerifiedJsonRpcProvider } from './VerifiedJsonRpcProvider'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
   'drpc.org': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
@@ -19,6 +20,13 @@ const getBatchCountFromUrl = (rpcUrl: string): number | undefined => {
   } catch {
     return undefined
   }
+}
+
+const isColibriEnabledForChain = (chainId?: bigint | number) => {
+  if (!chainId) return false
+  if (process.env.USE_COLIBRI !== 'true') return false
+  // First iteration: Sepolia only
+  return Number(chainId) === 11155111
 }
 
 const getRpcProvider = (
@@ -47,6 +55,10 @@ const getRpcProvider = (
 
   if (chainId) {
     const staticNetwork = Network.from(Number(chainId))
+
+    if (isColibriEnabledForChain(chainId)) {
+      return new VerifiedJsonRpcProvider(rpcUrl, chainId, providerOptions)
+    }
 
     if (staticNetwork) {
       return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...providerOptions })
