@@ -15,6 +15,9 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
 
   #storage: IStorageController
 
+  // Holds the initial load promise, so that one can wait until it completes
+  initialLoadPromise?: Promise<void>
+
   constructor(
     featureFlags: Partial<FeatureFlags>,
     storage: IStorageController,
@@ -24,7 +27,10 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
 
     this.#flags = { ...defaultFeatureFlags, ...(featureFlags || {}) }
     this.#storage = storage
-    this.#load()
+
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load(): Promise<void> {

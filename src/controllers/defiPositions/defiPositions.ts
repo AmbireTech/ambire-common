@@ -125,6 +125,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }
 
   async #load() {
+    await this.#features.initialLoadPromise
+
     try {
       this.#networksWithPositionsByAccounts = await this.#storage.get(
         'networksWithPositionsByAccounts',
@@ -204,6 +206,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     forceUpdate?: boolean
     forceDebankCall?: boolean
   }) {
+    await this.#initialLoadPromise
+
     if (!this.#features.isFeatureEnabled('defiPositions')) return
 
     // If a previous update is still in progress, exit early to avoid
