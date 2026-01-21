@@ -651,7 +651,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.pendingMessage = null
       await this.#setCurrentUserRequest(null)
 
-      const callsCount = this.userRequests.reduce((acc, request) => {
+      const callsCount = this.visibleUserRequests.reduce((acc, request) => {
         if (request.kind !== 'calls') return acc
 
         return acc + (request.signAccountOp.accountOp.calls?.length || 0)
