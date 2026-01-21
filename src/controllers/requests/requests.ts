@@ -731,15 +731,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // eslint-disable-next-line no-continue
       if (!call) continue
 
-      const idsToRemove = call.activeRouteId
-        ? [
-            call.activeRouteId,
-            `${call.activeRouteId}-approval`,
-            `${call.activeRouteId}-revoke-approval`
-          ]
-        : [call.id]
-
-      await rejectAndCleanup(request, idsToRemove)
+      await rejectAndCleanup(request, [call.id])
     }
 
     // eslint-disable-next-line no-restricted-syntax
