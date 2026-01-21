@@ -1016,6 +1016,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
   }
 
+  /**
+   * Either simulates+estimates or just estimates based on #shouldSimulate.
+   * This is needed because in some cases (one click transfer/swap) we don't
+   * need to simulate, just estimate.
+   */
   async #simulateAndEstimateOrEstimate() {
     if (
       this.#stopRefetching ||
@@ -1324,10 +1329,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#gasPriceInterval.stop()
     this.#stopRefetching = true
     // Destroy sub-controllers
-    this.gasPrice = null as any
-    this.estimation = null as any
     this.estimation.destroy()
     this.gasPrice.destroy()
+    this.gasPrice = null as any
+    this.estimation = null as any
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
