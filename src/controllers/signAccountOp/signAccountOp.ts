@@ -325,8 +325,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #reestimateCounter: number = 0
 
   /**
-   * Controls internal continuous updates. Currently only used
-   * to stop the reestimation loop.
+   * Controls internal continuous updates - gasPrice and estimation.
+   * When true, both intervals should be stopped and even if they
+   * are not, they shouldn't make any calls/updates (fallback measure).
    */
   #stopRefetching: boolean = false
 
@@ -446,13 +447,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Intervals
     this.#gasPriceInterval = new RecurringTimeout(async () => {
       // Null when the controller is destroyed
-      if (!this.gasPrice) return
+      if (!this.gasPrice || this.#stopRefetching) {
+        this.#gasPriceInterval.stop()
+      }
 
       await this.gasPrice.fetch('major')
     }, GAS_PRICE_UPDATE_INTERVAL)
 
     this.#estimationInterval = new RecurringTimeout(async () => {
-      if (!this.estimation) return
+      if (!this.estimation || this.#stopRefetching) {
+        this.#estimationInterval.stop()
+        return
+      }
 
       await this.#simulateAndEstimateOrEstimate()
     }, ESTIMATE_UPDATE_INTERVAL)
@@ -1025,7 +1031,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (
       this.#stopRefetching ||
       !this.estimation ||
-      this.estimation.status === EstimationStatus.Initial ||
+      // What if the estimation is loading just as we add new calls
+      // or make other changes to the accountOp?
       this.estimation.status === EstimationStatus.Loading
     )
       return
@@ -1106,7 +1113,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped
-        this.#gasPriceInterval.start()
+        // but only if the controller isn't paused.
+        // Scenario: An estimation starts on #load, the user
+        // batches the transaction and the controller is paused.
+        // Once the estimation completes we don't want to start
+        // the gas price refetching as the controller is paused.
+        if (!this.#stopRefetching) this.#gasPriceInterval.start()
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation) {
@@ -1170,18 +1182,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // update only if there are differences in the calls array
           // we do this to prevent double estimation problems
           if (shouldUpdate) {
+            const hasNewCalls = this.accountOp.calls.length < calls.length
             this.#updateAccountOp({ calls })
             this.humanize()
 
-            const hasNewCalls = this.accountOp.calls.length < calls.length
             if (hasNewCalls) {
               this.learnTokens()
               // Reset the discovery status when the calls change to allow
               // for rediscovery
               this.setDiscoveryStatus(TraceCallDiscoveryStatus.NotStarted)
             }
-            // Force reestimate when calls change
-            this.#resumeIntervals({ forceReestimate: true })
+            this.#resumeIntervals({ haveCallsChanged: true })
           }
         }
       }
@@ -1362,27 +1373,35 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   /**
    * Resumes the intervals of the signAccountOp controller, which may be paused
    * due to user inactivity or the controller being paused altogether.
+   *
+   * Also used to restart the intervals when the calls have changed.
+   * That is because they may be stopped (after inactivity).
    */
-  #resumeIntervals(opts?: { forceReestimate?: boolean }) {
-    const { forceReestimate = false } = opts || {}
-    let estimationIntervalShouldRunImmediately = forceReestimate
-
-    if (
-      !this.estimation.estimation?.updatedAt ||
-      Date.now() - this.estimation.estimation!.updatedAt > ESTIMATE_UPDATE_INTERVAL
-    ) {
-      estimationIntervalShouldRunImmediately = true
-    }
+  #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
+    const { haveCallsChanged = false } = opts || {}
 
     this.#stopRefetching = false
     this.#reestimateCounter = 0
+
     this.#gasPriceInterval.start({
       runImmediately:
         !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
     })
-    this.#estimationInterval.start({
-      runImmediately: estimationIntervalShouldRunImmediately
-    })
+
+    if (haveCallsChanged) {
+      // The estimationInterval must be restarted if the calls have changed
+      // as that forces an immediate reestimation. start() does nothing
+      // if the interval is already running.
+      this.#estimationInterval.restart({
+        runImmediately: true
+      })
+    } else {
+      this.#estimationInterval.start({
+        runImmediately:
+          !this.estimation.estimation?.updatedAt ||
+          Date.now() - this.estimation.estimation!.updatedAt > ESTIMATE_UPDATE_INTERVAL
+      })
+    }
   }
 
   /**
