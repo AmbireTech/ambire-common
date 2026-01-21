@@ -45,6 +45,7 @@ interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 export interface Filters {
   account: string
   chainId?: bigint
+  identifiedBy?: AccountOpIdentifiedBy
 }
 
 export interface InternalAccountsOps {
@@ -278,6 +279,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
       // However, when the network filter is omitted, #accountsOps from different networks are mixed,
       // requiring additional sorting to ensure they are also in descending order.
       filteredItems.sort((a, b) => b.timestamp - a.timestamp)
+    }
+
+    // for benzin fetching
+    if (filters.identifiedBy) {
+      filteredItems.filter((i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier)
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
@@ -618,6 +624,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     }
                   }
 
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.blockNumber = receipt.blockNumber
+
                   // update the chain if a receipt has been received as otherwise, we're
                   // left hanging with a pending portfolio balance
                   chainsToUpdate.add(network.chainId)
@@ -766,7 +775,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     return this.#accountsOps[accountAddr]?.[chainId.toString()]?.find(
-      (op) => op.identifiedBy.identifier === identifiedBy.identifier
+      (op) => op.identifiedBy && op.identifiedBy.identifier === identifiedBy.identifier
     )
   }
 

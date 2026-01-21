@@ -33,7 +33,7 @@ function getMintVestingRequestParams({
   selectedToken: TokenResult
   addrVestingData: AddrVestingData
 }): {
-  calls: CallsUserRequest['accountOp']['calls']
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
 } {
   return {
@@ -64,7 +64,7 @@ function getClaimWalletRequestParams({
   selectedToken: TokenResult
   claimableRewardsData: ClaimableRewardsData
 }): {
-  calls: CallsUserRequest['accountOp']['calls']
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
 } {
   return {
@@ -97,7 +97,7 @@ function getTransferRequestParams({
   recipientAddress: _recipientAddress,
   paymasterService
 }: BuildUserRequestParams): {
-  calls: CallsUserRequest['accountOp']['calls']
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
 } | null {
   if (!selectedToken || !selectedAccount || !_recipientAddress) return null
@@ -198,7 +198,7 @@ function getIntentRequestParams({
     data: string
   }[]
 }): {
-  calls: CallsUserRequest['accountOp']['calls']
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
 } | null {
   if (!selectedToken || !selectedAccount || !recipientAddress) return null

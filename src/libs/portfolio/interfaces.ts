@@ -254,7 +254,7 @@ export type PortfolioProjectedRewardsResult = {
   walletPrice: number
   pointsOfOtherUsers: number
   numberOfWeeksSinceStartOfSeason: number
-  multiplier: number
+  multipliers: { type: string; activated: boolean }[]
   weeklyTx: number
   frozenRewardSeason1: number
   governanceVotes: {
@@ -281,9 +281,11 @@ export type ProjectedRewardsStats = {
   poolSize: number
   rank: number
   totalScore: number
+  multiplierCount: number
   multiplier: number
   estimatedRewards: number
   estimatedRewardsUSD: number
+  multipliers: PortfolioProjectedRewardsResult['multipliers']
 }
 
 export type PortfolioKeyResult =
@@ -478,4 +480,10 @@ export type KnownTokenInfo = {
   token?: { symbol?: string; decimals?: number }
   isSC?: boolean
   chainIds?: number[]
+}
+
+export type TokenValidationResult = {
+  isValid: boolean
+  standard: string
+  error: { message: string | null; type: 'network' | 'validation' | null }
 }
