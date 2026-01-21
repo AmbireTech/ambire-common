@@ -1112,13 +1112,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (this.estimation.status === EstimationStatus.Success) {
-        // Start the gas price interval in case it was stopped
-        // but only if the controller isn't paused.
-        // Scenario: An estimation starts on #load, the user
-        // batches the transaction and the controller is paused.
-        // Once the estimation completes we don't want to start
-        // the gas price refetching as the controller is paused.
-        if (!this.#stopRefetching) this.#gasPriceInterval.start()
+        // Start the gas price interval in case it was stopped earlier
+        this.#gasPriceInterval.start()
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation) {
