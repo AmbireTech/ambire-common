@@ -211,7 +211,7 @@ export class SocketAPI implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    let tokens = response[toChainId]
+    let tokens = response[toChainId] || []
 
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
@@ -253,7 +253,7 @@ export class SocketAPI implements SwapProvider {
     if (!response.tokens || !response.tokens[chainId] || !response.tokens[chainId].length)
       return null
 
-    return normalizeIncomingSocketToken(response.tokens[chainId][0])
+    return normalizeIncomingSocketToken(response.tokens[chainId][0]!)
   }
 
   async quote({
@@ -304,7 +304,7 @@ export class SocketAPI implements SwapProvider {
     // configure the toAsset
     let socketToAsset = response.autoRoute ? response.autoRoute.output.token : null
     if (!socketToAsset) {
-      socketToAsset = response.manualRoutes.length ? response.manualRoutes[0].output.token : null
+      socketToAsset = response.manualRoutes.length ? response.manualRoutes[0]!.output.token : null
     }
     if (!socketToAsset) {
       socketToAsset = { ...toAsset, icon: toAsset.icon ?? '', logoURI: '' }
@@ -357,10 +357,10 @@ export class SocketAPI implements SwapProvider {
         ]
 
         // set the service fee
-        const serviceFee: SwapAndBridgeRoute['serviceFee'] = steps[0].protocolFees
+        const serviceFee: SwapAndBridgeRoute['serviceFee'] = steps[0]!.protocolFees
           ? {
-              amount: steps[0].protocolFees.amount,
-              amountUSD: steps[0].protocolFees.feesInUsd.toString()
+              amount: steps[0]!.protocolFees.amount,
+              amountUSD: steps[0]!.protocolFees.feesInUsd.toString()
             }
           : undefined
 
@@ -396,10 +396,10 @@ export class SocketAPI implements SwapProvider {
           },
           approvalData: 'approvalData' in route ? route.approvalData : undefined,
           txData: 'txData' in route ? route.txData : undefined,
-          rawRoute: '' // not needed for socket
+          rawRoute: '', // not needed for socket,
+          withConvenienceFee: shouldIncludeConvenienceFee
         }
-      }),
-      withConvenienceFee: shouldIncludeConvenienceFee
+      })
     }
   }
 
@@ -421,7 +421,7 @@ export class SocketAPI implements SwapProvider {
         chainId: route.fromChainId,
         txData: route.txData.data,
         txTarget: route.txData.to,
-        userTxIndex: route.steps.length ? route.steps[0].userTxIndex : 0,
+        userTxIndex: route.steps.length ? route.steps[0]!.userTxIndex : 0,
         value: route.txData.value
       }
     }
@@ -472,6 +472,7 @@ export class SocketAPI implements SwapProvider {
 
     if (!response) return null
     const res = response[0]
+    if (!res) return null
     // everything below 3 is pending on our end
     if (res.bungeeStatusCode < 3) return null
     // 3 and 4 is completed on our end

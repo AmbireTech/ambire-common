@@ -102,6 +102,7 @@ export class SwapProviderParallelExecutor {
       .filter((p) => !results.some((r) => r.provider === p))
       .map((provider) => {
         const originalIdx = supportedProviders.indexOf(provider)
+        if (!tasks[originalIdx]) return null
         return tasks[originalIdx]
           .then((res) => res)
           .catch((err) => ({ provider, result: err as Error }))
@@ -135,7 +136,7 @@ export class SwapProviderParallelExecutor {
     }
 
     // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
-    const baseMessage = errors[0].message || 'Unknown error'
+    const baseMessage = errors[0]!.message || 'Unknown error'
 
     // Extract technical details from all errors (that's the content between < and >)
     const technicalDetails = errors
@@ -256,7 +257,7 @@ export class SwapProviderParallelExecutor {
           .catch((e) => e),
       { chainIds: [fromChainId, toChainId] }
     )
-    const firstQuote = quotes[0]
+    const firstQuote = quotes[0] as SwapAndBridgeQuote
     return {
       ...firstQuote,
       routes: quotes.map((q) => q.routes.flat()).flat()

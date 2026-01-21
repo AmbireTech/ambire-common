@@ -246,10 +246,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #paidBy: string | null = null
 
+  /**
+   * The selected fee token the user is going to broadcast with.
+   * This probably exists in selectedOption as well and it could
+   * be refactored away someday
+   */
   feeTokenResult: TokenResult | null = null
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
+  /**
+   * The selected payment option for txn broadcasting.
+   * Depending on the account type, it could be various tokens,
+   * gas tank, or payment by another EOA
+   */
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
@@ -758,7 +768,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
 
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
+      (token) => token.address === ZeroAddress
     )
     if (!this.isSponsored && !currentPortfolioNetworkNative)
       errors.push({
@@ -1167,21 +1177,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.estimation.estimation.bundlerEstimation &&
         this.estimation.estimation.bundlerEstimation.paymaster
       ) {
-        // if it was sponsored but it no longer is (fallback case),
-        // reset the selectedOption option as we use native for the sponsorship
-        // but the user might not actually have any native
-        const isSponsorshipFallback =
-          this.isSponsored && !this.estimation.estimation.bundlerEstimation.paymaster.isSponsored()
-
         this.isSponsored = this.estimation.estimation.bundlerEstimation.paymaster.isSponsored()
         this.sponsor =
           this.estimation.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
-
-        if (isSponsorshipFallback) {
-          this.selectedOption = this.estimation.availableFeeOptions.length
-            ? this.estimation.availableFeeOptions[0]
-            : undefined
-        }
       }
 
       // calculate the fee speeds if either there are no feeSpeeds
@@ -1388,9 +1386,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
-      [
-        this.accountOp.chainId.toString()
-      ]?.result?.tokens.find((token) => token.address === '0x0000000000000000000000000000000000000000')
+      [this.accountOp.chainId.toString()]?.result?.tokens.find(
+        (token) => token.address === ZeroAddress
+      )
     if (!native) return null
 
     // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
@@ -1865,9 +1863,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // get the native token from the portfolio to calculate prices
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
-      [
-        this.accountOp.chainId.toString()
-      ]?.result?.tokens.find((token) => token.address === '0x0000000000000000000000000000000000000000')
+      [this.accountOp.chainId.toString()]?.result?.tokens.find(
+        (token) => token.address === ZeroAddress
+      )
     if (!native) return null
     const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     if (!nativePrice) return null
@@ -1930,7 +1928,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return
     }
 
-    if (this.accountOp.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp.gasFeePayment!.inToken === ZeroAddress) {
       // native payment
       this.#updateAccountOp({
         feeCall: {
@@ -2113,8 +2111,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         .catch((e) => console.error(e))
     }
 
-    // auto-retry once if it was the ambire paymaster
-    if (paymaster.canAutoRetryOnFailure() && counter === 0) {
+    if (paymaster.isAmbire() && counter === 0) {
       const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
       return this.#getPaymasterUserOp(reestimatedUserOp, paymaster, eip7702Auth, counter + 1)
     }
