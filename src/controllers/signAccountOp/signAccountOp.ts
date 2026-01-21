@@ -1052,7 +1052,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
       }
       // if there's a bundler estimation and the gasPrice for it has resolved, update the UI
-      if (this.estimation.estimation && this.estimation.estimation.bundlerGasPrices) {
+      if (this.estimation.estimation) {
         if (this.estimation.estimation.bundlerGasPrices) {
           // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
           // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
