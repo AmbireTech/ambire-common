@@ -675,14 +675,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async rejectCalls({
     callIds = [],
-    activeRouteIds = [],
+    activeRouteIds: paramActiveRouteIds = [],
     errorMessage = 'User rejected the transaction request!'
   }: {
     callIds?: Call['id'][]
     activeRouteIds?: string[]
     errorMessage?: string
   }) {
-    if (!callIds.length && !activeRouteIds.length) return
+    if (!callIds.length && !paramActiveRouteIds.length) return
 
     const findRequestByCall = (predicate: (c: Call) => boolean) =>
       this.userRequests.find(
@@ -720,6 +720,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     }
 
+    const activeRouteIdsToRemove = [...paramActiveRouteIds]
+
     // eslint-disable-next-line no-restricted-syntax
     for (const callId of callIds) {
       const request = findRequestByCall((c) => c.id === callId)
@@ -728,22 +730,27 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const call = request.signAccountOp.accountOp.calls.find((c) => c.id === callId)
 
+      if (call?.activeRouteId) {
+        // What we are doing here is finding all calls for a swap
+        // and removing them together if one of them is being removed.
+        // Example: The user removes the approval call only,
+        // and we also remove the actual swap call.
+        if (!activeRouteIdsToRemove.includes(call.activeRouteId)) {
+          activeRouteIdsToRemove.push(call.activeRouteId)
+        }
+
+        // eslint-disable-next-line no-continue
+        continue
+      }
+
       // eslint-disable-next-line no-continue
       if (!call) continue
 
-      const idsToRemove = call.activeRouteId
-        ? [
-            call.activeRouteId,
-            `${call.activeRouteId}-approval`,
-            `${call.activeRouteId}-revoke-approval`
-          ]
-        : [call.id]
-
-      await rejectAndCleanup(request, idsToRemove)
+      await rejectAndCleanup(request, [call.id])
     }
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const activeRouteId of activeRouteIds) {
+    for (const activeRouteId of activeRouteIdsToRemove) {
       const request = findRequestByCall((c) => c.activeRouteId === activeRouteId)
       // eslint-disable-next-line no-continue
       if (!request) continue
@@ -1000,7 +1007,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const walletSendCallsVersion = isWalletSendCalls
-        ? request.params[0].version ?? '1.0.0'
+        ? (request.params[0].version ?? '1.0.0')
         : undefined
 
       userRequest =
@@ -1435,7 +1442,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           transaction,
           network.chainId,
           this.#selectedAccount.account,
-          this.#providers.providers[network.chainId.toString()],
+          this.#providers.providers[network.chainId.toString()]!,
           accountState,
           getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
