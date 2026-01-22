@@ -216,16 +216,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     } catch (e: any) {
       console.error('Error parsing message:', e, 'Original message:', messageString)
 
-      // Parse it again with viem to get as much info as possible
-      // so we can display it to the user
-      try {
-        return {
-          parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
-          status: 'malformed'
-        }
-      } catch {
-        return null
-      }
+      // Fallback to regular sign message if parsing fails
+      return null
     }
   }
 

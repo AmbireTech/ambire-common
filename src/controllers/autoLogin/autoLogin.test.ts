@@ -279,7 +279,7 @@ URI: https://docs.fileverse.io
 
       expect(message?.status).toBe('invalid')
     })
-    it('invalid resource uri in resources - should return status malformed', async () => {
+    it('malformed siwe message - should return null', async () => {
       const malformedMessage = generateSiweMessage(undefined, (message) =>
         message.replace(/Resources:\n- https:\/\/privy.io/, 'Resources:\n- invaliduri')
       )
@@ -288,7 +288,7 @@ URI: https://docs.fileverse.io
         'https://docs.fileverse.io'
       )
 
-      expect(message?.status).toBe('malformed')
+      expect(message).toBeNull()
     })
     it('expired siwe - should return status invalid', async () => {
       const expiredSiwe = generateSiweMessage({
