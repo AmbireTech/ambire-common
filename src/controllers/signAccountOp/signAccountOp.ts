@@ -1109,7 +1109,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
-        this.#gasPriceInterval.start()
+        this.#gasPriceInterval.start({
+          // Refetch immediately if the gas prices are stale
+          runImmediately:
+            !this.gasPrice.updatedAt ||
+            Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+        })
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation) {
