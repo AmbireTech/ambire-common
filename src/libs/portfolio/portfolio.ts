@@ -30,7 +30,11 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
-// List of tokens to exclude from display by chainId and address
+/**
+ * List of tokens to exclude from display by chainId and address
+ *
+ * Note: MUST BE CHECKSUMMED ADDRESSES
+ */
 const EXCLUDED_TOKENS: Record<string, string[]> = {
   // Gnosis Chain (xDAI)
   '100': [
@@ -38,7 +42,8 @@ const EXCLUDED_TOKENS: Record<string, string[]> = {
   ],
   // Polygon
   '137': [
-    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6', // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0x0B91B07bEb67333225A5bA0259D55AeE10E3A578' // MNEP - scam token
   ],
   // Ethereum Mainnet
   '1': [
