@@ -335,7 +335,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         ?.positions.filter(
           (p) =>
             p.additionalData.inRange &&
-            p.additionalData.pool.id === '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66'
+            p.additionalData.pool?.id === '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66'
         )
         .map((p) => p.assets)
         .flat()
