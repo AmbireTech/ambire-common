@@ -22,6 +22,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -141,6 +142,7 @@ const inviteCtrl = new InviteController({
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
+const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
   fetch,
@@ -150,7 +152,8 @@ const portfolioCtrl = new PortfolioController(
   keystore,
   relayerUrl,
   velcroUrl,
-  new BannerController(storageCtrl)
+  new BannerController(storageCtrl),
+  featureFlagsCtrl
 )
 
 const activityCtrl = new ActivityController(
@@ -216,7 +219,6 @@ const swapAndBridgeController = new SwapAndBridgeController({
   activity: activityCtrl,
   storage: storageCtrl,
   swapProvider: socketAPIMock as any,
-  invite: inviteCtrl,
   keystore,
   portfolio: portfolioCtrl,
   providers: providersCtrl,

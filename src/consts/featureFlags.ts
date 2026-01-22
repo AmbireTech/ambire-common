@@ -3,11 +3,13 @@ export interface FeatureFlags {
   withEmailVaultController: boolean
   testnetMode: boolean
   defiPositions: boolean
+  tokenAutoDiscovery: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
   withTransactionManagerController: false,
   withEmailVaultController: true,
   testnetMode: false,
-  defiPositions: true
+  defiPositions: true,
+  tokenAutoDiscovery: true
 }

@@ -10,6 +10,8 @@ import {
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+/* eslint-disable @typescript-eslint/no-use-before-define */
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -22,7 +24,6 @@ import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/account
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
@@ -134,6 +135,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #keystore: IKeystoreController
 
+  #featureFlags: IFeatureFlagsController
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
 
@@ -147,6 +150,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     relayerUrl: string,
     velcroUrl: string,
     banner: IBannerController,
+    featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -164,6 +168,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#banner = banner
+    this.#featureFlags = featureFlags
     this.#batchedVelcroDiscovery = batcher(
       fetch,
       (queue) => {
@@ -203,6 +208,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
+      await this.#featureFlags.initialLoadPromise
 
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.customTokens = await this.#storage.get('customTokens', [])
@@ -1053,7 +1059,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                   state
                 }
               }),
-            disableAutoDiscovery: canSkipExternalApiHintsUpdate,
+            disableAutoDiscovery:
+              !this.#featureFlags.isFeatureEnabled('tokenAutoDiscovery') ||
+              canSkipExternalApiHintsUpdate,
             ...allHints
           })
 

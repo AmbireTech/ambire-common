@@ -163,7 +163,7 @@ const prepareTest = async () => {
     keystore,
     autoLogin: autoLoginCtrl
   })
-
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const portfolioCtrl = new PortfolioController(
     storageCtrl,
     fetch,
@@ -173,9 +173,9 @@ const prepareTest = async () => {
     keystore,
     relayerUrl,
     velcroUrl,
-    new BannerController(storageCtrl)
+    new BannerController(storageCtrl),
+    featureFlagsCtrl
   )
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const defiPositionsCtrl = new DefiPositionsController({
     fetch,
     storage: storageCtrl,

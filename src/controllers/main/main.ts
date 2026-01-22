@@ -302,6 +302,7 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       velcroUrl,
       this.banner,
+      this.featureFlags,
       eventEmitterRegistry
     )
     this.defiPositions = new DefiPositionsController({

@@ -19,6 +19,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -213,7 +214,7 @@ describe('Activity Controller ', () => {
       relayerUrl,
       fetch
     )
-
+    const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
     portfolioCtrl = new PortfolioController(
       storageCtrl,
       fetch,
@@ -223,7 +224,8 @@ describe('Activity Controller ', () => {
       keystore,
       relayerUrl,
       velcroUrl,
-      new BannerController(storageCtrl)
+      new BannerController(storageCtrl),
+      featureFlagsCtrl
     )
     providersCtrl.providers = providers
 
