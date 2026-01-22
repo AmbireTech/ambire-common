@@ -82,7 +82,8 @@ const createMockRoute = ({
       name: 'USD Coin',
       priceUSD: toTokenPriceUSDStr
     } as LiFiToken,
-    disabled: false
+    disabled: false,
+    withConvenienceFee: false
   }
 }
 

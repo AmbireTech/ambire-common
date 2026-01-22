@@ -108,6 +108,7 @@ export function getEstimationSummary(estimation: FullEstimation): FullEstimation
     bundlerEstimation:
       estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
     flags: estimation.flags,
-    bundlerGasPrices: estimation.bundlerGasPrices
+    bundlerGasPrices: estimation.bundlerGasPrices,
+    updatedAt: Date.now()
   }
 }

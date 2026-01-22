@@ -10,7 +10,9 @@ import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
@@ -24,13 +26,23 @@ import {
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
+import { BundlerEstimateResult } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
 import { AbstractPaymaster } from './abstractPaymaster'
 
-type PaymasterType = 'Ambire' | 'ERC7677' | 'None'
+/**
+ * Available paymaster types:
+ * - Ambire: when using the standart Ambire paymaster, fee is expected
+ * in native, allowed tokens or the gas tank
+ * - ERC7677: when a dapp requests sponsorship via ERC-7677:
+ * https://eips.ethereum.org/EIPS/eip-7677
+ * - SwapSponsorship: used for inner swap & bridge. When the txn fee is lower
+ * than the swap fee, the paymaster sponsors the userOperation
+ */
+type PaymasterType = 'Ambire' | 'ERC7677' | 'SwapSponsorship' | 'None'
 
 export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
@@ -45,10 +57,23 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   }
 }
 
+function getSwapSponsorshipEstimationData(): PaymasterEstimationData {
+  const paymasterData = getPaymasterDataForEstimate()
+  return {
+    ...paymasterData,
+    sponsor: {
+      name: 'Ambire Wallet',
+      icon: 'https://velcro.ambire.com/public/ambire-logos/symbol-color.svg'
+    }
+  }
+}
+
 export class Paymaster extends AbstractPaymaster {
   callRelayer: Function
 
   type: PaymasterType = 'None'
+
+  op: AccountOp | null = null
 
   paymasterService: PaymasterService | null = null
 
@@ -75,6 +100,7 @@ export class Paymaster extends AbstractPaymaster {
     network: Network,
     provider: RPCProvider
   ) {
+    this.op = op
     this.network = network
     this.provider = provider
     this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
@@ -122,7 +148,7 @@ export class Paymaster extends AbstractPaymaster {
     // for custom networks, check if the paymaster there has balance
     if (!network.predefined || seenInsufficientFunds) {
       try {
-        const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+        const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider) as any
         const paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
 
         // if the network paymaster has failed because of insufficient funds,
@@ -145,7 +171,8 @@ export class Paymaster extends AbstractPaymaster {
   shouldIncludePayment(): boolean {
     return (
       this.type === 'Ambire' ||
-      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER)
+      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER) ||
+      this.type === 'SwapSponsorship'
     )
   }
 
@@ -162,7 +189,7 @@ export class Paymaster extends AbstractPaymaster {
       return 'erc20'
     }
 
-    if (this.type === 'ERC7677') return 'gasTank'
+    if (this.isSponsored()) return 'gasTank'
     return undefined
   }
 
@@ -177,7 +204,7 @@ export class Paymaster extends AbstractPaymaster {
     }
 
     // hardcode USDC gas tank 0 for sponsorships
-    if (this.type === 'ERC7677') {
+    if (this.isSponsored()) {
       const abiCoder = new AbiCoder()
       return {
         to: FEE_COLLECTOR,
@@ -194,11 +221,13 @@ export class Paymaster extends AbstractPaymaster {
 
     if (this.type === 'Ambire') return getPaymasterDataForEstimate()
 
+    if (this.type === 'SwapSponsorship') return getSwapSponsorshipEstimationData()
+
     return null
   }
 
   isSponsored(): boolean {
-    return this.type === 'ERC7677'
+    return this.type === 'ERC7677' || this.type === 'SwapSponsorship'
   }
 
   isUsable() {
@@ -229,10 +258,11 @@ export class Paymaster extends AbstractPaymaster {
         })
       ])
 
+      const isAmbirePaymaster = this.type === 'Ambire' || this.type === 'SwapSponsorship'
       return {
         success: true,
-        paymaster: this.type === 'Ambire' ? AMBIRE_PAYMASTER : response.paymaster,
-        paymasterData: this.type === 'Ambire' ? response.data.paymasterData : response.paymasterData
+        paymaster: isAmbirePaymaster ? AMBIRE_PAYMASTER : response.paymaster,
+        paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData
       }
     } catch (e: any) {
       if (e.message === 'Ambire relayer error timeout') {
@@ -280,7 +310,14 @@ export class Paymaster extends AbstractPaymaster {
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,
-        bundler: userOp.bundler
+        bundler: userOp.bundler,
+        swapSponsorship:
+          this.type === 'SwapSponsorship' && this.op?.meta?.swapSponsorship
+            ? {
+                price: this.op.meta.swapSponsorship.fromTokenPriceInUsd,
+                decimals: this.op.meta.swapSponsorship.fromTokenDecimals
+              }
+            : undefined
       })
     })
   }
@@ -316,15 +353,15 @@ export class Paymaster extends AbstractPaymaster {
     userOp: UserOperation,
     network: Network
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
-    if (this.type === 'Ambire') return this.#ambireCall(acc, op, userOp)
+    if (this.isAmbire()) return this.#ambireCall(acc, op, userOp)
 
     if (this.type === 'ERC7677') return this.#erc7677Call(op, userOp, network)
 
     throw new Error('Paymaster not configured. Please contact support')
   }
 
-  canAutoRetryOnFailure(): boolean {
-    return this.type === 'Ambire'
+  isAmbire(): boolean {
+    return this.type === 'Ambire' || this.type === 'SwapSponsorship'
   }
 
   isEstimateBelowMin(localOp: UserOperation): boolean {
@@ -335,5 +372,31 @@ export class Paymaster extends AbstractPaymaster {
       localOp.paymasterVerificationGasLimit === undefined ||
       BigInt(localOp.paymasterVerificationGasLimit) < BigInt(min.paymasterVerificationGasLimit)
     )
+  }
+
+  /**
+   * We use the upgrade method when we initially need to start with another
+   * paymaster type, e.g. Ambire, but then we understand we can use another
+   * one because special conditions apply.
+   * One such case is the swap&bridge where we first need to know the estimation
+   * from the bundler so we could calculate the txn fee. If the swap fee is
+   * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
+   */
+  upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void {
+    // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
+    if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677') return
+
+    const gas =
+      BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
+    const amountInWei = gas * BigInt(gasPrices.ape.maxFeePerGas)
+    const cost = Number(
+      safeTokenAmountAndNumberMultiplication(
+        amountInWei,
+        18,
+        this.op.meta.swapSponsorship.nativePrice
+      )
+    )
+    const costPlusOverhead = cost + cost * 0.25
+    if (costPlusOverhead < this.op.meta.swapSponsorship.swapFeeInUsd) this.type = 'SwapSponsorship'
   }
 }

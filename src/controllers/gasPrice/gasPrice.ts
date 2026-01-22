@@ -1,5 +1,5 @@
-import { getAvailableBunlders } from '../../services/bundlers/getBundler'
 /* eslint-disable @typescript-eslint/no-floating-promises */
+import { GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -7,6 +7,7 @@ import { BaseAccount } from '../../libs/account/BaseAccount'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
 import { gasPriceToBundlerFormat, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { getAvailableBunlders } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
@@ -23,12 +24,32 @@ export class GasPriceController extends EventEmitter {
   #getSignAccountOpState: () => {
     estimation: EstimationController
     readyToSign: boolean
-    isSignRequestStillActive: Function
   }
 
   gasPrices?: GasSpeeds
 
+  /**
+   * Timestamp of the last successful gas price update
+   * TODO: Merge them into a single structure
+   * {
+   *  gasPrices: GasSpeeds
+   *  updatedAt: number
+   * }
+   */
+  updatedAt?: number
+
+  /**
+   * When the signAccountOp is not active we want to avoid
+   * refetching the gas prices.
+   */
   stopRefetching: boolean = false
+
+  /**
+   * If the bundler estimation succeeds successfully, we don't want
+   * to use the estimation from the gas price controller unless
+   * explicitly called from the signAccountOp.
+   * */
+  areGasPricesUsedFromBundlerEstimation: boolean = false
 
   constructor(
     network: Network,
@@ -37,7 +58,6 @@ export class GasPriceController extends EventEmitter {
     getSignAccountOpState: () => {
       estimation: EstimationController
       readyToSign: boolean
-      isSignRequestStillActive: Function
     }
   ) {
     super()
@@ -47,11 +67,12 @@ export class GasPriceController extends EventEmitter {
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
+  // @TODO: Refactor this to use recurringTimeout in order
+  // to safeguard it from piling up multiple concurrent calls
   async refetch() {
-    await wait(12000)
+    await wait(GAS_PRICE_UPDATE_INTERVAL)
     if (this.stopRefetching) return
     const signAccountOpState = this.#getSignAccountOpState()
-    if (!signAccountOpState.isSignRequestStillActive()) return
 
     // no need to update the gas prices if the estimation status is Error
     // try again after 12s
@@ -92,6 +113,7 @@ export class GasPriceController extends EventEmitter {
       clearTimeout(timeoutId)
       if (bundlerGasPrices) {
         this.gasPrices = bundlerGasPrices as GasSpeeds
+        this.updatedAt = Date.now()
 
         this.emitUpdate()
         this.refetch()
@@ -131,6 +153,7 @@ export class GasPriceController extends EventEmitter {
 
     if (gasPriceData && gasPriceData.gasPrice)
       this.gasPrices = gasPriceToBundlerFormat(gasPriceData.gasPrice)
+    this.updatedAt = Date.now()
 
     this.emitUpdate()
     this.refetch()
@@ -138,6 +161,30 @@ export class GasPriceController extends EventEmitter {
 
   destroy() {
     super.destroy()
+    this.pauseRefetching()
+  }
+
+  pauseRefetching(areGasPricesUsedFromBundlerEstimation?: boolean) {
     this.stopRefetching = true
+
+    if (areGasPricesUsedFromBundlerEstimation) this.areGasPricesUsedFromBundlerEstimation = true
+  }
+
+  /**
+   * Resumes the refetching of gas prices if it was paused.
+   * Does nothing if there is a successful bundler estimation as the gas prices
+   * are used directly from there.
+   */
+  resumeRefetching(
+    areGasPricesUsedFromBundlerEstimation = this.areGasPricesUsedFromBundlerEstimation
+  ) {
+    if (!this.stopRefetching || areGasPricesUsedFromBundlerEstimation) return
+
+    this.areGasPricesUsedFromBundlerEstimation = false
+    this.stopRefetching = false
+
+    if (!this.updatedAt || Date.now() - this.updatedAt > GAS_PRICE_UPDATE_INTERVAL) {
+      this.fetch()
+    }
   }
 }

@@ -246,17 +246,25 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #paidBy: string | null = null
 
+  /**
+   * The selected fee token the user is going to broadcast with.
+   * This probably exists in selectedOption as well and it could
+   * be refactored away someday
+   */
   feeTokenResult: TokenResult | null = null
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
+  /**
+   * The selected payment option for txn broadcasting.
+   * Depending on the account type, it could be various tokens,
+   * gas tank, or payment by another EOA
+   */
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
-
-  #isSignRequestStillActive: Function
 
   signedAccountOp: AccountOp | null
 
@@ -312,6 +320,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #reestimateCounter: number = 0
 
+  /**
+   * Controls internal continuous updates. Currently only used
+   * to stop the reestimation loop.
+   */
   #stopRefetching: boolean = false
 
   #activity: IActivityController
@@ -348,7 +360,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     phishing,
     fromRequestId,
     accountOp,
-    isSignRequestStillActive,
     shouldSimulate,
     onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess,
@@ -369,14 +380,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     phishing: IPhishingController
     fromRequestId: UserRequest['id']
     accountOp: AccountOp
-    isSignRequestStillActive: Function
     shouldSimulate: boolean
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
   }) {
-    super(eventEmitterRegistry)
-
+    super(eventEmitterRegistry, false)
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#accounts = accounts
@@ -395,7 +404,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
-    this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.signedAccountOp = null
     this.replacementFeeLow = false
@@ -419,15 +427,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
     this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
       estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      isSignRequestStillActive
+      readyToSign: this.readyToSign
     }))
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
 
-    this.#load(shouldSimulate)
+    this.#load()
   }
 
   get safetyChecksLoading() {
@@ -536,12 +543,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
     await wait(waitTime)
 
-    if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
+    if (this.#stopRefetching) return
 
     this.#shouldSimulate ? this.simulate(true) : this.estimate()
   }
 
-  #load(shouldSimulate: boolean) {
+  #load() {
     this.#setDefaults()
     this.humanize()
     this.learnTokens()
@@ -564,7 +571,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.emitError(error)
     })
 
-    shouldSimulate ? this.simulate(true) : this.estimate()
+    this.#shouldSimulate ? this.simulate(true) : this.estimate()
     this.gasPrice.fetch()
   }
 
@@ -761,7 +768,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
 
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
+      (token) => token.address === ZeroAddress
     )
     if (!this.isSponsored && !currentPortfolioNetworkNative)
       errors.push({
@@ -1055,14 +1062,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
       }
       // if there's a bundler estimation and the gasPrice for it has resolved, update the UI
-      if (this.estimation.estimation && this.estimation.estimation.bundlerGasPrices) {
-        // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
-        // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
-        // 2. we make sure we give priority to the bundler prices as they are generally better
-        this.gasPrices = this.estimation.estimation.bundlerGasPrices
-        // and we're stopping the gas price controller updates as
-        // the bundler will provide them
-        this.gasPrice.stopRefetching = true
+      if (this.estimation.estimation) {
+        if (this.estimation.estimation.bundlerGasPrices) {
+          // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
+          // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
+          // 2. we make sure we give priority to the bundler prices as they are generally better
+          this.gasPrices = this.estimation.estimation.bundlerGasPrices
+          // and we're stopping the gas price controller updates as
+          // the bundler will provide them
+          this.gasPrice.pauseRefetching(true)
+        } else {
+          // if there's an estimate, but no bundlerGasPrices, resume the gas price
+          // controller refetch as there's no other way to fetch gas prices
+          this.gasPrice.resumeRefetching(false)
+        }
       }
 
       if (accountOpData) {
@@ -1164,21 +1177,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.estimation.estimation.bundlerEstimation &&
         this.estimation.estimation.bundlerEstimation.paymaster
       ) {
-        // if it was sponsored but it no longer is (fallback case),
-        // reset the selectedOption option as we use native for the sponsorship
-        // but the user might not actually have any native
-        const isSponsorshipFallback =
-          this.isSponsored && !this.estimation.estimation.bundlerEstimation.paymaster.isSponsored()
-
         this.isSponsored = this.estimation.estimation.bundlerEstimation.paymaster.isSponsored()
         this.sponsor =
           this.estimation.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
-
-        if (isSponsorshipFallback) {
-          this.selectedOption = this.estimation.availableFeeOptions.length
-            ? this.estimation.availableFeeOptions[0]
-            : undefined
-        }
       }
 
       // calculate the fee speeds if either there are no feeSpeeds
@@ -1270,6 +1271,42 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.estimation = null as any
   }
 
+  /**
+   * Makes the signAccountOp controller inactive:
+   * - Stops all refetching (estimation, gas price)
+   * - Unregisters from the controller registry, which in turn stops all emit updates
+   * to the UI
+   * This is done so there is always only one signAccountOp controller active at a time,
+   * and only one controller in the registry (so the UI listens to the active one only).
+   */
+  pause() {
+    this.#stopRefetching = true
+    this.unregisterFromRegistry()
+    // GasPrice may be destroyed at this point if the request was rejected
+    this.gasPrice?.pauseRefetching()
+  }
+
+  /**
+   * Resumes updates and intervals for the signAccountOp controller.
+   */
+  resume() {
+    this.#stopRefetching = false
+    this.registerInRegistry()
+    this.#reestimateCounter = 0
+
+    // Reestimate if the estimation is stale
+    // Also used to resume the estimation interval
+    if (
+      !this.estimation.estimation?.updatedAt ||
+      Date.now() - this.estimation.estimation!.updatedAt > ESTIMATE_UPDATE_INTERVAL
+    ) {
+      this.#shouldSimulate ? this.simulate(true) : this.estimate()
+    }
+    this.gasPrice.resumeRefetching()
+
+    this.emitUpdate()
+  }
+
   resetStatus() {
     this.status = null
     this.emitUpdate()
@@ -1350,7 +1387,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === '0x0000000000000000000000000000000000000000'
+        (token) => token.address === ZeroAddress
       )
     if (!native) return null
 
@@ -1827,7 +1864,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === '0x0000000000000000000000000000000000000000'
+        (token) => token.address === ZeroAddress
       )
     if (!native) return null
     const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
@@ -1891,7 +1928,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return
     }
 
-    if (this.accountOp.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp.gasFeePayment!.inToken === ZeroAddress) {
       // native payment
       this.#updateAccountOp({
         feeCall: {
@@ -2074,8 +2111,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         .catch((e) => console.error(e))
     }
 
-    // auto-retry once if it was the ambire paymaster
-    if (paymaster.canAutoRetryOnFailure() && counter === 0) {
+    if (paymaster.isAmbire() && counter === 0) {
       const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
       return this.#getPaymasterUserOp(reestimatedUserOp, paymaster, eip7702Auth, counter + 1)
     }
@@ -2337,7 +2373,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // query the application state from memory to understand if the user
         // hasn't actually rejected the request while waiting for the
         // paymaster to respond
-        if (!this.#isSignRequestStillActive()) return
+        if (this.#stopRefetching) return
 
         const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
         const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'

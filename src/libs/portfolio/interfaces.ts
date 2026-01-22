@@ -318,8 +318,8 @@ export type PortfolioProjectedRewardsResult = {
   walletPrice: number
   pointsOfOtherUsers: number
   numberOfWeeksSinceStartOfSeason: number
-  multipliers: { type: string; activated: boolean }[]
-  weeklyTx: number
+  multiplier: number
+  multipliers: { type: string; activated: boolean, description:string }[]
   frozenRewardSeason1: number
   governanceVotes: {
     weight: number

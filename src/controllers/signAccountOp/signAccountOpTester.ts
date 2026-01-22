@@ -27,7 +27,6 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     provider: RPCProvider
     fromRequestId: AccountOpAction['id']
     accountOp: AccountOp
-    isSignRequestStillActive: Function
     shouldSimulate: boolean
     traceCall?: Function
     onBroadcastSuccess: OnBroadcastSuccess
