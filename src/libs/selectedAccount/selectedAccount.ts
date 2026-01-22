@@ -44,6 +44,7 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
         // and manual debugging. Positions are excluded to reduce size.
         defiPositions: defiPositions
           ? {
+              nonceId: defiPositions.nonceId,
               providerErrors: defiPositions.providerErrors,
               error: defiPositions.error,
               lastSuccessfulUpdate: defiPositions.lastSuccessfulUpdate

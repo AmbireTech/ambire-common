@@ -30,11 +30,10 @@ export type SelectedAccountPortfolioState = {
           | 'total'
           | 'defiPositions'
         > & {
-          defiPositions?: {
-            providerErrors: PortfolioNetworkResult['defiPositions']['providerErrors']
-            lastSuccessfulUpdate: PortfolioNetworkResult['defiPositions']['lastSuccessfulUpdate']
-            error: PortfolioNetworkResult['defiPositions']['error']
-          }
+          defiPositions?: Pick<
+            PortfolioNetworkResult['defiPositions'],
+            'nonceId' | 'providerErrors' | 'error' | 'lastSuccessfulUpdate'
+          >
         }
       })
     | undefined

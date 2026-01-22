@@ -476,7 +476,8 @@ const getHasNonceChangedSinceLastUpdate = (
   previousState: PortfolioNetworkResult['defiPositions'] | undefined,
   nonceId: string | undefined
 ): boolean => {
-  if (!previousState || !previousState.nonceId) return true
+  // First time fetching positions
+  if (!previousState || !previousState.nonceId) return false
 
   return nonceId !== previousState.nonceId
 }
