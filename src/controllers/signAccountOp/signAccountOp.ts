@@ -1028,14 +1028,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * need to simulate, just estimate.
    */
   async #simulateAndEstimateOrEstimate() {
-    if (
-      this.#stopRefetching ||
-      !this.estimation ||
-      // What if the estimation is loading just as we add new calls
-      // or make other changes to the accountOp?
-      this.estimation.status === EstimationStatus.Loading
-    )
-      return
+    if (this.#stopRefetching || !this.estimation) return
 
     // the first 10 times, reestimate once every 30s; then, slow down
     // the time as the user might just have closed the popup of the extension
