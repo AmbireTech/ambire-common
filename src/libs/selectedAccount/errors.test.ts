@@ -56,11 +56,10 @@ const getMockSelectedAccountPortfolio = (params?: {
     acc[network.chainId.toString()] = {
       isLoading: !!loadingChainIds?.includes(network.chainId),
       isReady: !!notReadyChainIds?.includes(network.chainId),
-      result: {
-        lastSuccessfulUpdate: !freshDataChainIds?.includes(network.chainId)
-          ? Date.now() - 60 * 60 * 1000
-          : Date.now() - 5 * 60 * 1000
-      } as any,
+      lastSuccessfulUpdate: !freshDataChainIds?.includes(network.chainId)
+        ? Date.now() - 60 * 60 * 1000
+        : Date.now() - 5 * 60 * 1000,
+      result: {} as any,
       criticalError: criticalErrorChainIds?.includes(network.chainId)
         ? new Error('Critical portfolio error')
         : undefined,
@@ -174,7 +173,7 @@ describe('selectedAccount errors', () => {
               {
                 label: 'Select',
                 actionName: 'select-rpc-url',
-                meta: { network: mockNetworks[1] }
+                meta: { network: mockNetworks[1]! }
               }
             ]
           }
@@ -416,7 +415,7 @@ describe('selectedAccount errors', () => {
         expect(result).toHaveLength(3)
         expect(result[0]!.id).toBe('portfolio-critical')
         expect(result[1]!.id).toBe('loading-too-long')
-        expect(result[2].id).toBe('PriceFetchError')
+        expect(result[2]!.id).toBe('PriceFetchError')
       })
 
       it('should add to existing error of same type while having other types', () => {
@@ -498,8 +497,8 @@ describe('selectedAccount errors', () => {
     })
     it('rpc down errors are added in favour of portfolio errors', () => {
       const providers = structuredClone(mockProviders)
-      providers['1'].isWorking = false
-      providers['56'].isWorking = false
+      providers['1']!.isWorking = false
+      providers['56']!.isWorking = false
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
@@ -553,8 +552,8 @@ describe('selectedAccount errors', () => {
     })
     it('no errors are added when the portfolio is loading from scratch', () => {
       const providers = structuredClone(mockProviders)
-      providers['1'].isWorking = false
-      providers['56'].isWorking = false
+      providers['1']!.isWorking = false
+      providers['56']!.isWorking = false
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
@@ -573,7 +572,7 @@ describe('selectedAccount errors', () => {
     })
     it('critical portfolio error and the rpc is not working, but the user has no assets', () => {
       const providers = structuredClone(mockProviders)
-      providers['137'].isWorking = false
+      providers['137']!.isWorking = false
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
