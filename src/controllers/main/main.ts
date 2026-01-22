@@ -1118,14 +1118,16 @@ export class MainController extends EventEmitter implements IMainController {
           : undefined
 
         if (networks?.length) {
-          this.updateSelectedAccountPortfolio({ networks })
-
-          // update the account state to latest as well
-          this.accounts.updateAccountState(
+          // The account state must be updated before the portfolio
+          // as the portfolio has internal checks whether the nonce has changed
+          // to decide if to force refetch certain data
+          await this.accounts.updateAccountState(
             this.selectedAccount.account.addr,
             'latest',
             networks?.map((net) => net.chainId)
           )
+
+          await this.updateSelectedAccountPortfolio({ networks })
         }
       }
     }
