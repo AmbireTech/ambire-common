@@ -1,7 +1,7 @@
 /* eslint-disable no-underscore-dangle */
-import { formatEther, getAddress } from 'ethers'
+import { formatEther, getAddress, isAddress } from 'ethers'
 
-import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
+import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
@@ -338,7 +338,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         ?.positions.filter(
           (p) =>
             p.additionalData.inRange &&
-            p.additionalData.pool.id === '0x53bbdf4ea397d17a6f904dc882b3fb78a6875a66'
+            isAddress(p.additionalData.pool?.id) && getAddress(p.additionalData.pool.id) === UNI_V3_WALLET_WETH_POOL
         )
         .map((p) => p.assets)
         .flat()
