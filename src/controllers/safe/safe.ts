@@ -45,6 +45,9 @@ export class SafeController extends EventEmitter implements ISafeController {
    * If we do, allow import of that safe
    */
   async #findSafe(safeAddr: string) {
+    this.errorMessage = ''
+    this.safeInfo = undefined
+
     // search enabled networks that are safe supported
     const safeNetworks = this.#networks.networks.filter(
       (n) =>
@@ -84,5 +87,12 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async findSafe(safeAddr: string) {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON()
+    }
   }
 }
