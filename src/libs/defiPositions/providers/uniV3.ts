@@ -81,7 +81,7 @@ export async function getUniV3Positions(
           positionIndex: pos.positionId.toString(),
           liquidity: pos.positionInfo.liquidity,
           name: 'Liquidity Pool',
-          pool: { id:pos.poolAddr }
+          pool: { id: pos.poolAddr }
         },
         assets: [
           {
