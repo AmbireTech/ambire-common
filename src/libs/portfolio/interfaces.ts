@@ -199,6 +199,7 @@ export type FormattedPortfolioDiscoveryResponse = {
       [chainId: string]: number
     }
   } | null
+  discoveryTime: number
   errors: ExtendedErrorWithLevel[]
 }
 
@@ -319,7 +320,7 @@ export type PortfolioProjectedRewardsResult = {
   pointsOfOtherUsers: number
   numberOfWeeksSinceStartOfSeason: number
   multiplier: number
-  multipliers: { type: string; activated: boolean, description:string }[]
+  multipliers: { type: string; activated: boolean; description: string }[]
   frozenRewardSeason1: number
   governanceVotes: {
     weight: number

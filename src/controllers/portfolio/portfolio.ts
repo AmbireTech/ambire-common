@@ -795,6 +795,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
+    const discoveryStart = Date.now()
     const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
@@ -883,9 +884,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
 
+    const discoveryTime = Date.now() - discoveryStart
+
     if (!response)
       return {
         data: null,
+        discoveryTime,
         errors
       }
 
@@ -918,6 +922,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
         hints: response ? formatExternalHintsAPIResponse(response) : null
       },
+      discoveryTime,
       errors
     }
   }
@@ -1044,6 +1049,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         lastSuccessfulUpdate,
         result: {
           ...portfolioResult,
+          // Overwrite the discovery time from the portfolio lib
+          // as the request is made in the controller
+          discoveryTime: discoveryData?.discoveryTime || 0,
           lastExternalApiUpdateData: discoveryData?.data?.hints
             ? {
                 hasHints: discoveryData.data.hints.hasHints,
