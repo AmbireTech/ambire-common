@@ -3,7 +3,7 @@ import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { AccountState } from '../defiPositions/types'
+import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
@@ -291,11 +291,11 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
 
 export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
-  defiPositionsAccountState,
+  defiPositionsCountOnDisabledNetworks,
   networks,
   accountAddr
 }: {
-  defiPositionsAccountState: AccountState
+  defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks[string]
   networks: Network[]
   accountAddr: string
 }) => {
@@ -305,19 +305,21 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
 
   if (!disabledNetworks.length) return []
 
-  const defiPositionsOnDisabledNetworks = []
   const disabledNetworksWithDefiPos = new Set<Network>()
 
-  disabledNetworks.forEach((n) => {
-    if (defiPositionsAccountState[n.chainId.toString()]) {
-      defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
-        defiPositionsOnDisabledNetworks.push(p)
-        disabledNetworksWithDefiPos.add(n)
-      })
+  let totalCount = 0
+
+  Object.entries(defiPositionsCountOnDisabledNetworks).forEach(([chainId, count]) => {
+    totalCount += count
+    if (count > 0) {
+      const network = disabledNetworks.find((n) => n.chainId.toString() === chainId)
+      if (network) {
+        disabledNetworksWithDefiPos.add(network)
+      }
     }
   })
 
-  if (!defiPositionsOnDisabledNetworks.length) return []
+  if (!disabledNetworksWithDefiPos.size) return []
 
   const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
 
@@ -325,9 +327,7 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
     id: defiPositionsOnDisabledNetworksBannerId,
     type: 'info',
     title: 'DeFi positions detected on disabled networks',
-    text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
-      defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
-    } on${
+    text: `You have ${totalCount} active DeFi ${totalCount === 1 ? 'position' : 'positions'} on${
       disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
     }: ${disabledNetworksWithDefiPosArray
       .map((n) => n.name)

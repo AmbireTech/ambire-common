@@ -320,7 +320,7 @@ export async function getTokens(
         mapToken(
           token,
           network,
-          tokenAddrs[i],
+          tokenAddrs[i]!,
           opts,
           undefined,
           Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
@@ -374,7 +374,7 @@ export async function getTokens(
           ...mapToken(
             token,
             network,
-            tokenAddrs[i],
+            tokenAddrs[i]!,
             opts,
             !!simulationAmount,
             Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
