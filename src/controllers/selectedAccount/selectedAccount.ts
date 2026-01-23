@@ -152,9 +152,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     })
 
-    this.#autoLogin.onUpdate(() => {
+    this.#autoLogin.onUpdate((forceEmit) => {
       if (this.account) {
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       }
     })
 
@@ -254,7 +254,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         ?.positions.filter(
           (p) =>
             p.additionalData.inRange &&
-            isAddress(p.additionalData.pool?.id) && getAddress(p.additionalData.pool.id) === UNI_V3_WALLET_WETH_POOL
+            isAddress(p.additionalData.pool?.id) &&
+            getAddress(p.additionalData.pool.id) === UNI_V3_WALLET_WETH_POOL
         )
         .map((p) => p.assets)
         .flat()
