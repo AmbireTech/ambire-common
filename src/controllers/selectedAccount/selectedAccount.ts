@@ -152,9 +152,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     })
 
-    this.#autoLogin.onUpdate(() => {
+    this.#autoLogin.onUpdate((forceEmit) => {
       if (this.account) {
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       }
     })
 
