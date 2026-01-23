@@ -37,6 +37,8 @@ import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
+/* eslint-disable no-underscore-dangle */
+import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { ISignMessageController } from '../../interfaces/signMessage'
@@ -50,12 +52,10 @@ import { getDefaultSelectedAccount } from '../../libs/account/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-/* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
-/* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { SocketAPI } from '../../services/socket/api'
@@ -83,6 +83,8 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
+/* eslint-disable no-await-in-loop */
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpType } from '../signAccountOp/helper'
 import { OnboardingSuccessProps } from '../signAccountOp/signAccountOp'
@@ -177,6 +179,8 @@ export class MainController extends EventEmitter implements IMainController {
   ui: IUiController
 
   #continuousUpdates: ContinuousUpdatesController
+
+  safe: ISafeController
 
   get continuousUpdates() {
     return this.#continuousUpdates
@@ -280,6 +284,11 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry
     )
+    this.safe = new SafeController({
+      eventEmitterRegistry,
+      networks: this.networks,
+      providers: this.providers
+    })
     this.selectedAccount = new SelectedAccountController({
       eventEmitterRegistry,
       storage: this.storage,
