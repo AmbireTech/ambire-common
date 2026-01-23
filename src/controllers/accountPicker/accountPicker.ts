@@ -82,6 +82,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
     shouldAddNextAccountAutomatically?: boolean
+    requestId?: number
   } | null = null
 
   keyIterator?: KeyIterator | null
@@ -416,7 +417,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
     shouldAddNextAccountAutomatically?: boolean
+    requestId?: number
   }) {
+    console.log('AccountPickerController: setInitParams', params)
     this.initParams = params
     this.emitUpdate()
   }
