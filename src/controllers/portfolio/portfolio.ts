@@ -816,10 +816,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const defiState = this.#state[accountAddr]?.[chainId.toString()]?.result?.defiPositions
     const canSkipExternalApiHintsUpdate =
-      !!externalApiHintsResponse &&
-      !isManualUpdate &&
-      Date.now() - externalApiHintsResponse.lastUpdate <
-        EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
+      !this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery') ||
+      (!!externalApiHintsResponse &&
+        !isManualUpdate &&
+        Date.now() - externalApiHintsResponse.lastUpdate <
+          EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic'])
 
     const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
       defiState,
@@ -827,6 +828,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     )
 
     const canSkipDefiUpdate = getCanSkipUpdate(
+      this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery'),
       defiState,
       hasNonceChangedSinceLastUpdate,
       defiMaxDataAgeMs
@@ -984,7 +986,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           priceCache: networkPriceCache,
           blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
-          ...portfolioProps
+          ...portfolioProps,
+          disableAutoDiscovery:
+            !this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery') ||
+            portfolioProps.disableAutoDiscovery
         }),
         getCustomProviderPositions(
           accountId,

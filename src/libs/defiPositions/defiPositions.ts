@@ -486,10 +486,12 @@ const getHasNonceChangedSinceLastUpdate = (
  * Whether the portfolio defi positions data should be updated
  */
 const getCanSkipUpdate = (
+  isFeatureEnabled: boolean,
   previousState: PortfolioNetworkResult['defiPositions'] | undefined,
   hasNonceChangedSinceLastUpdate: boolean,
   maxDataAgeMs: number = 60000
 ): boolean => {
+  if (!isFeatureEnabled) return true
   if (!previousState || !previousState.lastSuccessfulUpdate) return false
 
   // Always update if the nonce has changed
@@ -559,16 +561,16 @@ const getAccountNetworksWithPositions = (
 }
 
 export {
-  getAssetValue,
-  updatePositionsByProviderAssetPrices,
-  getCustomProviderPositions,
-  getUniqueMergedPositions,
-  getAllAssetsAsHints,
-  getNewDefiState,
-  getFormattedApiPositions,
   enhancePortfolioTokensWithDefiPositions,
-  getCanSkipUpdate,
-  getShouldBypassServerSideCache,
   getAccountNetworksWithPositions,
-  getHasNonceChangedSinceLastUpdate
+  getAllAssetsAsHints,
+  getAssetValue,
+  getCanSkipUpdate,
+  getCustomProviderPositions,
+  getFormattedApiPositions,
+  getHasNonceChangedSinceLastUpdate,
+  getNewDefiState,
+  getShouldBypassServerSideCache,
+  getUniqueMergedPositions,
+  updatePositionsByProviderAssetPrices
 }
