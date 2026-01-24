@@ -34,6 +34,7 @@ export async function getUniV3Positions(
   const data = result.map((asset: any) => ({
     positionId: asset.positionId,
     token0Symbol: asset.token0Symbol,
+    poolAddr: asset.poolAddr,
     token0Name: asset.token0Name,
     token0Decimals: asset.token0Decimals,
     token1Symbol: asset.token1Symbol,
@@ -79,7 +80,8 @@ export async function getUniV3Positions(
           inRange: tokenAmounts.isInRage,
           positionIndex: pos.positionId.toString(),
           liquidity: pos.positionInfo.liquidity,
-          name: 'Liquidity Pool'
+          name: 'Liquidity Pool',
+          pool: { id: pos.poolAddr }
         },
         assets: [
           {
