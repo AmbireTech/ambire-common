@@ -43,18 +43,21 @@ import { SocketModule } from './modules/Socket'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import traderJoeModule from './modules/TraderJoe'
+import TrustlessManifestoModule from './modules/TrustlessManifesto'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 
 // from most generic to least generic
 // the final humanization is the final triggered module
+console.log(1111)
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
   embeddedAmbireOperationHumanizer,
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
+  TrustlessManifestoModule,
   LidoModule,
   gasTankModule,
   airdropsModule,
