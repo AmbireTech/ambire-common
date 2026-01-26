@@ -358,11 +358,7 @@ export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: strin
  * @returns the timestamp of the operation if found, otherwise null.
  */
 export function checkIsRecipientOfAccountOp(op: SubmittedAccountOp, to: string): number | null {
-  const toAddrLower = to.toLowerCase()
-
-  const hasSentTo = getAccountOpRecipients(op)
-    .map((addr) => addr.toLowerCase())
-    .includes(toAddrLower)
+  const hasSentTo = getAccountOpRecipients(op, [to]).length > 0
 
   if (!hasSentTo) return null
 
