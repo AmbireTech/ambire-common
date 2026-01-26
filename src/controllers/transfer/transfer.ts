@@ -866,10 +866,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
         await this.#onBroadcastSuccess(props)
 
-        await new Promise((resolve) => {
-          setTimeout(resolve, 20000)
-        })
-
         if (this.transferSessionId) {
           this.latestBroadcastedToken = structuredClone(this.selectedToken)
           this.latestBroadcastedAccountOp = submittedAccountOp
