@@ -1,11 +1,13 @@
-import SafeApiKit, { SafeInfoResponse } from '@safe-global/api-kit'
+import SafeApiKit, { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 
 import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
+import { SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
-import { isSupportedSafeVersion } from '../../libs/safe/safe'
+import { getCalculatedSafeAddress, isSupportedSafeVersion } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -24,7 +26,11 @@ export class SafeController extends EventEmitter implements ISafeController {
     address: string
   }
 
-  safeInfo?: SafeInfoResponse & { deployedOn: bigint[] }
+  safeInfo?: SafeAccountCreation & {
+    deployedOn: bigint[]
+    version: string
+    address: string
+  }
 
   constructor({
     eventEmitterRegistry,
@@ -65,8 +71,8 @@ export class SafeController extends EventEmitter implements ISafeController {
           .catch((e) => ({ chainId: n.chainId, code: '0x' }))
       )
     )
-    const firstChainWithCode = codes.find((c) => c.code && c.code !== '0x')
-    if (!firstChainWithCode) {
+    const deployedOn = codes.find((c) => c.code && c.code !== '0x')
+    if (!deployedOn) {
       this.importError = {
         address: safeAddr,
         message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(',')}. Please deploy it from safe global on at least one network before continuing`
@@ -75,11 +81,17 @@ export class SafeController extends EventEmitter implements ISafeController {
     }
 
     const apiKit = new SafeApiKit({
-      chainId: firstChainWithCode.chainId,
+      chainId: deployedOn.chainId,
       apiKey: process.env.SAFE_API_KEY
     })
-    const safeInfo: SafeInfoResponse | Error = await apiKit.getSafeInfo(safeAddr).catch((e) => e)
-    if (safeInfo instanceof Error) {
+    const [safeInfo, safeCreationInfo]: [
+      SafeInfoResponse | Error,
+      SafeCreationInfoResponse | Error
+    ] = await Promise.all([
+      apiKit.getSafeInfo(safeAddr).catch((e) => e),
+      apiKit.getSafeCreationInfo(safeAddr).catch((e) => e)
+    ])
+    if (safeInfo instanceof Error || safeCreationInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the safe. Please try again'
@@ -94,9 +106,25 @@ export class SafeController extends EventEmitter implements ISafeController {
       return
     }
 
+    const calculatedAddr = await getCalculatedSafeAddress(
+      safeCreationInfo,
+      this.#providers.providers[deployedOn.chainId.toString()]!
+    )
+    if (!calculatedAddr || calculatedAddr.toLowerCase() !== safeAddr.toLowerCase()) {
+      this.importError = {
+        address: safeAddr,
+        message: 'Failed to retrieve information about the safe. Please try again'
+      }
+      return
+    }
+
     this.safeInfo = {
       ...safeInfo,
-      deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId)
+      deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
+      factoryAddr: safeCreationInfo.factoryAddress as Hex,
+      singleton: safeCreationInfo.singleton as Hex,
+      saltNonce: safeCreationInfo.saltNonce as Hex,
+      setupData: safeCreationInfo.setupData as Hex
     }
   }
 

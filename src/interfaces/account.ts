@@ -20,7 +20,7 @@ export interface Account {
   associatedKeys: string[]
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
-  creation: AccountCreation | null
+  creation: AccountCreation | SafeAccountCreation | null
   preferences: AccountPreferences
   email?: string
   newlyAdded?: boolean
@@ -42,6 +42,14 @@ export interface AccountCreation {
   identityCreatedAt?: number
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
+}
+
+// creation data for Safe accounts
+export interface SafeAccountCreation {
+  factoryAddr: Hex
+  singleton: Hex
+  saltNonce: Hex
+  setupData: Hex
 }
 
 export interface AmbireSmartAccountIdentityCreateRequest {

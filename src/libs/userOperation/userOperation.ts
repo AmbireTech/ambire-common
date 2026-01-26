@@ -13,11 +13,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-//  TODO: dependency cycle
-// eslint-disable-next-line import/no-cycle
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
-//  TODO: dependency cycle
-// eslint-disable-next-line import/no-cycle
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -232,7 +228,7 @@ export const parseLogs = (
     try {
       if (
         log.topics.length === 4 &&
-        (log.topics[1].toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
+        (log.topics[1]!.toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
       ) {
         // decode data for UserOperationEvent:
         // 'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'

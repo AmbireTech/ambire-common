@@ -340,9 +340,9 @@ export function canBecomeSmarterOnChain(
 export function hasBecomeSmarter(account: Account, state: AccountStates) {
   if (!state[account.addr]) return false
 
-  const networks = Object.keys(state[account.addr])
+  const networks = Object.keys(state[account.addr]!)
   for (let i = 0; i < networks.length; i++) {
-    const onChainState = state[account.addr][networks[i]]
+    const onChainState = state[account.addr]![networks[i]!]
     // eslint-disable-next-line no-continue
     if (!onChainState) continue
 
