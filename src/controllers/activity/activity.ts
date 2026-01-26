@@ -1,5 +1,3 @@
-import { Interface, isAddress } from 'ethers'
-
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -12,16 +10,18 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import {
   AccountOpIdentifiedBy,
+  checkIsRecipientOfAccountOp,
   fetchFrontRanTxnId,
   fetchTxnId,
+  getAccountOpRecipients,
   hasTimePassedSinceBroadcast,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
+  PortfoliosToUpdate,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-/* eslint-disable import/no-extraneous-dependencies */
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import wait from '../../utils/wait'
@@ -149,6 +149,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           shouldEmitUpdate: boolean
           // Which networks require a portfolio update?
           chainsToUpdate: Network['chainId'][]
+          portfoliosToUpdate: PortfoliosToUpdate
           updatedAccountsOps: SubmittedAccountOp[]
           newestOpTimestamp: number
         }>
@@ -208,7 +209,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
     await this.#initialLoadPromise
     if (!toAddress) return { found: false, lastTransactionDate: null }
-    const transferIface = new Interface(['function transfer(address,uint256)'])
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
@@ -221,33 +221,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const networkAccountOpsOfAccount = accountOpsOfAccount[network]
         if (!networkAccountOpsOfAccount) return
         networkAccountOpsOfAccount.forEach((op) => {
-          const toAddrLower = toAddress.toLowerCase()
-          const sentToTarget = op.calls.some((call) => {
-            // 1) Direct call.to match
-            const directMatch = call.to?.toLowerCase() === toAddrLower
-            if (directMatch && isAddress(call.to)) return true
+          const timestampOfSentTo = checkIsRecipientOfAccountOp(op, toAddress)
 
-            // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
-            const data = (call as Call).data as string | undefined
-            if (!data || typeof data !== 'string' || data.length < 10) return false
-
-            const selector = transferIface.getFunction('transfer')?.selector
-            if (selector && data.startsWith(selector)) {
-              try {
-                const decoded = transferIface.decodeFunctionData('transfer', data)
-                const recipient = (decoded[0] as string).toLowerCase()
-                if (recipient === toAddrLower) return true
-              } catch {
-                // ignore decode errors and continue
-              }
-            }
-
-            return false
-          })
-          if (sentToTarget) {
+          if (timestampOfSentTo) {
             found = true
-            if (!lastTimestamp || op.timestamp > lastTimestamp) {
-              lastTimestamp = op.timestamp
+
+            if (!lastTimestamp || timestampOfSentTo > lastTimestamp) {
+              lastTimestamp = timestampOfSentTo
             }
           }
         })
@@ -431,6 +411,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       {
         shouldEmitUpdate: boolean
         chainsToUpdate: Network['chainId'][]
+        portfoliosToUpdate: PortfoliosToUpdate
         updatedAccountsOps: SubmittedAccountOp[]
         newestOpTimestamp: number
       }
@@ -476,6 +457,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     chainsToUpdate: Network['chainId'][]
     updatedAccountsOps: SubmittedAccountOp[]
     newestOpTimestamp: number
+    portfoliosToUpdate: PortfoliosToUpdate
   }> {
     await this.#initialLoadPromise
 
@@ -484,6 +466,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         shouldEmitUpdate: false,
         chainsToUpdate: [],
         updatedAccountsOps: [],
+        portfoliosToUpdate: {},
         newestOpTimestamp: 0
       }
 
@@ -492,6 +475,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let shouldEmitUpdate = false
 
     const chainsToUpdate = new Set<Network['chainId']>()
+    const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
 
     // Use this flag to make the auto-refresh slower with the passege of time.
@@ -631,6 +615,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
 
+                  // Add accounts that are recipients of the AccountOp
+                  const accountOpRecipients = getAccountOpRecipients(
+                    accountOp,
+                    this.#accounts.accounts.map((a) => a.addr)
+                  )
+
+                  console.log('Debug: accountOpRecipients', accountOpRecipients)
+
+                  accountOpRecipients.forEach((accAddr) => {
+                    if (!portfoliosToUpdate[accAddr]) portfoliosToUpdate[accAddr] = []
+
+                    portfoliosToUpdate[accAddr].push(network.chainId)
+                  })
+
                   // update the chain if a receipt has been received as otherwise, we're
                   // left hanging with a pending portfolio balance
                   chainsToUpdate.add(network.chainId)
@@ -670,6 +668,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       shouldEmitUpdate,
       chainsToUpdate: Array.from(chainsToUpdate),
       updatedAccountsOps,
+      portfoliosToUpdate,
       newestOpTimestamp
     }
   }

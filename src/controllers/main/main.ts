@@ -1103,11 +1103,14 @@ export class MainController extends EventEmitter implements IMainController {
     ] || {
       shouldEmitUpdate: false,
       chainsToUpdate: [],
+      portfoliosToUpdate: {},
       updatedAccountsOps: [],
       newestOpTimestamp: 0
     }
-    const { shouldEmitUpdate, chainsToUpdate, newestOpTimestamp } =
+    const { shouldEmitUpdate, chainsToUpdate, portfoliosToUpdate, newestOpTimestamp } =
       updatedAccountsOpsForSelectedAccount
+
+    console.log('Debug: chainsToUpdate', chainsToUpdate)
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
@@ -1128,6 +1131,15 @@ export class MainController extends EventEmitter implements IMainController {
           )
 
           await this.updateSelectedAccountPortfolio({ networks })
+
+          console.log('Debug: portfoliosToUpdate', portfoliosToUpdate)
+
+          Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+            this.portfolio.updateSelectedAccount(
+              accountAddr,
+              this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+            )
+          })
         }
       }
     }
