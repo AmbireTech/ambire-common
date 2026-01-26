@@ -219,9 +219,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             accounts,
             blockTag
           )
-          const networkAccountStates = await this.accountStatesLoadingState[
-            network.chainId.toString()
-          ]!
+          const networkAccountStates =
+            await this.accountStatesLoadingState[network.chainId.toString()]!
 
           this.#updateProviderIsWorking(network.chainId, true)
 

@@ -29,7 +29,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   safeInfo?: SafeAccountCreation & {
     deployedOn: bigint[]
     version: string
-    address: string
+    address: Hex
+    owners: Hex[]
   }
 
   constructor({
@@ -119,7 +120,9 @@ export class SafeController extends EventEmitter implements ISafeController {
     }
 
     this.safeInfo = {
-      ...safeInfo,
+      version: safeInfo.version,
+      address: safeInfo.address as Hex,
+      owners: safeInfo.owners as Hex[],
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
       factoryAddr: safeCreationInfo.factoryAddress as Hex,
       singleton: safeCreationInfo.singleton as Hex,
