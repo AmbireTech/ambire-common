@@ -386,14 +386,7 @@ const init = async (
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
-    },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   providersCtrl.providers = providers

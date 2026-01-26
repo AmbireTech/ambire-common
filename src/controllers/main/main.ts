@@ -240,19 +240,23 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch,
       relayerUrl,
+      getProvider: (chainId) => {
+        return this.providers.providers[chainId.toString()]!
+      },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
         await this.reloadSelectedAccount({
           chainIds: networks.map((n) => n.chainId)
         })
-      },
-      onRemoveNetwork: (chainId: bigint) => {
-        this.providers.removeProvider(chainId)
       }
     })
 
-    this.providers = new ProvidersController(this.networks, this.storage, eventEmitterRegistry)
+    this.providers = new ProvidersController(
+      this.networks,
+      this.storage,
+      this.ui,
+      eventEmitterRegistry
+    )
     this.accounts = new AccountsController(
       this.storage,
       this.providers,

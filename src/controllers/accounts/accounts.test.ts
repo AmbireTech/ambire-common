@@ -60,14 +60,7 @@ describe('AccountsController', () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
-    },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })

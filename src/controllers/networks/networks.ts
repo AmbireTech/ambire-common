@@ -17,6 +17,7 @@ import {
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
@@ -59,7 +60,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
-  #onRemoveNetwork: (chainId: bigint) => void
+  #getProvider: (chainId: bigint) => RPCProvider
 
   /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetworks: (networks: Network[]) => void
@@ -75,24 +76,24 @@ export class NetworksController extends EventEmitter implements INetworksControl
     storage,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks,
-    onRemoveNetwork
+    getProvider,
+    onAddOrUpdateNetworks
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
     storage: IStorageController
     fetch: Fetch
     relayerUrl: string
+    getProvider: (chainId: bigint) => RPCProvider
     onAddOrUpdateNetworks: (networks: Network[]) => void
-    onRemoveNetwork: (chainId: bigint) => void
   }) {
     super(eventEmitterRegistry)
     if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#getProvider = getProvider
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
-    this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -189,10 +190,13 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (!Object.keys(networksInStorage).length) {
       const defaultNetworks =
         this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
-      finalNetworks = defaultNetworks.reduce((acc, network) => {
-        acc[network.chainId.toString()] = network
-        return acc
-      }, {} as { [key: string]: Network })
+      finalNetworks = defaultNetworks.reduce(
+        (acc, network) => {
+          acc[network.chainId.toString()] = network
+          return acc
+        },
+        {} as { [key: string]: Network }
+      )
       this.#networks = finalNetworks
       this.emitUpdate()
     }
@@ -525,7 +529,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
-    this.#onRemoveNetwork(chainId)
     await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
   }

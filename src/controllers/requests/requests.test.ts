@@ -120,14 +120,7 @@ const prepareTest = async () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
-    },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
   const providers: RPCProviders = {}
