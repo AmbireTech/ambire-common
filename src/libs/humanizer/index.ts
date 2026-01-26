@@ -50,7 +50,6 @@ import wrappingModule from './modules/Wrapping'
 
 // from most generic to least generic
 // the final humanization is the final triggered module
-console.log(1111)
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
   embeddedAmbireOperationHumanizer,
