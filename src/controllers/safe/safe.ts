@@ -19,9 +19,12 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  errorMessage: string = ''
+  importError?: {
+    message: string
+    address: string
+  }
 
-  safeInfo?: SafeInfoResponse
+  safeInfo?: SafeInfoResponse & { deployedOn: bigint[] }
 
   constructor({
     eventEmitterRegistry,
@@ -45,7 +48,7 @@ export class SafeController extends EventEmitter implements ISafeController {
    * If we do, allow import of that safe
    */
   async #findSafe(safeAddr: string) {
-    this.errorMessage = ''
+    this.importError = undefined
     this.safeInfo = undefined
 
     // search enabled networks that are safe supported
@@ -64,7 +67,10 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
     const firstChainWithCode = codes.find((c) => c.code && c.code !== '0x')
     if (!firstChainWithCode) {
-      this.errorMessage = `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(',')}. Please deploy it from safe global on at least one network before continuing`
+      this.importError = {
+        address: safeAddr,
+        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(',')}. Please deploy it from safe global on at least one network before continuing`
+      }
       return
     }
 
@@ -74,15 +80,24 @@ export class SafeController extends EventEmitter implements ISafeController {
     })
     const safeInfo: SafeInfoResponse | Error = await apiKit.getSafeInfo(safeAddr).catch((e) => e)
     if (safeInfo instanceof Error) {
-      this.errorMessage = 'Failed to retrieve information about the safe. Please try again'
+      this.importError = {
+        address: safeAddr,
+        message: 'Failed to retrieve information about the safe. Please try again'
+      }
       return
     }
     if (!isSupportedSafeVersion(safeInfo.version)) {
-      this.errorMessage = `Safe version ${safeInfo.version} accounts are not supported in Ambire. Smallest support version is ${SAFE_SMALLEST_SUPPORTED_V}`
+      this.importError = {
+        address: safeAddr,
+        message: `Safe version ${safeInfo.version} accounts are not supported in Ambire. Smallest support version is ${SAFE_SMALLEST_SUPPORTED_V}`
+      }
       return
     }
 
-    this.safeInfo = safeInfo
+    this.safeInfo = {
+      ...safeInfo,
+      deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId)
+    }
   }
 
   async findSafe(safeAddr: string) {
