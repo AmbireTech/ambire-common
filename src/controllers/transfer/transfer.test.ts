@@ -349,20 +349,20 @@ describe('Transfer Controller', () => {
       }
     })
 
-    expect(transferController.validationFormMsgs.amount.success).toBe(true)
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('warning')
 
     // Recipient address
     await transferController.update({
       isRecipientAddressUnknownAgreed: true
     })
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('success')
     // Amount
     await transferController.update({
       amount: '0'
     })
 
-    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('error')
 
     await transferController.update({
       amount: transferController.maxAmount
@@ -371,7 +371,7 @@ describe('Transfer Controller', () => {
       amount: String(Number(transferController.amount) + 1)
     })
 
-    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('error')
 
     // Reset
     await transferController.update({
