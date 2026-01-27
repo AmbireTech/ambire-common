@@ -7,7 +7,11 @@ import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
-import { getCalculatedSafeAddress, isSupportedSafeVersion } from '../../libs/safe/safe'
+import {
+  decodeSetupData,
+  getCalculatedSafeAddress,
+  isSupportedSafeVersion
+} from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -119,15 +123,17 @@ export class SafeController extends EventEmitter implements ISafeController {
       return
     }
 
+    const setupData = safeCreationInfo.setupData as Hex
+    const foundOwners = decodeSetupData(setupData)
     this.safeInfo = {
       version: safeInfo.version,
       address: safeInfo.address as Hex,
-      owners: safeInfo.owners as Hex[],
+      owners: foundOwners.length ? foundOwners : (safeInfo.owners as Hex[]),
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
       factoryAddr: safeCreationInfo.factoryAddress as Hex,
       singleton: safeCreationInfo.singleton as Hex,
       saltNonce: safeCreationInfo.saltNonce as Hex,
-      setupData: safeCreationInfo.setupData as Hex
+      setupData
     }
   }
 

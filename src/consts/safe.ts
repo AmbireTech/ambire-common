@@ -15,3 +15,10 @@ export const SAFE_NETWORKS = [
  * expect to handle accounts with different cross-chain addresses
  */
 export const SAFE_SMALLEST_SUPPORTED_V = '1.3'
+
+/**
+ * Information about safe contract addresses by their versions
+ */
+const vOneFourOne = {
+  singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a'
+}
