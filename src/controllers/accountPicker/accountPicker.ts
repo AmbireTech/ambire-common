@@ -22,6 +22,7 @@ import {
   SelectedAccountForImport
 } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -166,6 +167,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   } | null = null
 
   constructor({
+    eventEmitterRegistry,
     accounts,
     keystore,
     networks,
@@ -175,6 +177,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     onAddAccountsSuccessCallback
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
     keystore: IKeystoreController
     networks: INetworksController
@@ -184,7 +187,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
-    super()
+    super(eventEmitterRegistry)
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks
@@ -568,24 +571,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         : []
     }
 
-    // Case 3: The account is a Smart account and a linked one. For this case,
-    // there could exist multiple keys (EOAs) found on different slots.
-    const basicAccOnEverySlotWhereThisAddrIsFound = accountsOnPageWithThisAcc
-      .map((a) => a.slot)
-      .flatMap((slot) => {
-        const basicAccOnThisSlot = this.#derivedAccounts.find(
-          (a) =>
-            a.slot === slot &&
-            !isSmartAccount(a.account) &&
-            // The key of the linked account is always the EOA (basic) account
-            // on the same slot that is not explicitly used for smart account keys only.
-            !isDerivedForSmartAccountKeyOnly(a.index)
-        )
-
-        return basicAccOnThisSlot ? [basicAccOnThisSlot] : []
-      })
-
-    return basicAccOnEverySlotWhereThisAddrIsFound
+    // Case 3: The account is a smart account (v1 or v2) and a linked one.
+    // Since it's found as linked, the key(s) must be one or more of the EOAs
+    // derived, because linked accounts are searched on the EOAs only.
+    return this.#derivedAccounts
+      .filter((a) => !isSmartAccount(a.account))
+      .filter((a) => account.associatedKeys.includes(a.account.addr))
   }
 
   selectAccount(_account: Account | AccountWithNetworkMeta) {

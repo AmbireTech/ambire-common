@@ -93,6 +93,8 @@ export interface KeystoreSignerInterface {
     txnRequest: TxnRequest
     eip7702Auth: EIP7702Auth
   }) => Promise<Hex>
+  getEncryptionPublicKey?: () => Promise<string> // base64 string
+  decrypt?: (encryptedData: string) => string // plain text
   signingCleanup?: () => Promise<void>
 }
 

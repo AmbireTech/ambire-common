@@ -1,5 +1,3 @@
-import { ZeroAddress } from 'ethers'
-
 /* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
@@ -81,18 +79,6 @@ export class EstimationController extends EventEmitter {
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
     const estimation = this.estimation as FullEstimationSummary
-    const isSponsored = !!estimation.bundlerEstimation?.paymaster.isSponsored()
-
-    if (isSponsored) {
-      // if there's no ambireEstimation, it means there's an error
-      if (!estimation.ambireEstimation) return []
-
-      // if the txn is sponsored, return the native option only
-      const native = estimation.ambireEstimation.feePaymentOptions.find(
-        (feeOption) => feeOption.token.address === ZeroAddress
-      )
-      return native ? [native] : []
-    }
 
     return baseAcc.getAvailableFeeOptions(
       estimation,
@@ -100,8 +86,8 @@ export class EstimationController extends EventEmitter {
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
-        ? estimation.providerEstimation.feePaymentOptions
-        : [],
+          ? estimation.providerEstimation.feePaymentOptions
+          : [],
       op
     )
   }
@@ -275,7 +261,8 @@ export class EstimationController extends EventEmitter {
     if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
       warnings.push({
         id: 'bundler-failure',
-        title: 'You can proceed safely, but fee payment options are limited due to temporary provider issues'
+        title:
+          'You can proceed safely, but fee payment options are limited due to temporary provider issues'
       })
     }
 

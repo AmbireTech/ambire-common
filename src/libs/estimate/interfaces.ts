@@ -106,4 +106,5 @@ export interface FullEstimationSummary {
   bundlerEstimation?: Erc4337GasLimits
   bundlerGasPrices?: GasSpeeds
   flags: EstimationFlags
+  updatedAt: number
 }

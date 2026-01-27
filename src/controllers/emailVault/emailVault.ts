@@ -11,7 +11,7 @@ import {
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
@@ -20,9 +20,9 @@ import { EmailVault } from '../../libs/emailVault/emailVault'
 import { classifyEmailVaultError, friendlyEmailVaultMessage } from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
+import { RELAYER_DOWN_MESSAGE } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { RELAYER_DOWN_MESSAGE } from '../../libs/relayerCall/relayerCall'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -118,9 +118,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     fetch: Fetch,
     relayerUrl: string,
     keyStore: IKeystoreController,
-    options?: { autoConfirmMagicLink?: boolean }
+    options?: { autoConfirmMagicLink?: boolean },
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.#storage = storage
@@ -216,10 +217,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     if (!newKey) return
 
     const polling = new Polling()
-    polling.onUpdate(async () => {
+    polling.onUpdate(async (forceEmit) => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
         this.#isWaitingEmailConfirmation = true
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       } else if (polling.state.isError) {
         this.emitError({
           message: `Can't request magic link for email ${email}: ${polling.state.error.message}`,
@@ -229,7 +230,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
           )
         })
         this.emailVaultStates.errors = [polling.state.error]
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       }
     })
 

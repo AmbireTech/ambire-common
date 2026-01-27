@@ -1,6 +1,7 @@
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import {
@@ -8,6 +9,7 @@ import {
   PaymasterEstimationData,
   PaymasterSuccessReponse
 } from '../erc7677/types'
+import { BundlerEstimateResult } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 
@@ -41,7 +43,7 @@ export abstract class AbstractPaymaster {
 
   abstract isUsable(): boolean
 
-  abstract canAutoRetryOnFailure(): boolean
+  abstract isAmbire(): boolean
 
   abstract call(
     acc: Account,
@@ -51,4 +53,6 @@ export abstract class AbstractPaymaster {
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse>
 
   abstract isEstimateBelowMin(userOperation: UserOperation): boolean
+
+  abstract upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void
 }

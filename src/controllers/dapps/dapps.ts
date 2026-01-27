@@ -16,6 +16,7 @@ import {
   predefinedDapps
 } from '../../consts/dapps/dapps'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
@@ -90,6 +91,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   initialLoadPromise?: Promise<void>
 
   constructor({
+    eventEmitterRegistry,
     appVersion,
     fetch,
     storage,
@@ -97,6 +99,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     phishing,
     ui
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
     fetch: Fetch
     storage: IStorageController
@@ -104,7 +107,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     phishing: IPhishingController
     ui: IUiController
   }) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#appVersion = appVersion
     this.#fetch = fetch

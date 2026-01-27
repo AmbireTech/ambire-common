@@ -77,6 +77,13 @@ export interface AccountOp {
     fromQuoteId?: string
     /** Used to enable the gas tank if the user is topping up */
     topUpAmount?: bigint
+    /** Used to enable swap&bridge sponsorship */
+    swapSponsorship?: {
+      swapFeeInUsd: number
+      nativePrice: number
+      fromTokenPriceInUsd: number
+      fromTokenDecimals: number
+    }
   }
   flags?: {
     hideActivityBanner?: boolean

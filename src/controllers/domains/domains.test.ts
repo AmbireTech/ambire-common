@@ -14,9 +14,22 @@ const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-const ENS = {
+// 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
+const ENS_OLDEST_RESOLVER = {
   address: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
   name: 'elmoto.eth'
+}
+
+// 0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63
+const ENS_OLD_RESOLVER = {
+  address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+  name: 'vitalik.eth'
+}
+
+// 0xF29100983E058B709F3D539b0c765937B804AC15
+const ENS_LATEST_RESOLVER = {
+  address: '0x03077e67a87a92471ef93339e153DfD255E59977',
+  name: 'karawanken.eth'
 }
 
 const ENS2 = {
@@ -27,20 +40,29 @@ const ENS2 = {
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
 describe('Domains', () => {
-  const domainsController = new DomainsController(providers)
+  const domainsController = new DomainsController({ providers })
 
   it('should reverse lookup (ENS)', async () => {
-    await domainsController.reverseLookup(ENS.address)
+    await domainsController.reverseLookup(ENS_OLDEST_RESOLVER.address)
 
-    expect(domainsController.domains[ENS.address].ens).toBe(ENS.name)
+    expect(domainsController.domains[ENS_OLDEST_RESOLVER.address]!.ens).toBe(
+      ENS_OLDEST_RESOLVER.name
+    )
+  })
+  it('should reverse lookup ENS with the latest resolver', async () => {
+    await domainsController.reverseLookup(ENS_LATEST_RESOLVER.address)
+
+    expect(domainsController.domains[ENS_LATEST_RESOLVER.address]!.ens).toBe(
+      ENS_LATEST_RESOLVER.name
+    )
   })
   it('should save resolved reverse lookup', () => {
     const { name, address } = ENS2
     const type = 'ens'
 
-    domainsController.saveResolvedReverseLookup({ address, name, type })
+    domainsController.saveResolvedReverseLookup({ address, name, type, ensAvatar: null })
 
-    expect(domainsController.domains[address].ens).toBe(name)
+    expect(domainsController.domains[address]!.ens).toBe(name)
   })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
@@ -52,20 +74,20 @@ describe('Domains', () => {
     const { address, name } = ENS2
 
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address].ens).toBe(name)
+    expect(domainsController.domains[address]!.ens).toBe(name)
 
     // 1 min before expiry
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
 
-    const previousUpdatedAt = domainsController.domains[address].updatedAt
+    const previousUpdatedAt = domainsController.domains[address]!.updatedAt
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address].updatedAt).toBe(previousUpdatedAt)
+    expect(domainsController.domains[address]!.updatedAt).toBe(previousUpdatedAt)
 
     // 1 min after expiry
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
 
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address].updatedAt).toBe(
+    expect(domainsController.domains[address]!.updatedAt).toBe(
       start + PERSIST_DOMAIN_FOR_IN_MS + 60000
     )
 
@@ -89,18 +111,18 @@ describe('Domains', () => {
 
     // Initial failed lookup sets updateFailedAt
     await domainsController.reverseLookup(FAIL_ADDRESS)
-    const firstFailedAt = domainsController.domains[FAIL_ADDRESS].updateFailedAt
+    const firstFailedAt = domainsController.domains[FAIL_ADDRESS]!.updateFailedAt
     expect(typeof firstFailedAt).toBe('number')
 
     // 1 min before failure-expiry -> no retry, timestamp unchanged
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS - 60000)
     await domainsController.reverseLookup(FAIL_ADDRESS)
-    expect(domainsController.domains[FAIL_ADDRESS].updateFailedAt).toBe(firstFailedAt)
+    expect(domainsController.domains[FAIL_ADDRESS]!.updateFailedAt).toBe(firstFailedAt)
 
     // 1 min after failure-expiry -> retry, timestamp updated
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000)
     await domainsController.reverseLookup(FAIL_ADDRESS)
-    expect(domainsController.domains[FAIL_ADDRESS].updateFailedAt).toBe(
+    expect(domainsController.domains[FAIL_ADDRESS]!.updateFailedAt).toBe(
       start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000
     )
 
@@ -111,26 +133,35 @@ describe('Domains', () => {
   it('should NOT reverse lookup if already resolved', async () => {
     const { address } = ENS2
 
-    const lastUpdatedAt = domainsController.domains[address].updatedAt
+    const lastUpdatedAt = domainsController.domains[address]!.updatedAt
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address].updatedAt).toBe(lastUpdatedAt)
+    expect(domainsController.domains[address]!.updatedAt).toBe(lastUpdatedAt)
 
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address].updatedAt).toBe(lastUpdatedAt)
+    expect(domainsController.domains[address]!.updatedAt).toBe(lastUpdatedAt)
   })
   it('should set ens to null if no domain is found', async () => {
     await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
 
-    expect(domainsController.domains[NO_DOMAINS_ADDRESS].ens).toBe(null)
+    expect(domainsController.domains[NO_DOMAINS_ADDRESS]!.ens).toBe(null)
   })
-  it('should reverse multiple addresses', async () => {
+  it('should reverse multiple addresses and work with all resolvers', async () => {
     domainsController.domains = {}
 
     expect(Object.keys(domainsController.domains).length).toBe(0)
 
-    await domainsController.batchReverseLookup([ENS.address, ENS2.address])
+    await domainsController.batchReverseLookup([
+      ENS_OLDEST_RESOLVER.address,
+      ENS_OLD_RESOLVER.address,
+      ENS_LATEST_RESOLVER.address
+    ])
 
-    expect(domainsController.domains[ENS.address].ens).toBe(ENS.name)
-    expect(domainsController.domains[ENS2.address].ens).toBe(ENS2.name)
+    expect(domainsController.domains[ENS_OLDEST_RESOLVER.address]!.ens).toBe(
+      ENS_OLDEST_RESOLVER.name
+    )
+    expect(domainsController.domains[ENS_OLD_RESOLVER.address]!.ens).toBe(ENS_OLD_RESOLVER.name)
+    expect(domainsController.domains[ENS_LATEST_RESOLVER.address]!.ens).toBe(
+      ENS_LATEST_RESOLVER.name
+    )
   })
 })

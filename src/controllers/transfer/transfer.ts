@@ -5,6 +5,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -171,9 +172,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
 
     this.#callRelayer = callRelayer
     this.#storage = storage
@@ -213,7 +215,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.unloadScreen(view.type)
     })
 
-    this.#selectedAccount.onUpdate(async () => {
+    this.#selectedAccount.onUpdate(async (forceEmit) => {
       // Don't update anything if the transfer screen is not open or
       // if the user has proceeded with the transfer and is about to sign/broadcast
       if (!this.#currentTransferSessionId || this.hasProceeded) return
@@ -225,7 +227,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady) this.isReady = true
       }
 
-      this.emitUpdate()
+      this.propagateUpdate(forceEmit)
     })
 
     this.emitUpdate()
@@ -441,7 +443,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.#onRecipientAddressChange()
-    this.programmaticUpdateCounter = 0
+    // This MUST be incremented and not reset to zero, because the UI relies on
+    // the change of this value. If the value was 0 and is reset to 0, the UI
+    // would not detect a change.
+    if (this.programmaticUpdateCounter === 0) {
+      this.programmaticUpdateCounter += 1
+    } else {
+      this.programmaticUpdateCounter = 0
+    }
 
     if (shouldDestroyAccountOp) {
       this.destroySignAccountOp()
@@ -856,7 +865,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       phishing: this.#phishing,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
-      isSignRequestStillActive: () => true,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
@@ -878,8 +886,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     })
 
-    this.signAccountOpController.onUpdate(() => {
-      this.emitUpdate()
+    this.signAccountOpController.onUpdate((forceEmit) => {
+      this.propagateUpdate(forceEmit)
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         // Reset the form on the next tick so the FE receives the final
@@ -911,9 +919,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.hasProceeded = false
   }
 
-  destroyLatestBroadcastedAccountOp() {
+  destroyLatestBroadcastedAccountOp(skipUpdate: boolean = false) {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   unloadScreen(viewType: View['type'], opts?: { isNavigateOut: boolean }) {
@@ -934,7 +946,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.selectedToken = null
     this.isReady = false
 
-    this.destroyLatestBroadcastedAccountOp()
+    this.destroyLatestBroadcastedAccountOp(true)
     this.resetForm(destroyAccountOp)
   }
 

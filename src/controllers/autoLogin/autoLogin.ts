@@ -13,7 +13,7 @@ import {
   IAutoLoginController,
   SiweValidityStatus
 } from '../../interfaces/autoLogin'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController, Key } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -95,9 +95,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: IInviteController
+    invite: IInviteController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
@@ -215,16 +216,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     } catch (e: any) {
       console.error('Error parsing message:', e, 'Original message:', messageString)
 
-      // Parse it again with viem to get as much info as possible
-      // so we can display it to the user
-      try {
-        return {
-          parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
-          status: 'malformed'
-        }
-      } catch {
-        return null
-      }
+      // Fallback to regular sign message if parsing fails
+      return null
     }
   }
 

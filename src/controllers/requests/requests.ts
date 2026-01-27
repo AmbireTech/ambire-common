@@ -11,7 +11,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -96,6 +96,8 @@ const SWAP_AND_BRIDGE_WINDOW_SIZE = {
  * After the request window is closed all pending/unresolved requests will be removed except for the requests of type 'calls' to allow batching to an already existing ones.
  */
 export class RequestsController extends EventEmitter implements IRequestsController {
+  #eventEmitterRegistry?: IEventEmitterRegistryController
+
   #relayerUrl: string
 
   #callRelayer: Function
@@ -186,6 +188,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   initialLoadPromise?: Promise<void>
 
   constructor({
+    eventEmitterRegistry,
     relayerUrl,
     callRelayer,
     portfolio,
@@ -209,6 +212,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
     callRelayer: Function
     portfolio: IPortfolioController
@@ -237,8 +241,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
   }) {
-    super()
+    super(eventEmitterRegistry)
 
+    this.#eventEmitterRegistry = eventEmitterRegistry
     this.#relayerUrl = relayerUrl
     this.#callRelayer = callRelayer
     this.#portfolio = portfolio
@@ -473,7 +478,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.currentUserRequest &&
       !this.userRequests.find((r) => r.id === this.currentUserRequest!.id)
     ) {
-      this.currentUserRequest = null
+      await this.#setCurrentUserRequest(null)
     }
 
     userRequestsToAdd.forEach((newReq) => {
@@ -516,7 +521,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
+    // Pause the previously active signAccountOp request
+    if (
+      this.currentUserRequest &&
+      this.currentUserRequest.kind === 'calls' &&
+      this.currentUserRequest.signAccountOp
+    ) {
+      this.currentUserRequest.signAccountOp.pause()
+    }
+
+    // Resume the signAccountOp of the incoming request
+    if (nextRequest && nextRequest.kind === 'calls' && nextRequest.signAccountOp) {
+      nextRequest.signAccountOp.resume()
+    }
+
     this.currentUserRequest = nextRequest
+
     this.emitUpdate()
 
     if (nextRequest) {
@@ -629,9 +649,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
-      this.currentUserRequest = null
+      await this.#setCurrentUserRequest(null)
 
-      const callsCount = this.userRequests.reduce((acc, request) => {
+      const callsCount = this.visibleUserRequests.reduce((acc, request) => {
         if (request.kind !== 'calls') return acc
 
         return acc + (request.signAccountOp.accountOp.calls?.length || 0)
@@ -1677,6 +1697,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         kind: 'calls',
         meta,
         signAccountOp: new SignAccountOpController({
+          eventEmitterRegistry: this.#eventEmitterRegistry,
           callRelayer: this.#callRelayer,
           accounts: this.#accounts,
           networks: this.#networks,
@@ -1711,8 +1732,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ],
             meta
           },
-          isSignRequestStillActive: () =>
-            this.currentUserRequest && this.currentUserRequest.id === requestId,
           shouldSimulate: true,
           onUpdateAfterTraceCallSuccess: async () => {
             const accountOpsForSimulation = getAccountOpsForSimulation(
@@ -1739,14 +1758,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         dappPromises
       } as CallsUserRequest
 
-      callUserRequest.signAccountOp.onUpdate(() => {
+      if (executionType !== 'open-request-window') {
+        // If the request doesn't open immediately we shouldn't
+        // update the estimation and gasPrice in the background,
+        // thus we pause the controller until the user opens the request window
+        callUserRequest.signAccountOp.pause()
+      }
+
+      callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(
           (r) => r.kind === 'calls' && r.signAccountOp.fromRequestId === requestId
         ) as CallsUserRequest | undefined
 
         if (!callsReq) return
 
-        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.emitUpdate()
+        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.propagateUpdate(forceEmit)
       }, 'requests-ctrl')
     }
 

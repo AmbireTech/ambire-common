@@ -126,7 +126,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   route: LiFiRoute,
   userAddress: string,
   accountNativeBalance: bigint,
-  nativeSymbol: string
+  nativeSymbol: string,
+  withConvenienceFee: boolean
 ): SwapAndBridgeRoute => {
   // search for a feeCost that is not included in the quote
   // if there is one, check if the user has enough to pay for it
@@ -156,20 +157,21 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     fromAmount: route.fromAmount,
     toAmount: route.toAmount,
     currentUserTxIndex: 0,
-    ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
+    ...(route.steps[0]?.includedSteps.some((s) => s.type === 'cross')
       ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
-      : { usedDexName: route.steps[0].toolDetails.name }),
+      : { usedDexName: route.steps[0]?.toolDetails.name }),
     userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
-    serviceTime: route.steps[0].estimate.executionDuration,
+    serviceTime: route.steps[0]?.estimate.executionDuration || 0,
     rawRoute: route,
     sender: route.fromAddress,
     toToken: route.toToken,
     disabled,
     disabledReason,
-    serviceFee
+    serviceFee,
+    withConvenienceFee
   }
 }
 
@@ -397,7 +399,7 @@ export class LiFiAPI implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    const tokens: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
+    const tokens: SwapAndBridgeToToken[] = (response.tokens[toChainId] || []).map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
 
@@ -522,12 +524,17 @@ export class LiFiAPI implements SwapProvider {
       toAsset,
       toChainId,
       routes: response.routes.map((r: LiFiRoute) =>
-        normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol)
+        normalizeLiFiRouteToSwapAndBridgeRoute(
+          r,
+          userAddress,
+          accountNativeBalance,
+          nativeSymbol,
+          !shouldRemoveConvenienceFee
+        )
       ),
       // selecting a route is a controller's responsiilibty, not the API's
       selectedRoute: undefined,
-      selectedRouteSteps: [],
-      withConvenienceFee: !shouldRemoveConvenienceFee
+      selectedRouteSteps: []
     }
   }
 

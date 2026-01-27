@@ -1,16 +1,22 @@
 /* eslint-disable no-restricted-syntax */
-import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
+import { v4 as uuidv4 } from 'uuid'
+
+import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
 export default class EventEmitter {
+  id: string
+
+  #registry: IEventEmitterRegistryController | null = null
+
   #callbacksWithId: {
     id: string | null
-    cb: (forceEmit?: true) => void
+    cb: (forceEmit?: boolean) => void
   }[] = []
 
-  #callbacks: ((forceEmit?: true) => void)[] = []
+  #callbacks: ((forceEmit?: boolean) => void)[] = []
 
   #errorCallbacksWithId: {
     id: string | null
@@ -22,6 +28,30 @@ export default class EventEmitter {
   #errors: ErrorRef[] = []
 
   statuses: Statuses<string> = {}
+
+  /**
+   *
+   * @param registry - EventEmitterRegistryController instance to be used by this controller. Controllers
+   * added to the registry will have their updates and errors propagated to the front-end.
+   * @param registerImmediately - Most of the time we want to register the controller in the registry
+   * immediately upon construction. However, there are some dynamic controllers (like SignAccountOpController)
+   * that should be registered only after a condition is met (e.g. when the request is open)
+   */
+  constructor(registry?: IEventEmitterRegistryController, registerImmediately: boolean = true) {
+    this.id = uuidv4()
+
+    if (registry) {
+      this.#registry = registry
+
+      if (registerImmediately) {
+        this.registerInRegistry()
+      }
+    }
+  }
+
+  get name(): string {
+    return this.constructor.name
+  }
 
   get onUpdateIds() {
     return this.#callbacksWithId.map((item) => item.id)
@@ -38,25 +68,25 @@ export default class EventEmitter {
   }
 
   /**
-   * Using this function to emit an update bypasses both background and React batching,
-   * ensuring that the state update is immediately applied at the application level (React/Extension).
+   * Emits an update immediately, bypassing both background batching
+   * (where updates on the same tick are debounced and batched for performance)
+   * and React batching (where rapid state updates are merged).
    *
-   * This is particularly handy when multiple status flags are being updated rapidly.
-   * Without the `forceEmitUpdate` option, the application will only render the very first and last status updates,
-   * batching the ones in between.
+   * This ensures the state change is applied instantly at the React application level.
+   * It is especially useful when multiple status flags change in quick succession.
+   *
+   * For example, if a flow updates a status from INITIAL -> LOADING -> SUCCESS -> INITIAL,
+   * normal batching may skip intermediate states and only emit the first and last ones.
    */
   async forceEmitUpdate() {
+    // Bypassing background batching on the same tick
     await wait(1)
+
+    // Passing `true` to the cb will bypass React batching
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb(true)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb(true)
-
-    // TODO: This is a temporary workaround for a bug; a proper solution should be implemented.
-    // This `await` fixes an issue with event bubbling of force updates. When a parent ctrl
-    // subscribes to a child ctrl to propagate its updates, and the child ctrl emits two
-    // consecutive force updates, the parent's onUpdate listener receives only the last one, skipping one of the updates.
-    await wait(1)
   }
 
   protected emitUpdate() {
@@ -64,6 +94,39 @@ export default class EventEmitter {
     for (const i of this.#callbacksWithId) i.cb()
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb()
+  }
+
+  /**
+   * Propagates updates from a child controller to its parent in a parent -> child setup,
+   * ensuring child state updates reach the application without being lost due to batching.
+   *
+   * Used when a parent controller (e.g. swapAndBridgeController) subscribes to child updates:
+   *
+   *   this.#signAccountOpController.onUpdate((forceEmit) => {
+   *     this.propagateUpdate(forceEmit)
+   *   })
+   *
+   * Child controllers may update their status very quickly
+   * (e.g. INITIAL -> LOADING -> SUCCESS -> INITIAL).
+   * If the parent propagates these updates via `forceEmitUpdate()`,
+   * the update is scheduled in a new tick and intermediate states may be lost.
+   *
+   * `propagateUpdate` forwards the update in the same tick while preserving the
+   * `forceEmit` behavior, ensuring all states are correctly propagated.
+   *
+   * Notes:
+   *  - If `forceEmit` is falsy, this behaves the same as calling `emitUpdate()`.
+   *    For consistency and clarity, parent -> child setups should always use
+   *    `propagateUpdate()` instead of mixing `emitUpdate()` and `propagateUpdate()`.
+   *
+   *  -  For all direct controller updates (i.e. when there is no child controller involved
+   *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
+   */
+  protected propagateUpdate(forceEmit?: boolean) {
+    // eslint-disable-next-line no-restricted-syntax
+    for (const i of this.#callbacksWithId) i.cb(forceEmit)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const cb of this.#callbacks) cb(forceEmit)
   }
 
   protected emitError(error: ErrorRef) {
@@ -189,7 +252,12 @@ export default class EventEmitter {
     }
   }
 
+  /**
+   * Destroys the controller, unregistering it from the EventEmitterRegistry and
+   * clearing all callbacks and errors.
+   */
   destroy() {
+    this.unregisterFromRegistry()
     this.#callbacks = []
     this.#callbacksWithId = []
     this.#errorCallbacks = []
@@ -197,9 +265,39 @@ export default class EventEmitter {
     this.#errors = []
   }
 
+  /**
+   * Registers the controller into the EventEmitterRegistry (if set)
+   * to propagate its updates and errors to the front-end.
+   */
+  registerInRegistry() {
+    if (!this.#registry) {
+      this.emitError({
+        level: 'silent',
+        message: `EventEmitter: Trying to register a controller while the registry is not set. Controller: ${this.name}`,
+        error: new Error(
+          'EventEmitter: Trying to register a controller while the registry is not set.'
+        )
+      })
+      return
+    }
+
+    this.#registry.set(this.id, this)
+  }
+
+  /**
+   * Unregisters the controller from the EventEmitterRegistry (if set).
+   * Used when controllers are destroyed or by dynamic controllers.
+   */
+  unregisterFromRegistry() {
+    if (!this.#registry) return
+
+    this.#registry?.delete(this.id)
+  }
+
   toJSON() {
     return {
       ...this,
+      name: this.name,
       emittedErrors: this.emittedErrors // includes the getter in the stringified instance
     }
   }

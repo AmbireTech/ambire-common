@@ -3,7 +3,6 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 
-import { Encrypted } from 'eth-crypto'
 import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
