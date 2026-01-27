@@ -15,6 +15,9 @@ export const calculateRewardsStats = (
 ): ProjectedRewardsStats | null => {
   if (!projectedRewardsResult || !walletOrStkWalletTokenPrice) return null
 
+  const reasonToNotDisplayProjectedRewards =
+    projectedRewardsResult.reasonToNotDisplayProjectedRewards
+
   const { weeksWithData, governanceVotes, rank, poolSize, pointsOfOtherUsers, swapVolume } =
     projectedRewardsResult
 
@@ -58,10 +61,13 @@ export const calculateRewardsStats = (
   const governanceScore = Math.floor(governanceWeight / 2000)
   const multiplierCount = projectedRewardsResult.multipliers.filter((m) => m.activated).length
   const totalMultiplier = 1.06 ** multiplierCount
-  const totalScore = Math.floor(
-    (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
-      totalMultiplier
-  )
+
+  let totalScore = 0
+  if (!reasonToNotDisplayProjectedRewards)
+    totalScore = Math.floor(
+      (balanceScore + stkWALLETScore + liquidityScore + swapVolumeScore + governanceScore) *
+        totalMultiplier
+    )
 
   const estimatedRewardsUSD = Math.floor(
     (totalScore / (pointsOfOtherUsers + totalScore)) * poolSize
@@ -87,7 +93,7 @@ export const calculateRewardsStats = (
     estimatedRewards,
     estimatedRewardsUSD,
     multipliers: projectedRewardsResult.multipliers,
-    reasonToNotDisplayProjectedRewards: projectedRewardsResult.reasonToNotDisplayProjectedRewards
+    reasonToNotDisplayProjectedRewards
   }
 }
 
