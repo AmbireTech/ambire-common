@@ -1,3 +1,5 @@
+import { toBeHex } from 'ethers'
+
 import SafeApiKit, { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 
 import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
@@ -132,7 +134,9 @@ export class SafeController extends EventEmitter implements ISafeController {
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
       factoryAddr: safeCreationInfo.factoryAddress as Hex,
       singleton: safeCreationInfo.singleton as Hex,
-      saltNonce: safeCreationInfo.saltNonce as Hex,
+      saltNonce: safeCreationInfo.saltNonce
+        ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
+        : (toBeHex(0, 32) as Hex),
       setupData
     }
   }

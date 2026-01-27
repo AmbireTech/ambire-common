@@ -20,7 +20,8 @@ export interface Account {
   associatedKeys: string[]
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
-  creation: AccountCreation | SafeAccountCreation | null
+  creation: AccountCreation | null
+  safeCreation?: SafeAccountCreation
   preferences: AccountPreferences
   email?: string
   newlyAdded?: boolean
