@@ -356,7 +356,7 @@ describe('Transfer Controller', () => {
     await transferController.update({
       isRecipientAddressUnknownAgreed: true
     })
-    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('success')
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('warning')
     // Amount
     await transferController.update({
       amount: '0'
