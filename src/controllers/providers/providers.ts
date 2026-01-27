@@ -1,3 +1,5 @@
+import { Contract } from 'ethers'
+
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
@@ -50,9 +52,11 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       get: (target, prop, receiver) => {
         try {
           if (isNaN(Number(prop))) return Reflect.get(target, prop, receiver)
+          if (!!this.initialLoadPromise) return Reflect.get(target, prop, receiver)
 
           // Clean up temp providers first (any chainId not in allNetworks)
           if (!this.#networks.networkToAddOrUpdate) {
+            let shouldEmit = false
             for (const [chainIdStr, provider] of Object.entries(target)) {
               const chainId = BigInt(chainIdStr)
               const networkExists = this.#networks.allNetworks.some((n) => n.chainId === chainId)
@@ -60,8 +64,10 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
               if (!networkExists && provider) {
                 provider.destroy()
                 delete target[chainIdStr]
+                shouldEmit = true
               }
             }
+            if (shouldEmit) this.emitUpdate()
           }
 
           if (prop in target) return Reflect.get(target, prop, receiver)
@@ -79,6 +85,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
           }
 
           this.#autoSetProvider(chainId, rpcUrl)
+          this.emitUpdate()
         } catch (error) {
           console.error(`Failed to auto set provider for chainId: ${prop.toString()}`, error)
         }
@@ -126,6 +133,8 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     )
 
     this.isBatchingEnabled = storageIsBatchingEnabled
+    this.#networks.allNetworks.forEach((n) => this.setProvider(n))
+
     this.emitUpdate()
   }
 
@@ -218,26 +227,54 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
     const fn = provider[method]
 
-    if (typeof fn === 'function') {
-      try {
-        const result = await (fn as Function).apply(provider, args)
+    if (typeof fn !== 'function') return
 
-        this.#ui.message.sendUiMessage({
-          type: 'RpcCallRes',
-          requestId,
-          ok: true,
-          res: result
-        })
-      } catch (error: any) {
-        this.emitError({ error, message: error.message, level: 'major' })
-        this.#ui.message.sendUiMessage({
-          type: 'RpcCallRes',
-          requestId,
-          ok: false,
-          error: error.message
-        })
-      }
+    try {
+      const result = await (fn as Function).apply(provider, args)
+
+      this.#ui.message.sendUiMessage({
+        type: 'RpcCallRes',
+        requestId,
+        ok: true,
+        res: result
+      })
+    } catch (error: any) {
+      this.emitError({ error, message: error.message, level: 'major' })
+      this.#ui.message.sendUiMessage({
+        type: 'RpcCallRes',
+        requestId,
+        ok: false,
+        error: error.message
+      })
     }
+  }
+
+  async getContractNameAndSendResToUi({
+    requestId,
+    address,
+    abi,
+    chainId
+  }: {
+    requestId: string
+    address: string
+    abi: string
+    chainId: bigint
+  }) {
+    const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
+    if (!network) return
+
+    const provider = this.providers[network.chainId.toString()]
+    const contract = new Contract(address, [abi], provider)
+    let error: any = undefined
+    const name = await contract.name?.().catch((e) => (error = e))
+
+    this.#ui.message.sendUiMessage({
+      type: 'GetContractName',
+      requestId,
+      ok: !!name,
+      res: name ?? undefined,
+      error: error?.message ?? undefined
+    })
   }
 
   toJSON() {
