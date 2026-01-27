@@ -61,7 +61,7 @@ import {
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
-import { validateSendTransferAmount } from '../../services/validations/validate'
+import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
@@ -566,10 +566,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return SwapAndBridgeFormStatus.ReadyToSubmit
   }
 
-  get validateFromAmount() {
+  get validateFromAmount(): Validation {
     const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
-    if (!fromSelectedTokenWithUpToDateAmount) return { success: false, message: '' }
+    if (!fromSelectedTokenWithUpToDateAmount) return { severity: 'error', message: '' }
 
     if (
       !this.isFormEmpty &&
@@ -577,7 +577,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       Object.values(this.quoteRoutesStatuses).some((val) => val.status === 'MIN_AMOUNT_NOT_MET')
     ) {
       return {
-        success: true,
+        severity: 'success',
         message: '🔔 A route was found for this pair but the minimum token amount was not met.'
       }
     }
@@ -2190,8 +2190,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.toSelectedToken &&
       // Allow the quote fetch if the error is insufficient amount, as the user might want
       // to see the routes even if he has insufficient balance
-      (this.validateFromAmount.success ||
-        this.validateFromAmount.errorType === 'insufficient_amount')
+      (this.validateFromAmount.severity === 'success' ||
+        this.validateFromAmount.id === 'insufficient_amount')
     )
   }
 
