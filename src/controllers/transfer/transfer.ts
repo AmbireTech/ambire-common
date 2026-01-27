@@ -216,7 +216,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#selectedAccount.onUpdate(async (forceEmit) => {
-      if (!this.#currentTransferSessionId) return
+      // Don't update anything if the transfer screen is not open or
+      // if the user has proceeded with the transfer and is about to sign/broadcast
+      if (!this.#currentTransferSessionId || this.hasProceeded) return
       this.#setTokens()
 
       if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
@@ -370,6 +372,11 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
+    // Disallow the update of the selected token if the user has proceeded.
+    // If we update it, latestBroadcastedToken may not correspond to the token that
+    // is being sent in the latestBroadcastedAccountOp.
+    if (this.hasProceeded) return
+
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.#setAmountAndNotifyUI('')
