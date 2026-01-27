@@ -86,7 +86,8 @@ export const calculateRewardsStats = (
     multiplier: totalMultiplier,
     estimatedRewards,
     estimatedRewardsUSD,
-    multipliers: projectedRewardsResult.multipliers
+    multipliers: projectedRewardsResult.multipliers,
+    reasonToNotDisplayProjectedRewards: projectedRewardsResult.reasonToNotDisplayProjectedRewards
   }
 }
 

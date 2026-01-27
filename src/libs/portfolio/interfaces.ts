@@ -319,13 +319,14 @@ export type PortfolioProjectedRewardsResult = {
   pointsOfOtherUsers: number
   numberOfWeeksSinceStartOfSeason: number
   multiplier: number
-  multipliers: { type: string; activated: boolean, description:string }[]
+  multipliers: { type: string; activated: boolean; description: string }[]
   frozenRewardSeason1: number
   governanceVotes: {
     weight: number
     walletPrice: number
   }[]
   supportedChainIds: number[]
+  reasonToNotDisplayProjectedRewards: 'LEGACY_ACCOUNT' | 'BLACKLISTED'
 }
 
 export type ProjectedRewardsStats = {
@@ -341,16 +342,19 @@ export type ProjectedRewardsStats = {
   averageStkWalletBalance: number
   // Other
   governanceWeight: number
-  swapVolume: number
-  poolSize: number
-  rank: number
   totalScore: number
   multiplierCount: number
-  multiplier: number
   estimatedRewards: number
   estimatedRewardsUSD: number
-  multipliers: PortfolioProjectedRewardsResult['multipliers']
-}
+} & Pick<
+  PortfolioProjectedRewardsResult,
+  | 'swapVolume'
+  | 'poolSize'
+  | 'rank'
+  | 'multiplier'
+  | 'multipliers'
+  | 'reasonToNotDisplayProjectedRewards'
+>
 
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
