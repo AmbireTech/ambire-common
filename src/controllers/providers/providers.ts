@@ -249,16 +249,20 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
   }
 
-  async getContractNameAndSendResToUi({
+  async callContractAndSendResToUi({
     requestId,
+    chainId,
     address,
     abi,
-    chainId
+    method,
+    args
   }: {
     requestId: string
+    chainId: bigint
     address: string
     abi: string
-    chainId: bigint
+    method: keyof Contract
+    args: unknown[]
   }) {
     const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
     if (!network) return
@@ -266,13 +270,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     const provider = this.providers[network.chainId.toString()]
     const contract = new Contract(address, [abi], provider)
     let error: any = undefined
-    const name = await contract.name?.().catch((e) => (error = e))
+
+    if (typeof contract[method] !== 'function') return
+    const result = await (contract[method] as Function).apply(contract, args)
 
     this.#ui.message.sendUiMessage({
-      type: 'GetContractName',
+      type: 'CallContract',
       requestId,
-      ok: !!name,
-      res: name ?? undefined,
+      ok: !!result,
+      res: result ?? undefined,
       error: error?.message ?? undefined
     })
   }
