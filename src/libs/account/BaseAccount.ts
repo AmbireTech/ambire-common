@@ -88,6 +88,8 @@ export abstract class BaseAccount {
    */
   abstract getNonceId(): string
 
+  abstract shouldStateOverrideDuringAmbireEstimation(): boolean
+
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall() {
     return false
@@ -115,6 +117,13 @@ export abstract class BaseAccount {
 
   isSponsorable(): boolean {
     return false
+  }
+
+  /**
+   * Do we allow the account to broadcast by itself
+   */
+  canBroadcastByItself(): boolean {
+    return true
   }
 
   /**

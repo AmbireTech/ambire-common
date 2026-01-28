@@ -4,11 +4,10 @@ import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 /* eslint-disable no-console */
 import { yieldToMain } from '../../utils/scheduler'
-import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
+import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
-/* eslint-disable import/no-cycle */
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
@@ -118,7 +117,7 @@ export function getDeploylessOpts(
         ? DeploylessMode.StateOverride
         : DeploylessMode.Detect,
     stateToOverride:
-      supportsStateOverride && hasEOAOverride ? getEoaSimulationStateOverride(accountAddr) : null
+      supportsStateOverride && hasEOAOverride ? getNotAmbireStateOverride(accountAddr) : null
   }
 }
 

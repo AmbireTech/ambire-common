@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
+
 import { Hex } from '../../interfaces/hex'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
@@ -116,5 +117,14 @@ export class EOA extends BaseAccount {
   getNonceId(): string {
     // EOAs have only an execution layer nonce
     return this.accountState.eoaNonce!.toString()
+  }
+
+  /**
+   * We always state override when using an EOA as otherwise,
+   * we won't be able to perform the ambire estimation as it works
+   * only with smart accounts
+   */
+  shouldStateOverrideDuringAmbireEstimation(): boolean {
+    return true
   }
 }

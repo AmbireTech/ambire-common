@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Interface } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
@@ -14,8 +15,8 @@ import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../esti
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
-import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
+import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
@@ -108,5 +109,12 @@ export class V1 extends BaseAccount {
     provider: RPCProvider
   ): Promise<bigint> {
     return getRelayerNonce(activity, op, provider)
+  }
+
+  /**
+   * The Ambire estimation is made to work perfectly with Ambire SA
+   */
+  shouldStateOverrideDuringAmbireEstimation(): boolean {
+    return false
   }
 }

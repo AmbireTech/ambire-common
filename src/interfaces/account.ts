@@ -51,6 +51,7 @@ export interface SafeAccountCreation {
   singleton: Hex
   saltNonce: Hex
   setupData: Hex
+  version: string
 }
 
 export interface AmbireSmartAccountIdentityCreateRequest {
