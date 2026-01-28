@@ -68,7 +68,6 @@ describe('AccountsController', () => {
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
     await storageCtrl.set('selectedAccount', accounts[0]!.addr)
-    await providersCtrl.initialLoadPromise
 
     accountsCtrl = new AccountsController(
       storageCtrl,

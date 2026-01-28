@@ -58,10 +58,6 @@ import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
 paymasterFactory.init(relayerUrl, fetch, () => {})
 
 const createEOAAccountOp = (account: Account) => {
@@ -393,7 +389,6 @@ const init = async (
     onAddOrUpdateNetworks: () => {}
   })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,

@@ -39,6 +39,7 @@ describe('Networks Controller', () => {
       onAddOrUpdateNetworks: () => {}
     })
     providersCtrl = new ProvidersController(networksController, storageCtrl, uiCtrl)
+    await providersCtrl.initialLoadPromise
   })
 
   test('should initialize with predefined networks if storage is empty', async () => {
@@ -124,7 +125,6 @@ describe('Networks Controller', () => {
     expect(networksController.networkToAddOrUpdate?.chainId).toBe(1329n)
     const networkInfoLoading = networksController.networkToAddOrUpdate?.info
     expect(networkInfoLoading).toBeDefined()
-
     const setNetworkInfo: NetworkInfo = networkInfoLoading as NetworkInfo
 
     // has smart accounts

@@ -164,12 +164,6 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
-    const providersForTesting = ['1', '137']
-    const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
-    // ensure all providers are working
-    mockedProviders[1]!.isWorking = true
-    mockedProviders[137]!.isWorking = true
-    mainCtrl.providers.providers = mockedProviders
 
     jest.spyOn(mainCtrl.continuousUpdates.updatePortfolioInterval, 'restart')
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
@@ -271,12 +265,6 @@ describe('ContinuousUpdatesController intervals', () => {
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
 
-    const providersForTesting = ['1', '137']
-    const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
-    // ensure there is at least one provider that is not working
-    mockedProviders[1]!.isWorking = false
-    mockedProviders[137]!.isWorking = true
-    mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
     mainCtrl.continuousUpdates.accountStateLatestInterval.start = jest
       .fn()

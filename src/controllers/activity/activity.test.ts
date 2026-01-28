@@ -191,16 +191,16 @@ describe('Activity Controller ', () => {
       storage: storageCtrl,
       fetch,
       relayerUrl,
+      getProvider: (chainId) => {
+        return providersCtrl.providers[chainId.toString()]!
+      },
       onAddOrUpdateNetworks: (nets) => {
         nets.forEach((n) => {
           providersCtrl.setProvider(n)
         })
-      },
-      onRemoveNetwork: (id) => {
-        providersCtrl.removeProvider(id)
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
+    providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
 
     const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
     accountsCtrl = new AccountsController(
@@ -227,7 +227,6 @@ describe('Activity Controller ', () => {
       new BannerController(storageCtrl),
       featureFlagsCtrl
     )
-    providersCtrl.providers = providers
 
     const autoLoginCtrl = new AutoLoginController(
       storageCtrl,

@@ -243,8 +243,6 @@ export async function getNetworkInfo(
 
   networkInfo = { ...networkInfo, flagged: flagged || info === 'timeout reached' }
   callback(networkInfo)
-
-  provider.destroy()
 }
 
 /**

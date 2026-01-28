@@ -9,11 +9,9 @@ import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
-import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -31,10 +29,6 @@ const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
   getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
 ) => {
-  const providers = Object.fromEntries(
-    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-  )
-
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
 
@@ -53,7 +47,6 @@ const prepareTest = async (
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  providersCtrl.providers = providers
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,

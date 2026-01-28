@@ -15,13 +15,11 @@ import {
   DERIVATION_OPTIONS,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
@@ -81,10 +79,6 @@ const prepareTest = async () => {
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-
-  providersCtrl.providers = Object.fromEntries(
-    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-  )
 
   const keystoreController = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 

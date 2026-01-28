@@ -7,12 +7,10 @@ import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
 import { AutoLoginPolicy, AutoLoginSettings } from '../../interfaces/autoLogin'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -22,10 +20,6 @@ import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { AutoLoginController } from './autoLogin'
 
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
 const storage: Storage = produceMemoryStore()
 let providersCtrl: IProvidersController
 const storageCtrl = new StorageController(storage)
@@ -33,14 +27,15 @@ const networksCtrl = new NetworksController({
   storage: storageCtrl,
   fetch,
   relayerUrl,
+  getProvider: (chainId) => {
+    return providersCtrl.providers[chainId.toString()]!
+  },
   onAddOrUpdateNetworks: () => {}
 })
 
-providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-providersCtrl.providers = providers
-
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
+providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
 
 const EOA_ACC = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',

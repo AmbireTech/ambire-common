@@ -22,7 +22,6 @@ import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -49,10 +48,6 @@ const PLACEHOLDER_RECIPIENT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const STK_WALLET_ADDRESS = '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
-
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
 
 const account = {
   addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -175,7 +170,6 @@ const prepareTest = async () => {
 
   const uiCtrl = new UiController({ uiManager })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  providersCtrl.providers = providers
 
   const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
   const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)

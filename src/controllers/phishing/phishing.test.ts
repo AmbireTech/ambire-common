@@ -5,10 +5,8 @@ import { expect } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -22,10 +20,6 @@ import { UiController } from '../ui/ui'
 import { PhishingController } from './phishing'
 
 const prepareTest = async () => {
-  const providers = Object.fromEntries(
-    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-  )
-
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
 
@@ -63,7 +57,6 @@ const prepareTest = async () => {
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  providersCtrl.providers = providers
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,
