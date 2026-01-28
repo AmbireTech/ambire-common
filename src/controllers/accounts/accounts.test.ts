@@ -10,11 +10,9 @@ import {
 } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
-import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -46,9 +44,6 @@ describe('AccountsController', () => {
       }
     }
   ]
-  const providers = Object.fromEntries(
-    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-  )
 
   const mockKeys = mockInternalKeys(accounts)
 
@@ -68,12 +63,12 @@ describe('AccountsController', () => {
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
   providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  providersCtrl.providers = providers
 
   let accountsCtrl: IAccountsController
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
     await storageCtrl.set('selectedAccount', accounts[0]!.addr)
+    await providersCtrl.initialLoadPromise
 
     accountsCtrl = new AccountsController(
       storageCtrl,
