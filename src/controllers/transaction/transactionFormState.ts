@@ -36,11 +36,11 @@ import { ControllersTransactionDependencies } from './dependencies'
 
 const DEFAULT_VALIDATION_FORM_MSGS = {
   amount: {
-    success: false,
+    severity: 'error',
     message: ''
   },
   recipientAddress: {
-    success: false,
+    severity: 'error',
     message: ''
   }
 }

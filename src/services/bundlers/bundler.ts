@@ -18,8 +18,6 @@ import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
 import { BundlerTransactionReceipt, GasSpeeds, UserOpStatus } from './types'
 
-require('dotenv').config()
-
 export abstract class Bundler {
   /**
    * The default pollWaitTime. This is used to determine
