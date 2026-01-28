@@ -29,11 +29,9 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   #ui: IUiController
 
-  // backing store
   #providers: RPCProviders = {}
 
-  // public, proxied view
-  providers: RPCProviders
+  #providersProxy: RPCProviders
 
   #scheduledResolveAssetInfoActions: {
     [chainId: string]:
@@ -62,7 +60,11 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.#storage = storage
     this.#ui = ui
 
-    this.providers = new Proxy(this.#providers, {
+    // Proxy over the providers map that:
+    // - Lazily auto-initializes a provider when a chainId is accessed
+    // - Removes and destroys providers for networks no longer in allNetworks
+    // - Emits updates only when the providers set actually changes
+    this.#providersProxy = new Proxy(this.#providers, {
       get: (target, prop, receiver) => {
         try {
           if (isNaN(Number(prop))) return Reflect.get(target, prop, receiver)
@@ -134,8 +136,8 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     })
   }
 
-  get isInitialized() {
-    return this.#networks.isInitialized && !!Object.keys(this.#providers).length
+  get providers(): RPCProviders {
+    return this.#providersProxy
   }
 
   async #load() {
@@ -419,7 +421,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     return {
       ...this,
       ...super.toJSON(),
-      isInitialized: this.isInitialized
+      providers: this.providers
     }
   }
 }
