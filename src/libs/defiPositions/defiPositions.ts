@@ -559,16 +559,16 @@ const getAccountNetworksWithPositions = (
 }
 
 export {
-  getAssetValue,
-  updatePositionsByProviderAssetPrices,
-  getCustomProviderPositions,
-  getUniqueMergedPositions,
-  getAllAssetsAsHints,
-  getNewDefiState,
-  getFormattedApiPositions,
   enhancePortfolioTokensWithDefiPositions,
-  getCanSkipUpdate,
-  getShouldBypassServerSideCache,
   getAccountNetworksWithPositions,
-  getHasNonceChangedSinceLastUpdate
+  getAllAssetsAsHints,
+  getAssetValue,
+  getCanSkipUpdate,
+  getCustomProviderPositions,
+  getFormattedApiPositions,
+  getHasNonceChangedSinceLastUpdate,
+  getNewDefiState,
+  getShouldBypassServerSideCache,
+  getUniqueMergedPositions,
+  updatePositionsByProviderAssetPrices
 }
