@@ -26,7 +26,11 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
-import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
+import {
+  validateSendTransferAddress,
+  validateSendTransferAmount,
+  Validation
+} from '../../services/validations'
 import { getIsViewOnly } from '../../utils/accounts'
 import { getAddressFromAddressState } from '../../utils/domains'
 import {
@@ -45,15 +49,16 @@ const DEFAULT_ADDRESS_STATE = {
   isDomainResolving: false
 }
 
-const DEFAULT_VALIDATION_FORM_MSGS = {
+const DEFAULT_VALIDATION_FORM_MSGS: {
+  [key in 'amount' | 'recipientAddress']: Validation
+} = {
   amount: {
-    success: false,
+    severity: 'error',
     message: ''
   },
   recipientAddress: {
-    success: false,
     message: '',
-    severity: 'info'
+    severity: 'error'
   }
 }
 
@@ -467,7 +472,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
-      const recipientValidation = validateSendTransferAddress(
+      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
         this.#selectedAccount.account?.addr,
         this.isRecipientAddressUnknownAgreed,
@@ -478,12 +483,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt
       )
-
-      validationFormMsgsNew.recipientAddress = {
-        success: recipientValidation.success,
-        message: recipientValidation.message,
-        severity: recipientValidation.severity ?? 'info'
-      }
     }
 
     // Validate the amount
@@ -500,12 +499,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     // if the amount is set, it's enough in topUp mode
     if (this.isTopUp) {
       return (
-        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
+        this.selectedToken &&
+        validateSendTransferAmount(this.amount, this.selectedToken).severity === 'success'
       )
     }
 
-    const areFormFieldsValid =
-      this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
+    const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success'
 
     return areFormFieldsValid && !this.addressState.isDomainResolving
   }

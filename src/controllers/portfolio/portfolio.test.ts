@@ -39,6 +39,7 @@ import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -337,6 +338,7 @@ const prepareTest = async (
     relayerUrl,
     fetch
   )
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const controller = new PortfolioController(
     storageCtrl,
     fetch,
@@ -346,7 +348,8 @@ const prepareTest = async (
     keystore,
     relayerUrl,
     velcroUrl,
-    new BannerController(storageCtrl)
+    new BannerController(storageCtrl),
+    featureFlagsCtrl
   )
 
   await accountsCtrl.initialLoadPromise

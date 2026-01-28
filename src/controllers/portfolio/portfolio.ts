@@ -10,6 +10,8 @@ import {
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+/* eslint-disable @typescript-eslint/no-use-before-define */
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -41,7 +43,6 @@ import {
 import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
@@ -193,6 +194,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #keystore: IKeystoreController
 
+  #featureFlags: IFeatureFlagsController
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
 
@@ -210,6 +213,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     relayerUrl: string,
     velcroUrl: string,
     banner: IBannerController,
+    featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -227,6 +231,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#banner = banner
+    this.#featureFlags = featureFlags
     this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
@@ -260,9 +265,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
-            .join(',')}&account=${accountAddr}&baseCurrency=${baseCurrency}${
-            forceUpdateParam
-          }&sigs=${accountKeysCount}`
+            .join(
+              ','
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}`
 
           return { url, queueSegment }
         })
@@ -284,6 +289,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
+      await this.#featureFlags.initialLoadPromise
 
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.customTokens = await this.#storage.get('customTokens', [])
@@ -795,6 +801,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
+    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return null
+
     const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
@@ -978,7 +986,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           priceCache: networkPriceCache,
           blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
-          ...portfolioProps
+          ...portfolioProps,
+          disableAutoDiscovery: true
         }),
         getCustomProviderPositions(
           accountId,
