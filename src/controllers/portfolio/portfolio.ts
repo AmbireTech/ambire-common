@@ -801,6 +801,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     defiMaxDataAgeMs?: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
+    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return null
+
     const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
@@ -816,11 +818,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const defiState = this.#state[accountAddr]?.[chainId.toString()]?.result?.defiPositions
     const canSkipExternalApiHintsUpdate =
-      !this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery') ||
-      (!!externalApiHintsResponse &&
-        !isManualUpdate &&
-        Date.now() - externalApiHintsResponse.lastUpdate <
-          EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic'])
+      !!externalApiHintsResponse &&
+      !isManualUpdate &&
+      Date.now() - externalApiHintsResponse.lastUpdate <
+        EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
 
     const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
       defiState,
@@ -828,7 +829,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     )
 
     const canSkipDefiUpdate = getCanSkipUpdate(
-      this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery'),
       defiState,
       hasNonceChangedSinceLastUpdate,
       defiMaxDataAgeMs
@@ -987,9 +987,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
           ...portfolioProps,
-          disableAutoDiscovery:
-            !this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery') ||
-            portfolioProps.disableAutoDiscovery
+          disableAutoDiscovery: true
         }),
         getCustomProviderPositions(
           accountId,
@@ -1060,7 +1058,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                 hasHints: discoveryData.data.hints.hasHints,
                 lastUpdate: discoveryData.data.hints.lastUpdate
               }
-            : state.result?.lastExternalApiUpdateData ?? null,
+            : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
           defiPositions: newDefiState
