@@ -7,23 +7,32 @@ interface IEntryPoint {
     function getNonce(address, uint192) external returns (uint);
 }
 
+interface Safe {
+    function getNonce() external view returns (uint);
+    function getOwners() external view returns (address[] memory);
+}
+
+bytes32 constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
+
 struct AccountInput {
     address addr;
     address[] associatedKeys;
     address factory;
     bytes factoryCalldata;
     address erc4337EntryPoint;
+    bool isSafe;
 }
 
 struct AccountInfo {
     bool isDeployed;
     bytes deployErr;
     uint nonce;
-    bytes32[] associatedKeyPrivileges;
+    address[] associatedKeys;
     bool isV2;
     uint256 balance;
     bool isEOA;
     uint erc4337Nonce;
+    bool isErc4337Enabled;
     uint currentBlock;
 }
 
@@ -33,11 +42,18 @@ contract AmbireAccountState {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {
             AccountInput memory account = accounts[i];
+            if (account.isSafe) {
+                accountResult[i] = this.getSafeAccountState(account);
+                continue;
+            }
+
             accountResult[i].balance = address(account.addr).balance;
+            accountResult[i].associatedKeys = account.associatedKeys;
 
             // check for EOA
             if (account.factory == address(0)) {
                 accountResult[i].isEOA = true;
+                accountResult[i].isErc4337Enabled = true;
             }
 
             bytes memory code = address(account.addr).code;
@@ -64,10 +80,10 @@ contract AmbireAccountState {
             // do not continue for EOAs
             if (accountResult[i].isEOA && code.length == 0) continue;
 
-            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2) {
+            try this.gatherAmbireData(account) returns (uint nonce, bool isV2, bool isErc4337Enabled) {
                 accountResult[i].nonce = nonce;
-                accountResult[i].associatedKeyPrivileges = privileges;
                 accountResult[i].isV2 = isV2;
+                accountResult[i].isErc4337Enabled = isErc4337Enabled;
             } catch (bytes memory err) {
                 accountResult[i].deployErr = err;
                 continue;
@@ -78,13 +94,10 @@ contract AmbireAccountState {
         return accountResult;
     }
 
-    function gatherAmbireData(AccountInput memory account) external view returns (uint nonce, bytes32[] memory privileges, bool isV2) {
-        privileges = new bytes32[](account.associatedKeys.length);
+    function gatherAmbireData(AccountInput memory account) external view returns (uint nonce, bool isV2, bool isErc4337Enabled) {
         isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
-        for (uint j=0; j!=account.associatedKeys.length; j++) {
-            privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
-        }
         nonce = IAmbireAccount(account.addr).nonce();
+        isErc4337Enabled = IAmbireAccount(account.addr).privileges(account.erc4337EntryPoint) == ENTRY_POINT_MARKER;
     }
 
     function getErc4337Nonce(address acc, address entryPoint) external returns (uint) {
@@ -93,5 +106,16 @@ contract AmbireAccountState {
 
     function ambireV2Check(IAmbireAccount account) external view returns(bool) {
         return account.supportsInterface(0x0a417632) || account.supportsInterface(0x150b7a02);
+    }
+
+    function getSafeAccountState(AccountInput memory account) external view returns (AccountInfo memory safeRes) {
+        safeRes.balance = address(account.addr).balance;
+        bytes memory code = address(account.addr).code;
+        if (code.length > 0) safeRes.isDeployed = true;
+        // TODO: deploy the acc? do we need that logic?
+        Safe safeAccount = Safe(account.addr);
+        safeRes.nonce = safeAccount.getNonce();
+        safeRes.associatedKeys = safeAccount.getOwners();
+        safeRes.currentBlock = block.number;
     }
 }
