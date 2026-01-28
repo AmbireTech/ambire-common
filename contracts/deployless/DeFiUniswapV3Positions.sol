@@ -75,6 +75,7 @@ struct UniV3PositionsData {
     // TickData upperTickData;
     // TickData lowerTickData;
     uint256 positionId;
+    address poolAddr;
 }
 
 contract DeFiUniswapV3Positions {
@@ -112,6 +113,7 @@ contract DeFiUniswapV3Positions {
             positions[returnArrayIndex].token0Decimals = IERC20(positionInfo.token0).decimals();
             positions[returnArrayIndex].token1Symbol = IERC20(positionInfo.token1).symbol();
             positions[returnArrayIndex].token1Decimals = IERC20(positionInfo.token1).decimals();
+            positions[returnArrayIndex].poolAddr = poolAddr;
             returnArrayIndex++;
         }
         return positions;
