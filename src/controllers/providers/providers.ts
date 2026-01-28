@@ -1,3 +1,4 @@
+import { error } from 'console'
 import { Contract } from 'ethers'
 
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -7,12 +8,15 @@ import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 /* eslint-disable no-underscore-dangle */
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
+import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
   toggleBatching: 'INITIAL'
 } as const
+
+const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
 
 /**
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
@@ -31,8 +35,18 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   // public, proxied view
   providers: RPCProviders
 
+  #scheduledResolveAssetInfoActions: {
+    [chainId: string]:
+      | {
+          promise: Promise<any>
+          data: { callback: Function; address: string }[]
+        }
+      | undefined
+  } = {}
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
+
   isBatchingEnabled = true
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -84,7 +98,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
             rpcUrl = this.#networks.networkToAddOrUpdate.rpcUrl
           }
 
-          this.#autoSetProvider(chainId, rpcUrl)
+          this.#autoInitProvider(chainId, rpcUrl)
           this.emitUpdate()
         } catch (error) {
           console.error(`Failed to auto set provider for chainId: ${prop.toString()}`, error)
@@ -138,7 +152,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.emitUpdate()
   }
 
-  #autoSetProvider(chainId: bigint, rpcUrl?: string) {
+  #autoInitProvider(chainId: bigint, rpcUrl?: string) {
     if (!rpcUrl) return
 
     const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
@@ -280,6 +294,101 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       ok: !!result,
       res: result ?? undefined,
       error: error?.message ?? undefined
+    })
+  }
+
+  async #executeBatchedFetch(network: Network): Promise<void> {
+    const allAddresses =
+      Array.from(
+        new Set(
+          this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.data.map(
+            (i) => i.address
+          )
+        )
+      ) || []
+    const portfolio = new Portfolio(
+      fetch as any,
+      this.providers[network.chainId.toString()]!,
+      network
+    )
+    const options: Partial<GetOptions> = {
+      disableAutoDiscovery: true,
+      additionalErc20Hints: allAddresses,
+      additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]]))
+    }
+    const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
+
+    this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.data.forEach((i) => {
+      const tokenInfo =
+        (i.address,
+        portfolioResponse.tokens.find(
+          (t) => t.address.toLocaleLowerCase() === i.address.toLowerCase()
+        ))
+      const nftInfo =
+        (i.address,
+        portfolioResponse.collections.find(
+          (t) => t.address.toLocaleLowerCase() === i.address.toLowerCase()
+        ))
+
+      i.callback({ tokenInfo, nftInfo })
+    })
+  }
+
+  /**
+   * Resolves symbol and decimals for tokens or name for nfts.
+   */
+  async resolveAssetInfo(
+    address: string,
+    network: Network,
+    callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void
+  ): Promise<void> {
+    if (!this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.data?.length) {
+      this.#scheduledResolveAssetInfoActions[network.chainId.toString()] = {
+        promise: new Promise((resolve, reject) => {
+          setTimeout(async () => {
+            await this.#executeBatchedFetch(network).catch(reject)
+            this.#scheduledResolveAssetInfoActions[network.chainId.toString()] = undefined
+            resolve(0)
+          }, 500)
+        }),
+        data: [{ address, callback }]
+      }
+    } else {
+      this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.data.push({
+        address,
+        callback
+      })
+    }
+    // we are returning a promise so we can await the full execution
+    return this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.promise
+  }
+
+  // TODO: Implement on the FE once the refactor is complete and
+  // all controllers from the MainController are shared across Benzin, Legends, Extension, and Mobile
+  // TODO: remove src/services/assetInfo/assetInfo.ts
+  async resolveAssetInfoAndSendResToUi({
+    requestId,
+    address,
+    network
+  }: {
+    requestId: string
+    address: string
+    network: Network
+  }) {
+    this.resolveAssetInfo(address, network, (_assetInfo: any) => {
+      this.#ui.message.sendUiMessage({
+        type: 'ResolveAssetInfo',
+        requestId,
+        ok: true,
+        res: _assetInfo ?? undefined
+      })
+    }).catch((e) => {
+      this.#ui.message.sendUiMessage({
+        type: 'ResolveAssetInfo',
+        requestId,
+        ok: false,
+        error: e.message
+      })
     })
   }
 
