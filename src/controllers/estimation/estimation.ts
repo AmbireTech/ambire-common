@@ -156,11 +156,12 @@ export class EstimationController extends EventEmitter {
     // in all cases EXCEPT the case where we're making an estimation for
     // the view only account itself. In all other, view only accounts options
     // should not be present as the user cannot pay the fee with them (no key)
-    const nativeToCheck = account.creation
+    const nativeToCheck = baseAcc.canBroadcastByOtherEOA()
       ? this.#accounts.accounts
           .filter(
             (acc) =>
               !acc.creation &&
+              !acc.safeCreation &&
               (acc.addr === op.accountAddr ||
                 !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
           )

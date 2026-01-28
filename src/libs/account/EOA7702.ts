@@ -202,7 +202,11 @@ export class EOA7702 extends BaseAccount {
   /**
    * We need to state override if the account still hasn't transitioned
    */
-  shouldStateOverrideDuringAmbireEstimation(): boolean {
+  shouldStateOverrideDuringSimulations(): boolean {
     return !this.accountState.isSmarterEoa
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return false
   }
 }

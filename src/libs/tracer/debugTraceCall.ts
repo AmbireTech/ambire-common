@@ -11,6 +11,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
@@ -61,13 +62,14 @@ function getFunctionParams(account: Account, op: AccountOp, accountState: Accoun
 }
 
 export async function debugTraceCall(
-  account: Account,
+  baseAcc: BaseAccount,
   op: AccountOp,
   network: Network,
   accountState: AccountOnchainState,
   supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
+  const account = baseAcc.getAccount()
   const opts = {
     blockTag: 'latest' as 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
@@ -75,7 +77,7 @@ export async function debugTraceCall(
     isEOA: isBasicAccount(account, accountState),
     simulation: {
       accountOps: [op],
-      account,
+      baseAccount: baseAcc,
       state: accountState
     }
   }
@@ -155,7 +157,7 @@ export async function debugTraceCall(
     .filter((i) => i?.erc === 721)
     .reduce((res: { [address: string]: Set<bigint> }, i: any) => {
       if (!res[i?.address]) res[i?.address] = new Set()
-      res[i.address].add(i.tokenId)
+      res[i.address]!.add(i.tokenId)
       return res
     }, {})
   const foundNftTransfers: [string, bigint[]][] = Object.entries(foundNftTransfersObject).map(
@@ -205,7 +207,7 @@ export async function debugTraceCall(
       if (!beforeNftCollections[i][3] || beforeNftCollections[i][3] === '0x') return true
       const foundAfterToken = afterNftCollections.find(
         (t: any, j: number) =>
-          deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i][0].toLowerCase()
+          deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i]![0].toLowerCase()
       )
       if (!foundAfterToken || !foundAfterToken[0]) return false
 

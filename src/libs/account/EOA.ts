@@ -124,7 +124,11 @@ export class EOA extends BaseAccount {
    * we won't be able to perform the ambire estimation as it works
    * only with smart accounts
    */
-  shouldStateOverrideDuringAmbireEstimation(): boolean {
+  shouldStateOverrideDuringSimulations(): boolean {
     return true
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return false
   }
 }

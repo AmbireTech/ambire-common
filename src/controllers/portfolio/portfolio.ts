@@ -1360,6 +1360,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             discoveryResponse?.data?.hints
           )
 
+          const baseAcc = state
+            ? getBaseAccount(
+                selectedAccount,
+                state,
+                this.#keystore.getAccountKeys(selectedAccount),
+                network
+              )
+            : null
           const isSuccessful = await this.updatePortfolioState(
             accountId,
             network,
@@ -1369,9 +1377,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               isManualUpdate,
               blockTag: 'both',
               ...(currentAccountOps &&
+                baseAcc &&
                 state && {
                   simulation: {
-                    account: selectedAccount,
+                    baseAccount: baseAcc,
                     accountOps: currentAccountOps,
                     state
                   }

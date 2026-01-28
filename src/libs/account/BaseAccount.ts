@@ -88,7 +88,9 @@ export abstract class BaseAccount {
    */
   abstract getNonceId(): string
 
-  abstract shouldStateOverrideDuringAmbireEstimation(): boolean
+  abstract shouldStateOverrideDuringSimulations(): boolean
+
+  abstract canBroadcastByOtherEOA(): boolean
 
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall() {

@@ -30,9 +30,8 @@ const vOneFive = {
 }
 
 export const execTransactionAbi = [
-  'execTransaction(address to,uint256 value,bytes calldata data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address payable refundReceiver,bytes memory signatures) external payable override returns (bool success)'
+  'function execTransaction(address to,uint256 value,bytes calldata data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address payable refundReceiver,bytes memory signatures)'
 ]
-
 /**
  * In order to do batching, safe needs an extra contract helper called multisend
  * This is the latest contract and it's safe to use across versions

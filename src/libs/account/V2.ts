@@ -179,7 +179,11 @@ export class V2 extends BaseAccount {
   /**
    * The Ambire estimation is made to work perfectly with Ambire SA
    */
-  shouldStateOverrideDuringAmbireEstimation(): boolean {
+  shouldStateOverrideDuringSimulations(): boolean {
     return false
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return true
   }
 }

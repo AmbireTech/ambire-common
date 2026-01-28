@@ -79,13 +79,14 @@ export async function ambireEstimateGas(
     calls.push(getActivatorCall(op.accountAddr))
   }
 
-  const shouldStateOverride = baseAcc.shouldStateOverrideDuringAmbireEstimation()
+  const shouldStateOverride =
+    !network.rpcNoStateOverride && baseAcc.shouldStateOverrideDuringSimulations()
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
     [account.addr, op.nonce || 1, calls, '0x'],
     getProbableCallData(op, accountState, baseAcc.shouldIncludeActivatorCall()),
-    account.associatedKeys,
+    shouldStateOverride ? [account.addr] : account.associatedKeys,
     feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,

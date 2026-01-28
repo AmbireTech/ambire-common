@@ -9,6 +9,7 @@ import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
+import { getSigForCalculations } from '../estimate/estimateHelpers'
 import {
   BundlerStateOverride,
   FeePaymentOption,
@@ -93,13 +94,13 @@ export class Safe extends BaseAccount {
         multiSendAddr,
         0n,
         concat(multiSendCalls),
-        1, // multiSend only works with delegate call
+        1n, // multiSend only works with delegate call
         0n, // safe, outer gas gets set
         0n, // safe, outer gas gets set
         0n, // safe, outer gas price gets set
         ZeroAddress, // gasToken
         ZeroAddress, // no refunder
-        [] // signatures
+        concat([getSigForCalculations(), getSigForCalculations()]) // signatures
       ]) as Hex
     }
 
@@ -152,7 +153,11 @@ export class Safe extends BaseAccount {
    * We state override safes as the ambire estimation is working
    * with Ambire smart accounts
    */
-  shouldStateOverrideDuringAmbireEstimation(): boolean {
+  shouldStateOverrideDuringSimulations(): boolean {
+    return true
+  }
+
+  canBroadcastByOtherEOA(): boolean {
     return true
   }
 }

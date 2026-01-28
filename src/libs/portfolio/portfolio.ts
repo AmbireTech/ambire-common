@@ -1,4 +1,3 @@
-/* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
 import { ZeroAddress } from 'ethers'
 /* eslint-disable guard-for-in */
@@ -242,7 +241,7 @@ export class Portfolio {
       erc20s: [],
       erc721s: {}
     }
-    if (simulation && simulation.account.addr !== accountAddr)
+    if (simulation && simulation.baseAccount.getAccount().addr !== accountAddr)
       throw new Error('wrong account passed')
 
     const start = Date.now()

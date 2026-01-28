@@ -5,6 +5,7 @@ import { canBecomeSmarterOnChain } from './account'
 import { BaseAccount } from './BaseAccount'
 import { EOA } from './EOA'
 import { EOA7702 } from './EOA7702'
+import { Safe } from './Safe'
 import { V1 } from './V1'
 import { V2 } from './V2'
 
@@ -14,6 +15,7 @@ export function getBaseAccount(
   accountKeys: Key[],
   network: Network
 ): BaseAccount {
+  if (account.safeCreation) return new Safe(account, network, accountState)
   if (accountState.isEOA) {
     if (
       accountState.isSmarterEoa ||
