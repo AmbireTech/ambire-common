@@ -98,8 +98,7 @@ export interface AccountOnchainState {
   eoaNonce: bigint | null
   nonce: bigint
   erc4337Nonce: bigint
-  associatedKeys: { [key: string]: string }
-  deployError: boolean
+  associatedKeys: string[]
   balance: bigint
   isEOA: boolean
   isErc4337Enabled: boolean
