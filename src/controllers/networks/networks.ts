@@ -307,11 +307,12 @@ export class NetworksController extends EventEmitter implements INetworksControl
       )
         return
 
+      const provider = this.#getProvider(network.chainId)
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       getNetworkInfo(
         this.#fetch,
-        network.selectedRpcUrl,
         network.chainId,
+        provider,
         async (info) => {
           if (Object.values(info).some((prop) => prop === 'LOADING')) {
             return
@@ -351,10 +352,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()
 
+      const provider = this.#getProvider(networkToAddOrUpdate.chainId)
       await getNetworkInfo(
         this.#fetch,
-        networkToAddOrUpdate.rpcUrl,
         networkToAddOrUpdate.chainId,
+        provider,
         (info) => {
           if (this.networkToAddOrUpdate) {
             this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
@@ -470,11 +472,12 @@ export class NetworksController extends EventEmitter implements INetworksControl
           return
         }
 
+        const provider = this.#getProvider(chainId)
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         getNetworkInfo(
           this.#fetch,
-          changedNetwork.selectedRpcUrl,
-          this.#networks[chainId.toString()]!.chainId!,
+          chainId,
+          provider,
           async (info) => {
             if (Object.values(info).some((prop) => prop === 'LOADING')) {
               return
