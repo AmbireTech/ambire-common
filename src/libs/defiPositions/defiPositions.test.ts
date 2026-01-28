@@ -222,7 +222,7 @@ describe('Defi positions helper and portfolio functions', () => {
   })
   describe('getCanSkipUpdate', () => {
     it("Should not skip if there is no previous state or there hasn't been a successful update", () => {
-      const canSkip = getCanSkipUpdate(undefined, undefined)
+      const canSkip = getCanSkipUpdate(undefined, false)
 
       expect(canSkip).toBe(false)
     })
@@ -233,10 +233,7 @@ describe('Defi positions helper and portfolio functions', () => {
 
       portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 61000
 
-      const canSkip = getCanSkipUpdate(
-        portfolioState.result!.defiPositions,
-        portfolioState.result?.defiPositions.nonceId
-      )
+      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, false)
 
       expect(canSkip).toBe(false)
     })
@@ -247,7 +244,7 @@ describe('Defi positions helper and portfolio functions', () => {
 
       portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 10000
 
-      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, 'nonce-2')
+      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, true)
 
       expect(canSkip).toBe(false)
     })
@@ -264,7 +261,8 @@ describe('Defi positions helper and portfolio functions', () => {
         portfolioState.result!.defiPositions,
         true,
         true,
-        ['session-id-1']
+        ['session-id-1'],
+        false
       )
       expect(shouldBypass).toBe(true)
     })
@@ -279,7 +277,8 @@ describe('Defi positions helper and portfolio functions', () => {
         portfolioState.result!.defiPositions,
         true,
         true,
-        ['session-id-1']
+        ['session-id-1'],
+        false
       )
 
       expect(shouldBypass).toBe(false)
