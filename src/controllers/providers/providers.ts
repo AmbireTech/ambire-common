@@ -237,11 +237,22 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     args: unknown[]
   }) {
     const provider = this.providers[chainId.toString()]
-    if (!provider) return
+    if (!provider)
+      return this.emitError({
+        error: new Error('callProviderAndSendResToUi: provider not found'),
+        message: 'Provider not found',
+        level: 'silent'
+      })
 
     const fn = provider[method]
 
-    if (typeof fn !== 'function') return
+    if (typeof fn !== 'function') {
+      return this.emitError({
+        error: new Error('callProviderAndSendResToUi: not a valid provider method'),
+        message: `${method} is not a valid JsonRpcProvider method`,
+        level: 'silent'
+      })
+    }
 
     try {
       const result = await (fn as Function).apply(provider, args)
@@ -279,13 +290,25 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     args: unknown[]
   }) {
     const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
-    if (!network) return
+    if (!network) {
+      return this.emitError({
+        error: new Error('callContractAndSendResToUi: network not found'),
+        message: `Network with chainId: ${chainId} not found`,
+        level: 'silent'
+      })
+    }
 
     const provider = this.providers[network.chainId.toString()]
     const contract = new Contract(address, [abi], provider)
     let error: any = undefined
 
-    if (typeof contract[method] !== 'function') return
+    if (typeof contract[method] !== 'function') {
+      return this.emitError({
+        error: new Error('callContractAndSendResToUi: not a valid Contract method'),
+        message: `${method.toString()} is not a valid Contract method`,
+        level: 'silent'
+      })
+    }
     const result = await (contract[method] as Function).apply(contract, args)
 
     this.#ui.message.sendUiMessage({
