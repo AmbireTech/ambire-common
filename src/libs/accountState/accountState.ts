@@ -132,7 +132,7 @@ export async function getAccountState(
       nonce: !isSmartAccount(account) && !isSmarterEoa ? eoaNonces[account.addr] : accResult.nonce,
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
-      associatedKeys: Object.fromEntries(associatedKeys),
+      associatedKeys,
       isV2: accResult.isV2,
       balance: accResult.balance,
       isEOA: accResult.isEOA,
