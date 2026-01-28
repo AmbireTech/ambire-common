@@ -43,6 +43,7 @@ import { SocketModule } from './modules/Socket'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import traderJoeModule from './modules/TraderJoe'
+import TrustlessManifestoModule from './modules/TrustlessManifesto'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
@@ -55,6 +56,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
+  TrustlessManifestoModule,
   LidoModule,
   gasTankModule,
   airdropsModule,

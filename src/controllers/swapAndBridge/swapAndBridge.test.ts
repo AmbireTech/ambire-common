@@ -133,12 +133,6 @@ const selectedAccountCtrl = new SelectedAccountController({
 
 const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
 
-const inviteCtrl = new InviteController({
-  relayerUrl: '',
-  fetch,
-  storage: storageCtrl
-})
-
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
 const portfolioCtrl = new PortfolioController(
@@ -216,7 +210,6 @@ const swapAndBridgeController = new SwapAndBridgeController({
   activity: activityCtrl,
   storage: storageCtrl,
   swapProvider: socketAPIMock as any,
-  invite: inviteCtrl,
   keystore,
   portfolio: portfolioCtrl,
   providers: providersCtrl,
@@ -576,7 +569,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromAmountFieldMode).toEqual('fiat')
     swapAndBridgeController.updateForm({ fromAmount: '0.99785' }) // USDT price in USD
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
-    expect(swapAndBridgeController.validateFromAmount.success).toEqual(true)
+    expect(swapAndBridgeController.validateFromAmount.severity).toEqual('success')
   })
   test('should unload screen', () => {
     swapAndBridgeController.unloadScreen('1')
