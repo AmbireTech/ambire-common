@@ -173,6 +173,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #currentUserRequest: UserRequest | null = null
 
+  #shouldSimulateAccountOps = true
+
   get currentUserRequest() {
     return this.#currentUserRequest
   }
@@ -210,7 +212,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     addTokensToBeLearned,
     onSetCurrentUserRequest,
     onBroadcastSuccess,
-    onBroadcastFailed
+    onBroadcastFailed,
+    shouldSimulateAccountOps = true
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
@@ -240,6 +243,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
+    shouldSimulateAccountOps?: boolean
   }) {
     super(eventEmitterRegistry)
 
@@ -266,6 +270,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
+    this.#shouldSimulateAccountOps = shouldSimulateAccountOps
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
@@ -1034,7 +1039,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const walletSendCallsVersion = isWalletSendCalls
-        ? request.params[0].version ?? '1.0.0'
+        ? (request.params[0].version ?? '1.0.0')
         : undefined
 
       userRequest =
@@ -1739,7 +1744,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ],
             meta
           },
-          shouldSimulate: true,
+          shouldSimulate: this.#shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
             const accountOpsForSimulation = getAccountOpsForSimulation(
               account,

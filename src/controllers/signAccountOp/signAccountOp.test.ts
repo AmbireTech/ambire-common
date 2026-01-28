@@ -43,6 +43,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -429,6 +430,7 @@ const init = async (
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const portfolio = new PortfolioController(
     storageCtrl,
     fetch,
@@ -438,7 +440,8 @@ const init = async (
     keystore,
     'https://staging-relayer.ambire.com',
     velcroUrl,
-    new BannerController(storageCtrl)
+    new BannerController(storageCtrl),
+    featureFlagsCtrl
   )
   const phishing = new PhishingController({
     fetch,

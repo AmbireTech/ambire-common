@@ -20,6 +20,7 @@ import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -163,7 +164,7 @@ const prepareTest = async () => {
     keystore,
     autoLogin: autoLoginCtrl
   })
-
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const portfolioCtrl = new PortfolioController(
     storageCtrl,
     fetch,
@@ -173,7 +174,8 @@ const prepareTest = async () => {
     keystore,
     relayerUrl,
     velcroUrl,
-    new BannerController(storageCtrl)
+    new BannerController(storageCtrl),
+    featureFlagsCtrl
   )
 
   await accountsCtrl.initialLoadPromise
