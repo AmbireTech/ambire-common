@@ -319,9 +319,12 @@ const prepareTest = async (
     storage: storageCtrl,
     fetch,
     relayerUrl,
+    getProvider: (chainId) => {
+      return providersCtrl.providers[chainId.toString()]!
+    },
     onAddOrUpdateNetworks: () => {}
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
     storageCtrl,

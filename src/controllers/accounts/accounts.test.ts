@@ -60,11 +60,14 @@ describe('AccountsController', () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
+    getProvider: (chainId) => {
+      return providersCtrl.providers[chainId.toString()]!
+    },
     onAddOrUpdateNetworks: () => {}
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
   providersCtrl.providers = providers
 
   let accountsCtrl: IAccountsController

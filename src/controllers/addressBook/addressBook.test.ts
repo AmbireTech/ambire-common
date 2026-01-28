@@ -75,12 +75,16 @@ describe('AddressBookController', () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
+    getProvider: (chainId) => {
+      return providersCtrl.providers[chainId.toString()]!
+    },
     onAddOrUpdateNetworks: () => {}
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-  providersCtrl.providers = providers
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl.providers = providers
+
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,

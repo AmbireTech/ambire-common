@@ -6,8 +6,12 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { ProvidersController } from '../../controllers/providers/providers'
+import { UiController } from '../../controllers/ui/ui'
 import { AddNetworkRequestParams, INetworksController, NetworkInfo } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
 
@@ -20,13 +24,21 @@ describe('Networks Controller', () => {
 
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
+    let providersCtrl: IProvidersController
+
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
+
     networksController = new NetworksController({
       storage: storageCtrl,
       fetch,
       relayerUrl,
-      onAddOrUpdateNetworks: () => {},
-      onRemoveNetwork: () => {}
+      getProvider: (chainId) => {
+        return providersCtrl.providers[chainId.toString()]!
+      },
+      onAddOrUpdateNetworks: () => {}
     })
+    providersCtrl = new ProvidersController(networksController, storageCtrl, uiCtrl)
   })
 
   test('should initialize with predefined networks if storage is empty', async () => {
@@ -180,14 +192,21 @@ describe('Networks Controller', () => {
     skipBeforeEach = true
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
+    let providersCtrl: IProvidersController
+
     const testnetNetworksController = new NetworksController({
       defaultNetworksMode: 'testnet',
       storage: storageCtrl,
       fetch,
       relayerUrl,
-      onAddOrUpdateNetworks: () => {},
-      onRemoveNetwork: () => {}
+      getProvider: (chainId) => {
+        return providersCtrl.providers[chainId.toString()]!
+      },
+      onAddOrUpdateNetworks: () => {}
     })
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
+    providersCtrl = new ProvidersController(networksController, storageCtrl, uiCtrl)
 
     await testnetNetworksController.initialLoadPromise
     expect(testnetNetworksController.networks.find((n) => n.chainId === 1n)).toBe(undefined)

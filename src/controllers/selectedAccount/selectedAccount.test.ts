@@ -103,14 +103,17 @@ const prepareTest = async () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
+    getProvider: (chainId) => {
+      return providersCtrl.providers[chainId.toString()]!
+    },
     onAddOrUpdateNetworks: () => {}
   })
 
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-  providersCtrl.providers = providers
-
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
+
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl.providers = providers
 
   // Purposefully mocking these methods as they are not used
   // and listeners result in a memory leak warning in tests

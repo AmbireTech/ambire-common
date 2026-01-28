@@ -73,15 +73,19 @@ const prepareTest = async () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
+    getProvider: (chainId) => {
+      return providersCtrl.providers[chainId.toString()]!
+    },
     onAddOrUpdateNetworks: () => {}
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
 
   providersCtrl.providers = Object.fromEntries(
     networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
+
   const keystoreController = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
   const accountsCtrl = new AccountsController(

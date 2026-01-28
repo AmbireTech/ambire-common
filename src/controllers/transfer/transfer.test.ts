@@ -166,13 +166,16 @@ const prepareTest = async () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
+    getProvider: (chainId) => {
+      return providersCtrl.providers[chainId.toString()]!
+    },
     onAddOrUpdateNetworks: () => {}
   })
 
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
+  const uiCtrl = new UiController({ uiManager })
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
   providersCtrl.providers = providers
 
-  const uiCtrl = new UiController({ uiManager })
   const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
   const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
 
