@@ -663,7 +663,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     }
 
-    if (this.estimation.status === EstimationStatus.Success) {
+    if (this.estimation.status === EstimationStatus.Success && this.gasPrices) {
       this.#updateFeeSpeeds() // needed for the logic below
 
       const payOptionsPaidByUsOrGasTank = this.estimation.availableFeeOptions

@@ -28,6 +28,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -219,6 +220,7 @@ const prepareTest = async () => {
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
 
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const portfolioController = new PortfolioController(
     storageCtrl,
     fetch,
@@ -228,7 +230,8 @@ const prepareTest = async () => {
     keystoreController,
     relayerUrl,
     velcroUrl,
-    new BannerController(storageCtrl)
+    new BannerController(storageCtrl),
+    featureFlagsCtrl
   )
   const activity = new ActivityController(
     storageCtrl,
@@ -349,20 +352,20 @@ describe('Transfer Controller', () => {
       }
     })
 
-    expect(transferController.validationFormMsgs.amount.success).toBe(true)
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('warning')
 
     // Recipient address
     await transferController.update({
       isRecipientAddressUnknownAgreed: true
     })
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('warning')
     // Amount
     await transferController.update({
       amount: '0'
     })
 
-    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('error')
 
     await transferController.update({
       amount: transferController.maxAmount
@@ -371,7 +374,7 @@ describe('Transfer Controller', () => {
       amount: String(Number(transferController.amount) + 1)
     })
 
-    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('error')
 
     // Reset
     await transferController.update({

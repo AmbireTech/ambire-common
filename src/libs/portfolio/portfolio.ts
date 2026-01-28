@@ -30,7 +30,11 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
-// List of tokens to exclude from display by chainId and address
+/**
+ * List of tokens to exclude from display by chainId and address
+ *
+ * Note: MUST BE CHECKSUMMED ADDRESSES
+ */
 const EXCLUDED_TOKENS: Record<string, string[]> = {
   // Gnosis Chain (xDAI)
   '100': [
@@ -38,7 +42,8 @@ const EXCLUDED_TOKENS: Record<string, string[]> = {
   ],
   // Polygon
   '137': [
-    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' // EURe - Duplicate
+    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6', // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0x0B91B07bEb67333225A5bA0259D55AeE10E3A578' // MNEP - scam token
   ],
   // Ethereum Mainnet
   '1': [
@@ -71,6 +76,7 @@ export const LIMITS: Limits = {
   }
 }
 
+// @TODO: Move this somewhere else
 export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** External hints API (Velcro) request failed but fallback is sufficient */
   NonCriticalApiHintsError: 'NonCriticalApiHintsError',
@@ -79,7 +85,9 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** No external API (Velcro) hints are available- the request failed without fallback */
   NoApiHintsError: 'NoApiHintsError',
   /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError'
+  PriceFetchError: 'PriceFetchError',
+  /** Defi discovery failed */
+  DefiDiscoveryError: 'DefiDiscoveryError'
 }
 
 export const getEmptyHints = (): Hints => ({
@@ -92,7 +100,6 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  lastExternalApiUpdateData: null,
   fetchPinned: true,
   priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
@@ -164,7 +171,6 @@ export class Portfolio {
    * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
    */
   protected async externalHintsAPIDiscovery(options?: {
-    lastExternalApiUpdateData: PortfolioLibGetResult['lastExternalApiUpdateData'] | null
     disableAutoDiscovery?: boolean
     chainId: bigint
     accountAddr: string
@@ -173,13 +179,7 @@ export class Portfolio {
     hints: Hints
     error?: PortfolioLibGetResult['errors'][number]
   }> {
-    const {
-      disableAutoDiscovery = false,
-      lastExternalApiUpdateData,
-      chainId,
-      accountAddr,
-      baseCurrency
-    } = options || {}
+    const { disableAutoDiscovery = false, chainId, accountAddr, baseCurrency } = options || {}
     let hints: Hints = getEmptyHints()
 
     try {
@@ -204,52 +204,19 @@ export class Portfolio {
             }
           }
         }
-      } else if (lastExternalApiUpdateData) {
-        hints.externalApi = {
-          lastUpdate: lastExternalApiUpdateData.lastUpdate,
-          hasHints: lastExternalApiUpdateData.hasHints,
-          prices: {}
-        }
       }
 
       return {
         hints
       }
     } catch (error: any) {
-      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
-
-      // It's important for DX to see this error
-      // eslint-disable-next-line no-console
-      console.error(errorMesssage)
-
-      if (!lastExternalApiUpdateData) {
-        return {
-          hints,
-          error: {
-            name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-            message: errorMesssage,
-            level: 'critical'
-          }
-        }
-      }
-
-      const TEN_MINUTES = 10 * 60 * 1000
-      const lastUpdate = lastExternalApiUpdateData.lastUpdate
-      const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
-
-      hints.externalApi = {
-        ...lastExternalApiUpdateData,
-        prices: {}
-      }
-
+      console.error('Portfolio.externalHintsAPIDiscovery error:', error)
       return {
         hints,
         error: {
-          name: isLastUpdateTooOld
-            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
-          message: errorMesssage,
-          level: isLastUpdateTooOld ? 'critical' : 'silent'
+          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+          message: error?.message || 'Unknown error',
+          level: 'warning'
         }
       }
     }
@@ -259,7 +226,6 @@ export class Portfolio {
     const errors: PortfolioLibGetResult['errors'] = []
     const {
       simulation,
-      lastExternalApiUpdateData,
       disableAutoDiscovery = false,
       baseCurrency,
       fetchPinned,
@@ -283,7 +249,6 @@ export class Portfolio {
     const chainId = this.network.chainId
 
     const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
-      lastExternalApiUpdateData: lastExternalApiUpdateData ?? null,
       disableAutoDiscovery,
       chainId,
       accountAddr,
@@ -530,12 +495,6 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      lastExternalApiUpdateData: hints.externalApi
-        ? {
-            lastUpdate: hints.externalApi.lastUpdate,
-            hasHints: hints.externalApi.hasHints
-          }
-        : null,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
