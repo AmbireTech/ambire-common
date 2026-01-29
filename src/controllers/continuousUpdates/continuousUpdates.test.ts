@@ -7,7 +7,6 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
-import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import * as accountStateLib from '../../libs/accountState/accountState'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -78,12 +77,6 @@ const submittedAccountOp = {
     identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
   }
 } as SubmittedAccountOp
-
-function filterProviders(providers: RPCProviders, chainIdsToFilter: string[] = []): RPCProviders {
-  return Object.fromEntries(
-    Object.entries(providers).filter(([key]) => chainIdsToFilter.includes(key))
-  ) as RPCProviders
-}
 
 const prepareTest = async () => {
   const storage = produceMemoryStore()
