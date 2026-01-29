@@ -101,7 +101,7 @@ export async function getAccountState(
 
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
     const account = accounts[index]!
-    const associatedKeys = accResult.associatedKeys
+    const associatedKeys = accResult.associatedKeys.filter((k: string) => k !== ERC_4337_ENTRYPOINT)
 
     // an EOA is smarter if it either:
     // - has an active authorization
