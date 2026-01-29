@@ -196,6 +196,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
           batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
         }
       )
+      this.#providers[stringChainId].isWorking = true
       this.#providers[stringChainId]!.batchMaxCount = batchMaxCount
     }
   }
