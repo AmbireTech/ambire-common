@@ -354,7 +354,8 @@ const prepareTest = async () => {
       onSetCurrentUserRequest: () => {},
       onBroadcastSuccess: async () => {},
       onBroadcastFailed: () => {},
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      shouldSimulateAccountOps: false
     }),
     getSignAccountOp,
     getCallsRequest

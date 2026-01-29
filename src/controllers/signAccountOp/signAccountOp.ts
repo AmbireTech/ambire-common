@@ -639,8 +639,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get isInitialized(): boolean {
-    // The estimation becomes null when the signAccountOp controller
-    // is destroyed.
     return this.estimation && this.estimation.isInitialized()
   }
 
