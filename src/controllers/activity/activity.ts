@@ -621,8 +621,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     this.#accounts.accounts.map((a) => a.addr)
                   )
 
-                  console.log('Debug: accountOpRecipients', accountOpRecipients)
-
                   accountOpRecipients.forEach((accAddr) => {
                     if (!portfoliosToUpdate[accAddr]) portfoliosToUpdate[accAddr] = []
 
