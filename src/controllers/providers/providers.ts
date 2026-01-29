@@ -61,10 +61,12 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.#storage = storage
     this.#ui = ui
 
-    // Proxy over the providers map that:
-    // - Lazily auto-initializes a provider when a chainId is accessed
-    // - Removes and destroys providers for networks no longer in allNetworks
-    // - Emits updates only when the providers set actually changes
+    /**
+     * Proxy over the providers map that:
+     * - Lazily initializes a provider when a chainId is accessed
+     * - Removes and destroys providers for networks no longer in allNetworks
+     * - Emits updates only when the providers set actually changes
+     */
     this.#providersProxy = new Proxy(this.#providers, {
       get: (target, prop, receiver) => {
         try {
@@ -74,7 +76,10 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
             this.tempProviders = {}
             this.emitUpdate()
           }
+          // Handle only numeric chainIds or the special 'temp' key for temporary providers.
+          // Any other property (e.g. toJSON) is forwarded to the target without triggering proxy logic.
           if (isNaN(Number(prop)) && prop !== 'temp') return Reflect.get(target, prop, receiver)
+          // forwarded to the target without triggering proxy logic while ctrl is still loading.
           if (!!this.initialLoadPromise) return Reflect.get(target, prop, receiver)
 
           if (prop in target) {
@@ -246,20 +251,35 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     args: unknown[]
   }) {
     const provider = this.providers[chainId.toString()]
-    if (!provider)
-      return this.emitError({
+    if (!provider) {
+      this.emitError({
         error: new Error('callProviderAndSendResToUi: provider not found'),
         message: 'Provider not found',
         level: 'silent'
       })
 
+      return this.#ui.message.sendUiMessage({
+        type: 'RpcCallRes',
+        requestId,
+        ok: false,
+        error: 'Provider not found'
+      })
+    }
+
     const fn = provider[method]
 
     if (typeof fn !== 'function') {
-      return this.emitError({
+      this.emitError({
         error: new Error('callProviderAndSendResToUi: not a valid provider method'),
         message: `${method} is not a valid JsonRpcProvider method`,
         level: 'silent'
+      })
+
+      return this.#ui.message.sendUiMessage({
+        type: 'RpcCallRes',
+        requestId,
+        ok: false,
+        error: `${method} is not a valid JsonRpcProvider method`
       })
     }
 
@@ -300,10 +320,16 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   }) {
     const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
     if (!network) {
-      return this.emitError({
+      this.emitError({
         error: new Error('callContractAndSendResToUi: network not found'),
         message: `Network with chainId: ${chainId} not found`,
         level: 'silent'
+      })
+      return this.#ui.message.sendUiMessage({
+        type: 'CallContract',
+        requestId,
+        ok: false,
+        error: `Network with chainId: ${chainId} not found`
       })
     }
 
@@ -312,10 +338,17 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     let error: any = undefined
 
     if (typeof contract[method] !== 'function') {
-      return this.emitError({
+      this.emitError({
         error: new Error('callContractAndSendResToUi: not a valid Contract method'),
         message: `${method.toString()} is not a valid Contract method`,
         level: 'silent'
+      })
+
+      return this.#ui.message.sendUiMessage({
+        type: 'CallContract',
+        requestId,
+        ok: false,
+        error: `${method.toString()} is not a valid Contract method`
       })
     }
     const result = await (contract[method] as Function).apply(contract, args)
