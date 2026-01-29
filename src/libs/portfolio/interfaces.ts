@@ -200,6 +200,7 @@ export type FormattedPortfolioDiscoveryResponse = {
       [chainId: string]: number
     }
   } | null
+  discoveryTime: number
   errors: ExtendedErrorWithLevel[]
 }
 
@@ -327,6 +328,7 @@ export type PortfolioProjectedRewardsResult = {
     walletPrice: number
   }[]
   supportedChainIds: number[]
+  reasonToNotDisplayProjectedRewards: 'LEGACY_ACCOUNT' | 'BLACKLISTED'
 }
 
 export type ProjectedRewardsStats = {
@@ -342,16 +344,19 @@ export type ProjectedRewardsStats = {
   averageStkWalletBalance: number
   // Other
   governanceWeight: number
-  swapVolume: number
-  poolSize: number
-  rank: number
   totalScore: number
   multiplierCount: number
-  multiplier: number
   estimatedRewards: number
   estimatedRewardsUSD: number
-  multipliers: PortfolioProjectedRewardsResult['multipliers']
-}
+} & Pick<
+  PortfolioProjectedRewardsResult,
+  | 'swapVolume'
+  | 'poolSize'
+  | 'rank'
+  | 'multiplier'
+  | 'multipliers'
+  | 'reasonToNotDisplayProjectedRewards'
+>
 
 export type PortfolioKeyResult =
   | PortfolioRewardsResult

@@ -630,8 +630,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get isInitialized(): boolean {
-    // The estimation becomes null when the signAccountOp controller
-    // is destroyed.
     return this.estimation && this.estimation.isInitialized()
   }
 
@@ -1266,8 +1264,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.status = null
     this.signedTransactionsCount = null
     this.#stopRefetching = true
-    this.gasPrice = null as any
-    this.estimation = null as any
   }
 
   /**

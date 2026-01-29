@@ -1095,9 +1095,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
@@ -1114,10 +1113,11 @@ export class MainController extends EventEmitter implements IMainController {
     ] || {
       shouldEmitUpdate: false,
       chainsToUpdate: [],
+      portfoliosToUpdate: {},
       updatedAccountsOps: [],
       newestOpTimestamp: 0
     }
-    const { shouldEmitUpdate, chainsToUpdate, newestOpTimestamp } =
+    const { shouldEmitUpdate, chainsToUpdate, portfoliosToUpdate, newestOpTimestamp } =
       updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
@@ -1139,6 +1139,13 @@ export class MainController extends EventEmitter implements IMainController {
           )
 
           await this.updateSelectedAccountPortfolio({ networks })
+
+          Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+            this.portfolio.updateSelectedAccount(
+              accountAddr,
+              this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+            )
+          })
         }
       }
     }
