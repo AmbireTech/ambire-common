@@ -150,7 +150,7 @@ describe('AccountState', () => {
       accountErc4337,
       accountEOANonceNonZero
     ]
-    const state = await getAccountState(provider, polygon, accounts)
+    const state = await getAccountState(provider, polygon, accounts, [])
 
     expect(state.length).toBe(6)
 
@@ -195,7 +195,7 @@ describe('AccountState', () => {
     }
 
     const ethereumProvider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
-    const state = await getAccountState(ethereumProvider, ethereum, [account7702])
+    const state = await getAccountState(ethereumProvider, ethereum, [account7702], [])
 
     expect(state.length).toBe(1)
 
@@ -233,7 +233,7 @@ describe('AccountState', () => {
     ]
 
     const optimismProvider = getRpcProvider(optimism.rpcUrls, optimism.chainId)
-    const state = await getAccountState(optimismProvider, optimism, [safeAcc])
+    const state = await getAccountState(optimismProvider, optimism, [safeAcc], [])
 
     expect(state.length).toBe(1)
 
