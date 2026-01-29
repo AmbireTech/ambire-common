@@ -199,6 +199,7 @@ export type FormattedPortfolioDiscoveryResponse = {
       [chainId: string]: number
     }
   } | null
+  discoveryTime: number
   errors: ExtendedErrorWithLevel[]
 }
 
