@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -8,6 +7,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
+import { isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
@@ -155,8 +155,7 @@ export class EstimationController extends EventEmitter {
       ? this.#accounts.accounts
           .filter(
             (acc) =>
-              !acc.creation &&
-              !acc.safeCreation &&
+              !isSmartAccount(acc) &&
               (acc.addr === op.accountAddr ||
                 !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
           )

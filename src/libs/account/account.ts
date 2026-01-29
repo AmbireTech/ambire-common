@@ -189,7 +189,8 @@ export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
 export const isAmbireV2Account = (factoryAddr?: string) =>
   factoryAddr && getAddress(factoryAddr) === AMBIRE_ACCOUNT_FACTORY
 
-export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
+export const isSmartAccount = (account?: Account | null) =>
+  !!account && (!!account.creation || !!account.safeCreation)
 
 /**
  * Checks if a (basic) EOA account is a derived one,
