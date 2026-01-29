@@ -1,11 +1,11 @@
 import { Account, IAccountsController } from '../../interfaces/account'
-import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
+import { UserRequest } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -25,7 +25,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     network: Network
     activity: IActivityController
     provider: RPCProvider
-    fromRequestId: AccountOpAction['id']
+    fromRequestId: UserRequest['id']
     accountOp: AccountOp
     shouldSimulate: boolean
     traceCall?: Function
