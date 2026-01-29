@@ -1,4 +1,3 @@
-import { error } from 'console'
 import { Contract } from 'ethers'
 
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -30,6 +29,8 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   #ui: IUiController
 
   #providers: RPCProviders = {}
+
+  tempProviders: RPCProviders = {}
 
   #providersProxy: RPCProviders
 
@@ -67,41 +68,33 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.#providersProxy = new Proxy(this.#providers, {
       get: (target, prop, receiver) => {
         try {
-          if (isNaN(Number(prop))) return Reflect.get(target, prop, receiver)
+          // Clean up the temp provider if the is no networkToAddOrUpdate
+          if (!this.#networks.networkToAddOrUpdate && Object.keys(this.tempProviders).length) {
+            Object.values(this.tempProviders).forEach((p) => p.destroy())
+            this.tempProviders = {}
+            this.emitUpdate()
+          }
+          if (isNaN(Number(prop)) && prop !== 'temp') return Reflect.get(target, prop, receiver)
           if (!!this.initialLoadPromise) return Reflect.get(target, prop, receiver)
 
-          // Clean up temp providers first (any chainId not in allNetworks)
-          if (!this.#networks.networkToAddOrUpdate) {
-            let shouldEmit = false
-            for (const [chainIdStr, provider] of Object.entries(target)) {
-              const chainId = BigInt(chainIdStr)
-              const networkExists = this.#networks.allNetworks.some((n) => n.chainId === chainId)
-
-              if (!networkExists && provider) {
-                provider.destroy()
-                delete target[chainIdStr]
-                shouldEmit = true
-              }
-            }
-            if (shouldEmit) this.emitUpdate()
+          if (prop in target) {
+            return Reflect.get(target, prop, receiver)
           }
-
-          if (prop in target) return Reflect.get(target, prop, receiver)
+          if (
+            this.#networks.networkToAddOrUpdate &&
+            !this.tempProviders[this.#networks.networkToAddOrUpdate.chainId.toString()]
+          ) {
+            this.#autoInitProvider('temp')
+          }
+          if (prop === 'temp') {
+            return this.#networks.networkToAddOrUpdate?.chainId
+              ? this.tempProviders[this.#networks.networkToAddOrUpdate.chainId.toString()]
+              : undefined
+          }
 
           const chainId = BigInt(prop.toString())
-          let rpcUrl: string | undefined = undefined
           const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
-          if (network) rpcUrl = network.selectedRpcUrl
-          if (
-            !network &&
-            this.#networks.networkToAddOrUpdate &&
-            this.#networks.networkToAddOrUpdate.chainId === chainId
-          ) {
-            rpcUrl = this.#networks.networkToAddOrUpdate.rpcUrl
-          }
-
-          this.#autoInitProvider(chainId, rpcUrl)
-          this.emitUpdate()
+          if (network) this.#autoInitProvider(chainId)
         } catch (error) {
           console.error(`Failed to auto set provider for chainId: ${prop.toString()}`, error)
         }
@@ -154,16 +147,29 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.emitUpdate()
   }
 
-  #autoInitProvider(chainId: bigint, rpcUrl?: string) {
-    if (!rpcUrl) return
+  #autoInitProvider(chainId: bigint | 'temp', rpcUrl?: string) {
+    if (chainId === 'temp') {
+      const networkToAdd = this.#networks.networkToAddOrUpdate
+      if (networkToAdd) {
+        this.tempProviders[networkToAdd.chainId.toString()] = getRpcProvider(
+          [networkToAdd.rpcUrl],
+          networkToAdd.chainId,
+          networkToAdd.rpcUrl
+        )
+        this.emitUpdate()
+      }
+      return
+    }
 
     const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
 
     if (network) {
       this.setProvider(network)
-    } else {
+    } else if (rpcUrl) {
       this.#providers[chainId.toString()] = getRpcProvider([rpcUrl], chainId, rpcUrl)
     }
+
+    this.emitUpdate()
   }
 
   setProvider(network: Network, opts?: { forceUpdate: boolean }) {

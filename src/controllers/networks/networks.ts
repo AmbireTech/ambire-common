@@ -60,7 +60,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
-  #getProvider: (chainId: bigint) => RPCProvider
+  #getProvider: (chainId: bigint | 'temp') => RPCProvider
 
   /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetworks: (networks: Network[]) => void
@@ -84,7 +84,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     storage: IStorageController
     fetch: Fetch
     relayerUrl: string
-    getProvider: (chainId: bigint) => RPCProvider
+    getProvider: (chainId: bigint | 'temp') => RPCProvider
     onAddOrUpdateNetworks: (networks: Network[]) => void
   }) {
     super(eventEmitterRegistry)
@@ -352,7 +352,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()
 
-      const provider = this.#getProvider(networkToAddOrUpdate.chainId)
+      const provider = this.#getProvider('temp')
       await getNetworkInfo(
         this.#fetch,
         networkToAddOrUpdate.chainId,
@@ -472,7 +472,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
           return
         }
 
-        const provider = this.#getProvider(chainId)
+        const provider = this.#getProvider(networkToAddOrUpdate ? 'temp' : chainId)
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         getNetworkInfo(
           this.#fetch,

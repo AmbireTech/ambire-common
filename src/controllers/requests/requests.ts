@@ -1034,7 +1034,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const walletSendCallsVersion = isWalletSendCalls
-        ? request.params[0].version ?? '1.0.0'
+        ? (request.params[0].version ?? '1.0.0')
         : undefined
 
       userRequest =
