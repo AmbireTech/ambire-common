@@ -631,8 +631,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get isInitialized(): boolean {
-    // The estimation becomes null when the signAccountOp controller
-    // is destroyed.
     return this.estimation && this.estimation.isInitialized()
   }
 
@@ -1267,8 +1265,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.status = null
     this.signedTransactionsCount = null
     this.#stopRefetching = true
-    this.gasPrice = null as any
-    this.estimation = null as any
   }
 
   /**
@@ -1386,9 +1382,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
-      [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === ZeroAddress
-      )
+      [
+        this.accountOp.chainId.toString()
+      ]?.result?.tokens.find((token) => token.address === ZeroAddress)
     if (!native) return null
 
     // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
@@ -1863,9 +1859,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // get the native token from the portfolio to calculate prices
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
-      [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === ZeroAddress
-      )
+      [
+        this.accountOp.chainId.toString()
+      ]?.result?.tokens.find((token) => token.address === ZeroAddress)
     if (!native) return null
     const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     if (!nativePrice) return null
