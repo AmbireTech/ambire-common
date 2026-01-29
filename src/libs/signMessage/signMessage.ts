@@ -37,6 +37,8 @@ import {
   callToTuple,
   getSignableHash
 } from '../accountOp/accountOp'
+import { decodeError } from '../errorDecoder'
+import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import { PackedUserOperation } from '../userOperation/types'
 import { getActivatorCall } from '../userOperation/userOperation'
 import { get7702SigV } from './utils'
@@ -332,7 +334,7 @@ export const wrapCounterfactualSign = (signature: string, creation: AccountCreat
 
 export function mapSignatureV(sigRaw: string) {
   const sig = hexStringToUint8Array(sigRaw)
-  if (sig[64] < 27) sig[64] += 27
+  if (sig[64] && sig[64] < 27) sig[64] += 27
   return hexlify(sig)
 }
 
@@ -441,10 +443,12 @@ export async function verifyMessage({
     else if (deploylessRes === false) callResult = '0x00'
     else callResult = deploylessRes
   } catch (e: any) {
+    const decoded = decodeError(e)
+    const moreDetails = getErrorCodeStringFromReason(decoded.reason || e?.message || '')
+
     throw new Error(
-      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed, more details: ${
-        // TODO: Use the `reason` from the decodeError(e) instead, when this case is better handled in there
-        e?.message || 'missing'
+      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed (${decoded.type}).${
+        moreDetails ? `${moreDetails}` : ''
       }`
     )
   }
