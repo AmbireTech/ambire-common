@@ -225,6 +225,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             provider,
             network,
             accounts,
+            this.#keystore.keys,
             blockTag
           )
           const networkAccountStates =

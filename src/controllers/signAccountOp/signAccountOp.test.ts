@@ -494,7 +494,6 @@ const init = async (
   const baseAccount = getBaseAccount(
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
-    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
     network
   )
 
@@ -642,6 +641,7 @@ describe('SignAccountOp Controller ', () => {
       accountOp,
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -775,6 +775,7 @@ describe('SignAccountOp Controller ', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -869,6 +870,7 @@ describe('SignAccountOp Controller ', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -949,6 +951,7 @@ describe('SignAccountOp Controller ', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -1081,6 +1084,7 @@ describe('SignAccountOp Controller ', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -1208,6 +1212,7 @@ describe('Negative cases', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -1342,6 +1347,7 @@ describe('Negative cases', () => {
       createAccountOp(e2esmartAccount, network.chainId),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -1494,6 +1500,7 @@ describe('Negative cases', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -1626,6 +1633,7 @@ describe('Negative cases', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -1686,6 +1694,7 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1733,6 +1742,7 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1783,6 +1793,7 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1835,6 +1846,7 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1883,6 +1895,7 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1931,6 +1944,7 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
+        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -2008,6 +2022,7 @@ test('Signing [V1 with EOA payment]: working case', async () => {
     createAccountOp(v1Account),
     eoaSigner,
     {
+      updatedAt: 1,
       providerEstimation: {
         gasUsed: 10000n,
         feePaymentOptions

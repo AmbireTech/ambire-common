@@ -1,5 +1,6 @@
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
+import { Key } from './keystore'
 import { Network } from './network'
 
 export type IAccountsController = ControllerInterface<
@@ -99,6 +100,7 @@ export interface AccountOnchainState {
   nonce: bigint
   erc4337Nonce: bigint
   associatedKeys: string[]
+  importedAccountKeys: Key[]
   balance: bigint
   isEOA: boolean
   isErc4337Enabled: boolean

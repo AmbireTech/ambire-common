@@ -2327,12 +2327,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
       [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
-    )
+    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const swapSponsorship = getSwapSponsorship({
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,

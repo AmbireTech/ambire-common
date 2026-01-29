@@ -396,7 +396,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.baseAccount = getBaseAccount(
       account,
       accounts.accountStates[account.addr]![network.chainId.toString()]!, // ! is safe as otherwise, nothing will work
-      keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
       network
     )
     this.#network = network
@@ -1832,7 +1831,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get accountKeyStoreKeys(): Key[] {
-    return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
+    // we take signing keys from the state as safe account signers
+    // may be different per network.
+    // if the account isn't a safe, we return the hardcoded associatedKeys
+    // from the account itself in the accountState
+    const state =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (!state) return []
+    return this.#keystore.keys.filter((key) => state.associatedKeys.includes(key.addr))
   }
 
   get feePayerKeyStoreKeys(): Key[] {
@@ -2172,6 +2178,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
+    // in safe, you won't have to choose the signers, and they could be multiple
+    // we need to take the signers from the account state
+    // check which we have in the extension (they will be in keystore)
+    // decide what to do from that point onwards
+
     const isExternalSignerInvolved =
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
@@ -2494,12 +2505,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       return this.throwBroadcastAccountOp({ message, accountState })
     }
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.#keystore.getAccountKeys(account),
-      this.#network
-    )
     let transactionRes: {
       txnId?: string
       nonce: number
@@ -2548,7 +2553,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           signer.init(this.#externalSignerControllers[gasFeePayment.paidByKeyType])
         }
 
-        const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
+        const txnLength = this.baseAccount.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
         if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
@@ -2651,7 +2656,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const switcher = this.bundlerSwitcher
         this.updateStatus(SigningStatus.ReadyToSign)
 
-        if (switcher.canSwitch(baseAcc)) {
+        if (switcher.canSwitch(this.baseAccount)) {
           switcher.switch()
           this.simulate()
           this.gasPrice.fetch()
@@ -2967,6 +2972,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return banners
   }
 
+  get canAccountBroadcastByItself(): boolean {
+    return this.baseAccount.canBroadcastByItself()
+  }
+
   toJSON() {
     return {
       ...this,
@@ -2988,7 +2997,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isSignInProgress: this.isSignInProgress,
       isBroadcastInProgress: this.isBroadcastInProgress,
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
-      banners: this.banners
+      banners: this.banners,
+      canAccountBroadcastByItself: this.canAccountBroadcastByItself
     }
   }
 }

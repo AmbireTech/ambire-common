@@ -112,7 +112,8 @@ contract AmbireAccountState {
         safeRes.balance = address(account.addr).balance;
         bytes memory code = address(account.addr).code;
         if (code.length > 0) safeRes.isDeployed = true;
-        // // TODO: deploy the acc? do we need that logic?
+        // TODO: deploy the acc? do we need that logic?
+        // TODO: if the safe is not deployed, below is inapplicable
         Safe safeAccount = Safe(account.addr);
         safeRes.nonce = safeAccount.nonce();
         safeRes.associatedKeys = safeAccount.getOwners();

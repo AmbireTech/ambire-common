@@ -112,12 +112,7 @@ export class EstimationController extends EventEmitter {
       return
     }
 
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.#keystore.getAccountKeys(account),
-      network
-    )
+    const baseAcc = getBaseAccount(account, accountState, network)
 
     // Take the fee tokens from two places: the user's tokens and his gasTank
     // The gasTank tokens participate on each network as they belong everywhere

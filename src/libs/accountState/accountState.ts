@@ -6,6 +6,7 @@ import { ProviderError } from '../../classes/ProviderError'
 import { eip7702AmbireContracts } from '../../consts/7702'
 import { EIP_7702_METAMASK, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
@@ -28,6 +29,7 @@ export async function getAccountState(
   provider: RPCProvider,
   network: Network,
   accounts: Account[],
+  keys: Key[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
   const deploylessAccountState = fromDescriptor(
@@ -133,6 +135,7 @@ export async function getAccountState(
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
       associatedKeys,
+      importedAccountKeys: keys.filter((key) => associatedKeys.includes(key.addr)),
       isV2: accResult.isV2,
       balance: accResult.balance,
       isEOA: accResult.isEOA,

@@ -310,7 +310,7 @@ export function getUniqueAccountsArray(accounts: Account[]) {
 // use this in cases where you strictly want to enable/disable an action for
 // EOAs (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
-  return !account.creation && !state.isSmarterEoa
+  return !account.creation && !account.safeCreation && !state.isSmarterEoa
 }
 
 const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice']
@@ -327,13 +327,12 @@ export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
 export function canBecomeSmarterOnChain(
   network: Network,
   acc: Account,
-  state: AccountOnchainState,
-  accKeys: Key[]
+  state: AccountOnchainState
 ): boolean {
   return (
     has7702(network) &&
     isBasicAccount(acc, state) &&
-    !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
+    !!state.importedAccountKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
   )
 }
 

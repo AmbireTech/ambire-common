@@ -116,7 +116,7 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
-      const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
+      const baseAcc = getBaseAccount(smartAcc, accountState, optimism)
       const gasPrices = await fetchBundlerGasPrice(baseAcc, optimism, switcher)
       expect(gasPrices instanceof Error).toBe(false)
       const result = await bundlerEstimate(
@@ -179,7 +179,7 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
-      const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
+      const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism)
       const gasPrices = await fetchBundlerGasPrice(baseAcc, optimism, switcher)
       expect(gasPrices instanceof Error).toBe(false)
       const result = await bundlerEstimate(
@@ -239,7 +239,7 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
-      const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
+      const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism)
       const gasPrices = await fetchBundlerGasPrice(baseAcc, optimism, switcher)
       expect(gasPrices instanceof Error).toBe(false)
       const result = await bundlerEstimate(
@@ -318,7 +318,7 @@ describe('Bundler fallback tests', () => {
     ]
     const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base)
     const gasPrices = await fetchBundlerGasPrice(baseAcc, base, switcher)
     expect(gasPrices instanceof Error).toBe(false)
     const result = await bundlerEstimate(

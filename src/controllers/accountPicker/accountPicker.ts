@@ -1171,7 +1171,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         const accountState = await getAccountState(
           this.#providers.providers[chainId]!,
           network,
-          accounts.map((acc) => acc.account)
+          accounts.map((acc) => acc.account),
+          this.#keystore.keys
         ).catch(() => {
           if (this.page !== page) return
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
