@@ -163,7 +163,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'Quote expired'
   },
   {
-    reasons: ['TRANSFER_FROM_FAILED'],
+    reasons: ['TRANSFER_FROM_FAILED', '0x7939f424'],
     message: 'Insufficient token amount'
   },
   {
