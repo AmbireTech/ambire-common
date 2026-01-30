@@ -22,6 +22,10 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import {
@@ -31,7 +35,7 @@ import {
   SINGLETON
 } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
+import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -324,8 +328,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #reestimateCounter: number = 0
 
   /**
-   * Controls internal continuous updates. Currently only used
-   * to stop the reestimation loop.
+   * Controls internal continuous updates - gasPrice and estimation.
+   * When true, both intervals should be stopped and even if they
+   * are not, they shouldn't make any calls/updates (fallback measure).
    */
   #stopRefetching: boolean = false
 
@@ -346,6 +351,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   signAndBroadcastPromise: Promise<void> | undefined
 
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+  #gasPriceInterval: IRecurringTimeout
+
+  #simulateAndEstimateOrSimulateInterval: IRecurringTimeout
 
   constructor({
     eventEmitterRegistry,
@@ -429,12 +438,33 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
     this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
       estimation: this.estimation,
-      readyToSign: this.readyToSign
+      readyToSign: this.readyToSign,
+      stopRefetching: this.#stopRefetching
     }))
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
+
+    // Intervals
+    this.#gasPriceInterval = new RecurringTimeout(async () => {
+      // Null when the controller is destroyed
+      if (!this.gasPrice || this.#stopRefetching) {
+        this.#gasPriceInterval.stop()
+      }
+
+      await this.gasPrice.fetch('major')
+    }, GAS_PRICE_UPDATE_INTERVAL)
+
+    this.#simulateAndEstimateOrSimulateInterval = new RecurringTimeout(async () => {
+      if (!this.estimation || this.#stopRefetching) {
+        this.#simulateAndEstimateOrSimulateInterval.stop()
+        return
+      }
+
+      await this.#simulateAndEstimateOrEstimate()
+    }, ESTIMATE_UPDATE_INTERVAL)
+    // Intervals end
 
     this.#load()
   }
@@ -525,31 +555,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return callError
   }
 
-  async #reestimate() {
-    if (
-      this.#stopRefetching ||
-      this.estimation.status === EstimationStatus.Initial ||
-      this.estimation.status === EstimationStatus.Loading
-    )
-      return
-
-    // stop the interval reestimate if the user has done it at least 20 times
-    if (this.#reestimateCounter >= 20) this.#stopRefetching = true
-
-    this.#reestimateCounter += 1
-
-    // the first 10 times, reestimate once every 30s; then, slow down
-    // the time as the user might just have closed the popup of the extension
-    // in a ready-to-estimate state, resulting in meaningless requests
-    const waitTime =
-      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
-    await wait(waitTime)
-
-    if (this.#stopRefetching) return
-
-    this.#shouldSimulate ? this.simulate(true) : this.estimate()
-  }
-
   #load() {
     this.#setDefaults()
     this.humanize()
@@ -557,7 +562,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
-      this.#reestimate()
     })
 
     this.gasPrice.onUpdate(() => {
@@ -573,8 +577,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.emitError(error)
     })
 
-    this.#shouldSimulate ? this.simulate(true) : this.estimate()
-    this.gasPrice.fetch()
+    this.#simulateAndEstimateOrSimulateInterval.start({
+      runImmediately: true,
+      timeout: ESTIMATE_UPDATE_INTERVAL
+    })
+    this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
   }
 
   humanize() {
@@ -957,7 +964,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
-  async simulate(shouldTraceCall: boolean = false) {
+  /**
+   * Updates the estimation and the portfolio simulation
+   * for the current accountOp
+   */
+  async #simulateAndEstimate() {
+    // Trace call the only if it hasn't been done yet for these calls
+    const shouldTraceCall = this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
@@ -1011,13 +1024,53 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
   }
 
-  async estimate() {
-    await this.estimation.estimate(this.accountOp)
+  /**
+   * Either simulates+estimates or just estimates based on #shouldSimulate.
+   * This is needed because in some cases (one click transfer/swap) we don't
+   * need to simulate, just estimate.
+   */
+  async #simulateAndEstimateOrEstimate() {
+    if (this.#stopRefetching || !this.estimation) return
+
+    // the first 10 times, reestimate once every 30s; then, slow down
+    // the time as the user might just have closed the popup of the extension
+    // in a ready-to-estimate state, resulting in meaningless requests
+    const waitTime =
+      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
+
+    // Update the timeout for the next run
+    this.#simulateAndEstimateOrSimulateInterval.updateTimeout({ timeout: waitTime })
+
+    await (this.#shouldSimulate
+      ? this.#simulateAndEstimate()
+      : this.estimation.estimate(this.accountOp))
+
+    if (this.#reestimateCounter >= 20) {
+      this.#simulateAndEstimateOrSimulateInterval.stop()
+      this.#gasPriceInterval.stop()
+      this.#stopRefetching = true
+    }
+
+    this.#reestimateCounter += 1
+  }
+
+  /**
+   * Refetches the gas price immediately and silently
+   * (no errors emitted in case of failure). Also
+   * restarts the gas price interval afterward.
+   *
+   * We can't simply restart the interval with runImmediately
+   * because the interval is calling fetch() with a 'major' parameter
+   */
+  async #silentGasPriceUpdate() {
+    this.#gasPriceInterval.stop()
+    await this.gasPrice.fetch()
+    this.#gasPriceInterval.restart()
   }
 
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
-    return this[method]()
+    this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
   }
 
   update({
@@ -1054,12 +1107,23 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (this.estimation.status === EstimationStatus.Success) {
+        // Start the gas price interval in case it was stopped earlier
+        this.#gasPriceInterval.start({
+          // Refetch immediately if the gas prices are stale
+          runImmediately:
+            !this.gasPrice.updatedAt ||
+            Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+        })
+
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation) {
           this.#updateAccountOp({
             nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
           })
         }
+      } else if (this.estimation.status === EstimationStatus.Error) {
+        // No need to update gasPrices if the estimation failed
+        this.#gasPriceInterval.stop()
       }
       // if there's a bundler estimation and the gasPrice for it has resolved, update the UI
       if (this.estimation.estimation) {
@@ -1068,13 +1132,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
           // 2. we make sure we give priority to the bundler prices as they are generally better
           this.gasPrices = this.estimation.estimation.bundlerGasPrices
-          // and we're stopping the gas price controller updates as
-          // the bundler will provide them
-          this.gasPrice.pauseRefetching(true)
+          // and we're stopping the gas price interval as
+          // we will use the bundler gas prices
+          this.#gasPriceInterval.stop()
+          this.gasPrice.areGasPricesUsedFromBundlerEstimation = true
         } else {
           // if there's an estimate, but no bundlerGasPrices, resume the gas price
           // controller refetch as there's no other way to fetch gas prices
-          this.gasPrice.resumeRefetching(false)
+          this.#gasPriceInterval.start({
+            runImmediately:
+              !this.gasPrice.updatedAt ||
+              Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+          })
+          this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
         }
       }
 
@@ -1107,14 +1177,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // update only if there are differences in the calls array
           // we do this to prevent double estimation problems
           if (shouldUpdate) {
+            const hasNewCalls = this.accountOp.calls.length < calls.length
             this.#updateAccountOp({ calls })
             this.humanize()
 
-            const hasNewCalls = this.accountOp.calls.length < calls.length
-            if (hasNewCalls) this.learnTokens()
-            this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
-
-            this.#reestimateCounter = 0
+            if (hasNewCalls) {
+              this.learnTokens()
+              // Reset the discovery status when the calls change to allow
+              // for rediscovery
+              this.setDiscoveryStatus(TraceCallDiscoveryStatus.NotStarted)
+            }
+            this.#resumeIntervals({ haveCallsChanged: true })
           }
         }
       }
@@ -1257,8 +1330,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   destroy() {
     super.destroy()
+    // Stop intervals
+    this.#simulateAndEstimateOrSimulateInterval.stop()
+    this.#gasPriceInterval.stop()
+    this.#stopRefetching = true
+    // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()
+    this.gasPrice = null as any
+    this.estimation = null as any
+    // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
     this.selectedFeeSpeed = FeeSpeed.Fast
@@ -1266,7 +1347,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
-    this.#stopRefetching = true
   }
 
   /**
@@ -1281,26 +1361,56 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#stopRefetching = true
     this.unregisterFromRegistry()
     // GasPrice may be destroyed at this point if the request was rejected
-    this.gasPrice?.pauseRefetching()
+    this.#gasPriceInterval.stop()
+    this.#simulateAndEstimateOrSimulateInterval.stop()
+  }
+
+  /**
+   * Resumes the intervals of the signAccountOp controller, which may be paused
+   * due to user inactivity or the controller being paused altogether.
+   *
+   * Also used to restart the intervals when the calls have changed.
+   * That is because they may be stopped (after inactivity).
+   */
+  #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
+    const { haveCallsChanged = false } = opts || {}
+
+    this.#stopRefetching = false
+    this.#reestimateCounter = 0
+
+    this.#gasPriceInterval.start({
+      runImmediately:
+        !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+    })
+
+    if (haveCallsChanged) {
+      // The simulateAndEstimateOrSimulateInterval must be restarted if the calls have changed
+      // as that forces an immediate reestimation. start() does nothing
+      // if the interval is already running.
+      this.#simulateAndEstimateOrSimulateInterval.restart({
+        runImmediately: true,
+        // This must be true. Otherwise a pending estimation
+        // will prevent a new estimation from being made
+        // which is a must since the calls have changed
+        allowOverlap: true
+      })
+    } else {
+      this.#simulateAndEstimateOrSimulateInterval.start({
+        runImmediately:
+          !this.estimation.estimation?.updatedAt ||
+          Date.now() - this.estimation.estimation!.updatedAt > ESTIMATE_UPDATE_INTERVAL
+      })
+    }
   }
 
   /**
    * Resumes updates and intervals for the signAccountOp controller.
+   *
+   * Also registers the controller in the controller registry.
    */
   resume() {
-    this.#stopRefetching = false
     this.registerInRegistry()
-    this.#reestimateCounter = 0
-
-    // Reestimate if the estimation is stale
-    // Also used to resume the estimation interval
-    if (
-      !this.estimation.estimation?.updatedAt ||
-      Date.now() - this.estimation.estimation!.updatedAt > ESTIMATE_UPDATE_INTERVAL
-    ) {
-      this.#shouldSimulate ? this.simulate(true) : this.estimate()
-    }
-    this.gasPrice.resumeRefetching()
+    this.#resumeIntervals()
 
     this.emitUpdate()
   }
@@ -2399,7 +2509,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
-            this.estimate()
+            this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
             return
           }
         }
@@ -2681,8 +2791,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         if (switcher.canSwitch(this.baseAccount)) {
           switcher.switch()
-          this.simulate()
-          this.gasPrice.fetch()
+          this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+          this.#silentGasPriceUpdate()
           retryMsg = 'Broadcast failed because bundler was down. Please try again'
         }
 
@@ -2867,14 +2977,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message =
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         isReplacementFeeLow = true
-        this.simulate(false)
+        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = accountState?.isV2
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
         this.#accounts
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-          .then(() => this.simulate())
+          .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       } else if (
         originalMessage.includes('underpriced') ||
@@ -2886,9 +2996,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
 
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.gasPrice.fetch()
+        this.#silentGasPriceUpdate()
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.simulate(false)
+        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
@@ -2899,7 +3009,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-          .then(() => this.simulate())
+          .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       }
     }
@@ -2911,11 +3021,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // add it to the failedPaymasters to disable it until a top-up is made
       if (message.includes(insufficientPaymasterFunds) && provider && network) {
         failedPaymasters.addInsufficientFunds(provider, network).then(() => {
-          this.simulate(false)
+          this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
         })
       }
       if (message.includes('the selected fee is too low')) {
-        this.gasPrice.fetch()
+        this.#silentGasPriceUpdate()
       }
     }
 

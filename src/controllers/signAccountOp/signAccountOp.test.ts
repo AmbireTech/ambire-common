@@ -58,10 +58,6 @@ import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
 paymasterFactory.init(relayerUrl, fetch, () => {})
 
 const createEOAAccountOp = (account: Account) => {
@@ -387,17 +383,12 @@ const init = async (
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-  providersCtrl.providers = providers
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
@@ -526,7 +517,8 @@ const init = async (
     : estimationOrMock.providerEstimation!.feePaymentOptions
   const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
     estimation: estimationController,
-    readyToSign: true
+    readyToSign: true,
+    stopRefetching: false
   }))
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController({
@@ -653,7 +645,8 @@ describe('SignAccountOp Controller ', () => {
           ambireAccountNonce: 0,
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -683,6 +676,17 @@ describe('SignAccountOp Controller ', () => {
       hasNewEstimation: true
     })
 
+    // Wait for the first estimation to finish so we don't slow it instead
+    // The first estimation is the one scheduled automatically on controller init
+    await new Promise((resolve) => {
+      const unsub = controller.estimation.onUpdate(() => {
+        if (controller.estimation.status !== EstimationStatus.Loading) {
+          resolve(true)
+          unsub()
+        }
+      })
+    })
+
     // Slow down the first estimation artificially
     jest.spyOn(estimationLib, 'getEstimation').mockImplementationOnce(async (...allParams) => {
       await wait(8000)
@@ -703,6 +707,11 @@ describe('SignAccountOp Controller ', () => {
       }
     })
 
+    // Wait 1 tick so the first estimation starts
+    // This is required because we are using RecurringTimeout under
+    // the hood for reestimation.
+    await wait(0)
+
     const firstOpId = controller.accountOp.id
 
     // This estimation should finish after the other one, but as it's for the latest accountOp,
@@ -719,16 +728,21 @@ describe('SignAccountOp Controller ', () => {
       }
     })
 
+    // Wait 1 tick so the second estimation starts
+    // This is required because we are using RecurringTimeout under
+    // the hood for reestimation.
+    await wait(0)
+
     const latestAccountOpId = controller.accountOp.id
 
     await Promise.all([
       new Promise((resolve) => {
-        const unsub = controller.onUpdate(() => {
+        const unsub = controller.estimation.onUpdate(() => {
           if (controller.estimation.status !== EstimationStatus.Loading) {
-            resolve(true)
-            unsub()
             // @ts-ignore
             expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
+            resolve(true)
+            unsub()
           }
         })
       }),
@@ -787,7 +801,8 @@ describe('SignAccountOp Controller ', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -882,7 +897,8 @@ describe('SignAccountOp Controller ', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -963,7 +979,8 @@ describe('SignAccountOp Controller ', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1096,7 +1113,8 @@ describe('SignAccountOp Controller ', () => {
           ambireAccountNonce: 0,
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1224,7 +1242,8 @@ describe('Negative cases', () => {
           ambireAccountNonce: 0,
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1359,7 +1378,8 @@ describe('Negative cases', () => {
           ambireAccountNonce: 0,
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1512,7 +1532,8 @@ describe('Negative cases', () => {
           ambireAccountNonce: 0,
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1645,7 +1666,8 @@ describe('Negative cases', () => {
           ambireAccountNonce: 0,
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1706,7 +1728,8 @@ describe('throwBroadcastAccountOp', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1754,7 +1777,8 @@ describe('throwBroadcastAccountOp', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1805,7 +1829,8 @@ describe('throwBroadcastAccountOp', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1858,7 +1883,8 @@ describe('throwBroadcastAccountOp', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1907,7 +1933,8 @@ describe('throwBroadcastAccountOp', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -1956,7 +1983,8 @@ describe('throwBroadcastAccountOp', () => {
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
           flags: {}
         },
-        flags: {}
+        flags: {},
+        updatedAt: Date.now()
       },
       {
         slow: {
@@ -2034,7 +2062,8 @@ test('Signing [V1 with EOA payment]: working case', async () => {
         ambireAccountNonce: 0,
         flags: {}
       },
-      flags: {}
+      flags: {},
+      updatedAt: Date.now()
     },
     {
       slow: {

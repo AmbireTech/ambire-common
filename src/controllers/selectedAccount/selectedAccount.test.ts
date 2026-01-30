@@ -14,7 +14,6 @@ import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
-import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -93,10 +92,6 @@ const waitNextControllerUpdate = (ctrl: EventEmitter) => {
 }
 
 const prepareTest = async () => {
-  const providers = Object.fromEntries(
-    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-  )
-
   const storage: Storage = produceMemoryStore()
   let providersCtrl: IProvidersController
   const storageCtrl = new StorageController(storage)
@@ -104,21 +99,16 @@ const prepareTest = async () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
-
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-  providersCtrl.providers = providers
 
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
+
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
 
   // Purposefully mocking these methods as they are not used
   // and listeners result in a memory leak warning in tests
