@@ -206,6 +206,7 @@ describe('AccountState', () => {
     expect(eoa7702.isSmarterEoa).toBeTruthy()
     expect(eoa7702.isErc4337Enabled).toBeTruthy()
     expect(eoa7702.associatedKeys[0]).toBe('0xD8293ad21678c6F09Da139b4B62D38e514a03B78')
+    expect(eoa7702.threshold).toBe(0n)
   })
   test('should fetch the account state for a safe account', async () => {
     const safeAcc: Account = {
@@ -247,5 +248,6 @@ describe('AccountState', () => {
     expect(safe.associatedKeys[0]).toBe(correctAssociatedKeys[0])
     expect(safe.associatedKeys[1]).toBe(correctAssociatedKeys[1])
     expect(safe.nonce).toBeGreaterThan(0)
+    expect(safe.threshold).toBe(2n)
   })
 })

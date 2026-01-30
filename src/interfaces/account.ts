@@ -110,6 +110,7 @@ export interface AccountOnchainState {
   isSmarterEoa: boolean
   delegatedContract: Hex | null
   delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
+  threshold: bigint
   updatedAt: number
 }
 

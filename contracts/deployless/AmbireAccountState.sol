@@ -10,6 +10,7 @@ interface IEntryPoint {
 interface Safe {
     function nonce() external view returns (uint);
     function getOwners() external view returns (address[] memory);
+    function getThreshold() external view returns (uint256);
 }
 
 bytes32 constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
@@ -34,6 +35,7 @@ struct AccountInfo {
     uint erc4337Nonce;
     bool isErc4337Enabled;
     uint currentBlock;
+    uint threshold;
 }
 
 contract AmbireAccountState {
@@ -117,6 +119,7 @@ contract AmbireAccountState {
             Safe safeAccount = Safe(account.addr);
             safeRes.nonce = safeAccount.nonce();
             safeRes.associatedKeys = safeAccount.getOwners();
+            safeRes.threshold = safeAccount.getThreshold();
             safeRes.currentBlock = block.number;
         }
     }
