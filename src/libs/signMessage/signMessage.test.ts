@@ -1,4 +1,13 @@
-import { Contract, hashMessage, hexlify, JsonRpcProvider, toUtf8Bytes, Wallet } from 'ethers'
+import {
+  concat,
+  Contract,
+  hashMessage,
+  hexlify,
+  JsonRpcProvider,
+  recoverAddress,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
@@ -1075,5 +1084,28 @@ describe('Sign Message, Safe accounts', () => {
     ).toString('hex')
 
     expect(`0x${ourHash}`).toBe(validHash)
+
+    const sigs = [
+      '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b',
+      '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
+    ]
+    delete typedData.types.EIP712Domain
+    const recovered = recoverAddress(
+      validHash,
+      '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b'
+    )
+    const isOwnerOne = await safeContract.isOwner(recovered)
+    expect(isOwnerOne).toBe(true)
+
+    const recovered2 = recoverAddress(
+      validHash,
+      '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
+    )
+    const isOwnerTwo = await safeContract.isOwner(recovered2)
+    expect(isOwnerTwo).toBe(true)
+
+    const signature = concat(sigs)
+    await safeContract.checkNSignatures(validHash, '0x', signature, 2)
+    // not reverting here means success
   })
 })
