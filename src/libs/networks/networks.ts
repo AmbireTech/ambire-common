@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { JsonRpcProvider, toBeHex } from 'ethers'
+import { toBeHex } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
@@ -13,7 +13,7 @@ import {
   NetworkInfoLoading,
   RelayerNetwork
 } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/provider'
+import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import { getSASupport } from '../deployless/simulateDeployCall'
@@ -114,7 +114,7 @@ export function getProviderBatchMaxCount(network: Network, rpcUrl: string): numb
 export async function getNetworkInfo(
   fetch: Fetch,
   chainId: bigint,
-  provider: JsonRpcProvider,
+  provider: RPCProvider,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
   network: Network | undefined
 ) {

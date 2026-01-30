@@ -35,7 +35,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '../../int
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
@@ -240,8 +240,14 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch,
       relayerUrl,
-      getProvider: (chainId) => {
-        return this.providers.providers[chainId.toString()]!
+      useTempProvider: async (
+        props: {
+          rpcUrl: string
+          chainId: bigint
+        },
+        callback: (provider: RPCProvider) => Promise<void>
+      ) => {
+        await this.providers.useTempProvider(props, callback)
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))

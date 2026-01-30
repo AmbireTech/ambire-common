@@ -30,8 +30,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   #providers: RPCProviders = {}
 
-  tempProviders: RPCProviders = {}
-
   #providersProxy: RPCProviders
 
   #scheduledResolveAssetInfoActions: {
@@ -70,31 +68,14 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.#providersProxy = new Proxy(this.#providers, {
       get: (target, prop, receiver) => {
         try {
-          // Clean up the temp provider if the is no networkToAddOrUpdate
-          if (!this.#networks.networkToAddOrUpdate && Object.keys(this.tempProviders).length) {
-            Object.values(this.tempProviders).forEach((p) => p.destroy())
-            this.tempProviders = {}
-            this.emitUpdate()
-          }
-          // Handle only numeric chainIds or the special 'temp' key for temporary providers.
+          // Handle only numeric chainIds for temporary providers.
           // Any other property (e.g. toJSON) is forwarded to the target without triggering proxy logic.
-          if (isNaN(Number(prop)) && prop !== 'temp') return Reflect.get(target, prop, receiver)
+          if (isNaN(Number(prop))) return Reflect.get(target, prop, receiver)
           // forwarded to the target without triggering proxy logic while ctrl is still loading.
           if (!!this.initialLoadPromise) return Reflect.get(target, prop, receiver)
 
           if (prop in target) {
             return Reflect.get(target, prop, receiver)
-          }
-          if (
-            this.#networks.networkToAddOrUpdate &&
-            !this.tempProviders[this.#networks.networkToAddOrUpdate.chainId.toString()]
-          ) {
-            this.#autoInitProvider('temp')
-          }
-          if (prop === 'temp') {
-            return this.#networks.networkToAddOrUpdate?.chainId
-              ? this.tempProviders[this.#networks.networkToAddOrUpdate.chainId.toString()]
-              : undefined
           }
 
           const chainId = BigInt(prop.toString())
@@ -152,20 +133,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.emitUpdate()
   }
 
-  #autoInitProvider(chainId: bigint | 'temp', rpcUrl?: string) {
-    if (chainId === 'temp') {
-      const networkToAdd = this.#networks.networkToAddOrUpdate
-      if (networkToAdd) {
-        this.tempProviders[networkToAdd.chainId.toString()] = getRpcProvider(
-          [networkToAdd.rpcUrl],
-          networkToAdd.chainId,
-          networkToAdd.rpcUrl
-        )
-        this.emitUpdate()
-      }
-      return
-    }
-
+  #autoInitProvider(chainId: bigint, rpcUrl?: string) {
     const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
 
     if (network) {
@@ -237,6 +205,37 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       this.#networks.allNetworks.forEach((n) => this.setProvider(n, { forceUpdate: true }))
       this.emitUpdate()
     })
+  }
+
+  async useTempProvider(
+    {
+      rpcUrl,
+      chainId
+    }: {
+      rpcUrl: string
+      chainId: bigint
+    },
+    callback: (provider: RPCProvider) => Promise<void>
+  ) {
+    const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
+    const batchMaxCount =
+      this.isBatchingEnabled && network
+        ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
+        : 1
+
+    const provider: RPCProvider = getRpcProvider([rpcUrl], chainId, rpcUrl, {
+      batchMaxCount,
+      batchMaxSize: network?.rpcNoStateOverride ? 24576 : undefined
+    })
+    provider.isWorking = true
+    provider.batchMaxCount = batchMaxCount
+
+    await callback(provider)
+    try {
+      provider.destroy()
+    } catch (error: any) {
+      // Ignore errors — the provider have already been destroyed inside the callback.
+    }
   }
 
   async callProviderAndSendResToUi({
