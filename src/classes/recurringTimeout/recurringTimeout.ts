@@ -5,9 +5,31 @@
 
 import EventEmitter from '../../controllers/eventEmitter/eventEmitter'
 
+type RecurringTimeoutStartOptions = {
+  timeout?: number
+  /**
+   * Whether to run the function immediately upon starting,
+   * instead of waiting for the first timeout interval.
+   */
+  runImmediately?: boolean
+  /**
+   * Whether to allow the starting of a new function execution
+   * even if the previous one is still running. There will still
+   * be only one interval scheduled at a time.
+   *
+   * @example
+   * - Execution 1 starts
+   * - Execution 2 starts while Execution 1 is still running
+   * - Execution 1 completes - a new execution is not scheduled. Simply
+   * the promise of Execution 1 is resolved.
+   * - Execution 2 completes - a new execution is scheduled.
+   */
+  allowOverlap?: boolean
+}
+
 export interface IRecurringTimeout {
-  start: (options?: { timeout?: number; runImmediately?: boolean }) => void
-  restart: (options?: { timeout?: number; runImmediately?: boolean }) => void
+  start: (options?: RecurringTimeoutStartOptions) => void
+  restart: (options?: RecurringTimeoutStartOptions) => void
   stop: () => void
   updateTimeout: (options: { timeout: number }) => void
   running: boolean
@@ -42,7 +64,7 @@ export class RecurringTimeout implements IRecurringTimeout {
   promise: Promise<void> | undefined
 
   // collapse multiple start/restart calls in the same tick
-  #pendingStart?: { timeout?: number; runImmediately?: boolean }
+  #pendingStart?: RecurringTimeoutStartOptions
 
   startScheduled = false
 
@@ -62,7 +84,7 @@ export class RecurringTimeout implements IRecurringTimeout {
     this.currentTimeout = timeout
   }
 
-  start(opts: { timeout?: number; runImmediately?: boolean } = {}) {
+  start(opts: RecurringTimeoutStartOptions = {}) {
     this.#scheduleStart(opts)
   }
 
@@ -71,15 +93,17 @@ export class RecurringTimeout implements IRecurringTimeout {
     this.#reset()
   }
 
-  restart(opts: { timeout?: number; runImmediately?: boolean } = {}) {
+  restart(opts: RecurringTimeoutStartOptions = {}) {
     this.#reset()
     this.#scheduleStart(opts)
   }
 
   async #loop() {
+    this.fnExecutionsCount += 1
+    const currentCount = this.fnExecutionsCount
+
     try {
       this.promise = this.#fn()
-      this.fnExecutionsCount += 1
       await this.promise
     } catch (err: any) {
       if (!this.promise) return
@@ -87,19 +111,16 @@ export class RecurringTimeout implements IRecurringTimeout {
       if (this.#emitError)
         this.#emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
     } finally {
-      if (this.promise) {
+      // If fnExecutionsCount has changed, it means `restart` was called during the execution of fn,
+      // so we shouldn't schedule the next loop here.
+      if (this.promise && this.fnExecutionsCount === currentCount) {
         if (this.running) this.#timeoutId = setTimeout(this.#loop.bind(this), this.currentTimeout)
         this.promise = undefined
       }
     }
   }
 
-  #scheduleStart(
-    opts: {
-      timeout?: number
-      runImmediately?: boolean
-    } = {}
-  ) {
+  #scheduleStart(opts: RecurringTimeoutStartOptions = {}) {
     if (this.running) return
     this.#pendingStart = opts // collect latest opts for this tick
     if (this.startScheduled) return
@@ -107,7 +128,7 @@ export class RecurringTimeout implements IRecurringTimeout {
 
     queueMicrotask(() => {
       this.startScheduled = false
-      const { timeout: newTimeout, runImmediately } = this.#pendingStart || {}
+      const { timeout: newTimeout, runImmediately, allowOverlap } = this.#pendingStart || {}
       this.#pendingStart = undefined
 
       this.running = true
@@ -116,7 +137,8 @@ export class RecurringTimeout implements IRecurringTimeout {
 
       if (newTimeout) this.updateTimeout({ timeout: newTimeout })
 
-      if (this.promise) return // prevents multiple executions in one tick
+      // Prevents starting a new loop if the previous one is still running
+      if (this.promise && !allowOverlap) return
 
       if (runImmediately) {
         this.#loop()
