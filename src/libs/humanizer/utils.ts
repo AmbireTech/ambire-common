@@ -81,6 +81,9 @@ export function getDeadlineText(deadline: bigint): string {
   if (diff < 0) return 'already expired'
   if (diff < minute) return 'expires in less than a minute'
   if (diff < 30n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
+  if ((deadline / 1000n).toString(16) === 'f'.repeat(64)) return 'No expiration date'
+  if (deadline.toString(16) === 'f'.repeat(64)) return 'No expiration date'
+
   return `valid until ${new Date(Number(deadline)).toLocaleString()}`
 }
 
