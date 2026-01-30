@@ -383,8 +383,8 @@ const init = async (
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    getProvider: (chainId) => {
-      return providersCtrl.providers[chainId.toString()]!
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
     onAddOrUpdateNetworks: () => {}
   })

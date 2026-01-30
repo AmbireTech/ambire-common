@@ -240,13 +240,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch,
       relayerUrl,
-      useTempProvider: async (
-        props: {
-          rpcUrl: string
-          chainId: bigint
-        },
-        callback: (provider: RPCProvider) => Promise<void>
-      ) => {
+      useTempProvider: async (props, callback) => {
         await this.providers.useTempProvider(props, callback)
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
@@ -1096,8 +1090,9 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount =
-      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
