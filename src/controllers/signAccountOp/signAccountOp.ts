@@ -462,7 +462,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       await this.#simulateAndEstimateOrEstimate()
     }, ESTIMATE_UPDATE_INTERVAL)
-
     // Intervals end
 
     this.#load()
@@ -1387,7 +1386,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // as that forces an immediate reestimation. start() does nothing
       // if the interval is already running.
       this.#simulateAndEstimateOrSimulateInterval.restart({
-        runImmediately: true
+        runImmediately: true,
+        // This must be true. Otherwise a pending estimation
+        // will prevent a new estimation from being made
+        // which is a must since the calls have changed
+        allowOverlap: true
       })
     } else {
       this.#simulateAndEstimateOrSimulateInterval.start({
