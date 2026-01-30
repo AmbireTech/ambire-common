@@ -26,9 +26,9 @@ import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { SafeTx } from '../../interfaces/safe'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
@@ -328,12 +328,6 @@ export const wrapCounterfactualSign = (signature: string, creation: AccountCreat
       [creation.factoryAddr, factoryCallData, signature]
     ) + magicBytes
   )
-}
-
-export function mapSignatureV(sigRaw: string) {
-  const sig = hexStringToUint8Array(sigRaw)
-  if (sig[64] < 27) sig[64] += 27
-  return hexlify(sig)
 }
 
 // Either `message` or `typedData` must be provided - never both.
@@ -720,4 +714,46 @@ export const toPersonalSignHex = (input: string | Uint8Array | Hex): Hex => {
   }
 
   return hexlify(input) as Hex
+}
+
+export const getSafeTypedData = (
+  chainId: bigint,
+  safeAddr: Hex,
+  safeTx: SafeTx
+): TypedMessageUserRequest['meta']['params'] => {
+  const domain: TypedDataDomain = {
+    chainId: chainId.toString(),
+    verifyingContract: safeAddr
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'chainId',
+        type: 'uint256'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      }
+    ],
+    SafeTx: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' },
+      { name: 'safeTxGas', type: 'uint256' },
+      { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' },
+      { name: 'gasToken', type: 'address' },
+      { name: 'refundReceiver', type: 'address' },
+      { name: 'nonce', type: 'uint256' }
+    ]
+  }
+
+  return {
+    domain,
+    types,
+    message: safeTx,
+    primaryType: 'SafeTx'
+  }
 }
