@@ -332,12 +332,6 @@ export const wrapCounterfactualSign = (signature: string, creation: AccountCreat
   )
 }
 
-export function mapSignatureV(sigRaw: string) {
-  const sig = hexStringToUint8Array(sigRaw)
-  if (sig[64] && sig[64] < 27) sig[64] += 27
-  return hexlify(sig)
-}
-
 // Either `message` or `typedData` must be provided - never both.
 type Props = {
   provider: JsonRpcProvider
