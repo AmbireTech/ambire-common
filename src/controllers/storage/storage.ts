@@ -1,3 +1,5 @@
+import { v4 as uuidv4 } from 'uuid'
+
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
@@ -462,6 +464,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase)
     const accountPicker = accountPickerInitFn()
     await accountPicker.setInitParams({
+      sessionId: uuidv4(),
       keyIterator,
       hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
       pageSize: 10,
