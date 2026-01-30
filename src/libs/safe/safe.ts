@@ -127,13 +127,20 @@ export function getSafeBroadcastTxn(
   state: AccountOnchainState
 ): { to: Hex; value: bigint; data: Hex } {
   const exec = new Interface(execTransactionAbi)
-  const safeTxn: any = getSafeTxn(op, state)
-  delete safeTxn.nonce
+  const safeTxn = getSafeTxn(op, state)
   return {
     to: op.accountAddr as Hex,
     value: 0n,
     data: exec.encodeFunctionData('execTransaction', [
-      ...Object.values(safeTxn),
+      safeTxn.to,
+      safeTxn.value,
+      safeTxn.data,
+      safeTxn.operation,
+      safeTxn.safeTxGas,
+      safeTxn.baseGas,
+      safeTxn.gasPrice,
+      safeTxn.gasToken,
+      safeTxn.refundReceiver,
       op.signature
     ]) as Hex
   }
