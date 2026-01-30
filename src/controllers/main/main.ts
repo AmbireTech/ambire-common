@@ -598,20 +598,20 @@ export class MainController extends EventEmitter implements IMainController {
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
-      const FIVE_MINUTES = 1000 * 60 * 5
-      const ONE_HOUR = 1000 * 60 * 60
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
-      if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
-        this.updateSelectedAccountPortfolio({
-          maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR
-        })
-      }
-
-      if (!this.accounts.areAccountStatesLoading) {
-        this.accounts.updateAccountState(selectedAccountAddr)
-      }
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.accounts.updateAccountState(selectedAccountAddr).finally(async () => {
+        // Update the portfolio after the account state. We want to ensure that
+        // if the nonce has changed, the portfolio update takes that into account.
+        if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
+          await this.updateSelectedAccountPortfolio({
+            maxDataAgeMs: 1000 * 60 * 5,
+            maxDataAgeMsUnused: 1000 * 60 * 60
+          })
+        }
+      })
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -1090,9 +1090,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
