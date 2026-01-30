@@ -2240,7 +2240,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const safeKey = sortedKeys[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
           if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
-          const signature = (await signer.signTypedData(
+          const signature = (await safeSigner.signTypedData(
             getSafeTypedData(
               this.#network.chainId,
               this.account.addr as Hex,
