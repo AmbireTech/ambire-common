@@ -5,6 +5,7 @@
 /* eslint-disable class-methods-use-this */
 import {
   AbiCoder,
+  concat,
   formatEther,
   formatUnits,
   getAddress,
@@ -98,6 +99,7 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { getSafeTxn } from '../../libs/safe/safe'
 import {
   adjustEntryPointAuthorization,
   get7702Sig,
@@ -105,6 +107,7 @@ import {
   getEIP712Signature,
   getEntryPointAuthorization,
   getExecuteSignature,
+  getSafeTypedData,
   getTypedData,
   wrapStandard,
   wrapUnprotected
@@ -2147,6 +2150,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
+    // todo:
+    // for the time being, ignore signingKeyAddr | signingKeyType for
+    // safe accounts as they probably have multiple signers
+
     const signer = await this.#keystore.getSigner(
       this.accountOp.signingKeyAddr,
       this.accountOp.signingKeyType
@@ -2226,11 +2233,30 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     try {
-      // plain EOA
-      if (
+      if (this.account.safeCreation) {
+        const signatures: Hex[] = []
+        for (let i = 0; i < accountState.importedAccountKeys.length; i++) {
+          const safeKey = accountState.importedAccountKeys[i]!
+          const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
+          if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
+          const signature = (await signer.signTypedData(
+            getSafeTypedData(
+              this.#network.chainId,
+              this.account.addr as Hex,
+              getSafeTxn(this.accountOp, accountState)
+            )
+          )) as Hex
+          signatures.push(signature)
+
+          // emit update only if the loop is to continue
+          if (i + 1 < accountState.importedAccountKeys.length) this.emitUpdate()
+        }
+        this.#updateAccountOp({ signature: concat(signatures) })
+      } else if (
         broadcastOption === BROADCAST_OPTIONS.bySelf ||
         broadcastOption === BROADCAST_OPTIONS.bySelf7702
       ) {
+        // plain EOA
         // rawTxn, No SA signatures
         // or 7702, calling executeBySender(). No SA signatures
         this.#updateAccountOp({ signature: '0x' })

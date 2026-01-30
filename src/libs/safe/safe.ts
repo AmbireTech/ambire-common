@@ -6,13 +6,18 @@ import {
   Interface,
   keccak256,
   toBeHex,
+  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
 import { SafeCreationInfoResponse } from '@safe-global/api-kit'
 
+import { multiSendAddr } from '../../consts/safe'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
+import { SafeTx } from '../../interfaces/safe'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 
 export function isSupportedSafeVersion(version: string): boolean {
   const [major, minor] = version.split('.').map(Number)
@@ -69,4 +74,49 @@ export function decodeSetupData(setupData: Hex): Hex[] {
   }
 
   return Object.keys(decoded[0]).map((key) => decoded[0][key])
+}
+
+/**
+ * Construct a safe txn for signing
+ */
+export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
+  const coder = new AbiCoder()
+  const calls = getSignableCalls(op)
+
+  let to
+  let value
+  let data
+  let operation
+
+  if (calls.length === 1) {
+    const singleCall = calls[0]!
+    to = singleCall[0]
+    value = BigInt(singleCall[1])
+    data = singleCall[2]
+    operation = 0 // static call
+  } else {
+    const multiSendCalls = calls.map((call) => {
+      return coder.encode(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, call[0], call[1], call[2].length, call[2]]
+      )
+    })
+    to = multiSendAddr
+    value = 0n
+    data = concat(multiSendCalls)
+    operation = 1 // delegate call
+  }
+
+  return {
+    to: to as Hex,
+    value,
+    data: data as Hex,
+    operation,
+    safeTxGas: 0n,
+    baseGas: 0n,
+    gasPrice: 0n,
+    gasToken: ZeroAddress as Hex,
+    refundReceiver: ZeroAddress as Hex,
+    nonce: op.nonce || state.nonce || 0n
+  }
 }
