@@ -205,11 +205,12 @@ export async function ambireEstimateGas(
     })
   )
 
+  const originalNonce = shouldStateOverride ? op.nonce! : outcomeNonce
   return {
     gasUsed,
     deploymentGas: deployment.gasUsed,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    ambireAccountNonce: accountOp.success ? Number(outcomeNonce - 1n) : Number(outcomeNonce),
+    ambireAccountNonce: accountOp.success ? Number(originalNonce - 1n) : Number(originalNonce),
     flags
   }
 }

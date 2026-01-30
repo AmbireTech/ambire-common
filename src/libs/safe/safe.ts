@@ -12,9 +12,10 @@ import {
 
 import { SafeCreationInfoResponse } from '@safe-global/api-kit'
 
-import { multiSendAddr } from '../../consts/safe'
+import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
+import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
@@ -119,4 +120,36 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
     refundReceiver: ZeroAddress as Hex,
     nonce: op.nonce || state.nonce || 0n
   }
+}
+
+export function getSafeBroadcastTxn(
+  op: AccountOp,
+  state: AccountOnchainState
+): { to: Hex; value: bigint; data: Hex } {
+  const exec = new Interface(execTransactionAbi)
+  const safeTxn: any = getSafeTxn(op, state)
+  delete safeTxn.nonce
+  return {
+    to: op.accountAddr as Hex,
+    value: 0n,
+    data: exec.encodeFunctionData('execTransaction', [
+      ...Object.values(safeTxn),
+      op.signature
+    ]) as Hex
+  }
+}
+
+/**
+ * In safe, the signatures need to be in order for the transaction
+ * to pass and to be valid. So, we sort the owners initially and sign
+ * with them one by one, in the correct order.
+ * This would be better to do with signature alone but we would
+ * need to do ecrecover on them to get the address
+ */
+export function sortOwners(keys: Key[]): Key[] {
+  return keys.sort((a, b) => {
+    const aBig = BigInt(a.addr.toLowerCase())
+    const bBig = BigInt(b.addr.toLowerCase())
+    return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
+  })
 }

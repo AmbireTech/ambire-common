@@ -99,7 +99,7 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
-import { getSafeTxn } from '../../libs/safe/safe'
+import { getSafeTxn, sortOwners } from '../../libs/safe/safe'
 import {
   adjustEntryPointAuthorization,
   get7702Sig,
@@ -2235,8 +2235,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     try {
       if (this.account.safeCreation) {
         const signatures: Hex[] = []
-        for (let i = 0; i < accountState.importedAccountKeys.length; i++) {
-          const safeKey = accountState.importedAccountKeys[i]!
+        const sortedKeys = sortOwners(accountState.importedAccountKeys)
+        for (let i = 0; i < sortedKeys.length; i++) {
+          const safeKey = sortedKeys[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
           if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
           const signature = (await signer.signTypedData(
@@ -2249,7 +2250,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           signatures.push(signature)
 
           // emit update only if the loop is to continue
-          if (i + 1 < accountState.importedAccountKeys.length) this.emitUpdate()
+          if (i + 1 < sortedKeys.length) this.emitUpdate()
         }
         this.#updateAccountOp({ signature: concat(signatures) })
       } else if (
