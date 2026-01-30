@@ -7,9 +7,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import {
   BenzinUserRequest,
@@ -19,7 +17,6 @@ import {
 } from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -121,22 +118,12 @@ const prepareTest = async () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-  const providers: RPCProviders = {}
-  networks.forEach((network) => {
-    providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-    providers[network.chainId.toString()]!.isWorking = true
-  })
-  providersCtrl.providers = providers
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,

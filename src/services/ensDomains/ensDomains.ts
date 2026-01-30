@@ -15,9 +15,7 @@ import {
 // @ts-ignore
 import { normalize } from '@ensdomains/eth-ens-namehash'
 
-import { networks } from '../../consts/networks'
 import { RPCProvider } from '../../interfaces/provider'
-import { getRpcProvider } from '../provider'
 
 const BIP44_BASE_VALUE = 2147483648
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
@@ -51,22 +49,21 @@ export function isCorrectAddress(address: string) {
 }
 
 // @TODO: Get RPC provider url from settings controller
-async function resolveENSDomain(
-  domain: string,
+async function resolveENSDomain({
+  domain,
+  bip44Item,
+  getResolver
+}: {
+  domain: string
   bip44Item?: number[][]
-): Promise<{
+  getResolver: (domainName: string) => Promise<EnsResolver | null>
+}): Promise<{
   address: string
   avatar: string | null
 }> {
   const normalizedDomainName = normalizeDomain(domain)
-  if (!normalizedDomainName)
-    return {
-      address: '',
-      avatar: null
-    }
-  const ethereum = networks.find((n) => n.chainId === 1n)!
-  const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
-  const resolver = await provider.getResolver(normalizedDomainName)
+  if (!normalizedDomainName) return { address: '', avatar: null }
+  const resolver = await getResolver(normalizedDomainName)
 
   if (!resolver)
     return {
@@ -97,8 +94,6 @@ async function resolveENSDomain(
       }
 
     throw e
-  } finally {
-    provider?.destroy()
   }
 }
 

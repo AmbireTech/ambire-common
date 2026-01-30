@@ -314,17 +314,13 @@ const prepareTest = async (
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
-    }
+    onAddOrUpdateNetworks: () => {}
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl)
-  providersCtrl.providers = providers
+  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  await providersCtrl.initialLoadPromise
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
