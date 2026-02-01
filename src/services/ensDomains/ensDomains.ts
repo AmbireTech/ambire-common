@@ -56,7 +56,7 @@ async function resolveENSDomain({
 }: {
   domain: string
   bip44Item?: number[][]
-  getResolver: (domainName: string) => Promise<EnsResolver | null>
+  getResolver: (method: string) => Promise<EnsResolver | null>
 }): Promise<{
   address: string
   avatar: string | null
