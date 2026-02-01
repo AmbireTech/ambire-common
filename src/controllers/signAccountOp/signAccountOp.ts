@@ -131,7 +131,6 @@ import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
-import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -2345,7 +2344,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     try {
       if (this.account.safeCreation) {
         const signatures: Hex[] = []
-        const sortedKeys = sortOwners(accountState.importedAccountKeys)
+        const sortedKeys = sortOwners(
+          accountState.importedAccountKeys,
+          Number(accountState.threshold)
+        )
         for (let i = 0; i < sortedKeys.length; i++) {
           const safeKey = sortedKeys[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)

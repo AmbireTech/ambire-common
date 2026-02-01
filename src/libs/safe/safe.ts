@@ -153,10 +153,22 @@ export function getSafeBroadcastTxn(
  * This would be better to do with signature alone but we would
  * need to do ecrecover on them to get the address
  */
-export function sortOwners(keys: Key[]): Key[] {
-  return keys.sort((a, b) => {
-    const aBig = BigInt(a.addr.toLowerCase())
-    const bBig = BigInt(b.addr.toLowerCase())
-    return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
-  })
+export function sortOwners(keys: Key[], threshold: number): Key[] {
+  const sortByAddress = (sortableKeys: Key[]) => {
+    return sortableKeys.sort((a, b) => {
+      const aBig = BigInt(a.addr.toLowerCase())
+      const bBig = BigInt(b.addr.toLowerCase())
+      return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
+    })
+  }
+
+  // get internal keys first, if any, and keep only those until threshold is met
+  const internalFirst = keys
+    .sort((a, b) => {
+      const isAInternal = a.type === 'internal'
+      const isBInternal = b.type === 'internal'
+      return isAInternal && !isBInternal ? -1 : !isAInternal && isBInternal ? 1 : 0
+    })
+    .slice(0, threshold)
+  return sortByAddress(internalFirst)
 }
