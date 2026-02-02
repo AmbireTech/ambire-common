@@ -95,7 +95,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
-    resolveENSDomain({
+    await resolveENSDomain({
       domain,
       bip44Item,
       getResolver: (name) => ethereumProvider.getResolver(name)
@@ -138,7 +138,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     this.ensToAddress[domain] = checksummedAddress
     this.domains[checksummedAddress] = {
-      ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
+      ensAvatar: type === 'ens' ? ensAvatar : existing?.ensAvatar ?? null,
       ens: type === 'ens' ? domain : prevEns,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
