@@ -102,6 +102,48 @@ describe('RecurringTimeout', () => {
     await jest.advanceTimersByTimeAsync(200)
     expect(fn).toHaveBeenCalledTimes(2)
   })
+  test('should allow overlap when configured: next fn run starts even if previous is running', async () => {
+    // The second call should overlap with the first, but after both complete,
+    // there should be only one scheduled loop
+    const first = createDeferred()
+    const second = createDeferred()
+    const fn = jest
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    const t = new RecurringTimeout(fn, 200)
+    t.start({ runImmediately: true, allowOverlap: true })
+
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
+    expect(fn).toHaveBeenCalledTimes(1)
+
+    // Trigger restart while the first is still running
+    // without allowOverlap, this would not schedule a new run
+    t.restart({ runImmediately: true, allowOverlap: true })
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    // Resolve first
+    first.resolve()
+    await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
+
+    // No new run should be scheduled yet
+    await jest.advanceTimersByTimeAsync(1000)
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    // Resolve second
+    second.resolve()
+    await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
+
+    // Now a new run should be scheduled
+    // Purposefully advance more than 200ms to ensure the timer is not
+    // affected by small inaccuracies
+    await jest.advanceTimersByTimeAsync(300)
+    // Expect 3!!! If there is a bug that makes loop() schedule multiple
+    // timeouts, this will catch it.
+    expect(fn).toHaveBeenCalledTimes(3)
+  })
   test('stop should prevent further fn runs and clears timer', async () => {
     const d1 = createDeferred()
     const fn = jest.fn(() => d1.promise)

@@ -17,6 +17,7 @@ import {
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
@@ -59,7 +60,13 @@ export class NetworksController extends EventEmitter implements INetworksControl
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
-  #onRemoveNetwork: (chainId: bigint) => void
+  #useTempProvider: (
+    props: {
+      rpcUrl: string
+      chainId: bigint
+    },
+    callback: (provider: RPCProvider) => Promise<void>
+  ) => Promise<void>
 
   /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetworks: (networks: Network[]) => void
@@ -75,24 +82,30 @@ export class NetworksController extends EventEmitter implements INetworksControl
     storage,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks,
-    onRemoveNetwork
+    useTempProvider,
+    onAddOrUpdateNetworks
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
     storage: IStorageController
     fetch: Fetch
     relayerUrl: string
+    useTempProvider: (
+      props: {
+        rpcUrl: string
+        chainId: bigint
+      },
+      callback: (provider: RPCProvider) => Promise<void>
+    ) => Promise<void>
     onAddOrUpdateNetworks: (networks: Network[]) => void
-    onRemoveNetwork: (chainId: bigint) => void
   }) {
     super(eventEmitterRegistry)
     if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#useTempProvider = useTempProvider
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
-    this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -189,10 +202,13 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (!Object.keys(networksInStorage).length) {
       const defaultNetworks =
         this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
-      finalNetworks = defaultNetworks.reduce((acc, network) => {
-        acc[network.chainId.toString()] = network
-        return acc
-      }, {} as { [key: string]: Network })
+      finalNetworks = defaultNetworks.reduce(
+        (acc, network) => {
+          acc[network.chainId.toString()] = network
+          return acc
+        },
+        {} as { [key: string]: Network }
+      )
       this.#networks = finalNetworks
       this.emitUpdate()
     }
@@ -304,31 +320,39 @@ export class NetworksController extends EventEmitter implements INetworksControl
         return
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      getNetworkInfo(
-        this.#fetch,
-        network.selectedRpcUrl,
-        network.chainId,
-        async (info) => {
-          if (Object.values(info).some((prop) => prop === 'LOADING')) {
-            return
-          }
-
-          // If RPC is flagged there might be an issue with the RPC
-          // this information will fail to return
-          // and we dont want to update lastUpdatedNetworkInfo
-          const chainId = network.chainId.toString()
-          if (info.flagged || !this.#networks[chainId]) return
-          this.#networks[chainId] = {
-            ...this.#networks[chainId],
-            ...(info as NetworkInfo),
-            lastUpdatedNetworkInfo: Date.now()
-          }
-
-          await this.#storage.set('networks', this.#networks)
-
-          this.emitUpdate()
+      this.#useTempProvider(
+        {
+          chainId: network.chainId,
+          rpcUrl: network.selectedRpcUrl
         },
-        network
+        async (provider) => {
+          await getNetworkInfo(
+            this.#fetch,
+            network.chainId,
+            provider,
+            async (info) => {
+              if (Object.values(info).some((prop) => prop === 'LOADING')) {
+                return
+              }
+
+              // If RPC is flagged there might be an issue with the RPC
+              // this information will fail to return
+              // and we dont want to update lastUpdatedNetworkInfo
+              const chainId = network.chainId.toString()
+              if (info.flagged || !this.#networks[chainId]) return
+              this.#networks[chainId] = {
+                ...this.#networks[chainId],
+                ...(info as NetworkInfo),
+                lastUpdatedNetworkInfo: Date.now()
+              }
+
+              await this.#storage.set('networks', this.#networks)
+
+              this.emitUpdate()
+            },
+            network
+          )
+        }
       )
     })
 
@@ -347,17 +371,22 @@ export class NetworksController extends EventEmitter implements INetworksControl
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()
 
-      await getNetworkInfo(
-        this.#fetch,
-        networkToAddOrUpdate.rpcUrl,
-        networkToAddOrUpdate.chainId,
-        (info) => {
-          if (this.networkToAddOrUpdate) {
-            this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
-            this.emitUpdate()
-          }
-        },
-        this.#networks[networkToAddOrUpdate.chainId.toString()]
+      await this.#useTempProvider(
+        { chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl },
+        async (provider) => {
+          await getNetworkInfo(
+            this.#fetch,
+            networkToAddOrUpdate.chainId,
+            provider,
+            (info) => {
+              if (this.networkToAddOrUpdate) {
+                this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
+                this.emitUpdate()
+              }
+            },
+            this.#networks[networkToAddOrUpdate.chainId.toString()]
+          )
+        }
       )
     } else {
       this.networkToAddOrUpdate = null
@@ -467,30 +496,38 @@ export class NetworksController extends EventEmitter implements INetworksControl
         }
 
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        getNetworkInfo(
-          this.#fetch,
-          changedNetwork.selectedRpcUrl,
-          this.#networks[chainId.toString()]!.chainId!,
-          async (info) => {
-            if (Object.values(info).some((prop) => prop === 'LOADING')) {
-              return
-            }
-
-            const { feeOptions } = info as NetworkInfo
-
-            // eslint-disable-next-line no-param-reassign
-            delete (info as any).feeOptions
-            this.#networks[stringChainId] = {
-              ...(this.#networks[stringChainId] as Network),
-              ...(info as NetworkInfo),
-              ...feeOptions
-            }
-
-            await this.#storage.set('networks', this.#networks)
-
-            this.emitUpdate()
+        this.#useTempProvider(
+          {
+            chainId,
+            rpcUrl: changedNetwork.selectedRpcUrl
           },
-          this.#networks[stringChainId]
+          async (provider) => {
+            await getNetworkInfo(
+              this.#fetch,
+              chainId,
+              provider,
+              async (info) => {
+                if (Object.values(info).some((prop) => prop === 'LOADING')) {
+                  return
+                }
+
+                const { feeOptions } = info as NetworkInfo
+
+                // eslint-disable-next-line no-param-reassign
+                delete (info as any).feeOptions
+                this.#networks[stringChainId] = {
+                  ...(this.#networks[stringChainId] as Network),
+                  ...(info as NetworkInfo),
+                  ...feeOptions
+                }
+
+                await this.#storage.set('networks', this.#networks)
+
+                this.emitUpdate()
+              },
+              this.#networks[stringChainId]
+            )
+          }
         )
       }
     }
@@ -525,7 +562,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
-    this.#onRemoveNetwork(chainId)
     await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
   }

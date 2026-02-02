@@ -36,7 +36,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '../../int
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
@@ -241,19 +241,23 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch,
       relayerUrl,
+      useTempProvider: async (props, callback) => {
+        await this.providers.useTempProvider(props, callback)
+      },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
         await this.reloadSelectedAccount({
           chainIds: networks.map((n) => n.chainId)
         })
-      },
-      onRemoveNetwork: (chainId: bigint) => {
-        this.providers.removeProvider(chainId)
       }
     })
 
-    this.providers = new ProvidersController(this.networks, this.storage, eventEmitterRegistry)
+    this.providers = new ProvidersController(
+      this.networks,
+      this.storage,
+      this.ui,
+      eventEmitterRegistry
+    )
     this.accounts = new AccountsController(
       this.storage,
       this.providers,
@@ -1090,8 +1094,9 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount =
-      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
