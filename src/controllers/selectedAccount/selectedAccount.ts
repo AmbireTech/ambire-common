@@ -236,9 +236,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
     try {
       // Find stkWALLET or WALLET token in the latest portfolio state
-      const walletORStkWalletToken = portfolioAccountState['1']?.result?.tokens.find(
+      const walletOrStkWalletTokenPrice = portfolioAccountState['1']?.result?.tokens.find(
         ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
-      )
+      )?.priceIn?.[0]?.price
+
+      const ethTokenPrice = portfolioAccountState['1']?.result?.tokens.find(
+        ({ symbol }) => symbol === 'ETH'
+      )?.priceIn?.[0]?.price
+
       const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(
         ({ address }) => address === STK_WALLET
       )
@@ -266,7 +271,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         // extension and the app, we will not include assets with type Reward for the
         // uniswap liquidity position
         .filter((a) => a.type === AssetType.Liquidity)
-        .map((a) => a.priceIn.price * Number(formatEther(a.amount)))
+        .map((a) => {
+          const tokenPriceFromPosition = a.priceIn?.price
+          const tokenPriceFromPortfolio =
+            a.address === WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice
+          const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio || 0
+
+          return tokenPriceToUse * Number(formatEther(a.amount))
+        })
         .reduce((a, b) => a + b, 0)
 
       const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
@@ -279,8 +291,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         .reduce((a, b) => a + b, 0)
 
       if (portfolioAccountState.projectedRewards) {
-        const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
-
         const projectedRewardsData = getProjectedRewardsStatsAndToken(
           portfolioAccountState.projectedRewards,
           walletOrStkWalletTokenPrice,
