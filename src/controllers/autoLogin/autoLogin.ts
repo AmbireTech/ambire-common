@@ -1,7 +1,8 @@
 import { isHexString, toUtf8String } from 'ethers'
 import { SiweMessage } from 'siwe'
+import { getDomain } from 'tldts'
 import { getAddress } from 'viem'
-import { parseSiweMessage, SiweMessage as SiweMessageType } from 'viem/siwe'
+import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { IAccountsController } from '../../interfaces/account'
 import {
@@ -165,7 +166,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     }
 
     try {
-      const requestDomain = new URL(requestOrigin).host
+      const requestHostname = new URL(requestOrigin).host
 
       // Some dApps don't use checksum addresses in the SIWE message
       // Which makes verification by the 'siwe' package fail (as it's very strict)
@@ -180,7 +181,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
       if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
 
-      if (parsedSiweMessage.domain !== requestDomain)
+      if (getDomain(parsedSiweMessage.domain) !== getDomain(requestHostname))
         return {
           parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
           status: 'domain-mismatch'
