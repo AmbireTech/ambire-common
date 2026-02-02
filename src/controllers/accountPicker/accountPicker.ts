@@ -673,15 +673,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     )
   }
 
-  /**
-   * Prevents requesting the next page before the current one is fully loaded.
-   * This avoids race conditions where the user requests the next page before
-   * linked accounts are fully loaded, causing misleadingly failing `#verifyLinkedAccounts` checks.
-   */
-  get isPageLocked() {
-    return this.accountsLoading || this.linkedAccountsLoading
-  }
-
   async setPage({
     page = this.page,
     pageSize,
@@ -1473,8 +1464,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
-      subType: this.subType,
-      isPageLocked: this.isPageLocked
+      subType: this.subType
     }
   }
 }
