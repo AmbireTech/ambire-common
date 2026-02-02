@@ -26,7 +26,7 @@ export interface PositionAsset {
   iconUrl: string
   simulationAmount?: bigint
   amountPostSimulation?: bigint
-  priceIn: Price
+  priceIn?: Price
   value?: number
   type: AssetType
   additionalData?: {
