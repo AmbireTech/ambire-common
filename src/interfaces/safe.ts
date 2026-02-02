@@ -7,13 +7,13 @@ export type ISafeController = ControllerInterface<
 
 export interface SafeTx {
   to: Hex
-  value: bigint
+  value: Hex
   data: Hex
   operation: number
-  safeTxGas: bigint
-  baseGas: bigint
-  gasPrice: bigint
+  safeTxGas: Hex
+  baseGas: Hex
+  gasPrice: Hex
   gasToken: Hex
   refundReceiver: Hex
-  nonce: bigint
+  nonce: Hex
 }

@@ -110,15 +110,15 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
 
   return {
     to: to as Hex,
-    value,
+    value: toBeHex(value) as Hex,
     data: data as Hex,
     operation,
-    safeTxGas: 0n,
-    baseGas: 0n,
-    gasPrice: 0n,
+    safeTxGas: toBeHex(0) as Hex,
+    baseGas: toBeHex(0) as Hex,
+    gasPrice: toBeHex(0) as Hex,
     gasToken: ZeroAddress as Hex,
     refundReceiver: ZeroAddress as Hex,
-    nonce: op.nonce || state.nonce || 0n
+    nonce: toBeHex(op.nonce || state.nonce || 0n) as Hex
   }
 }
 
@@ -148,13 +148,15 @@ export function getSafeBroadcastTxn(
 
 /**
  * In safe, the signatures need to be in order for the transaction
- * to pass and to be valid. So, we sort the owners initially and sign
+ * to pass and to be valid. So, we sort the owners and sign
  * with them one by one, in the correct order.
  * This would be better to do with signature alone but we would
  * need to do ecrecover on them to get the address
  */
-export function sortOwners(keys: Key[], threshold: number): Key[] {
-  const sortByAddress = (sortableKeys: Key[]) => {
+export function sortOwnersForBroadcast(
+  keys: { addr: Key['addr']; type: Key['type'] }[] | Key[]
+): { addr: Key['addr']; type: Key['type'] }[] | Key[] {
+  const sortByAddress = (sortableKeys: { addr: Key['addr']; type: Key['type'] }[]) => {
     return sortableKeys.sort((a, b) => {
       const aBig = BigInt(a.addr.toLowerCase())
       const bBig = BigInt(b.addr.toLowerCase())
@@ -162,13 +164,19 @@ export function sortOwners(keys: Key[], threshold: number): Key[] {
     })
   }
 
-  // get internal keys first, if any, and keep only those until threshold is met
-  const internalFirst = keys
+  return sortByAddress(keys)
+}
+
+/**
+ * Get internal keys first
+ */
+export function sortDefaultOwners(keys: Key[], threshold: number): Key[] {
+  const slicedInternalFirst = keys
     .sort((a, b) => {
       const isAInternal = a.type === 'internal'
       const isBInternal = b.type === 'internal'
       return isAInternal && !isBInternal ? -1 : !isAInternal && isBInternal ? 1 : 0
     })
     .slice(0, threshold)
-  return sortByAddress(internalFirst)
+  return sortOwnersForBroadcast(slicedInternalFirst) as Key[]
 }
