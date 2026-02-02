@@ -1946,6 +1946,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const state =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (!state) return []
+    if (this.account.safeCreation) return sortOwners(state.importedAccountKeys, state.threshold)
     return this.#keystore.keys.filter((key) => state.associatedKeys.includes(key.addr))
   }
 
@@ -2344,10 +2345,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     try {
       if (this.account.safeCreation) {
         const signatures: Hex[] = []
-        const sortedKeys = sortOwners(
-          accountState.importedAccountKeys,
-          Number(accountState.threshold)
-        )
+        const sortedKeys = sortOwners(accountState.importedAccountKeys, accountState.threshold)
         for (let i = 0; i < sortedKeys.length; i++) {
           const safeKey = sortedKeys[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
@@ -2362,7 +2360,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           signatures.push(signature)
 
           // emit update only if the loop is to continue
-          if (i + 1 < sortedKeys.length) this.emitUpdate()
+          if (i + 1 < sortedKeys.length) {
+            const nextKey = sortedKeys[i + 1]!
+            this.#updateAccountOp({
+              signingKeyAddr: nextKey.addr,
+              signingKeyType: nextKey.type
+            })
+            this.emitUpdate()
+          }
         }
         this.#updateAccountOp({ signature: concat(signatures) })
       } else if (

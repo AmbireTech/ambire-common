@@ -144,7 +144,7 @@ export async function getAccountState(
       isSmarterEoa,
       delegatedContract,
       delegatedContractName,
-      threshold: BigInt(accResult.threshold),
+      threshold: Number(accResult.threshold),
       updatedAt: Date.now()
     }
   })
