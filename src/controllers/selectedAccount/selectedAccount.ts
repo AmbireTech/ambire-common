@@ -266,7 +266,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         // extension and the app, we will not include assets with type Reward for the
         // uniswap liquidity position
         .filter((a) => a.type === AssetType.Liquidity)
-        .map((a) => a.priceIn.price * Number(formatEther(a.amount)))
+        .map((a) => (a.priceIn?.price || 0) * Number(formatEther(a.amount)))
         .reduce((a, b) => a + b, 0)
 
       const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
