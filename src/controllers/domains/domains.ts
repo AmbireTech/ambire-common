@@ -30,8 +30,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
+  /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
 
+  /** Maps domain names to account addresses; necessary because the 'domains' state
+   * only indexes by address, making getting an address for an existing domain name inefficient.
+   */
   ensToAddress: { [ensName: string]: string } = {}
 
   loadingAddresses: string[] = []
@@ -86,7 +90,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     this.resolveDomainsStatus[domain] = 'LOADING'
-    await this.emitUpdate()
+    await this.forceEmitUpdate()
 
     if (this.ensToAddress[domain]) {
       this.resolveDomainsStatus[domain] = 'RESOLVED'
@@ -117,7 +121,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   /**
-   *Saves an already resolved ENS name for an address.
+   * Saves an already resolved ENS name for an address.
    */
   #saveResolvedDomain({
     address,
@@ -138,7 +142,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     this.ensToAddress[domain] = checksummedAddress
     this.domains[checksummedAddress] = {
-      ensAvatar: type === 'ens' ? ensAvatar : existing?.ensAvatar ?? null,
+      ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
       ens: type === 'ens' ? domain : prevEns,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
