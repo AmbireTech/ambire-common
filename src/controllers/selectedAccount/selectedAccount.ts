@@ -275,11 +275,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
           const tokenPriceFromPosition = a.priceIn?.price
           const tokenPriceFromPortfolio =
             a.address === WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice
-          const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio || 0
+          const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio
+          if (tokenPriceToUse === undefined) return undefined
 
           return tokenPriceToUse * Number(formatEther(a.amount))
         })
-        .reduce((a, b) => a + b, 0)
+        .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0)
 
       const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
         .filter(([k]) =>
