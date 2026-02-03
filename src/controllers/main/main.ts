@@ -297,7 +297,6 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore,
       autoLogin: this.autoLogin
     })
     this.banner = new BannerController(this.storage, eventEmitterRegistry)

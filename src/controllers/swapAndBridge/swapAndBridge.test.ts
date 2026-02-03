@@ -117,7 +117,6 @@ const autoLoginCtrl = new AutoLoginController(
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore,
   autoLogin: autoLoginCtrl
 })
 

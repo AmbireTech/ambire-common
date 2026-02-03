@@ -102,7 +102,6 @@ describe('AddressBookController', () => {
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore,
     autoLogin: autoLoginCtrl
   })
   const addressBookController = new AddressBookController(

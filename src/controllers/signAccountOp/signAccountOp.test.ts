@@ -412,7 +412,6 @@ const init = async (
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore,
     autoLogin: autoLoginCtrl
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
@@ -633,7 +632,6 @@ describe('SignAccountOp Controller ', () => {
       accountOp,
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -789,7 +787,6 @@ describe('SignAccountOp Controller ', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -885,7 +882,6 @@ describe('SignAccountOp Controller ', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -967,7 +963,6 @@ describe('SignAccountOp Controller ', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -1101,7 +1096,6 @@ describe('SignAccountOp Controller ', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -1230,7 +1224,6 @@ describe('Negative cases', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -1366,7 +1359,6 @@ describe('Negative cases', () => {
       createAccountOp(e2esmartAccount, network.chainId),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 50000n,
           feePaymentOptions
@@ -1520,7 +1512,6 @@ describe('Negative cases', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -1654,7 +1645,6 @@ describe('Negative cases', () => {
       createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
@@ -1716,7 +1706,6 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1765,7 +1754,6 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1817,7 +1805,6 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1871,7 +1858,6 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1921,7 +1907,6 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -1971,7 +1956,6 @@ describe('throwBroadcastAccountOp', () => {
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        updatedAt: 1,
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions: []
@@ -2050,7 +2034,6 @@ test('Signing [V1 with EOA payment]: working case', async () => {
     createAccountOp(v1Account),
     eoaSigner,
     {
-      updatedAt: 1,
       providerEstimation: {
         gasUsed: 10000n,
         feePaymentOptions

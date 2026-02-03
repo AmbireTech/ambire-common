@@ -228,3 +228,12 @@ export async function confirm(txn: SafeTx, chainId: bigint, safeAddress: Hex, ow
   })
   return apiKit.confirmTransaction(getSafeTxnHash(txn, chainId, safeAddress), ownerSig)
 }
+
+export async function getPendingTransactions(chainId: bigint, safeAddress: Hex) {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+
+  return apiKit.getMultisigTransactions(safeAddress, { executed: false })
+}
