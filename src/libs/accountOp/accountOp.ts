@@ -69,6 +69,8 @@ export interface AccountOp {
   // multiple signers use case
   // all the signers that are to sign the transaction
   signers?: { addr: Key['addr']; type: Key['type'] }[]
+  // who are the signers that already signed this txn
+  signed?: string[]
   // all kinds of custom accountOp properties that are needed in specific cases
   meta?: {
     // pass the entry point authorization signature for the deploy 4337 txn

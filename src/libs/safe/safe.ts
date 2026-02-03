@@ -5,20 +5,29 @@ import {
   getCreate2Address,
   Interface,
   keccak256,
+  recoverAddress,
   toBeHex,
   ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
-import SafeApiKit, { ProposeTransactionProps, SafeCreationInfoResponse } from '@safe-global/api-kit'
+import SafeApiKit, {
+  ProposeTransactionProps,
+  SafeCreationInfoResponse,
+  SafeMultisigTransactionListResponse
+} from '@safe-global/api-kit'
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
+import { CallsUserRequest } from '../../interfaces/userRequest'
+import wait from '../../utils/wait'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { adaptTypedMessageForMetaMaskSigUtil, getSafeTypedData } from '../signMessage/signMessage'
 
@@ -229,11 +238,125 @@ export async function confirm(txn: SafeTx, chainId: bigint, safeAddress: Hex, ow
   return apiKit.confirmTransaction(getSafeTxnHash(txn, chainId, safeAddress), ownerSig)
 }
 
-export async function getPendingTransactions(chainId: bigint, safeAddress: Hex) {
+export async function getPendingTransactions(
+  chainId: bigint,
+  safeAddress: Hex
+): Promise<SafeMultisigTransactionListResponse & { chainId: bigint }> {
   const apiKit = new SafeApiKit({
     chainId,
     apiKey: process.env.SAFE_API_KEY
   })
 
-  return apiKit.getMultisigTransactions(safeAddress, { executed: false })
+  const response = await apiKit.getMultisigTransactions(safeAddress, { executed: false })
+  return { ...response, chainId }
+}
+
+export async function fetchAllPending(
+  networks: Network[],
+  safeAddr: Hex
+): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
+  let promises = []
+  const results: { [chainId: string]: SafeMultisigTransactionResponse[] } = {}
+  for (let i = 0; i < networks.length; i++) {
+    const network = networks[i]!
+    promises.push(getPendingTransactions(network.chainId, safeAddr))
+
+    // when we assemble 5 promises, we make 5 requests to the API,
+    // take the results and wait an additional second.
+    // this is because we're allowed 5 requests per second
+    if ((i + 1) % 5 === 0 || i + 1 === networks.length) {
+      const responses = await Promise.all(promises)
+      responses.forEach((r) => {
+        results[r.chainId.toString()] = r.results
+      })
+      await wait(1100)
+      promises = []
+    }
+  }
+
+  return results
+}
+
+export function toCallsUserRequest(
+  safeAddr: Hex,
+  response: {
+    [chainId: string]: SafeMultisigTransactionResponse[]
+  }
+): {
+  type: 'calls'
+  params: {
+    userRequestParams: {
+      calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
+      meta: CallsUserRequest['meta'] & { txnId: Hex; signature: Hex }
+    }
+    executionType: 'queue'
+  }
+}[] {
+  const userRequests: {
+    type: 'calls'
+    params: {
+      userRequestParams: {
+        calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
+        meta: CallsUserRequest['meta'] & { txnId: Hex; signature: Hex }
+      }
+      executionType: 'queue'
+    }
+  }[] = []
+
+  Object.keys(response).forEach((chainId: string) => {
+    const txns = response[chainId]!
+    txns.forEach((txn) => {
+      let calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = []
+      try {
+        // try to decode the data to check if it's a batch
+        // if it is, use it; otherwise, construct a single call req
+        const abiCoder = new AbiCoder()
+        const safeCalls = abiCoder.decode(
+          ['tuple(uint8, address, uint256, uint256, bytes)'],
+          txn.data!
+        )
+        calls = safeCalls.map((call) => ({ to: call[1], value: call[2], data: call[4] }))
+      } catch (e) {
+        // this just means it's not a batch
+        calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
+      }
+
+      const signature = txn.confirmations
+        ? (concat(txn.confirmations?.map((c) => c.signature)) as Hex)
+        : null
+      if (!signature) return
+      userRequests.push({
+        type: 'calls',
+        params: {
+          userRequestParams: {
+            calls,
+            meta: {
+              accountAddr: safeAddr,
+              chainId: BigInt(chainId),
+              txnId: txn.safeTxHash as Hex,
+              signature
+            }
+          },
+          executionType: 'queue'
+        }
+      })
+    })
+  })
+
+  return userRequests
+}
+
+// the signature is 130 x number_of_sigs + 2 (0x) symbols long
+// so we cut the hex (0x) from the beginning
+// then take each sig (substring(0, 130)) and recover the address
+// finally, we update everything
+export function getAlreadySignedOwners(signature: string, hash: string) {
+  const signatures = signature.substring(2)
+  const signed = []
+  for (let i = 0; i < signatures.length; i += 130) {
+    const sig = `0x${signatures.substring(i, i + 130)}`
+    const owner = recoverAddress(hash, sig)
+    signed.push(owner)
+  }
+  return signed
 }

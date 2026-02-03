@@ -1,7 +1,9 @@
 import { toBeHex } from 'ethers'
 
 import SafeApiKit, { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
+import { FETCH_PENDING_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
 import { SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -11,6 +13,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import {
   decodeSetupData,
+  fetchAllPending,
   getCalculatedSafeAddress,
   isSupportedSafeVersion
 } from '../../libs/safe/safe'
@@ -24,6 +27,11 @@ export class SafeController extends EventEmitter implements ISafeController {
   #networks: INetworksController
 
   #providers: IProvidersController
+
+  /**
+   * The last time a request to fetch pending safe txn was made
+   */
+  #updatedAt: number = 0
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -143,6 +151,15 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async findSafe(safeAddr: string) {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
+  }
+
+  async fetchPending(
+    safeAddr: Hex
+  ): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
+    if (Date.now() - this.#updatedAt < FETCH_PENDING_SAFE_TXNS) return null
+
+    this.#updatedAt = Date.now()
+    return fetchAllPending(this.#networks.networks, safeAddr)
   }
 
   toJSON() {

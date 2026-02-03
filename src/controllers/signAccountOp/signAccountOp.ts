@@ -105,7 +105,9 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import {
   confirm,
+  getAlreadySignedOwners,
   getSafeTxn,
+  getSafeTxnHash,
   propose,
   sortDefaultOwners,
   sortOwnersForBroadcast
@@ -193,8 +195,7 @@ export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster,
-  SigningStatus.Queued
+  SigningStatus.WaitingForPaymaster
 ]
 
 export type SignAccountOpUpdateProps = {
@@ -423,6 +424,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
+
+    if (this.#accountOp.signature && this.#accountOp.txnId) {
+      this.#accountOp.signed = getAlreadySignedOwners(
+        this.#accountOp.signature,
+        this.#accountOp.txnId
+      )
+      this.status = { type: SigningStatus.Queued }
+    }
 
     this.signedAccountOp = null
     this.replacementFeeLow = false
@@ -1190,7 +1199,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (accountOpData) {
-        const { calls, ...rest } = accountOpData
+        const { calls, signature, ...rest } = accountOpData
+
+        if (signature && this.accountOp.txnId) {
+          const newlySigned = getAlreadySignedOwners(signature, this.accountOp.txnId)
+          const signed = this.accountOp.signed
+            ? [...new Set(...this.accountOp.signed, ...newlySigned)]
+            : newlySigned
+          this.#updateAccountOp({ signature, signed })
+        }
 
         // update all properties except calls
         // calls are handled separately below
@@ -1345,6 +1362,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.status?.type === SigningStatus.InProgress ||
       this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
+
     if (isInTheMiddleOfSigning || isDone) return
 
     // if we have an estimation error, set the state so and return
@@ -1356,6 +1374,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (this.errors.length) {
       this.status = { type: SigningStatus.UnableToSign }
+      this.emitUpdate()
+      return
+    }
+
+    if (this.#accountOp.signature) {
+      // probably make an ecrecover on the signature
+      // check if we have the owner in signers
+      // if we don't, count the signers as +1
+      this.status = { type: SigningStatus.Queued }
       this.emitUpdate()
       return
     }
@@ -2392,6 +2419,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const signatures: Hex[] = []
         const signers = this.accountOp.signers!
         const safeTxn = getSafeTxn(this.accountOp, accountState)
+        const safeTxnHash = getSafeTxnHash(safeTxn, this.#network.chainId, this.account.addr as Hex)
         for (let i = 0; i < signers.length; i++) {
           const safeKey = signers[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
@@ -2411,7 +2439,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.emitUpdate()
           }
         }
-        this.#updateAccountOp({ signature: concat(signatures) })
+        this.#updateAccountOp({
+          signature: concat(signatures),
+          signed: signers.map((s) => s.addr),
+          txnId: safeTxnHash
+        })
 
         // if the user cannot broadcast because he doesn't meet the threshold,
         // we push the txn to safe global
@@ -3205,11 +3237,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get canBroadcast() {
-    return (
-      !this.account.safeCreation ||
-      !this.accountOp.signers ||
-      this.accountOp.signers.length >= this.threshold
-    )
+    let uniqueSigners = this.accountOp.signed || []
+    if (this.accountOp.signers && this.accountOp.signed) {
+      uniqueSigners = [
+        ...new Set([...this.accountOp.signers.map((s) => s.addr), ...this.#accountOp.signed!])
+      ]
+    } else if (this.accountOp.signers) {
+      uniqueSigners = this.accountOp.signers.map((s) => s.addr)
+    }
+
+    return !this.account.safeCreation || uniqueSigners.length >= this.threshold
   }
 
   toJSON() {

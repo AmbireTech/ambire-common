@@ -67,7 +67,6 @@ import {
   getMintVestingRequestParams,
   getTransferRequestParams
 } from '../../libs/transfer/userRequest'
-import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -932,7 +931,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         userRequestParams,
         executionType
       )
-      if (userRequest) await this.addUserRequests([userRequest], { ...rest })
+      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...rest })
     }
 
     if (type === 'transferRequest') {
@@ -1615,7 +1614,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) =>
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
-        r.meta.chainId === meta.chainId
+        r.meta.chainId === meta.chainId &&
+        (!r.signAccountOp.accountOp.txnId || meta.txnId === r.signAccountOp.accountOp.txnId)
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {
@@ -1640,24 +1640,35 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
         }
       } else {
-        existingUserRequest.signAccountOp.update({
-          accountOpData: {
-            calls: [
-              ...existingUserRequest.signAccountOp.accountOp.calls,
-              ...calls.map((call) => ({
-                ...call,
-                id: uuidv4(),
-                to: call.to,
-                data: call.data || '0x',
-                value: call.value ? getBigInt(call.value) : 0n
-              }))
-            ],
-            meta: {
-              ...existingUserRequest.signAccountOp.accountOp.meta,
-              ...meta
+        // we're allowing updates only on the signature field for
+        // already signed accountOps
+        if (meta.txnId) {
+          existingUserRequest.signAccountOp.update({
+            accountOpData: {
+              signature: meta.signature,
+              txnId: meta.txnId
             }
-          }
-        })
+          })
+        } else {
+          existingUserRequest.signAccountOp.update({
+            accountOpData: {
+              calls: [
+                ...existingUserRequest.signAccountOp.accountOp.calls,
+                ...calls.map((call) => ({
+                  ...call,
+                  id: uuidv4(),
+                  to: call.to,
+                  data: call.data || '0x',
+                  value: call.value ? getBigInt(call.value) : 0n
+                }))
+              ],
+              meta: {
+                ...existingUserRequest.signAccountOp.accountOp.meta,
+                ...meta
+              }
+            }
+          })
+        }
         existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
       }
 
@@ -1691,7 +1702,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
-      const requestId = `${meta.accountAddr}-${meta.chainId}`
+      const requestId = `${meta.accountAddr}-${meta.chainId}${meta.txnId ? `-${meta.txnId}` : ''}`
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1718,9 +1729,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             gasLimit: null,
             gasFeePayment: null,
             nonce: accountState.nonce,
-            signature: account.associatedKeys[0]
-              ? generateSpoofSig(account.associatedKeys[0])
-              : null,
+            signature: meta.signature ?? null,
+            txnId: meta.txnId ?? undefined,
             calls: [
               ...calls.map((call) => ({
                 ...call,

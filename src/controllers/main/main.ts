@@ -55,6 +55,8 @@ import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+/* eslint-disable no-await-in-loop */
+import { toCallsUserRequest } from '../../libs/safe/safe'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
@@ -83,7 +85,6 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
-/* eslint-disable no-await-in-loop */
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpType } from '../signAccountOp/helper'
@@ -587,6 +588,7 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
+        this.#fetchSafeTxns()
       }
     })
 
@@ -620,6 +622,8 @@ export class MainController extends EventEmitter implements IMainController {
       if (!this.accounts.areAccountStatesLoading) {
         this.accounts.updateAccountState(selectedAccountAddr)
       }
+
+      this.#fetchSafeTxns()
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -708,6 +712,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
+
+    this.#fetchSafeTxns()
   }
 
   async #onAccountPickerSuccess() {
@@ -1262,6 +1268,28 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
+    this.#fetchSafeTxns()
+  }
+
+  /**
+   * Fetch safe txns from safe global and make them user requests
+   * if the selected account is a safe
+   */
+  #fetchSafeTxns() {
+    if (this.selectedAccount?.account?.safeCreation) {
+      this.safe
+        .fetchPending(this.selectedAccount.account.addr as Hex)
+        .then(async (res) => {
+          if (!res) return
+          const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
+          for (let i = 0; i < txnRequest.length; i++) {
+            await this.requests.build(txnRequest[i]!).catch((e) => e)
+          }
+        })
+        .catch((e) => {
+          console.log('failed to retrieve safe txns')
+        })
+    }
   }
 
   #updateIsOffline() {
