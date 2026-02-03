@@ -5,6 +5,7 @@ import {
   hexlify,
   JsonRpcProvider,
   recoverAddress,
+  toBeHex,
   toUtf8Bytes,
   Wallet
 } from 'ethers'
@@ -1050,16 +1051,16 @@ describe('Sign Message, Safe accounts', () => {
   })
   test('Signing [Safe]: typed data', async () => {
     const safeTxn = {
-      baseGas: 0n,
+      baseGas: toBeHex(0) as Hex,
       data: '0xa9059cbb0000000000000000000000005d8dd39a360e5d5219f965695f9c0290862ca24a0000000000000000000000000000000000000000000000000000000000002710' as Hex,
-      gasPrice: 0n,
+      gasPrice: toBeHex(0) as Hex,
       gasToken: '0x0000000000000000000000000000000000000000' as Hex,
-      nonce: 4n,
+      nonce: toBeHex(4n) as Hex,
       operation: 0,
       refundReceiver: '0x0000000000000000000000000000000000000000' as Hex,
-      safeTxGas: 0n,
+      safeTxGas: toBeHex(0) as Hex,
       to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Hex,
-      value: 0n
+      value: toBeHex(0) as Hex
     }
     const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
     const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')

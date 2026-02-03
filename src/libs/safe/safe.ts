@@ -10,7 +10,8 @@ import {
   zeroPadValue
 } from 'ethers'
 
-import { SafeCreationInfoResponse } from '@safe-global/api-kit'
+import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
+import SafeApiKit, { ProposeTransactionProps, SafeCreationInfoResponse } from '@safe-global/api-kit'
 
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
@@ -19,6 +20,7 @@ import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { adaptTypedMessageForMetaMaskSigUtil, getSafeTypedData } from '../signMessage/signMessage'
 
 export function isSupportedSafeVersion(version: string): boolean {
   const [major, minor] = version.split('.').map(Number)
@@ -179,4 +181,50 @@ export function sortDefaultOwners(keys: Key[], threshold: number): Key[] {
     })
     .slice(0, threshold)
   return sortOwnersForBroadcast(slicedInternalFirst) as Key[]
+}
+
+export function getSafeTxnHash(txn: SafeTx, chainId: bigint, safeAddress: Hex) {
+  const typedData = getSafeTypedData(chainId, safeAddress, txn)
+  return TypedDataUtils.eip712Hash(
+    adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+    SignTypedDataVersion.V4
+  ).toString('hex')
+}
+
+export async function propose(
+  txn: SafeTx,
+  chainId: bigint,
+  safeAddress: Hex,
+  owner: Hex,
+  ownerSig: Hex
+) {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+
+  const proposeTransactionProps: ProposeTransactionProps = {
+    safeAddress,
+    safeTxHash: getSafeTxnHash(txn, chainId, safeAddress),
+    safeTransactionData: {
+      ...txn,
+      baseGas: BigInt(txn.baseGas).toString(),
+      gasPrice: BigInt(txn.gasPrice).toString(),
+      safeTxGas: BigInt(txn.safeTxGas).toString(),
+      value: BigInt(txn.value).toString(),
+      nonce: parseInt(txn.nonce)
+    },
+    senderAddress: owner,
+    senderSignature: ownerSig
+  }
+
+  return apiKit.proposeTransaction(proposeTransactionProps)
+}
+
+export async function confirm(txn: SafeTx, chainId: bigint, safeAddress: Hex, ownerSig: Hex) {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+  return apiKit.confirmTransaction(getSafeTxnHash(txn, chainId, safeAddress), ownerSig)
 }

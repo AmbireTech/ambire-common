@@ -103,7 +103,13 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
-import { getSafeTxn, sortDefaultOwners, sortOwnersForBroadcast } from '../../libs/safe/safe'
+import {
+  confirm,
+  getSafeTxn,
+  propose,
+  sortDefaultOwners,
+  sortOwnersForBroadcast
+} from '../../libs/safe/safe'
 import {
   adjustEntryPointAuthorization,
   get7702Sig,
@@ -155,7 +161,8 @@ export enum SigningStatus {
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
   WaitingForPaymaster = 'waiting-for-paymaster-response',
-  Done = 'done'
+  Done = 'done',
+  Queued = 'queued'
 }
 
 export type Status = {
@@ -186,7 +193,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster
+  SigningStatus.WaitingForPaymaster,
+  SigningStatus.Queued
 ]
 
 export type SignAccountOpUpdateProps = {
@@ -929,7 +937,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return (
       !!this.status &&
       (this.status?.type === SigningStatus.ReadyToSign ||
-        this.status?.type === SigningStatus.UpdatesPaused)
+        this.status?.type === SigningStatus.UpdatesPaused ||
+        this.status?.type === SigningStatus.Queued)
     )
   }
 
@@ -1400,8 +1409,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * and only one controller in the registry (so the UI listens to the active one only).
    */
   pause() {
-    this.#stopRefetching = true
+    this.#stopIntervals()
     this.unregisterFromRegistry()
+  }
+
+  #stopIntervals() {
+    this.#stopRefetching = true
     // GasPrice may be destroyed at this point if the request was rejected
     this.#gasPriceInterval.stop()
     this.#simulateAndEstimateOrSimulateInterval.stop()
@@ -1415,6 +1428,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * That is because they may be stopped (after inactivity).
    */
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
+    // if the txn is Queued, do not resume intervals
+    if (this.status?.type === SigningStatus.Queued) return
+
     const { haveCallsChanged = false } = opts || {}
 
     this.#stopRefetching = false
@@ -2375,16 +2391,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       if (this.account.safeCreation) {
         const signatures: Hex[] = []
         const signers = this.accountOp.signers!
+        const safeTxn = getSafeTxn(this.accountOp, accountState)
         for (let i = 0; i < signers.length; i++) {
           const safeKey = signers[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
           if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
           const signature = (await safeSigner.signTypedData(
-            getSafeTypedData(
-              this.#network.chainId,
-              this.account.addr as Hex,
-              getSafeTxn(this.accountOp, accountState)
-            )
+            getSafeTypedData(this.#network.chainId, this.account.addr as Hex, safeTxn)
           )) as Hex
           signatures.push(signature)
 
@@ -2399,6 +2412,32 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         }
         this.#updateAccountOp({ signature: concat(signatures) })
+
+        // if the user cannot broadcast because he doesn't meet the threshold,
+        // we push the txn to safe global
+        if (signers.length < this.threshold) {
+          // todo: create intervals for this on error
+          for (let i = 0; i < signers.length; i++) {
+            const safeKey = signers[i]!
+            const sig = signatures[i]!
+            if (i === 0) {
+              // propose the txn to safe global upon first entry
+              await propose(
+                safeTxn,
+                this.accountOp.chainId,
+                this.account.addr as Hex,
+                safeKey.addr as Hex,
+                sig
+              )
+            } else {
+              // add extra confirmations
+              await confirm(safeTxn, this.accountOp.chainId, this.account.addr as Hex, sig)
+            }
+          }
+
+          this.status = { type: SigningStatus.Queued }
+          this.#stopIntervals()
+        }
       } else if (
         broadcastOption === BROADCAST_OPTIONS.bySelf ||
         broadcastOption === BROADCAST_OPTIONS.bySelf7702
@@ -2604,7 +2643,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      this.status = { type: SigningStatus.Done }
+      // if the txn is queued, do not broadcast it
+      if (this.status && this.status.type !== SigningStatus.Queued)
+        this.status = { type: SigningStatus.Done }
+
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
@@ -3162,6 +3204,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return accountState.threshold
   }
 
+  get canBroadcast() {
+    return (
+      !this.account.safeCreation ||
+      !this.accountOp.signers ||
+      this.accountOp.signers.length >= this.threshold
+    )
+  }
+
   toJSON() {
     return {
       ...this,
@@ -3185,7 +3235,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
-      threshold: this.threshold
+      threshold: this.threshold,
+      canBroadcast: this.canBroadcast
     }
   }
 }

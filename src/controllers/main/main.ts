@@ -35,7 +35,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '../../int
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController, RPCProvider } from '../../interfaces/provider'
+import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 /* eslint-disable no-underscore-dangle */
 import { ISafeController } from '../../interfaces/safe'
@@ -1099,9 +1099,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
@@ -1172,32 +1171,24 @@ export class MainController extends EventEmitter implements IMainController {
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
+  // remove all keys that have this addr
   #removeAccountKeyData(address: Account['addr']) {
-    // Compute account keys that are only associated with this account
-    const accountAssociatedKeys =
-      this.accounts.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
-    const keysInKeystore = this.keystore.keys
-    const importedAccountKeys = keysInKeystore.filter((key) =>
-      accountAssociatedKeys.includes(key.addr)
-    )
-    const solelyAccountKeys = importedAccountKeys.filter((key) => {
-      const isKeyAssociatedWithOtherAccounts = this.accounts.accounts.some(
-        (acc) => acc.addr !== address && acc.associatedKeys.includes(key.addr)
-      )
-
-      return !isKeyAssociatedWithOtherAccounts
-    })
-
-    // Remove account keys from the keystore
-    solelyAccountKeys.forEach((key) => {
-      this.keystore.removeKey(key.addr, key.type).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key',
-          error: e
+    this.keystore.keys
+      .filter((key) => key.addr === address)
+      .forEach((key) => {
+        this.keystore.removeKey(key.addr, key.type).catch((e) => {
+          throw new EmittableError({
+            level: 'major',
+            message: 'Failed to remove account key',
+            error: e
+          })
         })
       })
-    })
+    // the keystore doesn't update after key removals so we
+    // force update it here. Main controller updates don't propagate
+    // to the keystore
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.keystore.forceEmitUpdate()
   }
 
   async #removeAccount(address: Account['addr']) {
