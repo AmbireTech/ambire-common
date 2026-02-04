@@ -282,7 +282,9 @@ export function toCallsUserRequest(
   params: {
     userRequestParams: {
       calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
-      meta: CallsUserRequest['meta'] & { txnId: Hex; signature: Hex }
+      meta: CallsUserRequest['meta'] & {
+        safeTxnProps: { txnId: Hex; signature: Hex; nonce: bigint }
+      }
     }
     executionType: 'queue'
   }
@@ -292,7 +294,9 @@ export function toCallsUserRequest(
     params: {
       userRequestParams: {
         calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
-        meta: CallsUserRequest['meta'] & { txnId: Hex; signature: Hex }
+        meta: CallsUserRequest['meta'] & {
+          safeTxnProps: { txnId: Hex; signature: Hex; nonce: bigint }
+        }
       }
       executionType: 'queue'
     }
@@ -328,8 +332,11 @@ export function toCallsUserRequest(
             meta: {
               accountAddr: safeAddr,
               chainId: BigInt(chainId),
-              txnId: txn.safeTxHash as Hex,
-              signature
+              safeTxnProps: {
+                txnId: txn.safeTxHash as Hex,
+                signature,
+                nonce: BigInt(txn.nonce)
+              }
             }
           },
           executionType: 'queue'
@@ -390,4 +397,20 @@ export function sortSigs(signatures: Hex[], hash: string): Hex {
 
   const sorted = sortByAddress(signed)
   return concat(sorted.map((s) => s.sig)) as Hex
+}
+
+/**
+ * Safe requests may have multiple "call" ones with the same nonce
+ */
+export function getSameNonceRequests(requests: CallsUserRequest[]) {
+  return requests.reduce((acc: { [nonce: string]: CallsUserRequest[] }, r) => {
+    const key = r.signAccountOp.accountOp.nonce?.toString() || '0'
+
+    if (!acc[key]) {
+      acc[key] = []
+    }
+
+    acc[key].push(r)
+    return acc
+  }, {})
 }

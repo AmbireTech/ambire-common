@@ -58,6 +58,7 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
+    safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
   }
   signAccountOp: ISignAccountOpController
 }

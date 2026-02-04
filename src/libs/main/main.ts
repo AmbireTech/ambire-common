@@ -3,6 +3,7 @@ import { Network } from '../../interfaces/network'
 import { UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
+import { getSameNonceRequests } from '../safe/safe'
 
 export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
@@ -11,9 +12,20 @@ export const getAccountOpsForSimulation = (
   visibleUserRequests: UserRequest[],
   networks: Network[]
 ): { [key: string]: AccountOp[] } | undefined => {
+  let callRequests = visibleUserRequests.filter((r) => r.kind === 'calls')
+
+  // filter out the safe requests with conflicting nonces (same nonce)
+  // from the simulation as the user will have to choose and broadcast only one
+  if (!!account.safeCreation) {
+    const sameNonceRequestsIds = Object.values(getSameNonceRequests(callRequests))
+      .filter((grouped) => grouped.length > 1) // length of 1 means no conflict
+      .flat()
+      .map((r) => r.id)
+    callRequests = callRequests.filter((r) => !sameNonceRequestsIds.includes(r.id))
+  }
+
   const isSmart = isSmartAccount(account)
-  const accountOps = visibleUserRequests
-    .filter((r) => r.kind === 'calls')
+  const accountOps = callRequests
     .map((a) => a.signAccountOp.accountOp)
     .filter((op) => {
       if (op.accountAddr !== account.addr) return false

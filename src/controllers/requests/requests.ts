@@ -1589,7 +1589,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#selectedAccount.account.addr,
           this.userRequests
         ),
-        selectedAccount: this.#selectedAccount.account.addr,
+        selectedAccount: this.#selectedAccount.account,
         networks: this.#networks.networks,
         swapAndBridgeRoutesPendingSignature
       }),
@@ -1615,7 +1615,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
-        (!r.signAccountOp.accountOp.txnId || meta.txnId === r.signAccountOp.accountOp.txnId)
+        (!r.signAccountOp.accountOp.txnId ||
+          meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId)
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {
@@ -1642,16 +1643,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } else {
         // we're allowing updates only on the signature field for
         // already signed accountOps
-        if (meta.txnId) {
-          if (meta.signature !== existingUserRequest.signAccountOp.accountOp.signature)
+        if (meta.safeTxnProps) {
+          if (meta.safeTxnProps.signature !== existingUserRequest.signAccountOp.accountOp.signature)
             existingUserRequest.signAccountOp.update({
               accountOpData: {
-                signature: meta.signature,
-                txnId: meta.txnId
+                signature: meta.safeTxnProps.signature,
+                txnId: meta.safeTxnProps.txnId,
+                nonce: meta.safeTxnProps.nonce
               }
             })
 
-          // if we're updating a signAccountOp with external data (meta.txnId / signature),
+          // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
           return
         } else {
@@ -1707,7 +1709,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
-      const requestId = `${meta.accountAddr}-${meta.chainId}${meta.txnId ? `-${meta.txnId}` : ''}`
+      const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1733,9 +1735,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             signingKeyType: null,
             gasLimit: null,
             gasFeePayment: null,
-            nonce: accountState.nonce,
-            signature: meta.signature ?? null,
-            txnId: meta.txnId ?? undefined,
+            nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
+            signature: meta.safeTxnProps?.signature ?? null,
+            txnId: meta.safeTxnProps?.txnId ?? undefined,
             calls: [
               ...calls.map((call) => ({
                 ...call,

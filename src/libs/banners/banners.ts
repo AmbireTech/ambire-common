@@ -1,10 +1,11 @@
-import { AccountId } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
+import { getSameNonceRequests } from '../safe/safe'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -35,14 +36,14 @@ const getBridgeBannerText = (
 
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
-  const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
+  const toAssetSymbol = steps[steps.length - 1]!.toAsset.symbol
 
   let assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
 
   if (networks) {
-    const fromAssetNetwork = networks.find((n) => Number(n.chainId) === steps[0].fromAsset.chainId)
+    const fromAssetNetwork = networks.find((n) => Number(n.chainId) === steps[0]!.fromAsset.chainId)
     const toAssetNetwork = networks.find(
-      (n) => Number(n.chainId) === steps[steps.length - 1].toAsset.chainId
+      (n) => Number(n.chainId) === steps[steps.length - 1]!.toAsset.chainId
     )
     if (fromAssetNetwork && toAssetNetwork) {
       assetsText = `${fromAssetSymbol} (on ${fromAssetNetwork.name}) to ${toAssetSymbol} (on ${toAssetNetwork.name})`
@@ -200,6 +201,31 @@ const getAccountOpBannerText = (
   return ''
 }
 
+const getSafeBanner = ({
+  requests,
+  network,
+  selectedAccount
+}: {
+  requests: CallsUserRequest[]
+  network: Network
+  selectedAccount: Account
+}): Banner => {
+  return {
+    id: `${selectedAccount.addr}-${network.chainId.toString()}`,
+    type: 'info',
+    category: 'pending-to-be-signed-acc-op',
+    title: `Pending transactions ${network.name ? `on ${network.name}` : ''}`,
+    text: `${requests.length} transactions are mutually exclusive (Same nonce).\nYou can sign only one.`,
+    actions: [
+      {
+        label: 'Open',
+        actionName: 'open-accountOp',
+        meta: { requestId: requests[0]!.id }
+      }
+    ]
+  }
+}
+
 export const getAccountOpBanners = ({
   callsUserRequestsByNetwork,
   selectedAccount,
@@ -209,16 +235,30 @@ export const getAccountOpBanners = ({
   callsUserRequestsByNetwork: {
     [key: string]: CallsUserRequest[]
   }
-
-  selectedAccount: string
+  selectedAccount: Account
   networks: Network[]
   swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!callsUserRequestsByNetwork) return []
+
   const txnBanners: Banner[] = []
 
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
-    requests.forEach((request) => {
+    let remainingRequests: CallsUserRequest[] = []
+    if (!!selectedAccount.safeCreation && requests.length > 1) {
+      const sameNonceRequests = getSameNonceRequests(requests)
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
+      Object.keys(sameNonceRequests).forEach((nonce) => {
+        const grouped = sameNonceRequests[nonce]!
+        if (grouped.length === 1) {
+          remainingRequests = [...remainingRequests, ...grouped]
+          return
+        }
+        txnBanners.push(getSafeBanner({ requests: grouped, network, selectedAccount }))
+      })
+    } else remainingRequests = requests
+
+    remainingRequests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
       const nonSwapAndBridgeTxns = request.signAccountOp.accountOp.calls.reduce((prev, call) => {
         const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
@@ -238,7 +278,7 @@ export const getAccountOpBanners = ({
       )
 
       txnBanners.push({
-        id: `${selectedAccount}-${netId}`,
+        id: `${selectedAccount.addr}-${netId}`,
         type: 'info',
         category: 'pending-to-be-signed-acc-op',
         title: `${
