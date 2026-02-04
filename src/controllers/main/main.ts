@@ -248,15 +248,18 @@ export class MainController extends EventEmitter implements IMainController {
         await this.reloadSelectedAccount({
           chainIds: networks.map((n) => n.chainId)
         })
+      },
+      onReady: async () => {
+        await this.providers.init({ networks: this.networks.allNetworks })
       }
     })
 
-    this.providers = new ProvidersController(
-      this.networks,
-      this.storage,
-      this.ui,
-      eventEmitterRegistry
-    )
+    this.providers = new ProvidersController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      getNetworks: () => this.networks.allNetworks,
+      sendUiMessage: () => this.ui.message.sendUiMessage
+    })
     this.accounts = new AccountsController(
       this.storage,
       this.providers,
