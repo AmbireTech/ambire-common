@@ -970,8 +970,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (kind === 'calls') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
+
+      const isWalletSendCalls = !!request.params[0].calls
+      // For wallet_sendCalls (ERC-5792), use the chainId from the request params
+      // For other calls (e.g., eth_sendTransaction), fall back to the dapp's chainId
+      const requestChainId =
+        isWalletSendCalls && request.params[0].chainId
+          ? Number(request.params[0].chainId)
+          : dapp?.chainId
+
       const network = this.#networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
+        (n) => Number(n.chainId) === Number(requestChainId)
       )
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
@@ -993,8 +1002,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.#keystore.getAccountKeys(this.#selectedAccount.account),
         network
       )
-
-      const isWalletSendCalls = !!request.params[0].calls
       const accountAddr = getAddress(request.params[0].from)
 
       if (isWalletSendCalls && !request.params[0].calls.length)
@@ -1027,7 +1034,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const walletSendCallsVersion = isWalletSendCalls
-        ? (request.params[0].version ?? '1.0.0')
+        ? request.params[0].version ?? '1.0.0'
         : undefined
 
       userRequest =

@@ -52,12 +52,12 @@ function getSignificantBalanceDecreaseWarning(
     if (!simulatedTokens.length) return null
 
     // Calculates the amount on the pending block * the price of the token
-    const simulatedTokensValueBeforeSimulationInUSD = getTotal(simulatedTokens, {
+    const simulatedTokensValueBeforeSimulationInUSD = getTotal(simulatedTokens, null, {
       includeHiddenTokens: true,
       beforeSimulation: true
     })?.usd
     // Calculates the amount after the simulation * the price of the token
-    const simulatedTokensValueAfterSimulationInUSD = getTotal(simulatedTokens, {
+    const simulatedTokensValueAfterSimulationInUSD = getTotal(simulatedTokens, null, {
       includeHiddenTokens: true,
       beforeSimulation: false
     })?.usd

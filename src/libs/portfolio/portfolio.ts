@@ -76,6 +76,7 @@ export const LIMITS: Limits = {
   }
 }
 
+// @TODO: Move this somewhere else
 export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** External hints API (Velcro) request failed but fallback is sufficient */
   NonCriticalApiHintsError: 'NonCriticalApiHintsError',
@@ -84,7 +85,9 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** No external API (Velcro) hints are available- the request failed without fallback */
   NoApiHintsError: 'NoApiHintsError',
   /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError'
+  PriceFetchError: 'PriceFetchError',
+  /** Defi discovery failed */
+  DefiDiscoveryError: 'DefiDiscoveryError'
 }
 
 export const getEmptyHints = (): Hints => ({
@@ -97,7 +100,6 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  lastExternalApiUpdateData: null,
   fetchPinned: true,
   priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
@@ -169,7 +171,6 @@ export class Portfolio {
    * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
    */
   protected async externalHintsAPIDiscovery(options?: {
-    lastExternalApiUpdateData: PortfolioLibGetResult['lastExternalApiUpdateData'] | null
     disableAutoDiscovery?: boolean
     chainId: bigint
     accountAddr: string
@@ -178,13 +179,7 @@ export class Portfolio {
     hints: Hints
     error?: PortfolioLibGetResult['errors'][number]
   }> {
-    const {
-      disableAutoDiscovery = false,
-      lastExternalApiUpdateData,
-      chainId,
-      accountAddr,
-      baseCurrency
-    } = options || {}
+    const { disableAutoDiscovery = false, chainId, accountAddr, baseCurrency } = options || {}
     let hints: Hints = getEmptyHints()
 
     try {
@@ -209,52 +204,19 @@ export class Portfolio {
             }
           }
         }
-      } else if (lastExternalApiUpdateData) {
-        hints.externalApi = {
-          lastUpdate: lastExternalApiUpdateData.lastUpdate,
-          hasHints: lastExternalApiUpdateData.hasHints,
-          prices: {}
-        }
       }
 
       return {
         hints
       }
     } catch (error: any) {
-      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
-
-      // It's important for DX to see this error
-      // eslint-disable-next-line no-console
-      console.error(errorMesssage)
-
-      if (!lastExternalApiUpdateData) {
-        return {
-          hints,
-          error: {
-            name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-            message: errorMesssage,
-            level: 'critical'
-          }
-        }
-      }
-
-      const TEN_MINUTES = 10 * 60 * 1000
-      const lastUpdate = lastExternalApiUpdateData.lastUpdate
-      const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
-
-      hints.externalApi = {
-        ...lastExternalApiUpdateData,
-        prices: {}
-      }
-
+      console.error('Portfolio.externalHintsAPIDiscovery error:', error)
       return {
         hints,
         error: {
-          name: isLastUpdateTooOld
-            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
-          message: errorMesssage,
-          level: isLastUpdateTooOld ? 'critical' : 'silent'
+          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+          message: error?.message || 'Unknown error',
+          level: 'warning'
         }
       }
     }
@@ -264,7 +226,6 @@ export class Portfolio {
     const errors: PortfolioLibGetResult['errors'] = []
     const {
       simulation,
-      lastExternalApiUpdateData,
       disableAutoDiscovery = false,
       baseCurrency,
       fetchPinned,
@@ -288,7 +249,6 @@ export class Portfolio {
     const chainId = this.network.chainId
 
     const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
-      lastExternalApiUpdateData: lastExternalApiUpdateData ?? null,
       disableAutoDiscovery,
       chainId,
       accountAddr,
@@ -535,12 +495,6 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      lastExternalApiUpdateData: hints.externalApi
-        ? {
-            lastUpdate: hints.externalApi.lastUpdate,
-            hasHints: hints.externalApi.hasHints
-          }
-        : null,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
