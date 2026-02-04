@@ -13,9 +13,8 @@ import {
   NetworkInfoLoading,
   RelayerNetwork
 } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/provider'
+import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
-import { getRpcProvider } from '../../services/provider'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
@@ -114,8 +113,8 @@ export function getProviderBatchMaxCount(network: Network, rpcUrl: string): numb
  */
 export async function getNetworkInfo(
   fetch: Fetch,
-  rpcUrl: string,
   chainId: bigint,
+  provider: RPCProvider,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
   network: Network | undefined
 ) {
@@ -141,9 +140,6 @@ export async function getNetworkInfo(
   }
 
   let flagged = false
-  const provider = getRpcProvider([rpcUrl], chainId, undefined, {
-    batchMaxCount: network ? getProviderBatchMaxCount(network, rpcUrl) : 1
-  })
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
@@ -247,8 +243,6 @@ export async function getNetworkInfo(
 
   networkInfo = { ...networkInfo, flagged: flagged || info === 'timeout reached' }
   callback(networkInfo)
-
-  provider.destroy()
 }
 
 /**

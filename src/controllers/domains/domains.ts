@@ -3,7 +3,7 @@ import { getAddress, isAddress } from 'ethers'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { RPCProviders } from '../../interfaces/provider'
-import { getEnsAvatar, reverseLookupEns } from '../../services/ensDomains'
+import { getEnsAvatar, resolveENSDomain, reverseLookupEns } from '../../services/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -30,9 +30,17 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
+  /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
 
+  /** Maps domain names to account addresses; necessary because the 'domains' state
+   * only indexes by address, making getting an address for an existing domain name inefficient.
+   */
+  ensToAddress: { [ensName: string]: string } = {}
+
   loadingAddresses: string[] = []
+
+  resolveDomainsStatus: { [domain: string]: 'LOADING' | 'RESOLVED' | 'FAILED' | undefined } = {}
 
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
@@ -59,16 +67,70 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   /**
-   *Saves an already resolved ENS name for an address.
+   * Resolves an ENS domain and persists it to state only if resolution succeeds.
    */
-  saveResolvedReverseLookup({
+  async resolveDomain({ domain, bip44Item }: { domain: string; bip44Item?: number[][] }) {
+    const ethereumProvider =
+      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+
+    if (!ethereumProvider) {
+      this.emitError({
+        error: new Error('domains.resolveDomain: Ethereum provider is not available'),
+        message: 'The RPC provider for Ethereum is not available.',
+        level: 'major'
+      })
+      return
+    }
+
+    if (
+      this.resolveDomainsStatus[domain] === 'LOADING' ||
+      this.resolveDomainsStatus[domain] === 'RESOLVED'
+    ) {
+      return
+    }
+
+    this.resolveDomainsStatus[domain] = 'LOADING'
+    await this.forceEmitUpdate()
+
+    if (this.ensToAddress[domain]) {
+      this.resolveDomainsStatus[domain] = 'RESOLVED'
+      await this.forceEmitUpdate()
+      this.resolveDomainsStatus[domain] = undefined
+      return
+    }
+
+    await resolveENSDomain({
+      domain,
+      bip44Item,
+      getResolver: (name) => ethereumProvider.getResolver(name)
+    })
+      .then(async ({ address, avatar }) => {
+        if (address) {
+          this.#saveResolvedDomain({ address, ensAvatar: avatar, domain, type: 'ens' })
+        }
+        this.resolveDomainsStatus[domain] = 'RESOLVED'
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      })
+      .catch(async (e) => {
+        console.error(`Failed to resolve ENS domain: ${domain}`, e)
+        this.resolveDomainsStatus[domain] = 'FAILED'
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      })
+  }
+
+  /**
+   * Saves an already resolved ENS name for an address.
+   */
+  #saveResolvedDomain({
     address,
     ensAvatar,
-    name,
+    domain,
     type
   }: {
     address: string
-    name: string
+    domain: string
     ensAvatar: string | null
     type: 'ens'
   }) {
@@ -77,13 +139,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     const existing = this.domains[checksummedAddress]
     const now = Date.now()
+
+    this.ensToAddress[domain] = checksummedAddress
     this.domains[checksummedAddress] = {
-      ensAvatar: type === 'ens' ? ensAvatar : existing?.ensAvatar ?? null,
-      ens: type === 'ens' ? name : prevEns,
+      ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
+      ens: type === 'ens' ? domain : prevEns,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
     }
-    this.emitUpdate()
   }
 
   async reverseLookup(address: string, emitUpdate = true) {
@@ -137,6 +200,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       if (ens) {
         // We need the ens name to resolve the avatar
         ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider))
+        this.ensToAddress[ens] = checksummedAddress
       }
 
       const now = Date.now()
@@ -153,7 +217,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
       const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
       if (hasBeenResolvedOnce) {
-        this.domains[checksummedAddress].updateFailedAt = Date.now()
+        this.domains[checksummedAddress]!.updateFailedAt = Date.now()
       } else {
         this.domains[checksummedAddress] = { ens: null, updateFailedAt: Date.now() }
       }
