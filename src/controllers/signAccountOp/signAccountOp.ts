@@ -430,13 +430,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#accountOp.signature,
         this.#accountOp.txnId
       )
-      const uniqueOwners = getImportedSignersThatHaveNotSigned(
+      const notSigned = getImportedSignersThatHaveNotSigned(
         this.#accountOp.signed,
         accountState.importedAccountKeys.map((k) => k.addr)
       )
 
       // make the status queued if there are no additional owners left to sign
-      if (!uniqueOwners.length) this.status = { type: SigningStatus.Queued }
+      if (this.#accountOp.signed.length < accountState.threshold && !notSigned.length)
+        this.status = { type: SigningStatus.Queued }
     }
 
     this.signedAccountOp = null
@@ -949,6 +950,22 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
+    // safe txn, signed, with a future nonce: display an error
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (
+      !!this.account.safeCreation &&
+      accountState &&
+      this.accountOp.nonce &&
+      this.accountOp.nonce > accountState.nonce &&
+      this.#accountOp.signed &&
+      this.#accountOp.signed.length >= this.threshold
+    ) {
+      errors.push({
+        title: 'You need to broadcast pending transactions first before this one.'
+      })
+    }
+
     return errors
   }
 
@@ -1395,11 +1412,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#accountOp.signature,
         this.#accountOp.txnId
       )
-      const uniqueOwners = getImportedSignersThatHaveNotSigned(
+      const notSigned = getImportedSignersThatHaveNotSigned(
         this.#accountOp.signed,
         this.accountKeyStoreKeys.map((k) => k.addr)
       )
-      if (!uniqueOwners.length) {
+      if (this.#accountOp.signed.length < this.threshold && !notSigned.length) {
         this.status = { type: SigningStatus.Queued }
         this.emitUpdate()
         return
@@ -2431,8 +2448,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     try {
-      if (this.account.safeCreation) {
+      if (
+        this.account.safeCreation &&
+        this.#accountOp.signed &&
+        this.#accountOp.signed.length >= this.threshold
+      ) {
+        // all's good, proceed to broadcast
+      } else if (this.account.safeCreation) {
         const signatures: Hex[] = getSigs(this.accountOp)
+        const existsInSafeGlobal = signatures.length > 0
         const signers = this.accountOp.signers!
         const safeTxn = getSafeTxn(this.accountOp, accountState)
         const safeTxnHash = getSafeTxnHash(safeTxn, this.#network.chainId, this.account.addr as Hex)
@@ -2463,12 +2487,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         // if the user cannot broadcast because he doesn't meet the threshold,
         // we push the txn to safe global
-        if (countSigs(this.accountOp) < this.threshold) {
+        if (
+          countSigs(this.accountOp) < this.threshold ||
+          (this.accountOp.nonce || 0n) > accountState.nonce
+        ) {
           // todo: create intervals for this on error
           for (let i = 0; i < signers.length; i++) {
             const safeKey = signers[i]!
             const sig = signatures[i]!
-            if (i === 0) {
+            if (!existsInSafeGlobal) {
               // propose the txn to safe global upon first entry
               await propose(
                 safeTxn,
@@ -3258,11 +3285,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (!this.account.safeCreation) return true
 
     const signed = this.accountOp.signed || []
-    const notSignedOwners = getImportedSignersThatHaveNotSigned(
+    if (signed.length >= this.threshold) return true
+
+    const notSignedImportedOwners = getImportedSignersThatHaveNotSigned(
       signed,
       this.accountKeyStoreKeys.map((k) => k.addr)
     )
-    return notSignedOwners.length
+    return signed.length + notSignedImportedOwners.length >= this.threshold
   }
 
   toJSON() {
