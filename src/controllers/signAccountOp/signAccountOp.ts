@@ -1474,8 +1474,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * That is because they may be stopped (after inactivity).
    */
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
-    // if the txn is Queued, do not resume intervals
-    if (this.status?.type === SigningStatus.Queued) return
+    // if the txn is Queued and estimations are set, do not resume intervals
+    if (this.status?.type === SigningStatus.Queued && this.estimation.estimation && this.gasPrices)
+      return
 
     const { haveCallsChanged = false } = opts || {}
 
