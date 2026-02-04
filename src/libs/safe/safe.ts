@@ -158,46 +158,41 @@ export function getSafeBroadcastTxn(
 }
 
 /**
- * In safe, the signatures need to be in order for the transaction
- * to pass and to be valid. So, we sort the owners and sign
- * with them one by one, in the correct order.
- * This would be better to do with signature alone but we would
- * need to do ecrecover on them to get the address
+ * In safe, the signatures need to be in order, starting with
+ * the smallest ecrecover(sig) owner, ascending. Here, we
+ * sort the owners in that way
  */
-export function sortOwnersForBroadcast(
-  keys: { addr: Key['addr']; type: Key['type'] }[] | Key[]
-): { addr: Key['addr']; type: Key['type'] }[] | Key[] {
-  const sortByAddress = (sortableKeys: { addr: Key['addr']; type: Key['type'] }[]) => {
-    return sortableKeys.sort((a, b) => {
-      const aBig = BigInt(a.addr.toLowerCase())
-      const bBig = BigInt(b.addr.toLowerCase())
-      return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
-    })
-  }
-
-  return sortByAddress(keys)
+export function sortByAddress<T extends { addr: string }>(sortableKeys: T[]): T[] {
+  return sortableKeys.sort((a, b) => {
+    const aBig = BigInt(a.addr.toLowerCase())
+    const bBig = BigInt(b.addr.toLowerCase())
+    return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
+  })
 }
 
 /**
  * Get internal keys first
  */
-export function sortDefaultOwners(keys: Key[], threshold: number): Key[] {
-  const slicedInternalFirst = keys
+export function sortDefaultOwners(
+  keys: Key[],
+  threshold: number,
+  alreadySigned: number = 0
+): Key[] {
+  return keys
     .sort((a, b) => {
       const isAInternal = a.type === 'internal'
       const isBInternal = b.type === 'internal'
       return isAInternal && !isBInternal ? -1 : !isAInternal && isBInternal ? 1 : 0
     })
-    .slice(0, threshold)
-  return sortOwnersForBroadcast(slicedInternalFirst) as Key[]
+    .slice(0, threshold - alreadySigned)
 }
 
 export function getSafeTxnHash(txn: SafeTx, chainId: bigint, safeAddress: Hex) {
   const typedData = getSafeTypedData(chainId, safeAddress, txn)
-  return TypedDataUtils.eip712Hash(
+  return `0x${TypedDataUtils.eip712Hash(
     adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
     SignTypedDataVersion.V4
-  ).toString('hex')
+  ).toString('hex')}`
 }
 
 export async function propose(
@@ -350,7 +345,7 @@ export function toCallsUserRequest(
 // so we cut the hex (0x) from the beginning
 // then take each sig (substring(0, 130)) and recover the address
 // finally, we update everything
-export function getAlreadySignedOwners(signature: string, hash: string) {
+export function getAlreadySignedOwners(signature: string, hash: string): string[] {
   const signatures = signature.substring(2)
   const signed = []
   for (let i = 0; i < signatures.length; i += 130) {
@@ -359,4 +354,40 @@ export function getAlreadySignedOwners(signature: string, hash: string) {
     signed.push(owner)
   }
   return signed
+}
+
+export function getImportedSignersThatHaveNotSigned(
+  signed: string[],
+  importedOwners: string[]
+): string[] {
+  return importedOwners.filter((o) => !signed.includes(o))
+}
+
+export function getSigs(accountOp: AccountOp): Hex[] {
+  if (!accountOp.signature) return []
+  const signed: Hex[] = []
+  const signatures = accountOp.signature.substring(2)
+  for (let i = 0; i < signatures.length; i += 130) {
+    signed.push(`0x${signatures.substring(i, i + 130)}` as Hex)
+  }
+  return signed
+}
+
+export function countSigs(accountOp: AccountOp): number {
+  if (!accountOp.signature) return 0
+  // each safe sig is 130 length long; all sigs are concatenated here
+  return accountOp.signature.substring(2).length / 130
+}
+
+export function sortSigs(signatures: Hex[], hash: string): Hex {
+  const signed: { sig: string; addr: string }[] = []
+
+  for (let i = 0; i < signatures.length; i++) {
+    const sig = signatures[i]!
+    const owner = recoverAddress(hash, sig)
+    signed.push({ sig, addr: owner })
+  }
+
+  const sorted = sortByAddress(signed)
+  return concat(sorted.map((s) => s.sig)) as Hex
 }

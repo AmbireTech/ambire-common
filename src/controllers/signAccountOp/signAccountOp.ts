@@ -5,7 +5,6 @@
 /* eslint-disable class-methods-use-this */
 import {
   AbiCoder,
-  concat,
   formatEther,
   formatUnits,
   getAddress,
@@ -105,12 +104,16 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import {
   confirm,
+  countSigs,
   getAlreadySignedOwners,
+  getImportedSignersThatHaveNotSigned,
   getSafeTxn,
   getSafeTxnHash,
+  getSigs,
   propose,
+  sortByAddress,
   sortDefaultOwners,
-  sortOwnersForBroadcast
+  sortSigs
 } from '../../libs/safe/safe'
 import {
   adjustEntryPointAuthorization,
@@ -414,11 +417,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
-    this.baseAccount = getBaseAccount(
-      account,
-      accounts.accountStates[account.addr]![network.chainId.toString()]!, // ! is safe as otherwise, nothing will work
-      network
-    )
+    const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
+    this.baseAccount = getBaseAccount(account, accountState, network)
     this.#network = network
     this.#activity = activity
     this.#phishing = phishing
@@ -430,7 +430,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#accountOp.signature,
         this.#accountOp.txnId
       )
-      this.status = { type: SigningStatus.Queued }
+      const uniqueOwners = getImportedSignersThatHaveNotSigned(
+        this.#accountOp.signed,
+        accountState.importedAccountKeys.map((k) => k.addr)
+      )
+
+      // make the status queued if there are no additional owners left to sign
+      if (!uniqueOwners.length) this.status = { type: SigningStatus.Queued }
     }
 
     this.signedAccountOp = null
@@ -697,7 +703,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // The user can change this setting during signing, but we're setting
       // the default option as a "quick" broadcast way without choosing signers
       const signers = this.account.safeCreation
-        ? sortDefaultOwners(this.accountKeyStoreKeys, accountState.threshold).map((k) => ({
+        ? sortDefaultOwners(
+            this.accountKeyStoreKeys,
+            accountState.threshold,
+            countSigs(this.accountOp)
+          ).map((k) => ({
             addr: k.addr,
             type: k.type
           }))
@@ -1279,7 +1289,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (signers && signers.length) {
-        const sorted = sortOwnersForBroadcast(signers)
+        const sorted = sortByAddress(signers)
         const firstSigner = sorted[0]!
         this.#updateAccountOp({
           signers,
@@ -1378,13 +1388,22 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return
     }
 
-    if (this.#accountOp.signature) {
-      // probably make an ecrecover on the signature
-      // check if we have the owner in signers
-      // if we don't, count the signers as +1
-      this.status = { type: SigningStatus.Queued }
-      this.emitUpdate()
-      return
+    // change the status to SigningStatus.Queued if there are no
+    // available signers to sign
+    if (this.#accountOp.signature && this.#accountOp.txnId) {
+      this.#accountOp.signed = getAlreadySignedOwners(
+        this.#accountOp.signature,
+        this.#accountOp.txnId
+      )
+      const uniqueOwners = getImportedSignersThatHaveNotSigned(
+        this.#accountOp.signed,
+        this.accountKeyStoreKeys.map((k) => k.addr)
+      )
+      if (!uniqueOwners.length) {
+        this.status = { type: SigningStatus.Queued }
+        this.emitUpdate()
+        return
+      }
     }
 
     if (
@@ -2416,7 +2435,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     try {
       if (this.account.safeCreation) {
-        const signatures: Hex[] = []
+        const signatures: Hex[] = getSigs(this.accountOp)
         const signers = this.accountOp.signers!
         const safeTxn = getSafeTxn(this.accountOp, accountState)
         const safeTxnHash = getSafeTxnHash(safeTxn, this.#network.chainId, this.account.addr as Hex)
@@ -2440,14 +2459,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         }
         this.#updateAccountOp({
-          signature: concat(signatures),
+          signature: sortSigs(signatures, safeTxnHash),
           signed: signers.map((s) => s.addr),
           txnId: safeTxnHash
         })
 
         // if the user cannot broadcast because he doesn't meet the threshold,
         // we push the txn to safe global
-        if (signers.length < this.threshold) {
+        if (countSigs(this.accountOp) < this.threshold) {
           // todo: create intervals for this on error
           for (let i = 0; i < signers.length; i++) {
             const safeKey = signers[i]!
@@ -2467,7 +2486,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             }
           }
 
+          // todo: don't switch to Queued if actually the user can broadcast?
           this.status = { type: SigningStatus.Queued }
+          // todo: don't stop the intervals if the user can broadcast
           this.#stopIntervals()
         }
       } else if (
@@ -3237,16 +3258,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get canBroadcast() {
-    let uniqueSigners = this.accountOp.signed || []
-    if (this.accountOp.signers && this.accountOp.signed) {
-      uniqueSigners = [
-        ...new Set([...this.accountOp.signers.map((s) => s.addr), ...this.#accountOp.signed!])
-      ]
-    } else if (this.accountOp.signers) {
-      uniqueSigners = this.accountOp.signers.map((s) => s.addr)
-    }
+    if (!this.account.safeCreation) return true
 
-    return !this.account.safeCreation || uniqueSigners.length >= this.threshold
+    const signed = this.accountOp.signed || []
+    const notSignedOwners = getImportedSignersThatHaveNotSigned(
+      signed,
+      this.accountKeyStoreKeys.map((k) => k.addr)
+    )
+    return notSignedOwners.length
   }
 
   toJSON() {
