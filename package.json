@@ -45,7 +45,6 @@
   },
   "devDependencies": {
     "@borislav.itskov/schnorrkel.js": "2.0.85",
-    "@ensdomains/dnsprovejs": "^0.4.1",
     "@jest/globals": "^29.6.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
