@@ -384,6 +384,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.networks,
       this.portfolio,
+      this.#safe,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
@@ -1458,7 +1459,8 @@ export class MainController extends EventEmitter implements IMainController {
     const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id)
 
     await this.requests.removeUserRequests([requestId, ...safeRequests], {
-      shouldUpdateAccount: false
+      shouldUpdateAccount: false,
+      shouldRejectSafeRequests: false
     })
 
     const dappHandlers: any[] = []

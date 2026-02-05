@@ -957,12 +957,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       !!this.account.safeCreation &&
       accountState &&
       this.accountOp.nonce &&
-      this.accountOp.nonce > accountState.nonce &&
+      this.accountOp.nonce !== accountState.nonce &&
       this.#accountOp.signed &&
       this.#accountOp.signed.length >= this.threshold
     ) {
       errors.push({
-        title: 'You need to broadcast pending transactions first before this one.'
+        title: 'You need to broadcast pending transactions before this one.'
       })
     }
 

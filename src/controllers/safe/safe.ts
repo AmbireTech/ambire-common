@@ -36,6 +36,8 @@ export class SafeController extends EventEmitter implements ISafeController {
    */
   #updatedAt: number = 0
 
+  #automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[] = []
+
   #rejectedSafeTxns: string[] = []
 
   initialLoadPromise?: Promise<void>
@@ -76,6 +78,10 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async #load() {
     this.#rejectedSafeTxns = await this.#storage.get('rejectedSafeTxns', [])
+    this.#automaticallyResolvedSafeTxns = await this.#storage.get(
+      'automaticallyResolvedSafeTxns',
+      []
+    )
   }
 
   /**
@@ -179,12 +185,16 @@ export class SafeController extends EventEmitter implements ISafeController {
     const pending = await fetchAllPending(this.#networks.networks, safeAddr)
     if (!pending) return null
 
-    // filter out all rejected safe txns
+    // filter out all resolved & rejected safe txns
+    const hiddenTxns = [
+      ...this.#rejectedSafeTxns,
+      ...this.#automaticallyResolvedSafeTxns.map((row) => row.txnIds).flat()
+    ]
     return Object.assign(
       {},
       ...Object.keys(pending).map((chainId) => {
         return {
-          [chainId]: pending[chainId]!.filter((r) => !this.#rejectedSafeTxns.includes(r.safeTxHash))
+          [chainId]: pending[chainId]!.filter((r) => !hiddenTxns.includes(r.safeTxHash))
         }
       })
     )
@@ -193,6 +203,29 @@ export class SafeController extends EventEmitter implements ISafeController {
   async rejectTxnId(safeTxnId: string) {
     this.#rejectedSafeTxns = [...this.#rejectedSafeTxns, safeTxnId]
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
+  }
+
+  async resolveTxnId(safeTxnId: string, nonce: bigint) {
+    const resolved = this.#automaticallyResolvedSafeTxns.find((txns) => txns.nonce === nonce)
+
+    if (!resolved)
+      this.#automaticallyResolvedSafeTxns.push({
+        nonce,
+        txnIds: [safeTxnId]
+      })
+    else resolved.txnIds.push(safeTxnId)
+
+    return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
+  }
+
+  /**
+   * Upon failure, unresolve all safe txns with the same nonce
+   */
+  async unresolve(nonce: bigint) {
+    this.#automaticallyResolvedSafeTxns = this.#automaticallyResolvedSafeTxns.filter(
+      (txns) => txns.nonce !== nonce
+    )
+    return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
   }
 
   toJSON() {

@@ -804,12 +804,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       shouldRemoveSwapAndBridgeRoute?: boolean
       shouldUpdateAccount?: boolean
       shouldOpenNextRequest?: boolean
+      shouldRejectSafeRequests?: boolean
     }
   ) {
     const {
       shouldRemoveSwapAndBridgeRoute = true,
       shouldUpdateAccount = true,
-      shouldOpenNextRequest = true
+      shouldOpenNextRequest = true,
+      shouldRejectSafeRequests = true
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
@@ -843,8 +845,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        if (!!req.signAccountOp.account.safeCreation && req.signAccountOp.accountOp.txnId) {
-          safeRejectPromises.push(this.#safe.rejectTxnId(req.signAccountOp.accountOp.txnId))
+        // if it's a safe txn:
+        // - reject it upon a normal reject req;
+        // - resolve it on accountOp resolve
+        if (
+          !!req.signAccountOp.account.safeCreation &&
+          req.signAccountOp.accountOp.txnId &&
+          req.signAccountOp.accountOp.nonce
+        ) {
+          if (shouldRejectSafeRequests)
+            safeRejectPromises.push(this.#safe.rejectTxnId(req.signAccountOp.accountOp.txnId))
+          else
+            safeRejectPromises.push(
+              this.#safe.resolveTxnId(
+                req.signAccountOp.accountOp.txnId,
+                req.signAccountOp.accountOp.nonce
+              )
+            )
         }
 
         req.signAccountOp.destroy()
