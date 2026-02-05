@@ -32,16 +32,10 @@
   },
   "peerDependencies": {
     "@ensdomains/eth-ens-namehash": "^2.0.15",
-    "@ethersproject/abstract-signer": "^5.7.0",
     "@noble/hashes": "^1.8.0",
-    "@types/uuid": "9.0.0",
-    "@types/validator": "^13.7.0",
-    "@walletconnect/client": "^1.7.1",
     "bip44-constants": "^128.0.0",
-    "ethereumjs-util": "^7.1.3",
     "react": "^19.1.0",
     "secp256k1": "^5.0.1",
-    "url": "^0.10.3",
     "validator": "^13.7.0"
   },
   "peerDependenciesMeta": {
