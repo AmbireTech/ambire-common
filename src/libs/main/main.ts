@@ -21,7 +21,9 @@ export const getAccountOpsForSimulation = (
       .filter((grouped) => grouped.length > 1) // length of 1 means no conflict
       .flat()
       .map((r) => r.id)
-    callRequests = callRequests.filter((r) => !sameNonceRequestsIds.includes(r.id))
+    callRequests = callRequests.filter(
+      (r) => !sameNonceRequestsIds.includes(r.id) || r.signAccountOp.isInRegistry()
+    )
   }
 
   const isSmart = isSmartAccount(account)
