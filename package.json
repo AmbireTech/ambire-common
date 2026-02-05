@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@ambire/signature-validator": "^1.5.0",
+    "@corpus-core/colibri-stateless": "^1.1.1",
     "@lifi/types": "^17.7.1",
     "@metamask/eth-sig-util": "^8.2.0",
     "aes-js": "^3.1.2",

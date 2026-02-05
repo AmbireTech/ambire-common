@@ -2,6 +2,7 @@ import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import getRootDomain from '../../utils/getRootDomain'
+import { ColibriRpcProvider, ColibriRpcProviderOptions, isColibriEnabledForChain } from './ColibriRpcProvider'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
   'drpc.org': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
@@ -25,7 +26,7 @@ const getRpcProvider = (
   rpcUrls: NetworkInterface['rpcUrls'],
   chainId?: bigint | number,
   selectedRpcUrl?: string,
-  options?: JsonRpcApiProviderOptions
+  options?: ColibriRpcProviderOptions
 ) => {
   if (!rpcUrls.length) {
     throw new Error('rpcUrls must be a non-empty array')
@@ -47,6 +48,10 @@ const getRpcProvider = (
 
   if (chainId) {
     const staticNetwork = Network.from(Number(chainId))
+
+    if (isColibriEnabledForChain(chainId)) {
+      return new ColibriRpcProvider(rpcUrl, chainId, providerOptions)
+    }
 
     if (staticNetwork) {
       return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...providerOptions })
