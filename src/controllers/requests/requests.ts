@@ -18,6 +18,7 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
+import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import {
   ISwapAndBridgeController,
@@ -132,6 +133,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #ui: IUiController
 
+  #safe: ISafeController
+
   #autoLogin: IAutoLoginController
 
   #getDapp: (id: string) => Promise<Dapp | undefined>
@@ -204,6 +207,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     transfer,
     swapAndBridge,
     transactionManager,
+    safe,
     ui,
     autoLogin,
     getDapp,
@@ -235,6 +239,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
+    safe: ISafeController
     autoLogin: IAutoLoginController
     getDapp: (id: string) => Promise<Dapp | undefined>
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
@@ -262,6 +267,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
+    this.#safe = safe
     this.#autoLogin = autoLogin
     this.#getDapp = getDapp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -301,6 +307,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
+    await this.#safe.initialLoadPromise
   }
 
   get visibleUserRequests(): UserRequest[] {
@@ -806,6 +813,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
+    const safeRejectPromises: Promise<any>[] = []
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -835,6 +843,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
+        if (!!req.signAccountOp.account.safeCreation && req.signAccountOp.accountOp.txnId) {
+          safeRejectPromises.push(this.#safe.rejectTxnId(req.signAccountOp.accountOp.txnId))
+        }
+
         req.signAccountOp.destroy()
         return
       }
@@ -851,6 +863,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         })
       }
     })
+
+    // reject all safe txns so they do not appear by accident again
+    if (safeRejectPromises.length) await Promise.all(safeRejectPromises)
 
     if (userRequestsToAdd.length) {
       await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
@@ -907,6 +922,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
 
     await this.removeUserRequests(requestIds, options)
+    // maybe onl here?
   }
 
   async build({ type, params }: BuildRequest) {
@@ -1951,6 +1967,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     this.emitUpdate()
+  }
+
+  getSameNonceSafeRequests(requestId: UserRequest['id']): UserRequest[] {
+    const req = this.userRequests.find((uReq) => uReq.id === requestId)
+    if (!req || req.kind !== 'calls' || !req.signAccountOp.account.safeCreation) return []
+
+    const broadcastNonce = req.signAccountOp.accountOp.nonce
+    return this.userRequests.filter(
+      (r) =>
+        r.kind === 'calls' &&
+        !!r.signAccountOp.account.safeCreation &&
+        r.signAccountOp.accountOp.nonce === broadcastNonce
+    )
   }
 
   toJSON() {

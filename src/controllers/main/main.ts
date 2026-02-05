@@ -181,7 +181,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   #continuousUpdates: ContinuousUpdatesController
 
-  safe: ISafeController
+  #safe: ISafeController
 
   get continuousUpdates() {
     return this.#continuousUpdates
@@ -289,10 +289,11 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry
     )
-    this.safe = new SafeController({
+    this.#safe = new SafeController({
       eventEmitterRegistry,
       networks: this.networks,
-      providers: this.providers
+      providers: this.providers,
+      storage: this.storage
     })
     this.selectedAccount = new SelectedAccountController({
       eventEmitterRegistry,
@@ -502,6 +503,7 @@ export class MainController extends EventEmitter implements IMainController {
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
+      safe: this.#safe,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
       getDapp: async (id) => {
@@ -1277,7 +1279,7 @@ export class MainController extends EventEmitter implements IMainController {
    */
   #fetchSafeTxns() {
     if (this.selectedAccount?.account?.safeCreation) {
-      this.safe
+      this.#safe
         .fetchPending(this.selectedAccount.account.addr as Hex)
         .then(async (res) => {
           if (!res) return
@@ -1452,7 +1454,12 @@ export class MainController extends EventEmitter implements IMainController {
       skipFocus: true
     })
 
-    await this.requests.removeUserRequests([requestId], { shouldUpdateAccount: false })
+    // upon resolving an account op, check all same nonce safe requests and remove them
+    const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id)
+
+    await this.requests.removeUserRequests([requestId, ...safeRequests], {
+      shouldUpdateAccount: false
+    })
 
     const dappHandlers: any[] = []
 

@@ -11,6 +11,7 @@ import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
+import { IStorageController } from '../../interfaces/storage'
 import {
   decodeSetupData,
   fetchAllPending,
@@ -24,6 +25,8 @@ export const STATUS_WRAPPED_METHODS = {
 } as const
 
 export class SafeController extends EventEmitter implements ISafeController {
+  #storage: IStorageController
+
   #networks: INetworksController
 
   #providers: IProvidersController
@@ -32,6 +35,10 @@ export class SafeController extends EventEmitter implements ISafeController {
    * The last time a request to fetch pending safe txn was made
    */
   #updatedAt: number = 0
+
+  #rejectedSafeTxns: string[] = []
+
+  initialLoadPromise?: Promise<void>
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -50,15 +57,25 @@ export class SafeController extends EventEmitter implements ISafeController {
   constructor({
     eventEmitterRegistry,
     networks,
-    providers
+    providers,
+    storage
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
     providers: IProvidersController
+    storage: IStorageController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
     this.#providers = providers
+    this.#storage = storage
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
+  }
+
+  async #load() {
+    this.#rejectedSafeTxns = await this.#storage.get('rejectedSafeTxns', [])
   }
 
   /**
@@ -159,7 +176,23 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (Date.now() - this.#updatedAt < FETCH_PENDING_SAFE_TXNS) return null
 
     this.#updatedAt = Date.now()
-    return fetchAllPending(this.#networks.networks, safeAddr)
+    const pending = await fetchAllPending(this.#networks.networks, safeAddr)
+    if (!pending) return null
+
+    // filter out all rejected safe txns
+    return Object.assign(
+      {},
+      ...Object.keys(pending).map((chainId) => {
+        return {
+          [chainId]: pending[chainId]!.filter((r) => !this.#rejectedSafeTxns.includes(r.safeTxHash))
+        }
+      })
+    )
+  }
+
+  async rejectTxnId(safeTxnId: string) {
+    this.#rejectedSafeTxns = [...this.#rejectedSafeTxns, safeTxnId]
+    return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
   }
 
   toJSON() {
