@@ -249,6 +249,18 @@ export async function getPendingTransactions(
   return { ...response, chainId }
 }
 
+export async function getTransaction(
+  chainId: bigint,
+  safeTxnHash: Hex
+): Promise<SafeMultisigTransactionResponse> {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+
+  return apiKit.getTransaction(safeTxnHash)
+}
+
 export async function fetchAllPending(
   networks: Network[],
   safeAddr: Hex
@@ -416,4 +428,30 @@ export function getSameNonceRequests(requests: CallsUserRequest[]) {
     acc[key].push(r)
     return acc
   }, {})
+}
+
+export async function fetchExecutedTransactions(
+  txns: { chainId: bigint; safeTxnHash: Hex }[]
+): Promise<Hex[]> {
+  let promises = []
+  const results: Hex[] = []
+
+  for (let i = 0; i < txns.length; i++) {
+    const txn = txns[i]!
+    promises.push(getTransaction(txn.chainId, txn.safeTxnHash))
+
+    // when we assemble 5 promises, we make 5 requests to the API,
+    // take the results and wait an additional second.
+    // this is because we're allowed 5 requests per second
+    if ((i + 1) % 5 === 0 || i + 1 === txns.length) {
+      const responses = await Promise.all(promises)
+      responses.forEach((r) => {
+        if (r.isExecuted) results.push(r.safeTxHash as Hex)
+      })
+      await wait(1100)
+      promises = []
+    }
+  }
+
+  return results
 }

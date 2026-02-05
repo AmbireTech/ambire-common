@@ -1274,6 +1274,52 @@ export class MainController extends EventEmitter implements IMainController {
     this.#fetchSafeTxns()
   }
 
+  #fetchExecutedSafeTxns(pendingSafeIds: Hex[]) {
+    // get the safes we don't have info on
+    // those are the safe user requests that have been initiated but
+    // there's no pendingSafeIds for them
+    const noInfoSafes = this.requests.userRequests
+      .filter(
+        (r) =>
+          r.kind === 'calls' &&
+          !!r.signAccountOp.account.safeCreation &&
+          r.signAccountOp.accountOp.txnId &&
+          r.signAccountOp.accountOp.signed?.length &&
+          !pendingSafeIds.includes(r.signAccountOp.accountOp.txnId as Hex)
+      )
+      .map((r) => {
+        const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
+        return {
+          chainId: accountOp.chainId,
+          safeTxnHash: accountOp.txnId as Hex
+        }
+      })
+
+    // check their status
+    this.#safe
+      .fetchExecuted(noInfoSafes)
+      .then((confirmed) => {
+        if (!confirmed.length) return
+
+        // remove the requests if they have been executed
+        this.requests
+          .removeUserRequests(
+            this.requests.userRequests
+              .filter(
+                (r) =>
+                  r.kind === 'calls' &&
+                  !!r.signAccountOp.account.safeCreation &&
+                  confirmed.includes(r.signAccountOp.accountOp.txnId as Hex)
+              )
+              .map((r) => r.id)
+          )
+          .catch((e) => e)
+      })
+      .catch((e) => {
+        console.log('failed to retrieve executed safe txns')
+      })
+  }
+
   /**
    * Fetch safe txns from safe global and make them user requests
    * if the selected account is a safe
@@ -1288,9 +1334,14 @@ export class MainController extends EventEmitter implements IMainController {
           for (let i = 0; i < txnRequest.length; i++) {
             await this.requests.build(txnRequest[i]!).catch((e) => e)
           }
+
+          // fetch info about safe txns that may have concluded
+          this.#fetchExecutedSafeTxns(
+            txnRequest.map((r) => r.params.userRequestParams.meta.safeTxnProps.txnId)
+          )
         })
         .catch((e) => {
-          console.log('failed to retrieve safe txns')
+          console.log('failed to retrieve pending safe txns')
         })
     }
   }

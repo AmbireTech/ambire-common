@@ -815,7 +815,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
-    const safeRejectPromises: Promise<any>[] = []
+    const safeResolveIds: { txnIds: string[]; nonce: bigint }[] = []
+    const safeRejectIds: string[] = []
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -853,15 +854,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           req.signAccountOp.accountOp.txnId &&
           req.signAccountOp.accountOp.nonce
         ) {
-          if (shouldRejectSafeRequests)
-            safeRejectPromises.push(this.#safe.rejectTxnId(req.signAccountOp.accountOp.txnId))
-          else
-            safeRejectPromises.push(
-              this.#safe.resolveTxnId(
-                req.signAccountOp.accountOp.txnId,
-                req.signAccountOp.accountOp.nonce
-              )
+          if (shouldRejectSafeRequests) safeRejectIds.push(req.signAccountOp.accountOp.txnId)
+          else {
+            const resolved = safeResolveIds.find(
+              (txns) => txns.nonce === req.signAccountOp.accountOp.nonce
             )
+            if (!resolved)
+              safeResolveIds.push({
+                nonce: req.signAccountOp.accountOp.nonce,
+                txnIds: [req.signAccountOp.accountOp.txnId]
+              })
+            else resolved.txnIds.push(req.signAccountOp.accountOp.txnId)
+          }
         }
 
         req.signAccountOp.destroy()
@@ -882,7 +886,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     // reject all safe txns so they do not appear by accident again
-    if (safeRejectPromises.length) await Promise.all(safeRejectPromises)
+    if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
+    if (safeResolveIds.length) await this.#safe.resolveTxnId(safeResolveIds)
 
     if (userRequestsToAdd.length) {
       await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
@@ -1739,6 +1744,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             })
           : new Promise(() => {}) // Explicitly never-resolving promise
       ])) as any
+
+      // do not build requests for expired safe txns
+      if (meta.safeTxnProps?.nonce && meta.safeTxnProps?.nonce < accountState.nonce) return
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 

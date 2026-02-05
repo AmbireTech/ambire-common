@@ -3,7 +3,7 @@ import { toBeHex } from 'ethers'
 import SafeApiKit, { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
-import { FETCH_PENDING_SAFE_TXNS } from '../../consts/intervals'
+import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
 import { SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -15,6 +15,7 @@ import { IStorageController } from '../../interfaces/storage'
 import {
   decodeSetupData,
   fetchAllPending,
+  fetchExecutedTransactions,
   getCalculatedSafeAddress,
   isSupportedSafeVersion
 } from '../../libs/safe/safe'
@@ -179,7 +180,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   async fetchPending(
     safeAddr: Hex
   ): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
-    if (Date.now() - this.#updatedAt < FETCH_PENDING_SAFE_TXNS) return null
+    if (Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
 
     this.#updatedAt = Date.now()
     const pending = await fetchAllPending(this.#networks.networks, safeAddr)
@@ -200,20 +201,27 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
-  async rejectTxnId(safeTxnId: string) {
-    this.#rejectedSafeTxns = [...this.#rejectedSafeTxns, safeTxnId]
+  async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<Hex[]> {
+    // no protection, call this only after fetching the pending ones
+    this.#updatedAt = Date.now()
+    return fetchExecutedTransactions(txns)
+  }
+
+  async rejectTxnId(safeTxnIds: string[]) {
+    this.#rejectedSafeTxns = [...this.#rejectedSafeTxns, ...safeTxnIds]
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
   }
 
-  async resolveTxnId(safeTxnId: string, nonce: bigint) {
-    const resolved = this.#automaticallyResolvedSafeTxns.find((txns) => txns.nonce === nonce)
+  async resolveTxnId(resolves: { txnIds: string[]; nonce: bigint }[]) {
+    for (let i = 0; i < resolves.length; i++) {
+      const resolve = resolves[i]!
+      const resolved = this.#automaticallyResolvedSafeTxns.find(
+        (txns) => txns.nonce === resolve.nonce
+      )
 
-    if (!resolved)
-      this.#automaticallyResolvedSafeTxns.push({
-        nonce,
-        txnIds: [safeTxnId]
-      })
-    else resolved.txnIds.push(safeTxnId)
+      if (!resolved) this.#automaticallyResolvedSafeTxns.push(resolve)
+      else resolved.txnIds.push(...resolve.txnIds)
+    }
 
     return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
   }

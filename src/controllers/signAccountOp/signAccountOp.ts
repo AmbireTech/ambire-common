@@ -810,7 +810,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
-    if (!areGasPricesLoading && !this.gasPrices) {
+    if (!areGasPricesLoading && !this.gasPrices && this.canBroadcast) {
       errors.push({
         title:
           'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
@@ -818,7 +818,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
-    if (!this.isSponsored && !this.estimation.availableFeeOptions.length)
+    if (!this.isSponsored && !this.estimation.availableFeeOptions.length && this.canBroadcast)
       errors.push({
         title: 'Insufficient funds to cover the fee.'
       })
@@ -836,7 +836,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === ZeroAddress
     )
-    if (!this.isSponsored && !currentPortfolioNetworkNative)
+    if (!this.isSponsored && !currentPortfolioNetworkNative && this.canBroadcast)
       errors.push({
         title:
           'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
@@ -848,7 +848,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       !this.isSponsored &&
       !this.accountOp.gasFeePayment &&
       this.feeTokenResult &&
-      this.selectedOption
+      this.selectedOption &&
+      this.canBroadcast
     ) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       if (this.hasSpeeds(identifier))
@@ -861,7 +862,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       !this.isSponsored &&
       this.selectedOption &&
       this.accountOp.gasFeePayment &&
-      this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
+      this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount &&
+      this.canBroadcast
     ) {
       const speedCoverage = []
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
@@ -934,7 +936,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       errors.push(this.status.error)
     }
 
-    if (!this.isSponsored && !this.#feeSpeedsLoading && this.selectedOption) {
+    if (!this.isSponsored && !this.#feeSpeedsLoading && this.selectedOption && this.canBroadcast) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       if (!this.hasSpeeds(identifier)) {
         if (!this.feeTokenResult?.priceIn.length) {
@@ -1975,7 +1977,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     let updatedPaidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType || null
 
     // Update only if it's not set or it's passed as an argument
-    if (paidByKeyType || !updatedPaidByKeyType) {
+    if (this.canBroadcast && (paidByKeyType || !updatedPaidByKeyType)) {
       const key = this.#keystore.getFeePayerKey(
         this.accountOp.accountAddr,
         this.#paidBy,
