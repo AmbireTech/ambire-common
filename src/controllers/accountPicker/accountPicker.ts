@@ -75,6 +75,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #externalSignerControllers: ExternalSignerControllers
 
   initParams: {
+    sessionId: string
     keyIterator: KeyIterator | null
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     page?: number
@@ -409,6 +410,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   setInitParams(params: {
+    sessionId: string
     keyIterator: KeyIterator | null
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     page?: number
