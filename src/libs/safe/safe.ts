@@ -2,7 +2,9 @@ import {
   AbiCoder,
   concat,
   Contract,
+  getBytes,
   getCreate2Address,
+  hexlify,
   Interface,
   keccak256,
   recoverAddress,
@@ -30,6 +32,17 @@ import { CallsUserRequest } from '../../interfaces/userRequest'
 import wait from '../../utils/wait'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { adaptTypedMessageForMetaMaskSigUtil, getSafeTypedData } from '../signMessage/signMessage'
+
+const multiCallAbi = [
+  { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
+  {
+    inputs: [{ internalType: 'bytes', name: 'transactions', type: 'bytes' }],
+    name: 'multiSend',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function'
+  }
+]
 
 export function isSupportedSafeVersion(version: string): boolean {
   const [major, minor] = version.split('.').map(Number)
@@ -107,16 +120,6 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
     data = singleCall[2]
     operation = 0 // static call
   } else {
-    const multiCallAbi = [
-      { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
-      {
-        inputs: [{ internalType: 'bytes', name: 'transactions', type: 'bytes' }],
-        name: 'multiSend',
-        outputs: [],
-        stateMutability: 'payable',
-        type: 'function'
-      }
-    ]
     const multisendInterface = new Interface(multiCallAbi)
     const multiSendCalls = multisendInterface.encodeFunctionData('multiSend', [
       concat(
@@ -317,6 +320,38 @@ export async function fetchAllPending(
   return results
 }
 
+function decodeMultiSend(transactionsHex: string) {
+  const bytes = getBytes(transactionsHex)
+  let i = 0
+  const results = []
+
+  while (i < bytes.length) {
+    const operation = bytes[i]
+    i += 1
+
+    const to = hexlify(bytes.slice(i, i + 20))
+    i += 20
+
+    const value = BigInt(hexlify(bytes.slice(i, i + 32)))
+    i += 32
+
+    const dataLength = Number(BigInt(hexlify(bytes.slice(i, i + 32))))
+    i += 32
+
+    const data = hexlify(bytes.slice(i, i + dataLength))
+    i += dataLength
+
+    results.push({
+      operation,
+      to,
+      value,
+      data
+    })
+  }
+
+  return results
+}
+
 export function toCallsUserRequest(
   safeAddr: Hex,
   response: {
@@ -353,13 +388,14 @@ export function toCallsUserRequest(
       let calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = []
       try {
         // try to decode the data to check if it's a batch
-        // if it is, use it; otherwise, construct a single call req
-        const abiCoder = new AbiCoder()
-        const safeCalls = abiCoder.decode(
-          ['tuple(uint8, address, uint256, uint256, bytes)'],
-          txn.data!
-        )
-        calls = safeCalls.map((call) => ({ to: call[1], value: call[2], data: call[4] }))
+        // if it is, use it; otherwise, construct a single call reqx
+        const multisendInterface = new Interface(multiCallAbi)
+        const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data!)
+        calls = decodeMultiSend(multiSendCall[0]).map((call) => ({
+          to: call.to,
+          value: call.value,
+          data: call.data
+        }))
       } catch (e) {
         // this just means it's not a batch
         calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
