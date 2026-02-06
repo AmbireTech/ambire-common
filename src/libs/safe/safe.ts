@@ -107,15 +107,33 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
     data = singleCall[2]
     operation = 0 // static call
   } else {
-    const multiSendCalls = calls.map((call) => {
-      return coder.encode(
-        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-        [0, call[0], call[1], call[2].length, call[2]]
+    const multiCallAbi = [
+      { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
+      {
+        inputs: [{ internalType: 'bytes', name: 'transactions', type: 'bytes' }],
+        name: 'multiSend',
+        outputs: [],
+        stateMutability: 'payable',
+        type: 'function'
+      }
+    ]
+    const multisendInterface = new Interface(multiCallAbi)
+    const multiSendCalls = multisendInterface.encodeFunctionData('multiSend', [
+      concat(
+        calls.map((call) => {
+          return concat([
+            '0x00',
+            zeroPadValue(call[0], 20),
+            zeroPadValue(toBeHex(call[1]), 32),
+            zeroPadValue(toBeHex(call[2].substring(2).length / 2), 32),
+            call[2]
+          ])
+        })
       )
-    })
+    ])
     to = multiSendAddr
     value = 0n
-    data = concat(multiSendCalls)
+    data = multiSendCalls
     operation = 1 // delegate call
   }
 
