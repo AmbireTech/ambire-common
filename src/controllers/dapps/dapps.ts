@@ -158,12 +158,21 @@ export class DappsController extends EventEmitter implements IDappsController {
       }
       if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
 
+      const domainId = getDomainFromUrl(d.url)
+      const isInDappsNotToFilterOutByDomain =
+        domainId && dappsNotToFilterOutByDomain.includes(domainId)
+
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
       const hasNoNetworks = d.chainIds.length === 0
       const hasLowTVL = !d.tvl || d.tvl <= 15_000_000
 
       // Remove dapps that are not in excluded categories and either have no networks or low TVL
-      if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
+      // But skip this filtering if the dapp's domain is in dappsNotToFilterOutByDomain
+      if (
+        shouldSkipByCategory &&
+        (hasNoNetworks || hasLowTVL) &&
+        !isInDappsNotToFilterOutByDomain
+      ) {
         filteredMap.delete(key)
       }
     }

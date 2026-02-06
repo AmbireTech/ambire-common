@@ -13,6 +13,8 @@ export const dappIdsToBeRemoved = new Set([
   'curve.fi', // curve.fi was moved to curve.finance
   'app.ether.fi', // app.ether.fi was moved to ether.fi
   'core.app', // not supported,
+  'new.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
+  'multitx.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
   // unsupported or outdated protocols returned by DefiLlama
   'bridge.base.org',
   'binance.com',
@@ -419,7 +421,7 @@ export const defiLlamaProtocolIdsToExclude: string[] = [
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const categoriesToExclude = ['CEX', 'Developer Tools']
-export const dappsNotToFilterOutByDomain = ['snapshot.box']
+export const dappsNotToFilterOutByDomain = ['snapshot.box', 'bungee.exchange']
 
 export const CATEGORY_MAP: Record<string, string> = {
   'AI Agents': 'AI Agents',
