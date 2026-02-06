@@ -421,7 +421,7 @@ export const defiLlamaProtocolIdsToExclude: string[] = [
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const categoriesToExclude = ['CEX', 'Developer Tools']
-export const dappsNotToFilterOutByDomain = ['snapshot.box']
+export const dappsNotToFilterOutByDomain = ['snapshot.box', 'bungee.exchange']
 
 export const CATEGORY_MAP: Record<string, string> = {
   'AI Agents': 'AI Agents',
