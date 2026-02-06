@@ -13,6 +13,8 @@ export const dappIdsToBeRemoved = new Set([
   'curve.fi', // curve.fi was moved to curve.finance
   'app.ether.fi', // app.ether.fi was moved to ether.fi
   'core.app', // not supported,
+  'new.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
+  'multitx.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
   // unsupported or outdated protocols returned by DefiLlama
   'bridge.base.org',
   'binance.com',
