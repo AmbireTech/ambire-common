@@ -176,17 +176,16 @@ export function sortByAddress<T extends { addr: string }>(sortableKeys: T[]): T[
 export function sortDefaultOwners(
   keys: Key[],
   threshold: number,
-  alreadySigned: number = 0
+  alreadySignedAddrs: string[] = []
 ): Key[] {
-  // todo: fix
-
   return keys
+    .filter((k) => !alreadySignedAddrs.includes(k.addr))
     .sort((a, b) => {
       const isAInternal = a.type === 'internal'
       const isBInternal = b.type === 'internal'
       return isAInternal && !isBInternal ? -1 : !isAInternal && isBInternal ? 1 : 0
     })
-    .slice(0, threshold - alreadySigned)
+    .slice(0, threshold - alreadySignedAddrs.length)
 }
 
 export function getSafeTxnHash(txn: SafeTx, chainId: bigint, safeAddress: Hex) {

@@ -707,7 +707,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         ? sortDefaultOwners(
             this.accountKeyStoreKeys,
             accountState.threshold,
-            countSigs(this.accountOp)
+            this.accountOp.signed
           ).map((k) => ({
             addr: k.addr,
             type: k.type
