@@ -77,7 +77,8 @@ export const featuredDapps = new Set([
   'lido.fi',
   'bitrefill.com',
   'altitude.fi',
-  'drops.bot'
+  'drops.bot',
+  'app.barterswap.xyz'
 ])
 
 // NOTE: The final dApp list sorting preserves the order of this list
