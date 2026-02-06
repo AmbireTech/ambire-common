@@ -871,7 +871,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
         activityBanners.push({
           id: `pending-${addr}`,
-          type: 'info2',
+          type: 'info',
           category: 'pending-to-be-confirmed-acc-ops',
           title:
             pendingOps.length === 1
