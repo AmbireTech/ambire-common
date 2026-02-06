@@ -5,7 +5,7 @@ export type IBannerController = ControllerInterface<
   InstanceType<typeof import('../controllers/banner/banner').BannerController>
 >
 
-export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
+export type BannerType = 'error' | 'warning' | 'info' | 'success'
 export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
   | 'pending-to-be-confirmed-acc-ops'
