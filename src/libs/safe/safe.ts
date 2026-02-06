@@ -178,6 +178,8 @@ export function sortDefaultOwners(
   threshold: number,
   alreadySigned: number = 0
 ): Key[] {
+  // todo: fix
+
   return keys
     .sort((a, b) => {
       const isAInternal = a.type === 'internal'

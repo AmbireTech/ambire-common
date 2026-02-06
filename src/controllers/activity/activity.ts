@@ -155,6 +155,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           portfoliosToUpdate: PortfoliosToUpdate
           updatedAccountsOps: SubmittedAccountOp[]
           newestOpTimestamp: number
+          shouldFetchSafeTxns: boolean
         }>
       | undefined
   } = {}
@@ -419,6 +420,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         portfoliosToUpdate: PortfoliosToUpdate
         updatedAccountsOps: SubmittedAccountOp[]
         newestOpTimestamp: number
+        shouldFetchSafeTxns: boolean
       }
     >
   > {
@@ -463,6 +465,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     updatedAccountsOps: SubmittedAccountOp[]
     newestOpTimestamp: number
     portfoliosToUpdate: PortfoliosToUpdate
+    shouldFetchSafeTxns: boolean
   }> {
     await this.#initialLoadPromise
 
@@ -472,7 +475,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainsToUpdate: [],
         updatedAccountsOps: [],
         portfoliosToUpdate: {},
-        newestOpTimestamp: 0
+        newestOpTimestamp: 0,
+        shouldFetchSafeTxns: false
       }
 
     // This flag tracks the changes to AccountsOps statuses
@@ -482,6 +486,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const chainsToUpdate = new Set<Network['chainId']>()
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
+
+    // we should fetch safe txns again upon failure
+    let shouldFetchSafeTxns = false
 
     // Use this flag to make the auto-refresh slower with the passege of time.
     // implementation is in background.ts
@@ -517,8 +524,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 if (updatedOpIfAny) {
                   updatedAccountsOps.push(updatedOpIfAny)
                   const acc = this.#accounts.accounts.find((a) => a.addr === op.accountAddr)
-                  if (acc && !!acc.safeCreation)
+                  if (acc && !!acc.safeCreation) {
                     await this.#safe.unresolve(op.nonce).catch((e) => e)
+                    shouldFetchSafeTxns = true
+                  }
                 }
               }
             }
@@ -626,8 +635,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     const acc = this.#accounts.accounts.find(
                       (a) => a.addr === accountOp.accountAddr
                     )
-                    if (acc && !!acc.safeCreation)
+                    if (acc && !!acc.safeCreation) {
                       await this.#safe.unresolve(accountOp.nonce).catch((e) => e)
+                      shouldFetchSafeTxns = true
+                    }
                   }
 
                   // eslint-disable-next-line no-param-reassign
@@ -685,7 +696,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       chainsToUpdate: Array.from(chainsToUpdate),
       updatedAccountsOps,
       portfoliosToUpdate,
-      newestOpTimestamp
+      newestOpTimestamp,
+      shouldFetchSafeTxns
     }
   }
 

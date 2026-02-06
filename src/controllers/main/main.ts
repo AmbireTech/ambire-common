@@ -1127,10 +1127,16 @@ export class MainController extends EventEmitter implements IMainController {
       chainsToUpdate: [],
       portfoliosToUpdate: {},
       updatedAccountsOps: [],
-      newestOpTimestamp: 0
+      newestOpTimestamp: 0,
+      shouldFetchSafeTxns: false
     }
-    const { shouldEmitUpdate, chainsToUpdate, portfoliosToUpdate, newestOpTimestamp } =
-      updatedAccountsOpsForSelectedAccount
+    const {
+      shouldEmitUpdate,
+      chainsToUpdate,
+      portfoliosToUpdate,
+      newestOpTimestamp,
+      shouldFetchSafeTxns
+    } = updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
@@ -1160,6 +1166,8 @@ export class MainController extends EventEmitter implements IMainController {
           })
         }
       }
+
+      if (shouldFetchSafeTxns) this.#fetchSafeTxns()
     }
 
     return { newestOpTimestamp }

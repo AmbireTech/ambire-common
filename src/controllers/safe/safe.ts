@@ -230,6 +230,8 @@ export class SafeController extends EventEmitter implements ISafeController {
    * Upon failure, unresolve all safe txns with the same nonce
    */
   async unresolve(nonce: bigint) {
+    // reset the counter so we could fetch immediately
+    this.#updatedAt = 0
     this.#automaticallyResolvedSafeTxns = this.#automaticallyResolvedSafeTxns.filter(
       (txns) => txns.nonce !== nonce
     )
