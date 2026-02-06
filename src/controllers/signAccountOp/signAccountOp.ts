@@ -106,13 +106,13 @@ import {
   confirm,
   countSigs,
   getAlreadySignedOwners,
+  getDefaultOwners,
   getImportedSignersThatHaveNotSigned,
   getSafeTxn,
   getSafeTxnHash,
   getSigs,
   propose,
   sortByAddress,
-  sortDefaultOwners,
   sortSigs
 } from '../../libs/safe/safe'
 import {
@@ -704,7 +704,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // The user can change this setting during signing, but we're setting
       // the default option as a "quick" broadcast way without choosing signers
       const signers = this.account.safeCreation
-        ? sortDefaultOwners(
+        ? getDefaultOwners(
             this.accountKeyStoreKeys,
             accountState.threshold,
             this.accountOp.signed
