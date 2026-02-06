@@ -177,15 +177,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
   }
 
-  async fetchPending(
-    safeAddr: Hex
-  ): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
-    if (Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
-
-    this.#updatedAt = Date.now()
-    const pending = await fetchAllPending(this.#networks.networks, safeAddr)
-    if (!pending) return null
-
+  #filterOutHidden(pending: { [chainId: string]: SafeMultisigTransactionResponse[] }) {
     // filter out all resolved & rejected safe txns
     const hiddenTxns = [
       ...this.#rejectedSafeTxns,
@@ -199,6 +191,24 @@ export class SafeController extends EventEmitter implements ISafeController {
         }
       })
     )
+  }
+
+  async fetchPending(
+    safeAddr: Hex,
+    chainIds: bigint[] = []
+  ): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
+    if (chainIds.length === 0 && Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
+    if (chainIds.length === 0) this.#updatedAt = Date.now()
+
+    const networks =
+      chainIds.length === 0
+        ? this.#networks.networks
+        : this.#networks.networks.filter((n) => chainIds.includes(n.chainId))
+
+    const pending = await fetchAllPending(networks, safeAddr)
+    if (!pending) return null
+
+    return this.#filterOutHidden(pending)
   }
 
   async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<Hex[]> {

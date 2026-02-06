@@ -181,7 +181,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   #continuousUpdates: ContinuousUpdatesController
 
-  #safe: ISafeController
+  safe: ISafeController
 
   get continuousUpdates() {
     return this.#continuousUpdates
@@ -289,7 +289,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry
     )
-    this.#safe = new SafeController({
+    this.safe = new SafeController({
       eventEmitterRegistry,
       networks: this.networks,
       providers: this.providers,
@@ -384,7 +384,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.networks,
       this.portfolio,
-      this.#safe,
+      this.safe,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
@@ -504,7 +504,7 @@ export class MainController extends EventEmitter implements IMainController {
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
-      safe: this.#safe,
+      safe: this.safe,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
       getDapp: async (id) => {
@@ -591,7 +591,7 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
-        this.#fetchSafeTxns()
+        this.fetchSafeTxns()
       }
     })
 
@@ -626,7 +626,7 @@ export class MainController extends EventEmitter implements IMainController {
         this.accounts.updateAccountState(selectedAccountAddr)
       }
 
-      this.#fetchSafeTxns()
+      this.fetchSafeTxns()
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -716,7 +716,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.forceEmitUpdate()
     ])
 
-    this.#fetchSafeTxns()
+    this.fetchSafeTxns()
   }
 
   async #onAccountPickerSuccess() {
@@ -1167,7 +1167,7 @@ export class MainController extends EventEmitter implements IMainController {
         }
       }
 
-      if (shouldFetchSafeTxns) this.#fetchSafeTxns()
+      if (shouldFetchSafeTxns) this.fetchSafeTxns()
     }
 
     return { newestOpTimestamp }
@@ -1279,7 +1279,7 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.#fetchSafeTxns()
+    this.fetchSafeTxns()
   }
 
   #fetchExecutedSafeTxns(pendingSafeIds: Hex[]) {
@@ -1304,7 +1304,7 @@ export class MainController extends EventEmitter implements IMainController {
       })
 
     // check their status
-    this.#safe
+    this.safe
       .fetchExecuted(noInfoSafes)
       .then((confirmed) => {
         if (!confirmed.length) return
@@ -1332,10 +1332,10 @@ export class MainController extends EventEmitter implements IMainController {
    * Fetch safe txns from safe global and make them user requests
    * if the selected account is a safe
    */
-  #fetchSafeTxns() {
+  fetchSafeTxns(chainIds: bigint[] = []) {
     if (this.selectedAccount?.account?.safeCreation) {
-      this.#safe
-        .fetchPending(this.selectedAccount.account.addr as Hex)
+      this.safe
+        .fetchPending(this.selectedAccount.account.addr as Hex, chainIds)
         .then(async (res) => {
           if (!res) return
           const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
