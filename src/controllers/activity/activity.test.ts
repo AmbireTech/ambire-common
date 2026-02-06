@@ -198,9 +198,16 @@ describe('Activity Controller ', () => {
         nets.forEach((n) => {
           providersCtrl.setProvider(n)
         })
+      },
+      onReady: async () => {
+        await providersCtrl.init({ networks: networksCtrl.allNetworks })
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+    providersCtrl = new ProvidersController({
+      storage: storageCtrl,
+      getNetworks: () => networksCtrl.allNetworks,
+      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    })
 
     const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
     accountsCtrl = new AccountsController(

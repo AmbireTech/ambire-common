@@ -72,7 +72,10 @@ describe('AddressBookController', () => {
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })

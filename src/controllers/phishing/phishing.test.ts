@@ -52,11 +52,18 @@ const prepareTest = async () => {
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,

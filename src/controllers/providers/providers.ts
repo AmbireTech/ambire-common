@@ -1,10 +1,9 @@
 import { Contract } from 'ethers'
 
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
-import { INetworksController, Network } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController } from '../../interfaces/ui'
 /* eslint-disable no-underscore-dangle */
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
@@ -22,11 +21,11 @@ const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
  * Each network requires an initialized JsonRpcProvider, and the provider must be reinitialized whenever network.selectedRpcUrl changes.
  */
 export class ProvidersController extends EventEmitter implements IProvidersController {
-  #networks: INetworksController
-
   #storage: IStorageController
 
-  #ui: IUiController
+  #getNetworks: () => Network[]
+
+  #sendUiMessage: (params: {}) => void
 
   #providers: RPCProviders = {}
 
@@ -48,16 +47,21 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  constructor(
-    networks: INetworksController,
-    storage: IStorageController,
-    ui: IUiController,
+  constructor({
+    storage,
+    getNetworks,
+    sendUiMessage,
+    eventEmitterRegistry
+  }: {
+    storage: IStorageController
+    getNetworks: () => Network[]
+    sendUiMessage: (params: {}) => void
     eventEmitterRegistry?: IEventEmitterRegistryController
-  ) {
+  }) {
     super(eventEmitterRegistry)
-    this.#networks = networks
     this.#storage = storage
-    this.#ui = ui
+    this.#getNetworks = getNetworks
+    this.#sendUiMessage = sendUiMessage
 
     /**
      * Proxy over the providers map that:
@@ -79,7 +83,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
           }
 
           const chainId = BigInt(prop.toString())
-          const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
+          const network = getNetworks().find((n) => n.chainId === chainId)
           if (network) this.#autoInitProvider(chainId)
         } catch (error) {
           console.error(`Failed to auto set provider for chainId: ${prop.toString()}`, error)
@@ -120,21 +124,24 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   }
 
   async #load() {
-    await this.#networks.initialLoadPromise
-
     const storageIsBatchingEnabled = await this.#storage.get(
       'isBatchingEnabled',
       this.isBatchingEnabled
     )
 
     this.isBatchingEnabled = storageIsBatchingEnabled
-    this.#networks.allNetworks.forEach((n) => this.setProvider(n))
+    this.emitUpdate()
+  }
 
+  async init({ networks }: { networks: Network[] }) {
+    await this.initialLoadPromise
+
+    networks.forEach((n) => this.setProvider(n))
     this.emitUpdate()
   }
 
   #autoInitProvider(chainId: bigint, rpcUrl?: string) {
-    const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
+    const network = this.#getNetworks().find((n) => n.chainId === chainId)
 
     if (network) {
       this.setProvider(network)
@@ -202,7 +209,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       this.isBatchingEnabled = !this.isBatchingEnabled
       await this.#storage.set('isBatchingEnabled', this.isBatchingEnabled)
 
-      this.#networks.allNetworks.forEach((n) => this.setProvider(n, { forceUpdate: true }))
+      this.#getNetworks().forEach((n) => this.setProvider(n, { forceUpdate: true }))
       this.emitUpdate()
     })
   }
@@ -217,7 +224,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     },
     callback: (provider: RPCProvider) => Promise<void>
   ) {
-    const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
+    const network = this.#getNetworks().find((n) => n.chainId === chainId)
     const batchMaxCount =
       this.isBatchingEnabled && network
         ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
@@ -257,7 +264,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         level: 'silent'
       })
 
-      return this.#ui.message.sendUiMessage({
+      return this.#sendUiMessage({
         type: 'RpcCallRes',
         requestId,
         ok: false,
@@ -274,7 +281,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         level: 'silent'
       })
 
-      return this.#ui.message.sendUiMessage({
+      return this.#sendUiMessage({
         type: 'RpcCallRes',
         requestId,
         ok: false,
@@ -285,7 +292,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     try {
       const result = await (fn as Function).apply(provider, args)
 
-      this.#ui.message.sendUiMessage({
+      this.#sendUiMessage({
         type: 'RpcCallRes',
         requestId,
         ok: true,
@@ -293,7 +300,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
     } catch (error: any) {
       this.emitError({ error, message: error.message, level: 'major' })
-      this.#ui.message.sendUiMessage({
+      this.#sendUiMessage({
         type: 'RpcCallRes',
         requestId,
         ok: false,
@@ -317,14 +324,14 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     method: keyof Contract
     args: unknown[]
   }) {
-    const network = this.#networks.allNetworks.find((n) => n.chainId === chainId)
+    const network = this.#getNetworks().find((n) => n.chainId === chainId)
     if (!network) {
       this.emitError({
         error: new Error('callContractAndSendResToUi: network not found'),
         message: `Network with chainId: ${chainId} not found`,
         level: 'silent'
       })
-      return this.#ui.message.sendUiMessage({
+      return this.#sendUiMessage({
         type: 'CallContract',
         requestId,
         ok: false,
@@ -343,7 +350,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         level: 'silent'
       })
 
-      return this.#ui.message.sendUiMessage({
+      return this.#sendUiMessage({
         type: 'CallContract',
         requestId,
         ok: false,
@@ -352,7 +359,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
     const result = await (contract[method] as Function).apply(contract, args)
 
-    this.#ui.message.sendUiMessage({
+    this.#sendUiMessage({
       type: 'CallContract',
       requestId,
       ok: !!result,
@@ -440,14 +447,14 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     network: Network
   }) {
     this.resolveAssetInfo(address, network, (_assetInfo: any) => {
-      this.#ui.message.sendUiMessage({
+      this.#sendUiMessage({
         type: 'ResolveAssetInfo',
         requestId,
         ok: true,
         res: _assetInfo ?? undefined
       })
     }).catch((e) => {
-      this.#ui.message.sendUiMessage({
+      this.#sendUiMessage({
         type: 'ResolveAssetInfo',
         requestId,
         ok: false,
