@@ -22,6 +22,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 /* eslint-disable no-restricted-syntax */
 import { IPhishingController } from '../../interfaces/phishing'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -54,6 +55,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   #networks: INetworksController
 
   #phishing: IPhishingController
+
+  #selectedAccount: ISelectedAccountController
 
   #ui: IUiController
 
@@ -97,6 +100,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
+    selectedAccount,
     ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -105,6 +109,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage: IStorageController
     networks: INetworksController
     phishing: IPhishingController
+    selectedAccount: ISelectedAccountController
     ui: IUiController
   }) {
     super(eventEmitterRegistry)
@@ -114,6 +119,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#storage = storage
     this.#networks = networks
     this.#phishing = phishing
+    this.#selectedAccount = selectedAccount
     this.#ui = ui
 
     // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
@@ -443,6 +449,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.dappSessions[sessionId]?.setMessenger(messenger, isAmbireNext)
   }
 
+  setSessionIsForceConnectDisabled = (sessionId: string, isForceConnectDisabled: boolean) => {
+    if (!this.dappSessions[sessionId]) return
+
+    this.dappSessions[sessionId].isForceConnectDisabled = isForceConnectDisabled
+    this.emitUpdate()
+  }
+
   setSessionLastHandledRequestsId = (
     sessionId: string,
     providerId: number,
@@ -709,6 +722,48 @@ export class DappsController extends EventEmitter implements IDappsController {
         level: 'silent'
       })
     }
+  }
+
+  async forceConnectDapp(dappId: Dapp['id']) {
+    const session = Object.values(this.dappSessions).find(({ id }) => id === dappId)
+    if (!session || !this.#selectedAccount.account) return
+
+    let dapp = this.getDapp(session.id)
+
+    if (dapp) {
+      if (!dapp.isConnected) {
+        this.updateDapp(dapp.id, { isConnected: true })
+      }
+    } else {
+      dapp = await this.#buildDapp({
+        id: getDappIdFromUrl(session.origin),
+        name: session.name,
+        url: session.origin,
+        icon: session.icon,
+        chainId: 1,
+        isConnected: true
+      })
+      await this.addDapp(dapp)
+    }
+
+    const chainId = networkChainIdToHex(dapp.chainId || 1)
+    let networkVersion = '1'
+
+    try {
+      networkVersion = parseInt(chainId, 16).toString()
+    } catch (error) {
+      networkVersion = '1'
+    }
+    await this.broadcastDappSessionEvent(
+      'setProviderState',
+      {
+        chainId,
+        isUnlocked: true,
+        accounts: [this.#selectedAccount.account.addr],
+        networkVersion
+      },
+      session.id
+    )
   }
 
   toJSON() {
