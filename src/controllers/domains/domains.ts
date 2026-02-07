@@ -1,15 +1,19 @@
 import { getAddress, isAddress } from 'ethers'
+import { createWnsClient, isWei } from 'wns-utils'
+import type { WnsClient } from 'wns-utils'
 
 import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { RPCProviders } from '../../interfaces/provider'
 import { getEnsAvatar, resolveENSDomain, reverseLookupEns } from '../../services/ensDomains'
+import { resolveWNSDomain, reverseResolveWNS } from '../../services/wnsDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
   [address: string]: {
     ens: string | null
+    wns: string | null
     ensAvatar?: string | null
     createdAt?: number
     updatedAt?: number
@@ -30,6 +34,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
+  #wnsClient: WnsClient | null = null
+
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
 
@@ -37,6 +43,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    * only indexes by address, making getting an address for an existing domain name inefficient.
    */
   ensToAddress: { [ensName: string]: string } = {}
+
+  wnsToAddress: { [wnsName: string]: string } = {}
 
   loadingAddresses: string[] = []
 
@@ -57,6 +65,21 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     this.#providers = providers
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
+  }
+
+  #getWnsClient(): WnsClient | null {
+    if (this.#wnsClient) return this.#wnsClient
+
+    const ethereumProvider =
+      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+
+    if (!ethereumProvider) return null
+
+    // eslint-disable-next-line no-underscore-dangle
+    const rpcUrl = ethereumProvider._getConnection().url
+    this.#wnsClient = createWnsClient({ rpc: rpcUrl })
+
+    return this.#wnsClient
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -92,32 +115,58 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.resolveDomainsStatus[domain] = 'LOADING'
     await this.forceEmitUpdate()
 
-    if (this.ensToAddress[domain]) {
+    if (this.ensToAddress[domain] || this.wnsToAddress[domain]) {
       this.resolveDomainsStatus[domain] = 'RESOLVED'
       await this.forceEmitUpdate()
       this.resolveDomainsStatus[domain] = undefined
       return
     }
 
-    await resolveENSDomain({
-      domain,
-      bip44Item,
-      getResolver: (name) => ethereumProvider.getResolver(name)
-    })
-      .then(async ({ address, avatar }) => {
-        if (address) {
-          this.#saveResolvedDomain({ address, ensAvatar: avatar, domain, type: 'ens' })
-        }
-        this.resolveDomainsStatus[domain] = 'RESOLVED'
-        await this.forceEmitUpdate()
-        this.resolveDomainsStatus[domain] = undefined
-      })
-      .catch(async (e) => {
-        console.error(`Failed to resolve ENS domain: ${domain}`, e)
+    if (isWei(domain)) {
+      const wnsClient = this.#getWnsClient()
+      if (!wnsClient) {
         this.resolveDomainsStatus[domain] = 'FAILED'
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
+        return
+      }
+
+      await resolveWNSDomain({ domain, wnsClient })
+        .then(async ({ address }) => {
+          if (address) {
+            this.#saveResolvedDomain({ address, ensAvatar: null, domain, type: 'wns' })
+          }
+          this.resolveDomainsStatus[domain] = 'RESOLVED'
+          await this.forceEmitUpdate()
+          this.resolveDomainsStatus[domain] = undefined
+        })
+        .catch(async (e) => {
+          console.error(`Failed to resolve WNS domain: ${domain}`, e)
+          this.resolveDomainsStatus[domain] = 'FAILED'
+          await this.forceEmitUpdate()
+          this.resolveDomainsStatus[domain] = undefined
+        })
+    } else {
+      await resolveENSDomain({
+        domain,
+        bip44Item,
+        getResolver: (name) => ethereumProvider.getResolver(name)
       })
+        .then(async ({ address, avatar }) => {
+          if (address) {
+            this.#saveResolvedDomain({ address, ensAvatar: avatar, domain, type: 'ens' })
+          }
+          this.resolveDomainsStatus[domain] = 'RESOLVED'
+          await this.forceEmitUpdate()
+          this.resolveDomainsStatus[domain] = undefined
+        })
+        .catch(async (e) => {
+          console.error(`Failed to resolve ENS domain: ${domain}`, e)
+          this.resolveDomainsStatus[domain] = 'FAILED'
+          await this.forceEmitUpdate()
+          this.resolveDomainsStatus[domain] = undefined
+        })
+    }
   }
 
   /**
@@ -132,18 +181,22 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     address: string
     domain: string
     ensAvatar: string | null
-    type: 'ens'
+    type: 'ens' | 'wns'
   }) {
     const checksummedAddress = getAddress(address)
-    const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null }
-
     const existing = this.domains[checksummedAddress]
     const now = Date.now()
 
-    this.ensToAddress[domain] = checksummedAddress
+    if (type === 'wns') {
+      this.wnsToAddress[domain] = checksummedAddress
+    } else {
+      this.ensToAddress[domain] = checksummedAddress
+    }
+
     this.domains[checksummedAddress] = {
       ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
-      ens: type === 'ens' ? domain : prevEns,
+      ens: type === 'ens' ? domain : (existing?.ens ?? null),
+      wns: type === 'wns' ? domain : (existing?.wns ?? null),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
     }
@@ -193,20 +246,31 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.emitUpdate()
 
     try {
+      const wnsClient = this.#getWnsClient()
+
+      const [ens, wns] = await Promise.all([
+        withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider)),
+        wnsClient
+          ? withTimeout(() => reverseResolveWNS(checksummedAddress, wnsClient)).catch(() => null)
+          : Promise.resolve(null)
+      ])
+
       let ensAvatar: string | undefined | null
-
-      const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
-
       if (ens) {
         // We need the ens name to resolve the avatar
         ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider))
         this.ensToAddress[ens] = checksummedAddress
       }
 
+      if (wns) {
+        this.wnsToAddress[wns] = checksummedAddress
+      }
+
       const now = Date.now()
       const existing = this.domains[checksummedAddress]
       this.domains[checksummedAddress] = {
         ens,
+        wns,
         ensAvatar,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
@@ -219,7 +283,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       if (hasBeenResolvedOnce) {
         this.domains[checksummedAddress]!.updateFailedAt = Date.now()
       } else {
-        this.domains[checksummedAddress] = { ens: null, updateFailedAt: Date.now() }
+        this.domains[checksummedAddress] = { ens: null, wns: null, updateFailedAt: Date.now() }
       }
     }
 
