@@ -1,6 +1,7 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
+  BytesLike,
   concat,
   encodeRlp,
   getAddress,
@@ -492,13 +493,26 @@ export async function getPlainTextSignature(
   accountState: AccountOnchainState,
   signer: KeystoreSignerInterface,
   isOG = false
-): Promise<string> {
+): Promise<{ signature: Hex; hash?: Hex }> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
-  if (!account.creation) {
-    const signature = await signer.signMessage(messageHex)
-    return signature
+  if (!!account.safeCreation) {
+    // safe always signs a typed data, even if plain sig
+    const typedData = getSafeTypedDataForIsValidSignature(
+      network.chainId,
+      account.addr as Hex,
+      hashMessage(getBytes(messageHex))
+    )
+    return {
+      signature: (await signer.signTypedData(typedData)) as Hex,
+      hash: `0x${TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+        SignTypedDataVersion.V4
+      )}`
+    }
   }
+
+  if (!account.creation) return { signature: (await signer.signMessage(messageHex)) as Hex }
 
   if (!accountState.isV2) {
     const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
@@ -523,12 +537,12 @@ export async function getPlainTextSignature(
       )
     }
 
-    return wrapUnprotected(await signer.signMessage(messageHex))
+    return { signature: wrapUnprotected(await signer.signMessage(messageHex)) as Hex }
   }
 
   // if it's safe, we proceed
   if (dedicatedToOneSA) {
-    return wrapUnprotected(await signer.signMessage(messageHex))
+    return { signature: wrapUnprotected(await signer.signMessage(messageHex)) as Hex }
   }
 
   // in case of only_standard priv key, we transform the data
@@ -538,7 +552,7 @@ export async function getPlainTextSignature(
   // could be phishing him into approving an Ambire Op without him
   // knowing
   const typedData = getTypedData(network!.chainId, account.addr, hashMessage(getBytes(messageHex)))
-  return wrapStandard(await signer.signTypedData(typedData))
+  return { signature: wrapStandard(await signer.signTypedData(typedData)) as Hex }
 }
 
 export async function getEIP712Signature(
@@ -759,5 +773,36 @@ export const getSafeTypedData = (
     types,
     message: safeTx,
     primaryType: 'SafeTx'
+  }
+}
+
+export const getSafeTypedDataForIsValidSignature = (
+  chainId: bigint,
+  safeAddr: Hex,
+  hash: BytesLike // hash of the message, or the EIP-712 hash
+): TypedMessageUserRequest['meta']['params'] => {
+  const domain: TypedDataDomain = {
+    chainId: chainId.toString(),
+    verifyingContract: safeAddr
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'chainId',
+        type: 'uint256'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      }
+    ],
+    SafeMessage: [{ name: 'message', type: 'bytes' }]
+  }
+
+  return {
+    domain,
+    types,
+    message: getBytes(hash),
+    primaryType: 'SafeMessage'
   }
 }
