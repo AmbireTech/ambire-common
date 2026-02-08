@@ -1,8 +1,10 @@
 import {
   concat,
   Contract,
+  getBytes,
   hashMessage,
   hexlify,
+  Interface,
   JsonRpcProvider,
   recoverAddress,
   toBeHex,
@@ -1115,43 +1117,21 @@ describe('Sign Message, Safe accounts', () => {
     await safeContract.checkNSignatures(validHash, '0x', signature, 2)
     // not reverting here means success
   })
-  // test('Signing [Safe]: sign plain text message', async () => {
-  //   const msg = 'test signing plain text'
-  //   const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
-  //   const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
-  //   const safeContract = new Contract(safeAddr, Safe, baseProvider) as any
-  //   const hash = hashMessage(getBytes(msg))
-  //   // const validHash = await safeContract.isValidSignature(hash, signature)
-
-  //   const typedData = getSafeTypedDataForIsValidSignature(8453n, safeAddr, safeTxn)
-  //   const ourHash = TypedDataUtils.eip712Hash(
-  //     adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
-  //     SignTypedDataVersion.V4
-  //   ).toString('hex')
-
-  //   expect(`0x${ourHash}`).toBe(validHash)
-
-  //   const sigs = [
-  //     '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b',
-  //     '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
-  //   ]
-  //   delete typedData.types.EIP712Domain
-  //   const recovered = recoverAddress(
-  //     validHash,
-  //     '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b'
-  //   )
-  //   const isOwnerOne = await safeContract.isOwner(recovered)
-  //   expect(isOwnerOne).toBe(true)
-
-  //   const recovered2 = recoverAddress(
-  //     validHash,
-  //     '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
-  //   )
-  //   const isOwnerTwo = await safeContract.isOwner(recovered2)
-  //   expect(isOwnerTwo).toBe(true)
-
-  //   const signature = concat(sigs)
-  //   await safeContract.checkNSignatures(validHash, '0x', signature, 2)
-  //   // not reverting here means success
-  // })
+  test('Signing [Safe]: sign plain text message', async () => {
+    const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const msg = hexlify(toUtf8Bytes('testesetgs'))
+    const hash = hashMessage(getBytes(msg))
+    const isValidSigAbi = ['function isValidSignature(bytes32, bytes) public view returns (bytes4)']
+    const isValidSigInt = new Interface(isValidSigAbi)
+    const encodedData = isValidSigInt.encodeFunctionData('isValidSignature', [
+      hash,
+      '0x7ebeaeca3f7ed26bf23dd512f1abd9f174cfff98e41edffab851cb5beb31836574706c90e16ec80e07d03b6174966a4b0fb6ec99555871f11668a2a054c1ee5e1bff22d35ecef7ffaf72e2ab8ae27b21d803facdde1bc892ed6b0b7df6199aad5c7e792845c6c98dfb652ac252707e0e3e43d4091a62049a3556bec7cb978450be1b'
+    ])
+    const validHash = await baseProvider.call({
+      to: safeAddr,
+      data: encodedData
+    })
+    expect(validHash.substring(0, 10)).toBe('0x1626ba7e')
+  })
 })
