@@ -220,7 +220,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const firstRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(firstRes).toBe(true)
@@ -235,7 +235,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const secondRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: signatureForUint8Array,
+      signature: signatureForUint8Array.signature,
       message: toUtf8Bytes('test')
     })
     expect(secondRes).toBe(true)
@@ -250,7 +250,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const thirdRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: signatureForNumberAsString,
+      signature: signatureForNumberAsString.signature,
       message: '1'
     })
     expect(thirdRes).toBe(true)
@@ -267,19 +267,22 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer
     )
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
-    expect(signatureForPlainText.slice(-2)).toEqual('00')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: smartAccount.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(res).toBe(true)
 
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider) as any
-    const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
+    const isValidSig = await contract.isValidSignature(
+      hashMessage('test'),
+      signatureForPlainText.signature
+    )
     expect(isValidSig).toBe(contractSuccess)
   })
   test('Signing [V1 SA]: plain text, should allow as it contains the address in the message', async () => {
@@ -295,13 +298,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer
     )
     // the key should be 00 because it's a v1 account
-    expect(signatureForPlainText.slice(-2)).toEqual('00')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: hexStringToUint8Array(msg)
     })
     expect(res).toBe(true)
@@ -846,10 +849,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       v2AccountState,
       signer
     )
-    expect(signatureForPlainText.slice(-2)).toEqual('00')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-    const wrappedSig = wrapWallet(signatureForPlainText, smartAccount.addr)
+    const wrappedSig = wrapWallet(signatureForPlainText.signature, smartAccount.addr)
 
     const res = await verifyMessage({
       provider,
@@ -949,7 +952,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const firstRes = await verifyMessage({
       provider,
       signer: eoaAccountHackedDelegation.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(firstRes).toBe(true)
@@ -990,17 +993,20 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       signer
     )
     // the key should not be dedicatedToOneSA, so we expect the signature to end in 01
-    expect(signatureForPlainText.slice(-2)).toEqual('01')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('01')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider) as any
-    const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
+    const isValidSig = await contract.isValidSignature(
+      hashMessage('test'),
+      signatureForPlainText.signature
+    )
     expect(isValidSig).toBe(contractSuccess)
 
     const res = await verifyMessage({
       provider,
       signer: smartAccount.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(res).toBe(true)
@@ -1049,7 +1055,7 @@ describe('Sign Message, Safe accounts', () => {
       }
     ])
   })
-  test('Signing [Safe]: typed data', async () => {
+  test('Signing [Safe]: txn typed data', async () => {
     const safeTxn = {
       baseGas: toBeHex(0) as Hex,
       data: '0xa9059cbb0000000000000000000000005d8dd39a360e5d5219f965695f9c0290862ca24a0000000000000000000000000000000000000000000000000000000000002710' as Hex,
@@ -1109,4 +1115,43 @@ describe('Sign Message, Safe accounts', () => {
     await safeContract.checkNSignatures(validHash, '0x', signature, 2)
     // not reverting here means success
   })
+  // test('Signing [Safe]: sign plain text message', async () => {
+  //   const msg = 'test signing plain text'
+  //   const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+  //   const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+  //   const safeContract = new Contract(safeAddr, Safe, baseProvider) as any
+  //   const hash = hashMessage(getBytes(msg))
+  //   // const validHash = await safeContract.isValidSignature(hash, signature)
+
+  //   const typedData = getSafeTypedDataForIsValidSignature(8453n, safeAddr, safeTxn)
+  //   const ourHash = TypedDataUtils.eip712Hash(
+  //     adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+  //     SignTypedDataVersion.V4
+  //   ).toString('hex')
+
+  //   expect(`0x${ourHash}`).toBe(validHash)
+
+  //   const sigs = [
+  //     '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b',
+  //     '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
+  //   ]
+  //   delete typedData.types.EIP712Domain
+  //   const recovered = recoverAddress(
+  //     validHash,
+  //     '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b'
+  //   )
+  //   const isOwnerOne = await safeContract.isOwner(recovered)
+  //   expect(isOwnerOne).toBe(true)
+
+  //   const recovered2 = recoverAddress(
+  //     validHash,
+  //     '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
+  //   )
+  //   const isOwnerTwo = await safeContract.isOwner(recovered2)
+  //   expect(isOwnerTwo).toBe(true)
+
+  //   const signature = concat(sigs)
+  //   await safeContract.checkNSignatures(validHash, '0x', signature, 2)
+  //   // not reverting here means success
+  // })
 })
