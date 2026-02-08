@@ -507,7 +507,7 @@ export async function getPlainTextSignature(
       hash: `0x${TypedDataUtils.eip712Hash(
         adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
         SignTypedDataVersion.V4
-      )}`
+      ).toString('hex')}`
     }
   }
 

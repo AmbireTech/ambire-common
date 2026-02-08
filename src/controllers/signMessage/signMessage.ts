@@ -68,7 +68,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   // applicable on Safe message
   #signed?: string[]
 
-  #signers?: { addr: Key['addr']; type: Key['type'] }[]
+  signers?: { addr: Key['addr']; type: Key['type'] }[]
 
   constructor(
     keystore: IKeystoreController,
@@ -143,16 +143,27 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         throw new Error(`Account details missing. Please try again`)
       }
 
-      this.#signers = this.#account.safeCreation
-        ? getDefaultOwners(
-            accountState.importedAccountKeys,
-            accountState.threshold,
-            this.#signed
-          ).map((k) => ({
-            addr: k.addr,
-            type: k.type
-          }))
-        : undefined
+      if (this.#account.safeCreation) {
+        // safe account have their default signers set here
+        // if they cannot be chosen, signers are undefined
+        this.signers = getDefaultOwners(
+          accountState.importedAccountKeys,
+          accountState.threshold,
+          this.#signed
+        ).map((k) => ({
+          addr: k.addr,
+          type: k.type
+        }))
+      } else {
+        // if the account is not safe & view only, set a default signer
+        // the default signer should be the internal key if any
+        this.signers = accountState.importedAccountKeys
+          ? [
+              accountState.importedAccountKeys.find((k) => k.type === 'internal') ||
+                accountState.importedAccountKeys[0]!
+            ]
+          : undefined
+      }
 
       this.emitUpdate()
     } else {
@@ -178,7 +189,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#account = undefined
     this.#network = undefined
     this.#signed = undefined
-    this.#signers = undefined
+    this.signers = undefined
     this.emitUpdate()
   }
 
@@ -204,7 +215,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   setSigners(signers: { addr: Key['addr']; type: Key['type'] }[]) {
-    this.#signers = signers
+    this.signers = signers
     this.emitUpdate()
   }
 
@@ -230,7 +241,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       return SignMessageController.#throwMissingMessage()
     }
 
-    if (!this.#signers?.length) {
+    if (!this.signers?.length) {
       return SignMessageController.#throwMissingSigningKey()
     }
 
@@ -265,8 +276,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         ) {
           const signatures: Hex[] = []
           let hash = ''
-          for (let i = 0; i < this.#signers.length; i++) {
-            const signerKey = this.#signers[i]!
+          for (let i = 0; i < this.signers.length; i++) {
+            const signerKey = this.signers[i]!
             this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
             if (this.#signer.init) {
               this.#signer.init(this.#externalSignerControllers[signerKey.type])
@@ -298,8 +309,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           }
 
           const signatures = []
-          for (let i = 0; i < this.#signers.length; i++) {
-            const signerKey = this.#signers[i]!
+          for (let i = 0; i < this.signers.length; i++) {
+            const signerKey = this.signers[i]!
             this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
             if (this.#signer.init) {
               this.#signer.init(this.#externalSignerControllers[signerKey.type])
