@@ -561,7 +561,7 @@ export async function getEIP712Signature(
   signer: KeystoreSignerInterface,
   network: Network,
   isOG = false
-): Promise<string> {
+): Promise<{ signature: Hex; hash?: Hex }> {
   if (!message.types.EIP712Domain) {
     throw new Error(
       'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
@@ -573,10 +573,26 @@ export async function getEIP712Signature(
     )
   }
 
-  if (!account.creation) {
-    const signature = await signer.signTypedData(message)
-    return signature
+  if (!!account.safeCreation) {
+    // safe wraps the EIP-712 message in it's own EIP-712
+    const typedData = getSafeTypedDataForIsValidSignature(
+      network.chainId,
+      account.addr as Hex,
+      `0x${TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil({ ...message }),
+        SignTypedDataVersion.V4
+      ).toString('hex')}`
+    )
+    return {
+      signature: (await signer.signTypedData(typedData)) as Hex,
+      hash: `0x${TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+        SignTypedDataVersion.V4
+      ).toString('hex')}`
+    }
   }
+
+  if (!account.creation) return { signature: (await signer.signTypedData(message)) as Hex }
 
   if (!accountState.isV2) {
     const asString = JSON.stringify(message).toLowerCase()
@@ -599,7 +615,7 @@ export async function getEIP712Signature(
       )
     }
 
-    return wrapUnprotected(await signer.signTypedData(message))
+    return { signature: wrapUnprotected(await signer.signTypedData(message)) as Hex }
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
@@ -629,10 +645,10 @@ export async function getEIP712Signature(
     )
     const ambireOperation = getTypedData(ambireReadableOperation.chainId, account.addr, hash)
     const signature = wrapStandard(await signer.signTypedData(ambireOperation))
-    return wrapWallet(signature, account.addr)
+    return { signature: wrapWallet(signature, account.addr) as Hex }
   }
 
-  return wrapUnprotected(await signer.signTypedData(message))
+  return { signature: wrapUnprotected(await signer.signTypedData(message)) as Hex }
 }
 
 // get the typedData for the first ERC-4337 deploy txn

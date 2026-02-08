@@ -1,5 +1,3 @@
-import { concat } from 'ethers'
-
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -308,7 +306,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             )
           }
 
-          const signatures = []
+          const signatures: Hex[] = []
+          let hash = ''
           for (let i = 0; i < this.signers.length; i++) {
             const signerKey = this.signers[i]!
             this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
@@ -318,22 +317,19 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             // announce the next signer as the first has already been
             if (i !== 0) this.emitUpdate()
 
-            signatures.push(
-              await getEIP712Signature(
-                this.messageToSign.content,
-                this.#account,
-                accountState,
-                this.#signer,
-                this.#network,
-                this.#invite.isOG
-              )
+            const signed = await getEIP712Signature(
+              this.messageToSign.content,
+              this.#account,
+              accountState,
+              this.#signer,
+              this.#network,
+              this.#invite.isOG
             )
-            // initial: TypedDataUtils.eip712Hash(
-            //   adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
-            //   SignTypedDataVersion.V4
-            // )
+
+            signatures.push(signed.signature)
+            if (signed.hash) hash = signed.hash
           }
-          signature = concat(signatures)
+          signature = signatures.length === 1 ? signatures[0] : sortSigs(signatures, hash)
 
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
         }

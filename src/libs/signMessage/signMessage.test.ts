@@ -385,7 +385,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const res = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData: typedDataTest
     })
     expect(res).toBe(true)
@@ -406,7 +406,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const secondRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: eip712SigNum,
+      signature: eip712SigNum.signature,
       typedData: typedDataNumber
     })
     expect(secondRes).toBe(true)
@@ -637,7 +637,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const res = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData: typedDataTest
     })
     expect(res).toBe(true)
@@ -660,13 +660,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       polygonNetwork
     )
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: smartAccount.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
@@ -699,13 +699,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       ethereumNetwork
     )
     // the key is for a v1 acc so it should be 00
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
@@ -726,13 +726,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       ethereumNetwork
     )
     // the key is for a v1 acc so it should be 00
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
@@ -789,13 +789,16 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       polygonNetwork
     )
 
-    expect(eip712Sig.slice(-2)).toEqual('02')
+    expect(eip712Sig.signature.slice(-2)).toEqual('02')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
 
     // v2 account
     const contractV2 = new Contract(v2SmartAccAddr, AmbireAccount.abi, provider) as any
-    const isValidSigforv2 = await contractV2.isValidSignature(hash, eip712Sig.slice(0, 134))
+    const isValidSigforv2 = await contractV2.isValidSignature(
+      hash,
+      eip712Sig.signature.slice(0, 134)
+    )
     expect(isValidSigforv2).toBe(contractSuccess)
 
     // v1 account
@@ -807,7 +810,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
@@ -825,10 +828,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer,
       polygonNetwork
     )
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-    const wrappedSig = wrapWallet(eip712Sig, smartAccount.addr)
+    const wrappedSig = wrapWallet(eip712Sig.signature, smartAccount.addr)
 
     // verify message should pass
     const res = await verifyMessage({
