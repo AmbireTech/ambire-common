@@ -351,41 +351,43 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
 
-      // todo: configure this to work with Safes
-      const verifyMessageParams = {
-        provider,
-        // the signer is always the account even if the actual
-        // signature is from a key that has privs to the account
-        signer: this.messageToSign.accountAddr,
-        signature: getVerifyMessageSignature(signature, this.#account, accountState),
-        // eslint-disable-next-line no-nested-ternary
-        ...(this.messageToSign.content.kind === 'message' ||
-        this.messageToSign.content.kind === 'siwe'
-          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
-          : this.messageToSign.content.kind === 'typedMessage'
-            ? {
-                typedData: {
-                  domain: this.messageToSign.content.domain,
-                  types: this.messageToSign.content.types,
-                  message: this.messageToSign.content.message,
-                  primaryType: this.messageToSign.content.primaryType
-                }
-              }
-            : {
-                authorization: (
-                  this.messageToSign.content as AuthorizationUserRequest['meta']['params'] & {
-                    kind: AuthorizationUserRequest['kind']
+      if (!this.#account.safeCreation) {
+        // todo: configure this to work with Safes
+        const verifyMessageParams = {
+          provider,
+          // the signer is always the account even if the actual
+          // signature is from a key that has privs to the account
+          signer: this.messageToSign.accountAddr,
+          signature: getVerifyMessageSignature(signature, this.#account, accountState),
+          // eslint-disable-next-line no-nested-ternary
+          ...(this.messageToSign.content.kind === 'message' ||
+          this.messageToSign.content.kind === 'siwe'
+            ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
+            : this.messageToSign.content.kind === 'typedMessage'
+              ? {
+                  typedData: {
+                    domain: this.messageToSign.content.domain,
+                    types: this.messageToSign.content.types,
+                    message: this.messageToSign.content.message,
+                    primaryType: this.messageToSign.content.primaryType
                   }
-                ).message
-              })
-      }
-      const isValidSignature = await verifyMessage(verifyMessageParams)
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+                }
+              : {
+                  authorization: (
+                    this.messageToSign.content as AuthorizationUserRequest['meta']['params'] & {
+                      kind: AuthorizationUserRequest['kind']
+                    }
+                  ).message
+                })
+        }
+        const isValidSignature = await verifyMessage(verifyMessageParams)
+        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
 
-      if (!isValidSignature) {
-        throw new Error(
-          'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
-        )
+        if (!isValidSignature) {
+          throw new Error(
+            'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
+          )
+        }
       }
 
       this.signedMessage = {

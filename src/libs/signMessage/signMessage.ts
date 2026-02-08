@@ -1,7 +1,6 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
-  BytesLike,
   concat,
   encodeRlp,
   getAddress,
@@ -779,7 +778,7 @@ export const getSafeTypedData = (
 export const getSafeTypedDataForIsValidSignature = (
   chainId: bigint,
   safeAddr: Hex,
-  hash: BytesLike // hash of the message, or the EIP-712 hash
+  hash: string
 ): TypedMessageUserRequest['meta']['params'] => {
   const domain: TypedDataDomain = {
     chainId: chainId.toString(),
@@ -802,7 +801,7 @@ export const getSafeTypedDataForIsValidSignature = (
   return {
     domain,
     types,
-    message: getBytes(hash),
+    message: { message: hash },
     primaryType: 'SafeMessage'
   }
 }
