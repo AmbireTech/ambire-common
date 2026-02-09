@@ -677,7 +677,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         adaptTypedMessageForMetaMaskSigUtil(typedData),
         SignTypedDataVersion.V4
       ),
-      eip712Sig
+      eip712Sig.signature
     )
     expect(isValidSig).toBe(contractSuccess)
   })
@@ -803,7 +803,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     // v1 account
     const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider) as any
-    const isValidSig = await contract.isValidSignature(hash, eip712Sig)
+    const isValidSig = await contract.isValidSignature(hash, eip712Sig.signature)
     expect(isValidSig).toBe(contractSuccess)
 
     // verify message should pass
@@ -1130,6 +1130,22 @@ describe('Sign Message, Safe accounts', () => {
     const encodedData = isValidSigInt.encodeFunctionData('isValidSignature', [
       hash,
       '0x7ebeaeca3f7ed26bf23dd512f1abd9f174cfff98e41edffab851cb5beb31836574706c90e16ec80e07d03b6174966a4b0fb6ec99555871f11668a2a054c1ee5e1bff22d35ecef7ffaf72e2ab8ae27b21d803facdde1bc892ed6b0b7df6199aad5c7e792845c6c98dfb652ac252707e0e3e43d4091a62049a3556bec7cb978450be1b'
+    ])
+    const validHash = await baseProvider.call({
+      to: safeAddr,
+      data: encodedData
+    })
+    expect(validHash.substring(0, 10)).toBe('0x1626ba7e')
+  })
+  test('Signing [Safe]: sign eip-712 typed data', async () => {
+    const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const hash = `0x2ee323d41725455c8d7b63cb33c7125f91395e7f07b212358ebffd9461ec1491` // a typed data hash
+    const isValidSigAbi = ['function isValidSignature(bytes32, bytes) public view returns (bytes4)']
+    const isValidSigInt = new Interface(isValidSigAbi)
+    const encodedData = isValidSigInt.encodeFunctionData('isValidSignature', [
+      hash,
+      '0x5fa0195eab0e18f64ef65bb052b2586865edcb76e20b71f86938ab059b6971037193c2fb8ca4ce3d4b063c1174ae461c00086140108e28b5d6e70631b09ada361b85b67a7967db00f718c096f23f624f625174374f40baa82f12967bc7d20aa72c78852ed1a58acabcad8a0e9e06fb0c215afb1f7765cd4aef78ae82205ecab05d1b'
     ])
     const validHash = await baseProvider.call({
       to: safeAddr,
