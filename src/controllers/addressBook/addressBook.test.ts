@@ -79,7 +79,11 @@ describe('AddressBookController', () => {
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
 
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   const accountsCtrl = new AccountsController(
