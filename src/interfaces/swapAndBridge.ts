@@ -127,6 +127,7 @@ export interface SwapAndBridgeRoute {
    * @example - Wrapping and unwrapping natives
    */
   withConvenienceFee: boolean
+  isIntent?: boolean // we add this by ourselves
 }
 
 export interface SocketAPISwapUserTx {
@@ -447,6 +448,7 @@ export interface BungeeExchangeQuoteResponse {
     suggestedClientSlippage: number
     approvalData: BungeeApprovalData
     txData: BungeeTxData
+    isIntent?: boolean // we add this by ourselves
   }
   destinationChainId: number
   input: {
@@ -462,6 +464,7 @@ export interface BungeeExchangeQuoteResponse {
     estimatedTime?: number
     routeDetails: BungeeRouteDetails
     slippage: number
+    isIntent?: boolean // we add this by ourselves
   }[]
   originChainId: number
   receiverAddress: string
