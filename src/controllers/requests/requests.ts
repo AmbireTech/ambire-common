@@ -944,7 +944,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
 
     await this.removeUserRequests(requestIds, options)
-    // maybe onl here?
   }
 
   async build({ type, params }: BuildRequest) {

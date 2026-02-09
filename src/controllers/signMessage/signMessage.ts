@@ -64,7 +64,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   // who are the signers that already signed this message
   // applicable on Safe message
-  #signed?: string[]
+  #signed: string[] = []
 
   signers?: { addr: Key['addr']; type: Key['type'] }[]
 
@@ -110,7 +110,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
-      this.#signed = signed
+      this.#signed = signed || []
       this.isInitialized = true
 
       this.#account = this.#accounts.accounts.find(
@@ -186,7 +186,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signedMessage = null
     this.#account = undefined
     this.#network = undefined
-    this.#signed = undefined
+    this.#signed = []
     this.signers = undefined
     this.emitUpdate()
   }
@@ -292,6 +292,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
               this.#invite.isOG
             )
             signatures.push(signed.signature)
+            this.#signed.push(signerKey.addr)
             if (signed.hash) hash = signed.hash
           }
           signature = signatures.length === 1 ? signatures[0] : sortSigs(signatures, hash)
@@ -430,6 +431,15 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
       this.reset()
     }
+  }
+
+  // in case of safe accounts, signing may not resolve immediately
+  hasSigningResolved(): boolean {
+    if (!this.#account || !this.#network) return false // shouldn't happen
+    const accountState =
+      this.#accounts.accountStates[this.#account.addr]?.[this.#network.chainId.toString()]
+    if (!accountState) return false
+    return this.#signed.length >= accountState.threshold
   }
 
   #onAbortOperation() {

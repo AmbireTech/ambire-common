@@ -953,30 +953,33 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.signMessage.sign()
 
-    const signedMessage = this.signMessage.signedMessage
-    // Error handling on the prev step will notify the user, it's fine to return here
-    if (!signedMessage) return
+    // some accounts may not resolve immediately, like a safe acc
+    if (this.signMessage.hasSigningResolved()) {
+      const signedMessage = this.signMessage.signedMessage
+      // Error handling on the prev step will notify the user, it's fine to return here
+      if (!signedMessage) return
 
-    // The user may sign an invalid siwe message. We don't want to create policies
-    // for such messages
-    if (
-      signedMessage.content.kind === 'siwe' &&
-      signedMessage.content.parsedMessage &&
-      signedMessage.content.siweValidityStatus === 'valid'
-    ) {
-      await this.autoLogin.onSiweMessageSigned(
-        signedMessage.content.parsedMessage,
-        signedMessage.content.isAutoLoginEnabledByUser,
-        signedMessage.content.autoLoginDuration
+      // The user may sign an invalid siwe message. We don't want to create policies
+      // for such messages
+      if (
+        signedMessage.content.kind === 'siwe' &&
+        signedMessage.content.parsedMessage &&
+        signedMessage.content.siweValidityStatus === 'valid'
+      ) {
+        await this.autoLogin.onSiweMessageSigned(
+          signedMessage.content.parsedMessage,
+          signedMessage.content.isAutoLoginEnabledByUser,
+          signedMessage.content.autoLoginDuration
+        )
+      }
+
+      await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+
+      await this.requests.resolveUserRequest(
+        { hash: signedMessage.signature },
+        signedMessage.fromRequestId
       )
     }
-
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-
-    await this.requests.resolveUserRequest(
-      { hash: signedMessage.signature },
-      signedMessage.fromRequestId
-    )
 
     await this.ui.notification.create({
       title: 'Done!',

@@ -2648,7 +2648,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#updateAccountOp({ meta: {} })
           }
           if (this.accountOp.meta)
-            this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
+            this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+              epSignature.signature
+            )
 
           // after signing is complete, go to paymaster mode
           if (isUsingPaymaster) {
