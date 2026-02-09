@@ -311,7 +311,7 @@ export class SocketAPI implements SwapProvider {
     }
 
     let allRoutes = [...response.manualRoutes]
-    if (response.autoRoute) allRoutes.push(response.autoRoute)
+    if (response.autoRoute) allRoutes.push({ ...response.autoRoute, isIntent: true })
     allRoutes = allRoutes.sort((r1, r2) => {
       const a = BigInt(r1.output.amount)
       const b = BigInt(r2.output.amount)
@@ -397,7 +397,11 @@ export class SocketAPI implements SwapProvider {
           approvalData: 'approvalData' in route ? route.approvalData : undefined,
           txData: 'txData' in route ? route.txData : undefined,
           rawRoute: '', // not needed for socket,
-          withConvenienceFee: shouldIncludeConvenienceFee
+          withConvenienceFee: shouldIncludeConvenienceFee,
+          usedBridgeNames:
+            fromChainId !== route.output.token.chainId
+              ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]
+              : [route.isIntent ? 'bungeeAutoRoute' : '']
         }
       })
     }
