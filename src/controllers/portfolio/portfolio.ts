@@ -791,7 +791,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    */
   private async getPortfolioFromApiDiscovery(opts: {
     chainId: bigint
-    accountAddr: string
+    account: Account
     hasKeys: boolean
     baseCurrency: string
     externalApiHintsResponse: {
@@ -807,7 +807,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const errors: ExtendedErrorWithLevel[] = []
     const {
       chainId,
-      accountAddr,
+      account,
       baseCurrency,
       // Set to 6 hours by default. That is because we are making a lot of
       // portfolio updates, most of which shouldn't update the defi positions.
@@ -817,7 +817,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isManualUpdate
     } = opts
 
-    const defiState = this.#state[accountAddr]?.[chainId.toString()]?.result?.defiPositions
+    const defiState = this.#state[account.addr]?.[chainId.toString()]?.result?.defiPositions
     const canSkipExternalApiHintsUpdate =
       !!externalApiHintsResponse &&
       !isManualUpdate &&
@@ -826,7 +826,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
       defiState,
-      this.#getNonceId(this.#accounts.accounts.find(({ addr }) => addr === accountAddr)!, chainId)
+      this.#getNonceId(account, chainId)
     )
 
     const canSkipDefiUpdate = getCanSkipUpdate(
@@ -852,7 +852,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     try {
       response = await this.batchedPortfolioDiscovery({
         chainId,
-        accountAddr,
+        accountAddr: account.addr,
         baseCurrency,
         forceUpdateDefi: shouldForceUpdateDefi
       })
@@ -869,7 +869,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } catch (error: any) {
       this.emitError({
         level: 'silent',
-        message: `Error while fetching portfolio discovery data from Velcro for account ${accountAddr} on chainId ${chainId}.`,
+        message: `Error while fetching portfolio discovery data from Velcro for account ${account.addr} on chainId ${chainId}.`,
         error
       })
       // Add errors only if the respective updates could not be skipped. As if the user
@@ -938,7 +938,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
-    accountId: string,
+    account: Account,
     network: Network,
     portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & {
@@ -948,7 +948,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     discoveryData: FormattedPortfolioDiscoveryResponse | null
   ): Promise<boolean> {
     const { maxDataAgeMs, isManualUpdate } = portfolioProps
-    const accountState = this.#state[accountId]
+    const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
     if (!accountState) return false
@@ -966,14 +966,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (canSkipUpdate) return false
 
-    this.#setNetworkLoading(accountId, network.chainId.toString(), true)
+    this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
     if (isManualUpdate) state.criticalError = undefined
 
     this.emitUpdate()
 
     const hasNonZeroTokens = !!Object.values(
-      this.#networksWithAssetsByAccounts?.[accountId] || {}
+      this.#networksWithAssetsByAccounts?.[account.addr] || {}
     ).some(Boolean)
 
     try {
@@ -986,7 +986,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
-        portfolioLib.get(accountId, {
+        portfolioLib.get(account.addr, {
           priceRecency: 60000 * 5,
           priceCache: networkPriceCache,
           blockTag: 'both',
@@ -995,7 +995,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           disableAutoDiscovery: true
         }),
         getCustomProviderPositions(
-          accountId,
+          account.addr,
           portfolioLib.provider,
           network,
           this.#fetch,
@@ -1020,10 +1020,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         customPositionsResult.error || null,
         customPositionsResult.providerErrors,
         stkWalletToken,
-        this.#getNonceId(
-          this.#accounts.accounts.find(({ addr }) => addr === accountId)!,
-          network.chainId
-        )
+        this.#getNonceId(account, network.chainId)
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(
@@ -1354,7 +1351,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             this.#state[accountId]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
           const discoveryResponse = await this.getPortfolioFromApiDiscovery({
             chainId: network.chainId,
-            accountAddr: accountId,
+            account: selectedAccount,
             baseCurrency: 'usd',
             externalApiHintsResponse: hintsResponse || null,
             isManualUpdate,
@@ -1369,7 +1366,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
 
           const isSuccessful = await this.updatePortfolioState(
-            accountId,
+            selectedAccount,
             network,
             portfolioLib,
             {
@@ -1752,12 +1749,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   async simulateAccountOp(op: AccountOp): Promise<void> {
-    const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
-    const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
+    const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)
+    const network = this.#networks.networks.find((net) => net.chainId === op.chainId)
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       op.accountAddr,
       op.chainId
     )
+
+    if (!account)
+      throw new Error(
+        `${op.accountAddr} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
+      )
+
+    if (!network) throw new Error(`Network with chainId ${op.chainId} not found`)
 
     const noSimulation =
       !accountState || (isBasicAccount(account, accountState) && network.rpcNoStateOverride)
