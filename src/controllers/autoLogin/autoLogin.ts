@@ -443,7 +443,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       }
     })
 
-    this.#signMessage.setSigningKey(key.addr, key.type)
+    this.#signMessage.setSigners([{ addr: key.addr, type: key.type }])
 
     await this.#signMessage.sign()
 

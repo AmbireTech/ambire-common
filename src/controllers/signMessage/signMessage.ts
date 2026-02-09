@@ -12,9 +12,17 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import { ISignMessageController, SignMessageUpdateParams } from '../../interfaces/signMessage'
+import {
+  ISignMessageController,
+  SignMessageStatus,
+  SignMessageUpdateParams
+} from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
-import { getDefaultOwners, sortSigs } from '../../libs/safe/safe'
+import {
+  getDefaultOwners,
+  getImportedSignersThatHaveNotSigned,
+  sortSigs
+} from '../../libs/safe/safe'
 import {
   getAppFormatted,
   getEIP712Signature,
@@ -64,9 +72,11 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   // who are the signers that already signed this message
   // applicable on Safe message
-  #signed: string[] = []
+  signed: string[] = []
 
   signers?: { addr: Key['addr']; type: Key['type'] }[]
+
+  status: SignMessageStatus
 
   constructor(
     keystore: IKeystoreController,
@@ -85,6 +95,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#externalSignerControllers = externalSignerControllers
     this.#accounts = accounts
     this.#invite = invite
+    this.status = SignMessageStatus.Initial
   }
 
   async init({
@@ -110,7 +121,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
-      this.#signed = signed || []
+      this.signed = signed || []
       this.isInitialized = true
 
       this.#account = this.#accounts.accounts.find(
@@ -147,11 +158,17 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         this.signers = getDefaultOwners(
           accountState.importedAccountKeys,
           accountState.threshold,
-          this.#signed
+          this.signed
         ).map((k) => ({
           addr: k.addr,
           type: k.type
         }))
+
+        const notSigned = getImportedSignersThatHaveNotSigned(
+          this.signed,
+          accountState.importedAccountKeys.map((k) => k.addr)
+        )
+        if (this.signed.length && notSigned.length === 0) this.status = SignMessageStatus.Partial
       } else {
         // if the account is not safe & view only, set a default signer
         // the default signer should be the internal key if any
@@ -186,8 +203,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signedMessage = null
     this.#account = undefined
     this.#network = undefined
-    this.#signed = []
+    this.signed = []
     this.signers = undefined
+    this.status = SignMessageStatus.Initial
     this.emitUpdate()
   }
 
@@ -292,7 +310,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
               this.#invite.isOG
             )
             signatures.push(signed.signature)
-            this.#signed.push(signerKey.addr)
+            this.signed.push(signerKey.addr)
             if (signed.hash) hash = signed.hash
           }
           signature = signatures.length === 1 ? signatures[0] : sortSigs(signatures, hash)
@@ -406,6 +424,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         dapp: this.dapp
       }
 
+      // update the status to Partial if signing has not concluded
+      this.status =
+        this.signed.length >= accountState.threshold
+          ? SignMessageStatus.Done
+          : SignMessageStatus.Partial
+
       return this.signedMessage
     } catch (e: any) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
@@ -431,15 +455,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
       this.reset()
     }
-  }
-
-  // in case of safe accounts, signing may not resolve immediately
-  hasSigningResolved(): boolean {
-    if (!this.#account || !this.#network) return false // shouldn't happen
-    const accountState =
-      this.#accounts.accountStates[this.#account.addr]?.[this.#network.chainId.toString()]
-    if (!accountState) return false
-    return this.#signed.length >= accountState.threshold
   }
 
   #onAbortOperation() {

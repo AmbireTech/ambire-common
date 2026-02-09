@@ -69,6 +69,8 @@ export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromis
     params: { message: Hex }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
   }
 }
 
@@ -85,6 +87,8 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
   }
 }
 
@@ -99,6 +103,8 @@ export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> 
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
   }
 }
 

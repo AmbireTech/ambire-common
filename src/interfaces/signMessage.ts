@@ -8,3 +8,9 @@ export type SignMessageUpdateParams = {
   isAutoLoginEnabledByUser?: boolean
   autoLoginDuration?: number
 }
+
+export enum SignMessageStatus {
+  Initial = 'initial',
+  Done = 'done',
+  Partial = 'partial'
+}

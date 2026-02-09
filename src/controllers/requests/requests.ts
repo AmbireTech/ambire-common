@@ -687,7 +687,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       }
 
-      const userRequestsToRejectOnWindowClose = this.userRequests.filter((r) => r.kind !== 'calls')
+      const userRequestsToRejectOnWindowClose = this.userRequests.filter(
+        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive
+      )
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
@@ -2004,6 +2006,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         !!r.signAccountOp.account.safeCreation &&
         r.signAccountOp.accountOp.nonce === broadcastNonce
     )
+  }
+
+  setPartiallyCompleteRequest(requestId: UserRequest['id'], meta?: { signed?: string[] }): void {
+    const req = this.userRequests.find((uReq) => uReq.id === requestId)
+    if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
+
+    req.meta.keepRequestAlive = true
+    if (meta?.signed) req.meta.signed = meta.signed
   }
 
   toJSON() {

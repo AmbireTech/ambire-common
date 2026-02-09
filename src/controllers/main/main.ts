@@ -41,7 +41,7 @@ import { IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
-import { ISignMessageController } from '../../interfaces/signMessage'
+import { ISignMessageController, SignMessageStatus } from '../../interfaces/signMessage'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
@@ -952,13 +952,12 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     await this.signMessage.sign()
+    const signedMessage = this.signMessage.signedMessage
+    // Error handling on the prev step will notify the user, it's fine to return here
+    if (!signedMessage) return
 
     // some accounts may not resolve immediately, like a safe acc
-    if (this.signMessage.hasSigningResolved()) {
-      const signedMessage = this.signMessage.signedMessage
-      // Error handling on the prev step will notify the user, it's fine to return here
-      if (!signedMessage) return
-
+    if (this.signMessage.status === SignMessageStatus.Done) {
       // The user may sign an invalid siwe message. We don't want to create policies
       // for such messages
       if (
@@ -979,6 +978,13 @@ export class MainController extends EventEmitter implements IMainController {
         { hash: signedMessage.signature },
         signedMessage.fromRequestId
       )
+    }
+
+    // mark the request so it doesn't get removed on close
+    if (this.signMessage.status === SignMessageStatus.Partial) {
+      this.requests.setPartiallyCompleteRequest(signedMessage.fromRequestId, {
+        signed: this.signMessage.signed
+      })
     }
 
     await this.ui.notification.create({
