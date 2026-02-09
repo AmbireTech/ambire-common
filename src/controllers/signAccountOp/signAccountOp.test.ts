@@ -1566,7 +1566,7 @@ describe('Negative cases', () => {
       smartAccount.addr
     )
     expect(firstIdentity).not.toBe(secondIdentity)
-    expect(Object.keys(controller.feeSpeeds).length).toBe(2)
+    expect(Object.keys(controller.feeSpeeds).length).toBe(3)
     expect(controller.feeSpeeds[firstIdentity]).not.toBe(undefined)
     expect(controller.feeSpeeds[firstIdentity]!.length).toBe(4)
     expect(controller.feeSpeeds[secondIdentity]).not.toBe(undefined)
