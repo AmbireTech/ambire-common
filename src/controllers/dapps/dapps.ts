@@ -15,7 +15,13 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps/dapps'
-import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
+import {
+  Dapp,
+  DefiLlamaChain,
+  DefiLlamaProtocol,
+  GetCurrentDappRes,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
@@ -35,6 +41,7 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+import { isValidURL } from '../../services/validations'
 /* eslint-disable no-continue */
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -709,6 +716,27 @@ export class DappsController extends EventEmitter implements IDappsController {
         level: 'silent'
       })
     }
+  }
+
+  async getCurrentDappAndSendResToUi({
+    requestId,
+    dappId,
+    currentSessionId = ''
+  }: {
+    requestId: string
+    dappId: string
+    currentSessionId?: string
+  }) {
+    const dapp = this.#dapps.get(currentSessionId) || this.#dapps.get(dappId) || null
+
+    const message: GetCurrentDappRes = {
+      type: 'GetCurrentDappRes',
+      requestId,
+      ok: true,
+      res: dapp
+    }
+
+    this.#ui.message.sendUiMessage(message)
   }
 
   toJSON() {

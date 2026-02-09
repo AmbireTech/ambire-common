@@ -61,3 +61,10 @@ export interface DappProviderRequest {
   session: Session
   meta?: { [key: string]: any }
 }
+
+export interface GetCurrentDappRes {
+  type: string
+  requestId: string
+  ok: boolean
+  res: Dapp | null
+}
