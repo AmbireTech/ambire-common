@@ -721,46 +721,19 @@ export class DappsController extends EventEmitter implements IDappsController {
   async getCurrentDappAndSendResToUi({
     requestId,
     dappId,
-    windowId,
-    tabId,
-    tabUrl
+    currentSessionId = ''
   }: {
     requestId: string
     dappId: string
-    windowId?: number
-    tabId: number
-    tabUrl: string
+    currentSessionId?: string
   }) {
-    const currentSession = this.dappSessions?.[`${windowId}-${tabId}-${dappId}`]
-    const dapp = this.#dapps.get(currentSession?.id || '') || this.#dapps.get(dappId) || null
+    const dapp = this.#dapps.get(currentSessionId) || this.#dapps.get(dappId) || null
 
     const message: GetCurrentDappRes = {
       type: 'GetCurrentDappRes',
       requestId,
       ok: true,
       res: dapp
-    }
-
-    // Missing from our list, but still a web3 app
-    if (!dapp && currentSession && tabUrl && isValidURL(tabUrl) && currentSession.isWeb3App) {
-      message.res = {
-        id: dappId,
-        url: tabUrl,
-        name: currentSession.name,
-        icon: currentSession.icon,
-        isConnected: false,
-        description: '',
-        chainId: 1,
-        favorite: false,
-        category: null,
-        twitter: null,
-        tvl: null,
-        chainIds: [],
-        geckoId: null,
-        isCustom: true,
-        blacklisted: 'VERIFIED',
-        isFeatured: false
-      }
     }
 
     this.#ui.message.sendUiMessage(message)
