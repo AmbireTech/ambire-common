@@ -63,7 +63,7 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
   signAccountOp: ISignAccountOpController
 }
 
-export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'message'
   meta: UserRequestBase['meta'] & {
     params: { message: Hex }

@@ -1,7 +1,6 @@
 import { toBeHex } from 'ethers'
 
 import SafeApiKit, { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
-import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
@@ -17,7 +16,8 @@ import {
   fetchAllPending,
   fetchExecutedTransactions,
   getCalculatedSafeAddress,
-  isSupportedSafeVersion
+  isSupportedSafeVersion,
+  SafeResults
 } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -177,7 +177,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
   }
 
-  #filterOutHidden(pending: { [chainId: string]: SafeMultisigTransactionResponse[] }) {
+  #filterOutHidden(pending: SafeResults): SafeResults {
     // filter out all resolved & rejected safe txns
     const hiddenTxns = [
       ...this.#rejectedSafeTxns,
@@ -187,7 +187,10 @@ export class SafeController extends EventEmitter implements ISafeController {
       {},
       ...Object.keys(pending).map((chainId) => {
         return {
-          [chainId]: pending[chainId]!.filter((r) => !hiddenTxns.includes(r.safeTxHash))
+          [chainId]: {
+            txns: pending[chainId]!.txns.filter((r) => !hiddenTxns.includes(r.safeTxHash)),
+            messages: pending[chainId]!.messages
+          }
         }
       })
     )
@@ -195,15 +198,11 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async fetchPending(
     safeAddr: Hex,
-    chainIds: bigint[] = []
-  ): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
+    networks: { chainId: bigint; threshold: number }[]
+  ): Promise<SafeResults | null> {
+    const chainIds = networks.map((n) => n.chainId)
     if (chainIds.length === 0 && Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
     if (chainIds.length === 0) this.#updatedAt = Date.now()
-
-    const networks =
-      chainIds.length === 0
-        ? this.#networks.networks
-        : this.#networks.networks.filter((n) => chainIds.includes(n.chainId))
 
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null

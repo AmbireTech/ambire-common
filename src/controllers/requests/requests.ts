@@ -1,6 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
+import { Hex } from 'interfaces/hex'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
@@ -998,6 +999,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (type === 'intentRequest') {
       await this.#buildIntentUserRequest(params)
     }
+
+    if (type === 'safeSignMessageRequest') {
+      await this.#buildSafeSignMessageUserRequest(params)
+    }
   }
 
   async #buildUserRequestFromDAppRequest(
@@ -1383,6 +1388,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       executionType
     )
     if (userRequest) await this.addUserRequests([userRequest], { executionType, position: 'last' })
+  }
+
+  async #buildSafeSignMessageUserRequest({
+    chainId,
+    signed,
+    message
+  }: {
+    chainId: bigint
+    signed: string[]
+    message: Hex
+  }) {
+    await this.initialLoadPromise
+    if (!this.#selectedAccount.account) return
+
+    const req: PlainTextMessageUserRequest = {
+      id: uuidv4(),
+      kind: 'message',
+      dappPromises: [],
+      meta: {
+        params: { message },
+        accountAddr: this.#selectedAccount.account.addr,
+        chainId,
+        keepRequestAlive: true,
+        signed
+      }
+    }
+    await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
   }
 
   async #buildTransferUserRequest({

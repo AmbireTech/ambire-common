@@ -56,7 +56,7 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 /* eslint-disable no-await-in-loop */
-import { toCallsUserRequest } from '../../libs/safe/safe'
+import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '../../libs/safe/safe'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
@@ -591,7 +591,7 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
-        this.fetchSafeTxns()
+        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
       }
     })
 
@@ -626,7 +626,7 @@ export class MainController extends EventEmitter implements IMainController {
         this.accounts.updateAccountState(selectedAccountAddr)
       }
 
-      this.fetchSafeTxns()
+      this.fetchSafeTxns().catch((e) => e) // we catch the error inside
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -716,7 +716,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.forceEmitUpdate()
     ])
 
-    this.fetchSafeTxns()
+    this.fetchSafeTxns().catch((e) => e) // we catch the error inside.catch((e) => e) // we catch the error inside
   }
 
   async #onAccountPickerSuccess() {
@@ -1176,7 +1176,7 @@ export class MainController extends EventEmitter implements IMainController {
         }
       }
 
-      if (shouldFetchSafeTxns) this.fetchSafeTxns()
+      if (shouldFetchSafeTxns) this.fetchSafeTxns().catch((e) => e) // we catch the error inside
     }
 
     return { newestOpTimestamp }
@@ -1288,7 +1288,7 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.fetchSafeTxns()
+    this.fetchSafeTxns().catch((e) => e) // we catch the error inside
   }
 
   #fetchExecutedSafeTxns(pendingSafeIds: Hex[]) {
@@ -1341,11 +1341,22 @@ export class MainController extends EventEmitter implements IMainController {
    * Fetch safe txns from safe global and make them user requests
    * if the selected account is a safe
    */
-  fetchSafeTxns(chainIds: bigint[] = []) {
+  async fetchSafeTxns(chainIds: bigint[] = []) {
     if (this.selectedAccount?.account?.safeCreation) {
+      const finalChainIds = chainIds.length
+        ? chainIds
+        : this.networks.networks.map((n) => n.chainId)
+      const accountState = await this.accounts.getOrFetchAccountStates(
+        this.selectedAccount.account.addr
+      )
+      const networksAndThresholds = finalChainIds.map((c) => ({
+        chainId: c,
+        threshold: accountState[c.toString()]?.threshold || 0
+      }))
+
       this.safe
-        .fetchPending(this.selectedAccount.account.addr as Hex, chainIds)
-        .then(async (res) => {
+        .fetchPending(this.selectedAccount.account.addr as Hex, networksAndThresholds)
+        .then(async (res: SafeResults | null) => {
           if (!res) return
           const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
           for (let i = 0; i < txnRequest.length; i++) {
@@ -1356,8 +1367,16 @@ export class MainController extends EventEmitter implements IMainController {
           this.#fetchExecutedSafeTxns(
             txnRequest.map((r) => r.params.userRequestParams.meta.safeTxnProps.txnId)
           )
+
+          const messageRequests = toSigMessageUserRequests(res)
+          for (let i = 0; i < messageRequests.length; i++) {
+            await this.requests.build(messageRequests[i]!).catch((e) => e)
+          }
+
+          // todo: fetch info about the signed messages
         })
         .catch((e) => {
+          console.log(e)
           console.log('failed to retrieve pending safe txns')
         })
     }

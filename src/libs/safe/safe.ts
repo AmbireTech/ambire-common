@@ -10,6 +10,7 @@ import {
   keccak256,
   recoverAddress,
   toBeHex,
+  toUtf8Bytes,
   ZeroAddress,
   zeroPadValue
 } from 'ethers'
@@ -18,6 +19,8 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit, {
   ProposeTransactionProps,
   SafeCreationInfoResponse,
+  SafeMessage,
+  SafeMessageListResponse,
   SafeMultisigTransactionListResponse
 } from '@safe-global/api-kit'
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
@@ -26,7 +29,6 @@ import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest } from '../../interfaces/userRequest'
@@ -44,6 +46,13 @@ const multiCallAbi = [
     type: 'function'
   }
 ]
+
+export interface SafeResults {
+  [chainId: string]: {
+    txns: SafeMultisigTransactionResponse[]
+    messages: SafeMessage[]
+  }
+}
 
 export function isSupportedSafeVersion(version: string): boolean {
   const [major, minor] = version.split('.').map(Number)
@@ -294,7 +303,7 @@ export async function addMessageSignature(chainId: bigint, rawMessage: string, s
 export async function getPendingTransactions(
   chainId: bigint,
   safeAddress: Hex
-): Promise<SafeMultisigTransactionListResponse & { chainId: bigint }> {
+): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
   const apiKit = new SafeApiKit({
     chainId,
     apiKey: process.env.SAFE_API_KEY
@@ -304,7 +313,30 @@ export async function getPendingTransactions(
     executed: false,
     ordering: 'nonce'
   })
-  return { ...response, chainId }
+  return { ...response, chainId, type: 'txn' }
+}
+
+/**
+ * Due to the nature of signatures, we cannot ask for confirmed
+ * signatures as the moment the threshold for the account changes,
+ * the validity of the signatures change as well.
+ * Removing an owner would do the same.
+ * So we fetch the newest 15 and filter them on a higher level
+ */
+export async function getLatestMessages(
+  chainId: bigint,
+  safeAddress: Hex
+): Promise<SafeMessageListResponse & { chainId: bigint; type: string }> {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+
+  const response = await apiKit.getMessages(safeAddress, {
+    ordering: '-created',
+    limit: 15
+  })
+  return { ...response, chainId, type: 'message' }
 }
 
 export async function getTransaction(
@@ -320,24 +352,33 @@ export async function getTransaction(
 }
 
 export async function fetchAllPending(
-  networks: Network[],
+  networks: { chainId: bigint; threshold: number }[],
   safeAddr: Hex
-): Promise<{ [chainId: string]: SafeMultisigTransactionResponse[] } | null> {
+): Promise<SafeResults | null> {
   let promises = []
-  const results: { [chainId: string]: SafeMultisigTransactionResponse[] } = {}
+  const results: SafeResults = {}
   for (let i = 0; i < networks.length; i++) {
     const network = networks[i]!
     promises.push(getPendingTransactions(network.chainId, safeAddr))
+    promises.push(getLatestMessages(network.chainId, safeAddr))
 
-    // when we assemble 5 promises, we make 5 requests to the API,
+    // when we assemble 4 promises, we make 4 requests to the API,
     // take the results and wait an additional second.
     // this is because we're allowed 5 requests per second
-    if ((i + 1) % 5 === 0 || i + 1 === networks.length) {
+    if (promises.length === 4 || i + 1 === networks.length) {
       const responses = await Promise.all(promises)
       responses.forEach((r) => {
-        results[r.chainId.toString()] = r.results
+        if (!results[r.chainId.toString()])
+          results[r.chainId.toString()] = { txns: [], messages: [] }
+
+        if (r.type === 'txn')
+          results[r.chainId.toString()]!.txns = r.results as SafeMultisigTransactionResponse[]
+        else
+          results[r.chainId.toString()]!.messages = r.results.filter(
+            (r) => (r.confirmations?.length || 0) < network.threshold
+          ) as SafeMessage[]
       })
-      await wait(1100)
+      await wait(1000)
       promises = []
     }
   }
@@ -379,9 +420,7 @@ function decodeMultiSend(transactionsHex: string) {
 
 export function toCallsUserRequest(
   safeAddr: Hex,
-  response: {
-    [chainId: string]: SafeMultisigTransactionResponse[]
-  }
+  response: SafeResults
 ): {
   type: 'calls'
   params: {
@@ -408,7 +447,7 @@ export function toCallsUserRequest(
   }[] = []
 
   Object.keys(response).forEach((chainId: string) => {
-    const txns = response[chainId]!
+    const txns = response[chainId]!.txns
     txns.forEach((txn) => {
       let calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = []
       try {
@@ -446,6 +485,45 @@ export function toCallsUserRequest(
             }
           },
           executionType: 'queue'
+        }
+      })
+    })
+  })
+
+  return userRequests
+}
+
+export function toSigMessageUserRequests(response: SafeResults): {
+  type: 'safeSignMessageRequest'
+  params: {
+    chainId: bigint
+    signed: string[]
+    message: Hex
+  }
+}[] {
+  const userRequests: {
+    type: 'safeSignMessageRequest'
+    params: {
+      chainId: bigint
+      signed: string[]
+      message: Hex
+    }
+  }[] = []
+
+  Object.keys(response).forEach((chainId: string) => {
+    const messages = response[chainId]!.messages
+    messages.forEach((message) => {
+      const signature = message.confirmations
+        ? (concat(message.confirmations.map((c) => c.signature)) as Hex)
+        : null
+      if (!signature) return
+
+      userRequests.push({
+        type: 'safeSignMessageRequest',
+        params: {
+          chainId: BigInt(chainId),
+          signed: message.confirmations.map((confirm) => confirm.owner),
+          message: hexlify(toUtf8Bytes(message.message as string)) as Hex
         }
       })
     })
