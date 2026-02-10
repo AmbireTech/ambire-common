@@ -57,7 +57,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #invite: IInviteController
 
-  #signer: KeystoreSignerInterface | undefined
+  signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
 
@@ -222,6 +222,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#network = undefined
     this.signed = []
     this.signers = undefined
+    this.signer = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
   }
@@ -311,19 +312,19 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
           for (let i = 0; i < this.signers.length; i++) {
             const signerKey = this.signers[i]!
-            this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
-            if (this.#signer.init) {
-              this.#signer.init(this.#externalSignerControllers[signerKey.type])
+            this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+            if (this.signer.init) {
+              this.signer.init(this.#externalSignerControllers[signerKey.type])
             }
-            // announce the next signer as the first has already been
-            if (i !== 0) this.emitUpdate()
+            // announce the signer
+            this.emitUpdate()
 
             const signed = await getPlainTextSignature(
               this.messageToSign.content.message,
               this.#network,
               this.#account,
               accountState,
-              this.#signer,
+              this.signer,
               this.#invite.isOG
             )
             signatures.push(signed.signature)
@@ -361,18 +362,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           const signatures: Hex[] = []
           for (let i = 0; i < this.signers.length; i++) {
             const signerKey = this.signers[i]!
-            this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
-            if (this.#signer.init) {
-              this.#signer.init(this.#externalSignerControllers[signerKey.type])
+            this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+            if (this.signer.init) {
+              this.signer.init(this.#externalSignerControllers[signerKey.type])
             }
-            // announce the next signer as the first has already been
-            if (i !== 0) this.emitUpdate()
+            // announce the signer
+            this.emitUpdate()
 
             const signed = await getEIP712Signature(
               this.messageToSign.content,
               this.#account,
               accountState,
-              this.#signer,
+              this.signer,
               this.#network,
               this.#invite.isOG
             )
@@ -402,7 +403,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
           // TODO: Deprecated. Sync with the latest sign7702 method changes if used
-          // signature = this.#signer.sign7702(this.messageToSign.content.message)
+          // signature = this.signer.sign7702(this.messageToSign.content.message)
           throw new ExternalSignerError(
             'Signing EIP-7702 authorization via this flow is not implemented',
             { sendCrashReport: true }
@@ -505,8 +506,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   #onAbortOperation() {
-    if (this.#signer?.signingCleanup) {
-      this.#signer.signingCleanup()
+    if (this.signer?.signingCleanup) {
+      this.signer.signingCleanup()
     }
   }
 
