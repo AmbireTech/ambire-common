@@ -4,7 +4,6 @@ import {
   Contract,
   getBytes,
   getCreate2Address,
-  hashMessage,
   hexlify,
   Interface,
   keccak256,
@@ -23,7 +22,7 @@ import SafeApiKit, {
   SafeMessageListResponse,
   SafeMultisigTransactionListResponse
 } from '@safe-global/api-kit'
-import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
@@ -279,7 +278,7 @@ export async function confirm(txn: SafeTx, chainId: bigint, safeAddress: Hex, ow
 export async function addMessage(
   chainId: bigint,
   safeAddress: Hex,
-  rawMessage: string,
+  message: string | EIP712TypedData,
   signature: string
 ) {
   const apiKit = new SafeApiKit({
@@ -287,17 +286,17 @@ export async function addMessage(
     apiKey: process.env.SAFE_API_KEY
   })
   return apiKit.addMessage(safeAddress, {
-    message: rawMessage,
+    message,
     signature
   })
 }
 
-export async function addMessageSignature(chainId: bigint, rawMessage: string, signature: string) {
+export async function addMessageSignature(chainId: bigint, hash: string, signature: string) {
   const apiKit = new SafeApiKit({
     chainId,
     apiKey: process.env.SAFE_API_KEY
   })
-  return apiKit.addMessageSignature(hashMessage(getBytes(rawMessage)), signature)
+  return apiKit.addMessageSignature(hash, signature)
 }
 
 export async function getPendingTransactions(
