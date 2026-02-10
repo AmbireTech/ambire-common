@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
 
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
@@ -20,7 +19,6 @@ import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
 import { UserOperation } from '../userOperation/types'
-import { getSpoof } from './account'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -77,41 +75,33 @@ export class Safe extends BaseAccount {
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {
-    if (this.accountState.isDeployed) {
-      const exec = new Interface(execTransactionAbi)
-      const calls = getSignableCalls(accountOp)
-      const coder = new AbiCoder()
-      const multiSendCalls = calls.map((call) => {
-        return coder.encode(
-          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-          [0, call[0], call[1], call[2].length, call[2]]
-        )
-      })
+    const exec = new Interface(execTransactionAbi)
+    const calls = getSignableCalls(accountOp)
+    const coder = new AbiCoder()
+    const multiSendCalls = calls.map((call) => {
+      return coder.encode(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, call[0], call[1], call[2].length, call[2]]
+      )
+    })
 
-      // TODO: include the correct signature count depending on the network threshold
-
-      return exec.encodeFunctionData('execTransaction', [
-        multiSendAddr,
-        0n,
-        concat(multiSendCalls),
-        1n, // multiSend only works with delegate call
-        0n, // safe, outer gas gets set
-        0n, // safe, outer gas gets set
-        0n, // safe, outer gas price gets set
-        ZeroAddress, // gasToken
-        ZeroAddress, // no refunder
-        concat([getSigForCalculations(), getSigForCalculations()]) // signatures
-      ]) as Hex
+    // signature cost is equal to the threshold
+    let signature = getSigForCalculations()
+    for (let i = 1; i < this.accountState.threshold; i++) {
+      signature = concat([signature, getSigForCalculations()])
     }
 
-    // TODO: make the deploy logic
-
-    const ambireFactory = new Interface(AmbireFactory.abi)
-    return ambireFactory.encodeFunctionData('deployAndExecute', [
-      this.account.creation!.bytecode,
-      this.account.creation!.salt,
-      getSignableCalls(accountOp),
-      getSpoof(this.account)
+    return exec.encodeFunctionData('execTransaction', [
+      multiSendAddr,
+      0n,
+      concat(multiSendCalls),
+      1n, // multiSend only works with delegate call
+      0n, // safe, outer gas gets set
+      0n, // safe, outer gas gets set
+      0n, // safe, outer gas price gets set
+      ZeroAddress, // gasToken
+      ZeroAddress, // no refunder
+      signature
     ]) as Hex
   }
 

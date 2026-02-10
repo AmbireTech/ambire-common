@@ -968,6 +968,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     }
 
+    // if the safe txn is not deployed, display an error
+    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
+      errors.push({
+        title: 'Safe account not deployed. Please activate it from Safe global'
+      })
+    }
+
     return errors
   }
 

@@ -391,7 +391,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
           if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
-            console.log('is this the typed data?', this.messageToSign.content.message)
             await addMessage(
               this.#network.chainId,
               this.#account.addr as Hex,

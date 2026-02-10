@@ -42,6 +42,8 @@ function getFunctionParams(account: Account, op: AccountOp, accountState: Accoun
     }
   }
 
+  if (!!account.safeCreation && !accountState.isDeployed) return null
+
   const saAbi = new Interface(AmbireAccount.abi)
   const factoryAbi = new Interface(AmbireFactory.abi)
   const callData = accountState.isDeployed
@@ -96,6 +98,8 @@ export async function debugTraceCall(
   const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)
 
   const params = getFunctionParams(account, op, accountState)
+  if (!params) return { tokens: [], nfts: [] }
+
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
     await provider
       .send('debug_traceCall', [
