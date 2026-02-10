@@ -4,6 +4,7 @@ import {
   Contract,
   getBytes,
   getCreate2Address,
+  hashMessage,
   hexlify,
   Interface,
   keccak256,
@@ -264,6 +265,30 @@ export async function confirm(txn: SafeTx, chainId: bigint, safeAddress: Hex, ow
     apiKey: process.env.SAFE_API_KEY
   })
   return apiKit.confirmTransaction(getSafeTxnHash(txn, chainId, safeAddress), ownerSig)
+}
+
+export async function addMessage(
+  chainId: bigint,
+  safeAddress: Hex,
+  rawMessage: string,
+  signature: string
+) {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+  return apiKit.addMessage(safeAddress, {
+    message: rawMessage,
+    signature
+  })
+}
+
+export async function addMessageSignature(chainId: bigint, rawMessage: string, signature: string) {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+  return apiKit.addMessageSignature(hashMessage(getBytes(rawMessage)), signature)
 }
 
 export async function getPendingTransactions(

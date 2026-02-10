@@ -1,3 +1,5 @@
+import { toUtf8String } from 'ethers'
+
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -19,6 +21,8 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import {
+  addMessage,
+  addMessageSignature,
   getDefaultOwners,
   getImportedSignersThatHaveNotSigned,
   sortSigs
@@ -283,6 +287,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       const provider = this.#providers.providers[this.#network.chainId.toString()]
       if (!provider) throw new Error(`Network details missing. Please try again`)
 
+      // if signers are passed, we conclude it's already been passed on to safe global
+      const existsInSafeGlobal = !!this.#account.safeCreation && this.signed.length > 0
+
       let signature
 
       try {
@@ -292,6 +299,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         ) {
           const signatures: Hex[] = []
           let hash = ''
+
           for (let i = 0; i < this.signers.length; i++) {
             const signerKey = this.signers[i]!
             this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
@@ -312,7 +320,23 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.push(signed.signature)
             this.signed.push(signerKey.addr)
             if (signed.hash) hash = signed.hash
+
+            if (!existsInSafeGlobal) {
+              await addMessage(
+                this.#network.chainId,
+                this.#account.addr as Hex,
+                toUtf8String(this.messageToSign.content.message),
+                signed.signature
+              )
+            } else {
+              await addMessageSignature(
+                this.#network.chainId,
+                toUtf8String(this.messageToSign.content.message), // maybe wrong?
+                signed.signature
+              )
+            }
           }
+
           signature = signatures.length === 1 ? signatures[0] : sortSigs(signatures, hash)
 
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
