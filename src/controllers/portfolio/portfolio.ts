@@ -1756,12 +1756,29 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       op.chainId
     )
 
-    if (!account)
-      throw new Error(
-        `${op.accountAddr} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
-      )
+    if (!account) {
+      const message = `${op.accountAddr} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
 
-    if (!network) throw new Error(`Network with chainId ${op.chainId} not found`)
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+
+      return
+    }
+
+    if (!network) {
+      const message = `Network with chainId ${op.chainId} not found`
+
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+
+      return
+    }
 
     const noSimulation =
       !accountState || (isBasicAccount(account, accountState) && network.rpcNoStateOverride)
