@@ -1440,7 +1440,7 @@ describe('Negative cases', () => {
     // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
-  test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions but 1 feeSpeed as both feePaymentOptions are EOA', async () => {
+  test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions and 2 feeSpeeds', async () => {
     const network = networks.find((n) => n.chainId === 137n)!
     const feePaymentOptions = [
       {
@@ -1563,10 +1563,12 @@ describe('Negative cases', () => {
       controller.estimation.availableFeeOptions[1]!,
       smartAccount.addr
     )
-    expect(firstIdentity).toBe(secondIdentity)
-    expect(Object.keys(controller.feeSpeeds).length).toBe(1)
+    expect(firstIdentity).not.toBe(secondIdentity)
+    expect(Object.keys(controller.feeSpeeds).length).toBe(3)
     expect(controller.feeSpeeds[firstIdentity]).not.toBe(undefined)
     expect(controller.feeSpeeds[firstIdentity]!.length).toBe(4)
+    expect(controller.feeSpeeds[secondIdentity]).not.toBe(undefined)
+    expect(controller.feeSpeeds[secondIdentity]!.length).toBe(4)
 
     await controller.sign()
 
