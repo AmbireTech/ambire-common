@@ -1393,11 +1393,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async #buildSafeSignMessageUserRequest({
     chainId,
     signed,
-    message
+    message,
+    messageHash
   }: {
     chainId: bigint
     signed: string[]
     message: Hex
+    messageHash: Hex
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1411,7 +1413,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         accountAddr: this.#selectedAccount.account.addr,
         chainId,
         keepRequestAlive: true,
-        signed
+        signed,
+        hash: messageHash
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -2047,12 +2050,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
   }
 
-  setPartiallyCompleteRequest(requestId: UserRequest['id'], meta?: { signed?: string[] }): void {
+  setPartiallyCompleteRequest(
+    requestId: UserRequest['id'],
+    meta?: { signed?: string[]; hash?: string }
+  ): void {
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
     if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
 
     req.meta.keepRequestAlive = true
     if (meta?.signed) req.meta.signed = meta.signed
+    if (meta?.hash) req.meta.hash = meta.hash
   }
 
   toJSON() {

@@ -198,12 +198,12 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async fetchPending(
     safeAddr: Hex,
-    networks: { chainId: bigint; threshold: number }[]
+    networks: { chainId: bigint; threshold: number }[],
+    forceFetch = false
   ): Promise<SafeResults | null> {
-    const chainIds = networks.map((n) => n.chainId)
-    if (chainIds.length === 0 && Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
-    if (chainIds.length === 0) this.#updatedAt = Date.now()
+    if (!forceFetch && Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
 
+    this.#updatedAt = Date.now()
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
 

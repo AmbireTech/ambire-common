@@ -1,3 +1,5 @@
+/* eslint-disable no-await-in-loop */
+import { SignedMessage } from 'controllers/activity/types'
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
@@ -55,7 +57,6 @@ import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-/* eslint-disable no-await-in-loop */
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '../../libs/safe/safe'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '../../services/lifi/api'
@@ -930,6 +931,29 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
+  async #resolveSignMessage(signedMessage: SignedMessage) {
+    // The user may sign an invalid siwe message. We don't want to create policies
+    // for such messages
+    if (
+      signedMessage.content.kind === 'siwe' &&
+      signedMessage.content.parsedMessage &&
+      signedMessage.content.siweValidityStatus === 'valid'
+    ) {
+      await this.autoLogin.onSiweMessageSigned(
+        signedMessage.content.parsedMessage,
+        signedMessage.content.isAutoLoginEnabledByUser,
+        signedMessage.content.autoLoginDuration
+      )
+    }
+
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+
+    await this.requests.resolveUserRequest(
+      { hash: signedMessage.signature },
+      signedMessage.fromRequestId
+    )
+  }
+
   async handleSignMessage() {
     const accountAddr = this.signMessage.messageToSign?.accountAddr
     const chainId = this.signMessage.messageToSign?.chainId
@@ -958,32 +982,12 @@ export class MainController extends EventEmitter implements IMainController {
 
     // some accounts may not resolve immediately, like a safe acc
     if (this.signMessage.status === SignMessageStatus.Done) {
-      // The user may sign an invalid siwe message. We don't want to create policies
-      // for such messages
-      if (
-        signedMessage.content.kind === 'siwe' &&
-        signedMessage.content.parsedMessage &&
-        signedMessage.content.siweValidityStatus === 'valid'
-      ) {
-        await this.autoLogin.onSiweMessageSigned(
-          signedMessage.content.parsedMessage,
-          signedMessage.content.isAutoLoginEnabledByUser,
-          signedMessage.content.autoLoginDuration
-        )
-      }
-
-      await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-
-      await this.requests.resolveUserRequest(
-        { hash: signedMessage.signature },
-        signedMessage.fromRequestId
-      )
-    }
-
-    // mark the request so it doesn't get removed on close
-    if (this.signMessage.status === SignMessageStatus.Partial) {
+      await this.#resolveSignMessage(signedMessage)
+    } else if (this.signMessage.status === SignMessageStatus.Partial) {
+      // mark the request so it doesn't get removed on close
       this.requests.setPartiallyCompleteRequest(signedMessage.fromRequestId, {
-        signed: this.signMessage.signed
+        signed: this.signMessage.signed,
+        hash: this.signMessage.hash
       })
     }
 
@@ -1355,7 +1359,11 @@ export class MainController extends EventEmitter implements IMainController {
       }))
 
       this.safe
-        .fetchPending(this.selectedAccount.account.addr as Hex, networksAndThresholds)
+        .fetchPending(
+          this.selectedAccount.account.addr as Hex,
+          networksAndThresholds,
+          !!chainIds.length
+        )
         .then(async (res: SafeResults | null) => {
           if (!res) return
           const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
@@ -1368,12 +1376,24 @@ export class MainController extends EventEmitter implements IMainController {
             txnRequest.map((r) => r.params.userRequestParams.meta.safeTxnProps.txnId)
           )
 
+          // add unconfirmed safe requests & resolve confirmed
           const messageRequests = toSigMessageUserRequests(res)
           for (let i = 0; i < messageRequests.length; i++) {
-            await this.requests.build(messageRequests[i]!).catch((e) => e)
+            const req = messageRequests[i]!
+            const userRequest = this.requests.userRequests.find(
+              (u) =>
+                u.meta.accountAddr === this.selectedAccount.account!.addr &&
+                u.meta.chainId === req.params.chainId &&
+                (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+                u.meta.hash === req.params.messageHash
+            )
+            if (!userRequest && !req.isConfirmed) {
+              await this.requests.build(req).catch((e) => e)
+            }
+            if (userRequest && req.isConfirmed) {
+              await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+            }
           }
-
-          // todo: fetch info about the signed messages
         })
         .catch((e) => {
           console.log(e)

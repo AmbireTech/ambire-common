@@ -50,7 +50,7 @@ const multiCallAbi = [
 export interface SafeResults {
   [chainId: string]: {
     txns: SafeMultisigTransactionResponse[]
-    messages: SafeMessage[]
+    messages: (SafeMessage & { isConfirmed?: boolean })[]
   }
 }
 
@@ -374,9 +374,9 @@ export async function fetchAllPending(
         if (r.type === 'txn')
           results[r.chainId.toString()]!.txns = r.results as SafeMultisigTransactionResponse[]
         else
-          results[r.chainId.toString()]!.messages = r.results.filter(
-            (r) => (r.confirmations?.length || 0) < network.threshold
-          ) as SafeMessage[]
+          results[r.chainId.toString()]!.messages = r.results.map((r) => {
+            return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
+          }) as SafeMessage[]
       })
       await wait(1000)
       promises = []
@@ -499,7 +499,10 @@ export function toSigMessageUserRequests(response: SafeResults): {
     chainId: bigint
     signed: string[]
     message: Hex
+    messageHash: Hex
+    signature: Hex
   }
+  isConfirmed: boolean
 }[] {
   const userRequests: {
     type: 'safeSignMessageRequest'
@@ -507,7 +510,10 @@ export function toSigMessageUserRequests(response: SafeResults): {
       chainId: bigint
       signed: string[]
       message: Hex
+      messageHash: Hex
+      signature: Hex
     }
+    isConfirmed: boolean
   }[] = []
 
   Object.keys(response).forEach((chainId: string) => {
@@ -523,8 +529,14 @@ export function toSigMessageUserRequests(response: SafeResults): {
         params: {
           chainId: BigInt(chainId),
           signed: message.confirmations.map((confirm) => confirm.owner),
-          message: hexlify(toUtf8Bytes(message.message as string)) as Hex
-        }
+          message: hexlify(toUtf8Bytes(message.message as string)) as Hex,
+          messageHash: message.messageHash as Hex,
+          signature: sortSigs(
+            message.confirmations.map((c) => c.signature) as Hex[],
+            message.messageHash
+          )
+        },
+        isConfirmed: !!message.isConfirmed
       })
     })
   })

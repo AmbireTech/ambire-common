@@ -80,6 +80,11 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   signers?: { addr: Key['addr']; type: Key['type'] }[]
 
+  /**
+   * the signed hash
+   */
+  hash?: string
+
   status: SignMessageStatus
 
   constructor(
@@ -105,13 +110,15 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   async init({
     dapp,
     messageToSign,
-    signed
+    signed,
+    hash
   }: {
     dapp?: { name: string; icon: string }
     messageToSign: Message
     // who are the signers that already signed this message
     // applicable on Safe message
     signed?: string[]
+    hash?: Hex
   }) {
     // In the unlikely case that the signMessage controller was already
     // initialized, but not reset, force reset it to prevent misleadingly
@@ -173,6 +180,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           accountState.importedAccountKeys.map((k) => k.addr)
         )
         if (this.signed.length && notSigned.length === 0) this.status = SignMessageStatus.Partial
+        this.hash = hash
       } else {
         // if the account is not safe & view only, set a default signer
         // the default signer should be the internal key if any
@@ -298,7 +306,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           this.messageToSign.content.kind === 'siwe'
         ) {
           const signatures: Hex[] = []
-          let hash = ''
 
           for (let i = 0; i < this.signers.length; i++) {
             const signerKey = this.signers[i]!
@@ -319,7 +326,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             )
             signatures.push(signed.signature)
             this.signed.push(signerKey.addr)
-            if (signed.hash) hash = signed.hash
+            if (signed.hash) this.hash = signed.hash
 
             if (!existsInSafeGlobal) {
               await addMessage(
@@ -337,7 +344,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
           }
 
-          signature = signatures.length === 1 ? signatures[0] : sortSigs(signatures, hash)
+          signature =
+            signatures.length === 1 || !this.hash ? signatures[0] : sortSigs(signatures, this.hash)
 
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
         }
@@ -350,7 +358,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           }
 
           const signatures: Hex[] = []
-          let hash = ''
           for (let i = 0; i < this.signers.length; i++) {
             const signerKey = this.signers[i]!
             this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
@@ -370,9 +377,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             )
 
             signatures.push(signed.signature)
-            if (signed.hash) hash = signed.hash
+            if (signed.hash) this.hash = signed.hash
           }
-          signature = signatures.length === 1 ? signatures[0] : sortSigs(signatures, hash)
+          signature =
+            signatures.length === 1 || !this.hash ? signatures[0] : sortSigs(signatures, this.hash)
 
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
         }

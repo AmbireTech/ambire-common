@@ -75,5 +75,6 @@ export type BuildRequest =
         chainId: bigint
         signed: string[]
         message: Hex
+        messageHash: Hex
       }
     }
