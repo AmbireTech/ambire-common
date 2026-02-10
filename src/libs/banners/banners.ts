@@ -148,7 +148,37 @@ export const getBridgeBanners = (
   return banners
 }
 
-export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[] => {
+export const getSafeMessageRequestBanners = (
+  account: Account,
+  userRequests: UserRequest[]
+): Banner[] => {
+  if (!account.safeCreation) return []
+
+  const requests = userRequests.filter((r) => ['message', 'typedData', 'siwe'].includes(r.kind))
+  if (!requests.length) return []
+
+  return [
+    {
+      id: 'safe-message-request-banner',
+      type: 'info',
+      title: `You have ${requests.length} pending signature request${requests.length > 1 ? 's' : ''}`,
+      text: '',
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-pending-dapp-requests'
+        }
+      ]
+    }
+  ]
+}
+
+export const getDappUserRequestsBanners = (
+  account: Account,
+  userRequests: UserRequest[]
+): Banner[] => {
+  if (!!account.safeCreation) return []
+
   const requests = userRequests.filter(
     (r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind)
   )

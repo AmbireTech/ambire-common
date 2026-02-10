@@ -45,7 +45,11 @@ import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
-import { getAccountOpBanners, getDappUserRequestsBanners } from '../../libs/banners/banners'
+import {
+  getAccountOpBanners,
+  getDappUserRequestsBanners,
+  getSafeMessageRequestBanners
+} from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -458,12 +462,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-      } else if (req.kind === 'typedMessage' || req.kind === 'message') {
+      } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
         ) as PlainTextMessageUserRequest | TypedMessageUserRequest | undefined
 
-        if (existingMessageRequest) {
+        // remove the request only if it's not a safe req
+        if (existingMessageRequest && !this.#selectedAccount.account?.safeCreation) {
+          existingMessageRequest.meta.accountAddr
           await this.rejectUserRequests('User rejected the message request', [
             existingMessageRequest.id
           ])
@@ -1632,7 +1638,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         networks: this.#networks.networks,
         swapAndBridgeRoutesPendingSignature
       }),
-      ...getDappUserRequestsBanners(this.visibleUserRequests)
+      ...getDappUserRequestsBanners(this.#selectedAccount.account, this.visibleUserRequests),
+      ...getSafeMessageRequestBanners(this.#selectedAccount.account, this.userRequests)
     ]
   }
 
