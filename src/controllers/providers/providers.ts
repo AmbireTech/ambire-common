@@ -245,17 +245,18 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
   }
 
-  async callProviderAndSendResToUi({
-    requestId,
-    chainId,
-    method,
-    args
-  }: {
+  async callProviderAndSendResToUi(
+    {
+      chainId,
+      method,
+      args
+    }: {
+      chainId: bigint
+      method: keyof RPCProvider
+      args: unknown[]
+    },
     requestId: string
-    chainId: bigint
-    method: keyof RPCProvider
-    args: unknown[]
-  }) {
+  ) {
     const provider = this.providers[chainId.toString()]
     if (!provider) {
       this.emitError({
@@ -309,21 +310,22 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
   }
 
-  async callContractAndSendResToUi({
-    requestId,
-    chainId,
-    address,
-    abi,
-    method,
-    args
-  }: {
+  async callContractAndSendResToUi(
+    {
+      chainId,
+      address,
+      abi,
+      method,
+      args
+    }: {
+      chainId: bigint
+      address: string
+      abi: string
+      method: keyof Contract
+      args: unknown[]
+    },
     requestId: string
-    chainId: bigint
-    address: string
-    abi: string
-    method: keyof Contract
-    args: unknown[]
-  }) {
+  ) {
     const network = this.#getNetworks().find((n) => n.chainId === chainId)
     if (!network) {
       this.emitError({
