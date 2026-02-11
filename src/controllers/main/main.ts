@@ -35,7 +35,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '../../int
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
@@ -240,19 +240,23 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch,
       relayerUrl,
+      useTempProvider: async (props, callback) => {
+        await this.providers.useTempProvider(props, callback)
+      },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
         await this.reloadSelectedAccount({
           chainIds: networks.map((n) => n.chainId)
         })
-      },
-      onRemoveNetwork: (chainId: bigint) => {
-        this.providers.removeProvider(chainId)
       }
     })
 
-    this.providers = new ProvidersController(this.networks, this.storage, eventEmitterRegistry)
+    this.providers = new ProvidersController(
+      this.networks,
+      this.storage,
+      this.ui,
+      eventEmitterRegistry
+    )
     this.accounts = new AccountsController(
       this.storage,
       this.providers,
@@ -1105,10 +1109,11 @@ export class MainController extends EventEmitter implements IMainController {
     ] || {
       shouldEmitUpdate: false,
       chainsToUpdate: [],
+      portfoliosToUpdate: {},
       updatedAccountsOps: [],
       newestOpTimestamp: 0
     }
-    const { shouldEmitUpdate, chainsToUpdate, newestOpTimestamp } =
+    const { shouldEmitUpdate, chainsToUpdate, portfoliosToUpdate, newestOpTimestamp } =
       updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
@@ -1130,6 +1135,13 @@ export class MainController extends EventEmitter implements IMainController {
           )
 
           await this.updateSelectedAccountPortfolio({ networks })
+
+          Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+            this.portfolio.updateSelectedAccount(
+              accountAddr,
+              this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+            )
+          })
         }
       }
     }

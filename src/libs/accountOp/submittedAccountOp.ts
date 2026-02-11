@@ -1,4 +1,4 @@
-import { TransactionReceipt, ZeroAddress } from 'ethers'
+import { Interface, isAddress, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
@@ -41,6 +41,10 @@ export type AccountOpIdentifiedBy = {
   type: 'Transaction' | 'UserOperation' | 'Relayer' | 'MultipleTxns'
   identifier: string
   bundler?: BUNDLER
+}
+
+export type PortfoliosToUpdate = {
+  [address: string]: Network['chainId'][]
 }
 
 export interface SubmittedAccountOp extends AccountOp {
@@ -303,4 +307,60 @@ export function updateOpStatus(
   // eslint-disable-next-line no-param-reassign
   opReference.status = status
   return opReference
+}
+
+const transferIface = new Interface(['function transfer(address,uint256)'])
+
+/**
+ * Returns all addresses that the SubmittedAccountOp has calls sent to.
+ *
+ * @param whitelist Optional list of addresses to filter the results.
+ */
+export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: string[]): string[] {
+  const sentTo = new Set<string>()
+  const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase())
+
+  op.calls.forEach((call) => {
+    // 1) Direct call.to match
+    if (call.to && isAddress(call.to)) {
+      if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
+        sentTo.add(call.to)
+      }
+    }
+
+    // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
+    const data = (call as Call).data as string | undefined
+
+    if (!data || typeof data !== 'string' || data.length < 10) return
+
+    const selector = transferIface.getFunction('transfer')?.selector
+    if (selector && data.startsWith(selector)) {
+      try {
+        const decoded = transferIface.decodeFunctionData('transfer', data)
+        const recipient = decoded[0] as string
+        if (isAddress(recipient)) {
+          if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase())) return
+
+          sentTo.add(recipient)
+        }
+      } catch {
+        // ignore decode errors and continue
+      }
+    }
+  })
+
+  return Array.from(sentTo)
+}
+
+/**
+ * Checks if the SubmittedAccountOp has a call that was sent to the specified address.
+ *
+ * @returns the timestamp of the operation if found, otherwise null.
+ */
+export function checkIsRecipientOfAccountOp(op: SubmittedAccountOp, to: string): number | null {
+  const hasSentTo = getAccountOpRecipients(op, [to]).length > 0
+
+  if (!hasSentTo) return null
+
+  return op.timestamp
 }

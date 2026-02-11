@@ -15,7 +15,13 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps/dapps'
-import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
+import {
+  Dapp,
+  DefiLlamaChain,
+  DefiLlamaProtocol,
+  GetCurrentDappRes,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
@@ -35,6 +41,7 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+import { isValidURL } from '../../services/validations'
 /* eslint-disable no-continue */
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -158,12 +165,21 @@ export class DappsController extends EventEmitter implements IDappsController {
       }
       if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
 
+      const domainId = getDomainFromUrl(d.url)
+      const isInDappsNotToFilterOutByDomain =
+        domainId && dappsNotToFilterOutByDomain.includes(domainId)
+
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
       const hasNoNetworks = d.chainIds.length === 0
       const hasLowTVL = !d.tvl || d.tvl <= 15_000_000
 
       // Remove dapps that are not in excluded categories and either have no networks or low TVL
-      if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
+      // But skip this filtering if the dapp's domain is in dappsNotToFilterOutByDomain
+      if (
+        shouldSkipByCategory &&
+        (hasNoNetworks || hasLowTVL) &&
+        !isInDappsNotToFilterOutByDomain
+      ) {
         filteredMap.delete(key)
       }
     }
@@ -709,6 +725,27 @@ export class DappsController extends EventEmitter implements IDappsController {
         level: 'silent'
       })
     }
+  }
+
+  async getCurrentDappAndSendResToUi({
+    requestId,
+    dappId,
+    currentSessionId = ''
+  }: {
+    requestId: string
+    dappId: string
+    currentSessionId?: string
+  }) {
+    const dapp = this.#dapps.get(currentSessionId) || this.#dapps.get(dappId) || null
+
+    const message: GetCurrentDappRes = {
+      type: 'GetCurrentDappRes',
+      requestId,
+      ok: true,
+      res: dapp
+    }
+
+    this.#ui.message.sendUiMessage(message)
   }
 
   toJSON() {

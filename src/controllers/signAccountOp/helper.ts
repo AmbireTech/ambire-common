@@ -1,5 +1,3 @@
-import { ZeroAddress } from 'ethers'
-
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
@@ -12,13 +10,7 @@ import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/form
 export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
 
 function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {
-  // if the token is native and we're paying with EOA, we do not need
-  // a different identifier as the fee speed calculations will be the same
-  // regardless of the EOA address
-  const paidBy =
-    option.token.address === ZeroAddress && option.paidBy !== accountAddr ? 'EOA' : option.paidBy
-
-  return `${paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
+  return `${option.paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
     option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
   }`
 }

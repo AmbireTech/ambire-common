@@ -56,13 +56,12 @@ describe('Domains', () => {
       ENS_LATEST_RESOLVER.name
     )
   })
-  it('should save resolved reverse lookup', () => {
+  it('should resolve domain', async () => {
     const { name, address } = ENS2
-    const type = 'ens'
 
-    domainsController.saveResolvedReverseLookup({ address, name, type, ensAvatar: null })
+    await domainsController.resolveDomain({ domain: name })
 
-    expect(domainsController.domains[address]!.ens).toBe(name)
+    expect(domainsController.ensToAddress[name]).toBe(address)
   })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60

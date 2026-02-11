@@ -672,15 +672,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     )
   }
 
-  /**
-   * Prevents requesting the next page before the current one is fully loaded.
-   * This avoids race conditions where the user requests the next page before
-   * linked accounts are fully loaded, causing misleadingly failing `#verifyLinkedAccounts` checks.
-   */
-  get isPageLocked() {
-    return this.accountsLoading || this.linkedAccountsLoading
-  }
-
   async setPage({
     page = this.page,
     pageSize,
@@ -1140,7 +1131,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return accounts
   }
 
-  // inner func
   async #getAccountsUsedOnNetworks({
     accounts,
     page
@@ -1156,57 +1146,48 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: string]: Network } = this.#networks.allNetworks.reduce(
-      (acc, network) => {
-        acc[network.chainId.toString()] = network
-        return acc
-      },
-      {} as { [key: string]: Network }
-    )
+    const enabledNetworks = this.#networks.networks
+    const accountsList = accounts.map((acc) => acc.account)
+    const promises = enabledNetworks.map(async (network) => {
+      const chainId = network.chainId.toString()
+      const provider = this.#providers.providers[chainId]
+      if (!provider) return
 
-    const promises = Object.keys(this.#providers.providers).map(async (chainId: string) => {
-      const network = networkLookup[chainId]
-      if (network) {
-        const accountState = await getAccountState(
-          this.#providers.providers[chainId]!,
-          network,
-          accounts.map((acc) => acc.account)
-        ).catch(() => {
-          if (this.page !== page) return
-          if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
-          this.networksWithAccountStateError.push(BigInt(chainId))
-        })
+      const accountState = await getAccountState(provider, network, accountsList).catch(() => {
+        if (this.page !== page) return
+        if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
+        this.networksWithAccountStateError.push(BigInt(chainId))
+      })
 
-        if (!accountState) return
+      if (!accountState) return
 
-        accountState.forEach((acc: AccountOnchainState) => {
-          const isUsedOnThisNetwork =
-            // Known limitation: checks only the native token balance. If this
-            // account has any other tokens than native ones, this check will
-            // fail to detect that the account was used on this network.
-            acc.balance > BigInt(0) ||
-            (acc.isEOA
-              ? [acc.nonce, acc.eoaNonce].some((nonce) => (nonce || BigInt(0)) > BigInt(0)) ||
-                (acc.erc4337Nonce !== MAX_UINT256 && acc.erc4337Nonce !== BigInt(0))
-              : // For smart accounts, check for 'isDeployed' instead because in
-                // the erc-4337 scenario many cases might be missed with checking
-                // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
-                // might be actively using the account. This is because in erc-4337,
-                // we use the entry point nonce. However, detecting the entry point
-                // nonce is also not okay, because for various cases we do not use
-                // sequential nonce - i.e., the entry point nonce could still be 0,
-                // but the account is deployed. So the 'isDeployed' check is the
-                // only reliable way to detect if account is used on network.
-                acc.isDeployed)
+      accountState.forEach((acc: AccountOnchainState) => {
+        const isUsedOnThisNetwork =
+          // Known limitation: checks only the native token balance. If this
+          // account has any other tokens than native ones, this check will
+          // fail to detect that the account was used on this network.
+          acc.balance > BigInt(0) ||
+          (acc.isEOA
+            ? [acc.nonce, acc.eoaNonce].some((nonce) => (nonce || BigInt(0)) > BigInt(0)) ||
+              (acc.erc4337Nonce !== MAX_UINT256 && acc.erc4337Nonce !== BigInt(0))
+            : // For smart accounts, check for 'isDeployed' instead because in
+              // the erc-4337 scenario many cases might be missed with checking
+              // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
+              // might be actively using the account. This is because in erc-4337,
+              // we use the entry point nonce. However, detecting the entry point
+              // nonce is also not okay, because for various cases we do not use
+              // sequential nonce - i.e., the entry point nonce could still be 0,
+              // but the account is deployed. So the 'isDeployed' check is the
+              // only reliable way to detect if account is used on network.
+              acc.isDeployed)
 
-          const accObj = accountsObj[acc.accountAddr]
-          if (isUsedOnThisNetwork && accObj) {
-            if (!accObj.account.usedOnNetworks) accObj.account.usedOnNetworks = []
+        const accObj = accountsObj[acc.accountAddr]
+        if (isUsedOnThisNetwork && accObj) {
+          if (!accObj.account.usedOnNetworks) accObj.account.usedOnNetworks = []
 
-            accObj.account.usedOnNetworks.push(network)
-          }
-        })
-      }
+          accObj.account.usedOnNetworks.push(network)
+        }
+      })
     })
 
     await Promise.all(promises)
@@ -1482,8 +1463,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
-      subType: this.subType,
-      isPageLocked: this.isPageLocked
+      subType: this.subType
     }
   }
 }
