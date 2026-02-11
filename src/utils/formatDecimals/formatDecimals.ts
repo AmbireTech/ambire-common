@@ -76,7 +76,7 @@ const formatNumber = (
   sign: string,
   type: FormatType
 ) => {
-  const stringValue = value.toString()
+  const stringValue = value.toFixed(16)
   const [integer, decimal] = stringValue.split('.')
   // Display the number with the determined number of decimals
   const decimalFormatted = decimal ? decimal.slice(0, decimals) : '0'
