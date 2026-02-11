@@ -1976,7 +1976,7 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd'
     })
@@ -2003,12 +2003,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
@@ -2028,12 +2030,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(2)
     expect(formatted.data).toBe(null)
@@ -2052,7 +2056,7 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
@@ -2062,6 +2066,8 @@ describe('Portfolio Controller ', () => {
         hasHints: true
       }
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)

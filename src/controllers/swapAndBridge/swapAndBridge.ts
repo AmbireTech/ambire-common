@@ -1605,7 +1605,29 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
               return -1
             }
 
-            const sortByAmountAndTime = () => {
+            const sortByPerformance = () => {
+              // if it's a bridge, prioritize across and relay as we find
+              // across and relay the best bridges out where with a close
+              // to 100% success rate and an approximate bridge time of 30s
+              if (isBridge) {
+                const aHasAcross = r1.usedBridgeNames?.includes('across')
+                const bHasAcross = r2.usedBridgeNames?.includes('across')
+                if (aHasAcross && !bHasAcross) return -1
+                if (bHasAcross && !aHasAcross) return 1
+
+                const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
+                const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
+                if (aHasRelay && !bHasRelay) return -1
+                if (bHasRelay && !aHasRelay) return 1
+              } else {
+                // if it's a swap, deprioritize the bungee auto route as it's an intent
+                // engine. And intent engines are bad UX
+                const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
+                const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
+                if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
+                if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
+              }
+
               const a = BigInt(r1.toAmount)
               const b = BigInt(r2.toAmount)
 
@@ -1646,7 +1668,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
             if (r1ServiceFee && !r2ServiceFee) return 1
             if (r2ServiceFee && !r1ServiceFee) return -1
-            return sortByAmountAndTime()
+
+            return sortByPerformance()
           })
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
