@@ -797,7 +797,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!accountState) {
       const error = new Error(
-        `Failed to fetch account on-chain state for network with chainId ${network.chainId}`
+        `Failed to fetch account onchain state for network with chainId ${network.chainId}`
       )
 
       this.emitError({
