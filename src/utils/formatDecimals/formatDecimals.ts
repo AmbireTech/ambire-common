@@ -61,8 +61,7 @@ const formatNumber = (
   if (!cacheForNumberFormatters[keyForCache])
     cacheForNumberFormatters[keyForCache] = new Intl.NumberFormat('en-US', {
       minimumFractionDigits,
-      maximumFractionDigits,
-      roundingMode: 'trunc'
+      maximumFractionDigits
     })
 
   const formatter = cacheForNumberFormatters[keyForCache]
