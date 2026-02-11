@@ -717,6 +717,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     try {
       const derivedAccounts = await this.#deriveAccounts()
+      // FIXME: for some reason, when changing derivation - Trezor device emits an error:
+      // Trezor device busy. Please make sure there are no pending requests on the device.
+      // However, it succeeds to retrieve accounts with different than standard derivation.
+      // So as a workaround, clean any prev pageErrors that might have been occur.
+      this.pageError = null
+      this.emitUpdate()
 
       if (this.page !== page) return
 
