@@ -76,5 +76,6 @@ export type BuildRequest =
         signed: string[]
         message: Hex
         messageHash: Hex
+        safeAppId: string | null
       }
     }

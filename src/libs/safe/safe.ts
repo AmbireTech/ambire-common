@@ -216,7 +216,7 @@ export function getDefaultOwners(
   // reason for this is that we cannot select the hardware wallet automatically,
   // the user needs to do it manually
   const internal = notSinged.filter((k) => k.type === 'internal')
-  const hwTypes = [...new Set(...notSinged.filter((k) => k.type !== 'internal').map((k) => k.type))]
+  const hwTypes = [...new Set(notSinged.filter((k) => k.type !== 'internal').map((k) => k.type))]
   const leftToSign = threshold - alreadySignedAddrs.length
   if (hwTypes.length > 1 && internal.length < leftToSign) return []
 
@@ -279,7 +279,8 @@ export async function addMessage(
   chainId: bigint,
   safeAddress: Hex,
   message: string | EIP712TypedData,
-  signature: string
+  signature: string,
+  safeAppId: number
 ) {
   const apiKit = new SafeApiKit({
     chainId,
@@ -287,7 +288,8 @@ export async function addMessage(
   })
   return apiKit.addMessage(safeAddress, {
     message,
-    signature
+    signature,
+    safeAppId
   })
 }
 
@@ -500,6 +502,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     message: Hex
     messageHash: Hex
     signature: Hex
+    safeAppId: string
   }
   isConfirmed: boolean
 }[] {
@@ -511,6 +514,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
       message: Hex
       messageHash: Hex
       signature: Hex
+      safeAppId: string
     }
     isConfirmed: boolean
   }[] = []
@@ -533,7 +537,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
           signature: sortSigs(
             message.confirmations.map((c) => c.signature) as Hex[],
             message.messageHash
-          )
+          ),
+          safeAppId: message.safeAppId ?? message.created
         },
         isConfirmed: !!message.isConfirmed
       })

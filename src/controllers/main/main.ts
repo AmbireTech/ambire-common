@@ -987,7 +987,8 @@ export class MainController extends EventEmitter implements IMainController {
       // mark the request so it doesn't get removed on close
       this.requests.setPartiallyCompleteRequest(signedMessage.fromRequestId, {
         signed: this.signMessage.signed,
-        hash: this.signMessage.hash
+        hash: this.signMessage.hash,
+        safeAppId: this.signMessage.safeAppId
       })
     }
 

@@ -1,6 +1,10 @@
 import { toBeHex } from 'ethers'
 
-import SafeApiKit, { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
+import SafeApiKit, {
+  SafeCreationInfoResponse,
+  SafeInfoResponse,
+  SafeMessage
+} from '@safe-global/api-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
@@ -177,6 +181,10 @@ export class SafeController extends EventEmitter implements ISafeController {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
   }
 
+  getMessageId(msg: SafeMessage): string {
+    return `${msg.messageHash}-${msg.safeAppId ?? msg.created}`
+  }
+
   #filterOutHidden(pending: SafeResults): SafeResults {
     // filter out all resolved & rejected safe txns
     const hiddenTxns = [
@@ -189,7 +197,9 @@ export class SafeController extends EventEmitter implements ISafeController {
         return {
           [chainId]: {
             txns: pending[chainId]!.txns.filter((r) => !hiddenTxns.includes(r.safeTxHash)),
-            messages: pending[chainId]!.messages
+            messages: pending[chainId]!.messages.filter(
+              (m) => !hiddenTxns.includes(this.getMessageId(m))
+            )
           }
         }
       })

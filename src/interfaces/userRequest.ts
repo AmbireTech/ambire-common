@@ -72,6 +72,7 @@ export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappP
     keepRequestAlive?: boolean
     signed?: string[]
     hash?: string
+    safeAppId?: string
   }
 }
 
@@ -91,6 +92,7 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
     keepRequestAlive?: boolean
     signed?: string[]
     hash?: string
+    safeAppId?: string
   }
 }
 
@@ -108,6 +110,7 @@ export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> 
     keepRequestAlive?: boolean
     signed?: string[]
     hash?: string
+    safeAppId?: string
   }
 }
 

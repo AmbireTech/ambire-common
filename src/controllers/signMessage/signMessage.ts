@@ -91,6 +91,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   status: SignMessageStatus
 
+  safeAppId?: number
+
   constructor(
     keystore: IKeystoreController,
     providers: IProvidersController,
@@ -302,6 +304,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (!provider) throw new Error(`Network details missing. Please try again`)
 
       let signature
+      const safeAppId = Date.now()
 
       try {
         if (
@@ -347,7 +350,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
               this.#network.chainId,
               this.#account.addr as Hex,
               toUtf8String(this.messageToSign.content.message),
-              signature
+              signature,
+              safeAppId
             )
           }
         }
@@ -396,7 +400,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
               this.#network.chainId,
               this.#account.addr as Hex,
               this.messageToSign.content.message as EIP712TypedData,
-              signature
+              signature,
+              safeAppId
             )
           }
         }
@@ -477,6 +482,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         this.signed.length >= accountState.threshold
           ? SignMessageStatus.Done
           : SignMessageStatus.Partial
+
+      this.safeAppId = safeAppId
 
       return this.signedMessage
     } catch (e: any) {

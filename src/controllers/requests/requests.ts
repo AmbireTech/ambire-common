@@ -892,6 +892,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           userRequestsToAdd.push(r)
         })
       }
+      if (kind === 'message' || kind === 'siwe' || kind === 'typedMessage') {
+        const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
+        if (!account || !account.safeCreation) return
+
+        if (meta.safeAppId) safeRejectIds.push(`${meta.hash}-${meta.safeAppId}`)
+      }
     })
 
     // reject all safe txns so they do not appear by accident again
@@ -1394,12 +1400,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     chainId,
     signed,
     message,
-    messageHash
+    messageHash,
+    safeAppId
   }: {
     chainId: bigint
     signed: string[]
     message: Hex
     messageHash: Hex
+    safeAppId: string | null
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1414,7 +1422,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         chainId,
         keepRequestAlive: true,
         signed,
-        hash: messageHash
+        hash: messageHash,
+        safeAppId: safeAppId || undefined
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -2052,7 +2061,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   setPartiallyCompleteRequest(
     requestId: UserRequest['id'],
-    meta?: { signed?: string[]; hash?: string }
+    meta?: { signed?: string[]; hash?: string; safeAppId?: number }
   ): void {
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
     if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
@@ -2060,6 +2069,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     req.meta.keepRequestAlive = true
     if (meta?.signed) req.meta.signed = meta.signed
     if (meta?.hash) req.meta.hash = meta.hash
+    if (meta?.safeAppId) req.meta.safeAppId = meta.safeAppId.toString()
   }
 
   toJSON() {
