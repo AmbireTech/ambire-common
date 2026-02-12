@@ -96,6 +96,21 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls[i][3].value = calls[i][3].value! + calls[j][3].value!
         calls.splice(j, 1)
       }
+      // looks for swaps to merge
+      if (
+        i !== j &&
+        calls[i] &&
+        calls[j] &&
+        isSwap(calls[i]) &&
+        isSwap(calls[j]) &&
+        calls[i][3].address === calls[j][1].address
+      ) {
+        calls[i]?.push({ ...calls[i][3], isHidden: true })
+        calls[i][3].value = calls[j][3].value!
+        calls[i][3].address! = calls[j][3]?.address!
+
+        calls.splice(j, 1)
+      }
 
       // looks for fee payment to subtract
       if (
