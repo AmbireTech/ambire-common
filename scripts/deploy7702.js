@@ -27,7 +27,7 @@ async function main() {
     to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton
     value: 0n,
     data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt]),
-    gasLimit: 3500000n
+    gasLimit: 1024999935n
   }
 
   // Send the transaction

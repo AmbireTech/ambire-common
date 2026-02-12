@@ -106,6 +106,10 @@ const config: HardhatUserConfig = {
     etherlink: {
       url: 'https://rpc.ankr.com/etherlink_mainnet',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    megaeth: {
+      url: 'https://mainnet.megaeth.com/rpc',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -285,6 +289,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.worldscan.org/',
           browserURL: 'https://worldscan.org/'
+        }
+      },
+      {
+        network: 'megaeth',
+        chainId: 4326,
+        urls: {
+          apiURL: 'https://api.mega.etherscan.io/',
+          browserURL: 'https://mega.etherscan.io/'
         }
       }
     ]
