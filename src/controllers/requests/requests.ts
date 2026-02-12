@@ -1580,14 +1580,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   get banners(): Banner[] {
     if (!this.#selectedAccount.account || !this.#networks.isInitialized) return []
 
-    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
-      this.#selectedAccount.account.addr,
-      this.#swapAndBridge.activeRoutes
-    )
-    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
-      (r) => r.routeStatus === 'ready'
-    )
-
     return [
       ...getAccountOpBanners({
         callsUserRequestsByNetwork: getCallsUserRequestsByNetwork(
@@ -1595,8 +1587,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.userRequests
         ),
         selectedAccount: this.#selectedAccount.account.addr,
-        networks: this.#networks.networks,
-        swapAndBridgeRoutesPendingSignature
+        networks: this.#networks.networks
       }),
       ...getDappUserRequestsBanners(this.visibleUserRequests)
     ]
