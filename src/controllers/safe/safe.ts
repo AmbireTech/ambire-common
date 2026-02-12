@@ -7,7 +7,7 @@ import SafeApiKit, {
 } from '@safe-global/api-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
-import { SAFE_NETWORKS, SAFE_SMALLEST_SUPPORTED_V } from '../../consts/safe'
+import { SAFE_NETWORKS } from '../../consts/safe'
 import { SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -20,7 +20,6 @@ import {
   fetchAllPending,
   fetchExecutedTransactions,
   getCalculatedSafeAddress,
-  isSupportedSafeVersion,
   SafeResults
 } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -138,13 +137,6 @@ export class SafeController extends EventEmitter implements ISafeController {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the safe. Please try again'
-      }
-      return
-    }
-    if (!isSupportedSafeVersion(safeInfo.version)) {
-      this.importError = {
-        address: safeAddr,
-        message: `Safe version ${safeInfo.version} accounts are not supported in Ambire. Smallest support version is ${SAFE_SMALLEST_SUPPORTED_V}`
       }
       return
     }

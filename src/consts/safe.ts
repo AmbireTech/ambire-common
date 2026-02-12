@@ -9,14 +9,6 @@ export const SAFE_NETWORKS = [
 ]
 
 /**
- * We support Safe accounts that are at least v1.3 or above.
- * The reason for that is prior version have different addresses
- * on different chains. Since Ambire is chain-agnostic, we cannot
- * expect to handle accounts with different cross-chain addresses
- */
-export const SAFE_SMALLEST_SUPPORTED_V = '1.3'
-
-/**
  * Information about safe contract addresses by their versions
  */
 const vOneThree = {
