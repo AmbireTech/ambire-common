@@ -1469,8 +1469,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const expectedMinPortfolioBlockByChainId: { [chainId: string]: number } = {}
 
     for (const op of updatedAccountsOps) {
-      if (op.accountAddr !== accountId) continue
-      if (op.blockNumber == null) continue
+      if (op.accountAddr !== accountId || !op.blockNumber) continue
 
       const chainKey = op.chainId.toString()
       const prev = expectedMinPortfolioBlockByChainId[chainKey]
