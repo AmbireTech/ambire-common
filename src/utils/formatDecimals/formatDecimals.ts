@@ -53,9 +53,9 @@ const formatNumber = (
   sign: string,
   type: FormatType
 ) => {
-  let maximumFractionDigits = Math.max(DECIMAL_RULES[type].min, decimals) // we make sure minimumFractionDigits <= maximumFractionDigits
-  maximumFractionDigits = Math.min(maximumFractionDigits, MAX_SUPPORTED_DECIMALS_BY_FORMATTER)
   const minimumFractionDigits = DECIMAL_RULES[type].min
+  let maximumFractionDigits = Math.max(minimumFractionDigits, decimals) // we make sure minimumFractionDigits <= maximumFractionDigits
+  maximumFractionDigits = Math.min(maximumFractionDigits, MAX_SUPPORTED_DECIMALS_BY_FORMATTER)
 
   let keyForCache = `${minimumFractionDigits}:${maximumFractionDigits}`
   if (!cacheForNumberFormatters[keyForCache])
