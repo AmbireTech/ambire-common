@@ -180,7 +180,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   ui: IUiController
 
-  #continuousUpdates: ContinuousUpdatesController
+  #continuousUpdates: ContinuousUpdatesController | undefined
 
   safe: ISafeController
 
@@ -254,15 +254,18 @@ export class MainController extends EventEmitter implements IMainController {
         await this.reloadSelectedAccount({
           chainIds: networks.map((n) => n.chainId)
         })
+      },
+      onReady: async () => {
+        await this.providers.init({ networks: this.networks.allNetworks })
       }
     })
 
-    this.providers = new ProvidersController(
-      this.networks,
-      this.storage,
-      this.ui,
-      eventEmitterRegistry
-    )
+    this.providers = new ProvidersController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      getNetworks: () => this.networks.allNetworks,
+      sendUiMessage: () => this.ui.message.sendUiMessage
+    })
     this.accounts = new AccountsController(
       this.storage,
       this.providers,
@@ -548,24 +551,26 @@ export class MainController extends EventEmitter implements IMainController {
       this.initialLoadPromise = undefined
     })
 
-    this.#continuousUpdates = new ContinuousUpdatesController({
-      eventEmitterRegistry,
-      // Pass a read-only proxy of the main instance to ContinuousUpdatesController.
-      // This gives it full access to read main’s state and call its methods,
-      // but prevents any direct modification to the main state.
-      main: new Proxy(this, {
-        get(target, prop, receiver) {
-          const value = Reflect.get(target, prop, receiver)
-          if (typeof value === 'function') {
-            return value.bind(target) // bind original instance to preserve `this`
+    if (this.featureFlags.isFeatureEnabled('withContinuousUpdatesController')) {
+      this.#continuousUpdates = new ContinuousUpdatesController({
+        eventEmitterRegistry,
+        // Pass a read-only proxy of the main instance to ContinuousUpdatesController.
+        // This gives it full access to read main’s state and call its methods,
+        // but prevents any direct modification to the main state.
+        main: new Proxy(this, {
+          get(target, prop, receiver) {
+            const value = Reflect.get(target, prop, receiver)
+            if (typeof value === 'function') {
+              return value.bind(target) // bind original instance to preserve `this`
+            }
+            return value
+          },
+          set() {
+            throw new Error('Read-only')
           }
-          return value
-        },
-        set() {
-          throw new Error('Read-only')
-        }
+        })
       })
-    })
+    }
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (this.requests.currentUserRequest?.kind !== 'calls') return
       this.emitError(e)
@@ -691,9 +696,9 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    this.#continuousUpdates.updatePortfolioInterval.restart()
-    this.#continuousUpdates.accountStateLatestInterval.restart()
-    this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.#continuousUpdates?.updatePortfolioInterval.restart()
+    this.#continuousUpdates?.accountStateLatestInterval.restart()
+    this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
