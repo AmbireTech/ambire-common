@@ -509,7 +509,8 @@ export const getNetworksUpdatedWithRelayerNetworks = (
         suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
         suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
         iconUrls: relayerNetwork.iconUrls,
-        predefined: relayerNetwork.predefined
+        predefined: relayerNetwork.predefined,
+        tokenIcons: relayerNetwork.tokenIcons
       }
     }
   })
