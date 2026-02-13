@@ -323,9 +323,16 @@ const prepareTest = async (
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
   await providersCtrl.initialLoadPromise
   const accountsCtrl = new AccountsController(
     storageCtrl,
