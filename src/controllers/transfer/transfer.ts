@@ -68,6 +68,12 @@ const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
 }
 
+type SignAccountOpControllerMethods = {
+  [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
+    ? K
+    : never]: SignAccountOpController[K]
+}
+
 export class TransferController extends EventEmitter implements ITransferController {
   #callRelayer: Function
 
@@ -903,6 +909,15 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
       this.emitError(error)
     })
+  }
+
+  async callSignAccountOpMethod<M extends keyof SignAccountOpControllerMethods>(
+    method: M,
+    args: Parameters<SignAccountOpControllerMethods[M]>
+  ) {
+    if (!this.signAccountOpController) return
+
+    await (this.signAccountOpController[method] as any)(...args)
   }
 
   setUserProceeded(hasProceeded: boolean) {
