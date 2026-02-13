@@ -1,4 +1,4 @@
-import { Interface, isAddress, TransactionReceipt, ZeroAddress } from 'ethers'
+import { Interface, isAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
@@ -55,6 +55,8 @@ export interface SubmittedAccountOp extends AccountOp {
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
   blockNumber?: number
+  blockHash?: string
+  gasUsed?: string
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
@@ -150,7 +152,7 @@ export async function fetchTxnId(
     const txnIds = identifiedBy.identifier.split('-')
     return {
       status: 'success',
-      txnId: txnIds[txnIds.length - 1]
+      txnId: txnIds[txnIds.length - 1]!
     }
   }
 
@@ -282,15 +284,27 @@ export function updateOpStatus(
   if (opReference.identifiedBy.type === 'MultipleTxns') {
     const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
     // eslint-disable-next-line no-param-reassign
-    opReference.calls[callIndex].status = status
+    opReference.calls[callIndex]!.status = status
 
     // if there's a receipt, add the fee
     if (receipt) {
       // eslint-disable-next-line no-param-reassign
-      opReference.calls[callIndex].fee = {
+      opReference.calls[callIndex]!.fee = {
         inToken: ZeroAddress,
         amount: receipt.fee
       }
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockHash = receipt.blockHash
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockNumber = receipt.blockNumber
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockHash = receipt.blockHash
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.gasUsed = toBeHex(receipt.gasUsed)
     }
 
     if (callIndex === opReference.calls.length - 1) {
