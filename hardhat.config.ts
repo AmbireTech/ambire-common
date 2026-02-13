@@ -110,6 +110,10 @@ const config: HardhatUserConfig = {
     megaeth: {
       url: 'https://mainnet.megaeth.com/rpc',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    citrea: {
+      url: 'https://rpc.mainnet.citrea.xyz',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -297,6 +301,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.mega.etherscan.io/',
           browserURL: 'https://mega.etherscan.io/'
+        }
+      },
+      {
+        network: 'citrea',
+        chainId: 4114,
+        urls: {
+          apiURL: 'https://explorer.mainnet.citrea.xyz/api',
+          browserURL: 'https://explorer.mainnet.citrea.xyz'
         }
       }
     ]

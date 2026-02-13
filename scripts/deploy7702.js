@@ -26,8 +26,7 @@ async function main() {
   const tx = {
     to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton
     value: 0n,
-    data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt]),
-    gasLimit: 1024999935n
+    data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
   }
 
   // Send the transaction
