@@ -210,6 +210,7 @@ export async function ambireEstimateGas(
     : accountOp.success
       ? Number(outcomeNonce - 1n)
       : Number(outcomeNonce)
+
   return {
     gasUsed,
     deploymentGas: deployment.gasUsed,
