@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider, ZeroAddress } from 'ethers'
 
 import { BUNDLER } from '../consts/bundlers'
 import {
@@ -141,7 +141,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
       name: nativeAssetName,
       coingeckoId: nativeAssetId,
       wrapped: { address: wrappedAddr },
-      oldNativeAssetSymbols
+      oldNativeAssetSymbols,
+      icon
     },
     smartAccounts,
     feeOptions: incomingFeeOptions
@@ -225,7 +226,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     features,
     hasSingleton,
     has7702: is7702Enabled,
-    disabledByDefault
+    disabledByDefault,
+    tokenIcons: icon ? { [ZeroAddress]: icon } : undefined
   }
 }
 

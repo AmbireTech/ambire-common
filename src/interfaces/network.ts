@@ -115,6 +115,7 @@ export interface Network {
   allowForce4337?: boolean
   disabled?: boolean
   customBundlerUrl?: string
+  tokenIcons?: { [address: string]: string }
 }
 
 export interface AddNetworkRequestParams {
