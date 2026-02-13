@@ -229,23 +229,29 @@ const getMultipleAccountsLearnedAssets = () => {
   const tokenHints2 = generateRandomAddresses(10)
 
   const turnHintsToLearnedAssets = (hints: string[]) => {
-    return hints.reduce((acc, addr) => {
-      acc[addr] = Date.now()
+    return hints.reduce(
+      (acc, addr) => {
+        acc[addr] = Date.now()
 
-      return acc
-    }, {} as LearnedAssets['erc20s'][string])
+        return acc
+      },
+      {} as LearnedAssets['erc20s'][string]
+    )
   }
 
   const turnCollectionsToLearnedAssetKeys = (
     collections: [string, bigint[]][]
   ): LearnedAssets['erc721s'][string] => {
-    return collections.reduce((acc, nft) => {
-      erc721CollectionToLearnedAssetKeys(nft).forEach((key) => {
-        acc[key] = Date.now()
-      })
+    return collections.reduce(
+      (acc, nft) => {
+        erc721CollectionToLearnedAssetKeys(nft).forEach((key) => {
+          acc[key] = Date.now()
+        })
 
-      return acc
-    }, {} as LearnedAssets['erc721s'][string])
+        return acc
+      },
+      {} as LearnedAssets['erc721s'][string]
+    )
   }
 
   return {
@@ -317,9 +323,16 @@ const prepareTest = async (
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
   await providersCtrl.initialLoadPromise
   const accountsCtrl = new AccountsController(
     storageCtrl,
@@ -741,12 +754,15 @@ describe('Portfolio Controller ', () => {
       const firstBatchOf50 = generateRandomAddresses(50)
       const startingLearnedAssets: LearnedAssets = {
         erc20s: {
-          [`${1}:${account.addr}`]: firstBatchOf50.reduce((acc, addr, index) => {
-            // First 20 are still owned, last 30 are no longer owned
-            acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+          [`${1}:${account.addr}`]: firstBatchOf50.reduce(
+            (acc, addr, index) => {
+              // First 20 are still owned, last 30 are no longer owned
+              acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
 
-            return acc
-          }, {} as LearnedAssets['erc20s'][string])
+              return acc
+            },
+            {} as LearnedAssets['erc20s'][string]
+          )
         },
         erc721s: {}
       }
@@ -771,23 +787,29 @@ describe('Portfolio Controller ', () => {
     test('To be learned erc721 cleanup mechanism works', async () => {
       // A total of 80 collections are added. 30 of them are "no longer owned"
       // but only 10 of them should be removed as the threshold of unowned is 20
-      const firstRandomCollections = generateRandomAddresses(50).reduce((acc, addr, index) => {
-        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+      const firstRandomCollections = generateRandomAddresses(50).reduce(
+        (acc, addr, index) => {
+          acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
 
-        return acc
-      }, [] as [string, bigint[]][])
+          return acc
+        },
+        [] as [string, bigint[]][]
+      )
 
       const keys = firstRandomCollections.map((c) => erc721CollectionToLearnedAssetKeys(c)).flat()
 
       const startingLearnedAssets: LearnedAssets = {
         erc20s: {},
         erc721s: {
-          [`${1}:${account.addr}`]: keys.reduce((acc, key, index) => {
-            // First 20 are still owned, last 30 are no longer owned
-            acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+          [`${1}:${account.addr}`]: keys.reduce(
+            (acc, key, index) => {
+              // First 20 are still owned, last 30 are no longer owned
+              acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
 
-            return acc
-          }, {} as LearnedAssets['erc721s'][string])
+              return acc
+            },
+            {} as LearnedAssets['erc721s'][string]
+          )
         }
       }
 
@@ -795,11 +817,14 @@ describe('Portfolio Controller ', () => {
         storageC.set('learnedAssets', startingLearnedAssets)
       )
 
-      const nextRandomCollections = generateRandomAddresses(30).reduce((acc, addr, index) => {
-        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+      const nextRandomCollections = generateRandomAddresses(30).reduce(
+        (acc, addr, index) => {
+          acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
 
-        return acc
-      }, [] as [string, bigint[]][])
+          return acc
+        },
+        [] as [string, bigint[]][]
+      )
 
       const allCurrentlyOwnedCollections = [
         ...firstRandomCollections.slice(0, 20),
@@ -1043,9 +1068,9 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getAccountPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'
-        )
+        [
+          '1'
+        ]?.result?.tokens.find((token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b')
 
       expect(toBeLearnedToken).toBeTruthy()
 
@@ -1090,10 +1115,9 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getAccountPortfolioState(account2.addr)
-        ['137']?.result?.tokens.find(
-          (token) =>
-            token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n
-        )
+        [
+          '137'
+        ]?.result?.tokens.find((token) => token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n)
       expect(toBeLearnedToken).toBeTruthy()
 
       const key = `${137}:${account2.addr}`
@@ -1112,9 +1136,9 @@ describe('Portfolio Controller ', () => {
       networksCtrl.networks.forEach((network) => {
         const nativeToken = controller
           .getAccountPortfolioState(account.addr)
-          [network.chainId.toString()]?.result?.tokens.find(
-            (token) => token.address === ZeroAddress
-          )
+          [
+            network.chainId.toString()
+          ]?.result?.tokens.find((token) => token.address === ZeroAddress)
 
         if (!nativeToken) {
           console.error('Native token not found for network:', network.name)
@@ -1808,9 +1832,9 @@ describe('Portfolio Controller ', () => {
     const getCustomTokenFromPortfolio = () => {
       return controller
         .getAccountPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) => token.address === customToken.address && token.chainId === customToken.chainId
-        )
+        [
+          '1'
+        ]?.result?.tokens.find((token) => token.address === customToken.address && token.chainId === customToken.chainId)
     }
 
     expect(tokenIsSet).toEqual(customToken)
@@ -1870,12 +1894,9 @@ describe('Portfolio Controller ', () => {
 
     const hiddenToken = controller
       .getAccountPortfolioState(account.addr)
-      ['1']?.result?.tokens.find(
-        (token) =>
-          token.address === preference.address &&
-          token.chainId === preference.chainId &&
-          token.flags.isHidden
-      )
+      [
+        '1'
+      ]?.result?.tokens.find((token) => token.address === preference.address && token.chainId === preference.chainId && token.flags.isHidden)
     expect(hiddenToken).toBeTruthy()
   })
   test('Calling toggleHideToken a second time deletes the preference', async () => {
@@ -1955,7 +1976,7 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd'
     })
@@ -1982,12 +2003,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
@@ -2007,12 +2030,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(2)
     expect(formatted.data).toBe(null)
@@ -2031,7 +2056,7 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
@@ -2041,6 +2066,8 @@ describe('Portfolio Controller ', () => {
         hasHints: true
       }
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)

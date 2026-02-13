@@ -1030,14 +1030,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           ? getPaymasterService(network.chainId, request.params[0].capabilities)
           : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
 
-      const atomicRequired = isWalletSendCalls && !!request.params[0].atomicRequired
-      if (isWalletSendCalls && atomicRequired && baseAcc.getAtomicStatus() === 'unsupported') {
-        throw ethErrors.provider.custom({
-          code: 4999, // the custom code should be in the required range by the lib
-          message: 'Transaction failed - atomicity is not supported for this account'
-        })
-      }
-
       const walletSendCallsVersion = isWalletSendCalls
         ? (request.params[0].version ?? '1.0.0')
         : undefined
@@ -1588,14 +1580,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   get banners(): Banner[] {
     if (!this.#selectedAccount.account || !this.#networks.isInitialized) return []
 
-    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
-      this.#selectedAccount.account.addr,
-      this.#swapAndBridge.activeRoutes
-    )
-    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
-      (r) => r.routeStatus === 'ready'
-    )
-
     return [
       ...getAccountOpBanners({
         callsUserRequestsByNetwork: getCallsUserRequestsByNetwork(
@@ -1603,8 +1587,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.userRequests
         ),
         selectedAccount: this.#selectedAccount.account.addr,
-        networks: this.#networks.networks,
-        swapAndBridgeRoutesPendingSignature
+        networks: this.#networks.networks
       }),
       ...getDappUserRequestsBanners(this.visibleUserRequests)
     ]

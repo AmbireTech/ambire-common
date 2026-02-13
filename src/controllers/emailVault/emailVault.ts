@@ -676,14 +676,12 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
         text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
           {
-            label: 'Dismiss',
-            actionName: 'dismiss-email-vault'
-          },
-          {
-            label: 'Enable',
             actionName: 'backup-keystore-secret'
           }
-        ]
+        ],
+        dismissAction: {
+          actionName: 'dismiss-email-vault'
+        }
       })
     }
 

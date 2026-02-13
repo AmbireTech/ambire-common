@@ -14,44 +14,6 @@ export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: Ac
     return banner.meta.accountAddr === selectedAccount
   })
 
-const getBridgeActionText = (
-  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
-  isBridgeTxn: boolean
-) => {
-  if (isBridgeTxn) {
-    return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
-  }
-
-  return routeStatus === 'completed' ? 'Swapped' : 'Swap'
-}
-
-const getBridgeBannerText = (
-  route: SwapAndBridgeActiveRoute,
-  isBridgeTxn: boolean,
-  networks?: Network[]
-) => {
-  const steps = route.route?.steps || []
-  if (!steps[0]) return '' // should never happen
-
-  const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
-  const fromAssetSymbol = steps[0].fromAsset.symbol
-  const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
-
-  let assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
-
-  if (networks) {
-    const fromAssetNetwork = networks.find((n) => Number(n.chainId) === steps[0].fromAsset.chainId)
-    const toAssetNetwork = networks.find(
-      (n) => Number(n.chainId) === steps[steps.length - 1].toAsset.chainId
-    )
-    if (fromAssetNetwork && toAssetNetwork) {
-      assetsText = `${fromAssetSymbol} (on ${fromAssetNetwork.name}) to ${toAssetSymbol} (on ${toAssetNetwork.name})`
-    }
-  }
-
-  return `${actionText} ${assetsText}`
-}
-
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
   callsUserRequests: CallsUserRequest[]
@@ -129,18 +91,16 @@ export const getBridgeBanners = (
       text,
       actions: [
         {
-          label: 'Close',
-          actionName: 'close-bridge',
-          meta: {
-            activeRouteIds: allRoutes.map((r) => r.activeRouteId),
-            isHideStyle: true
-          }
-        },
-        {
-          label: 'View',
           actionName: 'view-bridge'
         }
-      ]
+      ],
+      dismissAction: {
+        actionName: 'close-bridge',
+        meta: {
+          activeRouteIds: allRoutes.map((r) => r.activeRouteId),
+          isHideStyle: true
+        }
+      }
     })
   }
 
@@ -161,7 +121,6 @@ export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[
       text: '',
       actions: [
         {
-          label: 'Open',
           actionName: 'open-pending-dapp-requests'
         }
       ]
@@ -169,42 +128,10 @@ export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[
   ]
 }
 
-const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
-  chainId: bigint,
-  nonSwapAndBridgeTxns: number,
-  networks: Network[]
-) => {
-  const swapsAndBridges: string[] = []
-  const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return route.route && BigInt(route.route.fromChainId) === chainId
-  })
-
-  if (networkSwapAndBridgeRoutes.length) {
-    networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = !!route.route?.steps.some(
-        (s) => s.fromAsset.chainId !== s.toAsset.chainId
-      )
-      const desc = getBridgeBannerText(route, isBridgeTxn, networks)
-
-      swapsAndBridges.push(desc)
-    })
-
-    return `${swapsAndBridges.join(', ')} ${
-      nonSwapAndBridgeTxns
-        ? `and ${nonSwapAndBridgeTxns} other transaction${nonSwapAndBridgeTxns > 1 ? 's' : ''}`
-        : ''
-    }`
-  }
-
-  return ''
-}
-
 export const getAccountOpBanners = ({
   callsUserRequestsByNetwork,
   selectedAccount,
-  networks,
-  swapAndBridgeRoutesPendingSignature
+  networks
 }: {
   callsUserRequestsByNetwork: {
     [key: string]: CallsUserRequest[]
@@ -212,7 +139,6 @@ export const getAccountOpBanners = ({
 
   selectedAccount: string
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!callsUserRequestsByNetwork) return []
   const txnBanners: Banner[] = []
@@ -220,22 +146,7 @@ export const getAccountOpBanners = ({
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
     requests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
-      const nonSwapAndBridgeTxns = request.signAccountOp.accountOp.calls.reduce((prev, call) => {
-        const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-          (route) => route.activeRouteId === call.id
-        )
-
-        if (isSwapAndBridge) return prev
-
-        return prev + 1
-      }, 0)
       const callCount = request.signAccountOp.accountOp.calls.length
-      const text = getAccountOpBannerText(
-        swapAndBridgeRoutesPendingSignature,
-        BigInt(network.chainId),
-        nonSwapAndBridgeTxns,
-        networks
-      )
 
       txnBanners.push({
         id: `${selectedAccount}-${netId}`,
@@ -243,24 +154,22 @@ export const getAccountOpBanners = ({
         category: 'pending-to-be-signed-acc-op',
         title: `${
           callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-        text,
+        } waiting to be signed ${network.name ? `on \n${network.name}` : ''}`,
+        text: '',
         actions: [
           {
-            label: 'Reject',
-            actionName: 'reject-accountOp',
-            meta: {
-              err: 'User rejected the transaction request.',
-              requestId: request.id,
-              shouldOpenNextAction: false
-            }
-          },
-          {
-            label: 'Open',
             actionName: 'open-accountOp',
             meta: { requestId: request.id }
           }
-        ]
+        ],
+        dismissAction: {
+          actionName: 'reject-accountOp',
+          meta: {
+            err: 'User rejected the transaction request.',
+            requestId: request.id,
+            shouldOpenNextAction: false
+          }
+        }
       })
     })
   })
@@ -279,7 +188,6 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
     actions: [
       {
-        label: 'Sync',
         actionName: 'sync-keys',
         meta: { email, keys }
       }
@@ -336,15 +244,13 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
     }?`,
     actions: [
       {
-        label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',
         actionName: 'enable-networks',
         meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
-      },
-      {
-        label: 'Dismiss',
-        actionName: 'dismiss-defi-positions-banner'
       }
     ],
+    dismissAction: {
+      actionName: 'dismiss-defi-positions-banner'
+    },
     meta: {
       accountAddr
     }

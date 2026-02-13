@@ -36,9 +36,16 @@ describe('Networks Controller', () => {
       useTempProvider: (props, cb) => {
         return providersCtrl.useTempProvider(props, cb)
       },
-      onAddOrUpdateNetworks: () => {}
+      onAddOrUpdateNetworks: () => {},
+      onReady: async () => {
+        await providersCtrl.init({ networks: networksController.allNetworks })
+      }
     })
-    providersCtrl = new ProvidersController(networksController, storageCtrl, uiCtrl)
+    providersCtrl = new ProvidersController({
+      storage: storageCtrl,
+      getNetworks: () => networksController.allNetworks,
+      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    })
     await providersCtrl.initialLoadPromise
   })
 
@@ -202,11 +209,18 @@ describe('Networks Controller', () => {
       useTempProvider: (props, cb) => {
         return providersCtrl.useTempProvider(props, cb)
       },
-      onAddOrUpdateNetworks: () => {}
+      onAddOrUpdateNetworks: () => {},
+      onReady: async () => {
+        await providersCtrl.init({ networks: testnetNetworksController.allNetworks })
+      }
     })
     const { uiManager } = mockUiManager()
     const uiCtrl = new UiController({ uiManager })
-    providersCtrl = new ProvidersController(networksController, storageCtrl, uiCtrl)
+    providersCtrl = new ProvidersController({
+      storage: storageCtrl,
+      getNetworks: () => testnetNetworksController.allNetworks,
+      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    })
 
     await testnetNetworksController.initialLoadPromise
     expect(testnetNetworksController.networks.find((n) => n.chainId === 1n)).toBe(undefined)

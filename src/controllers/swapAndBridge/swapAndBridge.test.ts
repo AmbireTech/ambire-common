@@ -83,12 +83,19 @@ const networksCtrl = new NetworksController({
   useTempProvider: (props, cb) => {
     return providersCtrl.useTempProvider(props, cb)
   },
-  onAddOrUpdateNetworks: () => {}
+  onAddOrUpdateNetworks: () => {},
+  onReady: async () => {
+    await providersCtrl.init({ networks: networksCtrl.allNetworks })
+  }
 })
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+providersCtrl = new ProvidersController({
+  storage: storageCtrl,
+  getNetworks: () => networksCtrl.allNetworks,
+  sendUiMessage: () => uiCtrl.message.sendUiMessage
+})
 
 const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
@@ -457,7 +464,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
+    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(1)
   })
   it('should continuously update active routes', async () => {
     const { restore } = suppressConsole()
