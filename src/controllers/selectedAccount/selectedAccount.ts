@@ -451,7 +451,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const defiBanner = this.banners.find((b) => b.id === defiPositionsOnDisabledNetworksBannerId)
     if (!defiBanner) return
 
-    const action = defiBanner.actions.find((a) => a.actionName === 'enable-networks')
+    const action =
+      defiBanner.actions[0]?.actionName === 'enable-networks' ? defiBanner.actions[0] : undefined
     if (!action) return
 
     if (!this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId])
