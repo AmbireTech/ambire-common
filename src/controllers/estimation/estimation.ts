@@ -159,6 +159,18 @@ export class EstimationController extends EventEmitter {
               (acc.addr === op.accountAddr ||
                 !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
           )
+          // internal keys first
+          .sort((a, b) => {
+            const aKeyInternal = this.#keystore.keys.find(
+              (k) => k.type === 'internal' && k.addr === a.addr
+            )
+            const bKeyInternal = this.#keystore.keys.find(
+              (k) => k.type === 'internal' && k.addr === b.addr
+            )
+            if (aKeyInternal && !bKeyInternal) return -1
+            if (!aKeyInternal && bKeyInternal) return 1
+            return 0
+          })
           .map((acc) => acc.addr)
       : []
 
