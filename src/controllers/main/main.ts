@@ -1090,9 +1090,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
@@ -1135,6 +1134,12 @@ export class MainController extends EventEmitter implements IMainController {
           )
 
           await this.updateSelectedAccountPortfolio({ networks })
+
+          // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+          this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+            this.selectedAccount.account.addr,
+            updatedAccountsOpsForSelectedAccount.updatedAccountsOps
+          )
 
           Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
             this.portfolio.updateSelectedAccount(
