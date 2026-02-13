@@ -1,4 +1,4 @@
-import { JsonRpcProvider, ZeroAddress } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
 import { BUNDLER } from '../consts/bundlers'
 import {
@@ -89,7 +89,7 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     name: network.name,
     chainId: BigInt(network.chainId),
     rpcUrls: [workingRpcUrl ?? network.rpc[0]],
-    explorerUrl: network.explorers[0].url,
+    explorerUrl: network.explorers[0]?.url || '',
     selectedRpcUrl: workingRpcUrl || '',
     platformId,
     nativeAssetId,
@@ -133,7 +133,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     platformId,
     has7702,
     disabledByDefault,
-    rpcNoStateOverride
+    rpcNoStateOverride,
+    additionalTokenIcons
   } = relayerNetwork
   const {
     native: {
@@ -141,8 +142,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
       name: nativeAssetName,
       coingeckoId: nativeAssetId,
       wrapped: { address: wrappedAddr },
-      oldNativeAssetSymbols,
-      icon
+      oldNativeAssetSymbols
     },
     smartAccounts,
     feeOptions: incomingFeeOptions
@@ -227,7 +227,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     hasSingleton,
     has7702: is7702Enabled,
     disabledByDefault,
-    tokenIcons: icon ? { [ZeroAddress]: icon } : undefined
+    tokenIcons: additionalTokenIcons
   }
 }
 

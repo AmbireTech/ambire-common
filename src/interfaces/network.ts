@@ -180,14 +180,12 @@ export type RelayerNetwork = {
     symbol: string
     name: string
     coingeckoId: string
-    icon: string
     decimals: number
     wrapped: {
       address: string
       symbol: string
       name: string
       coingeckoId: string
-      icon: string
       decimals: number
     }
     oldNativeAssetSymbols?: string[]
@@ -215,6 +213,7 @@ export type RelayerNetwork = {
     }
   }
   disabledByDefault?: boolean
+  additionalTokenIcons?: { [address: string]: string }
 }
 
 export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }
