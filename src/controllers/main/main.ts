@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
+import { nanoid } from 'nanoid'
 
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -1002,6 +1003,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       this.accountPicker.setInitParams({
+        sessionId: nanoid(6),
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
@@ -1036,6 +1038,7 @@ export class MainController extends EventEmitter implements IMainController {
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
       await this.accountPicker.setInitParams({
+        sessionId: nanoid(6),
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
@@ -1069,6 +1072,7 @@ export class MainController extends EventEmitter implements IMainController {
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
       await this.accountPicker.setInitParams({
+        sessionId: nanoid(6),
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,

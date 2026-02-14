@@ -127,7 +127,7 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
-    controller.setInitParams({ keyIterator, hdPathTemplate })
+    controller.setInitParams({ sessionId: 'test', keyIterator, hdPathTemplate })
     await controller.init()
     expect(controller.page).toEqual(DEFAULT_PAGE)
     expect(controller.pageSize).toEqual(DEFAULT_PAGE_SIZE)
@@ -178,6 +178,7 @@ describe('AccountPicker', () => {
       })
 
       controller.setInitParams({
+        sessionId: 'test',
         keyIterator: null,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
@@ -192,6 +193,7 @@ describe('AccountPicker', () => {
     const PAGE_SIZE = 5
     const keyIterator = new KeyIterator(process.env.SEED)
     controller.setInitParams({
+      sessionId: 'test',
       keyIterator,
       pageSize: PAGE_SIZE,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -215,6 +217,7 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     controller.setInitParams({
+      sessionId: 'test',
       keyIterator,
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -250,6 +253,7 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     controller.setInitParams({
+      sessionId: 'test',
       keyIterator,
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -272,6 +276,7 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     controller.setInitParams({
+      sessionId: 'test',
       keyIterator,
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -295,6 +300,7 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     controller.setInitParams({
+      sessionId: 'test',
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
@@ -317,6 +323,7 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     controller.setInitParams({
+      sessionId: 'test',
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
@@ -345,6 +352,7 @@ describe('AccountPicker', () => {
       const keyIterator = new KeyIterator(process.env.SEED)
       const pageSize = 5
       controller.setInitParams({
+        sessionId: 'test',
         keyIterator,
         hdPathTemplate: value,
         pageSize,
