@@ -133,8 +133,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     platformId,
     has7702,
     disabledByDefault,
-    rpcNoStateOverride,
-    additionalTokenIcons
+    rpcNoStateOverride
   } = relayerNetwork
   const {
     native: {
@@ -226,8 +225,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     features,
     hasSingleton,
     has7702: is7702Enabled,
-    disabledByDefault,
-    tokenIcons: additionalTokenIcons
+    disabledByDefault
   }
 }
 

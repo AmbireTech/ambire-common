@@ -115,7 +115,6 @@ export interface Network {
   allowForce4337?: boolean
   disabled?: boolean
   customBundlerUrl?: string
-  tokenIcons?: { [address: string]: string }
 }
 
 export interface AddNetworkRequestParams {
@@ -213,7 +212,6 @@ export type RelayerNetwork = {
     }
   }
   disabledByDefault?: boolean
-  additionalTokenIcons?: { [address: string]: string }
 }
 
 export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

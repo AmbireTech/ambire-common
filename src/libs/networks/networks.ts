@@ -1,5 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
 import { toBeHex } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
@@ -509,8 +507,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
         suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
         suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
         iconUrls: relayerNetwork.iconUrls,
-        predefined: relayerNetwork.predefined,
-        tokenIcons: relayerNetwork.tokenIcons
+        predefined: relayerNetwork.predefined
       }
     }
   })
