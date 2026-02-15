@@ -158,7 +158,6 @@ const prepareTest = async () => {
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore: keystoreCtrl,
     autoLogin: autoLoginCtrl
   })
 

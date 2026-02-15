@@ -63,9 +63,6 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   promise: Promise<void> | undefined
 
-  // collapse multiple start/restart calls in the same tick
-  #pendingStart?: RecurringTimeoutStartOptions
-
   startScheduled = false
 
   constructor(
@@ -122,14 +119,13 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #scheduleStart(opts: RecurringTimeoutStartOptions = {}) {
     if (this.running) return
-    this.#pendingStart = opts // collect latest opts for this tick
+
     if (this.startScheduled) return
     this.startScheduled = true
 
     queueMicrotask(() => {
       this.startScheduled = false
-      const { timeout: newTimeout, runImmediately, allowOverlap } = this.#pendingStart || {}
-      this.#pendingStart = undefined
+      const { timeout: newTimeout, runImmediately, allowOverlap } = opts
 
       this.running = true
       this.startedRunningAt = Date.now()

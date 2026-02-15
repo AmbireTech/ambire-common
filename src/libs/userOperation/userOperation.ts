@@ -13,11 +13,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-//  TODO: dependency cycle
-// eslint-disable-next-line import/no-cycle
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
-//  TODO: dependency cycle
-// eslint-disable-next-line import/no-cycle
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -33,10 +29,6 @@ export function getPaymasterSpoof() {
   const spoofSig = abiCoder.encode(['address'], [AMBIRE_PAYMASTER_SIGNER]) + SPOOF_SIGTYPE
   const simulationData = abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, spoofSig])
   return hexlify(concat([AMBIRE_PAYMASTER, simulationData]))
-}
-
-export function getSigForCalculations() {
-  return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
 }
 
 // get the call to give privileges to the entry point
@@ -232,7 +224,7 @@ export const parseLogs = (
     try {
       if (
         log.topics.length === 4 &&
-        (log.topics[1].toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
+        (log.topics[1]!.toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
       ) {
         // decode data for UserOperationEvent:
         // 'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'

@@ -58,16 +58,21 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
+    safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
   }
   signAccountOp: ISignAccountOpController
 }
 
-export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'message'
   meta: UserRequestBase['meta'] & {
     params: { message: Hex }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: string
+    safeAppId?: string
   }
 }
 
@@ -84,6 +89,10 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: string
+    safeAppId?: string
   }
 }
 
@@ -98,6 +107,10 @@ export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> 
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: string
+    safeAppId?: string
   }
 }
 

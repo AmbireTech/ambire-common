@@ -6,6 +6,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import {
@@ -137,6 +138,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #portfolio: IPortfolioController
 
+  #safe: ISafeController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #callRelayer: Function
@@ -152,6 +155,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           portfoliosToUpdate: PortfoliosToUpdate
           updatedAccountsOps: SubmittedAccountOp[]
           newestOpTimestamp: number
+          shouldFetchSafeTxns: boolean
         }>
       | undefined
   } = {}
@@ -165,6 +169,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,
+    safe: ISafeController,
     onContractsDeployed: (network: Network) => Promise<void>,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
@@ -177,6 +182,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#providers = providers
     this.#networks = networks
     this.#portfolio = portfolio
+    this.#safe = safe
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -414,6 +420,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         portfoliosToUpdate: PortfoliosToUpdate
         updatedAccountsOps: SubmittedAccountOp[]
         newestOpTimestamp: number
+        shouldFetchSafeTxns: boolean
       }
     >
   > {
@@ -458,6 +465,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     updatedAccountsOps: SubmittedAccountOp[]
     newestOpTimestamp: number
     portfoliosToUpdate: PortfoliosToUpdate
+    shouldFetchSafeTxns: boolean
   }> {
     await this.#initialLoadPromise
 
@@ -467,7 +475,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainsToUpdate: [],
         updatedAccountsOps: [],
         portfoliosToUpdate: {},
-        newestOpTimestamp: 0
+        newestOpTimestamp: 0,
+        shouldFetchSafeTxns: false
       }
 
     // This flag tracks the changes to AccountsOps statuses
@@ -477,6 +486,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const chainsToUpdate = new Set<Network['chainId']>()
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
+
+    // we should fetch safe txns again upon failure
+    let shouldFetchSafeTxns = false
 
     // Use this flag to make the auto-refresh slower with the passege of time.
     // implementation is in background.ts
@@ -506,10 +518,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
               newestOpTimestamp = accountOp.timestamp
             }
 
-            const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
+            const declareStuckIfFiveMinsPassed = async (op: SubmittedAccountOp) => {
               if (hasTimePassedSinceBroadcast(op, 5)) {
                 const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
-                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                if (updatedOpIfAny) {
+                  updatedAccountsOps.push(updatedOpIfAny)
+                  const acc = this.#accounts.accounts.find((a) => a.addr === op.accountAddr)
+                  if (acc && !!acc.safeCreation) {
+                    await this.#safe.unresolve(op.nonce).catch((e) => e)
+                    shouldFetchSafeTxns = true
+                  }
+                }
               }
             }
 
@@ -527,7 +546,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 return
               }
               if (fetchTxnIdResult.status === 'not_found') {
-                declareStuckIfFiveMinsPassed(accountOp)
+                await declareStuckIfFiveMinsPassed(accountOp)
                 return
               }
 
@@ -610,6 +629,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     if (foundTokens.length) {
                       this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
                     }
+                  } else {
+                    // if the txn resulted in a failure, unresolve all safe txns
+                    // with the same nonce so that the user can retry
+                    const acc = this.#accounts.accounts.find(
+                      (a) => a.addr === accountOp.accountAddr
+                    )
+                    if (acc && !!acc.safeCreation) {
+                      await this.#safe.unresolve(accountOp.nonce).catch((e) => e)
+                      shouldFetchSafeTxns = true
+                    }
                   }
 
                   // eslint-disable-next-line no-param-reassign
@@ -640,7 +669,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 const txn = txnId ? await provider.getTransaction(txnId) : null
                 // eslint-disable-next-line no-continue
                 if (txn) continue
-                declareStuckIfFiveMinsPassed(accountOp)
+                await declareStuckIfFiveMinsPassed(accountOp)
               }
             } catch {
               this.emitError({
@@ -667,7 +696,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       chainsToUpdate: Array.from(chainsToUpdate),
       updatedAccountsOps,
       portfoliosToUpdate,
-      newestOpTimestamp
+      newestOpTimestamp,
+      shouldFetchSafeTxns
     }
   }
 

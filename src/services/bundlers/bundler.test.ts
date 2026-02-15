@@ -18,13 +18,10 @@ import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { getSigForCalculations } from '../../libs/estimate/estimateHelpers'
 import { getPaymasterDataForEstimate } from '../../libs/paymaster/paymaster'
 import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
-import {
-  getActivatorCall,
-  getSigForCalculations,
-  getUserOperation
-} from '../../libs/userOperation/userOperation'
+import { getActivatorCall, getUserOperation } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
 import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'

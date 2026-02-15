@@ -1,6 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
+import { Hex } from 'interfaces/hex'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
@@ -18,6 +19,7 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
+import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import {
   ISwapAndBridgeController,
@@ -44,7 +46,11 @@ import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
-import { getAccountOpBanners, getDappUserRequestsBanners } from '../../libs/banners/banners'
+import {
+  getAccountOpBanners,
+  getDappUserRequestsBanners,
+  getSafeMessageRequestBanners
+} from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -57,17 +63,13 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import {
-  getActiveRoutesForAccount,
-  getSwapAndBridgeRequestParams
-} from '../../libs/swapAndBridge/swapAndBridge'
+import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
   getMintVestingRequestParams,
   getTransferRequestParams
 } from '../../libs/transfer/userRequest'
-import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -132,6 +134,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #transactionManager?: ITransactionManagerController
 
   #ui: IUiController
+
+  #safe: ISafeController
 
   #autoLogin: IAutoLoginController
 
@@ -205,6 +209,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     transfer,
     swapAndBridge,
     transactionManager,
+    safe,
     ui,
     autoLogin,
     getDapp,
@@ -236,6 +241,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
+    safe: ISafeController
     autoLogin: IAutoLoginController
     getDapp: (id: string) => Promise<Dapp | undefined>
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
@@ -263,6 +269,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
+    this.#safe = safe
     this.#autoLogin = autoLogin
     this.#getDapp = getDapp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -302,6 +309,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
+    await this.#safe.initialLoadPromise
   }
 
   get visibleUserRequests(): UserRequest[] {
@@ -452,12 +460,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-      } else if (req.kind === 'typedMessage' || req.kind === 'message') {
+      } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
         ) as PlainTextMessageUserRequest | TypedMessageUserRequest | undefined
 
-        if (existingMessageRequest) {
+        // remove the request only if it's not a safe req
+        if (existingMessageRequest && !this.#selectedAccount.account?.safeCreation) {
+          existingMessageRequest.meta.accountAddr
           await this.rejectUserRequests('User rejected the message request', [
             existingMessageRequest.id
           ])
@@ -681,7 +691,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       }
 
-      const userRequestsToRejectOnWindowClose = this.userRequests.filter((r) => r.kind !== 'calls')
+      const userRequestsToRejectOnWindowClose = this.userRequests.filter(
+        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive
+      )
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
@@ -798,15 +810,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       shouldRemoveSwapAndBridgeRoute?: boolean
       shouldUpdateAccount?: boolean
       shouldOpenNextRequest?: boolean
+      shouldRejectSafeRequests?: boolean
     }
   ) {
     const {
       shouldRemoveSwapAndBridgeRoute = true,
       shouldUpdateAccount = true,
-      shouldOpenNextRequest = true
+      shouldOpenNextRequest = true,
+      shouldRejectSafeRequests = true
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
+    const safeResolveIds: { txnIds: string[]; nonce: bigint }[] = []
+    const safeRejectIds: string[] = []
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -836,6 +852,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
+        // if it's a safe txn:
+        // - reject it upon a normal reject req;
+        // - resolve it on accountOp resolve
+        if (
+          !!req.signAccountOp.account.safeCreation &&
+          req.signAccountOp.accountOp.txnId &&
+          req.signAccountOp.accountOp.nonce
+        ) {
+          if (shouldRejectSafeRequests) safeRejectIds.push(req.signAccountOp.accountOp.txnId)
+          else {
+            const resolved = safeResolveIds.find(
+              (txns) => txns.nonce === req.signAccountOp.accountOp.nonce
+            )
+            if (!resolved)
+              safeResolveIds.push({
+                nonce: req.signAccountOp.accountOp.nonce,
+                txnIds: [req.signAccountOp.accountOp.txnId]
+              })
+            else resolved.txnIds.push(req.signAccountOp.accountOp.txnId)
+          }
+        }
+
         req.signAccountOp.destroy()
         return
       }
@@ -851,7 +889,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           userRequestsToAdd.push(r)
         })
       }
+      if (kind === 'message' || kind === 'siwe' || kind === 'typedMessage') {
+        const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
+        if (!account || !account.safeCreation) return
+
+        if (meta.safeAppId) safeRejectIds.push(`${meta.hash}-${meta.safeAppId}`)
+      }
     })
+
+    // reject all safe txns so they do not appear by accident again
+    if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
+    if (safeResolveIds.length) await this.#safe.resolveTxnId(safeResolveIds)
 
     if (userRequestsToAdd.length) {
       await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
@@ -932,7 +980,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         userRequestParams,
         executionType
       )
-      if (userRequest) await this.addUserRequests([userRequest], { ...rest })
+      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...rest })
     }
 
     if (type === 'transferRequest') {
@@ -953,6 +1001,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'intentRequest') {
       await this.#buildIntentUserRequest(params)
+    }
+
+    if (type === 'safeSignMessageRequest') {
+      await this.#buildSafeSignMessageUserRequest(params)
     }
   }
 
@@ -1001,12 +1053,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
       }
 
-      const baseAcc = getBaseAccount(
-        this.#selectedAccount.account,
-        accountState,
-        this.#keystore.getAccountKeys(this.#selectedAccount.account),
-        network
-      )
+      const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
       const accountAddr = getAddress(request.params[0].from)
 
       if (isWalletSendCalls && !request.params[0].calls.length)
@@ -1306,7 +1353,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
 
@@ -1337,6 +1383,39 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       executionType
     )
     if (userRequest) await this.addUserRequests([userRequest], { executionType, position: 'last' })
+  }
+
+  async #buildSafeSignMessageUserRequest({
+    chainId,
+    signed,
+    message,
+    messageHash,
+    safeAppId
+  }: {
+    chainId: bigint
+    signed: string[]
+    message: Hex
+    messageHash: Hex
+    safeAppId: string | null
+  }) {
+    await this.initialLoadPromise
+    if (!this.#selectedAccount.account) return
+
+    const req: PlainTextMessageUserRequest = {
+      id: uuidv4(),
+      kind: 'message',
+      dappPromises: [],
+      meta: {
+        params: { message },
+        accountAddr: this.#selectedAccount.account.addr,
+        chainId,
+        keepRequestAlive: true,
+        signed,
+        hash: messageHash,
+        safeAppId: safeAppId || undefined
+      }
+    }
+    await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
   }
 
   async #buildTransferUserRequest({
@@ -1377,7 +1456,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
 
@@ -1456,12 +1534,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
-        const baseAcc = getBaseAccount(
-          this.#selectedAccount.account,
-          accountState,
-          this.#keystore.getAccountKeys(this.#selectedAccount.account),
-          network
-        )
+        const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
         const swapAndBridgeRequestParams = await getSwapAndBridgeRequestParams(
           transaction,
           network.chainId,
@@ -1586,10 +1659,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#selectedAccount.account.addr,
           this.userRequests
         ),
-        selectedAccount: this.#selectedAccount.account.addr,
+        selectedAccount: this.#selectedAccount.account,
         networks: this.#networks.networks
       }),
-      ...getDappUserRequestsBanners(this.visibleUserRequests)
+      ...getDappUserRequestsBanners(this.#selectedAccount.account, this.visibleUserRequests),
+      ...getSafeMessageRequestBanners(this.#selectedAccount.account, this.userRequests)
     ]
   }
 
@@ -1610,7 +1684,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) =>
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
-        r.meta.chainId === meta.chainId
+        r.meta.chainId === meta.chainId &&
+        (!r.signAccountOp.accountOp.txnId ||
+          meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId)
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {
@@ -1635,24 +1711,41 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
         }
       } else {
-        existingUserRequest.signAccountOp.update({
-          accountOpData: {
-            calls: [
-              ...existingUserRequest.signAccountOp.accountOp.calls,
-              ...calls.map((call) => ({
-                ...call,
-                id: uuidv4(),
-                to: call.to,
-                data: call.data || '0x',
-                value: call.value ? getBigInt(call.value) : 0n
-              }))
-            ],
-            meta: {
-              ...existingUserRequest.signAccountOp.accountOp.meta,
-              ...meta
+        // we're allowing updates only on the signature field for
+        // already signed accountOps
+        if (meta.safeTxnProps) {
+          if (meta.safeTxnProps.signature !== existingUserRequest.signAccountOp.accountOp.signature)
+            existingUserRequest.signAccountOp.update({
+              accountOpData: {
+                signature: meta.safeTxnProps.signature,
+                txnId: meta.safeTxnProps.txnId,
+                nonce: meta.safeTxnProps.nonce
+              }
+            })
+
+          // if we're updating a signAccountOp with external data (txnId / signature),
+          // we do not wish to continue any further down as race conditions may happen
+          return
+        } else {
+          existingUserRequest.signAccountOp.update({
+            accountOpData: {
+              calls: [
+                ...existingUserRequest.signAccountOp.accountOp.calls,
+                ...calls.map((call) => ({
+                  ...call,
+                  id: uuidv4(),
+                  to: call.to,
+                  data: call.data || '0x',
+                  value: call.value ? getBigInt(call.value) : 0n
+                }))
+              ],
+              meta: {
+                ...existingUserRequest.signAccountOp.accountOp.meta,
+                ...meta
+              }
             }
-          }
-        })
+          })
+        }
         existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
       }
 
@@ -1684,9 +1777,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           : new Promise(() => {}) // Explicitly never-resolving promise
       ])) as any
 
+      // do not build requests for expired safe txns
+      if (meta.safeTxnProps?.nonce && meta.safeTxnProps?.nonce < accountState.nonce) return
+
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
-      const requestId = `${meta.accountAddr}-${meta.chainId}`
+      const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1712,10 +1808,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             signingKeyType: null,
             gasLimit: null,
             gasFeePayment: null,
-            nonce: accountState.nonce,
-            signature: account.associatedKeys[0]
-              ? generateSpoofSig(account.associatedKeys[0])
-              : null,
+            nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
+            signature: meta.safeTxnProps?.signature ?? null,
+            txnId: meta.safeTxnProps?.txnId ?? undefined,
             calls: [
               ...calls.map((call) => ({
                 ...call,
@@ -1929,6 +2024,32 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     this.emitUpdate()
+  }
+
+  getSameNonceSafeRequests(requestId: UserRequest['id']): UserRequest[] {
+    const req = this.userRequests.find((uReq) => uReq.id === requestId)
+    if (!req || req.kind !== 'calls' || !req.signAccountOp.account.safeCreation) return []
+
+    const broadcastNonce = req.signAccountOp.accountOp.nonce
+    return this.userRequests.filter(
+      (r) =>
+        r.kind === 'calls' &&
+        !!r.signAccountOp.account.safeCreation &&
+        r.signAccountOp.accountOp.nonce === broadcastNonce
+    )
+  }
+
+  setPartiallyCompleteRequest(
+    requestId: UserRequest['id'],
+    meta?: { signed?: string[]; hash?: string; safeAppId?: number }
+  ): void {
+    const req = this.userRequests.find((uReq) => uReq.id === requestId)
+    if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
+
+    req.meta.keepRequestAlive = true
+    if (meta?.signed) req.meta.signed = meta.signed
+    if (meta?.hash) req.meta.hash = meta.hash
+    if (meta?.safeAppId) req.meta.safeAppId = meta.safeAppId.toString()
   }
 
   toJSON() {

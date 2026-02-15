@@ -1,5 +1,6 @@
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
+import { Key } from './keystore'
 import { Network } from './network'
 
 export type IAccountsController = ControllerInterface<
@@ -21,6 +22,7 @@ export interface Account {
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  safeCreation?: SafeAccountCreation
   preferences: AccountPreferences
   email?: string
   newlyAdded?: boolean
@@ -42,6 +44,15 @@ export interface AccountCreation {
   identityCreatedAt?: number
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
+}
+
+// creation data for Safe accounts
+export interface SafeAccountCreation {
+  factoryAddr: Hex
+  singleton: Hex
+  saltNonce: Hex
+  setupData: Hex
+  version: string
 }
 
 export interface AmbireSmartAccountIdentityCreateRequest {
@@ -88,8 +99,8 @@ export interface AccountOnchainState {
   eoaNonce: bigint | null
   nonce: bigint
   erc4337Nonce: bigint
-  associatedKeys: { [key: string]: string }
-  deployError: boolean
+  associatedKeys: string[]
+  importedAccountKeys: Key[]
   balance: bigint
   isEOA: boolean
   isErc4337Enabled: boolean
@@ -99,6 +110,7 @@ export interface AccountOnchainState {
   isSmarterEoa: boolean
   delegatedContract: Hex | null
   delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
+  threshold: number
   updatedAt: number
 }
 
