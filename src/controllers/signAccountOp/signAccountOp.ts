@@ -528,6 +528,23 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return signer
   }
 
+  #setDefaultSigners(accountState?: AccountOnchainState) {
+    if (!accountState || !this.account.safeCreation) return
+
+    const signers = getDefaultOwners(
+      this.accountKeyStoreKeys,
+      accountState.threshold,
+      this.accountOp.signed
+    ).map((k) => ({
+      addr: k.addr,
+      type: k.type
+    }))
+
+    this.#updateAccountOp({
+      signers
+    })
+  }
+
   #validateAccountOp(): SignAccountOpError | null {
     const invalidAccountOpError =
       'The transaction is missing essential data. Please contact support.'
@@ -703,19 +720,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // broadcast easily.
       // The user can change this setting during signing, but we're setting
       // the default option as a "quick" broadcast way without choosing signers
-      const signers = this.account.safeCreation
-        ? getDefaultOwners(
-            this.accountKeyStoreKeys,
-            accountState.threshold,
-            this.accountOp.signed
-          ).map((k) => ({
-            addr: k.addr,
-            type: k.type
-          }))
-        : undefined
+      this.#setDefaultSigners(accountState)
 
       this.#updateAccountOp({
-        signers,
         signingKeyAddr: this.accountKeyStoreKeys[0]!.addr,
         signingKeyType: this.accountKeyStoreKeys[0]!.type
       })
@@ -2136,8 +2143,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningErrorAndResetToReadyToSign(error: string, sendCrashReport?: boolean) {
-    this.emitError({ level: 'major', message: error, error: new Error(error), sendCrashReport })
+  #emitSigningErrorAndResetToReadyToSign({
+    message,
+    sendCrashReport,
+    accountState
+  }: {
+    message: string
+    sendCrashReport?: boolean
+    accountState?: AccountOnchainState
+  }) {
+    this.#setDefaultSigners(accountState)
+    this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -2372,7 +2388,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   async sign() {
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     // when signing begings, we stop immediatelly state updates on the controller
@@ -2383,17 +2399,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     if (!this.accountOp.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     if (!this.estimation.estimation) {
       const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     const estimation = this.estimation.estimation as FullEstimationSummary
@@ -2455,7 +2471,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (!accountState) {
       const message = `Unable to sign the transaction. During the preparation step, required transaction information was found missing (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message, accountState })
     }
 
     try {
@@ -2741,7 +2757,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
-      this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
+      this.#emitSigningErrorAndResetToReadyToSign({
+        message,
+        sendCrashReport: error?.sendCrashReport,
+        accountState
+      })
     }
   }
 
@@ -3214,6 +3234,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (this.#onBroadcastFailed) {
       this.#onBroadcastFailed(this.#accountOp)
     }
+
+    // reset the signers upon failure if the account is a safe;
+    // otherwise, the user cannot choose new ones
+    this.#setDefaultSigners(accountState)
 
     this.emitError({
       level: 'major',
