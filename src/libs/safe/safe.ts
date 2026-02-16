@@ -269,8 +269,7 @@ export async function addMessage(
   chainId: bigint,
   safeAddress: Hex,
   message: string | EIP712TypedData,
-  signature: string,
-  safeAppId: number
+  signature: string
 ) {
   const apiKit = new SafeApiKit({
     chainId,
@@ -278,8 +277,7 @@ export async function addMessage(
   })
   return apiKit.addMessage(safeAddress, {
     message,
-    signature,
-    safeAppId
+    signature
   })
 }
 
@@ -492,7 +490,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     message: Hex | EIP712TypedData
     messageHash: Hex
     signature: Hex
-    safeAppId: number
+    created: number
   }
   isConfirmed: boolean
 }[] {
@@ -504,7 +502,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
       message: Hex | EIP712TypedData
       messageHash: Hex
       signature: Hex
-      safeAppId: number
+      created: number
     }
     isConfirmed: boolean
   }[] = []
@@ -531,9 +529,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations.map((c) => c.signature) as Hex[],
             message.messageHash
           ),
-          safeAppId: message.safeAppId
-            ? Number(message.safeAppId)
-            : new Date(message.created).getTime()
+          created: new Date(message.created).getTime()
         },
         isConfirmed: !!message.isConfirmed
       })

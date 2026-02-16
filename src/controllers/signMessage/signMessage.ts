@@ -91,8 +91,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   status: SignMessageStatus
 
-  safeAppId?: number
-
   constructor(
     keystore: IKeystoreController,
     providers: IProvidersController,
@@ -117,8 +115,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     dapp,
     messageToSign,
     signed,
-    hash,
-    safeAppId
+    hash
   }: {
     dapp?: { name: string; icon: string }
     messageToSign: Message
@@ -126,7 +123,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     // applicable on Safe message
     signed?: string[]
     hash?: Hex
-    safeAppId?: number
   }) {
     // In the unlikely case that the signMessage controller was already
     // initialized, but not reset, force reset it to prevent misleadingly
@@ -189,7 +185,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
         if (this.signed.length && notSigned.length === 0) this.status = SignMessageStatus.Partial
         this.hash = hash
-        this.safeAppId = safeAppId
         this.existsInSafeGlobal = !!hash
       } else {
         // if the account is not safe & view only, set a default signer
@@ -307,8 +302,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (!provider) throw new Error(`Network details missing. Please try again`)
 
       let signature
-      let safeAppId = this.safeAppId
-      if (!safeAppId && !this.existsInSafeGlobal) safeAppId = Date.now()
 
       try {
         if (
@@ -349,13 +342,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (!this.existsInSafeGlobal && safeAppId && signatures.length < accountState.threshold) {
+          if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
             await addMessage(
               this.#network.chainId,
               this.#account.addr as Hex,
               toUtf8String(this.messageToSign.content.message),
-              signature,
-              safeAppId
+              signature
             )
           }
         }
@@ -399,13 +391,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (!this.existsInSafeGlobal && safeAppId && signatures.length < accountState.threshold) {
+          if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
             await addMessage(
               this.#network.chainId,
               this.#account.addr as Hex,
               this.messageToSign.content.message as EIP712TypedData,
-              signature,
-              safeAppId
+              signature
             )
           }
         }
@@ -486,8 +477,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         this.signed.length >= accountState.threshold
           ? SignMessageStatus.Done
           : SignMessageStatus.Partial
-
-      this.safeAppId = safeAppId
 
       return this.signedMessage
     } catch (e: any) {

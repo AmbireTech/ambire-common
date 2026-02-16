@@ -78,6 +78,6 @@ export type BuildRequest =
         signed: string[]
         message: Hex | EIP712TypedData
         messageHash: Hex
-        safeAppId: number | undefined
+        created: number
       }
     }

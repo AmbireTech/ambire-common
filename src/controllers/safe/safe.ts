@@ -8,7 +8,7 @@ import SafeApiKit, {
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS } from '../../consts/safe'
-import { SafeAccountCreation } from '../../interfaces/account'
+import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
@@ -32,6 +32,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   #storage: IStorageController
 
   #networks: INetworksController
+
+  #accounts: IAccountsController
 
   #providers: IProvidersController
 
@@ -64,23 +66,27 @@ export class SafeController extends EventEmitter implements ISafeController {
     eventEmitterRegistry,
     networks,
     providers,
-    storage
+    storage,
+    accounts
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
     providers: IProvidersController
     storage: IStorageController
+    accounts: IAccountsController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
     this.#providers = providers
     this.#storage = storage
+    this.#accounts = accounts
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
   }
 
   async #load() {
+    await this.#accounts.initialLoadPromise
     this.#rejectedSafeTxns = await this.#storage.get('rejectedSafeTxns', [])
     this.#automaticallyResolvedSafeTxns = await this.#storage.get(
       'automaticallyResolvedSafeTxns',
@@ -174,24 +180,32 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   getMessageId(msg: SafeMessage): string {
-    return `${msg.messageHash}-${msg.safeAppId ?? new Date(msg.created).getTime()}`
+    return `${msg.messageHash}-${new Date(msg.created).getTime()}`
   }
 
-  #filterOutHidden(pending: SafeResults): SafeResults {
+  #filterOutHidden(pending: SafeResults, safeAddr: string): SafeResults {
     // filter out all resolved & rejected safe txns
     const hiddenTxns = [
       ...this.#rejectedSafeTxns,
       ...this.#automaticallyResolvedSafeTxns.map((row) => row.txnIds).flat()
     ]
+
     return Object.assign(
       {},
       ...Object.keys(pending).map((chainId) => {
+        const state = this.#accounts.accountStates[safeAddr]?.[chainId]
+        const importedKeysLength = state?.importedAccountKeys.length || 0
         return {
           [chainId]: {
             txns: pending[chainId]!.txns.filter((r) => !hiddenTxns.includes(r.safeTxHash)),
-            messages: pending[chainId]!.messages.filter(
-              (m) => !hiddenTxns.includes(this.getMessageId(m))
-            )
+            messages: pending[chainId]!.messages.filter((m) => {
+              return (
+                // filter out rejected msgs by the user
+                !hiddenTxns.includes(this.getMessageId(m)) &&
+                // and those that the user cannot sign
+                importedKeysLength > m.confirmations.length
+              )
+            })
           }
         }
       })
@@ -209,7 +223,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
 
-    return this.#filterOutHidden(pending)
+    return this.#filterOutHidden(pending, safeAddr)
   }
 
   async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<Hex[]> {

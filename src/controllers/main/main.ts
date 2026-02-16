@@ -297,7 +297,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       networks: this.networks,
       providers: this.providers,
-      storage: this.storage
+      storage: this.storage,
+      accounts: this.accounts
     })
     this.selectedAccount = new SelectedAccountController({
       eventEmitterRegistry,
@@ -992,8 +993,7 @@ export class MainController extends EventEmitter implements IMainController {
       // mark the request so it doesn't get removed on close
       this.requests.setPartiallyCompleteRequest(signedMessage.fromRequestId, {
         signed: this.signMessage.signed,
-        hash: this.signMessage.hash,
-        safeAppId: this.signMessage.safeAppId
+        hash: this.signMessage.hash
       })
     }
 
@@ -1359,12 +1359,19 @@ export class MainController extends EventEmitter implements IMainController {
    */
   async fetchSafeTxns(chainIds: bigint[] = []) {
     if (this.selectedAccount?.account?.safeCreation) {
-      const finalChainIds = chainIds.length
-        ? chainIds
-        : this.networks.networks.map((n) => n.chainId)
       const accountState = await this.accounts.getOrFetchAccountStates(
         this.selectedAccount.account.addr
       )
+      const finalChainIds = chainIds.length
+        ? chainIds
+        : this.networks.networks
+            .filter((n) => {
+              // fetch info only about deployed safes
+              const state = accountState?.[n.chainId.toString()]
+              return state?.isDeployed
+            })
+            .map((n) => n.chainId)
+
       const networksAndThresholds = finalChainIds.map((c) => ({
         chainId: c,
         threshold: accountState[c.toString()]?.threshold || 0

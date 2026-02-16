@@ -895,7 +895,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account || !account.safeCreation) return
 
-        if (meta.safeAppId) safeRejectIds.push(`${meta.hash}-${meta.safeAppId}`)
+        if (meta.created) safeRejectIds.push(`${meta.hash}-${meta.created}`)
       }
     })
 
@@ -1392,13 +1392,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     signed,
     message,
     messageHash,
-    safeAppId
+    created
   }: {
     chainId: bigint
     signed: string[]
     message: Hex | EIP712TypedData
     messageHash: Hex
-    safeAppId: number | undefined
+    created: number
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1416,7 +1416,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           keepRequestAlive: true,
           signed,
           hash: messageHash,
-          safeAppId: safeAppId || undefined
+          created
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1446,7 +1446,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         keepRequestAlive: true,
         signed,
         hash: messageHash,
-        safeAppId: safeAppId || undefined
+        created
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -2075,7 +2075,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   setPartiallyCompleteRequest(
     requestId: UserRequest['id'],
-    meta?: { signed?: string[]; hash?: Hex; safeAppId?: number }
+    meta?: { signed?: string[]; hash?: Hex }
   ): void {
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
     if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
@@ -2083,7 +2083,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     req.meta.keepRequestAlive = true
     if (meta?.signed) req.meta.signed = meta.signed
     if (meta?.hash) req.meta.hash = meta.hash
-    if (meta?.safeAppId) req.meta.safeAppId = meta.safeAppId
   }
 
   toJSON() {
