@@ -1252,7 +1252,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             primaryType: typedData.primaryType
           },
           accountAddr: msgAddress,
-          chainId: network.chainId
+          chainId: typedData.domain?.chainId ? BigInt(typedData.domain.chainId) : network.chainId
         },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest

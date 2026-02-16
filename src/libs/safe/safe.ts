@@ -517,10 +517,17 @@ export function toSigMessageUserRequests(response: SafeResults): {
         : null
       if (!signature) return
 
+      // if the message is eip-712, the chain id of the message may be in the
+      // domain itself. If that's the case, set that as the chain as that is
+      // the correct one - the user will be signing for that chain
+      const messageChainId = (message.message as EIP712TypedData)?.domain?.chainId
+        ? BigInt((message.message as EIP712TypedData).domain.chainId!)
+        : BigInt(chainId)
+
       userRequests.push({
         type: 'safeSignMessageRequest',
         params: {
-          chainId: BigInt(chainId),
+          chainId: messageChainId,
           signed: message.confirmations.map((confirm) => confirm.owner),
           message:
             typeof message.message === 'string'

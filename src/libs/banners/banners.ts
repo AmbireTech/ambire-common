@@ -115,7 +115,6 @@ export const getSafeMessageRequestBanners = (
   if (!account.safeCreation) return []
 
   const requests = userRequests.filter((r) => ['message', 'typedMessage', 'siwe'].includes(r.kind))
-  console.log('requests', requests)
   if (!requests.length) return []
 
   return [
