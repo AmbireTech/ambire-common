@@ -96,7 +96,7 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
   }
 }
 
-export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'typedMessage'
   meta: UserRequestBase['meta'] & {
     params: {

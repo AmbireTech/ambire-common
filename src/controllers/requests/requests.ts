@@ -1,8 +1,10 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt } from 'ethers'
+import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField } from 'ethers'
 import { Hex } from 'interfaces/hex'
 import { v4 as uuidv4 } from 'uuid'
+
+import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -1394,19 +1396,51 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }: {
     chainId: bigint
     signed: string[]
-    message: Hex
+    message: Hex | EIP712TypedData
     messageHash: Hex
     safeAppId: string | null
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
 
-    const req: PlainTextMessageUserRequest = {
+    // plain text
+    if (typeof message === 'string') {
+      const req: PlainTextMessageUserRequest = {
+        id: uuidv4(),
+        kind: 'message',
+        dappPromises: [],
+        meta: {
+          params: { message },
+          accountAddr: this.#selectedAccount.account.addr,
+          chainId,
+          keepRequestAlive: true,
+          signed,
+          hash: messageHash,
+          safeAppId: safeAppId || undefined
+        }
+      }
+      await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
+    }
+
+    const typedData = message as EIP712TypedData
+    if (typedData.domain.salt && typeof typedData.domain.salt !== 'string') {
+      typedData.domain.salt = hexlify(new Uint8Array(typedData.domain.salt))
+    }
+
+    // eip-712
+    const req: TypedMessageUserRequest = {
       id: uuidv4(),
-      kind: 'message',
+      kind: 'typedMessage',
       dappPromises: [],
       meta: {
-        params: { message },
+        // basically, it's the same eip-712 message but one is coming
+        // from safe with the safe typehints, and other is ethers
+        params: typedData as {
+          domain: TypedDataDomain
+          types: Record<string, Array<TypedDataField>>
+          message: Record<string, any>
+          primaryType: keyof Record<string, Array<TypedDataField>>
+        },
         accountAddr: this.#selectedAccount.account.addr,
         chainId,
         keepRequestAlive: true,

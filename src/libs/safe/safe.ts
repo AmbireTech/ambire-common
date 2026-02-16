@@ -489,7 +489,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
   params: {
     chainId: bigint
     signed: string[]
-    message: Hex
+    message: Hex | EIP712TypedData
     messageHash: Hex
     signature: Hex
     safeAppId: string
@@ -501,7 +501,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     params: {
       chainId: bigint
       signed: string[]
-      message: Hex
+      message: Hex | EIP712TypedData
       messageHash: Hex
       signature: Hex
       safeAppId: string
@@ -522,7 +522,10 @@ export function toSigMessageUserRequests(response: SafeResults): {
         params: {
           chainId: BigInt(chainId),
           signed: message.confirmations.map((confirm) => confirm.owner),
-          message: hexlify(toUtf8Bytes(message.message as string)) as Hex,
+          message:
+            typeof message.message === 'string'
+              ? (hexlify(toUtf8Bytes(message.message)) as Hex)
+              : message.message,
           messageHash: message.messageHash as Hex,
           signature: sortSigs(
             message.confirmations.map((c) => c.signature) as Hex[],

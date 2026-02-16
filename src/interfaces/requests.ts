@@ -1,3 +1,5 @@
+import { EIP712TypedData } from '@safe-global/types-kit'
+
 import { TokenResult } from '../libs/portfolio'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
@@ -74,7 +76,7 @@ export type BuildRequest =
       params: {
         chainId: bigint
         signed: string[]
-        message: Hex
+        message: Hex | EIP712TypedData
         messageHash: Hex
         safeAppId: string | null
       }
