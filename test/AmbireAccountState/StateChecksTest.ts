@@ -20,7 +20,7 @@ describe('Account state checks tests', () => {
       deploySalt
     } = await deployAmbireAccountHardhatNetwork([
       {
-        addr: signer.address,
+        addr: signer!.address,
         hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
       }
     ])
@@ -45,7 +45,7 @@ describe('Account state checks tests', () => {
         Deployless.interface.encodeDeploy([AmbireAccountState.bytecode, callData])
       ])
     )
-    const deploylessResult = await signer.call({
+    const deploylessResult = await signer!.call({
       data: bytecode
     })
     expect(deploylessResult).to.equal(ethers.toBeHex(1, 32))
@@ -65,7 +65,7 @@ describe('Account state checks tests', () => {
         Deployless.interface.encodeDeploy([AmbireAccountState.bytecode, callData])
       ])
     )
-    const deploylessResult = await signer.call({
+    const deploylessResult = await signer!.call({
       data: bytecode
     })
     expect(deploylessResult).to.equal('0x')
@@ -75,7 +75,7 @@ describe('Account state checks tests', () => {
 
     const account = {
       addr: ambireAccountAddress,
-      associatedKeys: [signer.address],
+      associatedKeys: [signer!.address],
       creation: {
         factoryAddr,
         bytecode: addrBytecode,
@@ -87,22 +87,23 @@ describe('Account state checks tests', () => {
       acc.addr,
       acc.associatedKeys,
       ...getAccountDeployParams(acc),
-      ERC_4337_ENTRYPOINT
+      ERC_4337_ENTRYPOINT,
+      false
     ])
 
     const abi = [
-      'function getAccountsState(tuple(address, address[], address, bytes, address)[]) external'
+      'function getAccountsState(tuple(address, address[], address, bytes, address, bool)[]) external'
     ]
     const iface = new ethers.Interface(abi)
     const callData = iface.encodeFunctionData('getAccountsState', [args])
 
     const AmbireAccountState = await ethers.deployContract('AmbireAccountState')
-    const result = await signer.call({
+    const result = await signer!.call({
       to: await AmbireAccountState.getAddress(),
       data: callData
     })
     const decoded = abiCoder.decode(
-      ['tuple(bool, bytes, uint, bytes32[], bool, uint256, bool, uint, uint)[]'],
+      ['tuple(bool, bytes, uint, address[], bool, uint256, bool, uint, bool, uint, uint)[]'],
       result
     )[0]
     const block = await ethers.provider.getBlock('latest')
@@ -112,12 +113,14 @@ describe('Account state checks tests', () => {
       expect(oneAcc[1]).to.equal('0x')
       expect(oneAcc[2]).to.equal(0n)
       expect(oneAcc[3].length).to.equal(1)
-      oneAcc[3].map((priv: any) => expect(priv).to.equal(ethers.toBeHex(2, 32)))
+      expect(oneAcc[3][0]).to.equal(signer!.address)
       expect(oneAcc[4]).to.equal(true)
       expect(oneAcc[5]).to.equal(0n)
       expect(oneAcc[6]).to.equal(false)
       expect(oneAcc[7]).to.be.greaterThan(100000n)
-      expect(oneAcc[8]).to.be.equal(block?.number)
+      expect(oneAcc[8]).to.equal(false)
+      expect(oneAcc[9]).to.be.equal(block?.number)
+      expect(oneAcc[10]).to.equal(0)
       return null
     })
   })
