@@ -18,6 +18,9 @@ export interface Call {
   data: string
   txnId?: Hex
   status?: AccountOpStatus
+  blockNumber?: number
+  blockHash?: string
+  gasUsed?: string
   fee?: {
     inToken: string
     amount: bigint
