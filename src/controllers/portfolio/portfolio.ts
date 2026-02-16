@@ -1479,7 +1479,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
 
-    // We don't need the full error and its strack trace reported to Sentry
+    // We don't need the full error and its stack trace reported to Sentry
     const flatError = (e: ExtendedError) => ({
       name: e.name,
       message: e.message,
@@ -1497,10 +1497,16 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       const networkState = accountState[chainKey]
       const portfolioBlock = networkState?.result?.blockNumber
       const isLoading = !!networkState?.isLoading
+      const hasCriticalError = !!networkState?.criticalError
 
       // Can't validate yet - no portfolio data or still loading.
       if (portfolioBlock == null) continue
       if (isLoading) continue
+
+      // In case of a critical error, the portfolio won't be updated to the new block.
+      // However, we already handle this on the UI level (showing a warning + an option for a manual refresh),
+      // so we are not interested in reporting it.
+      if (hasCriticalError) continue
 
       if (portfolioBlock < expectedMinBlock) {
         const message =
@@ -1512,8 +1518,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           chainId: chainKey,
           expectedMinBlock,
           portfolioBlock,
-          errors: (networkState?.errors || []).map(flatError),
-          criticalError: networkState?.criticalError ? flatError(networkState.criticalError) : null
+          errors: (networkState?.errors || []).map(flatError)
         }
 
         this.emitError({
