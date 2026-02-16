@@ -1,3 +1,5 @@
+import { toBeHex } from 'ethers'
+
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -643,6 +645,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                   // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
+
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.blockHash = receipt.blockHash
+
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.gasUsed = toBeHex(receipt.gasUsed)
 
                   // Add accounts that are recipients of the AccountOp
                   const accountOpRecipients = getAccountOpRecipients(

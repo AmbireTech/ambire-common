@@ -499,7 +499,9 @@ describe('Activity Controller ', () => {
           {
             ...accountOp,
             status: 'success',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber
+            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
           }
         ], //  we expect success here
         itemsTotal: 1,
@@ -551,7 +553,9 @@ describe('Activity Controller ', () => {
           {
             ...accountOp,
             status: 'failure',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber
+            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
           }
         ], // we expect failure here
         itemsTotal: 1,
