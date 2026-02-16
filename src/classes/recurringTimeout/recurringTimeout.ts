@@ -122,7 +122,11 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #scheduleStart(opts: RecurringTimeoutStartOptions = {}) {
     if (this.running) return
-    this.#pendingStart = opts // collect latest opts for this tick
+    this.#pendingStart = {
+      timeout: opts.timeout ?? this.#pendingStart?.timeout,
+      runImmediately: opts.runImmediately || this.#pendingStart?.runImmediately,
+      allowOverlap: opts.allowOverlap || this.#pendingStart?.allowOverlap
+    }
     if (this.startScheduled) return
     this.startScheduled = true
 

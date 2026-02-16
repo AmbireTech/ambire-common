@@ -6,6 +6,7 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AssetType } from '../defiPositions/types'
@@ -801,4 +802,20 @@ export const getHintsError = (
     message: errorMessage,
     level: isLastUpdateTooOld ? 'critical' : 'silent'
   }
+}
+
+export const getHardcodedCitreaPrices = (address: string): Price | null => {
+  const stables = [
+    '0x8D82c4E3c936C7B5724A382a9c5a4E6Eb7aB6d5D',
+    '0xE045e6c36cF77FAA2CfB54466D71A3aEF7bbE839',
+    '0x9f3096Bac87e7F03DC09b0B416eB0DF837304dc4'
+  ]
+  if (stables.indexOf(address) !== -1) {
+    return {
+      baseCurrency: 'usd',
+      price: 1
+    }
+  }
+
+  return null
 }
