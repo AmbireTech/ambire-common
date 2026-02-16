@@ -531,7 +531,9 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations.map((c) => c.signature) as Hex[],
             message.messageHash
           ),
-          safeAppId: Number(message.safeAppId) ?? message.created
+          safeAppId: message.safeAppId
+            ? Number(message.safeAppId)
+            : new Date(message.created).getTime()
         },
         isConfirmed: !!message.isConfirmed
       })

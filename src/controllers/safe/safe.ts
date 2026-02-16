@@ -174,7 +174,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   getMessageId(msg: SafeMessage): string {
-    return `${msg.messageHash}-${msg.safeAppId ?? msg.created}`
+    return `${msg.messageHash}-${msg.safeAppId ?? new Date(msg.created).getTime()}`
   }
 
   #filterOutHidden(pending: SafeResults): SafeResults {

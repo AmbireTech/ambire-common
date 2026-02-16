@@ -307,7 +307,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (!provider) throw new Error(`Network details missing. Please try again`)
 
       let signature
-      const safeAppId = this.safeAppId ?? Date.now()
+      let safeAppId = this.safeAppId
+      if (!safeAppId && !this.existsInSafeGlobal) safeAppId = Date.now()
 
       try {
         if (
@@ -348,7 +349,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
+          if (!this.existsInSafeGlobal && safeAppId && signatures.length < accountState.threshold) {
             await addMessage(
               this.#network.chainId,
               this.#account.addr as Hex,
@@ -398,7 +399,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
+          if (!this.existsInSafeGlobal && safeAppId && signatures.length < accountState.threshold) {
             await addMessage(
               this.#network.chainId,
               this.#account.addr as Hex,
