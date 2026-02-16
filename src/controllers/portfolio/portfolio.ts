@@ -59,6 +59,7 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  ExtendedError,
   ExtendedErrorWithLevel,
   ExternalPortfolioDiscoveryResponse,
   FormattedPortfolioDiscoveryResponse,
@@ -79,6 +80,7 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -1447,6 +1449,87 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
+  }
+
+  // Reports to Sentry if the portfolio was not updated after an updated AccountOp.
+  // We previously encountered such a case (see https://github.com/AmbireTech/ambire-app/issues/6371),
+  // and this method is added to verify whether our hypothesis about the root cause is correct.
+  reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+    accountId: AccountId,
+    updatedAccountsOps: SubmittedAccountOp[]
+  ) {
+    if (!updatedAccountsOps.length) return
+
+    const accountState = this.#state[accountId]
+    if (!accountState) return
+
+    // The minimum block number that the portfolio must be updated to per chainId.
+    // The portfolio block does NOT have to match this block exactly.
+    // It can be higher (because other updates may have occurred in the meantime),
+    // but it must be >= this value to ensure the Activity confirmation is reflected.
+    const expectedMinPortfolioBlockByChainId: { [chainId: string]: number } = {}
+
+    for (const op of updatedAccountsOps) {
+      if (op.accountAddr !== accountId || !op.blockNumber) continue
+
+      const chainKey = op.chainId.toString()
+      const prev = expectedMinPortfolioBlockByChainId[chainKey]
+
+      if (prev == null || op.blockNumber > prev) {
+        expectedMinPortfolioBlockByChainId[chainKey] = op.blockNumber
+      }
+    }
+
+    // We don't need the full error and its stack trace reported to Sentry
+    const flatError = (e: ExtendedError) => ({
+      name: e.name,
+      message: e.message,
+      simulationErrorMsg: e.simulationErrorMsg
+    })
+
+    const chainIds = Object.keys(expectedMinPortfolioBlockByChainId)
+    if (!chainIds.length) return
+
+    for (const chainKey of chainIds) {
+      const expectedMinBlock = expectedMinPortfolioBlockByChainId[chainKey]
+      // satisfies TS and is safe guard
+      if (expectedMinBlock == null) continue
+
+      const networkState = accountState[chainKey]
+      const portfolioBlock = networkState?.result?.blockNumber
+      const isLoading = !!networkState?.isLoading
+      const hasCriticalError = !!networkState?.criticalError
+
+      // Can't validate yet - no portfolio data or still loading.
+      if (portfolioBlock == null) continue
+      if (isLoading) continue
+
+      // In case of a critical error, the portfolio won't be updated to the new block.
+      // However, we already handle this on the UI level (showing a warning + an option for a manual refresh),
+      // so we are not interested in reporting it.
+      if (hasCriticalError) continue
+
+      if (portfolioBlock < expectedMinBlock) {
+        const message =
+          '[PORTFOLIO_ACTIVITY_BLOCK_MISMATCH] Portfolio block is behind confirmed Activity block'
+        const error = new Error(message)
+
+        ;(error as any).debugInfo = {
+          accountId,
+          chainId: chainKey,
+          expectedMinBlock,
+          portfolioBlock,
+          errors: (networkState?.errors || []).map(flatError)
+        }
+
+        this.emitError({
+          level: 'silent',
+          sendCrashReport: true,
+          message,
+          error
+        })
+      }
+    }
   }
 
   markSimulationAsBroadcasted(accountId: string, chainId: bigint) {
