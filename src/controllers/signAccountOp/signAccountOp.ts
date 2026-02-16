@@ -1467,8 +1467,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()
-    this.gasPrice = null as any
-    this.estimation = null as any
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
