@@ -1,7 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField } from 'ethers'
-import { Hex } from 'interfaces/hex'
 import { v4 as uuidv4 } from 'uuid'
 
 import { EIP712TypedData } from '@safe-global/types-kit'
@@ -15,6 +14,7 @@ import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogi
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -1410,7 +1410,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         kind: 'message',
         dappPromises: [],
         meta: {
-          params: { message },
+          params: { message: message as Hex },
           accountAddr: this.#selectedAccount.account.addr,
           chainId,
           keepRequestAlive: true,

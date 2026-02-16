@@ -1,5 +1,3 @@
-/* eslint-disable no-await-in-loop */
-import { SignedMessage } from 'controllers/activity/types'
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
@@ -68,6 +66,8 @@ import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+/* eslint-disable no-await-in-loop */
+import { SignedMessage } from '../activity/types'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
