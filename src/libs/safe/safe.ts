@@ -2,6 +2,7 @@ import {
   AbiCoder,
   concat,
   Contract,
+  getAddress,
   getBytes,
   getCreate2Address,
   hexlify,
@@ -240,10 +241,11 @@ export async function propose(
   })
 
   const proposeTransactionProps: ProposeTransactionProps = {
-    safeAddress,
+    safeAddress: getAddress(safeAddress),
     safeTxHash: getSafeTxnHash(txn, chainId, safeAddress),
     safeTransactionData: {
       ...txn,
+      to: getAddress(txn.to),
       baseGas: BigInt(txn.baseGas).toString(),
       gasPrice: BigInt(txn.gasPrice).toString(),
       safeTxGas: BigInt(txn.safeTxGas).toString(),
@@ -569,12 +571,6 @@ export function getSigs(accountOp: AccountOp): Hex[] {
     signed.push(`0x${signatures.substring(i, i + 130)}` as Hex)
   }
   return signed
-}
-
-export function countSigs(accountOp: AccountOp): number {
-  if (!accountOp.signature) return 0
-  // each safe sig is 130 length long; all sigs are concatenated here
-  return accountOp.signature.substring(2).length / 130
 }
 
 export function sortSigs(signatures: Hex[], hash: string): Hex {

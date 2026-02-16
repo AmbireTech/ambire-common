@@ -104,7 +104,6 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import {
   confirm,
-  countSigs,
   getAlreadySignedOwners,
   getDefaultOwners,
   getImportedSignersThatHaveNotSigned,
@@ -2513,8 +2512,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // if the user cannot broadcast because he doesn't meet the threshold,
         // we push the txn to safe global
         if (
-          countSigs(this.accountOp) < this.threshold ||
-          (this.accountOp.nonce || 0n) > accountState.nonce
+          (this.#accountOp.signed?.length || 0) < this.threshold ||
+          (this.#accountOp.nonce || 0n) > accountState.nonce
         ) {
           // todo: create intervals for this on error
           for (let i = 0; i < signers.length; i++) {
