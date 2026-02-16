@@ -89,7 +89,7 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     name: network.name,
     chainId: BigInt(network.chainId),
     rpcUrls: [workingRpcUrl ?? network.rpc[0]],
-    explorerUrl: network.explorers[0].url,
+    explorerUrl: network.explorers[0]?.url || '',
     selectedRpcUrl: workingRpcUrl || '',
     platformId,
     nativeAssetId,

@@ -10,6 +10,14 @@ const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
 export function geckoIdMapper(address: string, network: Network): string | null {
   if (address === ZeroAddress) return network.nativeAssetId
 
+  // citrea wrapepd cbtc
+  if (network.chainId === 4114n && address === '0x3100000000000000000000000000000000000006')
+    return network.nativeAssetId
+
+  // citrea wbtc
+  if (network.chainId === 4114n && address === '0xDF240DC08B0FdaD1d93b74d5048871232f6BEA3d')
+    return 'wrapped-bitcoin'
+
   // we currently can't map aave so we're leaving this
   if (address === '0x4da27a545c0c5B758a6BA100e3a049001de870f5') return 'aave'
 
