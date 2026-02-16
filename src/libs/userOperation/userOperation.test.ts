@@ -42,7 +42,7 @@ describe('User Operation tests', () => {
     test('should include deploy code if the account is not deployed', async () => {
       const opOptimism: AccountOp = {
         accountAddr: smartAccDeployed.addr,
-        signingKeyAddr: smartAccDeployed.associatedKeys[0],
+        signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
@@ -56,10 +56,11 @@ describe('User Operation tests', () => {
         [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-      accountStates[smartAccDeployed.addr][optimism.chainId.toString()].isDeployed = false
+      const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
+      accountState.isDeployed = false
       const userOp = getUserOperation({
         account: smartAccDeployed,
-        accountState: accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
+        accountState,
         accountOp: opOptimism,
         bundler: 'pimlico',
         entryPointSig: '0x0001'
@@ -71,7 +72,7 @@ describe('User Operation tests', () => {
     test('should not include deploy code nor the activator call on a deployed account with entry point privs', async () => {
       const opOptimism: AccountOp = {
         accountAddr: smartAccDeployed.addr,
-        signingKeyAddr: smartAccDeployed.associatedKeys[0],
+        signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
@@ -85,9 +86,10 @@ describe('User Operation tests', () => {
         [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
+      const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
       const userOp = getUserOperation({
         account: smartAccDeployed,
-        accountState: accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
+        accountState,
         accountOp: opOptimism,
         bundler: 'pimlico'
       })
@@ -98,7 +100,7 @@ describe('User Operation tests', () => {
     test('should include activator call if the account is deployed but does not have entry point privs', async () => {
       const opOptimism: AccountOp = {
         accountAddr: smartAccDeployed.addr,
-        signingKeyAddr: smartAccDeployed.associatedKeys[0],
+        signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
@@ -112,10 +114,11 @@ describe('User Operation tests', () => {
         [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-      accountStates[smartAccDeployed.addr][optimism.chainId.toString()].isErc4337Enabled = false
+      const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
+      accountState.isErc4337Enabled = false
       const userOp = getUserOperation({
         account: smartAccDeployed,
-        accountState: accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
+        accountState,
         accountOp: opOptimism,
         bundler: 'pimlico'
       })

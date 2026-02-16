@@ -192,9 +192,10 @@ describe('SignMessageController', () => {
     await signMessageController.init({ messageToSign })
     signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
 
-    expect(signMessageController.signer).not.toBe(undefined)
-    expect(signMessageController.signer?.key.addr).toBe(signingKeyAddr)
-    expect(signMessageController.signer?.key.type).toBe('internal')
+    expect(signMessageController.signers).not.toBe(undefined)
+    expect(signMessageController.signers?.length).toBe(1)
+    expect(signMessageController.signers![0]!.addr).toBe(signingKeyAddr)
+    expect(signMessageController.signers![0]!.type).toBe('internal')
   })
 
   // TODO: Would be better to test the signing via the Main controller -> handleSignMessage instead

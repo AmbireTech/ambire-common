@@ -28,6 +28,7 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { TransferController } from '../transfer/transfer'
@@ -145,6 +146,12 @@ const portfolioCtrl = new PortfolioController(
   featureFlagsCtrl
 )
 
+const safe = new SafeController({
+  networks: networksCtrl,
+  providers: providersCtrl,
+  storage: storageCtrl
+})
+
 const activityCtrl = new ActivityController(
   storageCtrl,
   fetch,
@@ -154,6 +161,7 @@ const activityCtrl = new ActivityController(
   providersCtrl,
   networksCtrl,
   portfolioCtrl,
+  safe,
   () => Promise.resolve()
 )
 
@@ -254,6 +262,7 @@ requestsCtrl = new RequestsController({
   transfer: transferCtrl,
   swapAndBridge: swapAndBridgeController,
   ui: uiCtrl,
+  safe,
   autoLogin: autoLoginCtrl,
   getDapp: async () => undefined,
   updateSelectedAccountPortfolio: () => Promise.resolve(),
