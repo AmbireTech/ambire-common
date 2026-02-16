@@ -78,7 +78,6 @@ export const featuredDapps = new Set([
   'snapshot.box/#/s:ambire.eth',
   'lido.fi',
   'bitrefill.com',
-  'altitude.fi',
   'drops.bot',
   'app.barterswap.xyz'
 ])
