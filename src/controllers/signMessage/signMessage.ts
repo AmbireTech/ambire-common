@@ -85,7 +85,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   /**
    * the signed hash
    */
-  hash?: string
+  hash?: Hex
 
   existsInSafeGlobal: boolean = false
 
@@ -117,7 +117,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     dapp,
     messageToSign,
     signed,
-    hash
+    hash,
+    safeAppId
   }: {
     dapp?: { name: string; icon: string }
     messageToSign: Message
@@ -125,6 +126,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     // applicable on Safe message
     signed?: string[]
     hash?: Hex
+    safeAppId?: number
   }) {
     // In the unlikely case that the signMessage controller was already
     // initialized, but not reset, force reset it to prevent misleadingly
@@ -187,6 +189,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
         if (this.signed.length && notSigned.length === 0) this.status = SignMessageStatus.Partial
         this.hash = hash
+        this.safeAppId = safeAppId
         this.existsInSafeGlobal = !!hash
       } else {
         // if the account is not safe & view only, set a default signer
@@ -304,7 +307,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (!provider) throw new Error(`Network details missing. Please try again`)
 
       let signature
-      const safeAppId = Date.now()
+      const safeAppId = this.safeAppId ?? Date.now()
 
       try {
         if (

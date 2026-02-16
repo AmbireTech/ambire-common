@@ -492,7 +492,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     message: Hex | EIP712TypedData
     messageHash: Hex
     signature: Hex
-    safeAppId: string
+    safeAppId: number
   }
   isConfirmed: boolean
 }[] {
@@ -504,7 +504,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
       message: Hex | EIP712TypedData
       messageHash: Hex
       signature: Hex
-      safeAppId: string
+      safeAppId: number
     }
     isConfirmed: boolean
   }[] = []
@@ -517,17 +517,10 @@ export function toSigMessageUserRequests(response: SafeResults): {
         : null
       if (!signature) return
 
-      // if the message is eip-712, the chain id of the message may be in the
-      // domain itself. If that's the case, set that as the chain as that is
-      // the correct one - the user will be signing for that chain
-      const messageChainId = (message.message as EIP712TypedData)?.domain?.chainId
-        ? BigInt((message.message as EIP712TypedData).domain.chainId!)
-        : BigInt(chainId)
-
       userRequests.push({
         type: 'safeSignMessageRequest',
         params: {
-          chainId: messageChainId,
+          chainId: BigInt(chainId),
           signed: message.confirmations.map((confirm) => confirm.owner),
           message:
             typeof message.message === 'string'
@@ -538,7 +531,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations.map((c) => c.signature) as Hex[],
             message.messageHash
           ),
-          safeAppId: message.safeAppId ?? message.created
+          safeAppId: Number(message.safeAppId) ?? message.created
         },
         isConfirmed: !!message.isConfirmed
       })

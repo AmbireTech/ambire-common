@@ -1252,7 +1252,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             primaryType: typedData.primaryType
           },
           accountAddr: msgAddress,
-          chainId: typedData.domain?.chainId ? BigInt(typedData.domain.chainId) : network.chainId
+          chainId: network.chainId
         },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
@@ -1398,7 +1398,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     signed: string[]
     message: Hex | EIP712TypedData
     messageHash: Hex
-    safeAppId: string | null
+    safeAppId: number | undefined
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -2075,7 +2075,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   setPartiallyCompleteRequest(
     requestId: UserRequest['id'],
-    meta?: { signed?: string[]; hash?: string; safeAppId?: number }
+    meta?: { signed?: string[]; hash?: Hex; safeAppId?: number }
   ): void {
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
     if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
@@ -2083,7 +2083,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     req.meta.keepRequestAlive = true
     if (meta?.signed) req.meta.signed = meta.signed
     if (meta?.hash) req.meta.hash = meta.hash
-    if (meta?.safeAppId) req.meta.safeAppId = meta.safeAppId.toString()
+    if (meta?.safeAppId) req.meta.safeAppId = meta.safeAppId
   }
 
   toJSON() {
