@@ -226,7 +226,13 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#filterOutHidden(pending, safeAddr)
   }
 
-  async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<Hex[]> {
+  async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<
+    {
+      safeTxnHash: Hex
+      transactionHash: Hex
+      nonce: string
+    }[]
+  > {
     // no protection, call this only after fetching the pending ones
     this.#updatedAt = Date.now()
     return fetchExecutedTransactions(txns)

@@ -604,9 +604,19 @@ export function getSameNonceRequests(requests: CallsUserRequest[]) {
 
 export async function fetchExecutedTransactions(
   txns: { chainId: bigint; safeTxnHash: Hex }[]
-): Promise<Hex[]> {
+): Promise<
+  {
+    safeTxnHash: Hex
+    transactionHash: Hex
+    nonce: string
+  }[]
+> {
   let promises = []
-  const results: Hex[] = []
+  const results: {
+    safeTxnHash: Hex
+    transactionHash: Hex
+    nonce: string
+  }[] = []
 
   for (let i = 0; i < txns.length; i++) {
     const txn = txns[i]!
@@ -618,7 +628,12 @@ export async function fetchExecutedTransactions(
     if ((i + 1) % 5 === 0 || i + 1 === txns.length) {
       const responses = await Promise.all(promises)
       responses.forEach((r) => {
-        if (r.isExecuted) results.push(r.safeTxHash as Hex)
+        if (r.transactionHash)
+          results.push({
+            safeTxnHash: r.safeTxHash as Hex,
+            transactionHash: r.transactionHash as Hex,
+            nonce: r.nonce
+          })
       })
       await wait(1100)
       promises = []

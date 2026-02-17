@@ -1334,19 +1334,43 @@ export class MainController extends EventEmitter implements IMainController {
       .then((confirmed) => {
         if (!confirmed.length) return
 
-        // remove the requests if they have been executed
-        this.requests
-          .removeUserRequests(
-            this.requests.userRequests
-              .filter(
-                (r) =>
-                  r.kind === 'calls' &&
-                  !!r.signAccountOp.account.safeCreation &&
-                  confirmed.includes(r.signAccountOp.accountOp.txnId as Hex)
-              )
-              .map((r) => r.id)
+        // resolve each request
+        for (let i = 0; i < confirmed.length; i++) {
+          const oneConfirmed = confirmed[i]!
+          const userR = this.requests.userRequests.find(
+            (r) =>
+              r.kind === 'calls' &&
+              !!r.signAccountOp.account.safeCreation &&
+              oneConfirmed.safeTxnHash === r.signAccountOp.accountOp.txnId
           )
-          .catch((e) => e)
+          if (!userR) continue
+
+          const accountOp = (userR as CallsUserRequest).signAccountOp.accountOp
+          const submittedAccountOp: SubmittedAccountOp = {
+            ...accountOp,
+            status: AccountOpStatus.BroadcastedButNotConfirmed,
+            txnId: oneConfirmed.transactionHash,
+            nonce: BigInt(oneConfirmed.nonce),
+            identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
+            timestamp: new Date().getTime()
+          }
+          this.#commonHandlerForBroadcastSuccess({
+            type: 'default',
+            submittedAccountOp,
+            accountOp,
+            fromRequestId: userR.id
+          })
+            .then(() => {
+              this.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
+                console.log('could not resolve safe global request')
+                console.log(e)
+              })
+            })
+            .catch((e) => {
+              console.log('could not resolve safe global request')
+              console.log(e)
+            })
+        }
       })
       .catch((e) => {
         console.log('failed to retrieve executed safe txns')
@@ -1545,7 +1569,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async resolveAccountOpRequest(
     submittedAccountOp: SubmittedAccountOp,
-    requestId: CallsUserRequest['id']
+    requestId: CallsUserRequest['id'],
+    openBenzin = true
   ) {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
@@ -1570,24 +1595,28 @@ export class MainController extends EventEmitter implements IMainController {
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    const benzinUserRequest: BenzinUserRequest = {
-      id: new Date().getTime(),
-      kind: 'benzin',
-      meta,
-      dappPromises: []
+    if (openBenzin) {
+      const benzinUserRequest: BenzinUserRequest = {
+        id: new Date().getTime(),
+        kind: 'benzin',
+        meta,
+        dappPromises: []
+      }
+      await this.requests.addUserRequests([benzinUserRequest], {
+        position: 'first',
+        skipFocus: true
+      })
     }
-    await this.requests.addUserRequests([benzinUserRequest], {
-      position: 'first',
-      skipFocus: true
-    })
 
     // upon resolving an account op, check all same nonce safe requests and remove them
     const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id)
 
-    await this.requests.removeUserRequests([requestId, ...safeRequests], {
-      shouldUpdateAccount: false,
-      shouldRejectSafeRequests: false
-    })
+    if (safeRequests.length) {
+      await this.requests.removeUserRequests(safeRequests, {
+        shouldUpdateAccount: false,
+        shouldRejectSafeRequests: false
+      })
+    }
 
     const dappHandlers: any[] = []
 

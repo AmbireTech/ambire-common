@@ -2069,7 +2069,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) =>
         r.kind === 'calls' &&
         !!r.signAccountOp.account.safeCreation &&
-        r.signAccountOp.accountOp.nonce === broadcastNonce
+        r.signAccountOp.accountOp.nonce === broadcastNonce &&
+        r.id !== requestId
     )
   }
 
