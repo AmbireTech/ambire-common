@@ -334,8 +334,7 @@ export class MainController extends EventEmitter implements IMainController {
        * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
        * changes are reflected for view-only accounts as well. Because the
        * view-only accounts import flow bypasses the AccountPicker, this method
-       * won't click for them. Their on add success flow continues in the
-       * MAIN_CONTROLLER_ADD_VIEW_ONLY_ACCOUNTS action case.
+       * won't click for them.
        */
       onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
     })
