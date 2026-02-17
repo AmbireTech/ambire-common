@@ -1140,6 +1140,12 @@ export class MainController extends EventEmitter implements IMainController {
 
           await this.updateSelectedAccountPortfolio({ networks })
 
+          // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+          this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+            this.selectedAccount.account.addr,
+            updatedAccountsOpsForSelectedAccount.updatedAccountsOps
+          )
+
           Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
             this.portfolio.updateSelectedAccount(
               accountAddr,

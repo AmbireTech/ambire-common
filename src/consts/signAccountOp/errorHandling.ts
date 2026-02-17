@@ -32,7 +32,7 @@ const WARNINGS: { [key: string]: Warning } = {
     title: 'Delegation detected',
     text: 'The transaction you are about to sign will override the existing EIP-7702 delegation on your account. Are you sure you want to proceed?',
     promptBefore: ['one-click-sign', 'sign'],
-    type: 'info3'
+    type: 'info'
   }
 }
 

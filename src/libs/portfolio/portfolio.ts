@@ -1,4 +1,3 @@
-/* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
 import { ZeroAddress } from 'ethers'
 /* eslint-disable guard-for-in */
@@ -15,7 +14,12 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { formatExternalHintsAPIResponse, mergeERC721s, tokenFilter } from './helpers'
+import {
+  formatExternalHintsAPIResponse,
+  getHardcodedCitreaPrices,
+  mergeERC721s,
+  tokenFilter
+} from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -346,6 +350,12 @@ export class Portfolio {
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string, _priceRecency: number = priceRecency) => {
+      // hardcode citrea prices
+      if (this.network.chainId === 4114n) {
+        const citreaTokenPrice = getHardcodedCitreaPrices(address)
+        if (citreaTokenPrice) return [citreaTokenPrice]
+      }
+
       const cached = priceCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached

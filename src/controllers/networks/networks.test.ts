@@ -125,7 +125,7 @@ describe('Networks Controller', () => {
 
   test('should add the sei network as a custom network', async () => {
     await networksController.setNetworkToAddOrUpdate({
-      rpcUrl: 'https://evm-rpc.sei-apis.com',
+      rpcUrl: 'https://sei-public.nodies.app',
       chainId: 1329n
     })
 
