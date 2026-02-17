@@ -9,8 +9,12 @@ import {
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
+import { CallsUserRequest } from '../../interfaces/userRequest'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -46,6 +50,8 @@ export class ContinuousUpdatesController extends EventEmitter {
   #accountStateRetriesByNetwork: {
     [chainId: string]: number
   } = {}
+
+  #safeGlobalResolvedInterval: IRecurringTimeout
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -122,6 +128,13 @@ export class ContinuousUpdatesController extends EventEmitter {
       'fastAccountStateReFetchTimeout'
     )
 
+    this.#safeGlobalResolvedInterval = new RecurringTimeout(
+      this.#resolveConfirmedSafeTxns.bind(this),
+      10000,
+      this.emitError.bind(this),
+      'safeGlobalResolvedInterval'
+    )
+
     this.#main.swapAndBridge.onUpdate(() => {
       if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
@@ -178,6 +191,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     await this.#main.initialLoadPromise
 
     this.#accountStateLatestInterval.start()
+    this.#safeGlobalResolvedInterval.start()
   }
 
   async #updatePortfolio() {
@@ -331,5 +345,77 @@ export class ContinuousUpdatesController extends EventEmitter {
     const updateTime = networksNotYetRetried.length ? 8000 : 20000
 
     this.#fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
+  }
+
+  async #resolveConfirmedSafeTxns() {
+    await this.initialLoadPromise
+
+    // call only if the selected account is a safe
+    if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
+      return
+
+    const pendingSafeTxns = this.#main.requests.userRequests
+      .filter(
+        (r) =>
+          r.meta.accountAddr === this.#main.selectedAccount.account?.addr &&
+          r.kind === 'calls' &&
+          !!r.signAccountOp.account.safeCreation &&
+          r.signAccountOp.accountOp.txnId &&
+          r.signAccountOp.accountOp.signed?.length
+      )
+      .map((r) => {
+        const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
+        return {
+          chainId: accountOp.chainId,
+          safeTxnHash: accountOp.txnId as Hex
+        }
+      })
+    if (!pendingSafeTxns.length) return
+
+    const confirmed = await this.#main.safe.fetchExecuted(pendingSafeTxns).catch((e) => {
+      console.log('failed to retrieve executed safe txns')
+      return []
+    })
+    if (!confirmed.length) return
+
+    // resolve each request
+    for (let i = 0; i < confirmed.length; i++) {
+      const oneConfirmed = confirmed[i]!
+      const userR = this.#main.requests.userRequests.find(
+        (r) =>
+          r.kind === 'calls' &&
+          !!r.signAccountOp.account.safeCreation &&
+          oneConfirmed.safeTxnHash === r.signAccountOp.accountOp.txnId
+      )
+      if (!userR) continue
+
+      const accountOp = (userR as CallsUserRequest).signAccountOp.accountOp
+      const submittedAccountOp: SubmittedAccountOp = {
+        ...accountOp,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        txnId: oneConfirmed.transactionHash,
+        nonce: BigInt(oneConfirmed.nonce),
+        identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
+        timestamp: new Date().getTime()
+      }
+      const commonSuccessHandler = await this.#main
+        .commonHandlerForBroadcastSuccess({
+          type: 'default',
+          submittedAccountOp,
+          accountOp,
+          fromRequestId: userR.id
+        })
+        .catch((e: Error) => {
+          console.log('could not resolve safe global request')
+          console.log(e)
+          return e
+        })
+      if (commonSuccessHandler instanceof Error) continue
+
+      await this.#main.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
+        console.log('could not resolve safe global request')
+        console.log(e)
+      })
+    }
   }
 }

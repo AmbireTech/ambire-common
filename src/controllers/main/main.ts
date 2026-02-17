@@ -440,7 +440,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       getUserRequests: () => this.requests.userRequests || [],
       getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
-      onBroadcastSuccess: this.#commonHandlerForBroadcastSuccess.bind(this),
+      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
     this.transfer = new TransferController(
@@ -458,7 +458,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.phishing,
       relayerUrl,
-      this.#commonHandlerForBroadcastSuccess.bind(this),
+      this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       eventEmitterRegistry
     )
@@ -530,7 +530,7 @@ export class MainController extends EventEmitter implements IMainController {
           submittedAccountOp.accountAddr,
           submittedAccountOp.chainId
         )
-        await this.#commonHandlerForBroadcastSuccess(props)
+        await this.commonHandlerForBroadcastSuccess(props)
         // resolve dapp requests, open benzin and etc only if the main sign accountOp
         this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
@@ -759,7 +759,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
   }
 
-  async #commonHandlerForBroadcastSuccess({
+  async commonHandlerForBroadcastSuccess({
     submittedAccountOp,
     accountOp,
     fromRequestId
@@ -1307,76 +1307,6 @@ export class MainController extends EventEmitter implements IMainController {
     this.fetchSafeTxns().catch((e) => e) // we catch the error inside
   }
 
-  #fetchExecutedSafeTxns(pendingSafeIds: Hex[]) {
-    // get the safes we don't have info on
-    // those are the safe user requests that have been initiated but
-    // there's no pendingSafeIds for them
-    const noInfoSafes = this.requests.userRequests
-      .filter(
-        (r) =>
-          r.kind === 'calls' &&
-          !!r.signAccountOp.account.safeCreation &&
-          r.signAccountOp.accountOp.txnId &&
-          r.signAccountOp.accountOp.signed?.length &&
-          !pendingSafeIds.includes(r.signAccountOp.accountOp.txnId as Hex)
-      )
-      .map((r) => {
-        const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
-        return {
-          chainId: accountOp.chainId,
-          safeTxnHash: accountOp.txnId as Hex
-        }
-      })
-
-    // check their status
-    this.safe
-      .fetchExecuted(noInfoSafes)
-      .then((confirmed) => {
-        if (!confirmed.length) return
-
-        // resolve each request
-        for (let i = 0; i < confirmed.length; i++) {
-          const oneConfirmed = confirmed[i]!
-          const userR = this.requests.userRequests.find(
-            (r) =>
-              r.kind === 'calls' &&
-              !!r.signAccountOp.account.safeCreation &&
-              oneConfirmed.safeTxnHash === r.signAccountOp.accountOp.txnId
-          )
-          if (!userR) continue
-
-          const accountOp = (userR as CallsUserRequest).signAccountOp.accountOp
-          const submittedAccountOp: SubmittedAccountOp = {
-            ...accountOp,
-            status: AccountOpStatus.BroadcastedButNotConfirmed,
-            txnId: oneConfirmed.transactionHash,
-            nonce: BigInt(oneConfirmed.nonce),
-            identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
-            timestamp: new Date().getTime()
-          }
-          this.#commonHandlerForBroadcastSuccess({
-            type: 'default',
-            submittedAccountOp,
-            accountOp,
-            fromRequestId: userR.id
-          })
-            .then(() => {
-              this.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
-                console.log('could not resolve safe global request')
-                console.log(e)
-              })
-            })
-            .catch((e) => {
-              console.log('could not resolve safe global request')
-              console.log(e)
-            })
-        }
-      })
-      .catch((e) => {
-        console.log('failed to retrieve executed safe txns')
-      })
-  }
-
   /**
    * Fetch safe txns from safe global and make them user requests
    * if the selected account is a safe
@@ -1413,11 +1343,6 @@ export class MainController extends EventEmitter implements IMainController {
           for (let i = 0; i < txnRequest.length; i++) {
             await this.requests.build(txnRequest[i]!).catch((e) => e)
           }
-
-          // fetch info about safe txns that may have concluded
-          this.#fetchExecutedSafeTxns(
-            txnRequest.map((r) => r.params.userRequestParams.meta.safeTxnProps.txnId)
-          )
 
           // add unconfirmed safe requests & resolve confirmed
           const messageRequests = toSigMessageUserRequests(res)
