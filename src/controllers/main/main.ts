@@ -1312,61 +1312,65 @@ export class MainController extends EventEmitter implements IMainController {
    * if the selected account is a safe
    */
   async fetchSafeTxns(chainIds: bigint[] = []) {
-    if (this.selectedAccount?.account?.safeCreation) {
-      const accountState = await this.accounts.getOrFetchAccountStates(
-        this.selectedAccount.account.addr
+    if (!this.selectedAccount?.account?.safeCreation) return
+
+    const accountState = await this.accounts.getOrFetchAccountStates(
+      this.selectedAccount.account.addr
+    )
+    if (!accountState) return
+
+    const finalChainIds = chainIds.length
+      ? chainIds
+      : this.networks.networks
+          .filter((n) => {
+            // fetch info only about deployed safes
+            const state = accountState?.[n.chainId.toString()]
+            return state?.isDeployed
+          })
+          .map((n) => n.chainId)
+
+    const networksAndThresholds = finalChainIds.map((c) => ({
+      chainId: c,
+      threshold: accountState[c.toString()]?.threshold || 0
+    }))
+
+    const res: SafeResults | null = await this.safe
+      .fetchPending(
+        this.selectedAccount.account.addr as Hex,
+        networksAndThresholds,
+        !!chainIds.length
       )
-      const finalChainIds = chainIds.length
-        ? chainIds
-        : this.networks.networks
-            .filter((n) => {
-              // fetch info only about deployed safes
-              const state = accountState?.[n.chainId.toString()]
-              return state?.isDeployed
-            })
-            .map((n) => n.chainId)
+      .catch((e) => {
+        console.log(e)
+        console.log('failed to retrieve pending safe txns')
+        return null
+      })
 
-      const networksAndThresholds = finalChainIds.map((c) => ({
-        chainId: c,
-        threshold: accountState[c.toString()]?.threshold || 0
-      }))
+    if (!res) return
 
-      this.safe
-        .fetchPending(
-          this.selectedAccount.account.addr as Hex,
-          networksAndThresholds,
-          !!chainIds.length
-        )
-        .then(async (res: SafeResults | null) => {
-          if (!res) return
-          const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
-          for (let i = 0; i < txnRequest.length; i++) {
-            await this.requests.build(txnRequest[i]!).catch((e) => e)
-          }
+    // build txn requests
+    const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
+    for (let i = 0; i < txnRequest.length; i++) {
+      await this.requests.build(txnRequest[i]!).catch((e) => e)
+    }
 
-          // add unconfirmed safe requests & resolve confirmed
-          const messageRequests = toSigMessageUserRequests(res)
-          for (let i = 0; i < messageRequests.length; i++) {
-            const req = messageRequests[i]!
-            const userRequest = this.requests.userRequests.find(
-              (u) =>
-                u.meta.accountAddr === this.selectedAccount.account!.addr &&
-                u.meta.chainId === req.params.chainId &&
-                (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-                u.meta.hash === req.params.messageHash
-            )
-            if (!userRequest && !req.isConfirmed) {
-              await this.requests.build(req).catch((e) => e)
-            }
-            if (userRequest && req.isConfirmed) {
-              await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
-            }
-          }
-        })
-        .catch((e) => {
-          console.log(e)
-          console.log('failed to retrieve pending safe txns')
-        })
+    // build and resolve message requests
+    const messageRequests = toSigMessageUserRequests(res)
+    for (let i = 0; i < messageRequests.length; i++) {
+      const req = messageRequests[i]!
+      const userRequest = this.requests.userRequests.find(
+        (u) =>
+          u.meta.accountAddr === this.selectedAccount.account!.addr &&
+          u.meta.chainId === req.params.chainId &&
+          (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+          u.meta.hash === req.params.messageHash
+      )
+      if (!userRequest && !req.isConfirmed) {
+        await this.requests.build(req).catch((e) => e)
+      }
+      if (userRequest && req.isConfirmed) {
+        await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+      }
     }
   }
 

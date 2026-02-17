@@ -17,9 +17,11 @@ import { ISafeController } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
   decodeSetupData,
+  ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
   getCalculatedSafeAddress,
+  getMessage,
   SafeResults
 } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -267,6 +269,19 @@ export class SafeController extends EventEmitter implements ISafeController {
       (txns) => txns.nonce !== nonce
     )
     return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
+  }
+
+  async getMessagesByHash(
+    data: { chainId: bigint; threshold: number; messageHash: Hex }[]
+  ): Promise<ExtendedSafeMessage[]> {
+    const messages = []
+    for (let i = 0; i < data.length; i++) {
+      const entry = data[i]!
+      const msg = await getMessage(entry).catch((e) => e)
+      if (msg instanceof Error) continue
+      messages.push(msg)
+    }
+    return messages
   }
 
   toJSON() {

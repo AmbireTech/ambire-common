@@ -51,7 +51,9 @@ export class ContinuousUpdatesController extends EventEmitter {
     [chainId: string]: number
   } = {}
 
-  #safeGlobalResolvedInterval: IRecurringTimeout
+  #safeGlobalTxnInterval: IRecurringTimeout
+
+  #safeGlobalMessageInterval: IRecurringTimeout
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -128,11 +130,18 @@ export class ContinuousUpdatesController extends EventEmitter {
       'fastAccountStateReFetchTimeout'
     )
 
-    this.#safeGlobalResolvedInterval = new RecurringTimeout(
+    this.#safeGlobalTxnInterval = new RecurringTimeout(
       this.#resolveConfirmedSafeTxns.bind(this),
       10000,
       this.emitError.bind(this),
-      'safeGlobalResolvedInterval'
+      'safeGlobalTxnInterval'
+    )
+
+    this.#safeGlobalMessageInterval = new RecurringTimeout(
+      this.#resolveConfirmedSafeMessages.bind(this),
+      11000,
+      this.emitError.bind(this),
+      'resolveConfirmedSafeMessages'
     )
 
     this.#main.swapAndBridge.onUpdate(() => {
@@ -191,7 +200,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     await this.#main.initialLoadPromise
 
     this.#accountStateLatestInterval.start()
-    this.#safeGlobalResolvedInterval.start()
+    this.#safeGlobalTxnInterval.start()
+    this.#safeGlobalMessageInterval.start()
   }
 
   async #updatePortfolio() {
@@ -416,6 +426,53 @@ export class ContinuousUpdatesController extends EventEmitter {
         console.log('could not resolve safe global request')
         console.log(e)
       })
+    }
+  }
+
+  async #resolveConfirmedSafeMessages() {
+    await this.initialLoadPromise
+
+    // call only if the selected account is a safe
+    if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
+      return
+
+    const accountStates = await this.#main.accounts.getOrFetchAccountStates(
+      this.#main.selectedAccount.account.addr
+    )
+    if (!accountStates) return
+
+    const pendingSafeMessages = this.#main.requests.userRequests
+      .filter(
+        (r) =>
+          r.meta.accountAddr === this.#main.selectedAccount.account?.addr &&
+          (r.kind === 'message' || r.kind === 'typedMessage' || r.kind === 'siwe') &&
+          r.meta.hash &&
+          !!r.meta.signed?.length
+      )
+      .map((r) => {
+        return {
+          chainId: r.meta.chainId,
+          threshold: accountStates[r.meta.chainId]?.threshold || 0,
+          messageHash: r.meta.hash,
+          requestId: r.id
+        }
+      })
+    if (!pendingSafeMessages.length) return
+
+    const msgs = (await this.#main.safe.getMessagesByHash(pendingSafeMessages)).filter(
+      (m) => m.isConfirmed
+    )
+
+    // resolve each request
+    for (let i = 0; i < msgs.length; i++) {
+      const msg = msgs[i]!
+      const userR = this.#main.requests.userRequests.find(
+        (r) =>
+          (r.kind === 'message' || r.kind === 'typedMessage' || r.kind === 'siwe') &&
+          r.meta.hash === msg.messageHash
+      )
+      if (!userR) continue
+      await this.#main.requests.resolveUserRequest({ hash: msg.preparedSignature }, userR.id)
     }
   }
 }

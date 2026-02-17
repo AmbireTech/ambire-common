@@ -47,10 +47,12 @@ const multiCallAbi = [
   }
 ]
 
+export type ExtendedSafeMessage = SafeMessage & { isConfirmed: boolean }
+
 export interface SafeResults {
   [chainId: string]: {
     txns: SafeMultisigTransactionResponse[]
-    messages: (SafeMessage & { isConfirmed?: boolean })[]
+    messages: ExtendedSafeMessage[]
   }
 }
 
@@ -283,6 +285,27 @@ export async function addMessage(
   })
 }
 
+export async function getMessage({
+  chainId,
+  threshold,
+  messageHash
+}: {
+  chainId: bigint
+  threshold: number
+  messageHash: Hex
+}): Promise<ExtendedSafeMessage | null> {
+  const apiKit = new SafeApiKit({
+    chainId: chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+  const msg = await apiKit.getMessage(messageHash).catch((e) => null)
+  if (!msg) return null
+  return {
+    ...msg,
+    isConfirmed: msg.confirmations.length >= threshold
+  }
+}
+
 export async function addMessageSignature(chainId: bigint, hash: string, signature: string) {
   const apiKit = new SafeApiKit({
     chainId,
@@ -367,7 +390,7 @@ export async function fetchAllPending(
         else
           results[r.chainId.toString()]!.messages = r.results.map((r) => {
             return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
-          }) as SafeMessage[]
+          }) as ExtendedSafeMessage[]
       })
       await wait(1000)
       promises = []
@@ -622,10 +645,9 @@ export async function fetchExecutedTransactions(
     const txn = txns[i]!
     promises.push(getTransaction(txn.chainId, txn.safeTxnHash))
 
-    // when we assemble 5 promises, we make 5 requests to the API,
-    // take the results and wait an additional second.
-    // this is because we're allowed 5 requests per second
-    if ((i + 1) % 5 === 0 || i + 1 === txns.length) {
+    // we're allowed a max of 5 req to the API per second so we
+    // have to be careful - making 3 at a time from here
+    if ((i + 1) % 3 === 0 || i + 1 === txns.length) {
       const responses = await Promise.all(promises)
       responses.forEach((r) => {
         if (r.transactionHash)
