@@ -1313,10 +1313,10 @@ export class MainController extends EventEmitter implements IMainController {
    */
   async fetchSafeTxns(chainIds: bigint[] = []) {
     if (!this.selectedAccount?.account?.safeCreation) return
+    // cache the addr here to prevent race conditions
+    const safeAddr = this.selectedAccount?.account?.addr as Hex
 
-    const accountState = await this.accounts.getOrFetchAccountStates(
-      this.selectedAccount.account.addr
-    )
+    const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
     if (!accountState) return
 
     const finalChainIds = chainIds.length
@@ -1335,11 +1335,7 @@ export class MainController extends EventEmitter implements IMainController {
     }))
 
     const res: SafeResults | null = await this.safe
-      .fetchPending(
-        this.selectedAccount.account.addr as Hex,
-        networksAndThresholds,
-        !!chainIds.length
-      )
+      .fetchPending(safeAddr, networksAndThresholds, !!chainIds.length)
       .catch((e) => {
         console.log(e)
         console.log('failed to retrieve pending safe txns')
@@ -1349,9 +1345,11 @@ export class MainController extends EventEmitter implements IMainController {
     if (!res) return
 
     // build txn requests
-    const txnRequest = toCallsUserRequest(this.selectedAccount.account!.addr as Hex, res)
+    const txnRequest = toCallsUserRequest(safeAddr, res)
     for (let i = 0; i < txnRequest.length; i++) {
-      await this.requests.build(txnRequest[i]!).catch((e) => e)
+      // build the requests only if the selected account hasn't changed
+      if (this.selectedAccount?.account?.addr === safeAddr)
+        await this.requests.build(txnRequest[i]!).catch((e) => e)
     }
 
     // build and resolve message requests
@@ -1360,13 +1358,15 @@ export class MainController extends EventEmitter implements IMainController {
       const req = messageRequests[i]!
       const userRequest = this.requests.userRequests.find(
         (u) =>
-          u.meta.accountAddr === this.selectedAccount.account!.addr &&
+          u.meta.accountAddr === safeAddr &&
           u.meta.chainId === req.params.chainId &&
           (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
           u.meta.hash === req.params.messageHash
       )
       if (!userRequest && !req.isConfirmed) {
-        await this.requests.build(req).catch((e) => e)
+        // build the requests only if the selected account hasn't changed
+        if (this.selectedAccount?.account?.addr === safeAddr)
+          await this.requests.build(req).catch((e) => e)
       }
       if (userRequest && req.isConfirmed) {
         await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
