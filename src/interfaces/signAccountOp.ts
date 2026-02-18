@@ -12,12 +12,18 @@ type Warning = {
   type?: Type
 }
 
-type Type = 'error' | 'warning' | 'info3'
+type Type = 'error' | 'warning' | 'info'
 
 type SignAccountOpError = {
   title: string
   code?: string
   text?: string
+}
+
+type SignAccountOpBanner = {
+  id: string
+  type: 'error' | 'warning'
+  text: string
 }
 
 enum TraceCallDiscoveryStatus {
@@ -29,4 +35,4 @@ enum TraceCallDiscoveryStatus {
 }
 
 export { TraceCallDiscoveryStatus }
-export type { Warning, SignAccountOpError }
+export type { Warning, SignAccountOpError, SignAccountOpBanner }

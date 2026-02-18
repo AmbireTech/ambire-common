@@ -18,8 +18,6 @@ import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
 import { BundlerTransactionReceipt, GasSpeeds, UserOpStatus } from './types'
 
-require('dotenv').config()
-
 export abstract class Bundler {
   /**
    * The default pollWaitTime. This is used to determine
@@ -151,37 +149,31 @@ export abstract class Bundler {
     return result.status === 200
   }
 
-  async fetchGasPrices(
-    network: Network,
-    errorCallback: Function,
-    counter: number = 0
-  ): Promise<GasSpeeds> {
-    if (counter >= 3)
-      throw new Error('Estimating gas prices from the bundler timed out. Retrying...')
-
-    let response
-
-    try {
-      response = await Promise.race([
-        this.getGasPrice(network),
-        new Promise((_resolve, reject) => {
-          setTimeout(
-            () => reject(new Error('fetching bundler gas prices failed, request too slow')),
-            5000
-          )
-        })
-      ])
-    } catch (e: any) {
-      const increment = counter + 1
-      return this.fetchGasPrices(network, errorCallback, increment)
-    }
-
-    return response as GasSpeeds
+  async fetchGasPrices(network: Network): Promise<GasSpeeds> {
+    return this.getGasPrice(network)
   }
 
   // used when catching errors from bundler requests
   decodeBundlerError(e: Error): DecodedError {
     const error = new BundlerError(e.message, this.getName())
     return decodeError(error)
+  }
+
+  /**
+   * Different bundlers return the success flag differently:
+   * - number, string (0,1), string (success)
+   * We make it one and the same here
+   */
+  static getReceiptSuccess(bundlerTransactionReceipt: BundlerTransactionReceipt): bigint {
+    const receipt = bundlerTransactionReceipt.receipt
+    if (receipt.status === undefined) return bundlerTransactionReceipt.success ? 1n : 0n
+
+    let statusAsNumber = 0n
+    try {
+      statusAsNumber = BigInt(receipt.status)
+    } catch (e: any) {
+      statusAsNumber = receipt.status === 'success' ? 1n : 0n
+    }
+    return statusAsNumber
   }
 }

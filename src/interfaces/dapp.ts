@@ -1,5 +1,6 @@
 import { Session } from '../classes/session'
 import { ControllerInterface } from './controller'
+import { BlacklistedStatus } from './phishing'
 
 export type IDappsController = ControllerInterface<
   InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
@@ -21,7 +22,7 @@ export interface Dapp {
   isCustom: boolean
   chainId: number
   favorite: boolean
-  blacklisted?: boolean
+  blacklisted: BlacklistedStatus
   grantedPermissionId?: string
   grantedPermissionAt?: number
 }
@@ -46,12 +47,12 @@ export interface DefiLlamaProtocol {
 }
 
 export interface DefiLlamaChain {
-  gecko_id: string
+  gecko_id: string | null
   tvl: number
-  tokenSymbol: string
-  cmcId: string
+  tokenSymbol: string | null
+  cmcId: string | null
   name: string
-  chainId: number
+  chainId: number | null
 }
 
 export interface DappProviderRequest {
@@ -59,4 +60,11 @@ export interface DappProviderRequest {
   params?: any
   session: Session
   meta?: { [key: string]: any }
+}
+
+export interface GetCurrentDappRes {
+  type: string
+  requestId: string
+  ok: boolean
+  res: Dapp | null
 }

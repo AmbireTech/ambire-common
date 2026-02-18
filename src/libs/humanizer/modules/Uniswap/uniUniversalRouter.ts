@@ -11,7 +11,7 @@ import {
   getToken,
   getWrapping
 } from '../../utils'
-import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
+import { COMMANDS, COMMANDS_DESCRIPTIONS, V4_ACTION_CODES, V4_ACTION_DESCRIPTORS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
@@ -41,6 +41,115 @@ function parseCommands(commands: string): string[] | null {
     res.push(`0x${commands.slice(i, i + 2)}`)
   }
   return res
+}
+
+function parseV4Actions(
+  actions: string,
+  totalParams: string[],
+  accountAddr: string
+): HumanizerVisualization[][] {
+  const parsedActions = parseCommands(actions)
+  const parsed: HumanizerVisualization[][] = []
+  if (!parsedActions) return [[getAction('Unknown Uniswap V4 action')]]
+  if (parsedActions.length !== totalParams.length) return [[getAction('Unknown Uniswap V4 action')]]
+  const zippedData = parsedActions.map((_, i) => ({
+    action: parsedActions[i],
+    param: totalParams[i]
+  }))
+  zippedData.forEach(({ action, param }) => {
+    if (action === V4_ACTION_CODES.SETTLE) {
+      const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE, param)
+      parsed.push([getAction('Send'), getToken(args.currency, args.amount)])
+    } else if (action === V4_ACTION_CODES.SETTLE_ALL) {
+      const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE_ALL, param)
+      parsed.push([getAction('Send'), getToken(args.currency, args.maxAmount)])
+    } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN) {
+      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN, param)
+      const [tokenIn, path, amountIn, amountOut] = swap
+      const lastToken = path[path.length - 1][0]
+
+      // we add them so we can use them as token hints later on in the simulation
+      const hiddenTokens = path.map((p: any): HumanizerVisualization[] => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const [intermediateCurrency, fee, tickSpacing, hooks, hookData] = p
+        return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
+      })
+      parsed.push(
+        [
+          getAction('Swap'),
+          getToken(tokenIn, amountIn),
+          getLabel('for'),
+          getToken(lastToken, amountOut)
+        ],
+        ...hiddenTokens
+      )
+    } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
+      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT, param)
+      const [tokenOut, path, amountOut, amountIn] = swap
+      const firstToken = path[0][0]
+
+      // we add them so we can use them as token hints later on in the simulation
+      const hiddenTokens = path.map((p: any): HumanizerVisualization[] => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const [intermediateCurrency, fee, tickSpacing, hooks, hookData] = p
+        return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
+      })
+      parsed.push(
+        [
+          getAction('Swap'),
+          getToken(firstToken, amountIn),
+          getLabel('for'),
+          getToken(tokenOut, amountOut)
+        ],
+        ...hiddenTokens
+      )
+    } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
+      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE, param)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const [poolKey, zeroForOne, amountIn, amountOutMinimum, hookData] = swap
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const [currency0, currency1, fee, tickSpacing, hooks] = poolKey
+
+      parsed.push([
+        getAction('Swap'),
+        getToken(currency0, amountIn),
+        getLabel('for'),
+        getToken(currency1, amountOutMinimum),
+        // used for hint in token discovery
+        getToken(hooks, 0n, true)
+      ])
+    } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE) {
+      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT_SINGLE, param)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const [poolKey, zeroForOne, amountOut, amountInMaximum, hookData] = swap
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const [currency0, currency1, fee, tickSpacing, hooks] = poolKey
+
+      parsed.push([
+        getAction('Swap'),
+        getToken(currency0, amountInMaximum),
+        getLabel('for'),
+        getToken(currency1, amountOut),
+        // used for hint in token discovery
+        getToken(hooks, 0n, true)
+      ])
+    } else if (action === V4_ACTION_CODES.TAKE) {
+      const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
+      if (
+        args.amount &&
+        ['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)
+      )
+        parsed.push([getAction('Take'), getToken(args.currency, args.amount)])
+      // for hints
+      else parsed.push([getToken(args.currency, 0n, true)])
+    } else if (action === V4_ACTION_CODES.TAKE_ALL) {
+      const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
+      parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
+    } else {
+      parsed.push([getAction('Unknown uniswap V4 action')])
+    }
+  })
+  return parsed
 }
 
 export const uniUniversalRouter = (): HumanizerUniMatcher => {
@@ -89,11 +198,7 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
                   params.recipient
                 )
               )
-                parsed.push([
-                  getAction('Take'),
-                  getLabel('at least'),
-                  getToken(params.token, params.amountMin)
-                ])
+                parsed.push([getAction('Take'), getToken(params.token, params.amountMin)])
               else
                 parsed.push([
                   getAction('Send'),
@@ -131,17 +236,43 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
                 getAddressVisualization(params.recipient)
               ])
             } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
-              const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
-              const params = extractParams(inputsDetails, inputs[index])
-              const path = params.path
+              try {
+                const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
+                const params = extractParams(inputsDetails, inputs[index])
+                const path = params.path
 
-              parsed.push([
-                getAction('Swap'),
-                getToken(path[0], params.amountIn),
-                getLabel('for at least'),
-                getToken(path[path.length - 1], params.amountOutMin),
-                getDeadline(deadline)
-              ])
+                parsed.push([
+                  getAction('Swap'),
+                  getToken(path[0], params.amountIn),
+                  getLabel('for at least'),
+                  getToken(path[path.length - 1], params.amountOutMin),
+                  getDeadline(deadline)
+                ])
+              } catch (e) {
+                // alternative encoding, handled here
+                // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=158&end=160
+                // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=223&end=259
+                const params = extractParams(
+                  [
+                    { type: 'address', name: 'user' },
+                    { type: 'uint256', name: 'amountIn' },
+                    { type: 'uint256', name: 'amountOut' },
+                    { type: 'bytes', name: 'path' },
+                    { type: 'bool', name: 'isUserPayer' },
+                    { type: 'bool', name: 'isUni' }
+                  ],
+                  inputs[index]
+                )
+
+                if ((params.path.length / (2 + 40)) % 1 === 0) {
+                  parsed.push([
+                    getAction('Swap'),
+                    getToken(params.path.slice(0, 42), params.amountIn),
+                    getLabel('for'),
+                    getToken('0x' + params.path.slice(-40), params.amountOut)
+                  ])
+                }
+              }
             } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
               const params = extractParams(inputsDetails, inputs[index])
@@ -184,6 +315,15 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
                   getToken(ZeroAddress, params.amountMin),
                   ...getUniRecipientText(accountOp.accountAddr, params.recipient)
                 ])
+            } else if (command === COMMANDS.V4_SWAP) {
+              const { inputsDetails } = COMMANDS_DESCRIPTIONS.V4_SWAP
+              const params = extractParams(inputsDetails, inputs[index])
+              const v4NewHumanization = parseV4Actions(
+                params.actions,
+                params.params,
+                accountOp.accountAddr
+              )
+              parsed.push(...v4NewHumanization)
             } else {
               if (!call.to)
                 throw Error('Humanizer: should not be inside the uniswap module when !call.to')

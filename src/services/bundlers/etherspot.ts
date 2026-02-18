@@ -8,9 +8,13 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class Etherspot extends Bundler {
   protected getUrl(network: Network): string {
-    return `https://rpc.etherspot.io/v2/${network.chainId.toString()}?api-key=${
-      process.env.REACT_APP_ETHERSPOT_API_KEY
-    }`
+    const API_KEY = process.env.REACT_APP_ETHERSPOT_API_KEY || ''
+
+    if (!API_KEY) {
+      throw new Error('Etherspot API key is not set')
+    }
+
+    return `https://rpc.etherspot.io/v2/${network.chainId.toString()}?api-key=${API_KEY}`
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
@@ -39,12 +43,16 @@ export class Etherspot extends Bundler {
   public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {
     const provider = this.getProvider(network)
 
-    const status = await provider.send('eth_getUserOperationByHash', [userOpHash]).catch((e) => {
-      // etherspot throws an error when the userOpHash is not found
+    const status = await provider.send('eth_getUserOperationReceipt', [userOpHash]).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.log('etherspot failed to find the status of the user op')
+      // eslint-disable-next-line no-console
+      console.log(e)
+
       return null
     })
 
-    if (!status) {
+    if (!status || !status.receipt) {
       return {
         status: 'not_found'
       }
@@ -52,7 +60,7 @@ export class Etherspot extends Bundler {
 
     return {
       status: 'found',
-      transactionHash: status.transactionHash
+      transactionHash: status.receipt.transactionHash
     }
   }
 

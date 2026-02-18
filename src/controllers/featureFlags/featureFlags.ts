@@ -1,5 +1,7 @@
 import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
@@ -11,10 +13,30 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export class FeatureFlagsController extends EventEmitter implements IFeatureFlagsController {
   #flags: FeatureFlags
 
-  constructor(featureFlags: Partial<FeatureFlags>) {
-    super()
+  #storage: IStorageController
+
+  // Holds the initial load promise, so that one can wait until it completes
+  initialLoadPromise?: Promise<void>
+
+  constructor(
+    featureFlags: Partial<FeatureFlags>,
+    storage: IStorageController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
+  ) {
+    super(eventEmitterRegistry)
 
     this.#flags = { ...defaultFeatureFlags, ...(featureFlags || {}) }
+    this.#storage = storage
+
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
+  }
+
+  async #load(): Promise<void> {
+    const features = await this.#storage.get('flags', {})
+    this.#flags = { ...this.#flags, ...(features || {}) }
+    this.emitUpdate()
   }
 
   /** Syntactic sugar for checking if a feature flag is enabled */
@@ -22,15 +44,21 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
     return this.#flags[flag]
   }
 
-  setFeatureFlag(flag: keyof typeof defaultFeatureFlags, value: boolean): void {
+  async setFeatureFlag(flag: keyof typeof defaultFeatureFlags, value: boolean): Promise<void> {
     this.#flags[flag] = value
+    await this.#storage.set('flags', this.#flags)
     this.emitUpdate()
+  }
+
+  get flags() {
+    return this.#flags
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      flags: this.#flags
     }
   }
 }

@@ -2,74 +2,131 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { IPhishingController } from '../../interfaces/phishing'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
+import { AccountsController } from '../accounts/accounts'
+import { AddressBookController } from '../addressBook/addressBook'
+import { AutoLoginController } from '../autoLogin/autoLogin'
+import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { PhishingController } from './phishing'
 
-const storage: Storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-const uiManager = mockUiManager().uiManager
-const uiCtrl = new UiController({ uiManager })
+const prepareTest = async () => {
+  const storage: Storage = produceMemoryStore()
+  const storageCtrl = new StorageController(storage)
 
-let phishing: IPhishingController
-const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
-describe('PhishingController', () => {
-  beforeEach(async () => {
-    await storageCtrl.set('phishingDetection', {
-      timestamp: twentyFourHoursAgo,
-      // actual blacklisted domains by MetaMask/eth-phishing-detect
-      metamaskBlacklist: [
-        'go-blast2l.xyz',
-        'insta-dapp.net',
-        'l2blast-check.xyz',
-        'lihea.build',
-        'lidofinance.one',
-        'owlto-v2.online',
-        'swlifi.org',
-        'pndlifi.com'
-      ],
-      phantomBlacklist: []
-    })
-    phishing = new PhishingController({ storage: storageCtrl, fetch, ui: uiCtrl })
-    await phishing.initialLoadPromise
-  })
-  test('should initialize', async () => {
-    expect(phishing).toBeDefined()
-  })
-  test('should fetch lists from github', async () => {
-    const storedPhishingDetection = await storageCtrl.get('phishingDetection', {
-      timestamp: null,
-      metamaskBlacklist: [],
-      phantomBlacklist: []
-    })
-    expect(storedPhishingDetection).not.toBe(null)
-    expect(phishing.lastStorageUpdate).not.toBe(null)
-    if ((phishing.lastStorageUpdate as number) > twentyFourHoursAgo) {
-      expect(phishing.blacklistLength).toBeGreaterThan(
-        storedPhishingDetection!.metamaskBlacklist.length
-      )
-    } else {
-      expect(phishing.blacklistLength).toEqual(storedPhishingDetection!.metamaskBlacklist.length)
+  await storageCtrl.set('domainsBlacklistedStatus', {
+    'foourmemez.com': {
+      status: 'BLACKLISTED',
+      updatedAt: Date.now()
+    },
+    'rewards.ambire.com': {
+      status: 'VERIFIED',
+      updatedAt: Date.now()
     }
   })
-  test('should load and update blacklists and correctly check for blacklisted urls', async () => {
-    expect(await phishing.getIsBlacklisted('https://unstake.it')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://blogpost-opensea.io')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://safe.com')).toBe(false)
+  await storageCtrl.set('addressesBlacklistedStatus', {
+    '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e': {
+      status: 'BLACKLISTED',
+      updatedAt: Date.now()
+    },
+    '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45': {
+      status: 'VERIFIED',
+      updatedAt: Date.now()
+    }
   })
-  test('should send correct url status to the UI', async () => {
-    const sendWindowUiMessageSpy = jest.spyOn(uiManager.message, 'sendUiMessage')
-    await phishing.sendIsBlacklistedToUi('https://unstake.it')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
-    sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://blogpost-opensea.io')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
-    sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://safe.com')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'NOT_BLACKLISTED' })
+
+  let providersCtrl: IProvidersController
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
+    fetch,
+    relayerUrl,
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
+    },
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
+  })
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
+  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
+  const accountsCtrl = new AccountsController(
+    storageCtrl,
+    providersCtrl,
+    networksCtrl,
+    keystore,
+    () => {},
+    () => {},
+    () => {},
+    relayerUrl,
+    fetch
+  )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystore,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl,
+    keystore,
+    autoLogin: autoLoginCtrl
+  })
+  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
+
+  const controller = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    addressBook: addressBookCtrl
+  })
+  await controller.initialLoadPromise
+
+  return { controller }
+}
+
+describe('PhishingController', () => {
+  test('should initialize', async () => {
+    const { controller } = await prepareTest()
+    expect(controller).toBeDefined()
+  })
+  test('should get dapps blacklisted status', async () => {
+    const { controller } = await prepareTest()
+    await controller.updateDomainsBlacklistedStatus(
+      ['foourmemez.com', 'rewards.ambire.com'],
+      (blacklistedStatus) => {
+        expect(blacklistedStatus['foourmemez.com'] === 'BLACKLISTED')
+        expect(blacklistedStatus['rewards.ambire.com'] === 'VERIFIED')
+      }
+    )
+  })
+  test('should get addresses blacklisted status', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.updateAddressesBlacklistedStatus(
+      ['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e', '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'],
+      (blacklistedStatus) => {
+        expect(blacklistedStatus['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'] === 'BLACKLISTED')
+        expect(blacklistedStatus['0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'] === 'VERIFIED')
+      }
+    )
   })
 })

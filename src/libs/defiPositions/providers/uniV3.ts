@@ -34,6 +34,7 @@ export async function getUniV3Positions(
   const data = result.map((asset: any) => ({
     positionId: asset.positionId,
     token0Symbol: asset.token0Symbol,
+    poolAddr: asset.poolAddr,
     token0Name: asset.token0Name,
     token0Decimals: asset.token0Decimals,
     token1Symbol: asset.token1Symbol,
@@ -79,7 +80,8 @@ export async function getUniV3Positions(
           inRange: tokenAmounts.isInRage,
           positionIndex: pos.positionId.toString(),
           liquidity: pos.positionInfo.liquidity,
-          name: 'Liquidity Pool'
+          name: 'Liquidity Pool',
+          pool: { id: pos.poolAddr }
         },
         assets: [
           {
@@ -147,21 +149,35 @@ export async function getDebankEnhancedUniV3Positions(
   if (!uniPositionFromDebank) return uniPosition
 
   // Merge the positions from Debank with the custom ones
+  const positionsMap = new Map<string, Position>()
+
+  uniPosition.positions.forEach((customPos) => {
+    positionsMap.set(customPos.additionalData.positionIndex, customPos)
+  })
+
+  uniPositionFromDebank.positions.forEach((debankPos) => {
+    const existingPos = positionsMap.get(debankPos.additionalData.positionIndex)
+
+    if (existingPos) {
+      // Merge data if position exists in both
+      positionsMap.set(debankPos.additionalData.positionIndex, {
+        ...debankPos,
+        additionalData: {
+          ...debankPos.additionalData,
+          inRange: existingPos.additionalData.inRange,
+          liquidity: existingPos.additionalData.liquidity
+        }
+      })
+    } else {
+      // Add new Debank position
+      positionsMap.set(debankPos.additionalData.positionIndex, debankPos)
+    }
+  })
+  const mergedPositions = Array.from(positionsMap.values())
+
   return {
     ...uniPositionFromDebank,
     source: 'mixed' as const,
-    positions: uniPositionFromDebank.positions.map((pos) => {
-      const match = uniPosition.positions.find((p) => p.id === pos.additionalData.positionIndex)
-
-      return match
-        ? {
-            ...pos,
-            additionalData: {
-              ...pos.additionalData,
-              inRange: match.additionalData.inRange
-            }
-          }
-        : pos
-    })
+    positions: mergedPositions
   }
 }

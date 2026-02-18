@@ -1,6 +1,7 @@
 import { getAddress, isAddress } from 'ethers'
 
 import { IContractNamesController } from '../../interfaces/contractNames'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -57,8 +58,17 @@ export class ContractNamesController extends EventEmitter implements IContractNa
 
   #contractsPendingToBeFetched: { address: string; chainId: bigint }[] = []
 
-  constructor(fetch: Fetch, debounceTime: number = 100) {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    fetch,
+    debounceTime = 100
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    fetch: Fetch
+    debounceTime?: number
+  }) {
+    super(eventEmitterRegistry)
+
     this.#fetch = fetch
     this.#debounceTime = debounceTime
   }

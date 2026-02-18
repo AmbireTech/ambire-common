@@ -6,23 +6,29 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { isValidAddress } from '../address'
 
-type ValidateReturnType = {
-  success: boolean
+export type Validation = {
   message: string
-  errorType?: 'insufficient_amount'
+  /** Severity levels:
+   * - 'error' - Critical validation failures that block the transaction
+   * - 'warning' - Important information user should know but transaction can proceed
+   * - 'info' - Neutral informational messages
+   * - 'success' - Green confirmation message
+   **/
+  severity: 'info' | 'warning' | 'error' | 'success'
+  id?: 'insufficient_amount' | 'resolving_domain'
 }
 
-export const validateAddress = (address: string): ValidateReturnType => {
+export const validateAddress = (address: string): Validation => {
   if (!(address && address.length)) {
     return {
-      success: false,
+      severity: 'error',
       message: ''
     }
   }
 
   if (!(address && isValidAddress(address))) {
     return {
-      success: false,
+      severity: 'error',
       message: 'Invalid address.'
     }
   }
@@ -31,26 +37,26 @@ export const validateAddress = (address: string): ValidateReturnType => {
     getAddress(address)
   } catch {
     return {
-      success: false,
+      severity: 'error',
       message: 'Invalid checksum. Verify the address and try again.'
     }
   }
 
-  return { success: true, message: '' }
+  return { severity: 'success', message: '' }
 }
 
-const validateAddAuthSignerAddress = (address: string, selectedAcc: any): ValidateReturnType => {
+const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Validation => {
   const isValidAddr = validateAddress(address)
-  if (!isValidAddr.success) return isValidAddr
+  if (isValidAddr.severity === 'error') return isValidAddr
 
   if (address && selectedAcc && address === selectedAcc) {
     return {
-      success: false,
+      severity: 'error',
       message: "You can't send to the same address you’re sending from."
     }
   }
 
-  return { success: true, message: '' }
+  return { severity: 'success', message: '' }
 }
 
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
@@ -88,30 +94,28 @@ const validateSendTransferAddress = (
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
-  isSWWarningVisible?: boolean,
-  isSWWarningAgreed?: boolean,
   isRecipientAddressFirstTimeSend?: boolean,
   lastRecipientTransactionDate?: Date | null
-): ValidateReturnType => {
+): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
-      success: true,
-      message: ''
+      message: '',
+      severity: 'success'
     }
   }
 
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
-      success: false,
-      message: "You can't send to the same address you're sending from."
+      message: "You're about to send funds back to yourself.",
+      severity: 'warning'
     }
   }
 
   if (isRecipientHumanizerKnownTokenOrSmartContract) {
     return {
-      success: false,
-      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
+      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
+      severity: 'error'
     }
   }
 
@@ -123,8 +127,8 @@ const validateSendTransferAddress = (
       message = `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
     }
     return {
-      success: true,
-      message
+      message,
+      severity: lastRecipientTransactionDate ? 'success' : 'warning'
     }
   }
 
@@ -136,8 +140,8 @@ const validateSendTransferAddress = (
     !isRecipientDomainResolving
   ) {
     return {
-      success: false,
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
+      severity: 'error'
     }
   }
 
@@ -149,37 +153,27 @@ const validateSendTransferAddress = (
     !isRecipientDomainResolving
   ) {
     return {
-      success: false,
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE
-    }
-  }
-
-  if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
-    return {
-      success: false,
-      message: 'Please confirm that the recipient address is not an exchange.'
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
+      severity: 'error'
     }
   }
 
   if (lastRecipientTransactionDate) {
     return {
-      success: true,
-      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
+      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
+      severity: 'success'
     }
   }
 
-  return { success: true, message: '' }
+  return { severity: 'success', message: '' }
 }
 
-const validateSendTransferAmount = (
-  amount: string,
-  selectedAsset: TokenResult
-): ValidateReturnType => {
+const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {
   const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
 
   if (!(sanitizedAmount && sanitizedAmount.length)) {
     return {
-      success: false,
+      severity: 'error',
       message: ''
     }
   }
@@ -188,13 +182,13 @@ const validateSendTransferAmount = (
     // The user has entered an amount that is outside of the valid range.
     if (Number(amount) > 0 && selectedAsset.decimals && selectedAsset.decimals > 0) {
       return {
-        success: false,
+        severity: 'error',
         message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`
       }
     }
 
     return {
-      success: false,
+      severity: 'error',
       message: 'The amount must be greater than 0.'
     }
   }
@@ -203,30 +197,30 @@ const validateSendTransferAmount = (
     if (sanitizedAmount && selectedAsset && selectedAsset.decimals) {
       if (Number(sanitizedAmount) < 1 / 10 ** selectedAsset.decimals)
         return {
-          success: false,
-          message: 'Token amount too low.'
+          message: 'Token amount too low.',
+          severity: 'error'
         }
 
       const currentAmount: bigint = parseUnits(sanitizedAmount, selectedAsset.decimals)
 
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
-          success: false,
           message: 'Insufficient amount.',
-          errorType: 'insufficient_amount'
+          severity: 'error',
+          id: 'insufficient_amount'
         }
       }
     }
   } catch (e) {
-    console.error(e)
-
+    // Keep original behavior but avoid adding new console usage beyond existing
+    // callers may log if needed; return a warning indicating invalid amount.
     return {
-      success: false,
-      message: 'Invalid amount.'
+      message: 'Invalid amount.',
+      severity: 'error'
     }
   }
 
-  return { success: true, message: '' }
+  return { severity: 'success', message: '' }
 }
 
 const isValidCode = (code: string) => code.length === 6

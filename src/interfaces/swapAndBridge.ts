@@ -51,11 +51,6 @@ export interface SwapAndBridgeQuote {
   selectedRoute?: SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
-  /**
-   * We don't charge a convenience fee for some operations
-   * @example - Wrapping and unwrapping natives
-   */
-  withConvenienceFee: boolean
 }
 
 export interface SocketAPIRoute {
@@ -113,7 +108,11 @@ export interface SwapAndBridgeRoute {
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
-  // put in a service fee only if it's not included in the quote
+  isSelectedManually?: boolean
+  // applied only for bridges
+  // some bridges require a fee paid out in source chain native that we cannot
+  // abstract. That's why we put it here and display it to the user so he
+  // knows extra fee is going to leave his account
   serviceFee?: {
     amount: string
     amountUSD: string
@@ -121,6 +120,14 @@ export interface SwapAndBridgeRoute {
   // the socket auto route comes with approvalData & txData
   approvalData?: BungeeApprovalData
   txData?: BungeeTxData
+  /**
+   * We don't charge a convenience fee for some operations.
+   * Also, on some chains we have a fee with some providers while
+   * we don't have with others.
+   * @example - Wrapping and unwrapping natives
+   */
+  withConvenienceFee: boolean
+  isIntent?: boolean // we add this by ourselves
 }
 
 export interface SocketAPISwapUserTx {
@@ -441,6 +448,7 @@ export interface BungeeExchangeQuoteResponse {
     suggestedClientSlippage: number
     approvalData: BungeeApprovalData
     txData: BungeeTxData
+    isIntent?: boolean // we add this by ourselves
   }
   destinationChainId: number
   input: {
@@ -456,6 +464,7 @@ export interface BungeeExchangeQuoteResponse {
     estimatedTime?: number
     routeDetails: BungeeRouteDetails
     slippage: number
+    isIntent?: boolean // we add this by ourselves
   }[]
   originChainId: number
   receiverAddress: string
@@ -478,7 +487,6 @@ export interface ProviderQuoteParams {
   fromAmount: bigint
   userAddress: string
   sort: 'time' | 'output'
-  isOG: boolean
   isWrapOrUnwrap: boolean
   accountNativeBalance: bigint
   nativeSymbol: string
@@ -490,6 +498,11 @@ export interface SwapProvider {
   isHealthy: boolean | null
   updateHealth(): void
   resetHealth(): void
+  /**
+   * List of supported chains by the provider
+   * null if a successful fetch has not been made yet
+   */
+  supportedChains: SwapAndBridgeSupportedChain[] | null
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,
@@ -516,7 +529,6 @@ export interface SwapProvider {
     fromAmount,
     userAddress,
     sort,
-    isOG,
     accountNativeBalance,
     nativeSymbol
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>

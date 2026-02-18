@@ -20,9 +20,13 @@ import {
 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
-import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import {
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  DERIVATION_OPTIONS,
+  HD_PATH_TEMPLATE_TYPE
+} from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   ExternalKey,
@@ -136,9 +140,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     platform: Platform,
     _storage: IStorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
-    ui: IUiController
+    ui: IUiController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
@@ -166,12 +171,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
       this.#keystoreKeys = keystoreKeys
-    } catch (e) {
+    } catch (e: any) {
       this.emitError({
         message:
           'Something went wrong when loading the Keystore. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('keystore: failed to pull keys from storage')
+        error: e
       })
     }
 
@@ -485,6 +490,15 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
 
     this.#tempSeed = { seed, seedPassphrase, hdPathTemplate }
+
+    this.emitUpdate()
+  }
+
+  async generateTempSeed({ extraEntropy }: { extraEntropy?: string }) {
+    const entropyGenerator = new EntropyGenerator()
+    const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy || '').phrase
+
+    this.#tempSeed = { seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE }
 
     this.emitUpdate()
   }
@@ -1126,6 +1140,45 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.#keystoreKeys = keystoreKeys
 
     this.emitUpdate()
+  }
+
+  decryptMessage = async ({
+    encryptedMessage,
+    keyAddr,
+    keyType
+  }: {
+    encryptedMessage: string
+    keyAddr: Key['addr']
+    keyType: Key['type']
+  }) => {
+    const signer = await this.getSigner(keyAddr, keyType)
+    if (!signer.decrypt) throw new Error(`This account uses a key type (${keyType}) that does not support getting encryption public key.`)
+
+    try {
+      return signer.decrypt(encryptedMessage)
+    } catch (e) {
+      const message = `Failed to decrypt message. Error details: <${e}>`
+      throw new EmittableError({ message, level: 'major', error: new Error(`keystore: ${e}`)
+      })
+    }
+  }
+
+  sendDecryptedMessageToUi = async ({
+    encryptedMessage,
+    keyAddr,
+    keyType
+  }: {
+    encryptedMessage: string
+    keyAddr: Key['addr']
+    keyType: Key['type']
+  }) => {
+    const decryptedMessage = await this.decryptMessage({
+      encryptedMessage,
+      keyAddr,
+      keyType
+    })
+
+    this.#ui.message.sendUiMessage({ decryptedMessage })
   }
 
   toJSON() {

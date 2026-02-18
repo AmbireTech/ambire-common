@@ -9,7 +9,7 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import wait from '../../utils/wait'
+import wait, { waitWithAbort } from '../../utils/wait'
 
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
@@ -19,6 +19,9 @@ export class SwapProviderParallelExecutor {
   isHealthy: boolean | null = null
 
   #providers: SwapProvider[]
+
+  // Added for compatibility with the type
+  supportedChains: SwapProvider['supportedChains'] = []
 
   constructor(providers: SwapProvider[]) {
     this.#providers = providers
@@ -36,7 +39,14 @@ export class SwapProviderParallelExecutor {
     this.isHealthy = null
   }
 
-  async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
+  async #fetchFromAll<T>(
+    fetchMethod: (provider: SwapProvider) => Promise<T | Error>,
+    reqMeta?: {
+      chainIds?: number[]
+    }
+  ): Promise<T> {
+    const { chainIds = [] } = reqMeta || {}
+    const uniqueChainIds = [...new Set(chainIds)]
     const MIN_WAIT = 3000 // 3s
     const MAX_WAIT_AFTER_FIRST_COMPLETED = 2000 // 2s
     const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 15000 // 15s
@@ -45,13 +55,35 @@ export class SwapProviderParallelExecutor {
 
     const startTime = Date.now()
 
-    const tasks = this.#providers.map((provider) =>
+    const supportedProviders = this.#providers.filter((provider) => {
+      // If the request is not chainId specific, use all providers
+      if (!uniqueChainIds.length) return true
+      // If supportedChains is not set yet, we just try to use the provider
+      if (provider.supportedChains === null) return true
+      const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
+
+      const res = uniqueChainIds.every((chainId) => supportedChainIds?.includes(chainId))
+
+      return res
+    })
+
+    if (!supportedProviders.length) {
+      throw new SwapAndBridgeProviderApiError(
+        `The requested network(s) are not supported by any available service provider. Chain IDs: ${uniqueChainIds.join(
+          ', '
+        )}`
+      )
+    }
+
+    const tasks = supportedProviders.map((provider) =>
       fetchMethod(provider)
         .then((result) => ({ provider, result }))
         .catch((err) => ({ provider, result: err as Error }))
     )
 
-    const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
+    const waitPromise = waitWithAbort(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE)
+
+    const absoluteTimeout = waitPromise.promise.then(() => {
       throw new Error(
         'Our service providers are temporarily unavailable or your internet connection is too slow.'
       )
@@ -59,14 +91,18 @@ export class SwapProviderParallelExecutor {
 
     const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
 
+    if (waitPromise.abort) waitPromise.abort()
+
     if ('provider' in firstResult && 'result' in firstResult) {
       results.push(firstResult)
     }
 
-    const remainingTasks = this.#providers
+    const remainingTasks = supportedProviders
+      // Make sure the provider was not filtered out
       .filter((p) => !results.some((r) => r.provider === p))
       .map((provider) => {
-        const originalIdx = this.#providers.indexOf(provider)
+        const originalIdx = supportedProviders.indexOf(provider)
+        if (!tasks[originalIdx]) return null
         return tasks[originalIdx]
           .then((res) => res)
           .catch((err) => ({ provider, result: err as Error }))
@@ -78,7 +114,8 @@ export class SwapProviderParallelExecutor {
     const remainingMinWait = Math.max(0, MIN_WAIT - elapsed)
 
     const secondResult = (await Promise.race([
-      Promise.any(remainingTasks),
+      // Promise.any can't be called with an empty array
+      remainingTasks.length ? Promise.any(remainingTasks) : Promise.resolve(),
       wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
     ])) as { provider: SwapProvider; result: Error | T }
 
@@ -99,7 +136,7 @@ export class SwapProviderParallelExecutor {
     }
 
     // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
-    const baseMessage = errors[0].message || 'Unknown error'
+    const baseMessage = errors[0]!.message || 'Unknown error'
 
     // Extract technical details from all errors (that's the content between < and >)
     const technicalDetails = errors
@@ -111,7 +148,7 @@ export class SwapProviderParallelExecutor {
       .filter(Boolean)
 
     // Modify the base message to indicate multiple providers
-    const providerNames = this.#providers.map((p) => p.name).join(' and ')
+    const providerNames = supportedProviders.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
@@ -154,8 +191,10 @@ export class SwapProviderParallelExecutor {
     fromChainId: number
     toChainId: number
   }): Promise<SwapAndBridgeToToken[]> {
-    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>((provider: SwapProvider) =>
-      provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e)
+    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>(
+      (provider: SwapProvider) =>
+        provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e),
+      { chainIds: [fromChainId, toChainId] }
     )
 
     // filter duplicates
@@ -174,7 +213,8 @@ export class SwapProviderParallelExecutor {
     chainId: number
   }): Promise<SwapAndBridgeToToken | null> {
     const toTokens = await this.#fetchFromAll<SwapAndBridgeToToken[] | null[]>(
-      (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e)
+      (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e),
+      { chainIds: [chainId] }
     )
     return toTokens.find((t) => t) || null
   }
@@ -193,31 +233,31 @@ export class SwapProviderParallelExecutor {
     fromAmount,
     userAddress,
     sort,
-    isOG,
     accountNativeBalance,
     nativeSymbol,
     isWrapOrUnwrap
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
-    const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>((provider: SwapProvider) =>
-      provider
-        .quote({
-          fromAsset,
-          fromChainId,
-          fromTokenAddress,
-          toAsset,
-          toChainId,
-          toTokenAddress,
-          fromAmount,
-          userAddress,
-          sort,
-          isOG,
-          accountNativeBalance,
-          nativeSymbol,
-          isWrapOrUnwrap
-        })
-        .catch((e) => e)
+    const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>(
+      (provider: SwapProvider) =>
+        provider
+          .quote({
+            fromAsset,
+            fromChainId,
+            fromTokenAddress,
+            toAsset,
+            toChainId,
+            toTokenAddress,
+            fromAmount,
+            userAddress,
+            sort,
+            accountNativeBalance,
+            nativeSymbol,
+            isWrapOrUnwrap
+          })
+          .catch((e) => e),
+      { chainIds: [fromChainId, toChainId] }
     )
-    const firstQuote = quotes[0]
+    const firstQuote = quotes[0] as SwapAndBridgeQuote
     return {
       ...firstQuote,
       routes: quotes.map((q) => q.routes.flat()).flat()

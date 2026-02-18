@@ -25,21 +25,18 @@ const config: HardhatUserConfig = {
     coinmarketcap: 'c47b3b52-863b-4ffe-8673-955a09a393c2',
     token: 'ETH'
   },
+  // sourcify: {
+  //   enabled: true,
+  //   apiUrl: 'https://sourcify-api-monad.blockvision.org/',
+  //   browserUrl: 'https://monadvision.com/'
+  // },
   networks: {
     base: {
       url: 'https://mainnet.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
-    polygon: {
-      url: 'https://invictus.ambire.com/polygon',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
-    },
-    ink: {
-      url: 'https://rpc-gel.inkonchain.com',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
-    },
-    hyperEvm: {
-      url: 'https://invictus.ambire.com/hyperevm',
+    monad: {
+      url: 'https://rpc.monad.xyz',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     baseSepolia: {
@@ -48,6 +45,14 @@ const config: HardhatUserConfig = {
     },
     opSepolia: {
       url: 'https://sepolia.optimism.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    sepolia: {
+      url: 'https://invictus.ambire.com/sepolia',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    arbSepolia: {
+      url: 'https://sepolia-rollup.arbitrum.io/rpc',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     optimism: {
@@ -60,10 +65,6 @@ const config: HardhatUserConfig = {
     },
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
-    },
-    sepolia: {
-      url: 'https://eth-sepolia.public.blastapi.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     binance: {
@@ -79,7 +80,7 @@ const config: HardhatUserConfig = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     berachain: {
-      url: 'https://berachain-rpc.publicnode.com',
+      url: 'https://rpc.berachain-apis.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     arbitrum: {
@@ -92,6 +93,10 @@ const config: HardhatUserConfig = {
     },
     katana: {
       url: 'https://rpc.katana.network',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    world: {
+      url: 'https://invictus.ambire.com/world',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     celo: {
@@ -126,35 +131,11 @@ const config: HardhatUserConfig = {
         }
       },
       {
-        network: 'polygon',
-        chainId: 137,
-        urls: {
-          apiURL: 'https://api.polygonscan.org/api',
-          browserURL: 'https://api.polygonscan.org/api'
-        }
-      },
-      {
-        network: 'ink',
-        chainId: 57073,
-        urls: {
-          apiURL: 'https://explorer.inkonchain.com/api',
-          browserURL: 'https://explorer.inkonchain.com'
-        }
-      },
-      {
         network: 'baseSepolia',
         chainId: 84532,
         urls: {
           apiURL: 'https://api.sepolia.basescan.org/api',
           browserURL: 'https://api.sepolia.basescan.org/api'
-        }
-      },
-      {
-        network: 'opSepolia',
-        chainId: 11155420,
-        urls: {
-          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
-          browserURL: 'https://api-sepolia-optimistic.etherscan.io/api'
         }
       },
       {
@@ -198,6 +179,30 @@ const config: HardhatUserConfig = {
         }
       },
       {
+        network: 'arbSepolia',
+        chainId: 421614,
+        urls: {
+          apiURL: 'https://api.sepolia.arbiscan.io/api',
+          browserURL: 'https://api.sepolia.arbiscan.io'
+        }
+      },
+      {
+        network: 'opSepolia',
+        chainId: 11155420,
+        urls: {
+          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
+          browserURL: 'https://api-sepolia-optimistic.etherscan.io/api'
+        }
+      },
+      {
+        network: 'sepolia',
+        chainId: 11155111,
+        urls: {
+          apiURL: 'https://api-sepolia.etherscan.io/api',
+          browserURL: 'https://api-sepolia.etherscan.io/'
+        }
+      },
+      {
         network: 'gnosis',
         chainId: 100,
         urls: {
@@ -230,14 +235,6 @@ const config: HardhatUserConfig = {
         }
       },
       {
-        network: 'hyperEvm',
-        chainId: 999,
-        urls: {
-          apiURL: 'https://api.hyperevmscan.io/api',
-          browserURL: 'https://api.hyperevmscan.io'
-        }
-      },
-      {
         network: 'berachainBepolia',
         chainId: 80069,
         urls: {
@@ -260,6 +257,22 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.celoscan.io/api',
           browserURL: 'https://celoscan.io'
+        }
+      },
+      {
+        network: 'monad',
+        chainId: 143,
+        urls: {
+          apiURL: 'https://api.monadvision.com',
+          browserURL: 'https://monadvision.com'
+        }
+      },
+      {
+        network: 'world',
+        chainId: 480,
+        urls: {
+          apiURL: 'https://api.worldscan.org/',
+          browserURL: 'https://worldscan.org/'
         }
       }
     ]

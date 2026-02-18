@@ -126,7 +126,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   route: LiFiRoute,
   userAddress: string,
   accountNativeBalance: bigint,
-  nativeSymbol: string
+  nativeSymbol: string,
+  withConvenienceFee: boolean
 ): SwapAndBridgeRoute => {
   // search for a feeCost that is not included in the quote
   // if there is one, check if the user has enough to pay for it
@@ -156,25 +157,27 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     fromAmount: route.fromAmount,
     toAmount: route.toAmount,
     currentUserTxIndex: 0,
-    ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
+    ...(route.steps[0]?.includedSteps.some((s) => s.type === 'cross')
       ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
-      : { usedDexName: route.steps[0].toolDetails.name }),
+      : { usedDexName: route.steps[0]?.toolDetails.name }),
     userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
-    serviceTime: route.steps[0].estimate.executionDuration,
+    serviceTime: route.steps[0]?.estimate.executionDuration || 0,
     rawRoute: route,
     sender: route.fromAddress,
     toToken: route.toToken,
     disabled,
     disabledReason,
-    serviceFee
+    serviceFee,
+    withConvenienceFee
   }
 }
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
-  parentStep: LiFiStep
+  parentStep: LiFiStep,
+  routeId: string
 ): SwapAndBridgeSendTxRequest => {
   if (
     !parentStep.transactionRequest ||
@@ -188,8 +191,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   }
 
   return {
-    // Route ID is the string before the colon, then it's the step index
-    activeRouteId: parentStep.id.split(':')[0],
+    activeRouteId: routeId,
     approvalData:
       parentStep.action.fromToken.address === ZERO_ADDRESS
         ? null // No approval needed fo native tokens
@@ -200,10 +202,10 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
             owner: ''
           },
     chainId: parentStep.action.fromChainId,
-    txData: parentStep.transactionRequest.data,
     txTarget: parentStep.transactionRequest.to,
     userTxIndex: 0,
-    value: parentStep.transactionRequest.value
+    value: parentStep.transactionRequest.value,
+    txData: parentStep.transactionRequest.data
   }
 }
 
@@ -223,6 +225,8 @@ export class LiFiAPI implements SwapProvider {
   isHealthy: boolean | null = null
 
   #apiKey: string
+
+  supportedChains: SwapProvider['supportedChains'] = null
 
   /**
    * We don't use the apiKey as a default option for sending LiFi API
@@ -299,10 +303,11 @@ export class LiFiAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
+      let timeoutPromise: NodeJS.Timeout | undefined
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
-          setTimeout(() => {
+          timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
                 'Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'
@@ -311,6 +316,8 @@ export class LiFiAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
+
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       // Rethrow the same error if it's already humanized
       if (e instanceof SwapAndBridgeProviderApiError) throw e
@@ -368,7 +375,10 @@ export class LiFiAPI implements SwapProvider {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response.chains.map((c) => ({ chainId: c.id }))
+    const chains = response.chains.map((c) => ({ chainId: c.id }))
+    this.supportedChains = chains
+
+    return chains
   }
 
   async getToTokenList({
@@ -389,7 +399,7 @@ export class LiFiAPI implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    const tokens: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
+    const tokens: SwapAndBridgeToToken[] = (response.tokens[toChainId] || []).map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
 
@@ -438,8 +448,6 @@ export class LiFiAPI implements SwapProvider {
     userAddress,
     sort,
     isWrapOrUnwrap,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isOG,
     accountNativeBalance,
     nativeSymbol
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
@@ -497,8 +505,7 @@ export class LiFiAPI implements SwapProvider {
       }
     }
 
-    const shouldRemoveConvenienceFee =
-      isOG || isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
+    const shouldRemoveConvenienceFee = isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
@@ -517,12 +524,17 @@ export class LiFiAPI implements SwapProvider {
       toAsset,
       toChainId,
       routes: response.routes.map((r: LiFiRoute) =>
-        normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol)
+        normalizeLiFiRouteToSwapAndBridgeRoute(
+          r,
+          userAddress,
+          accountNativeBalance,
+          nativeSymbol,
+          !shouldRemoveConvenienceFee
+        )
       ),
       // selecting a route is a controller's responsiilibty, not the API's
       selectedRoute: undefined,
-      selectedRouteSteps: [],
-      withConvenienceFee: !shouldRemoveConvenienceFee
+      selectedRouteSteps: []
     }
   }
 
@@ -541,7 +553,7 @@ export class LiFiAPI implements SwapProvider {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response)
+    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response, route.routeId)
   }
 
   async getRouteStatus({

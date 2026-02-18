@@ -36,11 +36,11 @@ import { ControllersTransactionDependencies } from './dependencies'
 
 const DEFAULT_VALIDATION_FORM_MSGS = {
   amount: {
-    success: false,
+    severity: 'error',
     message: ''
   },
   recipientAddress: {
-    success: false,
+    severity: 'error',
     message: ''
   }
 }
@@ -307,7 +307,6 @@ export class TransactionFormState extends EventEmitter {
     this.isRecipientAddressUnknown =
       !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.isRecipientAddressUnknownAgreed = false
-    // this.#setSWWarningVisibleIfNeeded()
 
     this.emitUpdate()
   }

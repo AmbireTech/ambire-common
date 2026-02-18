@@ -1,6 +1,6 @@
 import { Account } from '../../interfaces/account'
-import { AccountOpAction, Action } from '../../interfaces/actions'
 import { Network } from '../../interfaces/network'
+import { UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 
@@ -8,14 +8,13 @@ export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
 export const getAccountOpsForSimulation = (
   account: Account,
-  visibleActionsQueue: Action[],
+  visibleUserRequests: UserRequest[],
   networks: Network[]
 ): { [key: string]: AccountOp[] } | undefined => {
   const isSmart = isSmartAccount(account)
-  const accountOps = (
-    visibleActionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-  )
-    .map((a) => a.accountOp)
+  const accountOps = visibleUserRequests
+    .filter((r) => r.kind === 'calls')
+    .map((a) => a.signAccountOp.accountOp)
     .filter((op) => {
       if (op.accountAddr !== account.addr) return false
 

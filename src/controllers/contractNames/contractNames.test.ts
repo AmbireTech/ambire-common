@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { ContractNamesController, PERSIST_NOT_FOUND_IN_MS } from './contractNames'
 
 const contracts = {
@@ -19,7 +20,7 @@ describe('Contract Names', () => {
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
-    const contractNamesController = new ContractNamesController(mockedFetch)
+    const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress = Wallet.createRandom().address
 
     // request multiple
@@ -62,13 +63,15 @@ describe('Contract Names', () => {
       'UniswapV3Factory'
     )
     jest.useRealTimers()
+    jest.clearAllTimers()
   })
 
   it('Refetch failed addresses', async () => {
+    const { restore } = suppressConsole()
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
-    const contractNamesController = new ContractNamesController(mockedFetch)
+    const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress = Wallet.createRandom().address
 
     // request a non contract address that will fail
@@ -111,12 +114,14 @@ describe('Contract Names', () => {
     // make sure an attempt was actually made
     expect(mockedFetch).toHaveBeenCalledTimes(2)
     jest.useRealTimers()
+    jest.clearAllTimers()
+    restore()
   })
   it('fetch two times', async () => {
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
-    const contractNamesController = new ContractNamesController(mockedFetch)
+    const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress1 = Wallet.createRandom().address
     const randomAddress2 = Wallet.createRandom().address
 
@@ -166,12 +171,14 @@ describe('Contract Names', () => {
       PERSIST_NOT_FOUND_IN_MS
     )
     jest.useRealTimers()
+    jest.clearAllTimers()
   })
 
   it('Test address validity handling', async () => {
+    const { restore } = suppressConsole()
     const badCheckSum = '0x026224a2940bfe258D0dbE947919B62fE321F042'
     const randomAddress = Wallet.createRandom().address
-    const contractNamesController = new ContractNamesController(fetch)
+    const contractNamesController = new ContractNamesController({ fetch })
     errorPromise = new Promise((resolve) => {
       // expected error for wrong address format
       contractNamesController.onError(resolve)
@@ -185,5 +192,6 @@ describe('Contract Names', () => {
     contractNamesController.getName(randomAddress.toLowerCase(), 1n)
 
     expect(contractNamesController.contractsPendingToBeFetched.length).toBe(1)
+    restore()
   })
 })

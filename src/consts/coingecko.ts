@@ -1,7 +1,7 @@
 import { ZeroAddress } from 'ethers'
 
 import { Network } from '../interfaces/network'
-import { WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses'
+import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses'
 
 const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/'
 const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
@@ -9,6 +9,14 @@ const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
 // @TODO some form of a constants list
 export function geckoIdMapper(address: string, network: Network): string | null {
   if (address === ZeroAddress) return network.nativeAssetId
+
+  // citrea wrapepd cbtc
+  if (network.chainId === 4114n && address === '0x3100000000000000000000000000000000000006')
+    return network.nativeAssetId
+
+  // citrea wbtc
+  if (network.chainId === 4114n && address === '0xDF240DC08B0FdaD1d93b74d5048871232f6BEA3d')
+    return 'wrapped-bitcoin'
 
   // we currently can't map aave so we're leaving this
   if (address === '0x4da27a545c0c5B758a6BA100e3a049001de870f5') return 'aave'
@@ -21,8 +29,8 @@ export function geckoIdMapper(address: string, network: Network): string | null 
  * CoinGecko (so that they are aliased to existing tokens).
  */
 export function geckoTokenAddressMapper(address: string) {
-  // xWALLET is missing on CoinGecko, so alias it to WALLET token (that exists on CoinGecko)
-  if (address === WALLET_STAKING_ADDR) return WALLET_TOKEN
+  // stkWALLET and xWALLET are missing on CoinGecko, so alias to WALLET token (which exists)
+  if ([STK_WALLET, WALLET_STAKING_ADDR].includes(address)) return WALLET_TOKEN
 
   return address
 }

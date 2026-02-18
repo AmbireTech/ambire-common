@@ -6,12 +6,15 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { AssetType } from '../defiPositions/types'
 import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   ERC721s,
+  ExtendedErrorWithLevel,
   ExternalHintsAPIResponse,
   FormattedExternalHintsAPIResponse,
   GetOptions,
@@ -19,10 +22,14 @@ import {
   KnownTokenInfo,
   NetworkState,
   PortfolioGasTankResult,
+  PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult,
+  Total
 } from './interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
@@ -38,7 +45,7 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
   if (
     usdcEMapping[chainId.toString()] &&
-    usdcEMapping[chainId.toString()].toLowerCase() === address.toLowerCase()
+    usdcEMapping[chainId.toString()]!.toLowerCase() === address.toLowerCase()
   ) {
     return 'USDC.E'
   }
@@ -57,13 +64,6 @@ const removeNonLatinChars = (str: string): string =>
       return code >= 32 && code <= 126
     })
     .join('')
-
-// returns true if the original string contained any non-ASCII / invisible chars
-const nonLatinSymbol = (str: string): boolean => {
-  if (!str) return false
-  const cleaned = removeNonLatinChars(str)
-  return cleaned !== str
-}
 
 // safe address normalizer
 const normalizeAddress = (addr: string) => {
@@ -106,7 +106,6 @@ export const isSuspectedRegardsKnownAddresses = (
 export const isSuspectedToken = (
   address: string,
   symbol: string,
-  name: string,
   chainId: bigint
 ): SuspectedType => {
   const normalizedAddr = normalizeAddress(address)
@@ -120,14 +119,10 @@ export const isSuspectedToken = (
     return null // trusted
   }
 
-  // 3) Unknown address (or known but no chainIds) => run symbol/name checks
-  if (nonLatinSymbol(symbol)) return 'no-latin-symbol'
-  if (nonLatinSymbol(name)) return 'no-latin-name'
-
-  // 4) Same-symbol spoofing on same chain (different address)
+  // 3) Same-symbol spoofing on same chain (different address)
   if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
 
-  // 5) Not flagged
+  // 4) Not flagged
   return null
 }
 
@@ -165,7 +160,7 @@ export function getFlags(
   let suspectedType: SuspectedType = null
 
   if (hasSimulationAmount && !isRewardsOrGasTank) {
-    suspectedType = isSuspectedToken(address, symbol, name, BigInt(chainId))
+    suspectedType = isSuspectedToken(address, symbol, BigInt(chainId))
   }
 
   return {
@@ -187,6 +182,16 @@ export function mergeERC721s(sources: ERC721s[]): ERC721s {
   addresses.forEach((address) => {
     try {
       const checksummed = getAddress(address)
+
+      const hasEnumerableHint = sources.some(
+        (source) => source[address] && source[address].length === 0
+      )
+
+      if (hasEnumerableHint) {
+        result[checksummed] = []
+        return
+      }
+
       // Merge arrays and remove duplicates
       const merged: bigint[] = Array.from(
         new Set(sources.flatMap((source) => source[checksummed] || []))
@@ -273,42 +278,202 @@ export const mapToken = (
   }
 }
 
+/**
+ * Determines whether an error is related to network connectivity issues rather than validation failures.
+ *
+ * This function helps distinguish between temporary network problems (which should allow retries)
+ * and actual token validation errors (which indicate the token is genuinely invalid).
+ *
+ */
+const isNetworkError = (error: any): boolean => {
+  if (!error) return false
+
+  const message = error.message?.toLowerCase() || ''
+  const errorCode = error.code
+
+  // Common network error patterns
+  const networkErrorPatterns = [
+    'network error',
+    'network request failed',
+    'fetch failed',
+    'connection refused',
+    'timeout',
+    'econnrefused',
+    'enotfound',
+    'etimedout',
+    'socket hang up',
+    'request timeout',
+    'failed to fetch',
+    'networkerror'
+  ]
+
+  // Common network error codes
+  const networkErrorCodes = ['NETWORK_ERROR', 'TIMEOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']
+
+  return (
+    networkErrorPatterns.some((pattern) => message.includes(pattern)) ||
+    networkErrorCodes.includes(errorCode)
+  )
+}
+
+/**
+ * Executes async functions with limited concurrency to prevent overwhelming RPC providers
+ */
+const limitConcurrency = async <T>(
+  items: T[],
+  asyncFn: (item: T) => Promise<any>,
+  limit: number = 5
+): Promise<any[]> => {
+  const results: any[] = []
+
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit)
+    const batchPromises = batch.map(asyncFn)
+    // eslint-disable-next-line no-await-in-loop
+    const batchResults = await Promise.allSettled(batchPromises)
+
+    results.push(
+      ...batchResults.map((result) => (result.status === 'fulfilled' ? result.value : null))
+    )
+  }
+
+  return results
+}
+
+/**
+ * Validates whether a token address represents a valid ERC20 token on the specified network.
+ * Optionally suggests alternative networks where the token is found if validation fails.
+ *
+ */
 export const validateERC20Token = async (
   token: { address: string; chainId: bigint },
   accountId: string,
-  provider: RPCProvider
-) => {
+  provider: RPCProvider,
+  options?: {
+    allNetworks?: Network[]
+    allProviders?: { [chainId: string]: RPCProvider }
+    enableNetworkDetection?: boolean
+    maxNetworksToCheck?: number
+    concurrencyLimit?: number
+  }
+): Promise<TokenValidationResult> => {
+  const {
+    allNetworks,
+    allProviders,
+    enableNetworkDetection = false,
+    maxNetworksToCheck = 10,
+    concurrencyLimit = 3
+  } = options || {}
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
-  const type = 'erc20'
   let isValid = true
-  let hasError = false
+  let hasNetworkError = false
+  let message = ''
+  let type: 'network' | 'validation' | null = null
 
-  const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch(() => {
-      hasError = true
-    }),
-    erc20.symbol().catch(() => {
-      hasError = true
-    }),
-    erc20.decimals().catch(() => {
-      hasError = true
-    })
-  ]).catch(() => {
-    hasError = true
-    isValid = false
-  })) || [undefined, undefined, undefined]
+  const handleERC20Error = (e: any, operation: string) => {
+    if (isNetworkError(e)) {
+      hasNetworkError = true
+      isValid = false
+      type = 'network'
+      message = `Network error validating token: ${
+        e.message || `Network error while fetching token ${operation}`
+      }`
+    } else {
+      isValid = false
+      type = 'validation'
+      message = 'This token type is not supported'
+    }
+  }
+
+  let balance
+  let symbol
+  let decimals
+  try {
+    ;[balance, symbol, decimals] = await Promise.all([
+      erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
+      erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
+      erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+    ])
+  } catch (e) {
+    handleERC20Error(e, 'token validation')
+  }
 
   if (
     typeof balance === 'undefined' ||
     typeof symbol === 'undefined' ||
     typeof decimals === 'undefined'
   ) {
-    isValid = false
+    // Only mark as invalid if it's not a network error
+    if (!hasNetworkError) {
+      isValid = false
+      if (!message) {
+        message = 'Token validation failed: unable to fetch required token data'
+        type = 'validation'
+      }
+    }
+  } else if (!hasNetworkError) {
+    // Reset error state only if validation succeeded AND there was no network error
+    isValid = true
+    message = ''
+    type = null
   }
 
-  isValid = isValid && !hasError
-  return [isValid, type]
+  // If validation failed and network detection is enabled, check other networks
+  if (!isValid && !hasNetworkError && enableNetworkDetection && allNetworks && allProviders) {
+    try {
+      // Get candidate networks and limit the number to check
+      const candidateNetworks = allNetworks
+        .filter((network) => allProviders[network.chainId.toString()]?.isWorking !== false)
+        .filter((network) => network.chainId !== token.chainId) // Skip the current network
+        .slice(0, maxNetworksToCheck) // Limit the number of networks to check
+
+      // Use concurrency-limited validation to prevent overwhelming RPC providers
+      const validationFunction = async (network: Network) => {
+        try {
+          const networkProvider = allProviders[network.chainId.toString()]
+          if (!networkProvider) return null
+
+          // Use validateERC20Token without network detection to avoid circular dependency
+          const validation = await validateERC20Token(
+            { address: token.address, chainId: network.chainId },
+            accountId,
+            networkProvider,
+            { enableNetworkDetection: false }
+          )
+
+          return validation.isValid ? network : null
+        } catch (error) {
+          return null
+        }
+      }
+
+      const results = await limitConcurrency(
+        candidateNetworks,
+        validationFunction,
+        concurrencyLimit
+      )
+      const validNetworks = results.filter((network): network is Network => network !== null)
+
+      if (validNetworks.length > 0) {
+        const networkNames = validNetworks.map((net) => net.name).join(', ')
+        message = `This token is found on ${networkNames}. Is the correct network selected?`
+        type = 'validation'
+      }
+    } catch (networkDetectionError) {
+      // Network detection failed, but don't override the original error
+      console.warn('Network detection failed:', networkDetectionError)
+    }
+  }
+
+  return {
+    isValid,
+    standard: 'erc20',
+    error: {
+      message: message || null,
+      type
+    }
+  }
 }
 
 // fetch the amountPostSimulation for the token if set
@@ -331,22 +496,77 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
 
 export const getTotal = (
   t: TokenResult[],
-  excludeHiddenTokens: boolean = true,
-  beforeSimulation: boolean = false
-) =>
-  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+  defiState: PortfolioNetworkResult['defiPositions'] | null,
+  opts?: {
+    includeHiddenTokens?: boolean
+    beforeSimulation?: boolean
+  }
+) => {
+  const { includeHiddenTokens = false, beforeSimulation = false } = opts || {}
+
+  const tokensTotal = t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
-    if (token.flags.isHidden && excludeHiddenTokens) return localCur
+    if (token.flags.isHidden && !includeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
 
       const tokenAmount = Number(getTokenAmount(token, beforeSimulation)) / 10 ** token.decimals
-      localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
+      const total = tokenAmount * x.price
+
+      // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
+      if (typeof total !== 'number' || Number.isNaN(total)) {
+        console.error(
+          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`
+        )
+        // eslint-disable-next-line no-continue
+        continue
+      }
+
+      localCur[x.baseCurrency] = currentAmount + total
     }
 
     return localCur
   }, {})
+
+  let defiTotal: Total = {
+    usd: 0
+  }
+
+  if (defiState) {
+    // The portfolio handles at least one collateral token,
+    // thus we must exclude them from the defi total to avoid double counting
+    const positionsToExclude: string[] = t
+      .filter(
+        (token) => token.flags.defiPositionId && token.flags.defiTokenType === AssetType.Collateral
+      )
+      .map((token) => token.flags.defiPositionId!)
+
+    defiTotal = defiState.positionsByProvider.reduce(
+      (cur, position) => {
+        const positionsFlat = position.positions.flat()
+
+        positionsFlat.forEach((p) => {
+          // stkWallet is an internal position, created from the stkWallet token
+          if (positionsToExclude.includes(p.id) || p.id === 'stk-wallet') return
+
+          // eslint-disable-next-line no-param-reassign
+          cur.usd += p.additionalData.positionInUSD || 0
+        })
+
+        return cur
+      },
+      { usd: 0 }
+    )
+  }
+
+  return Object.keys(tokensTotal).reduce((cur, key) => {
+    // eslint-disable-next-line no-param-reassign
+    cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0)
+
+    return cur
+  }, {} as Total)
+}
 
 export const addHiddenTokenValueToTotal = (
   totalWithoutHiddenTokens: number,
@@ -385,7 +605,7 @@ export const getAccountPortfolioTotal = (
  * Formats and strips the original velcro response
  */
 export const formatExternalHintsAPIResponse = (
-  response: ExternalHintsAPIResponse | null
+  response: Omit<ExternalHintsAPIResponse, 'prices'> | null
 ): FormattedExternalHintsAPIResponse | null => {
   if (!response) return null
 
@@ -482,6 +702,8 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
   keys.forEach((key) => {
     const [collectionAddress, tokenId] = key.split(':')
 
+    if (!collectionAddress) return
+
     if (tokenId === 'enumerable') {
       hints[collectionAddress] = []
 
@@ -493,6 +715,8 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
     if (keys.includes(`${collectionAddress}:enumerable`)) {
       return
     }
+
+    if (typeof tokenId !== 'string') return
 
     if (!hints[collectionAddress]) {
       hints[collectionAddress] = []
@@ -549,3 +773,49 @@ export const isPortfolioGasTankResult = (
 
 export const isNative = (token: TokenResult) =>
   token.address === ZeroAddress && !token.flags.onGasTank
+
+export const getHintsError = (
+  errorMessage: string,
+  lastExternalApiHintsData: {
+    lastUpdate: number
+    hasHints: boolean
+  } | null
+): ExtendedErrorWithLevel => {
+  if (!lastExternalApiHintsData) {
+    return {
+      name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+      message: errorMessage,
+      level: 'critical'
+    }
+  }
+
+  const TEN_MINUTES = 10 * 60 * 1000
+
+  const lastUpdate = lastExternalApiHintsData.lastUpdate
+
+  const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
+
+  return {
+    name: isLastUpdateTooOld
+      ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+      : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+    message: errorMessage,
+    level: isLastUpdateTooOld ? 'critical' : 'silent'
+  }
+}
+
+export const getHardcodedCitreaPrices = (address: string): Price | null => {
+  const stables = [
+    '0x8D82c4E3c936C7B5724A382a9c5a4E6Eb7aB6d5D',
+    '0xE045e6c36cF77FAA2CfB54466D71A3aEF7bbE839',
+    '0x9f3096Bac87e7F03DC09b0B416eB0DF837304dc4'
+  ]
+  if (stables.indexOf(address) !== -1) {
+    return {
+      baseCurrency: 'usd',
+      price: 1
+    }
+  }
+
+  return null
+}

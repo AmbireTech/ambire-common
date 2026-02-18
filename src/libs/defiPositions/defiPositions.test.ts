@@ -1,12 +1,31 @@
+import { ZeroAddress } from 'ethers'
+
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { describe, expect, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
+import { STK_WALLET } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
-import { getAAVEPositions, getDebankEnhancedUniV3Positions, getUniV3Positions } from './providers'
-import { PositionsByProvider } from './types'
+import { NetworkState, PortfolioNetworkResult, TokenResult } from '../portfolio/interfaces'
+import { PORTFOLIO_STATE } from '../portfolio/testData'
+import {
+  enhancePortfolioTokensWithDefiPositions,
+  getAllAssetsAsHints,
+  getCanSkipUpdate,
+  getFormattedApiPositions,
+  getShouldBypassServerSideCache,
+  getUniqueMergedPositions
+} from './defiPositions'
+import {
+  getAAVEPositions,
+  getDebankEnhancedUniV3Positions,
+  getStakedWalletPositions,
+  getUniV3Positions
+} from './providers'
+import { AssetType, PositionsByProvider } from './types'
 
-describe('DeFi positions', () => {
+describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
   // 1. Go to https://debank.com/protocols/matic_uniswap3/holders
   // 2. Find an account that has the required positions and use it in the test
@@ -28,7 +47,7 @@ describe('DeFi positions', () => {
       expect(uniV3Positions).not.toBeNull()
 
       if (uniV3Positions !== null) {
-        const firstPos = uniV3Positions.positions[0]
+        const firstPos = uniV3Positions.positions[0]!
         expect(firstPos.additionalData.liquidity).toBeGreaterThan(0)
         expect(firstPos.assets.length).toBeGreaterThan(0)
       }
@@ -52,7 +71,7 @@ describe('DeFi positions', () => {
               iconUrl: '',
               siteUrl: 'https://app.uniswap.org/swap',
               type: 'common',
-              positions: DEBANK_UNI_V3[0].positions
+              positions: DEBANK_UNI_V3[0]!.positions
             }
           ],
           [],
@@ -89,7 +108,7 @@ describe('DeFi positions', () => {
         expect(res?.source).toBe('mixed')
         expect(res?.positions.length).toBeGreaterThan(0)
 
-        const firstPos = res?.positions[0]
+        const firstPos = res?.positions[0]!
         expect(firstPos).toBeDefined()
         expect(firstPos?.additionalData.inRange).toBeDefined()
       })
@@ -101,20 +120,299 @@ describe('DeFi positions', () => {
 
       expect(aavePositions).not.toBeNull()
       if (aavePositions !== null) {
-        const pos1 = aavePositions.positions[0]
+        const pos1 = aavePositions.positions[0]!
         expect(pos1.additionalData.healthRate).toBeGreaterThan(1)
       }
     })
     test('AAVE returns prices, health rate, additional date and asset value', async () => {
       const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, ethereum)
-      const pos = aavePositions?.positions[0]
-
+      const pos = aavePositions?.positions[0]!
       if (!pos) throw new Error('no positions found')
 
       expect(aavePositions?.positionInUSD).toBeGreaterThan(0)
       expect(pos.additionalData.positionInUSD).toBeGreaterThan(0)
       expect(pos.additionalData.healthRate).toBeGreaterThan(0)
       expect(pos.additionalData.collateralInUSD).toBeGreaterThan(0)
+    })
+  })
+})
+
+describe('Defi positions helper and portfolio functions', () => {
+  describe('enhancePortfolioTokensWithDefiPositions', () => {
+    it('should add positions to the portfolio', () => {
+      const clonedPortfolioEthereumState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+      const originalTokenCount = clonedPortfolioEthereumState!.result!.tokens.length
+
+      const tokens = enhancePortfolioTokensWithDefiPositions(
+        clonedPortfolioEthereumState.result!.tokens,
+        clonedPortfolioEthereumState.result!.defiPositions
+      )
+
+      // -- Defi positions are added to the portfolio
+
+      // 5 portfolio tokens + 4 defi tokens
+      expect(tokens?.length).toBe(originalTokenCount + 1)
+
+      // -- Protocol representations of borrowed tokens don't have prices
+      const variableDebtBasGHO = tokens!.find(
+        ({ address }) => address === '0x38e59ADE183BbEb94583d44213c8f3297e9933e9'
+      )
+
+      expect(variableDebtBasGHO?.priceIn.length).toBe(0)
+
+      // Tokens added from defi positions have flags
+
+      // -- Defi tokens have the respective flag
+      const aBasWETH = tokens!.find(
+        ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
+      )
+      // Tokens added from defi positions have flags
+      const aaveCbtc = tokens!.find(
+        ({ address }) => address === '0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6'
+      )
+
+      expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
+      expect(aaveCbtc?.flags.defiTokenType).toBe(AssetType.Collateral)
+      expect(variableDebtBasGHO?.flags.defiTokenType).toBe(AssetType.Borrow)
+    })
+    it('should add a price to portfolio defi tokens if the price is defined in the defi state', () => {
+      const clonedPortfolioEthereumState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+      const secondPosition =
+        clonedPortfolioEthereumState?.result?.defiPositions.positionsByProvider[2]?.positions[0]
+      const secondPositionAsset = secondPosition?.assets[0]
+      const aBasWETHWithoutPrice: TokenResult = {
+        ...structuredClone(secondPositionAsset),
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          isFeeToken: false,
+          isCustom: false,
+          canTopUpGasTank: false
+        },
+        priceIn: [],
+        chainId: 1n,
+        // Ensure required fields are present and not undefined
+        address: secondPositionAsset?.address ?? '',
+        symbol: secondPositionAsset?.symbol ?? '',
+        name: secondPositionAsset?.name ?? '',
+        decimals: secondPositionAsset?.decimals ?? 18,
+        amount: secondPositionAsset?.amount ?? 0n
+      }
+
+      expect(aBasWETHWithoutPrice.priceIn.length).toBe(0)
+
+      clonedPortfolioEthereumState.result?.tokens.push(aBasWETHWithoutPrice)
+
+      const tokens = enhancePortfolioTokensWithDefiPositions(
+        clonedPortfolioEthereumState.result!.tokens,
+        clonedPortfolioEthereumState.result!.defiPositions
+      )
+
+      const aBasWETH = tokens!.findLast(
+        ({ address }) => address === '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'
+      )
+
+      expect(aBasWETH?.flags.defiTokenType).toBe(AssetType.Collateral)
+      expect(aBasWETH?.priceIn.length).toBe(1)
+    })
+  })
+  describe('getCanSkipUpdate', () => {
+    it("Should not skip if there is no previous state or there hasn't been a successful update", () => {
+      const canSkip = getCanSkipUpdate(undefined, false)
+
+      expect(canSkip).toBe(false)
+    })
+    it('Should not skip if the update is older than 60sec and the user has position', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 61000
+
+      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, false)
+
+      expect(canSkip).toBe(false)
+    })
+    it('Should not skip if the nonce has changed', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 10000
+
+      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, true)
+
+      expect(canSkip).toBe(false)
+    })
+  })
+  describe('getShouldBypassServerSideCache', () => {
+    it('Should bypass if the last force api update is older than 30sec, there are keys, session ids and the update is manual', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 31000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        true,
+        true,
+        ['session-id-1'],
+        false
+      )
+      expect(shouldBypass).toBe(true)
+    })
+    it('Should not bypass if the last force api update is within 30sec, even if there are keys, session ids and the update is manual', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 20000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        true,
+        true,
+        ['session-id-1'],
+        false
+      )
+
+      expect(shouldBypass).toBe(false)
+    })
+  })
+  describe('getAllAssetsAsHints', () => {
+    it('assets are returned as hints', () => {
+      const state = structuredClone(PORTFOLIO_STATE['1']) as NetworkState<PortfolioNetworkResult>
+
+      const hints = getAllAssetsAsHints(state.result?.defiPositions)
+
+      expect(hints.length).toBe(9)
+      expect(hints).not.toContain('eth')
+      expect(hints).toContain('0x88800092ff476844f74dc2fc427974bbee2794ae'.toLowerCase())
+      expect(hints).toContain('0x4200000000000000000000000000000000000006'.toLowerCase())
+      expect(hints).toContain('0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'.toLowerCase())
+      expect(hints).toContain('0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee'.toLowerCase())
+      expect(hints).toContain('0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42'.toLowerCase())
+    })
+    it('protocol assets are returned as hints', () => {
+      const state = structuredClone(PORTFOLIO_STATE['1']) as NetworkState<PortfolioNetworkResult>
+
+      const hints = getAllAssetsAsHints(state.result?.defiPositions)
+
+      expect(hints).toContain('0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7'.toLowerCase())
+      expect(hints).toContain('0xBdb9300b7CDE636d9cD4AFF00f6F009fFBBc8EE6'.toLowerCase())
+      expect(hints).toContain('0x38e59ADE183BbEb94583d44213c8f3297e9933e9'.toLowerCase())
+      expect(hints).toContain('0x03D01595769333174036832e18fA2f17C74f8161'.toLowerCase())
+    })
+  })
+  describe('getUniqueMergedPositions', () => {
+    it('Debank and custom positions are merged correctly', () => {
+      const debankPositions = DEBANK_UNI_V3
+      const customPositions = structuredClone(DEBANK_UNI_V3)
+
+      customPositions[0]!.source = 'custom'
+      customPositions[0]!.positions[0]!.assets[0]!.amount += 1000n
+
+      const mergedPositions = getUniqueMergedPositions(
+        debankPositions,
+        customPositions,
+        getStakedWalletPositions({
+          address: STK_WALLET,
+          amount: 1000n * 10n ** 18n,
+          priceIn: [{ price: 1, baseCurrency: 'usd' }],
+          chainId: 1n,
+          symbol: 'stkWALLET',
+          name: 'Ambire Staked Wallet',
+          decimals: 18,
+          flags: {
+            rewardsType: 'wallet-rewards',
+            onGasTank: false,
+            canTopUpGasTank: false,
+            isFeeToken: false
+          }
+        })
+      )
+
+      expect(mergedPositions.length).toBe(2)
+      expect(mergedPositions[0]!.source).toBe('custom')
+      expect(
+        mergedPositions[0]!.positions
+          .find(({ id }) => id === 'a49f7296-ce5a-4c61-99f7-8a0698742ddf')!
+          .assets.find(({ address }) => address === '0xcb555a9926eb72f1622ce9bc34a385507c9f5be2')
+          ?.amount
+      ).toBe(2775999n)
+      expect(mergedPositions[1]?.providerName).toBe('Ambire')
+    })
+    it('Positions and assets are sorted by value', () => {
+      const debankPositions = DEBANK_UNI_V3
+
+      const mergedPositions = getUniqueMergedPositions(debankPositions, [], null)
+
+      expect(mergedPositions.length).toBeGreaterThan(0)
+
+      mergedPositions.forEach((providerPositions) => {
+        let previousPositionValue = Number.POSITIVE_INFINITY
+
+        providerPositions.positions.forEach((position) => {
+          const positionValue = position.additionalData.positionInUSD || 0
+
+          expect(positionValue).toBeLessThanOrEqual(previousPositionValue)
+
+          previousPositionValue = positionValue
+
+          let previousAssetValue = Number.POSITIVE_INFINITY
+
+          position.assets.forEach((asset) => {
+            const assetValue = asset.value || 0
+            expect(assetValue).toBeLessThanOrEqual(previousAssetValue)
+            previousAssetValue = assetValue
+          })
+        })
+      })
+    })
+  })
+  describe('getFormattedApiPositions', () => {
+    it('Invalid positions are filtered out', () => {
+      const { restore } = suppressConsole()
+      const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
+
+      // @ts-ignore
+      delete clonedDebankUniV3[0]!.source
+      // @ts-ignore
+      delete clonedDebankUniV3[0]!.positions[0]!.additionalData
+
+      const firstPositionId = clonedDebankUniV3[0]!.positions[0]!.id
+
+      const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)
+
+      expect(formattedPositions.length).toBe(1)
+      expect(formattedPositions[0]?.source).toBe('debank')
+      expect(formattedPositions[0]!.positions.find((p) => p.id === firstPositionId)).toBeUndefined()
+
+      restore()
+    })
+    it('Non-hex addresses are converted to ZeroAddress', () => {
+      const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
+
+      clonedDebankUniV3[0]!.positions[0]!.assets[0]!.address = 'eth'
+
+      const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)
+
+      expect(formattedPositions[0]!.positions[0]!.assets[0]!.address).toBe(ZeroAddress)
+    })
+    it('Asset amounts are converted to BigInt', () => {
+      const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
+
+      // @ts-ignore
+      clonedDebankUniV3[0]!.positions[0]!.assets[0]!.amount = 1234567890
+
+      const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)
+
+      expect(formattedPositions[0]!.positions[0]!.assets[0]!.amount).toBe(1234567890n)
     })
   })
 })
@@ -132,34 +430,6 @@ const DEBANK_UNI_V3: PositionsByProvider[] = [
       {
         id: 'a49f7296-ce5a-4c61-99f7-8a0698742ddf',
         assets: [
-          {
-            address: '0xcb555a9926eb72f1622ce9bc34a385507c9f5be2',
-            symbol: 'bPMPKN',
-            name: 'beta Pumpkin',
-            decimals: 6,
-            amount: 10660978675n,
-            priceIn: {
-              price: 0,
-              baseCurrency: 'usd'
-            },
-            value: 0,
-            type: 0,
-            iconUrl: ''
-          },
-          {
-            address: '0xeb18fc3350049043b21724d2260562e210714729',
-            symbol: 'bFARM',
-            name: 'beta CryptoFarmers',
-            decimals: 6,
-            amount: 3809952978464n,
-            priceIn: {
-              price: 0,
-              baseCurrency: 'usd'
-            },
-            value: 0,
-            type: 0,
-            iconUrl: ''
-          },
           {
             address: '0xcb555a9926eb72f1622ce9bc34a385507c9f5be2',
             symbol: 'bPMPKN',

@@ -1,10 +1,8 @@
 /* eslint-disable class-methods-use-this */
-import fetch from 'node-fetch'
-
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
+import { fetchWithAppVersion as fetch, produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { IStorageController, Storage } from '../../interfaces/storage'
@@ -112,7 +110,6 @@ describe('happy cases', () => {
   })
   test('recoverKeyStore', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
-
     await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
@@ -151,10 +148,10 @@ describe('happy cases', () => {
     await keystore.unlockWithSecret('smth', 'secret')
     await keystore.addKeys([
       {
-        addr: keys[0].address,
+        addr: keys[0]!.address,
         type: 'internal',
         label: 'Key 1',
-        privateKey: keys[0].privateKey,
+        privateKey: keys[0]!.privateKey,
         dedicatedToOneSA: false,
         meta: {
           createdAt: new Date().getTime()
@@ -163,10 +160,10 @@ describe('happy cases', () => {
     ])
     await keystore.addKeys([
       {
-        addr: keys[1].address,
+        addr: keys[1]!.address,
         type: 'internal',
         label: 'Key 2',
-        privateKey: keys[1].privateKey,
+        privateKey: keys[1]!.privateKey,
         dedicatedToOneSA: false,
         meta: {
           createdAt: new Date().getTime()

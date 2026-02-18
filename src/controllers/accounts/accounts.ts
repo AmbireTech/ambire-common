@@ -20,7 +20,7 @@ import {
   AmbireSmartAccountIdentityCreateResponse,
   IAccountsController
 } from '../../interfaces/account'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -37,7 +37,6 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
-  selectAccount: 'INITIAL',
   addAccounts: 'INITIAL'
 } as const
 
@@ -89,7 +88,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   // Tracks the initial load of account states. Unlike `initialLoadPromise`,
   // this one isn’t awaited during the AccountsController initial load, so it’s the only
   // reliable way to know when account states are fully loaded.
-  accountStatesInitialLoadPromise?: Promise<void>
+  accountStateInitialLoadPromise?: Promise<void>
 
   constructor(
     storage: IStorageController,
@@ -100,9 +99,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
     onAccountStateUpdate: () => void,
     relayerUrl: string,
-    fetch: Fetch
+    fetch: Fetch,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#providers = providers
     this.#networks = networks
@@ -131,17 +131,13 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   #getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr?: string | null): Account[] {
-    return this.accounts.filter((account) => {
-      // Always update the selected account state in the background
-      if (account.addr === selectedAccountAddr) return true
-
-      const accountKeys = this.#keystore.getAccountKeys(account)
-      const isViewOnly = accountKeys.length === 0
-      // If the account is not selected, update the account state in the background
-      // only if it's not view-only. We update the account state
-      // in the background so EOAs can be used as a broadcast option.
-      return !isViewOnly
+    // We used to update all accounts in background, but now we only update the selected one
+    const selectedAccData = this.accounts.find((account) => {
+      return account.addr === selectedAccountAddr
     })
+    if (!selectedAccData) return []
+
+    return [selectedAccData]
   }
 
   async #load() {
@@ -156,11 +152,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // Don't await this. Networks should update one by one
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.accountStatesInitialLoadPromise = this.#updateAccountStates(
+    // --------------------------------------------------
+    this.accountStateInitialLoadPromise = this.#updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
     ).finally(() => {
-      this.accountStatesInitialLoadPromise = undefined
+      this.accountStateInitialLoadPromise = undefined
     })
   }
 
@@ -177,20 +173,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     if (noNewAccountsAndNotInitialLoad) return
     this.#viewOnlyAccountGetIdentityInterval.restart({ runImmediately: true })
     this.#smartAccountIdentityCreateInterval.restart({ runImmediately: true })
-  }
-
-  async updateAccountStates(
-    selectedAccountAddr: string | undefined,
-    blockTag: string | number = 'latest',
-    networks: bigint[] = []
-  ) {
-    await this.initialLoadPromise
-
-    await this.#updateAccountStates(
-      this.#getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr),
-      blockTag,
-      networks
-    )
   }
 
   async updateAccountState(
@@ -393,7 +375,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   // the account state to be fetched only for it to haven't been.
   // This ensures production doesn't blow up and it 99.9% of cases it
   // should not call the promise
-  async getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
+  async getOrFetchAccountOnChainState(
+    addr: string,
+    chainId: bigint
+  ): Promise<AccountOnchainState | undefined> {
     if (!this.accountStates[addr]?.[chainId.toString()]) {
       await this.updateAccountState(addr, 'latest', [chainId])
     }

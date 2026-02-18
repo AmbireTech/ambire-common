@@ -27,7 +27,7 @@ import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
-import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
+import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -37,6 +37,8 @@ import {
   callToTuple,
   getSignableHash
 } from '../accountOp/accountOp'
+import { decodeError } from '../errorDecoder'
+import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import { PackedUserOperation } from '../userOperation/types'
 import { getActivatorCall } from '../userOperation/userOperation'
 import { get7702SigV } from './utils'
@@ -95,7 +97,9 @@ interface AmbireReadableOperation {
   calls: { to: Hex; value: bigint; data: Hex }[]
 }
 
-export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
+export const adaptTypedMessageForMetaMaskSigUtil = (
+  typedMessage: TypedMessageUserRequest['meta']['params']
+) => {
   return {
     ...typedMessage,
     types: {
@@ -124,7 +128,7 @@ export const getAmbireReadableTypedData = (
   chainId: bigint,
   verifyingAddr: string,
   v1Execute: AmbireReadableOperation
-): TypedMessage => {
+): TypedMessageUserRequest['meta']['params'] => {
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
@@ -169,7 +173,6 @@ export const getAmbireReadableTypedData = (
   }
 
   return {
-    kind: 'typedMessage',
     domain,
     types,
     message: v1Execute,
@@ -184,7 +187,7 @@ export const getTypedData = (
   chainId: bigint,
   verifyingAddr: string,
   msgHash: string
-): TypedMessage => {
+): TypedMessageUserRequest['meta']['params'] => {
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
@@ -226,7 +229,6 @@ export const getTypedData = (
   }
 
   return {
-    kind: 'typedMessage',
     domain,
     types,
     message,
@@ -242,7 +244,7 @@ export const get7702UserOpTypedData = (
   txns: [string, string, string][],
   packedUserOp: PackedUserOperation,
   userOpHash: string
-): TypedMessage => {
+): TypedMessageUserRequest['meta']['params'] => {
   const calls = txns.map((txn) => ({
     to: txn[0],
     value: txn[1],
@@ -298,7 +300,6 @@ export const get7702UserOpTypedData = (
   }
 
   return {
-    kind: 'typedMessage',
     domain,
     types,
     message,
@@ -331,12 +332,6 @@ export const wrapCounterfactualSign = (signature: string, creation: AccountCreat
   )
 }
 
-export function mapSignatureV(sigRaw: string) {
-  const sig = hexStringToUint8Array(sigRaw)
-  if (sig[64] < 27) sig[64] += 27
-  return hexlify(sig)
-}
-
 // Either `message` or `typedData` must be provided - never both.
 type Props = {
   provider: JsonRpcProvider
@@ -345,12 +340,7 @@ type Props = {
 } & (
   | { message: string | Uint8Array; typedData?: never; authorization?: never }
   | {
-      typedData: {
-        domain: TypedMessage['domain']
-        types: TypedMessage['types']
-        message: TypedMessage['message']
-        primaryType: TypedMessage['primaryType']
-      }
+      typedData: TypedMessageUserRequest['meta']['params']
       message?: never
       authorization?: never
     }
@@ -416,7 +406,7 @@ export async function verifyMessage({
         finalDigest = hexlify(
           // @ts-ignore
           TypedDataUtils.eip712Hash(
-            adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
+            adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
             SignTypedDataVersion.V4
           )
         )
@@ -447,10 +437,12 @@ export async function verifyMessage({
     else if (deploylessRes === false) callResult = '0x00'
     else callResult = deploylessRes
   } catch (e: any) {
+    const decoded = decodeError(e)
+    const moreDetails = getErrorCodeStringFromReason(decoded.reason || e?.message || '')
+
     throw new Error(
-      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed, more details: ${
-        // TODO: Use the `reason` from the decodeError(e) instead, when this case is better handled in there
-        e?.message || 'missing'
+      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed (${decoded.type}).${
+        moreDetails ? `${moreDetails}` : ''
       }`
     )
   }
@@ -494,7 +486,7 @@ export async function getExecuteSignature(
 }
 
 export async function getPlainTextSignature(
-  messageHex: PlainTextMessage['message'],
+  messageHex: PlainTextMessageUserRequest['meta']['params']['message'],
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
@@ -550,7 +542,7 @@ export async function getPlainTextSignature(
 }
 
 export async function getEIP712Signature(
-  message: TypedMessage,
+  message: TypedMessageUserRequest['meta']['params'],
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSignerInterface,
@@ -635,7 +627,7 @@ export async function getEntryPointAuthorization(
   addr: AccountId,
   chainId: bigint,
   nonce: bigint
-): Promise<TypedMessage> {
+): Promise<TypedMessageUserRequest['meta']['params']> {
   const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
   return getTypedData(chainId, addr, hexlify(hash))
 }

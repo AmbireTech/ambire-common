@@ -1,6 +1,8 @@
 import { isHexString, toUtf8String } from 'ethers'
 import { SiweMessage } from 'siwe'
-import { parseSiweMessage, SiweMessage as SiweMessageType } from 'viem/siwe'
+import { getDomain } from 'tldts'
+import { getAddress } from 'viem'
+import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { IAccountsController } from '../../interfaces/account'
 import {
@@ -12,18 +14,19 @@ import {
   IAutoLoginController,
   SiweValidityStatus
 } from '../../interfaces/autoLogin'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController, Key } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { PlainTextMessage } from '../../interfaces/userRequest'
+import { PlainTextMessageUserRequest } from '../../interfaces/userRequest'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignMessageController } from '../signMessage/signMessage'
 
 export const STATUS_WRAPPED_METHODS = {
-  revokePolicy: 'INITIAL'
+  revokePolicy: 'INITIAL',
+  revokeAllPoliciesForDomain: 'INITIAL'
 } as const
 
 // Taken from viem's parseSiweMessage.ts
@@ -93,9 +96,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: IInviteController
+    invite: IInviteController,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
@@ -142,7 +146,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static getParsedSiweMessage(
     message: string | `0x${string}`,
-    requestOrigin: string
+    requestOrigin: string,
+    signerAddress?: string
   ): null | {
     parsedSiwe: SiweMessageType
     status: SiweValidityStatus
@@ -161,12 +166,22 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     }
 
     try {
-      const requestDomain = new URL(requestOrigin).host
+      const requestHostname = new URL(requestOrigin).host
+
+      // Some dApps don't use checksum addresses in the SIWE message
+      // Which makes verification by the 'siwe' package fail (as it's very strict)
+      if (signerAddress) {
+        messageString = messageString.replace(
+          signerAddress.toLowerCase(),
+          getAddress(signerAddress)
+        )
+      }
+
       const parsedSiweMessage = new SiweMessage(messageString)
 
       if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
 
-      if (parsedSiweMessage.domain !== requestDomain)
+      if (getDomain(parsedSiweMessage.domain) !== getDomain(requestHostname))
         return {
           parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
           status: 'domain-mismatch'
@@ -200,18 +215,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         status: 'valid'
       }
     } catch (e: any) {
-      console.error('Error parsing message:', e)
+      console.error('Error parsing message:', e, 'Original message:', messageString)
 
-      // Parse it again with viem to get as much info as possible
-      // so we can display it to the user
-      try {
-        return {
-          parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
-          status: 'invalid-critical'
-        }
-      } catch {
-        return null
-      }
+      // Fallback to regular sign message if parsing fails
+      return null
     }
   }
 
@@ -342,6 +349,24 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     })
   }
 
+  async revokeAllPoliciesForDomain(policyDomain: string, policyUriPrefix: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus('revokeAllPoliciesForDomain', async () => {
+      Object.keys(this.#policiesByAccount).forEach((accountAddress) => {
+        const accountPolicies = this.#policiesByAccount[accountAddress] || []
+
+        if (accountPolicies.length === 0) return
+
+        this.#policiesByAccount[accountAddress] = accountPolicies.filter(
+          (p) => !(p.domain === policyDomain && p.uriPrefix === policyUriPrefix)
+        )
+      })
+
+      await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
+    })
+  }
+
   async onSiweMessageSigned(
     parsedSiwe: SiweMessageType,
     isAutoLoginEnabledByUser: boolean,
@@ -392,7 +417,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   async autoLogin(messageToSign: {
     accountAddr: string
     chainId: bigint
-    message: PlainTextMessage['message']
+    message: PlainTextMessageUserRequest['meta']['params']['message']
   }) {
     await this.initialLoadPromise
 
@@ -413,7 +438,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
           kind: 'message',
           message: messageToSign.message
         },
-        fromActionId: 'siwe-auto-login',
+        fromRequestId: 'siwe-auto-login',
         signature: null
       }
     })

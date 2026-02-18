@@ -2,8 +2,8 @@ import { Interface, MaxUint256, solidityPackedKeccak256, toBeHex } from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
+import { networks } from '../../consts/networks'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
@@ -16,7 +16,8 @@ const ACCOUNT_ADDRESS = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
 
 // @TODO add minting and burning test
 describe('Debug tracecall detection for transactions', () => {
-  const provider = getRpcProvider(['https://invictus.ambire.com/optimism'], 10n)
+  const network = networks.find((n) => n.chainId === 10n)
+  if (!network) throw new Error('Missing network with id 10n in the constants')
   let account: Account
   let accountOp: AccountOp
   const nftIface: Interface = new Interface(ERC721)
@@ -62,10 +63,10 @@ describe('Debug tracecall detection for transactions', () => {
       signature: '0x000000000000000000000000db26aeea3b986887feaba661df6d211e725797a003',
       calls: [
         {
+          id: 'test-id',
           to: '0xb7330c592dc5feafda855867b1e172be3a8d4abf',
           value: 0n,
-          data: '0x23b872dd000000000000000000000000d034ddc997283b8179a12fe8d36a7356f01f2ddd00000000000000000000000073573bacb097a65786ebd7968e5775cbb89c73570000000000000000000000000000000000000000000000000000000000000003',
-          fromUserRequestId: 1723530835106
+          data: '0x23b872dd000000000000000000000000d034ddc997283b8179a12fe8d36a7356f01f2ddd00000000000000000000000073573bacb097a65786ebd7968e5775cbb89c73570000000000000000000000000000000000000000000000000000000000000003'
         }
       ]
     }
@@ -148,7 +149,7 @@ describe('Debug tracecall detection for transactions', () => {
       }
     }
 
-    const res = await debugTraceCall(account, accountOp, provider, state, true, overrideData)
+    const res = await debugTraceCall(account, accountOp, network, state, true, overrideData)
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe(NFT_ADDRESS)

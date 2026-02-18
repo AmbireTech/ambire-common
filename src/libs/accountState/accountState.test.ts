@@ -152,31 +152,31 @@ describe('AccountState', () => {
 
     expect(state.length).toBe(6)
 
-    const v1Acc = state[0]
+    const v1Acc = state[0]!
     expect(v1Acc.isEOA).toBe(false)
     expect(v1Acc.isV2).toBeFalsy()
     expect(v1Acc.isDeployed).toBeTruthy()
     expect(v1Acc.currentBlock).toBeGreaterThan(0)
 
-    const v2Acc = state[1]
+    const v2Acc = state[1]!
     expect(v2Acc.isV2).toBeTruthy()
     expect(v2Acc.isEOA).toBe(false)
     expect(v2Acc.isDeployed).toBeFalsy()
     expect(v2Acc.currentBlock).toBeGreaterThan(0)
 
-    const eoaAcc = state[2]
+    const eoaAcc = state[2]!
     expect(eoaAcc.isEOA).toBe(true)
     expect(eoaAcc.balance).toBeGreaterThan(0n)
 
-    const acc4337 = state[3]
+    const acc4337 = state[3]!
     expect(acc4337.nonce).toBeGreaterThanOrEqual(0n)
 
-    const acc4337deployed = state[4]
+    const acc4337deployed = state[4]!
     expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0n)
     // TODO: polygon is no longer the erc-4337 network so the below is not valid
     // expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
 
-    const accEOANonZero = state[5]
+    const accEOANonZero = state[5]!
     expect(accEOANonZero.isEOA).toBe(true)
     expect(accEOANonZero.nonce).toBeGreaterThan(0n)
   })
@@ -197,7 +197,7 @@ describe('AccountState', () => {
 
     expect(state.length).toBe(1)
 
-    const eoa7702 = state[0]
+    const eoa7702 = state[0]!
     expect(eoa7702.isEOA).toBeTruthy()
     expect(eoa7702.isV2).toBeTruthy()
     expect(eoa7702.isDeployed).toBeTruthy()

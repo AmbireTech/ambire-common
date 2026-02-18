@@ -9,7 +9,6 @@ import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -18,7 +17,6 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -65,10 +63,6 @@ class InternalSigner {
   ) => '0x'
 }
 
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
 const account: Account = {
   addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
   associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'],
@@ -86,11 +80,11 @@ const account: Account = {
 }
 
 const messageToSign: Message = {
-  fromActionId: 1,
+  fromRequestId: 1,
   content: { kind: 'message', message: '0x74657374' },
   accountAddr: account.addr,
-  signature: null,
-  chainId: 1n
+  chainId: 1n,
+  signature: null
 }
 
 describe('SignMessageController', () => {
@@ -118,17 +112,19 @@ describe('SignMessageController', () => {
       storage: storageCtrl,
       fetch,
       relayerUrl,
-      onAddOrUpdateNetworks: (nets) => {
-        nets.forEach((n) => {
-          providersCtrl.setProvider(n)
-        })
+      useTempProvider: (props, cb) => {
+        return providersCtrl.useTempProvider(props, cb)
       },
-      onRemoveNetwork: (id) => {
-        providersCtrl.removeProvider(id)
+      onAddOrUpdateNetworks: () => {},
+      onReady: async () => {
+        await providersCtrl.init({ networks: networksCtrl.allNetworks })
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl)
-    providersCtrl.providers = providers
+    providersCtrl = new ProvidersController({
+      storage: storageCtrl,
+      getNetworks: () => networksCtrl.allNetworks,
+      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    })
 
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -219,18 +215,10 @@ describe('SignMessageController', () => {
     await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
-    await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest', [
-      messageToSign.chainId
-    ])
+    await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest')
 
     await signMessageController.sign()
 
-    signMessageController.onUpdate(() => {
-      console.log(signMessageController.statuses)
-    })
-    console.log(signMessageController.signedMessage)
-
-    // expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
     expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
 
     getSignerSpy.mockRestore() // cleans up the spy

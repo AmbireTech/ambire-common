@@ -1,7 +1,14 @@
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { AccountOp } from '../accountOp/accountOp'
-import { AssetType } from '../defiPositions/types'
+import {
+  AssetType,
+  NetworkState as DefiNetworkState,
+  PositionsByProvider
+} from '../defiPositions/types'
+
+// @TODO: Move most of these interfaces to src/interfaces and
+// figure out how to restructure portfolio/defiPositions types
 
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
@@ -11,7 +18,7 @@ export interface GetOptionsSimulation {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
-export type SuspectedType = 'no-latin-symbol' | 'no-latin-name' | 'suspected' | null
+export type SuspectedType = 'suspected' | null
 
 export type TokenResult = {
   symbol: string
@@ -29,6 +36,14 @@ export type TokenResult = {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
+    /**
+     * A property used to link a token to a specific defi position. It's used
+     * to prevent double counting of balances in the portfolio total.
+     * As collateral tokens are part of the defi positions, but also held
+     * as regular tokens in the portfolio, we use this property to identify
+     * which token is used as collateral in which position.
+     */
+    defiPositionId?: string
     canTopUpGasTank: boolean
     isFeeToken: boolean
     isHidden?: boolean
@@ -39,12 +54,6 @@ export type TokenResult = {
 
 export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
-  cashback: bigint
-  saved: bigint
-}
-
-export type ProjectedRewardsTokenResult = TokenResult & {
-  userXp: number
 }
 
 export interface CollectionResult extends TokenResult {
@@ -56,6 +65,10 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
+/**
+ * Cache for prices, used to avoid redundant price fetches
+ * Map<tokenAddress, [timestamp, prices]>
+ */
 export type PriceCache = Map<string, [number, Price[]]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
@@ -126,17 +139,69 @@ export interface Hints {
 }
 
 /**
- * The raw response, returned by the Velcro API
+ * The raw response, returned by the Velcro API.
+ * Currently only called by the portfolio lib to fetch hints only.
  */
 export type ExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
   erc721s: VelcroERC721Hints
 } & (Required<Hints['externalApi']> & {
+  error?: string
+})
+
+/**
+ * The raw response, returned by Velcro for portfolio discovery.
+ * It contains hints and defi positions. Used by the controller.
+ */
+export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
   chainId: number
   accountAddr: string
-  error?: string
-})
+  erc20s: ExternalHintsAPIResponse['erc20s']
+  erc721s: ExternalHintsAPIResponse['erc721s']
+  hasHints: ExternalHintsAPIResponse['hasHints']
+  prices: ExternalHintsAPIResponse['prices']
+  lastUpdate: ExternalHintsAPIResponse['lastUpdate']
+  defi:
+    | {
+        positions: Omit<PositionsByProvider, 'source'>[]
+        updatedAt: number
+      }
+    | {
+        success: false
+        errorState: {
+          message: string
+          level: 'fatal'
+        }[]
+      }
+  /**
+   * The count of defi positions on networks that weren't requested.
+   * Used to inform the user about positions on disabled networks.
+   */
+  otherNetworksDefiCounts: {
+    [chainId: string]: number
+  }
+}
+
+export type FormattedPortfolioDiscoveryResponse = {
+  data: {
+    hints: FormattedExternalHintsAPIResponse | null
+    defi: {
+      positions: PositionsByProvider[]
+      updatedAt: number
+      isForceUpdate: boolean
+    } | null
+    /**
+     * The count of defi positions on networks that weren't requested.
+     * Used to inform the user about positions on disabled networks.
+     */
+    otherNetworksDefiCounts: {
+      [chainId: string]: number
+    }
+  } | null
+  discoveryTime: number
+  errors: ExtendedErrorWithLevel[]
+}
 
 /**
  * A stripped version of `ExternalHintsAPIResponse`. Also, ERC-721 hints
@@ -153,7 +218,7 @@ export interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
-type ExtendedErrorWithLevel = ExtendedError & {
+export type ExtendedErrorWithLevel = ExtendedError & {
   level: 'critical' | 'warning' | 'silent'
 }
 
@@ -175,25 +240,15 @@ export interface PortfolioLibGetResult {
   }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  /**
-   * Metadata from the last external api hints call. It comes from the API
-   * if the request is successful and not cached, or from cache otherwise.
-   */
-  lastExternalApiUpdateData: {
-    lastUpdate: number
-    hasHints: boolean
-  } | null
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
   afterNonce: bigint
 }
 
-interface Total {
+export interface Total {
   [currency: string]: number
 }
-
-type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
 
 export type ClaimableRewardsData = {
   addr: string
@@ -213,47 +268,108 @@ export type AddrVestingData = {
   end: string
 }
 
-// Create the final type with some properties optional
-export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
-  Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
-    lastSuccessfulUpdate: number
-    total: Total
-    totalBeforeSimulation?: Total
-    claimableRewardsData?: ClaimableRewardsData
-    addrVestingData?: AddrVestingData
+type CommonResultProps = Pick<PortfolioLibGetResult, 'tokens' | 'updateStarted'> & {
+  total: Total
+}
+
+export type PortfolioNetworkResult = CommonResultProps &
+  Pick<
+    PortfolioLibGetResult,
+    | 'collections'
+    | 'tokenErrors'
+    | 'blockNumber'
+    | 'priceCache'
+    | 'toBeLearned'
+    | 'feeTokens'
+    | 'priceUpdateTime'
+    | 'oracleCallTime'
+    | 'discoveryTime'
+  > & {
+    defiPositions: DefiNetworkState
+    lastExternalApiUpdateData?: {
+      lastUpdate: number
+      hasHints: boolean
+    } | null
   }
 
-type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
+export type PortfolioRewardsResult = CommonResultProps &
+  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted'> & {
+    claimableRewardsData?: ClaimableRewardsData
+    addrVestingData?: AddrVestingData
+    xWalletClaimableBalance?: Pick<TokenResult, 'decimals' | 'address' | 'priceIn' | 'symbol'> & {
+      amount: string
+      chainId: number
+    }
+  }
 
-export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
+export type PortfolioGasTankResult = CommonResultProps & {
   gasTankTokens: GasTankTokenResult[]
 }
 
-export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
-  currentSeasonSnapshots: { week: number; balance: number }[]
-  currentWeek: number
-  supportedChainIds: number[]
-  numberOfWeeksSinceStartOfSeason: number
-  totalRewardsPool: number
-  totalWeightNonUser: number
-  userLevel: number
+export type PortfolioProjectedRewardsResult = {
+  weeksWithData: {
+    week: number
+    balance: number
+    liquidityUsd: number
+    stkWalletUsd: number
+  }[]
+  swapVolume: number
+  poolSize: number
+  rank: number
   walletPrice: number
-  apy: number
-  minLvl: number
-  minBalance: number
-  userXp: number
+  pointsOfOtherUsers: number
+  numberOfWeeksSinceStartOfSeason: number
+  multiplier: number
+  multipliers: { type: string; activated: boolean; description: string }[]
+  frozenRewardSeason1: number
+  governanceVotes: {
+    weight: number
+    walletPrice: number
+  }[]
+  supportedChainIds: number[]
+  reasonToNotDisplayProjectedRewards: 'LEGACY_ACCOUNT' | 'BLACKLISTED'
 }
 
-export type NetworkState = {
+export type ProjectedRewardsStats = {
+  // Scores
+  balanceScore: number
+  stkWALLETScore: number
+  liquidityScore: number
+  swapVolumeScore: number
+  governanceScore: number
+  // Average
+  averageBalance: number
+  averageLiquidity: number
+  averageStkWalletBalance: number
+  // Other
+  governanceWeight: number
+  totalScore: number
+  multiplierCount: number
+  estimatedRewards: number
+  estimatedRewardsUSD: number
+} & Pick<
+  PortfolioProjectedRewardsResult,
+  | 'swapVolume'
+  | 'poolSize'
+  | 'rank'
+  | 'multiplier'
+  | 'multipliers'
+  | 'reasonToNotDisplayProjectedRewards'
+>
+
+export type PortfolioKeyResult =
+  | PortfolioRewardsResult
+  | PortfolioGasTankResult
+  | PortfolioProjectedRewardsResult
+  | PortfolioNetworkResult
+
+export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  result?:
-    | PortfolioNetworkResult
-    | AdditionalPortfolioNetworkResult
-    | PortfolioGasTankResult
-    | PortfolioProjectedRewardsResult
+  lastSuccessfulUpdate?: number
+  result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
@@ -261,7 +377,11 @@ export type NetworkState = {
 }
 
 export type AccountState = {
-  [chainId: string]: NetworkState | undefined
+  rewards?: NetworkState<PortfolioRewardsResult>
+  gasTank?: NetworkState<PortfolioGasTankResult>
+  projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+} & {
+  [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
 
 export type PortfolioControllerState = {
@@ -311,10 +431,6 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   priceRecencyOnFailure?: number
-  lastExternalApiUpdateData?: {
-    lastUpdate: number
-    hasHints: boolean
-  } | null
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type
@@ -431,4 +547,10 @@ export type KnownTokenInfo = {
   token?: { symbol?: string; decimals?: number }
   isSC?: boolean
   chainIds?: number[]
+}
+
+export type TokenValidationResult = {
+  isValid: boolean
+  standard: string
+  error: { message: string | null; type: 'network' | 'validation' | null }
 }

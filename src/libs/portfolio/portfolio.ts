@@ -1,6 +1,5 @@
-/* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
-import { JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { ZeroAddress } from 'ethers'
 /* eslint-disable guard-for-in */
 import { getAddress } from 'viem'
 
@@ -10,11 +9,17 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { formatExternalHintsAPIResponse, mergeERC721s, tokenFilter } from './helpers'
+import {
+  formatExternalHintsAPIResponse,
+  getHardcodedCitreaPrices,
+  mergeERC721s,
+  tokenFilter
+} from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -29,6 +34,39 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
+/**
+ * List of tokens to exclude from display by chainId and address
+ *
+ * Note: MUST BE CHECKSUMMED ADDRESSES
+ */
+const EXCLUDED_TOKENS: Record<string, string[]> = {
+  // Gnosis Chain (xDAI)
+  '100': [
+    '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe - Duplicate
+  ],
+  // Polygon
+  '137': [
+    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6', // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+    '0x0B91B07bEb67333225A5bA0259D55AeE10E3A578' // MNEP - scam token
+  ],
+  // Ethereum Mainnet
+  '1': [
+    '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe - Duplicate
+  ],
+  // Hyper EVM
+  '999': [
+    '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE
+  ],
+  // Andromeda
+  '1088': [
+    '0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000' // METIS as an ERC-20 token - Excluded because it's a duplicate of the native token
+  ],
+  // Optimism
+  '10': [
+    '0xDfA2d3a0d32F870D87f8A0d7AA6b9CdEB7bc5AdB' // sUSD - Duplicate of 0x8c6f28f2F1A3C87F0f938b96d27520d9751ec8d9
+  ]
+}
+
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
@@ -42,6 +80,7 @@ export const LIMITS: Limits = {
   }
 }
 
+// @TODO: Move this somewhere else
 export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** External hints API (Velcro) request failed but fallback is sufficient */
   NonCriticalApiHintsError: 'NonCriticalApiHintsError',
@@ -50,7 +89,9 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
   /** No external API (Velcro) hints are available- the request failed without fallback */
   NoApiHintsError: 'NoApiHintsError',
   /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError'
+  PriceFetchError: 'PriceFetchError',
+  /** Defi discovery failed */
+  DefiDiscoveryError: 'DefiDiscoveryError'
 }
 
 export const getEmptyHints = (): Hints => ({
@@ -63,13 +104,14 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  lastExternalApiUpdateData: null,
   fetchPinned: true,
   priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
 
 export class Portfolio {
   network: Network
+
+  provider: RPCProvider
 
   private batchedVelcroDiscovery: Function
 
@@ -81,7 +123,7 @@ export class Portfolio {
 
   constructor(
     fetch: Fetch,
-    provider: Provider | JsonRpcProvider,
+    provider: RPCProvider,
     network: Network,
     velcroUrl?: string,
     customBatcher?: Function
@@ -118,6 +160,7 @@ export class Portfolio {
         timeoutErrorMessage: `Cena request timed out on ${network.name}`
       }
     })
+    this.provider = provider
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
@@ -132,7 +175,6 @@ export class Portfolio {
    * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
    */
   protected async externalHintsAPIDiscovery(options?: {
-    lastExternalApiUpdateData: PortfolioLibGetResult['lastExternalApiUpdateData'] | null
     disableAutoDiscovery?: boolean
     chainId: bigint
     accountAddr: string
@@ -141,13 +183,7 @@ export class Portfolio {
     hints: Hints
     error?: PortfolioLibGetResult['errors'][number]
   }> {
-    const {
-      disableAutoDiscovery = false,
-      lastExternalApiUpdateData,
-      chainId,
-      accountAddr,
-      baseCurrency
-    } = options || {}
+    const { disableAutoDiscovery = false, chainId, accountAddr, baseCurrency } = options || {}
     let hints: Hints = getEmptyHints()
 
     try {
@@ -172,52 +208,19 @@ export class Portfolio {
             }
           }
         }
-      } else if (lastExternalApiUpdateData) {
-        hints.externalApi = {
-          lastUpdate: lastExternalApiUpdateData.lastUpdate,
-          hasHints: lastExternalApiUpdateData.hasHints,
-          prices: {}
-        }
       }
 
       return {
         hints
       }
     } catch (error: any) {
-      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
-
-      // It's important for DX to see this error
-      // eslint-disable-next-line no-console
-      console.error(errorMesssage)
-
-      if (!lastExternalApiUpdateData) {
-        return {
-          hints,
-          error: {
-            name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-            message: errorMesssage,
-            level: 'critical'
-          }
-        }
-      }
-
-      const TEN_MINUTES = 10 * 60 * 1000
-      const lastUpdate = lastExternalApiUpdateData.lastUpdate
-      const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
-
-      hints.externalApi = {
-        ...lastExternalApiUpdateData,
-        prices: {}
-      }
-
+      console.error('Portfolio.externalHintsAPIDiscovery error:', error)
       return {
         hints,
         error: {
-          name: isLastUpdateTooOld
-            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
-          message: errorMesssage,
-          level: isLastUpdateTooOld ? 'critical' : 'silent'
+          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+          message: error?.message || 'Unknown error',
+          level: 'warning'
         }
       }
     }
@@ -227,7 +230,6 @@ export class Portfolio {
     const errors: PortfolioLibGetResult['errors'] = []
     const {
       simulation,
-      lastExternalApiUpdateData,
       disableAutoDiscovery = false,
       baseCurrency,
       fetchPinned,
@@ -251,7 +253,6 @@ export class Portfolio {
     const chainId = this.network.chainId
 
     const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
-      lastExternalApiUpdateData: lastExternalApiUpdateData ?? null,
       disableAutoDiscovery,
       chainId,
       accountAddr,
@@ -268,6 +269,7 @@ export class Portfolio {
       // add the fee tokens
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
+
     hints.erc721s = mergeERC721s([
       additionalErc721Hints || {},
       hints.erc721s,
@@ -286,8 +288,14 @@ export class Portfolio {
       })
       .filter(Boolean) as string[]
 
+    // Exclude tokens by chainId/address from hints (after checksumming)
+    const excludedAddresses = EXCLUDED_TOKENS[this.network.chainId.toString()]
+    const filteredChecksummedHints = excludedAddresses
+      ? checksummedErc20Hints.filter((addr) => !excludedAddresses.includes(addr))
+      : checksummedErc20Hints
+
     // Remove duplicates and always add ZeroAddress
-    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
+    hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = paramsPriceCache || new Map()
@@ -342,6 +350,12 @@ export class Portfolio {
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string, _priceRecency: number = priceRecency) => {
+      // hardcode citrea prices
+      if (this.network.chainId === 4114n) {
+        const citreaTokenPrice = getHardcodedCitreaPrices(address)
+        if (citreaTokenPrice) return [citreaTokenPrice]
+      }
+
       const cached = priceCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached
@@ -491,12 +505,6 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      lastExternalApiUpdateData: hints.externalApi
-        ? {
-            lastUpdate: hints.externalApi.lastUpdate,
-            hasHints: hints.externalApi.hasHints
-          }
-        : null,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,

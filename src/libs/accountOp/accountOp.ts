@@ -1,4 +1,4 @@
-import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, getBytes, Interface, isAddress, keccak256, toBeHex } from 'ethers'
 
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
@@ -77,11 +77,20 @@ export interface AccountOp {
     fromQuoteId?: string
     /** Used to enable the gas tank if the user is topping up */
     topUpAmount?: bigint
+    /** Used to enable swap&bridge sponsorship */
+    swapSponsorship?: {
+      swapFeeInUsd: number
+      nativePrice: number
+      fromTokenPriceInUsd: number
+      fromTokenDecimals: number
+    }
   }
   flags?: {
     hideActivityBanner?: boolean
   }
 }
+
+export type AccountOpWithId = AccountOp & { id: string }
 
 /**
  * If we want to deploy a contract, the to field of Call will actually

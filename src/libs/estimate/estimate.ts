@@ -1,16 +1,15 @@
-import { BaseAccount } from '../account/BaseAccount'
-import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
-
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { GasSpeeds } from '../../services/bundlers/types'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
+import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 import { TokenResult } from '../portfolio'
 import { ambireEstimateGas } from './ambireEstimation'
-import { bundlerEstimate } from './estimateBundler'
-import { estimateWithRetries } from './estimateWithRetries'
-import { FullEstimation, FullEstimationSummary } from './interfaces'
+import { bundlerEstimate, fetchBundlerGasPrice } from './estimateBundler'
+import { Erc4337GasLimits, FullEstimation, FullEstimationSummary } from './interfaces'
 import { providerEstimateGas } from './providerEstimateGas'
 
 // get all possible estimation combinations and leave it to the implementation
@@ -31,9 +30,8 @@ export async function getEstimation(
   feeTokens: TokenResult[],
   nativeToCheck: string[],
   switcher: BundlerSwitcher,
-  errorCallback: Function,
   pendingUserOp?: SubmittedAccountOp
-): Promise<FullEstimation | Error> {
+): Promise<FullEstimation> {
   const ambireEstimation = ambireEstimateGas(
     baseAcc,
     accountState,
@@ -43,18 +41,31 @@ export async function getEstimation(
     feeTokens,
     nativeToCheck
   )
-  const bundlerEstimation = bundlerEstimate(
-    baseAcc,
-    accountState,
-    op,
-    network,
-    feeTokens,
-    provider,
-    switcher,
-    errorCallback,
-    undefined,
-    pendingUserOp
-  )
+  let bundlerGasPrices: GasSpeeds | undefined
+  const bundlerEstimation = async (): Promise<Erc4337GasLimits | Error | null> => {
+    if (!baseAcc.supportsBundlerEstimation() || !network.erc4337.hasBundlerSupport) return null
+
+    const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher)
+    if (gasPrice instanceof Error) return gasPrice
+
+    const bundlerEstimateResponse = await bundlerEstimate(
+      baseAcc,
+      accountState,
+      op,
+      network,
+      feeTokens,
+      provider,
+      gasPrice,
+      switcher,
+      undefined,
+      pendingUserOp
+    )
+    bundlerGasPrices =
+      !bundlerEstimateResponse || bundlerEstimateResponse instanceof Error
+        ? gasPrice
+        : bundlerEstimateResponse.gasPrice
+    return bundlerEstimateResponse
+  }
   const providerEstimation = providerEstimateGas(
     baseAcc.getAccount(),
     op,
@@ -64,18 +75,7 @@ export async function getEstimation(
     feeTokens
   )
 
-  const estimations = await estimateWithRetries<
-    [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
-  >(
-    () => [ambireEstimation, bundlerEstimation, providerEstimation],
-    'estimation-deployless',
-    errorCallback,
-    12000
-  )
-
-  // this is only if we hit a timeout 5 consecutive times
-  if (estimations instanceof Error) return estimations
-
+  const estimations = await Promise.all([ambireEstimation, bundlerEstimation(), providerEstimation])
   const ambireGas = estimations[0]
   const bundlerGas = estimations[1]
   const providerGas = estimations[2]
@@ -83,11 +83,12 @@ export async function getEstimation(
     provider: providerGas,
     ambire: ambireGas,
     bundler: bundlerGas,
-    flags: {}
+    flags: {},
+    bundlerGasPrices
   }
 
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation, op)
-  if (criticalError) return criticalError
+  if (criticalError) fullEstimation.criticalError = criticalError
 
   let flags = {}
   if (!(ambireGas instanceof Error) && ambireGas) flags = { ...ambireGas.flags }
@@ -106,6 +107,8 @@ export function getEstimationSummary(estimation: FullEstimation): FullEstimation
       estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
     bundlerEstimation:
       estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
-    flags: estimation.flags
+    flags: estimation.flags,
+    bundlerGasPrices: estimation.bundlerGasPrices,
+    updatedAt: Date.now()
   }
 }

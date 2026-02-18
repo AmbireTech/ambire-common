@@ -4,9 +4,10 @@ import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './inter
 
 export function getWarning(
   content: string,
-  level: HumanizerWarning['level'] = 'warning'
+  code: HumanizerWarning['code'],
+  blocking?: boolean
 ): HumanizerWarning {
-  return { content, level }
+  return { content, blocking, code }
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
@@ -80,7 +81,12 @@ export function getDeadlineText(deadline: bigint): string {
   if (diff < 0) return 'already expired'
   if (diff < minute) return 'expires in less than a minute'
   if (diff < 30n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
-  return `valid until ${new Date(Number(deadline)).toLocaleString()}`
+  if ((deadline / 1000n).toString(16) === 'f'.repeat(64)) return 'No expiration date'
+  if (deadline.toString(16) === 'f'.repeat(64)) return 'No expiration date'
+  const deadlineDate = new Date(Number(deadline))
+  if (isNaN(deadlineDate.getTime())) return 'Invalid expiration date'
+
+  return `valid until ${deadlineDate.toLocaleString()}`
 }
 
 export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualization {

@@ -67,6 +67,8 @@ export class SocketAPI implements SwapProvider {
 
   isHealthy: boolean | null = null
 
+  supportedChains: SwapProvider['supportedChains'] = null
+
   constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
@@ -114,10 +116,12 @@ export class SocketAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
+      let timeoutPromise
+
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
-          setTimeout(() => {
+          timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
                 'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
@@ -126,6 +130,8 @@ export class SocketAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
+
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
@@ -179,11 +185,15 @@ export class SocketAPI implements SwapProvider {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response
+    const chains = response
       .filter((c) => c.sendingEnabled && c.receivingEnabled)
       .map(({ chainId }) => ({
         chainId
       }))
+
+    this.supportedChains = chains
+
+    return chains
   }
 
   async getToTokenList({ toChainId }: { toChainId: number }): Promise<SwapAndBridgeToToken[]> {
@@ -201,7 +211,7 @@ export class SocketAPI implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    let tokens = response[toChainId]
+    let tokens = response[toChainId] || []
 
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
@@ -243,7 +253,7 @@ export class SocketAPI implements SwapProvider {
     if (!response.tokens || !response.tokens[chainId] || !response.tokens[chainId].length)
       return null
 
-    return normalizeIncomingSocketToken(response.tokens[chainId][0])
+    return normalizeIncomingSocketToken(response.tokens[chainId][0]!)
   }
 
   async quote({
@@ -255,7 +265,6 @@ export class SocketAPI implements SwapProvider {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isOG,
     isWrapOrUnwrap,
     accountNativeBalance,
     nativeSymbol
@@ -278,7 +287,7 @@ export class SocketAPI implements SwapProvider {
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
     const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isOG && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feeBps', (FEE_PERCENT * 100).toString())
@@ -295,14 +304,14 @@ export class SocketAPI implements SwapProvider {
     // configure the toAsset
     let socketToAsset = response.autoRoute ? response.autoRoute.output.token : null
     if (!socketToAsset) {
-      socketToAsset = response.manualRoutes.length ? response.manualRoutes[0].output.token : null
+      socketToAsset = response.manualRoutes.length ? response.manualRoutes[0]!.output.token : null
     }
     if (!socketToAsset) {
       socketToAsset = { ...toAsset, icon: toAsset.icon ?? '', logoURI: '' }
     }
 
     let allRoutes = [...response.manualRoutes]
-    if (response.autoRoute) allRoutes.push(response.autoRoute)
+    if (response.autoRoute) allRoutes.push({ ...response.autoRoute, isIntent: true })
     allRoutes = allRoutes.sort((r1, r2) => {
       const a = BigInt(r1.output.amount)
       const b = BigInt(r2.output.amount)
@@ -348,10 +357,10 @@ export class SocketAPI implements SwapProvider {
         ]
 
         // set the service fee
-        const serviceFee: SwapAndBridgeRoute['serviceFee'] = steps[0].protocolFees
+        const serviceFee: SwapAndBridgeRoute['serviceFee'] = steps[0]!.protocolFees
           ? {
-              amount: steps[0].protocolFees.amount,
-              amountUSD: steps[0].protocolFees.feesInUsd.toString()
+              amount: steps[0]!.protocolFees.amount,
+              amountUSD: steps[0]!.protocolFees.feesInUsd.toString()
             }
           : undefined
 
@@ -387,10 +396,14 @@ export class SocketAPI implements SwapProvider {
           },
           approvalData: 'approvalData' in route ? route.approvalData : undefined,
           txData: 'txData' in route ? route.txData : undefined,
-          rawRoute: '' // not needed for socket
+          rawRoute: '', // not needed for socket,
+          withConvenienceFee: shouldIncludeConvenienceFee,
+          usedBridgeNames:
+            fromChainId !== route.output.token.chainId
+              ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]
+              : [route.isIntent ? 'bungeeAutoRoute' : '']
         }
-      }),
-      withConvenienceFee: shouldIncludeConvenienceFee
+      })
     }
   }
 
@@ -412,7 +425,7 @@ export class SocketAPI implements SwapProvider {
         chainId: route.fromChainId,
         txData: route.txData.data,
         txTarget: route.txData.to,
-        userTxIndex: route.steps.length ? route.steps[0].userTxIndex : 0,
+        userTxIndex: route.steps.length ? route.steps[0]!.userTxIndex : 0,
         value: route.txData.value
       }
     }
@@ -434,7 +447,11 @@ export class SocketAPI implements SwapProvider {
         ? {
             allowanceTarget: response.approvalData.spenderAddress,
             approvalTokenAddress: response.approvalData.tokenAddress,
-            minimumApprovalAmount: response.approvalData.amount,
+            // we're using route.fromAmount instead of response.approvalData.amount
+            // because the API wrongly returns the substracted approval amount
+            // (meaning the amount after the swap&bridge fee) and it causes the
+            // estimation to fail with a TRANSFER_FROM_FAILED
+            minimumApprovalAmount: route.fromAmount,
             owner: response.approvalData.userAddress
           }
         : null,
@@ -459,6 +476,7 @@ export class SocketAPI implements SwapProvider {
 
     if (!response) return null
     const res = response[0]
+    if (!res) return null
     // everything below 3 is pending on our end
     if (res.bungeeStatusCode < 3) return null
     // 3 and 4 is completed on our end

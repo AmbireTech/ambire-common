@@ -9,7 +9,6 @@ import {
 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { Session } from '../../classes/session'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -24,11 +23,12 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
-import { UserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  FEE_PERCENT,
   JPYC_TOKEN,
   NULL_ADDRESS,
   SOCKET_EXPLORER_URL,
@@ -329,12 +329,14 @@ const buildRevokeApprovalIfNeeded = async (
   if (!fails) return
 
   return {
+    id: `${userTx.activeRouteId}-revoke-approval`,
     to: userTx.approvalData.approvalTokenAddress,
     value: BigInt('0'),
     data: erc20Contract.interface.encodeFunctionData('approve', [
       userTx.approvalData.allowanceTarget,
       BigInt(0)
-    ])
+    ]),
+    activeRouteId: userTx.activeRouteId
   }
 }
 
@@ -352,53 +354,49 @@ const getSwapAndBridgeCalls = async (
     if (revokeApproval) calls.push(revokeApproval)
 
     calls.push({
+      id: `${userTx.activeRouteId}-approval`,
       to: userTx.approvalData.approvalTokenAddress,
       value: BigInt('0'),
       data: erc20Interface.encodeFunctionData('approve', [
         userTx.approvalData.allowanceTarget,
         BigInt(userTx.approvalData.minimumApprovalAmount)
       ]),
-      fromUserRequestId: userTx.activeRouteId
+      activeRouteId: userTx.activeRouteId
     } as Call)
   }
 
   calls.push({
+    id: userTx.activeRouteId,
     to: userTx.txTarget,
     value: BigInt(userTx.value),
     data: userTx.txData,
-    fromUserRequestId: userTx.activeRouteId
+    activeRouteId: userTx.activeRouteId
   })
 
   return calls
 }
 
-const buildSwapAndBridgeUserRequests = async (
+const getSwapAndBridgeRequestParams = async (
   userTx: SwapAndBridgeSendTxRequest,
   chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState,
-  paymasterService?: PaymasterService,
-  windowId?: number
-): Promise<UserRequest[]> => {
-  return [
-    {
-      id: userTx.activeRouteId,
-      action: {
-        kind: 'calls' as const,
-        calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
-      },
-      session: new Session({ windowId }),
-      meta: {
-        isSignAction: true as true,
-        chainId,
-        accountAddr: account.addr,
-        activeRouteId: userTx.activeRouteId,
-        isSwapAndBridgeCall: true,
-        paymasterService
-      }
+  paymasterService?: PaymasterService
+): Promise<{
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+}> => {
+  return {
+    calls: await getSwapAndBridgeCalls(userTx, account, provider, state),
+    meta: {
+      chainId,
+      accountAddr: account.addr,
+      activeRouteId: userTx.activeRouteId,
+      isSwapAndBridgeCall: true,
+      paymasterService
     }
-  ]
+  }
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
@@ -567,9 +565,10 @@ export const calculateAmountWarnings = (
     }
 
     // try to calculate the slippage
-    const minAmountOutInWei = BigInt(
-      selectedRoute.userTxs[selectedRoute.userTxs.length - 1].minAmountOut
-    )
+    const txn = selectedRoute.userTxs[selectedRoute.userTxs.length - 1]
+    if (!txn) throw new Error('no userTxs in selectedRoute')
+
+    const minAmountOutInWei = BigInt(txn.minAmountOut)
     const minInUsd = safeTokenAmountAndNumberMultiplication(
       minAmountOutInWei,
       selectedRoute.toToken.decimals,
@@ -616,9 +615,52 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
+/**
+ * Get the swap sponsorship details.
+ * We need the native price so we can later understand if the cost
+ * of the txn in USD is less than the swap fee to sponsor it.
+ * No sponsorships in og mode.
+ * Also, to calculate the fee in USD, we multiply the full from
+ * amount in USD to the fee percent
+ */
+const getSwapSponsorship = ({
+  hasConvinienceFee,
+  nativePrice,
+  fromAmountInUsd,
+  fromTokenPriceInUsd,
+  fromTokenDecimals
+}: {
+  hasConvinienceFee: boolean
+  nativePrice: number | undefined
+  fromAmountInUsd: number | undefined
+  fromTokenPriceInUsd: number | undefined
+  fromTokenDecimals: number | undefined
+}):
+  | {
+      nativePrice: number
+      swapFeeInUsd: number
+      fromTokenPriceInUsd: number
+      fromTokenDecimals: number
+    }
+  | undefined => {
+  if (
+    !hasConvinienceFee ||
+    !nativePrice ||
+    !fromAmountInUsd ||
+    !fromTokenPriceInUsd ||
+    !fromTokenDecimals
+  )
+    return undefined
+  return {
+    nativePrice,
+    swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
+    fromTokenPriceInUsd,
+    fromTokenDecimals
+  }
+}
+
 export {
   addCustomTokensIfNeeded,
-  buildSwapAndBridgeUserRequests,
   convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
@@ -627,6 +669,8 @@ export {
   getLink,
   getSlippage,
   getSwapAndBridgeCalls,
+  getSwapAndBridgeRequestParams,
+  getSwapSponsorship,
   isNoFeeToken,
   isTxnBridge,
   lifiMapNativeToAddr,

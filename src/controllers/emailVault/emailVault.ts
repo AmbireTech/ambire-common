@@ -11,7 +11,7 @@ import {
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
-import { Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
@@ -20,6 +20,7 @@ import { EmailVault } from '../../libs/emailVault/emailVault'
 import { classifyEmailVaultError, friendlyEmailVaultMessage } from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
+import { RELAYER_DOWN_MESSAGE } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -117,9 +118,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     fetch: Fetch,
     relayerUrl: string,
     keyStore: IKeystoreController,
-    options?: { autoConfirmMagicLink?: boolean }
+    options?: { autoConfirmMagicLink?: boolean },
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.#storage = storage
@@ -187,16 +189,38 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#shouldStopConfirmationPolling = false
     this.emitUpdate()
 
-    const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
-      autoConfirm: this.#autoConfirmMagicLink,
-      flow
-    })
+    let newKey
+    try {
+      newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
+        autoConfirm: this.#autoConfirmMagicLink,
+        flow
+      })
+    } catch (error: any) {
+      this.cancelEmailConfirmation()
+
+      let message
+      if (error?.message === RELAYER_DOWN_MESSAGE) {
+        message = error?.message
+      } else if (error?.message) {
+        message = `Can't request magic link for email ${email}: ${error?.message}. Please try again or contact support if the problem persists.`
+      } else {
+        message = `Can't request magic link for email ${email}. Please try again or contact support if the problem persists.`
+      }
+
+      this.emitError({
+        message,
+        level: 'major',
+        error
+      })
+    }
+
+    if (!newKey) return
 
     const polling = new Polling()
-    polling.onUpdate(async () => {
+    polling.onUpdate(async (forceEmit) => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
         this.#isWaitingEmailConfirmation = true
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       } else if (polling.state.isError) {
         this.emitError({
           message: `Can't request magic link for email ${email}: ${polling.state.error.message}`,
@@ -206,7 +230,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
           )
         })
         this.emailVaultStates.errors = [polling.state.error]
-        this.emitUpdate()
+        this.propagateUpdate(forceEmit)
       }
     })
 
@@ -458,13 +482,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
     // Once we are here - it means we pass all the above validations,
     // and we are ready to change the keystore password secret
-    this.emailVaultStates.email[email].availableSecrets[result.key] = result
-
     await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
     await this.#keyStore.removeSecret('password')
     await this.#keyStore.addSecret('password', newPassword, '', false)
 
-    await this.#storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
     this.emitUpdate()
   }
 
@@ -655,14 +676,12 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
         text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
           {
-            label: 'Dismiss',
-            actionName: 'dismiss-email-vault'
-          },
-          {
-            label: 'Enable',
             actionName: 'backup-keystore-secret'
           }
-        ]
+        ],
+        dismissAction: {
+          actionName: 'dismiss-email-vault'
+        }
       })
     }
 

@@ -4,6 +4,7 @@ import { getCreate2Address, keccak256 } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { MAX_UINT256 } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -21,6 +22,7 @@ import {
   SelectedAccountForImport
 } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -144,9 +146,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
 
+  #controllerSubscriptions: Function[] = []
+
   // Used in order to expose the ongoing "find linked accounts" task, so other
   // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
+
+  /**
+   * Needed in order to cancel the ongoing findAndSetLinkedAccounts operation
+   * when reset() is called (usually when the user navigates away/closes the Account Picker).
+   * This prevents the operation from continuing after the controller state has been
+   * cleared, avoiding errors in #verifyLinkedAccounts when #derivedAccounts is empty.
+   */
+  #findAndSetLinkedAccountsAbortController?: AbortController
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -154,11 +166,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     accounts?: SelectedAccountForImport[]
   } | null = null
 
-  #accountsUnsubscribe?: () => void
-
-  #keystoreUnsubscribe?: () => void
-
   constructor({
+    eventEmitterRegistry,
     accounts,
     keystore,
     networks,
@@ -168,6 +177,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     onAddAccountsSuccessCallback
   }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
     keystore: IKeystoreController
     networks: INetworksController
@@ -177,7 +187,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
-    super()
+    super(eventEmitterRegistry)
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks
@@ -186,25 +196,29 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
-    this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
-      this.#debounceFunctionCalls(
-        'update-accounts',
-        () => {
-          if (!this.isInitialized) return
-          if (this.addAccountsStatus !== 'INITIAL') return
+    this.#controllerSubscriptions.push(
+      this.#accounts.onUpdate(() => {
+        this.#debounceFunctionCalls(
+          'update-accounts',
+          () => {
+            if (!this.isInitialized) return
+            if (this.addAccountsStatus !== 'INITIAL') return
 
-          this.#updateStateWithTheLatestFromAccounts()
-        },
-        20
-      )
-    })
+            this.#updateStateWithTheLatestFromAccounts()
+          },
+          20
+        )
+      })
+    )
 
-    this.#keystoreUnsubscribe = this.#keystore.onUpdate(() => {
-      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
-        this.#addAccountsOnKeystoreReady = null
-      }
-    })
+    this.#controllerSubscriptions.push(
+      this.#keystore.onUpdate(() => {
+        if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+          this.#addAccountsOnKeystoreReady = null
+        }
+      })
+    )
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -408,7 +422,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   async init() {
-    if (!this.initParams) return
+    if (!this.initParams) {
+      this.emitError({
+        level: 'silent',
+        message: 'AccountPickerController init failed: missing initParams.',
+        error: new Error('AccountPickerController init failed: missing initParams.')
+      })
+      return
+    }
 
     const {
       keyIterator,
@@ -450,6 +471,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   async reset(resetInitParams: boolean = true) {
     await this.addAccountsPromise
+    // Abort any ongoing findAndSetLinkedAccounts operation
+    if (this.#findAndSetLinkedAccountsAbortController) {
+      this.#findAndSetLinkedAccountsAbortController.abort()
+      this.#findAndSetLinkedAccountsAbortController = undefined
+    }
     if (resetInitParams) this.initParams = null
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
@@ -476,14 +502,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   destroy() {
-    if (this.#accountsUnsubscribe) {
-      this.#accountsUnsubscribe()
-      this.#accountsUnsubscribe = undefined
-    }
-    if (this.#keystoreUnsubscribe) {
-      this.#keystoreUnsubscribe()
-      this.#keystoreUnsubscribe = undefined
-    }
+    super.destroy()
+    // We must unsubscribe from the controllers and CAN'T call
+    // their destroy methods. That is because they are also used
+    // outside of this controller instance.
+    this.#controllerSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#controllerSubscriptions = []
   }
 
   resetAccountsSelection() {
@@ -530,14 +554,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const isSmartAccountAndNotLinked =
       isSmartAccount(account) &&
       accountsOnPageWithThisAcc.length === 1 &&
-      accountsOnPageWithThisAcc[0].isLinked === false
+      accountsOnPageWithThisAcc[0]?.isLinked === false
 
     if (isSmartAccountAndNotLinked) {
       // The key of the smart account is the EOA on the same slot
       // that is explicitly derived for a smart account key only.
       const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find(
         (a) =>
-          a.slot === accountsOnPageWithThisAcc[0].slot &&
+          a.slot === accountsOnPageWithThisAcc[0]?.slot &&
           !isSmartAccount(a.account) &&
           isDerivedForSmartAccountKeyOnly(a.index)
       )
@@ -547,24 +571,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         : []
     }
 
-    // Case 3: The account is a Smart account and a linked one. For this case,
-    // there could exist multiple keys (EOAs) found on different slots.
-    const basicAccOnEverySlotWhereThisAddrIsFound = accountsOnPageWithThisAcc
-      .map((a) => a.slot)
-      .flatMap((slot) => {
-        const basicAccOnThisSlot = this.#derivedAccounts.find(
-          (a) =>
-            a.slot === slot &&
-            !isSmartAccount(a.account) &&
-            // The key of the linked account is always the EOA (basic) account
-            // on the same slot that is not explicitly used for smart account keys only.
-            !isDerivedForSmartAccountKeyOnly(a.index)
-        )
-
-        return basicAccOnThisSlot ? [basicAccOnThisSlot] : []
-      })
-
-    return basicAccOnEverySlotWhereThisAddrIsFound
+    // Case 3: The account is a smart account (v1 or v2) and a linked one.
+    // Since it's found as linked, the key(s) must be one or more of the EOAs
+    // derived, because linked accounts are searched on the EOAs only.
+    return this.#derivedAccounts
+      .filter((a) => !isSmartAccount(a.account))
+      .filter((a) => account.associatedKeys.includes(a.account.addr))
   }
 
   selectAccount(_account: Account | AccountWithNetworkMeta) {
@@ -660,15 +672,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     )
   }
 
-  /**
-   * Prevents requesting the next page before the current one is fully loaded.
-   * This avoids race conditions where the user requests the next page before
-   * linked accounts are fully loaded, causing misleadingly failing `#verifyLinkedAccounts` checks.
-   */
-  get isPageLocked() {
-    return this.accountsLoading || this.linkedAccountsLoading
-  }
-
   async setPage({
     page = this.page,
     pageSize,
@@ -713,12 +716,39 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     try {
-      this.#derivedAccounts = await this.#deriveAccounts()
+      const derivedAccounts = await this.#deriveAccounts()
+
+      if (this.page !== page) return
+
+      this.#derivedAccounts = derivedAccounts
+
+      // The used on information is not critical. Allow the user to proceed after
+      // 1 second. It will get popuplated in the background.
+      const minWaitTimeout = setTimeout(() => {
+        if (this.page !== page) return
+
+        this.accountsLoading = false
+        this.emitUpdate()
+      }, 1000)
+
+      const derivedAccountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
+        accounts: this.#derivedAccounts,
+        page
+      })
+
+      if (this.page !== page) return
+
+      this.#derivedAccounts = derivedAccountsWithUsedOn
+
+      if (minWaitTimeout) clearTimeout(minWaitTimeout)
+
+      this.accountsLoading = false
+      this.emitUpdate()
 
       if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
         const usedAccounts = accountsOnPageWithoutTheLinked.filter(
-          (acc) => acc.account.usedOnNetworks.length
+          (acc) => acc.account.usedOnNetworks?.length
         )
 
         // If at least one account is used - preselect all accounts on the page
@@ -729,11 +759,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         }
       }
     } catch (e: any) {
+      if (this.page !== page) return
       const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`
+      this.accountsLoading = false
       this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage
+      this.emitUpdate()
     }
-    this.accountsLoading = false
-    this.emitUpdate()
+
+    if (this.page !== page) return
 
     await this.findAndSetLinkedAccounts()
   }
@@ -871,10 +904,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       ...this.addedAccountsFromCurrentSession,
       ...this.readyToAddAccounts
     ]
+
     this.selectedAccountsFromCurrentSession = []
     this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
       this.#onAddAccountsSuccessCallbackPromise = undefined
     })
+
+    // Explicitly emit an update here because the front-end needs this state immediately,
+    // without waiting for the promise below to resolve.
+    // Previously, this caused a bug in AccountPersonalizeScreen where
+    // `addedAccountsFromCurrentSession` was still empty while waiting for the Promise.
+    // As a result, the app redirected to the NextRoute instead of showing the Personalize screen.
+    await this.forceEmitUpdate()
+
     await this.#onAddAccountsSuccessCallbackPromise
 
     this.addAccountsStatus = 'SUCCESS'
@@ -953,12 +995,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    const keyPublicAddress: string = (await this.keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
+    const keyPublicAddress: string | undefined = (
+      await this.keyIterator.retrieve([{ from: 0, to: 1 }])
+    )[0]
+
+    if (!keyPublicAddress) {
+      const message =
+        'accountPicker: createAndAddEmailAccount called, but failed to derive the public key address.'
+      this.emitError({ message, level: 'silent', error: new Error(message) })
+      return
+    }
 
     const emailSmartAccount = await getEmailAccount(
       {
         emailFrom: email!,
-        secondaryKey: recoveryKey.addr
+        secondaryKey: recoveryKey!.addr
       },
       keyPublicAddress
     )
@@ -1077,73 +1128,66 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
-    const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({ accounts })
-
-    return accountsWithNetworks
+    return accounts
   }
 
-  // inner func
-  // eslint-disable-next-line class-methods-use-this
   async #getAccountsUsedOnNetworks({
-    accounts
+    accounts,
+    page
   }: {
     accounts: DerivedAccountWithoutNetworkMeta[]
+    page: number
   }): Promise<DerivedAccount[]> {
     if (!this.shouldGetAccountsUsedOnNetworks) {
-      return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: [] } }))
+      return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: null } }))
     }
 
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: string]: Network } = this.#networks.allNetworks.reduce(
-      (acc, network) => {
-        acc[network.chainId.toString()] = network
-        return acc
-      },
-      {} as { [key: string]: Network }
-    )
+    const enabledNetworks = this.#networks.networks
+    const accountsList = accounts.map((acc) => acc.account)
+    const promises = enabledNetworks.map(async (network) => {
+      const chainId = network.chainId.toString()
+      const provider = this.#providers.providers[chainId]
+      if (!provider) return
 
-    const promises = Object.keys(this.#providers.providers).map(async (chainId: string) => {
-      const network = networkLookup[chainId]
-      if (network) {
-        const accountState = await getAccountState(
-          this.#providers.providers[chainId],
-          network,
-          accounts.map((acc) => acc.account)
-        ).catch(() => {
-          if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
-          this.networksWithAccountStateError.push(BigInt(chainId))
-        })
+      const accountState = await getAccountState(provider, network, accountsList).catch(() => {
+        if (this.page !== page) return
+        if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
+        this.networksWithAccountStateError.push(BigInt(chainId))
+      })
 
-        if (!accountState) return
+      if (!accountState) return
 
-        accountState.forEach((acc: AccountOnchainState) => {
-          const isUsedOnThisNetwork =
-            // Known limitation: checks only the native token balance. If this
-            // account has any other tokens than native ones, this check will
-            // fail to detect that the account was used on this network.
-            acc.balance > BigInt(0) ||
-            (acc.isEOA
-              ? [acc.nonce, acc.eoaNonce, acc.erc4337Nonce].some(
-                  (nonce) => (nonce || BigInt(0)) > BigInt(0)
-                )
-              : // For smart accounts, check for 'isDeployed' instead because in
-                // the erc-4337 scenario many cases might be missed with checking
-                // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
-                // might be actively using the account. This is because in erc-4337,
-                // we use the entry point nonce. However, detecting the entry point
-                // nonce is also not okay, because for various cases we do not use
-                // sequential nonce - i.e., the entry point nonce could still be 0,
-                // but the account is deployed. So the 'isDeployed' check is the
-                // only reliable way to detect if account is used on network.
-                acc.isDeployed)
-          if (isUsedOnThisNetwork) {
-            accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
-          }
-        })
-      }
+      accountState.forEach((acc: AccountOnchainState) => {
+        const isUsedOnThisNetwork =
+          // Known limitation: checks only the native token balance. If this
+          // account has any other tokens than native ones, this check will
+          // fail to detect that the account was used on this network.
+          acc.balance > BigInt(0) ||
+          (acc.isEOA
+            ? [acc.nonce, acc.eoaNonce].some((nonce) => (nonce || BigInt(0)) > BigInt(0)) ||
+              (acc.erc4337Nonce !== MAX_UINT256 && acc.erc4337Nonce !== BigInt(0))
+            : // For smart accounts, check for 'isDeployed' instead because in
+              // the erc-4337 scenario many cases might be missed with checking
+              // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
+              // might be actively using the account. This is because in erc-4337,
+              // we use the entry point nonce. However, detecting the entry point
+              // nonce is also not okay, because for various cases we do not use
+              // sequential nonce - i.e., the entry point nonce could still be 0,
+              // but the account is deployed. So the 'isDeployed' check is the
+              // only reliable way to detect if account is used on network.
+              acc.isDeployed)
+
+        const accObj = accountsObj[acc.accountAddr]
+        if (isUsedOnThisNetwork && accObj) {
+          if (!accObj.account.usedOnNetworks) accObj.account.usedOnNetworks = []
+
+          accObj.account.usedOnNetworks.push(network)
+        }
+      })
     })
 
     await Promise.all(promises)
@@ -1152,8 +1196,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     // Preserve the original order of networks based on usedOnNetworks
     const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
-      const chainIdsA = a.account.usedOnNetworks.map((network) => network.chainId)
-      const chainIdsB = b.account.usedOnNetworks.map((network) => network.chainId)
+      const chainIdsA = (a.account.usedOnNetworks || []).map((network) => network.chainId)
+      const chainIdsB = (b.account.usedOnNetworks || []).map((network) => network.chainId)
       const networkIndexA = this.#networks.networks.findIndex((network) =>
         chainIdsA.includes(network.chainId)
       )
@@ -1166,10 +1210,27 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return sortedAccountsWithNetworksArray
   }
 
+  /**
+   * Guard to ensure we only proceed with data that matches the current page and
+   * that the operation hasn't been cancelled via reset().
+   * Similar to #isQuoteIdObsoleteAfterAsyncOperation in SwapAndBridgeController.
+   */
+  #isFindAndSetLinkedAccountsCancelled(
+    calledForPage: number,
+    calledForAbortController: AbortController | undefined
+  ): boolean {
+    return calledForAbortController?.signal.aborted || calledForPage !== this.page
+  }
+
   async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
     if (!this.shouldSearchForLinkedAccounts) return
 
     if (accounts.length === 0) return
+
+    // Cache the page and the abort controller at the start to use throughout
+    // the operation, even if reset() clears them mid-process
+    const calledForPage = this.page
+    const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
     this.linkedAccountsLoading = true
     this.linkedAccountsError = ''
@@ -1189,6 +1250,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       errorMessage += upstreamError ? ` Error details: <${upstreamError}>` : ''
       this.linkedAccountsError = errorMessage
     }
+
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
       relayerLinkedAccounts
@@ -1251,23 +1314,46 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       ]
     })
 
-    // in case the page is changed or the ctrl is reset do not continue with the logic
-    if (!this.linkedAccountsLoading) return
+    // Check if operation was aborted or page changed
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
-    const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
-      accounts: linkedAccounts as any
-    })
+    this.#linkedAccounts = linkedAccounts
 
-    if (!this.linkedAccountsLoading) return
-
-    this.#linkedAccounts = linkedAccountsWithNetworks
     this.#verifyLinkedAccounts()
 
+    // The used on information is not critical. Allow the user to proceed after
+    // 1 second. It will get popuplated in the background.
+    const minWaitTimeout = setTimeout(() => {
+      this.linkedAccountsLoading = false
+      this.emitUpdate()
+    }, 1000)
+
+    const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
+      accounts: linkedAccounts as any,
+      page: calledForPage
+    })
+
+    if (minWaitTimeout) {
+      clearTimeout(minWaitTimeout)
+    }
+
+    // Check if operation was aborted or page changed
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+    this.#linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
     this.emitUpdate()
   }
 
   async findAndSetLinkedAccounts() {
+    // Abort any previous operation
+    if (this.#findAndSetLinkedAccountsAbortController) {
+      this.#findAndSetLinkedAccountsAbortController.abort()
+    }
+
+    // Create a new AbortController for this operation
+    this.#findAndSetLinkedAccountsAbortController = new AbortController()
+
     this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
@@ -1281,6 +1367,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         .map((acc) => acc.account)
     }).finally(() => {
       this.findAndSetLinkedAccountsPromise = undefined
+      this.#findAndSetLinkedAccountsAbortController = undefined
     })
     await this.findAndSetLinkedAccountsPromise
   }
@@ -1376,8 +1463,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
-      subType: this.subType,
-      isPageLocked: this.isPageLocked
+      subType: this.subType
     }
   }
 }

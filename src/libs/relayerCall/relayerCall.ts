@@ -26,7 +26,7 @@ export async function relayerCallUncaught(
   method: string = 'GET',
   body: any = null,
   headers: any = null,
-  timeoutMs: number = 10000
+  timeoutMs: number = 20000
 ) {
   if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
     return { success: false, message: 'bad method' }
@@ -83,8 +83,16 @@ export async function relayerCall(
   method: string = 'GET',
   body: any = null,
   headers: any = null,
-  timeoutMs: number = 10000
+  timeoutMs: number = 20000
 ): Promise<any> {
+  if (!this.url || !this.fetch) {
+    throw new RelayerError(
+      'Unable to connect to the Ambire relayer. Please try again later. Error code: RELAYERCALL_NOT_BINDED',
+      { url: this.url, path, method, body, headers },
+      {},
+      true
+    )
+  }
   const res = await relayerCallUncaught(
     this.url + path,
     this.fetch,
@@ -93,6 +101,7 @@ export async function relayerCall(
     headers,
     timeoutMs
   )
+
   if (!res.success) {
     const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res
     throw new RelayerError(

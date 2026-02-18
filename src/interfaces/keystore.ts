@@ -16,7 +16,7 @@ import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 // TODO: Handle better to prevent dep cycle
 // eslint-disable-next-line import/no-cycle
-import { TypedMessage } from './userRequest'
+import { TypedMessageUserRequest } from './userRequest'
 
 export type IKeystoreController = ControllerInterface<
   InstanceType<typeof import('../controllers/keystore/keystore').KeystoreController>
@@ -75,7 +75,7 @@ export interface KeystoreSignerInterface {
   key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
-  signTypedData: (typedMessage: TypedMessage) => Promise<string>
+  signTypedData: (typedMessage: TypedMessageUserRequest['meta']['params']) => Promise<string>
   signMessage: (hex: string) => Promise<string>
   sign7702: ({
     chainId,
@@ -93,6 +93,8 @@ export interface KeystoreSignerInterface {
     txnRequest: TxnRequest
     eip7702Auth: EIP7702Auth
   }) => Promise<Hex>
+  getEncryptionPublicKey?: () => Promise<string> // base64 string
+  decrypt?: (encryptedData: string) => string // plain text
   signingCleanup?: () => Promise<void>
 }
 

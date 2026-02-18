@@ -7,12 +7,10 @@ import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
 import { AutoLoginPolicy, AutoLoginSettings } from '../../interfaces/autoLogin'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -22,10 +20,6 @@ import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { AutoLoginController } from './autoLogin'
 
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
 const storage: Storage = produceMemoryStore()
 let providersCtrl: IProvidersController
 const storageCtrl = new StorageController(storage)
@@ -33,21 +27,22 @@ const networksCtrl = new NetworksController({
   storage: storageCtrl,
   fetch,
   relayerUrl,
-  onAddOrUpdateNetworks: (nets) => {
-    nets.forEach((n) => {
-      providersCtrl.setProvider(n)
-    })
+  useTempProvider: (props, cb) => {
+    return providersCtrl.useTempProvider(props, cb)
   },
-  onRemoveNetwork: (id) => {
-    providersCtrl.removeProvider(id)
+  onAddOrUpdateNetworks: () => {},
+  onReady: async () => {
+    await providersCtrl.init({ networks: networksCtrl.allNetworks })
   }
 })
 
-providersCtrl = new ProvidersController(networksCtrl)
-providersCtrl.providers = providers
-
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
+providersCtrl = new ProvidersController({
+  storage: storageCtrl,
+  getNetworks: () => networksCtrl.allNetworks,
+  sendUiMessage: () => uiCtrl.message.sendUiMessage
+})
 
 const EOA_ACC = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -89,7 +84,9 @@ const prepareTest = async (
     keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
 
   await networksCtrl.initialLoadPromise
@@ -277,7 +274,7 @@ URI: https://docs.fileverse.io
 
       expect(message?.status).toBe('invalid')
     })
-    it('invalid resource uri in resources - should return status invalid-critical', async () => {
+    it('malformed siwe message - should return null', async () => {
       const malformedMessage = generateSiweMessage(undefined, (message) =>
         message.replace(/Resources:\n- https:\/\/privy.io/, 'Resources:\n- invaliduri')
       )
@@ -286,7 +283,7 @@ URI: https://docs.fileverse.io
         'https://docs.fileverse.io'
       )
 
-      expect(message?.status).toBe('invalid-critical')
+      expect(message).toBeNull()
     })
     it('expired siwe - should return status invalid', async () => {
       const expiredSiwe = generateSiweMessage({
@@ -348,7 +345,7 @@ URI: https://docs.fileverse.io
     it('valid siwe - should return parsed message', async () => {
       const siwe = generateSiweMessage()
 
-      const resp = AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')
+      const resp = AutoLoginController.getParsedSiweMessage(siwe, 'https://docs.fileverse.io')
 
       const message = resp?.parsedSiwe
 
@@ -397,7 +394,7 @@ URI: https://docs.fileverse.io
       const siwe = generateSiweMessage()
 
       const status = controller.getAutoLoginStatus(
-        AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')!.parsedSiwe
+        AutoLoginController.getParsedSiweMessage(siwe, 'https://docs.fileverse.io')!.parsedSiwe
       )
 
       expect(status).toBe('active')
@@ -417,7 +414,7 @@ URI: https://docs.fileverse.io
       })
 
       const status = controller.getAutoLoginStatus(
-        AutoLoginController.getParsedSiweMessage(siwe, 'some-other-domain.com')!.parsedSiwe
+        AutoLoginController.getParsedSiweMessage(siwe, 'https://some-other-domain.com')!.parsedSiwe
       )
 
       expect(status).toBe('no-policy')
@@ -439,7 +436,7 @@ URI: https://docs.fileverse.io
       const siwe = generateSiweMessage()
 
       const status = controller.getAutoLoginStatus(
-        AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')!.parsedSiwe
+        AutoLoginController.getParsedSiweMessage(siwe, 'https://docs.fileverse.io')!.parsedSiwe
       )
 
       expect(status).toBe('expired')
@@ -458,7 +455,7 @@ URI: https://docs.fileverse.io
       })
 
       const status = controller.getAutoLoginStatus(
-        AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')!.parsedSiwe
+        AutoLoginController.getParsedSiweMessage(siwe, 'https://docs.fileverse.io')!.parsedSiwe
       )
 
       expect(status).toBe('unsupported')
@@ -473,7 +470,7 @@ URI: https://docs.fileverse.io
         uri: 'https://some-domain.com/login',
         chainId: 1
       }),
-      'some-domain.com'
+      'https://some-domain.com'
     )!
 
     const policy = await controller.onSiweMessageSigned(
@@ -515,7 +512,7 @@ URI: https://docs.fileverse.io
         chainId: 137,
         resources: ['https://privy.io', 'https://fileverse.io']
       }),
-      'docs.fileverse.io'
+      'https://docs.fileverse.io'
     )!
 
     const policy = await controller.onSiweMessageSigned(
@@ -540,7 +537,7 @@ URI: https://docs.fileverse.io
 
     const { parsedSiwe } = AutoLoginController.getParsedSiweMessage(
       generateSiweMessage(),
-      'docs.fileverse.io'
+      'https://docs.fileverse.io'
     )!
 
     const policy = await controller.onSiweMessageSigned(
@@ -573,5 +570,112 @@ URI: https://docs.fileverse.io
     await controller.revokePolicy(EOA_ACC.addr, EXISTING_POLICY.domain, EXISTING_POLICY.uriPrefix)
 
     expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([])
+  })
+  it('revokeAllPoliciesForDomain works', async () => {
+    const POLICY_1: AutoLoginPolicy = {
+      domain: 'docs.fileverse.io',
+      uriPrefix: 'https://docs.fileverse.io/login',
+      allowedChains: [1],
+      allowedResources: ['https://privy.io'],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const POLICY_2: AutoLoginPolicy = {
+      domain: 'docs.fileverse.io',
+      uriPrefix: 'https://docs.fileverse.io/admin',
+      allowedChains: [1, 137],
+      allowedResources: ['https://privy.io'],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const OTHER_DOMAIN_POLICY: AutoLoginPolicy = {
+      domain: 'other-site.com',
+      uriPrefix: 'https://other-site.com/login',
+      allowedChains: [1],
+      allowedResources: [],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const { controller } = await prepareTest((s) => {
+      return s.set('autoLoginPolicies', {
+        [EOA_ACC.addr]: [POLICY_1, POLICY_2, OTHER_DOMAIN_POLICY]
+      })
+    })
+
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([
+      POLICY_1,
+      POLICY_2,
+      OTHER_DOMAIN_POLICY
+    ])
+
+    await controller.revokeAllPoliciesForDomain(
+      'docs.fileverse.io',
+      'https://docs.fileverse.io/login'
+    )
+    await controller.revokeAllPoliciesForDomain(
+      'docs.fileverse.io',
+      'https://docs.fileverse.io/admin'
+    )
+
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([OTHER_DOMAIN_POLICY])
+  })
+
+  it('revokeAllPoliciesForDomain removes policies across multiple accounts', async () => {
+    const SHARED_POLICY: AutoLoginPolicy = {
+      domain: 'docs.fileverse.io',
+      uriPrefix: 'https://docs.fileverse.io/login',
+      allowedChains: [1],
+      allowedResources: ['https://privy.io'],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const EOA_POLICY: AutoLoginPolicy = {
+      domain: 'eoa-only.com',
+      uriPrefix: 'https://eoa-only.com/login',
+      allowedChains: [1],
+      allowedResources: [],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const HW_POLICY: AutoLoginPolicy = {
+      domain: 'hw-only.com',
+      uriPrefix: 'https://hw-only.com/login',
+      allowedChains: [137],
+      allowedResources: [],
+      supportsEIP6492: false,
+      expiresAt: Date.now() + 60000,
+      lastAuthenticated: Date.now()
+    }
+
+    const { controller } = await prepareTest((s) => {
+      return s.set('autoLoginPolicies', {
+        [EOA_ACC.addr]: [SHARED_POLICY, EOA_POLICY],
+        [HW_ACC.addr]: [SHARED_POLICY, HW_POLICY]
+      })
+    })
+
+    // Verify initial state
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([SHARED_POLICY, EOA_POLICY])
+    expect(controller.getAccountPolicies(HW_ACC.addr)).toEqual([SHARED_POLICY, HW_POLICY])
+
+    // Remove the shared policy from all accounts
+    await controller.revokeAllPoliciesForDomain(
+      'docs.fileverse.io',
+      'https://docs.fileverse.io/login'
+    )
+
+    // Verify the shared policy is removed from both accounts, but other policies remain
+    expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([EOA_POLICY])
+    expect(controller.getAccountPolicies(HW_ACC.addr)).toEqual([HW_POLICY])
   })
 })

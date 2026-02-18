@@ -17,6 +17,10 @@ import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
+import { getProviderId } from '../../libs/defiPositions/helpers'
+import * as defiProviders from '../../libs/defiPositions/providers'
+import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { Portfolio } from '../../libs/portfolio'
 import {
   erc721CollectionToLearnedAssetKeys,
@@ -27,12 +31,15 @@ import {
   Hints,
   LearnedAssets,
   PortfolioGasTankResult,
+  PortfolioNetworkResult,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -46,13 +53,13 @@ const providers: RPCProviders = {}
 
 networks.forEach((network) => {
   providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.chainId.toString()].isWorking = true
+  providers[network.chainId.toString()]!.isWorking = true
 })
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()], network, accounts)
+      getAccountState(providers[network.chainId.toString()]!, network, accounts)
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -60,7 +67,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.chainId, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex]![accIndex]]
         })
       )
     ]
@@ -185,6 +192,27 @@ const accountWithManyAssets = {
   }
 }
 
+// If the account ever has to be replaced:
+// 1. Go to https://debank.com/protocols
+// 2. Find an Account that has both Aave v3 and Uniswap v3 positions on mainnet
+// 3. Replace the address below with that account's address
+// 4. Update the static MOCK_DEBANK_RESPONSE_DATA below with a fresh call to cena
+const DEFI_TEST_ACCOUNT = {
+  addr: '0x741aa7cfb2c7bf2a1e7d4da2e3df6a56ca4131f3',
+  initialPrivileges: [],
+  associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+  creation: {
+    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+    salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+  },
+  preferences: {
+    label: 'Test account',
+    pfp: '0x741aa7cfb2c7bf2a1e7d4da2e3df6a56ca4131f3'
+  }
+}
+
 const generateRandomAddresses = (count: number): string[] => {
   const addresses = []
 
@@ -201,23 +229,29 @@ const getMultipleAccountsLearnedAssets = () => {
   const tokenHints2 = generateRandomAddresses(10)
 
   const turnHintsToLearnedAssets = (hints: string[]) => {
-    return hints.reduce((acc, addr) => {
-      acc[addr] = Date.now()
+    return hints.reduce(
+      (acc, addr) => {
+        acc[addr] = Date.now()
 
-      return acc
-    }, {} as LearnedAssets['erc20s'][string])
+        return acc
+      },
+      {} as LearnedAssets['erc20s'][string]
+    )
   }
 
   const turnCollectionsToLearnedAssetKeys = (
     collections: [string, bigint[]][]
   ): LearnedAssets['erc721s'][string] => {
-    return collections.reduce((acc, nft) => {
-      erc721CollectionToLearnedAssetKeys(nft).forEach((key) => {
-        acc[key] = Date.now()
-      })
+    return collections.reduce(
+      (acc, nft) => {
+        erc721CollectionToLearnedAssetKeys(nft).forEach((key) => {
+          acc[key] = Date.now()
+        })
 
-      return acc
-    }, {} as LearnedAssets['erc721s'][string])
+        return acc
+      },
+      {} as LearnedAssets['erc721s'][string]
+    )
   }
 
   return {
@@ -227,14 +261,14 @@ const getMultipleAccountsLearnedAssets = () => {
     },
     erc721s: {
       [`${1}:${account.addr}`]: turnCollectionsToLearnedAssetKeys([
-        [tokenHints1[0], [1n, 2n, 3n]],
-        [tokenHints1[1], [4n, 5n, 6n]],
-        [tokenHints1[2], [7n, 8n, 9n]]
+        [tokenHints1[0]!, [1n, 2n, 3n]],
+        [tokenHints1[1]!, [4n, 5n, 6n]],
+        [tokenHints1[2]!, [7n, 8n, 9n]]
       ]),
       [`${1}:${account2.addr}`]: turnCollectionsToLearnedAssetKeys([
         // Collision with account 1 (on purpose)
-        [tokenHints1[0], [10n, 11n, 12n]],
-        [tokenHints2[5], [13n, 14n, 15n]]
+        [tokenHints1[0]!, [10n, 11n, 12n]],
+        [tokenHints2[5]!, [13n, 14n, 15n]]
       ])
     }
   }
@@ -245,7 +279,7 @@ const getKeystoreKeys = (): StoredKey[] => {
     {
       privKey: '0',
       dedicatedToOneSA: false,
-      addr: account.associatedKeys[0],
+      addr: account.associatedKeys[0]!,
       type: 'internal',
       label: 'key 1',
       meta: {} as any
@@ -253,7 +287,7 @@ const getKeystoreKeys = (): StoredKey[] => {
     {
       privKey: '0',
       dedicatedToOneSA: false,
-      addr: account2.associatedKeys[0],
+      addr: account2.associatedKeys[0]!,
       type: 'internal',
       label: 'key 2',
       meta: {} as any
@@ -275,7 +309,8 @@ const prepareTest = async (
     account4,
     emptyAccount,
     ambireV2Account,
-    accountWithManyAssets
+    accountWithManyAssets,
+    DEFI_TEST_ACCOUNT
   ])
   if (initialSetStorage) await initialSetStorage(storageCtrl)
 
@@ -285,17 +320,20 @@ const prepareTest = async (
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
     }
   })
-  providersCtrl = new ProvidersController(networksCtrl)
-  providersCtrl.providers = providers
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
+  await providersCtrl.initialLoadPromise
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
@@ -307,6 +345,7 @@ const prepareTest = async (
     relayerUrl,
     fetch
   )
+  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const controller = new PortfolioController(
     storageCtrl,
     fetch,
@@ -316,15 +355,20 @@ const prepareTest = async (
     keystore,
     relayerUrl,
     velcroUrl,
-    new BannerController(storageCtrl)
+    new BannerController(storageCtrl),
+    featureFlagsCtrl
   )
+
+  await accountsCtrl.initialLoadPromise
+  await providersCtrl.initialLoadPromise
+  await networksCtrl.initialLoadPromise
 
   if (initialSetStorage) {
     // The initial load promise is not exposed so we wait 500ms for the storage to be set
     await wait(500)
   }
 
-  return { storageCtrl, controller }
+  return { storageCtrl, controller, networksCtrl }
 }
 
 describe('Portfolio Controller ', () => {
@@ -341,7 +385,7 @@ describe('Portfolio Controller ', () => {
       137
     ])
 
-    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1'])
+    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1']!)
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
@@ -460,7 +504,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
 
       controller.onUpdate(() => {
@@ -506,11 +550,11 @@ describe('Portfolio Controller ', () => {
       const accountStates = await getAccountsInfo([account])
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
 
       expect(done).toHaveBeenCalled()
@@ -523,7 +567,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state1 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -531,7 +575,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state2 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -547,7 +591,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state1 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -555,11 +599,11 @@ describe('Portfolio Controller ', () => {
 
       const accountOp2 = await getAccountOp()
       // Change the address
-      accountOp2['1'][0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
+      accountOp2['1'][0]!.accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp2,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state2 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -632,8 +676,6 @@ describe('Portfolio Controller ', () => {
       expect(token).toBeTruthy()
       expect(token?.amount).toEqual(0n)
       expect(token?.availableAmount).toEqual(0n)
-      expect(token?.cashback).toEqual(0n)
-      expect(token?.saved).toEqual(0n)
     })
   })
 
@@ -712,12 +754,15 @@ describe('Portfolio Controller ', () => {
       const firstBatchOf50 = generateRandomAddresses(50)
       const startingLearnedAssets: LearnedAssets = {
         erc20s: {
-          [`${1}:${account.addr}`]: firstBatchOf50.reduce((acc, addr, index) => {
-            // First 20 are still owned, last 30 are no longer owned
-            acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+          [`${1}:${account.addr}`]: firstBatchOf50.reduce(
+            (acc, addr, index) => {
+              // First 20 are still owned, last 30 are no longer owned
+              acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
 
-            return acc
-          }, {} as LearnedAssets['erc20s'][string])
+              return acc
+            },
+            {} as LearnedAssets['erc20s'][string]
+          )
         },
         erc721s: {}
       }
@@ -736,29 +781,35 @@ describe('Portfolio Controller ', () => {
       const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
       const learnedErc20s = learnedAssets.erc20s?.[`${1}:${account.addr}`]
 
-      expect(Object.keys(learnedErc20s).length).toBe(70)
+      expect(Object.keys(learnedErc20s!).length).toBe(70)
     })
 
     test('To be learned erc721 cleanup mechanism works', async () => {
       // A total of 80 collections are added. 30 of them are "no longer owned"
       // but only 10 of them should be removed as the threshold of unowned is 20
-      const firstRandomCollections = generateRandomAddresses(50).reduce((acc, addr, index) => {
-        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+      const firstRandomCollections = generateRandomAddresses(50).reduce(
+        (acc, addr, index) => {
+          acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
 
-        return acc
-      }, [] as [string, bigint[]][])
+          return acc
+        },
+        [] as [string, bigint[]][]
+      )
 
       const keys = firstRandomCollections.map((c) => erc721CollectionToLearnedAssetKeys(c)).flat()
 
       const startingLearnedAssets: LearnedAssets = {
         erc20s: {},
         erc721s: {
-          [`${1}:${account.addr}`]: keys.reduce((acc, key, index) => {
-            // First 20 are still owned, last 30 are no longer owned
-            acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+          [`${1}:${account.addr}`]: keys.reduce(
+            (acc, key, index) => {
+              // First 20 are still owned, last 30 are no longer owned
+              acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
 
-            return acc
-          }, {} as LearnedAssets['erc721s'][string])
+              return acc
+            },
+            {} as LearnedAssets['erc721s'][string]
+          )
         }
       }
 
@@ -766,11 +817,14 @@ describe('Portfolio Controller ', () => {
         storageC.set('learnedAssets', startingLearnedAssets)
       )
 
-      const nextRandomCollections = generateRandomAddresses(30).reduce((acc, addr, index) => {
-        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+      const nextRandomCollections = generateRandomAddresses(30).reduce(
+        (acc, addr, index) => {
+          acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
 
-        return acc
-      }, [] as [string, bigint[]][])
+          return acc
+        },
+        [] as [string, bigint[]][]
+      )
 
       const allCurrentlyOwnedCollections = [
         ...firstRandomCollections.slice(0, 20),
@@ -783,7 +837,7 @@ describe('Portfolio Controller ', () => {
       // Expect the oldest 10 to be removed
       const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
 
-      const learnedErc721s = learnedAssets.erc721s?.[`${1}:${account.addr}`]
+      const learnedErc721s = learnedAssets.erc721s?.[`${1}:${account.addr}`]!
 
       Object.keys(learnedErc721s).forEach((key) => {
         const [, id] = key.split(':')
@@ -817,7 +871,7 @@ describe('Portfolio Controller ', () => {
         1n
       )
       controller.addErc721sToBeLearned(
-        [[DUPLICATE_COLLECTION[0].toLowerCase(), [1n, 2n]]],
+        [[DUPLICATE_COLLECTION[0]!.toLowerCase(), [1n, 2n]]],
         account.addr,
         1n
       )
@@ -832,10 +886,10 @@ describe('Portfolio Controller ', () => {
       ).toBe(1)
       expect(
         Object.keys(allHints.specialErc721Hints.learn).filter(
-          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0].toLowerCase()
+          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0]!.toLowerCase()
         ).length
       ).toBe(1)
-      expect(allHints.specialErc721Hints.learn[DUPLICATE_COLLECTION[0]].length).toBe(2)
+      expect(allHints.specialErc721Hints.learn[DUPLICATE_COLLECTION[0]]!.length).toBe(2)
     })
 
     test('Add the same learned asset twice', async () => {
@@ -892,7 +946,7 @@ describe('Portfolio Controller ', () => {
 
       expect(
         Object.keys(learnedAssets.erc721s?.[`${1}:${account.addr}`] || {}).filter((addr) =>
-          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0].toLowerCase())
+          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0]!.toLowerCase())
         ).length
       ).toBe(2)
     })
@@ -1014,9 +1068,9 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getAccountPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'
-        )
+        [
+          '1'
+        ]?.result?.tokens.find((token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b')
 
       expect(toBeLearnedToken).toBeTruthy()
 
@@ -1061,31 +1115,34 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getAccountPortfolioState(account2.addr)
-        ['137']?.result?.tokens.find(
-          (token) =>
-            token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n
-        )
+        [
+          '137'
+        ]?.result?.tokens.find((token) => token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n)
       expect(toBeLearnedToken).toBeTruthy()
 
       const key = `${137}:${account2.addr}`
 
       const previousHintsStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
-      const tokenInLearnedTokens = previousHintsStorage.erc20s?.[key][toBeLearnedToken!.address]
+      const tokenInLearnedTokens = previousHintsStorage.erc20s?.[key]![toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeTruthy()
     })
 
     test('Native tokens are fetched for all networks', async () => {
-      const { controller } = await prepareTest()
+      const { controller, networksCtrl } = await prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
 
-      networks.forEach((network) => {
+      networksCtrl.networks.forEach((network) => {
         const nativeToken = controller
           .getAccountPortfolioState(account.addr)
-          [network.chainId.toString()]?.result?.tokens.find(
-            (token) => token.address === ZeroAddress
-          )
+          [
+            network.chainId.toString()
+          ]?.result?.tokens.find((token) => token.address === ZeroAddress)
+
+        if (!nativeToken) {
+          console.error('Native token not found for network:', network.name)
+        }
 
         expect(nativeToken).toBeTruthy()
       })
@@ -1177,7 +1234,7 @@ describe('Portfolio Controller ', () => {
     test('Learned assets are fetched from storage', async () => {
       const STETH = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0'
       const CHAINLINK = '0x514910771af9ca656af840dff83e8264ecf986ca'
-      const LILPUDGIS_COLLECTION = '0x524cab2ec69124574082676e6f654a18df49a048'
+      const LILPUDGIS_COLLECTION = getAddress('0x524cab2ec69124574082676e6f654a18df49a048')
       const initialLearnedAssets: LearnedAssets = {
         erc20s: {
           [`${1}:${account.addr}`]: {
@@ -1233,6 +1290,8 @@ describe('Portfolio Controller ', () => {
 
       const learnedInStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
 
+      if (!learnedInStorage.erc721s[key]) throw new Error('No learned erc721s for the account')
+
       // Nfts learned by directly calling learnNfts are added to learned in storage, regardless
       // of whether the user has a collectible from the collection or not.
       expect(learnedInStorage.erc721s[key][`${LILPUDGIS_COLLECTION}:1`]).toBeGreaterThan(0)
@@ -1280,7 +1339,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(account.addr)
       const tokens1 = Object.values(
         controller.getAccountPortfolioState(account.addr) || {}
-      ).flatMap((res) => res?.result?.tokens || [])
+      ).flatMap((res) => (res?.result as PortfolioNetworkResult)?.tokens || [])
 
       const latestHintsUpdate = controller.getAccountPortfolioState(account.addr)['1']?.result
         ?.lastExternalApiUpdateData?.lastUpdate
@@ -1292,7 +1351,7 @@ describe('Portfolio Controller ', () => {
 
       const tokens2 = Object.values(
         controller.getAccountPortfolioState(account.addr) || {}
-      ).flatMap((res) => res?.result?.tokens || [])
+      ).flatMap((res) => (res?.result as PortfolioNetworkResult)?.tokens || [])
 
       const latestHintsUpdate2 = controller.getAccountPortfolioState(account.addr)['1']?.result
         ?.lastExternalApiUpdateData?.lastUpdate
@@ -1319,11 +1378,17 @@ describe('Portfolio Controller ', () => {
 
       tokens
         ?.filter(({ amount }) => amount > 0)
-        .forEach(({ address }) => {
+        .forEach(({ address, flags }) => {
           if (address === ZeroAddress) return
+          if (flags.defiTokenType) {
+            console.warn(`Skipping defi token ${address} from learned assets check`)
+            // Defi tokens are learned in a different way. Warning just in case someone debugs
+            // this test in the future if the behaviour changes
+            return
+          }
           expect(learnedAssets.erc20s[key]).toHaveProperty(address)
           // Has a timestamp
-          expect(learnedAssets.erc20s[key][address]).toBeDefined()
+          expect(learnedAssets.erc20s[key]![address]).toBeDefined()
         })
 
       collections?.forEach(({ address, collectibles }) => {
@@ -1334,7 +1399,7 @@ describe('Portfolio Controller ', () => {
           const collectibleKey = `${address}:${id.toString()}`
 
           expect(learnedAssets.erc721s[key]).toHaveProperty(collectibleKey)
-          expect(learnedAssets.erc721s[key][collectibleKey]).toBeGreaterThan(0)
+          expect(learnedAssets.erc721s[key]![collectibleKey]).toBeGreaterThan(0)
         })
       })
     })
@@ -1369,10 +1434,10 @@ describe('Portfolio Controller ', () => {
       // @ts-ignore
       const allHints = controller.getAllHints(account.addr, 1n)
 
-      Object.keys(previousHints.learnedTokens['1']).forEach((addr) => {
+      Object.keys(previousHints.learnedTokens['1']!).forEach((addr) => {
         expect(allHints.specialErc20Hints.learn.find((toBeLearned) => addr === toBeLearned))
       })
-      Object.keys(previousHints.learnedNfts['1']).forEach((addr) => {
+      Object.keys(previousHints.learnedNfts['1']!).forEach((addr) => {
         expect(allHints.specialErc721Hints.learn).toHaveProperty(addr)
       })
 
@@ -1399,7 +1464,7 @@ describe('Portfolio Controller ', () => {
       const hints = controller.getAllHints(account.addr, 1n, true)
       const key = `${1n}:${account.addr}`
 
-      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]))
+      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
       expect(hints.additionalErc721Hints).toEqual(
         learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {}))
       )
@@ -1417,7 +1482,7 @@ describe('Portfolio Controller ', () => {
       const hints = controller.getAllHints(account.addr, 1n)
       const key = `${1n}:${account.addr}`
 
-      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]))
+      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
       expect(hints.additionalErc721Hints).toEqual(
         learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {}))
       )
@@ -1437,10 +1502,10 @@ describe('Portfolio Controller ', () => {
       const key2 = `${1n}:${account2.addr}`
 
       expect(hints.additionalErc20Hints).toEqual([
-        ...Object.keys(learnedAssets.erc20s[key]),
-        ...Object.keys(learnedAssets.erc20s[key2])
+        ...Object.keys(learnedAssets.erc20s[key]!),
+        ...Object.keys(learnedAssets.erc20s[key2]!)
       ])
-      const firstNftAddr = Object.keys(learnedAssets.erc721s[key])[0].split(':')[0]
+      const firstNftAddr = Object.keys(learnedAssets.erc721s[key]!)[0]!.split(':')[0]!
       expect(hints.additionalErc721Hints).toEqual({
         ...learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {})),
         ...learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key2] || {})),
@@ -1449,6 +1514,278 @@ describe('Portfolio Controller ', () => {
 
       // Collectibles are merged correctly for the same collection
       expect(hints.additionalErc721Hints[firstNftAddr]).toHaveLength(6)
+    })
+  })
+
+  describe('Defi positions', () => {
+    const ethereum = networks.find((n) => n.chainId === 1n)!
+    beforeEach(() => {
+      jest.restoreAllMocks()
+      jest.clearAllMocks()
+    })
+    it('should update positions correctly', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.lastSuccessfulUpdate).toBeDefined()
+      expect(result?.defiPositions.positionsByProvider.length).toBeGreaterThan(0)
+    })
+
+    it('should handle errors in update positions', async () => {
+      const consoleSuppressor = suppressConsole()
+      jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('AAVE error'))
+          })
+      )
+      jest.spyOn(defiProviders, 'getDebankEnhancedUniV3Positions').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('Uniswap error'))
+          })
+      )
+      const { controller } = await prepareTest()
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.providerErrors).toEqual([
+        { providerName: 'AAVE v3', error: 'AAVE error' },
+        { providerName: 'Uniswap V3', error: 'Uniswap error' }
+      ])
+
+      consoleSuppressor.restore()
+    })
+
+    it('should set asset prices correctly', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const positions = result?.defiPositions.positionsByProvider!
+      expect(positions.length).toBeGreaterThan(0)
+      positions.forEach((provider) => {
+        provider.positions.forEach((position) => {
+          position.assets.forEach((asset) => {
+            expect(asset.value).toBeDefined()
+            expect(asset.priceIn).toEqual({ baseCurrency: 'usd', price: expect.any(Number) })
+          })
+        })
+      })
+    })
+
+    it('should update networksWithPositionsByAccounts properly', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const networksWithPositions = controller.getNetworksWithDefiPositions(DEFI_TEST_ACCOUNT.addr)
+
+      expect(networksWithPositions['1']).toContain('AAVE v3')
+    })
+    it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
+      const consoleSuppressor = suppressConsole()
+
+      jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('AAVE error'))
+          })
+      )
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.providerErrors!.length).toBeGreaterThan(0)
+
+      const networksWithPositions = controller.getNetworksWithDefiPositions(DEFI_TEST_ACCOUNT.addr)
+
+      // Undefined because there is a provider has an error, so we
+      // can't be certain if the account has positions on that network
+      expect(networksWithPositions['137']).toBeUndefined()
+      expect(networksWithPositions['1']).toBeUndefined()
+
+      consoleSuppressor.restore()
+    })
+
+    it('should add a critical defi error if the portfolio discovery fails, despite custom positions being fetched properly', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+
+      jest
+        // @ts-ignore
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-ignore
+        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const state = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
+      const result = state!.result
+
+      expect(result?.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
+      expect(state?.errors.length).toBeGreaterThan(0)
+      // Custom positions are still fetched and present
+      expect(result?.defiPositions.positionsByProvider.length).toBeGreaterThan(0)
+
+      restore()
+    })
+
+    it('uniswap v3 positions are added from the discovery and enhanced with custom positions', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const state = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
+
+      const uniswapV3Positions = state?.result?.defiPositions.positionsByProvider.find(
+        (p) => p.providerName === 'Uniswap V3'
+      )
+
+      expect(uniswapV3Positions).toBeDefined()
+      expect(uniswapV3Positions!.positions.length).toBeGreaterThan(0)
+
+      uniswapV3Positions!.positions.forEach((position) => {
+        expect(position.additionalData.positionIndex).toBeDefined()
+      })
+
+      // It's not guaranteed that all positions will have inRange defined, but only in the tests
+      // That is because the call to debank returns static data that is defined below. If the position
+      // no longer exists, deployless will not return it and there is no way for it to be inRange
+      // It's enough for us to check that one is being enhanced with the custom data
+      expect(
+        uniswapV3Positions?.positions.some((p) => typeof p.additionalData.inRange === 'boolean')
+      ).toBe(true)
+    })
+    it('aave v3 is coming from custom positions', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const aaveV3Positions = result?.defiPositions.positionsByProvider.find(
+        (p) => getProviderId(p.providerName) === 'aave v3'
+      )
+
+      expect(aaveV3Positions).toBeDefined()
+      expect(aaveV3Positions!.positions.length).toBeGreaterThan(0)
+      expect(aaveV3Positions!.source).toBe('custom')
+      aaveV3Positions!.positions.forEach((position) => {
+        expect(position.additionalData.healthRate).toBeDefined()
+      })
+    })
+
+    it('portfolio discovery critical error is prioritized over price errors', async () => {
+      const { restore } = suppressConsole()
+
+      jest
+        .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
+        .mockImplementationOnce(async () => {
+          throw new Error('Asset price error')
+        })
+
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result?.defiPositions.error).toBe(DeFiPositionsError.AssetPriceError)
+
+      jest
+        // @ts-ignore
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-ignore
+        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0
+      })
+
+      const result2 = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      expect(result2?.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
+      restore()
+    })
+
+    it('custom positions are persisted after a failure', async () => {
+      const { restore } = suppressConsole()
+      const spy = jest.spyOn(defiProviders, 'getAAVEPositions')
+
+      const { controller } = await prepareTest()
+
+      // First, do a successful update to have positions stored
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const hasPosition = result?.defiPositions.positionsByProvider.some(
+        (p) => getProviderId(p.providerName) === 'aave v3'
+      )
+
+      expect(hasPosition).toBe(true)
+
+      // Mock getAAVEPositions to throw
+      spy.mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            reject(new Error('AAVE error'))
+          })
+      )
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+
+      const result2 = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result!
+
+      const hasPosition2 = result2?.defiPositions.positionsByProvider.some(
+        (p) => getProviderId(p.providerName) === 'aave v3'
+      )
+
+      expect(hasPosition2).toBe(true)
+
+      expect(result2.defiPositions.providerErrors).toBeDefined()
+      expect(result2.defiPositions.providerErrors?.length).toBeGreaterThan(0)
+
+      restore()
+    })
+
+    it('positions from portfolio discovery are persisted after a call failure', async () => {
+      const { restore } = suppressConsole()
+
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+
+      const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+
+      const hasDebankPositions = result?.defiPositions.positionsByProvider.some(
+        (p) => p.source === 'debank'
+      )
+      expect(hasDebankPositions).toBe(true)
+
+      jest
+        // @ts-ignore
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-ignore
+        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+      const state2 = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
+      const result2 = state2!.result!
+
+      const hasDebankPositions2 = result2.defiPositions.positionsByProvider.some(
+        (p) => p.source === 'debank'
+      )
+      expect(hasDebankPositions2).toBe(true)
+
+      expect(result2.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
+      expect(state2!.errors.length).toBeGreaterThan(0)
+      restore()
     })
   })
 
@@ -1468,9 +1805,10 @@ describe('Portfolio Controller ', () => {
 
     controller.onUpdate(() => {
       const tokenIsValid =
-        controller.validTokens.erc20[`${token.address}-${token.chainId}`] === true
+        controller.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true
       const tokenIsNotValid =
-        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.chainId}`] === false
+        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.chainId}`]?.isValid ===
+        false
       expect(tokenIsNotValid).toBeFalsy()
       expect(tokenIsValid).toBeTruthy()
     })
@@ -1494,9 +1832,9 @@ describe('Portfolio Controller ', () => {
     const getCustomTokenFromPortfolio = () => {
       return controller
         .getAccountPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) => token.address === customToken.address && token.chainId === customToken.chainId
-        )
+        [
+          '1'
+        ]?.result?.tokens.find((token) => token.address === customToken.address && token.chainId === customToken.chainId)
     }
 
     expect(tokenIsSet).toEqual(customToken)
@@ -1556,12 +1894,9 @@ describe('Portfolio Controller ', () => {
 
     const hiddenToken = controller
       .getAccountPortfolioState(account.addr)
-      ['1']?.result?.tokens.find(
-        (token) =>
-          token.address === preference.address &&
-          token.chainId === preference.chainId &&
-          token.flags.isHidden
-      )
+      [
+        '1'
+      ]?.result?.tokens.find((token) => token.address === preference.address && token.chainId === preference.chainId && token.flags.isHidden)
     expect(hiddenToken).toBeTruthy()
   })
   test('Calling toggleHideToken a second time deletes the preference', async () => {
@@ -1596,7 +1931,7 @@ describe('Portfolio Controller ', () => {
 
     await controller.updateSelectedAccount(account.addr, ethereum)
 
-    const lastSuccessfulUpdate = controller.getAccountPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate = controller.getAccountPortfolioState(account.addr)['1']
       ?.lastSuccessfulUpdate
 
     expect(lastSuccessfulUpdate).toBeTruthy()
@@ -1608,7 +1943,7 @@ describe('Portfolio Controller ', () => {
       .mockRejectedValueOnce(new Error('Simulated error'))
 
     await controller.updateSelectedAccount(account.addr, ethereum)
-    const lastSuccessfulUpdate2 = controller.getAccountPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate2 = controller.getAccountPortfolioState(account.addr)['1']
       ?.lastSuccessfulUpdate
 
     // Last successful update should not change if the update fails
@@ -1625,12 +1960,118 @@ describe('Portfolio Controller ', () => {
       isManualUpdate: true
     })
 
-    const lastSuccessfulUpdate3 = controller.getAccountPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate3 = controller.getAccountPortfolioState(account.addr)['1']
       ?.lastSuccessfulUpdate
     // Last successful update should reset on a manual update (passing maxDataAgeMs: 0)
     expect(lastSuccessfulUpdate2).not.toEqual(lastSuccessfulUpdate3)
     expect(lastSuccessfulUpdate3).toBe(0)
 
+    restore()
+  })
+  it('Price cache is updated after portfolio discovery', async () => {
+    const { controller } = await prepareTest()
+
+    // @ts-ignore
+    expect(controller.priceCache['137']).toBe(undefined)
+    // @ts-ignore
+    await controller.getPortfolioFromApiDiscovery({
+      chainId: 137n,
+      account,
+      hasKeys: true,
+      baseCurrency: 'usd'
+    })
+
+    // @ts-ignore
+    expect(controller.priceCache['137']).toBeDefined()
+    // @ts-ignore
+    expect(controller.priceCache['137'].size).toBeGreaterThan(0)
+  })
+  it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
+    const { restore } = suppressConsole()
+
+    const { controller } = await prepareTest()
+    const ethereum = networks.find((n) => n.chainId === 1n)!
+
+    await controller.updateSelectedAccount(account.addr, [ethereum])
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Velcro error'))
+
+    // @ts-ignore
+    const formatted = await controller.getPortfolioFromApiDiscovery({
+      chainId: 1n,
+      account,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      defiMaxDataAgeMs: 6000000,
+      isManualUpdate: false
+    })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
+
+    expect(formatted.errors.length).toBe(1)
+    expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
+    expect(formatted.data).toBe(null)
+    restore()
+  })
+  it('A defi error is returned if canSkipDefiUpdate=false', async () => {
+    const { restore } = suppressConsole()
+    const { controller } = await prepareTest()
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Velcro error'))
+
+    // @ts-ignore
+    const formatted = await controller.getPortfolioFromApiDiscovery({
+      chainId: 1n,
+      account,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      defiMaxDataAgeMs: 6000000,
+      isManualUpdate: false
+    })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
+
+    expect(formatted.errors.length).toBe(2)
+    expect(formatted.data).toBe(null)
+    restore()
+  })
+  it('A hints error is not added if canSkipExternalApiHintsUpdate=true', async () => {
+    const { restore } = suppressConsole()
+    const { controller } = await prepareTest()
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Velcro error'))
+
+    // @ts-ignore
+    const formatted = await controller.getPortfolioFromApiDiscovery({
+      chainId: 1n,
+      account,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      defiMaxDataAgeMs: 6000000,
+      isManualUpdate: false,
+      externalApiHintsResponse: {
+        lastUpdate: Date.now(),
+        hasHints: true
+      }
+    })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
+
+    expect(formatted.errors.length).toBe(1)
+    expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)
+    expect(formatted.data).toBe(null)
     restore()
   })
   test('removeAccountData', async () => {
@@ -1647,6 +2088,6 @@ describe('Portfolio Controller ', () => {
 
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
-    expect(controller.getNetworksWithAssets(account.addr).length).toEqual(0)
+    expect(Object.keys(controller.getNetworksWithAssets(account.addr)).length).toEqual(0)
   })
 })

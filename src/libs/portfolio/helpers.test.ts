@@ -4,12 +4,16 @@ import { networks } from '../../consts/networks'
 import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
+  getHintsError,
+  getTotal,
   isSuspectedToken,
   learnedErc721sToHints,
   mapToken,
   mergeERC721s
 } from './helpers'
 import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
+import { PORTFOLIO_STATE } from './testData'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const optimism = networks.find((x) => x.chainId === 10n)!
@@ -230,36 +234,102 @@ describe('Portfolio helpers', () => {
       expect(token?.flags.isHidden).toBe(true)
     })
   })
+  describe('getTotal', () => {
+    const firstToken = PORTFOLIO_STATE['1']?.result?.tokens[0]!
+    const mockHiddenToken = {
+      ...firstToken,
+      address: '0xHiddenTokenAddress',
+      amount: 10n * 10n ** 6n,
+      decimals: 6,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      flags: {
+        ...firstToken.flags,
+        isHidden: true
+      }
+    }
+    it('Calculates total', () => {
+      const ethereumState = PORTFOLIO_STATE['1']
+
+      const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
+
+      expect(total.usd).toBe(140.05)
+    })
+    it('Calculates total excluding hidden tokens', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
+
+      ethereumState?.result?.tokens.push(mockHiddenToken)
+
+      const total = getTotal(ethereumState?.result?.tokens!, ethereumState?.result?.defiPositions!)
+
+      expect(total.usd).toBe(140.05)
+    })
+    it('Calculates total and includes hidden tokens if specified', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])
+
+      ethereumState?.result?.tokens.push(mockHiddenToken)
+
+      const total = getTotal(
+        ethereumState?.result?.tokens!,
+        ethereumState?.result?.defiPositions!,
+        { includeHiddenTokens: true }
+      )
+
+      expect(total.usd).toBe(150.05)
+    })
+  })
+  describe('getHintsError', () => {
+    it('NoApiHintsError is returned if there are no previous hints', () => {
+      const error = getHintsError('some error', null)
+
+      expect(error.message).toBe('some error')
+      expect(error.level).toBe('critical')
+      expect(error.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
+    })
+    it('StaleApiHintsError is returned if the update is older than 10 minutes', () => {
+      const tenMinutesAgo = Date.now() - 10 * 60 * 1000 - 1
+
+      const error = getHintsError('some error', {
+        lastUpdate: tenMinutesAgo,
+        hasHints: true
+      })
+
+      expect(error.message).toBe('some error')
+      expect(error.level).toBe('critical')
+      expect(error.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError)
+    })
+    it('NonCriticalApiHintsError is returned if the update is fresher than 10 minutes', () => {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+
+      const error = getHintsError('some error', {
+        lastUpdate: fiveMinutesAgo,
+        hasHints: true
+      })
+
+      expect(error.message).toBe('some error')
+      expect(error.level).toBe('silent')
+      expect(error.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError)
+    })
+  })
 })
 
 describe('isSuspectedToken', () => {
   it('returns null for trusted token', () => {
-    const { address, symbol, name, chainId } = TOKENS.TRUSTED
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+    const { address, symbol, chainId } = TOKENS.TRUSTED
+    expect(isSuspectedToken(address, symbol, chainId)).toBeNull()
   })
 
   it('returns null for trusted token with non-Latin symbol', () => {
-    const { address, symbol, name, chainId } = TOKENS.TRUSTED_WITH_NON_LATIN_SYMBOL
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+    const { address, symbol, chainId } = TOKENS.TRUSTED_WITH_NON_LATIN_SYMBOL
+    expect(isSuspectedToken(address, symbol, chainId)).toBeNull()
   })
 
   it('returns null for legit token missing from trusted list', () => {
-    const { address, symbol, name, chainId } = TOKENS.LEGIT_BUT_NOT_TRUSTED
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
-  })
-
-  it('returns "no-latin-symbol" for token with hidden/invisible symbol', () => {
-    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_NON_LATIN_SYMBOL
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('no-latin-symbol')
-  })
-
-  it('returns "no-latin-name" for token with non-Latin name', () => {
-    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_NON_LATIN_NAME
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('no-latin-name')
+    const { address, symbol, chainId } = TOKENS.LEGIT_BUT_NOT_TRUSTED
+    expect(isSuspectedToken(address, symbol, chainId)).toBeNull()
   })
 
   it('returns "suspected" for spoofed token with same symbol but different address', () => {
-    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
-    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('suspected')
+    const { address, symbol, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
+    expect(isSuspectedToken(address, symbol, chainId)).toBe('suspected')
   })
 })

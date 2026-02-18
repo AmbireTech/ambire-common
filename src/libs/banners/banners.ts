@@ -1,9 +1,10 @@
 import { AccountId } from '../../interfaces/account'
-import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
-import { AccountState } from '../defiPositions/types'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
+import { HumanizerVisualization } from '../humanizer/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -13,55 +14,17 @@ export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: Ac
     return banner.meta.accountAddr === selectedAccount
   })
 
-const getBridgeActionText = (
-  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
-  isBridgeTxn: boolean
-) => {
-  if (isBridgeTxn) {
-    return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
-  }
-
-  return routeStatus === 'completed' ? 'Swapped' : 'Swap'
-}
-
-const getBridgeBannerText = (
-  route: SwapAndBridgeActiveRoute,
-  isBridgeTxn: boolean,
-  networks?: Network[]
-) => {
-  const steps = route.route?.steps || []
-  if (!steps[0]) return '' // should never happen
-
-  const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
-  const fromAssetSymbol = steps[0].fromAsset.symbol
-  const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
-
-  let assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
-
-  if (networks) {
-    const fromAssetNetwork = networks.find((n) => Number(n.chainId) === steps[0].fromAsset.chainId)
-    const toAssetNetwork = networks.find(
-      (n) => Number(n.chainId) === steps[steps.length - 1].toAsset.chainId
-    )
-    if (fromAssetNetwork && toAssetNetwork) {
-      assetsText = `${fromAssetSymbol} (on ${fromAssetNetwork.name}) to ${toAssetSymbol} (on ${toAssetNetwork.name})`
-    }
-  }
-
-  return `${actionText} ${assetsText}`
-}
-
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  accountOpActions: AccountOpAction[]
+  callsUserRequests: CallsUserRequest[]
 ): Banner[] => {
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
-    return accountOpActions.some((action) => {
-      return action.accountOp.calls.some(
+    return callsUserRequests.some((req) => {
+      return req.signAccountOp.accountOp.calls.some(
         (call) =>
-          call.fromUserRequestId === route.activeRouteId ||
-          call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
-          call.fromUserRequestId === `${route.activeRouteId}-approval`
+          call.id === route.activeRouteId ||
+          call.id === `${route.activeRouteId}-revoke-approval` ||
+          call.id === `${route.activeRouteId}-approval`
       )
     })
   }
@@ -128,26 +91,26 @@ export const getBridgeBanners = (
       text,
       actions: [
         {
-          label: 'Close',
-          actionName: 'close-bridge',
-          meta: {
-            activeRouteIds: allRoutes.map((r) => r.activeRouteId),
-            isHideStyle: true
-          }
-        },
-        {
-          label: 'View',
           actionName: 'view-bridge'
         }
-      ]
+      ],
+      dismissAction: {
+        actionName: 'close-bridge',
+        meta: {
+          activeRouteIds: allRoutes.map((r) => r.activeRouteId),
+          isHideStyle: true
+        }
+      }
     })
   }
 
   return banners
 }
 
-export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
+export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[] => {
+  const requests = userRequests.filter(
+    (r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind)
+  )
   if (!requests.length) return []
 
   return [
@@ -158,7 +121,6 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
       text: '',
       actions: [
         {
-          label: 'Open',
           actionName: 'open-pending-dapp-requests'
         }
       ]
@@ -166,73 +128,25 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
   ]
 }
 
-const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
-  chainId: bigint,
-  nonSwapAndBridgeTxns: number,
-  networks: Network[]
-) => {
-  const swapsAndBridges: string[] = []
-  const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return route.route && BigInt(route.route.fromChainId) === chainId
-  })
-
-  if (networkSwapAndBridgeRoutes.length) {
-    networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = !!route.route?.steps.some(
-        (s) => s.fromAsset.chainId !== s.toAsset.chainId
-      )
-      const desc = getBridgeBannerText(route, isBridgeTxn, networks)
-
-      swapsAndBridges.push(desc)
-    })
-
-    return `${swapsAndBridges.join(', ')} ${
-      nonSwapAndBridgeTxns
-        ? `and ${nonSwapAndBridgeTxns} other transaction${nonSwapAndBridgeTxns > 1 ? 's' : ''}`
-        : ''
-    }`
-  }
-
-  return ''
-}
-
 export const getAccountOpBanners = ({
-  accountOpActionsByNetwork,
+  callsUserRequestsByNetwork,
   selectedAccount,
-  networks,
-  swapAndBridgeRoutesPendingSignature
+  networks
 }: {
-  accountOpActionsByNetwork: {
-    [key: string]: AccountOpAction[]
+  callsUserRequestsByNetwork: {
+    [key: string]: CallsUserRequest[]
   }
 
   selectedAccount: string
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
-  if (!accountOpActionsByNetwork) return []
+  if (!callsUserRequestsByNetwork) return []
   const txnBanners: Banner[] = []
 
-  Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
-    actions.forEach((action) => {
-      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
-      const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
-        const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-          (route) => route.activeRouteId === call.fromUserRequestId
-        )
-
-        if (isSwapAndBridge) return prev
-
-        return prev + 1
-      }, 0)
-      const callCount = action.accountOp.calls.length
-      const text = getAccountOpBannerText(
-        swapAndBridgeRoutesPendingSignature,
-        BigInt(network.chainId),
-        nonSwapAndBridgeTxns,
-        networks
-      )
+  Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
+    requests.forEach((request) => {
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
+      const callCount = request.signAccountOp.accountOp.calls.length
 
       txnBanners.push({
         id: `${selectedAccount}-${netId}`,
@@ -240,24 +154,22 @@ export const getAccountOpBanners = ({
         category: 'pending-to-be-signed-acc-op',
         title: `${
           callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-        text,
+        } waiting to be signed ${network.name ? `on \n${network.name}` : ''}`,
+        text: '',
         actions: [
           {
-            label: 'Reject',
-            actionName: 'reject-accountOp',
-            meta: {
-              err: 'User rejected the transaction request.',
-              actionId: action.id,
-              shouldOpenNextAction: false
-            }
-          },
-          {
-            label: 'Open',
             actionName: 'open-accountOp',
-            meta: { actionId: action.id }
+            meta: { requestId: request.id }
           }
-        ]
+        ],
+        dismissAction: {
+          actionName: 'reject-accountOp',
+          meta: {
+            err: 'User rejected the transaction request.',
+            requestId: request.id,
+            shouldOpenNextAction: false
+          }
+        }
       })
     })
   })
@@ -276,7 +188,6 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
     actions: [
       {
-        label: 'Sync',
         actionName: 'sync-keys',
         meta: { email, keys }
       }
@@ -288,11 +199,13 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
 
 export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
-  defiPositionsAccountState,
-  networks
+  defiPositionsCountOnDisabledNetworks,
+  networks,
+  accountAddr
 }: {
-  defiPositionsAccountState: AccountState
+  defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks[string]
   networks: Network[]
+  accountAddr: string
 }) => {
   const banners: Banner[] = []
 
@@ -300,19 +213,21 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
 
   if (!disabledNetworks.length) return []
 
-  const defiPositionsOnDisabledNetworks = []
   const disabledNetworksWithDefiPos = new Set<Network>()
 
-  disabledNetworks.forEach((n) => {
-    if (defiPositionsAccountState[n.chainId.toString()]) {
-      defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
-        defiPositionsOnDisabledNetworks.push(p)
-        disabledNetworksWithDefiPos.add(n)
-      })
+  let totalCount = 0
+
+  Object.entries(defiPositionsCountOnDisabledNetworks).forEach(([chainId, count]) => {
+    totalCount += count
+    if (count > 0) {
+      const network = disabledNetworks.find((n) => n.chainId.toString() === chainId)
+      if (network) {
+        disabledNetworksWithDefiPos.add(network)
+      }
     }
   })
 
-  if (!defiPositionsOnDisabledNetworks.length) return []
+  if (!disabledNetworksWithDefiPos.size) return []
 
   const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
 
@@ -320,9 +235,7 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
     id: defiPositionsOnDisabledNetworksBannerId,
     type: 'info',
     title: 'DeFi positions detected on disabled networks',
-    text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
-      defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
-    } on${
+    text: `You have ${totalCount} active DeFi ${totalCount === 1 ? 'position' : 'positions'} on${
       disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
     }: ${disabledNetworksWithDefiPosArray
       .map((n) => n.name)
@@ -331,16 +244,44 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
     }?`,
     actions: [
       {
-        label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',
         actionName: 'enable-networks',
         meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
-      },
-      {
-        label: 'Dismiss',
-        actionName: 'dismiss-defi-positions-banner'
       }
-    ]
+    ],
+    dismissAction: {
+      actionName: 'dismiss-defi-positions-banner'
+    },
+    meta: {
+      accountAddr
+    }
   })
 
   return banners
+}
+
+export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) {
+  const blacklistedItemsCount = blacklistedItems.length
+  const hasScamAddress = blacklistedItems.some((i) => i.type === 'address')
+  const hasScamToken = blacklistedItems.some((i) => i.type === 'token')
+
+  const isSingle = blacklistedItemsCount === 1
+
+  let label = ''
+
+  if (hasScamAddress && hasScamToken) {
+    label = blacklistedItemsCount === 2 ? 'address or token' : 'addresses or tokens'
+  } else if (hasScamAddress) {
+    label = isSingle ? 'address' : 'addresses'
+  } else if (hasScamToken) {
+    label = isSingle ? 'token' : 'tokens'
+  }
+
+  // eslint-disable-next-line no-nested-ternary
+  const prefix = isSingle
+    ? `The destination ${label}`
+    : `${blacklistedItemsCount} of the destination ${label}`
+
+  return `${prefix} in this transaction ${
+    isSingle ? 'was' : 'were'
+  } flagged as dangerous. Proceed at your own risk.`
 }

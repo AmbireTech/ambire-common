@@ -10,11 +10,9 @@ import {
 } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
-import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -46,9 +44,6 @@ describe('AccountsController', () => {
       }
     }
   ]
-  const providers = Object.fromEntries(
-    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-  )
 
   const mockKeys = mockInternalKeys(accounts)
 
@@ -60,23 +55,26 @@ describe('AccountsController', () => {
     storage: storageCtrl,
     fetch,
     relayerUrl,
-    onAddOrUpdateNetworks: (nets) => {
-      nets.forEach((n) => {
-        providersCtrl.setProvider(n)
-      })
+    useTempProvider: (props, cb) => {
+      return providersCtrl.useTempProvider(props, cb)
     },
-    onRemoveNetwork: (id) => {
-      providersCtrl.removeProvider(id)
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
     }
   })
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController(networksCtrl)
-  providersCtrl.providers = providers
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
 
   let accountsCtrl: IAccountsController
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
+    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
 
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -113,7 +111,7 @@ describe('AccountsController', () => {
     expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
   test('removeAccountData', async () => {
-    await accountsCtrl.updateAccountStates(accounts[0].addr)
+    await accountsCtrl.updateAccountState(accounts[0]!.addr)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)

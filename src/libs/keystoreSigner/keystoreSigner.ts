@@ -13,13 +13,16 @@ import {
 import { ecdsaSign } from 'secp256k1'
 
 import {
+  decrypt,
+  getEncryptionPublicKey,
   signTypedData as signTypedDataWithMetaMaskSigUtil,
   SignTypedDataVersion
 } from '@metamask/eth-sig-util'
 
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { TypedMessage } from '../../interfaces/userRequest'
+import { TypedMessageUserRequest } from '../../interfaces/userRequest'
+import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getAuthorizationHash
@@ -52,7 +55,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return sig
   }
 
-  async signTypedData(typedMessage: TypedMessage) {
+  async signTypedData(typedMessage: TypedMessageUserRequest['meta']['params']) {
     const sig = signTypedDataWithMetaMaskSigUtil({
       privateKey: Buffer.from(getBytes(this.#signer.privateKey)),
       data: adaptTypedMessageForMetaMaskSigUtil(typedMessage),
@@ -174,5 +177,33 @@ export class KeystoreSigner implements KeystoreSignerInterface {
         toBeHex(BigInt(txnTypeFourSignature.s))
       ])
     ]) as Hex
+  }
+
+  /**
+   * Gets account public encryption key computed from entropy associated with
+   * the specified user account, using the nacl implementation of the
+   * X25519_XSalsa20_Poly1305 algorithm.
+   */
+  getEncryptionPublicKey: KeystoreSignerInterface['getEncryptionPublicKey'] = async () => {
+    const encryptionPublicKeyBase64 = getEncryptionPublicKey(
+      stripHexPrefix(this.#signer.privateKey)
+    )
+
+    return encryptionPublicKeyBase64
+  }
+
+  /**
+   * Decrypt a message (encrypted by the encryption public key).
+   */
+  decrypt: KeystoreSignerInterface['decrypt'] = (encryptedDataHex: string) => {
+    const jsonString = Buffer.from(encryptedDataHex, 'hex').toString('utf8')
+    const encryptedData = JSON.parse(jsonString)
+
+    const plaintext = decrypt({
+      encryptedData,
+      privateKey: stripHexPrefix(this.#signer.privateKey)
+    })
+
+    return plaintext
   }
 }

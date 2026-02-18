@@ -1,4 +1,4 @@
-import { TransactionReceipt, ZeroAddress } from 'ethers'
+import { Interface, isAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
@@ -8,6 +8,7 @@ import {
   getBundlerByName,
   getDefaultBundler
 } from '../../services/bundlers/getBundler'
+import { BundlerTransactionReceipt, UserOpStatus } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
@@ -42,6 +43,10 @@ export type AccountOpIdentifiedBy = {
   bundler?: BUNDLER
 }
 
+export type PortfoliosToUpdate = {
+  [address: string]: Network['chainId'][]
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -49,6 +54,9 @@ export interface SubmittedAccountOp extends AccountOp {
   timestamp: number
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
+  blockNumber?: number
+  blockHash?: string
+  gasUsed?: string
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
@@ -79,13 +87,13 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
 } {
   // get the first BroadcastedButNotConfirmed call if any
   for (let i = 0; i < op.calls.length; i++) {
-    const currentCall = op.calls[i]
+    const currentCall = op.calls[i]!
     if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
       return { call: currentCall, callIndex: i }
   }
 
   // if no BroadcastedButNotConfirmed, get the last one
-  return { call: op.calls[op.calls.length - 1], callIndex: op.calls.length - 1 }
+  return { call: op.calls[op.calls.length - 1]!, callIndex: op.calls.length - 1 }
 }
 
 export async function fetchFrontRanTxnId(
@@ -144,7 +152,7 @@ export async function fetchTxnId(
     const txnIds = identifiedBy.identifier.split('-')
     return {
       status: 'success',
-      txnId: txnIds[txnIds.length - 1]
+      txnId: txnIds[txnIds.length - 1]!
     }
   }
 
@@ -155,17 +163,57 @@ export async function fetchTxnId(
       ? getBundlerByName(identifiedBy.bundler)
       : getDefaultBundler(network)
 
-    let bundlerResult = await bundler.getStatus(network, userOpHash)
-    if (bundlerResult.status === 'rejected') {
+    // leave a 10s window to fetch the status from the broadcasting bundler
+    let timeoutId
+    const bundlerStatus = await Promise.race([
+      bundler.getStatus(network, userOpHash),
+      new Promise((_resolve, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('bundler gas price fetch fail, request too slow')),
+          10000
+        )
+      })
+    ]).catch(() => {
+      // upon error or timeout, we return not_found and we fallback to receipt
+      // from all our available bundlers
+      return {
+        status: 'not_found'
+      }
+    })
+    clearTimeout(timeoutId)
+    let bundlerResult = bundlerStatus as UserOpStatus
+
+    // upon reject or failure to find/fetch, take the receipt from all available bundlers
+    if (bundlerResult.status === 'rejected' || bundlerResult.status === 'not_found') {
       // sometimes the bundlers return rejected by mistake
       // if that's the case, make the user wait a bit longer, but then query
       // all bundlers for the user op receipt to make sure it's really not mined
-      await wait(15000)
+      if (bundlerResult.status === 'rejected') await wait(10000)
       const bundlers = getAvailableBunlders(network)
       const bundlerResults = await Promise.all(
-        bundlers.map((b) => b.getReceipt(userOpHash, network))
+        bundlers.map((b) => {
+          let innerTimeoutId: any
+          const result = Promise.race([
+            b.getReceipt(userOpHash, network),
+            new Promise((_resolve, reject) => {
+              innerTimeoutId = setTimeout(
+                () => reject(new Error('bundler gas price fetch fail, request too slow')),
+                10000
+              )
+            })
+          ])
+            .catch(() => {
+              // upon timeout or error, just return null and let the logic continue
+              return null
+            })
+            .finally(() => {
+              clearTimeout(innerTimeoutId)
+            })
+          return result
+        })
       )
-      bundlerResults.forEach((res) => {
+      bundlerResults.forEach((bundlerResponse) => {
+        const res = bundlerResponse as BundlerTransactionReceipt | null
         if (res && res.receipt && res.receipt.transactionHash) {
           bundlerResult = {
             status: 'found',
@@ -188,19 +236,6 @@ export async function fetchTxnId(
         status: 'success',
         txnId: bundlerResult.transactionHash
       }
-
-    // anytime after 3 mins past broadcast, check the receipt
-    // as bundlers return "not found" if the status is searched for
-    // after more than 30 mins
-    if (op && hasTimePassedSinceBroadcast(op, 3)) {
-      const receipt = await bundler.getReceipt(userOpHash, network)
-      if (receipt) {
-        return {
-          status: 'success',
-          txnId: receipt.receipt.transactionHash
-        }
-      }
-    }
 
     return {
       status: 'not_found',
@@ -249,15 +284,27 @@ export function updateOpStatus(
   if (opReference.identifiedBy.type === 'MultipleTxns') {
     const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
     // eslint-disable-next-line no-param-reassign
-    opReference.calls[callIndex].status = status
+    opReference.calls[callIndex]!.status = status
 
     // if there's a receipt, add the fee
     if (receipt) {
       // eslint-disable-next-line no-param-reassign
-      opReference.calls[callIndex].fee = {
+      opReference.calls[callIndex]!.fee = {
         inToken: ZeroAddress,
         amount: receipt.fee
       }
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockHash = receipt.blockHash
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockNumber = receipt.blockNumber
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockHash = receipt.blockHash
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.gasUsed = toBeHex(receipt.gasUsed)
     }
 
     if (callIndex === opReference.calls.length - 1) {
@@ -274,4 +321,60 @@ export function updateOpStatus(
   // eslint-disable-next-line no-param-reassign
   opReference.status = status
   return opReference
+}
+
+const transferIface = new Interface(['function transfer(address,uint256)'])
+
+/**
+ * Returns all addresses that the SubmittedAccountOp has calls sent to.
+ *
+ * @param whitelist Optional list of addresses to filter the results.
+ */
+export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: string[]): string[] {
+  const sentTo = new Set<string>()
+  const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase())
+
+  op.calls.forEach((call) => {
+    // 1) Direct call.to match
+    if (call.to && isAddress(call.to)) {
+      if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
+        sentTo.add(call.to)
+      }
+    }
+
+    // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
+    const data = (call as Call).data as string | undefined
+
+    if (!data || typeof data !== 'string' || data.length < 10) return
+
+    const selector = transferIface.getFunction('transfer')?.selector
+    if (selector && data.startsWith(selector)) {
+      try {
+        const decoded = transferIface.decodeFunctionData('transfer', data)
+        const recipient = decoded[0] as string
+        if (isAddress(recipient)) {
+          if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase())) return
+
+          sentTo.add(recipient)
+        }
+      } catch {
+        // ignore decode errors and continue
+      }
+    }
+  })
+
+  return Array.from(sentTo)
+}
+
+/**
+ * Checks if the SubmittedAccountOp has a call that was sent to the specified address.
+ *
+ * @returns the timestamp of the operation if found, otherwise null.
+ */
+export function checkIsRecipientOfAccountOp(op: SubmittedAccountOp, to: string): number | null {
+  const hasSentTo = getAccountOpRecipients(op, [to]).length > 0
+
+  if (!hasSentTo) return null
+
+  return op.timestamp
 }

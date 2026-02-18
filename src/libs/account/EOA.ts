@@ -74,7 +74,7 @@ export class EOA extends BaseAccount {
 
     const calls = options.op.calls
     if (calls.length === 1) {
-      const call = calls[0]
+      const call = calls[0]! // ! as we check calls.length === 1 one line above
       // a normal transfer is 21k, so just return the providerEstimation
       if (call.data === '0x') return estimation.providerEstimation.gasUsed
     }

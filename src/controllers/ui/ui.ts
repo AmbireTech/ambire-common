@@ -1,5 +1,6 @@
 import { EventEmitter as UiEventEmitter } from 'events'
 
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -14,8 +15,14 @@ export class UiController extends EventEmitter implements IUiController {
 
   message: UiManager['message']
 
-  constructor({ uiManager }: { uiManager: UiManager }) {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    uiManager
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    uiManager: UiManager
+  }) {
+    super(eventEmitterRegistry)
 
     this.uiEvent = new UiEventEmitter()
     this.window = uiManager.window
@@ -41,7 +48,10 @@ export class UiController extends EventEmitter implements IUiController {
     this.emitUpdate()
   }
 
-  updateView(viewId: string, updatedProps: Pick<View, 'currentRoute' | 'isReady'>) {
+  updateView(
+    viewId: string,
+    updatedProps: Pick<View, 'currentRoute' | 'isReady' | 'searchParams'>
+  ) {
     const view = this.views.find((v) => v.id === viewId)
     if (!view) return
 
@@ -49,12 +59,24 @@ export class UiController extends EventEmitter implements IUiController {
     const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => view[key] !== value)
     if (!shouldUpdate) return
 
+    let previousRoute = view.previousRoute
+    if (updatedProps.currentRoute && updatedProps.currentRoute !== view.currentRoute) {
+      previousRoute = view.currentRoute
+    }
+
     Object.assign(view, updatedProps)
+
+    if (previousRoute) {
+      view.previousRoute = previousRoute
+    }
+
+    this.uiEvent.emit('updateView', view)
     this.emitUpdate()
   }
 
   removeView(viewId: string) {
     const view = this.views.find((v) => v.id === viewId)
+
     if (!view) return
 
     this.views = this.views.filter((v) => v.id !== viewId)

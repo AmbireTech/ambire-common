@@ -1,8 +1,9 @@
-import { Interface, isAddress } from 'ethers'
+import { toBeHex } from 'ethers'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -11,16 +12,18 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import {
   AccountOpIdentifiedBy,
+  checkIsRecipientOfAccountOp,
   fetchFrontRanTxnId,
   fetchTxnId,
+  getAccountOpRecipients,
   hasTimePassedSinceBroadcast,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
+  PortfoliosToUpdate,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-/* eslint-disable import/no-extraneous-dependencies */
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import wait from '../../utils/wait'
@@ -45,6 +48,7 @@ interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 export interface Filters {
   account: string
   chainId?: bigint
+  identifiedBy?: AccountOpIdentifiedBy
 }
 
 export interface InternalAccountsOps {
@@ -147,6 +151,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           shouldEmitUpdate: boolean
           // Which networks require a portfolio update?
           chainsToUpdate: Network['chainId'][]
+          portfoliosToUpdate: PortfoliosToUpdate
           updatedAccountsOps: SubmittedAccountOp[]
           newestOpTimestamp: number
         }>
@@ -162,9 +167,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,
-    onContractsDeployed: (network: Network) => Promise<void>
+    onContractsDeployed: (network: Network) => Promise<void>,
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
-    super()
+    super(eventEmitterRegistry)
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
@@ -205,44 +211,25 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
     await this.#initialLoadPromise
     if (!toAddress) return { found: false, lastTransactionDate: null }
-    const transferIface = new Interface(['function transfer(address,uint256)'])
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
 
     accounts.forEach((account) => {
-      if (!this.#accountsOps[account]) return
-      const networks = Object.keys(this.#accountsOps[account])
+      const accountOpsOfAccount = this.#accountsOps[account]
+      if (!accountOpsOfAccount) return
+      const networks = Object.keys(accountOpsOfAccount)
       networks.forEach((network) => {
-        if (!this.#accountsOps[account][network]) return
-        this.#accountsOps[account][network].forEach((op) => {
-          const toAddrLower = toAddress.toLowerCase()
-          const sentToTarget = op.calls.some((call) => {
-            // 1) Direct call.to match
-            const directMatch = call.to?.toLowerCase() === toAddrLower
-            if (directMatch && isAddress(call.to)) return true
+        const networkAccountOpsOfAccount = accountOpsOfAccount[network]
+        if (!networkAccountOpsOfAccount) return
+        networkAccountOpsOfAccount.forEach((op) => {
+          const timestampOfSentTo = checkIsRecipientOfAccountOp(op, toAddress)
 
-            // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
-            const data = (call as Call).data as string | undefined
-            if (!data || typeof data !== 'string' || data.length < 10) return false
-
-            const selector = transferIface.getFunction('transfer')?.selector
-            if (selector && data.startsWith(selector)) {
-              try {
-                const decoded = transferIface.decodeFunctionData('transfer', data)
-                const recipient = (decoded[0] as string).toLowerCase()
-                if (recipient === toAddrLower) return true
-              } catch {
-                // ignore decode errors and continue
-              }
-            }
-
-            return false
-          })
-          if (sentToTarget) {
+          if (timestampOfSentTo) {
             found = true
-            if (!lastTimestamp || op.timestamp > lastTimestamp) {
-              lastTimestamp = op.timestamp
+
+            if (!lastTimestamp || timestampOfSentTo > lastTimestamp) {
+              lastTimestamp = timestampOfSentTo
             }
           }
         })
@@ -259,16 +246,30 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ) {
     await this.#initialLoadPromise
 
-    let filteredItems
+    const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
+    const accountOpsEntriesOnEnabledNetworks = Object.entries(
+      this.#accountsOps[filters.account] || {}
+    ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
+    let filteredItems: SubmittedAccountOp[]
 
-    if (filters.chainId) {
-      filteredItems = this.#accountsOps[filters.account]?.[filters.chainId.toString()] || []
+    if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
+      filteredItems =
+        accountOpsEntriesOnEnabledNetworks.find(
+          ([chainId]) => chainId === String(filters.chainId)
+        )?.[1] || []
     } else {
-      filteredItems = Object.values(this.#accountsOps[filters.account] || []).flat()
+      filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
       // By default, #accountsOps are grouped by network and sorted in descending order.
       // However, when the network filter is omitted, #accountsOps from different networks are mixed,
       // requiring additional sorting to ensure they are also in descending order.
       filteredItems.sort((a, b) => b.timestamp - a.timestamp)
+    }
+
+    // for benzin fetching
+    if (filters.identifiedBy) {
+      filteredItems.filter(
+        (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
+      )
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
@@ -323,8 +324,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const promises = Object.keys(this.accountsOps).map(async (sessionId) => {
       await this.filterAccountsOps(
         sessionId,
-        this.accountsOps[sessionId].filters,
-        this.accountsOps[sessionId].pagination
+        this.accountsOps[sessionId]!.filters,
+        this.accountsOps[sessionId]!.pagination
       )
     })
 
@@ -364,8 +365,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const promises = Object.keys(this.signedMessages).map(async (sessionId) => {
       await this.filterSignedMessages(
         sessionId,
-        this.signedMessages[sessionId].filters,
-        this.signedMessages[sessionId].pagination
+        this.signedMessages[sessionId]!.filters,
+        this.signedMessages[sessionId]!.pagination
       )
     })
 
@@ -375,7 +376,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   removeNetworkData(chainId: bigint) {
     Object.keys(this.accountsOps).forEach(async (sessionId) => {
       const state = this.accountsOps[sessionId]
-      const isFilteredByRemovedNetwork = state.filters.chainId === chainId
+      const isFilteredByRemovedNetwork = state?.filters.chainId === chainId
 
       if (isFilteredByRemovedNetwork) {
         await this.filterAccountsOps(
@@ -397,8 +398,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
     // newest SubmittedAccountOp goes first in the list
-    this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp })
-    trim(this.#accountsOps[accountAddr][chainId.toString()])
+    this.#accountsOps[accountAddr]![chainId.toString()]!.unshift({ ...accountOp })
+    trim(this.#accountsOps[accountAddr][chainId.toString()]!)
 
     await this.syncFilteredAccountsOps()
 
@@ -412,6 +413,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       {
         shouldEmitUpdate: boolean
         chainsToUpdate: Network['chainId'][]
+        portfoliosToUpdate: PortfoliosToUpdate
         updatedAccountsOps: SubmittedAccountOp[]
         newestOpTimestamp: number
       }
@@ -457,6 +459,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     chainsToUpdate: Network['chainId'][]
     updatedAccountsOps: SubmittedAccountOp[]
     newestOpTimestamp: number
+    portfoliosToUpdate: PortfoliosToUpdate
   }> {
     await this.#initialLoadPromise
 
@@ -465,6 +468,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         shouldEmitUpdate: false,
         chainsToUpdate: [],
         updatedAccountsOps: [],
+        portfoliosToUpdate: {},
         newestOpTimestamp: 0
       }
 
@@ -473,6 +477,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let shouldEmitUpdate = false
 
     const chainsToUpdate = new Set<Network['chainId']>()
+    const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
 
     // Use this flag to make the auto-refresh slower with the passege of time.
@@ -487,19 +492,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
         if (!network) return
         const provider = this.#providers.providers[network.chainId.toString()]
+        if (!provider) return
 
-        const allOps = this.#accountsOps[accountAddr][network.chainId.toString()]
+        const allOps = this.#accountsOps[accountAddr]![network.chainId.toString()]
         const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : []
         const opsToUpdate = recentOps.filter(
           (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
         )
 
         return Promise.all(
-          opsToUpdate.map(async (accountOp, accountOpIndex) => {
-            // Don't update the current network account ops statuses,
-            // as the statuses are already updated in the previous calls.
-            if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
-
+          opsToUpdate.map(async (accountOp) => {
             shouldEmitUpdate = true
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
@@ -508,97 +510,146 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
             const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
               if (hasTimePassedSinceBroadcast(op, 5)) {
-                const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                  AccountOpStatus.BroadcastButStuck
-                )
+                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               }
             }
 
-            const fetchTxnIdResult = await fetchTxnId(
-              accountOp.identifiedBy,
-              network,
-              this.#callRelayer,
-              accountOp
-            )
-            if (fetchTxnIdResult.status === 'rejected') {
-              const updatedOpIfAny = updateOpStatus(
-                this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                AccountOpStatus.Rejected
+            const txIds = []
+            if (accountOp.identifiedBy.type !== 'MultipleTxns') {
+              const fetchTxnIdResult = await fetchTxnId(
+                accountOp.identifiedBy,
+                network,
+                this.#callRelayer,
+                accountOp
               )
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              return
-            }
-            if (fetchTxnIdResult.status === 'not_found') {
-              declareStuckIfFiveMinsPassed(accountOp)
-              return
-            }
-
-            const txnId = fetchTxnIdResult.txnId as string
-            this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId = txnId
-
-            try {
-              let receipt = await provider.getTransactionReceipt(txnId)
-              if (receipt) {
-                // if the status is a failure and it's an userOp, it means it
-                // could've been front ran. We need to make sure we find the
-                // transaction that has succeeded
-                if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                  const frontRanTxnId = await fetchFrontRanTxnId(
-                    accountOp.identifiedBy,
-                    txnId,
-                    network
-                  )
-                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId =
-                    frontRanTxnId
-                  receipt = await provider.getTransactionReceipt(frontRanTxnId)
-                  if (!receipt) return
-                }
-
-                // if this is an user op, we have to check the logs
-                let isSuccess: boolean | undefined
-                if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
-                  if (userOpEventLog) isSuccess = userOpEventLog.success
-                }
-
-                // if it's not an userOp or it is, but isSuccess was not found
-                if (isSuccess === undefined) isSuccess = !!receipt.status
-
-                const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
-                  receipt
-                )
+              if (fetchTxnIdResult.status === 'rejected') {
+                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-
-                if (accountOp.isSingletonDeploy && receipt.status) {
-                  await this.#onContractsDeployed(network)
-                }
-
-                // learn tokens from the transfer logs
-                if (isSuccess) {
-                  const foundTokens = await getTransferLogTokens(
-                    receipt.logs,
-                    accountOp.accountAddr
-                  )
-                  if (foundTokens.length) {
-                    this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-                  }
-                }
-
-                // update the chain if a receipt has been received as otherwise, we're
-                // left hanging with a pending portfolio balance
-                chainsToUpdate.add(network.chainId)
+                return
+              }
+              if (fetchTxnIdResult.status === 'not_found') {
+                declareStuckIfFiveMinsPassed(accountOp)
                 return
               }
 
-              // if there's no receipt, confirm there's a txn
-              // if there's no txn and 15 minutes have passed, declare it a failure
-              const txn = await provider.getTransaction(txnId)
-              if (txn) return
-              declareStuckIfFiveMinsPassed(accountOp)
+              const txnId = fetchTxnIdResult.txnId as string
+              // eslint-disable-next-line no-param-reassign
+              accountOp.txnId = txnId
+              txIds.push(txnId)
+            } else {
+              const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
+              txIds.push(
+                ...accountOp.calls
+                  .filter((call) => !!call.status)
+                  .map((call) => call.txnId)
+                  .slice(0, limit)
+              )
+            }
+
+            try {
+              const receipts = await Promise.all(
+                // no catch, throw an error if one promise doesn't complete
+                txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null))
+              )
+              for (let i = 0; i < receipts.length; i++) {
+                let receipt = receipts[i]
+                const txnId = txIds[i]
+                if (receipt) {
+                  // if the status is a failure and it's an userOp, it means it
+                  // could've been front ran. We need to make sure we find the
+                  // transaction that has succeeded
+                  if (
+                    !receipt.status &&
+                    isIdentifiedByUserOpHash(accountOp.identifiedBy) &&
+                    txnId
+                  ) {
+                    // eslint-disable-next-line no-await-in-loop
+                    const frontRanTxnId = await fetchFrontRanTxnId(
+                      accountOp.identifiedBy,
+                      txnId,
+                      network
+                    )
+                    // eslint-disable-next-line no-param-reassign
+                    accountOp.txnId = frontRanTxnId
+                    // eslint-disable-next-line no-await-in-loop
+                    receipt = await provider.getTransactionReceipt(frontRanTxnId)
+                    if (!receipt) return
+                  }
+
+                  // if this is an user op, we have to check the logs
+                  let isSuccess: boolean | undefined
+                  if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                    const userOpEventLog = parseLogs(
+                      receipt.logs,
+                      accountOp.identifiedBy.identifier
+                    )
+                    if (userOpEventLog) isSuccess = userOpEventLog.success
+                  }
+
+                  // if it's not an userOp or it is, but isSuccess was not found
+                  if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                  const updatedOpIfAny = updateOpStatus(
+                    accountOp,
+                    isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                    receipt
+                  )
+                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+
+                  if (accountOp.isSingletonDeploy && receipt.status) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await this.#onContractsDeployed(network)
+                  }
+
+                  // learn tokens from the transfer logs
+                  if (isSuccess) {
+                    // eslint-disable-next-line no-await-in-loop
+                    const foundTokens = await getTransferLogTokens(
+                      receipt.logs,
+                      accountOp.accountAddr
+                    )
+                    if (foundTokens.length) {
+                      this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                    }
+                  }
+
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.blockNumber = receipt.blockNumber
+
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.blockHash = receipt.blockHash
+
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.gasUsed = toBeHex(receipt.gasUsed)
+
+                  // Add accounts that are recipients of the AccountOp
+                  const accountOpRecipients = getAccountOpRecipients(
+                    accountOp,
+                    this.#accounts.accounts.map((a) => a.addr)
+                  )
+
+                  accountOpRecipients.forEach((accAddr) => {
+                    if (!portfoliosToUpdate[accAddr]) portfoliosToUpdate[accAddr] = []
+
+                    portfoliosToUpdate[accAddr].push(network.chainId)
+                  })
+
+                  // update the chain if a receipt has been received as otherwise, we're
+                  // left hanging with a pending portfolio balance
+                  chainsToUpdate.add(network.chainId)
+                  // eslint-disable-next-line no-continue
+                  continue
+                }
+
+                // if there's no receipt, confirm there's a txn
+                // if there's no txn and 15 minutes have passed, declare it a failure
+                // eslint-disable-next-line no-await-in-loop
+                const txn = txnId ? await provider.getTransaction(txnId) : null
+                // eslint-disable-next-line no-continue
+                if (txn) continue
+                declareStuckIfFiveMinsPassed(accountOp)
+              }
             } catch {
               this.emitError({
                 level: 'silent',
@@ -623,6 +674,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       shouldEmitUpdate,
       chainsToUpdate: Array.from(chainsToUpdate),
       updatedAccountsOps,
+      portfoliosToUpdate,
       newestOpTimestamp
     }
   }
@@ -672,16 +724,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
   }
 
-  getLastFive(): SubmittedAccountOp[] {
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return []
-
-    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
-      .flat()
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 5)
-  }
-
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
     await this.#initialLoadPromise
 
@@ -700,13 +742,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ): Promise<string | undefined> {
     if (
       !this.#accountsOps[submittedAccountOp.accountAddr] ||
-      !this.#accountsOps[submittedAccountOp.accountAddr][submittedAccountOp.chainId.toString()]
+      !this.#accountsOps[submittedAccountOp.accountAddr]![submittedAccountOp.chainId.toString()]
     )
       return undefined
 
-    const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr][
+    const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr]![
       submittedAccountOp.chainId.toString()
-    ].find((op) => op.identifiedBy === submittedAccountOp.identifiedBy)
+    ]!.find((op) => op.identifiedBy === submittedAccountOp.identifiedBy)
     // shouldn't happen
     if (!activityAccountOp) return undefined
 
@@ -741,8 +783,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       return undefined
     }
 
-    return this.#accountsOps[accountAddr][chainId.toString()].find(
-      (op) => op.identifiedBy.identifier === identifiedBy.identifier
+    return this.#accountsOps[accountAddr]?.[chainId.toString()]?.find(
+      (op) => op.identifiedBy && op.identifiedBy.identifier === identifiedBy.identifier
     )
   }
 
@@ -807,12 +849,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
         activityBanners.push({
           id: `pending-${addr}`,
-          type: 'info2',
+          type: 'info',
           category: 'pending-to-be-confirmed-acc-ops',
           title:
             pendingOps.length === 1
-              ? 'Transaction is pending on-chain confirmation.'
-              : 'Transactions are pending on-chain confirmation.',
+              ? 'Transaction is pending onchain confirmation.'
+              : 'Transactions are pending onchain confirmation.',
           text:
             pendingOps.length === 1
               ? 'Scroll down to view the pending transaction.'
@@ -869,6 +911,23 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     return Array.from(this.#bannersByAccount.values()).flat()
+  }
+
+  getAccountOpsForAccount({
+    accountAddr = this.#selectedAccount.account?.addr,
+    from,
+    numberOfItems
+  }: {
+    accountAddr?: string
+    from: number
+    numberOfItems: number
+  }) {
+    if (!accountAddr) return []
+
+    return Object.values(this.#accountsOps[accountAddr] || {})
+      .flat()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(from, from + numberOfItems)
   }
 
   toJSON() {

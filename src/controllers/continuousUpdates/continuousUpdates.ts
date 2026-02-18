@@ -3,12 +3,12 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import {
-  ACCOUNT_STATE_PENDING_INTERVAL,
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
@@ -37,25 +37,27 @@ export class ContinuousUpdatesController extends EventEmitter {
     return this.#accountStateLatestInterval
   }
 
-  #accountStatePendingInterval: IRecurringTimeout
-
-  get accountStatePendingInterval() {
-    return this.#accountStatePendingInterval
-  }
-
   #fastAccountStateReFetchTimeout: IRecurringTimeout
 
   get fastAccountStateReFetchTimeout() {
     return this.#fastAccountStateReFetchTimeout
   }
 
-  #retriedFastAccountStateReFetchForNetworks: string[] = []
+  #accountStateRetriesByNetwork: {
+    [chainId: string]: number
+  } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
 
-  constructor({ main }: { main: IMainController }) {
-    super()
+  constructor({
+    eventEmitterRegistry,
+    main
+  }: {
+    eventEmitterRegistry?: IEventEmitterRegistryController
+    main: IMainController
+  }) {
+    super(eventEmitterRegistry)
 
     this.#main = main
 
@@ -103,13 +105,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       this.emitError.bind(this)
     )
 
-    this.#accountStatePendingInterval = new RecurringTimeout(
-      this.#updateAccountStatePending.bind(this),
-      ACCOUNT_STATE_PENDING_INTERVAL,
-      this.emitError.bind(this),
-      'accountStatePendingInterval'
-    )
-
     this.#accountsOpsStatusesInterval = new RecurringTimeout(
       this.#updateAccountsOpsStatuses.bind(this),
       ACTIVITY_REFRESH_INTERVAL,
@@ -127,10 +122,34 @@ export class ContinuousUpdatesController extends EventEmitter {
       'fastAccountStateReFetchTimeout'
     )
 
-    this.#main.onUpdate(() => {
-      if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
-        this.#accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
+    this.#main.swapAndBridge.onUpdate(() => {
+      if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
+      }
+    }, 'continuous-update')
+
+    this.#main.transfer.onUpdate(() => {
+      if (this.#main.transfer.signAccountOpController?.broadcastStatus === 'SUCCESS') {
+        this.#accountStateLatestInterval.restart()
+      }
+    }, 'continuous-update')
+
+    this.#main.requests.onUpdate(() => {
+      if (this.#main.requests.currentUserRequest?.kind === 'calls') {
+        if (
+          !this.#main.requests.currentUserRequest.signAccountOp.onUpdateIds.includes(
+            'continuous-update'
+          )
+        ) {
+          this.#main.requests.currentUserRequest.signAccountOp.onUpdate(() => {
+            if (
+              this.#main.requests.currentUserRequest?.kind === 'calls' &&
+              this.#main.requests.currentUserRequest.signAccountOp.broadcastStatus === 'SUCCESS'
+            ) {
+              this.#accountStateLatestInterval.restart()
+            }
+          }, 'continuous-update')
+        }
       }
     }, 'continuous-update')
 
@@ -167,7 +186,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
       ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
       : []
-    if (selectedAccountBroadcastedButNotConfirmed.length) return
+    if (selectedAccountBroadcastedButNotConfirmed?.length) return
     await this.#main.updateSelectedAccountPortfolio({
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
@@ -181,7 +200,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updateAccountStateLatest() {
     await this.initialLoadPromise
-    await this.#main.accounts.accountStatesInitialLoadPromise
+    await this.#main.accounts.accountStateInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
@@ -193,7 +212,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     })
 
     const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr] ||
+        []
       : []
     const networksWithPendingAccountOp = selectedAccountBroadcastedButNotConfirmed
       .map((op) => op.chainId)
@@ -216,7 +236,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #updateAccountStatePending() {
     await this.initialLoadPromise
-    await this.#main.accounts.accountStatesInitialLoadPromise
+    await this.#main.accounts.accountStateInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to update pending state')
@@ -224,14 +244,14 @@ export class ContinuousUpdatesController extends EventEmitter {
     }
 
     const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr] ||
+        []
       : []
     const networksToUpdate = selectedAccountBroadcastedButNotConfirmed
       .map((op) => op.chainId)
       .filter((chainId, index, self) => self.indexOf(chainId) === index)
 
     if (!networksToUpdate.length) {
-      this.#accountStatePendingInterval.stop()
       this.#accountStateLatestInterval.restart()
       return
     }
@@ -246,25 +266,33 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #fastAccountStateReFetch() {
     await this.initialLoadPromise
 
+    const selectedAccountAddr = this.#main.selectedAccount.account?.addr
+
     const failedChainIds: string[] = getNetworksWithFailedRPC({
       providers: this.#main.providers.providers
     })
-    if (!failedChainIds.length) {
+
+    const chainIdsToRetry = failedChainIds.filter((id) => {
+      const retries = this.#accountStateRetriesByNetwork[id] || 0
+
+      return retries < 3
+    })
+
+    if (!chainIdsToRetry.length || !selectedAccountAddr) {
       this.#fastAccountStateReFetchTimeout.stop()
-      this.#retriedFastAccountStateReFetchForNetworks = []
+      this.#accountStateRetriesByNetwork = {}
       return
     }
 
-    await this.#main.accounts.updateAccountStates(
-      this.#main.selectedAccount.account?.addr,
+    await this.#main.accounts.updateAccountState(
+      selectedAccountAddr,
       'latest',
-      failedChainIds.map((id) => BigInt(id))
+      chainIdsToRetry.map((id) => BigInt(id))
     )
 
-    // Add the networks that have been retried to the list
-    failedChainIds.forEach((id) => {
-      if (this.#retriedFastAccountStateReFetchForNetworks.includes(id)) return
-      this.#retriedFastAccountStateReFetchForNetworks.push(id)
+    // Increment the retry count for each chainId
+    chainIdsToRetry.forEach((id) => {
+      this.#accountStateRetriesByNetwork[id] = (this.#accountStateRetriesByNetwork[id] || 0) + 1
     })
 
     const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
@@ -273,11 +301,11 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
     // if the RPC goes down again
-    if (this.#retriedFastAccountStateReFetchForNetworks.length) {
+    if (Object.keys(this.#accountStateRetriesByNetwork).length) {
       const networksToUpdate: Network[] = []
-      this.#retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
+      Object.keys(this.#accountStateRetriesByNetwork).forEach((chainId) => {
         if (!failedChainIdsAfterUpdate.includes(chainId)) {
-          delete this.#retriedFastAccountStateReFetchForNetworks[index]
+          delete this.#accountStateRetriesByNetwork[chainId]
 
           const network = this.#main.networks.networks.find((n) => n.chainId.toString() === chainId)
 
@@ -292,13 +320,12 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     if (!failedChainIdsAfterUpdate.length) {
       this.#fastAccountStateReFetchTimeout.stop()
-      this.#retriedFastAccountStateReFetchForNetworks = []
       return
     }
 
     // Filter out the network ids that have already been retried
     const networksNotYetRetried = failedChainIdsAfterUpdate.filter(
-      (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
+      (id) => !this.#accountStateRetriesByNetwork[id]
     )
 
     const updateTime = networksNotYetRetried.length ? 8000 : 20000
