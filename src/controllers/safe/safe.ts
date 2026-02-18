@@ -182,6 +182,11 @@ export class SafeController extends EventEmitter implements ISafeController {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
   }
 
+  async resetFind() {
+    this.safeInfo = undefined
+    this.importError = undefined
+  }
+
   getMessageId(msg: SafeMessage): string {
     return `${msg.messageHash}-${new Date(msg.created).getTime()}`
   }
