@@ -153,6 +153,9 @@ export class DappsController extends EventEmitter implements IDappsController {
     return !!this.dapps
   }
 
+  // Returns the curated list of dapps for the Apps Catalog.
+  // Applies all catalog-specific rules: status filtering, category inclusion/exclusion,
+  // domain deduplication, TVL thresholds, and final sorting.
   get dapps(): Dapp[] {
     // Clone the original map so we don’t mutate #dapps
     const filteredMap = new Map(this.#dapps)
@@ -194,6 +197,12 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     return Array.from(filteredMap.values()).sort(sortDapps)
+  }
+
+  // Returns all dapps explicitly marked as VERIFIED.
+  // This list is used as the trusted baseline for phishing checks.
+  get verifiedDapps(): Dapp[] {
+    return Array.from(this.#dapps.values()).filter((dapp) => dapp.blacklisted === 'VERIFIED')
   }
 
   get categories(): string[] {
@@ -753,6 +762,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...this,
       ...super.toJSON(),
       dapps: this.dapps,
+      verifiedDapps: this.verifiedDapps,
       categories: this.categories,
       isReady: this.isReady,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
