@@ -1753,7 +1753,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
               accountOpData: {
                 signature: meta.safeTxnProps.signature,
                 txnId: meta.safeTxnProps.txnId,
-                nonce: meta.safeTxnProps.nonce
+                nonce: meta.safeTxnProps.nonce,
+                safeTx: meta.safeTx
               }
             })
 
@@ -1854,6 +1855,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 value: call.value ? getBigInt(call.value) : 0n
               }))
             ],
+            safeTx: meta.safeTx,
             meta
           },
           shouldSimulate: this.#shouldSimulateAccountOps,

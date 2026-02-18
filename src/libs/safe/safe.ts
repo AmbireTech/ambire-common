@@ -107,6 +107,22 @@ export function decodeSetupData(setupData: Hex): Hex[] {
  * Construct a safe txn for signing
  */
 export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
+  // todo: we're blindly trusting the returned txn from safe global, is this OK?
+  if (op.safeTx) {
+    return {
+      to: op.safeTx.to as Hex,
+      value: toBeHex(op.safeTx.value) as Hex,
+      data: op.safeTx.data as Hex,
+      operation: op.safeTx.operation,
+      safeTxGas: toBeHex(op.safeTx.safeTxGas) as Hex,
+      baseGas: toBeHex(op.safeTx.baseGas) as Hex,
+      gasPrice: toBeHex(op.safeTx.gasPrice) as Hex,
+      gasToken: op.safeTx.gasToken as Hex,
+      refundReceiver: op.safeTx.refundReceiver as Hex,
+      nonce: toBeHex(op.safeTx.nonce) as Hex
+    }
+  }
+
   const coder = new AbiCoder()
   const calls = getSignableCalls(op)
 
@@ -442,6 +458,7 @@ export function toCallsUserRequest(
       calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
       meta: CallsUserRequest['meta'] & {
         safeTxnProps: { txnId: Hex; signature: Hex; nonce: bigint }
+        safeTx: SafeMultisigTransactionResponse
       }
     }
     executionType: 'queue'
@@ -454,6 +471,7 @@ export function toCallsUserRequest(
         calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
         meta: CallsUserRequest['meta'] & {
           safeTxnProps: { txnId: Hex; signature: Hex; nonce: bigint }
+          safeTx: SafeMultisigTransactionResponse
         }
       }
       executionType: 'queue'
@@ -495,7 +513,8 @@ export function toCallsUserRequest(
                 txnId: txn.safeTxHash as Hex,
                 signature,
                 nonce: BigInt(txn.nonce)
-              }
+              },
+              safeTx: txn
             }
           },
           executionType: 'queue'

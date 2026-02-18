@@ -1,5 +1,7 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
@@ -71,6 +73,7 @@ export interface AccountOp {
   signers?: { addr: Key['addr']; type: Key['type'] }[]
   // who are the signers that already signed this txn
   signed?: string[]
+  safeTx?: SafeMultisigTransactionResponse
   // all kinds of custom accountOp properties that are needed in specific cases
   meta?: {
     // pass the entry point authorization signature for the deploy 4337 txn

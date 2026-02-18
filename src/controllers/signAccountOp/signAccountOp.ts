@@ -2479,7 +2479,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ) {
         // all's good, proceed to broadcast
       } else if (this.account.safeCreation) {
-        const signatures: Hex[] = getSigs(this.accountOp)
+        const originalSigs = getSigs(this.accountOp)
+        const allSigned = this.accountOp.signed ? [...this.accountOp.signed] : []
+        const signatures: Hex[] = [...originalSigs]
         const existsInSafeGlobal = signatures.length > 0
         const signers = this.accountOp.signers!
         const safeTxn = getSafeTxn(this.accountOp, accountState)
@@ -2492,6 +2494,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             getSafeTypedData(this.#network.chainId, this.account.addr as Hex, safeTxn)
           )) as Hex
           signatures.push(signature)
+          allSigned.push(safeKey.addr)
 
           // emit update only if the loop is to continue
           if (i + 1 < signers.length) {
@@ -2505,7 +2508,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
         this.#updateAccountOp({
           signature: sortSigs(signatures, safeTxnHash),
-          signed: signers.map((s) => s.addr),
+          signed: allSigned,
           txnId: safeTxnHash
         })
 
@@ -2519,6 +2522,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           for (let i = 0; i < signers.length; i++) {
             const safeKey = signers[i]!
             const sig = signatures[i]!
+
+            // if the signature has already been sent to safe global,
+            // do not send it again
+            if (originalSigs.includes(sig)) continue
+
             if (!existsInSafeGlobal) {
               // propose the txn to safe global upon first entry
               await propose(

@@ -4,6 +4,8 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
@@ -59,6 +61,7 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
     safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
+    safeTx?: SafeMultisigTransactionResponse
   }
   signAccountOp: ISignAccountOpController
 }
