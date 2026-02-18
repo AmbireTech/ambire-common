@@ -7,7 +7,7 @@ import SafeApiKit, {
 } from '@safe-global/api-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
-import { SAFE_NETWORKS } from '../../consts/safe'
+import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -16,7 +16,6 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
-  decodeSetupData,
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
@@ -62,6 +61,8 @@ export class SafeController extends EventEmitter implements ISafeController {
     version: string
     address: Hex
     owners: Hex[]
+    // does the safe need special conditions to send/sign txns
+    requiresModules: boolean
   }
 
   constructor({
@@ -162,18 +163,19 @@ export class SafeController extends EventEmitter implements ISafeController {
     }
 
     const setupData = safeCreationInfo.setupData as Hex
-    const foundOwners = decodeSetupData(setupData)
+    console.log('these are the owners', safeInfo.owners)
     this.safeInfo = {
       version: safeInfo.version,
       address: safeInfo.address as Hex,
-      owners: foundOwners.length ? foundOwners : (safeInfo.owners as Hex[]),
+      owners: safeInfo.owners as Hex[],
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
       factoryAddr: safeCreationInfo.factoryAddress as Hex,
       singleton: safeCreationInfo.singleton as Hex,
       saltNonce: safeCreationInfo.saltNonce
         ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
         : (toBeHex(0, 32) as Hex),
-      setupData
+      setupData,
+      requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
     }
   }
 

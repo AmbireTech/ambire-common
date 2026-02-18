@@ -29,3 +29,9 @@ export const execTransactionAbi = [
  * This is the latest contract and it's safe to use across versions
  */
 export const multiSendAddr = '0x218543288004CD07832472D464648173c77D7eB7'
+
+/**
+ * In order to do batching, safe needs an extra contract helper called multisend
+ * This is the latest contract and it's safe to use across versions
+ */
+export const safeNullOwner = '0x0000000000000000000000000000000000000002'
