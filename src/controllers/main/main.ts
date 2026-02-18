@@ -1304,14 +1304,14 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.fetchSafeTxns().catch((e) => e) // we catch the error inside
+    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
   }
 
   /**
    * Fetch safe txns from safe global and make them user requests
    * if the selected account is a safe
    */
-  async fetchSafeTxns(chainIds: bigint[] = []) {
+  async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
@@ -1335,7 +1335,7 @@ export class MainController extends EventEmitter implements IMainController {
     }))
 
     const res: SafeResults | null = await this.safe
-      .fetchPending(safeAddr, networksAndThresholds, !!chainIds.length)
+      .fetchPending(safeAddr, networksAndThresholds, !!chainIds.length || forceRefetch)
       .catch((e) => {
         console.log(e)
         console.log('failed to retrieve pending safe txns')

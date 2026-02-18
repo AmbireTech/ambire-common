@@ -41,7 +41,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   /**
    * The last time a request to fetch pending safe txn was made
    */
-  #updatedAt: number = 0
+  #updatedAt?: { time: number; addr: string }
 
   #automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[] = []
 
@@ -220,9 +220,18 @@ export class SafeController extends EventEmitter implements ISafeController {
     networks: { chainId: bigint; threshold: number }[],
     forceFetch = false
   ): Promise<SafeResults | null> {
-    if (!forceFetch && Date.now() - this.#updatedAt < FETCH_SAFE_TXNS) return null
+    if (
+      !forceFetch &&
+      this.#updatedAt &&
+      this.#updatedAt.addr === safeAddr &&
+      Date.now() - this.#updatedAt.time < FETCH_SAFE_TXNS
+    )
+      return null
 
-    this.#updatedAt = Date.now()
+    this.#updatedAt = {
+      time: Date.now(),
+      addr: safeAddr
+    }
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
 
@@ -236,8 +245,6 @@ export class SafeController extends EventEmitter implements ISafeController {
       nonce: string
     }[]
   > {
-    // no protection, call this only after fetching the pending ones
-    this.#updatedAt = Date.now()
     return fetchExecutedTransactions(txns)
   }
 
@@ -265,7 +272,8 @@ export class SafeController extends EventEmitter implements ISafeController {
    */
   async unresolve(nonce: bigint) {
     // reset the counter so we could fetch immediately
-    this.#updatedAt = 0
+    this.#updatedAt = undefined
+
     this.#automaticallyResolvedSafeTxns = this.#automaticallyResolvedSafeTxns.filter(
       (txns) => txns.nonce !== nonce
     )

@@ -857,10 +857,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // if it's a safe txn:
         // - reject it upon a normal reject req;
         // - resolve it on accountOp resolve
+
         if (
           !!req.signAccountOp.account.safeCreation &&
           req.signAccountOp.accountOp.txnId &&
-          req.signAccountOp.accountOp.nonce
+          req.signAccountOp.accountOp.nonce !== null
         ) {
           if (shouldRejectSafeRequests) safeRejectIds.push(req.signAccountOp.accountOp.txnId)
           else {
