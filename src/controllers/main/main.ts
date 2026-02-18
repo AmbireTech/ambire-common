@@ -258,7 +258,7 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
-      sendUiMessage: () => this.ui.message.sendUiMessage
+      sendUiMessage: this.ui.message.sendUiMessage
     })
     this.accounts = new AccountsController(
       this.storage,
