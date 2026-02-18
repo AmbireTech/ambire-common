@@ -163,7 +163,6 @@ export class SafeController extends EventEmitter implements ISafeController {
     }
 
     const setupData = safeCreationInfo.setupData as Hex
-    console.log('these are the owners', safeInfo.owners)
     this.safeInfo = {
       version: safeInfo.version,
       address: safeInfo.address as Hex,
