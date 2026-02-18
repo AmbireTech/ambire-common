@@ -16,7 +16,6 @@
     "checkJs": false,
     "declaration": true,
     "declarationMap": true,
-    "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "forceConsistentCasingInFileNames": true,
     "importHelpers": true,
