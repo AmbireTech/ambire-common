@@ -740,7 +740,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        if (
+        // for safe accounts, always select the first not disabled EOA
+        // or the first EOA if all are disabled
+        if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
+          const notDisabled = payOptionsPaidByEOA.find(
+            (option) => !this.#getIsFeeOptionDisabled(option)
+          )
+          const selected = notDisabled ?? payOptionsPaidByEOA[0]!
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
+        } else if (
           payOptionsPaidByUsOrGasTank.length > 0 &&
           !this.#getIsFeeOptionDisabled(payOptionsPaidByUsOrGasTank[0]!)
         ) {
@@ -783,6 +792,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get errors(): SignAccountOpError[] {
+    // no errors on a signed txn
+    if (this.status?.type === SigningStatus.Queued) return []
+
     const accountOpValidationError = this.#validateAccountOp()
 
     if (accountOpValidationError) return [accountOpValidationError]
@@ -881,7 +893,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      if (speedCoverage.length === 0) {
+      if (speedCoverage.length === 0 && !!this.account.safeCreation) {
+        errors.push({
+          title:
+            this.selectedOption.paidBy === this.account.addr
+              ? 'Broadcasting transactions is possible only using an external account. Import or create one to broadcast your Safe transactions'
+              : ERRORS.eoaInsufficientFunds
+        })
+      } else if (speedCoverage.length === 0) {
         const isSA = isSmartAccount(this.account)
         const isUnableToCoverWithAllOtherTokens = this.estimation.availableFeeOptions.every(
           (option) => {
@@ -2506,20 +2525,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         }
 
-        // update the final account op
-        this.#updateAccountOp({
-          signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
-          signed: this.accountOp.signed
-            ? this.accountOp.signed.concat(signers.map((s) => s.addr))
-            : signers.map((s) => s.addr),
-          txnId: safeTxnHash
-        })
+        // all the signers that have signed
+        const allSigners = this.accountOp.signed
+          ? this.accountOp.signed.concat(signers.map((s) => s.addr))
+          : signers.map((s) => s.addr)
 
         // if the user cannot broadcast because he doesn't meet the threshold,
         // we push the txn to safe global
         if (
-          (this.#accountOp.signed?.length || 0) < this.threshold ||
-          (this.#accountOp.nonce || 0n) > accountState.nonce
+          !this.canBroadcast &&
+          ((this.#accountOp.signed?.length || 0) < this.threshold ||
+            (this.#accountOp.nonce || 0n) > accountState.nonce)
         ) {
           // todo: create intervals for this on error
           for (let i = 0; i < signers.length; i++) {
@@ -2541,9 +2557,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             }
           }
 
-          // todo: don't switch to Queued if actually the user can broadcast?
+          // update the final account op
+          this.#updateAccountOp({
+            signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
+            signed: allSigners,
+            txnId: safeTxnHash
+          })
+
           this.status = { type: SigningStatus.Queued }
-          // todo: don't stop the intervals if the user can broadcast
           this.#stopIntervals()
         }
       } else if (
@@ -2753,7 +2774,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      // if the txn is queued, do not broadcast it
       if (this.status && this.status.type !== SigningStatus.Queued)
         this.status = { type: SigningStatus.Done }
 
@@ -3328,11 +3348,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const signed = this.accountOp.signed || []
     if (signed.length >= this.threshold) return true
 
+    const hasEOAWithEnoughAmount = this.estimation.availableFeeOptions.find(
+      (option) =>
+        option.paidBy !== this.account.addr &&
+        option.availableAmount > (this.accountOp.gasFeePayment?.amount || 0)
+    )
     const notSignedImportedOwners = getImportedSignersThatHaveNotSigned(
       signed,
       this.accountKeyStoreKeys.map((k) => k.addr)
     )
-    return signed.length + notSignedImportedOwners.length >= this.threshold
+    return (
+      signed.length + notSignedImportedOwners.length >= this.threshold && hasEOAWithEnoughAmount
+    )
   }
 
   toJSON() {
