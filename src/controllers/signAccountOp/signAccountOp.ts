@@ -826,30 +826,41 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         )
         if (isUnableToCoverWithAllOtherTokens) {
-          let skippedTokensCount = 0
-          const gasTokenNames = gasTankFeeTokens
-            .filter(({ chainId, hiddenOnError }) => {
-              if (chainId !== this.accountOp.chainId) return false
-
-              if (hiddenOnError) {
-                skippedTokensCount++
-                return false
-              }
-
-              return true
+          // v1 acc handle
+          const state =
+            this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+          const isV1 = this.account.creation && !state?.isV2
+          if (isV1) {
+            errors.push({
+              title:
+                'Broadcasting Ambire V1 transactions is possible only by using an external account. Import or create one to broadcast your transactions.'
             })
-            .map(({ symbol }) => symbol.toUpperCase())
-            .join(', ')
+          } else {
+            let skippedTokensCount = 0
+            const gasTokenNames = gasTankFeeTokens
+              .filter(({ chainId, hiddenOnError }) => {
+                if (chainId !== this.accountOp.chainId) return false
 
-          errors.push({
-            title: `${ERRORS.eoaInsufficientFunds}${
-              isSA
-                ? ` Available fee options: USDC in Gas Tank, ${gasTokenNames}${
-                    skippedTokensCount ? ' and others' : ''
-                  }`
-                : ''
-            }`
-          })
+                if (hiddenOnError) {
+                  skippedTokensCount++
+                  return false
+                }
+
+                return true
+              })
+              .map(({ symbol }) => symbol.toUpperCase())
+              .join(', ')
+
+            errors.push({
+              title: `${ERRORS.eoaInsufficientFunds}${
+                isSA
+                  ? ` Available fee options: USDC in Gas Tank, ${gasTokenNames}${
+                      skippedTokensCount ? ' and others' : ''
+                    }`
+                  : ''
+              }`
+            })
+          }
         } else {
           errors.push({
             title: isSA
@@ -953,6 +964,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     ) {
       warnings.push(WARNINGS.delegationDetected)
     }
+
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (this.account.creation && !accountState?.isV2 && WARNINGS.v1Acc)
+      warnings.push(WARNINGS.v1Acc)
 
     const estimationWarnings = this.estimation.calculateWarnings()
 
