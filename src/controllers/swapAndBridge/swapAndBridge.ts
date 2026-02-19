@@ -112,6 +112,12 @@ const STATUS_WRAPPED_METHODS = {
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
+type SignAccountOpControllerMethods = {
+  [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
+    ? K
+    : never]: SignAccountOpController[K]
+}
+
 /**
  * The Swap and Bridge controller is responsible for managing the state and
  * logic related to swapping and bridging tokens across different networks.
@@ -2479,6 +2485,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.onEstimationFailure(this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
       }
     })
+  }
+
+  async callSignAccountOpMethod<M extends keyof SignAccountOpControllerMethods>(
+    method: M,
+    args: Parameters<SignAccountOpControllerMethods[M]>
+  ) {
+    if (!this.signAccountOpController) return
+
+    await (this.signAccountOpController[method] as any)(...args)
   }
 
   setUserProceeded(hasProceeded: boolean) {
