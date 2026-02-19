@@ -49,7 +49,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #providers: IProvidersController
 
-  #networks: INetworksController
+  networks: INetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -74,7 +74,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #account?: Account
 
-  #network?: Network
+  network?: Network
 
   // who are the signers that already signed this message
   // applicable on Safe message
@@ -104,7 +104,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     this.#keystore = keystore
     this.#providers = providers
-    this.#networks = networks
+    this.networks = networks
     this.#externalSignerControllers = externalSignerControllers
     this.#accounts = accounts
     this.#invite = invite
@@ -147,21 +147,21 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-      this.#network = this.#networks.networks.find(
+      this.network = this.networks.networks.find(
         (n: Network) => n.chainId === this.messageToSign!.chainId
       )
-      if (!this.#network) {
+      if (!this.network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
       const accountState = await this.#accounts.getOrFetchAccountOnChainState(
         this.#account.addr,
-        this.#network.chainId
+        this.network.chainId
       )
       if (!accountState) {
-        if (this.#network.disabled) {
+        if (this.network.disabled) {
           throw new Error(
-            `Please enable ${this.#network.name} from settings -> networks to sign messages on it`
+            `Please enable ${this.network.name} from settings -> networks to sign messages on it`
           )
         }
         throw new Error(`Account details missing. Please try again`)
@@ -219,7 +219,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.messageToSign = null
     this.signedMessage = null
     this.#account = undefined
-    this.#network = undefined
+    this.network = undefined
     this.signed = []
     this.signers = undefined
     this.signer = undefined
@@ -286,19 +286,19 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-      if (!this.#network) {
+      if (!this.network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
       const accountState = await this.#accounts.getOrFetchAccountOnChainState(
         this.#account.addr,
-        this.#network.chainId
+        this.network.chainId
       )
       if (!accountState) {
         throw new Error(`Account details missing. Please try again`)
       }
 
-      const provider = this.#providers.providers[this.#network.chainId.toString()]
+      const provider = this.#providers.providers[this.network.chainId.toString()]
       if (!provider) throw new Error(`Network details missing. Please try again`)
 
       let signature
@@ -321,7 +321,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
             const signed = await getPlainTextSignature(
               this.messageToSign.content.message,
-              this.#network,
+              this.network,
               this.#account,
               accountState,
               this.signer,
@@ -331,7 +331,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             this.signed.push(signerKey.addr)
             if (signed.hash) this.hash = signed.hash
             if (this.existsInSafeGlobal && this.hash) {
-              await addMessageSignature(this.#network.chainId, this.hash, signed.signature)
+              await addMessageSignature(this.network.chainId, this.hash, signed.signature)
             }
           }
 
@@ -344,7 +344,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           // send only to safe global if it doesn't already exists and if the threshold is not met
           if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
             await addMessage(
-              this.#network.chainId,
+              this.network.chainId,
               this.#account.addr as Hex,
               toUtf8String(this.messageToSign.content.message),
               signature
@@ -374,7 +374,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
               this.#account,
               accountState,
               this.signer,
-              this.#network,
+              this.network,
               this.#invite.isOG
             )
 
@@ -382,7 +382,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             this.signed.push(signerKey.addr)
             if (signed.hash) this.hash = signed.hash
             if (this.existsInSafeGlobal && this.hash) {
-              await addMessageSignature(this.#network.chainId, this.hash, signed.signature)
+              await addMessageSignature(this.network.chainId, this.hash, signed.signature)
             }
           }
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
@@ -393,7 +393,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           // send only to safe global if it doesn't already exists and if the threshold is not met
           if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
             await addMessage(
-              this.#network.chainId,
+              this.network.chainId,
               this.#account.addr as Hex,
               this.messageToSign.content.message as EIP712TypedData,
               signature
