@@ -2530,10 +2530,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           ? this.accountOp.signed.concat(signers.map((s) => s.addr))
           : signers.map((s) => s.addr)
 
+        // updating the account op causes this.canBroadcast to change
+        // so we cache it before we update the account op
+        const canBroadcastBeforeSigning = this.canBroadcast
+        this.#updateAccountOp({
+          signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
+          signed: allSigners,
+          txnId: safeTxnHash
+        })
+
         // if the user cannot broadcast because he doesn't meet the threshold,
         // we push the txn to safe global
         if (
-          !this.canBroadcast &&
+          !canBroadcastBeforeSigning &&
           ((this.#accountOp.signed?.length || 0) < this.threshold ||
             (this.#accountOp.nonce || 0n) > accountState.nonce)
         ) {
@@ -2556,13 +2565,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               await confirm(safeTxn, this.accountOp.chainId, this.account.addr as Hex, sig)
             }
           }
-
-          // update the final account op
-          this.#updateAccountOp({
-            signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
-            signed: allSigners,
-            txnId: safeTxnHash
-          })
 
           this.status = { type: SigningStatus.Queued }
           this.#stopIntervals()
