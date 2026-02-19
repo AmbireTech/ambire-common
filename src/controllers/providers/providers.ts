@@ -266,7 +266,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
 
       return this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: false,
         error: 'Provider not found'
@@ -283,7 +282,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
 
       return this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: false,
         error: `${method} is not a valid JsonRpcProvider method`
@@ -294,7 +292,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       const result = await (fn as Function).apply(provider, args)
 
       this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: true,
         res: result
@@ -302,7 +299,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     } catch (error: any) {
       this.emitError({ error, message: error.message, level: 'major' })
       this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: false,
         error: error.message
@@ -334,7 +330,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         level: 'silent'
       })
       return this.#sendUiMessage({
-        type: 'CallContract',
         requestId,
         ok: false,
         error: `Network with chainId: ${chainId} not found`
@@ -353,7 +348,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
 
       return this.#sendUiMessage({
-        type: 'CallContract',
         requestId,
         ok: false,
         error: `${method.toString()} is not a valid Contract method`
@@ -362,7 +356,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     const result = await (contract[method] as Function).apply(contract, args)
 
     this.#sendUiMessage({
-      type: 'CallContract',
       requestId,
       ok: !!result,
       res: result ?? undefined,
