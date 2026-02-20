@@ -37,6 +37,16 @@ const ENS2 = {
   name: 'josh.eth'
 }
 
+const WNS_FORWARD = {
+  address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+  name: 'vitalik.wei'
+}
+
+const WNS_REVERSE = {
+  address: '0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20',
+  name: 'ross.wei'
+}
+
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
 describe('Domains', () => {
@@ -62,6 +72,18 @@ describe('Domains', () => {
     await domainsController.resolveDomain({ domain: name })
 
     expect(domainsController.ensToAddress[name]).toBe(address)
+  })
+  it('should resolve a .wei domain (WNS)', async () => {
+    const { name, address } = WNS_FORWARD
+
+    await domainsController.resolveDomain({ domain: name })
+
+    expect(domainsController.wnsToAddress[name]).toBe(address)
+  })
+  it('should reverse lookup (WNS)', async () => {
+    await domainsController.reverseLookup(WNS_REVERSE.address)
+
+    expect(domainsController.domains[WNS_REVERSE.address]!.wns).toBe(WNS_REVERSE.name)
   })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
