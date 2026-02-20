@@ -1064,5 +1064,41 @@ export default [
     symbol: 'kbtc',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/50879/standard/kBTC.png?1730321084'
+  },
+  // ctUSD
+  {
+    address: '0x8D82c4E3c936C7B5724A382a9c5a4E6Eb7aB6d5D',
+    chainId: 4114n,
+    disableGasTankDeposit: true,
+    symbol: 'ctUSD',
+    decimals: 6,
+    icon: 'https://coin-images.coingecko.com/coins/images/71615/standard/ctusd-logo.jpg'
+  },
+  // USDT.e
+  {
+    address: '0x9f3096Bac87e7F03DC09b0B416eB0DF837304dc4',
+    chainId: 4114n,
+    disableGasTankDeposit: true,
+    symbol: 'USDT.e',
+    decimals: 6,
+    icon: 'https://coin-images.coingecko.com/coins/images/325/standard/Tether.png'
+  },
+  // USDC.e
+  {
+    address: '0xE045e6c36cF77FAA2CfB54466D71A3aEF7bbE839',
+    chainId: 4114n,
+    disableGasTankDeposit: true,
+    symbol: 'USDC.e',
+    decimals: 6,
+    icon: 'https://coin-images.coingecko.com/coins/images/6319/standard/USDC.png'
+  },
+  // WBTC.e
+  {
+    chainId: 4114n,
+    address: '0xDF240DC08B0FdaD1d93b74d5048871232f6BEA3d',
+    disableGasTankDeposit: true,
+    symbol: 'WBTC.e',
+    decimals: 8,
+    icon: 'https://coin-images.coingecko.com/coins/images/39529/standard/WBTCLOGO.png'
   }
 ]
