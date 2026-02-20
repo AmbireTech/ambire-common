@@ -841,6 +841,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'Insufficient funds to cover the fee.'
       })
 
+    // if the safe txn is not deployed, display an error
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
+      errors.push({
+        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe global`
+      })
+    }
+
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
@@ -978,8 +987,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // safe txn, signed, with a future nonce: display an error
-    const accountState =
-      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (
       !!this.account.safeCreation &&
       accountState &&
@@ -990,13 +997,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     ) {
       errors.push({
         title: 'You need to broadcast pending transactions before this one.'
-      })
-    }
-
-    // if the safe txn is not deployed, display an error
-    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
-      errors.push({
-        title: 'Safe account not deployed on this network. Please activate it from Safe global'
       })
     }
 
