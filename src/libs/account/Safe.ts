@@ -6,6 +6,8 @@ import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
+import { SafeTx } from '../../interfaces/safe'
+import { getSafeTypedData, getSafeV1TypedData } from '../../libs/signMessage/signMessage'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { getSigForCalculations } from '../estimate/estimateHelpers'
@@ -149,5 +151,17 @@ export class Safe extends BaseAccount {
 
   canBroadcastByOtherEOA(): boolean {
     return true
+  }
+
+  /**
+   * Final commitment Safe data can differ according to the Safe v.
+   * We encapsulate the logic here
+   */
+  getTxnTypedData(safeTx: SafeTx) {
+    const safeCreation = this.account.safeCreation!
+    if (safeCreation.version.startsWith('1.1.') || safeCreation.version.startsWith('1.2'))
+      return getSafeV1TypedData(this.account.addr as Hex, safeTx)
+
+    return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)
   }
 }

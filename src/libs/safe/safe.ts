@@ -31,10 +31,10 @@ import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
-import { CallsUserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import wait from '../../utils/wait'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { adaptTypedMessageForMetaMaskSigUtil, getSafeTypedData } from '../signMessage/signMessage'
+import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 
 const multiCallAbi = [
   { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
@@ -238,8 +238,7 @@ export function getDefaultOwners(
     .slice(0, leftToSign)
 }
 
-export function getSafeTxnHash(txn: SafeTx, chainId: bigint, safeAddress: Hex) {
-  const typedData = getSafeTypedData(chainId, safeAddress, txn)
+export function getSafeTxnHash(typedData: TypedMessageUserRequest['meta']['params']) {
   return `0x${TypedDataUtils.eip712Hash(
     adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
     SignTypedDataVersion.V4
@@ -251,7 +250,8 @@ export async function propose(
   chainId: bigint,
   safeAddress: Hex,
   owner: Hex,
-  ownerSig: Hex
+  ownerSig: Hex,
+  safeTxHash: string
 ) {
   const apiKit = new SafeApiKit({
     chainId,
@@ -260,7 +260,7 @@ export async function propose(
 
   const proposeTransactionProps: ProposeTransactionProps = {
     safeAddress: getAddress(safeAddress),
-    safeTxHash: getSafeTxnHash(txn, chainId, safeAddress),
+    safeTxHash: safeTxHash,
     safeTransactionData: {
       ...txn,
       to: getAddress(txn.to),
@@ -277,12 +277,12 @@ export async function propose(
   return apiKit.proposeTransaction(proposeTransactionProps)
 }
 
-export async function confirm(txn: SafeTx, chainId: bigint, safeAddress: Hex, ownerSig: Hex) {
+export async function confirm(chainId: bigint, ownerSig: Hex, safeTxHash: string) {
   const apiKit = new SafeApiKit({
     chainId,
     apiKey: process.env.SAFE_API_KEY
   })
-  return apiKit.confirmTransaction(getSafeTxnHash(txn, chainId, safeAddress), ownerSig)
+  return apiKit.confirmTransaction(safeTxHash, ownerSig)
 }
 
 export async function addMessage(

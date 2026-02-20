@@ -78,6 +78,7 @@ import {
 } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { Safe } from '../../libs/account/Safe'
 import {
   AccountOp,
   AccountOpWithId,
@@ -121,7 +122,6 @@ import {
   getEIP712Signature,
   getEntryPointAuthorization,
   getExecuteSignature,
-  getSafeTypedData,
   getTypedData,
   wrapStandard,
   wrapUnprotected
@@ -2502,16 +2502,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const nowSignedSigs: Hex[] = []
         const signers = this.accountOp.signers!
         const safeTxn = getSafeTxn(this.accountOp, accountState)
-        const safeTxnHash = getSafeTxnHash(safeTxn, this.#network.chainId, this.account.addr as Hex)
+        const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
+        const safeTxnHash = getSafeTxnHash(typedData)
 
         for (let i = 0; i < signers.length; i++) {
           // sign with the current signer
           const safeKey = signers[i]!
           const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
           if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
-          const signature = (await safeSigner.signTypedData(
-            getSafeTypedData(this.#network.chainId, this.account.addr as Hex, safeTxn)
-          )) as Hex
+          const signature = (await safeSigner.signTypedData(typedData)) as Hex
           nowSignedSigs.push(signature)
 
           // emit update only if the loop is to continue
@@ -2545,11 +2544,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
                 this.accountOp.chainId,
                 this.account.addr as Hex,
                 safeKey.addr as Hex,
-                sig
+                sig,
+                safeTxnHash
               )
             } else {
               // add extra confirmations
-              await confirm(safeTxn, this.accountOp.chainId, this.account.addr as Hex, sig)
+              await confirm(this.accountOp.chainId, sig, safeTxnHash)
             }
           }
 
