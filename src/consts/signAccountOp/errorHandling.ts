@@ -36,7 +36,7 @@ const WARNINGS: { [key: string]: Warning } = {
   },
   v1Acc: {
     id: 'v1Acc',
-    title: 'You can only broadcast transactions for V1 accounts from an EOA'
+    title: 'You can only broadcast transactions for Ambire v1 accounts from an EOA'
   }
 }
 
