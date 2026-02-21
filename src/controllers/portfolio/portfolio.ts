@@ -1229,7 +1229,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
     if (!network) return undefined
 
-    const baseAcc = getBaseAccount(acc, networkState, this.#keystore.getAccountKeys(acc), network)
+    const baseAcc = getBaseAccount(acc, networkState, network)
     return baseAcc.getNonceId()
   }
 
@@ -1366,6 +1366,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             discoveryResponse?.data?.hints
           )
 
+          const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null
           const isSuccessful = await this.updatePortfolioState(
             selectedAccount,
             network,
@@ -1375,9 +1376,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               isManualUpdate,
               blockTag: 'both',
               ...(currentAccountOps &&
+                baseAcc &&
                 state && {
                   simulation: {
-                    account: selectedAccount,
+                    baseAccount: baseAcc,
                     accountOps: currentAccountOps,
                     state
                   }

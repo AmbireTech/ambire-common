@@ -1,6 +1,9 @@
+import { EIP712TypedData } from '@safe-global/types-kit'
+
 import { TokenResult } from '../libs/portfolio'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
+import { Hex } from './hex'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 import { CallsUserRequest, RequestExecutionType, RequestPosition } from './userRequest'
 
@@ -66,5 +69,15 @@ export type BuildRequest =
         recipientAddress: string
         selectedToken: TokenResult
         executionType: RequestExecutionType
+      }
+    }
+  | {
+      type: 'safeSignMessageRequest'
+      params: {
+        chainId: bigint
+        signed: string[]
+        message: Hex | EIP712TypedData
+        messageHash: Hex
+        created: number
       }
     }

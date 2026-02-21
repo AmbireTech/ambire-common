@@ -247,7 +247,6 @@ describe('Activity Controller ', () => {
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
       accounts: accountsCtrl,
-      keystore,
       autoLogin: autoLoginCtrl
     })
 

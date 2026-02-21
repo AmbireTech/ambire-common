@@ -1,24 +1,21 @@
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { canBecomeSmarterOnChain } from './account'
 import { BaseAccount } from './BaseAccount'
 import { EOA } from './EOA'
 import { EOA7702 } from './EOA7702'
+import { Safe } from './Safe'
 import { V1 } from './V1'
 import { V2 } from './V2'
 
 export function getBaseAccount(
   account: Account,
   accountState: AccountOnchainState,
-  accountKeys: Key[],
   network: Network
 ): BaseAccount {
+  if (account.safeCreation) return new Safe(account, network, accountState)
   if (accountState.isEOA) {
-    if (
-      accountState.isSmarterEoa ||
-      canBecomeSmarterOnChain(network, account, accountState, accountKeys)
-    ) {
+    if (accountState.isSmarterEoa || canBecomeSmarterOnChain(network, account, accountState)) {
       return new EOA7702(account, network, accountState)
     }
 

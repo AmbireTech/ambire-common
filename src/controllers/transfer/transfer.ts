@@ -816,13 +816,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
-    )
-
+    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const accountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,

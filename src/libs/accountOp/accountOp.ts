@@ -1,4 +1,6 @@
-import { AbiCoder, getBytes, Interface, isAddress, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
+
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
@@ -42,6 +44,8 @@ export interface AccountOp {
   accountAddr: string
   chainId: bigint
   // this may not be defined, in case the user has not picked a key yet
+  // also, this represents the last signer (if it's only 1, the only signer,
+  // but in case of multi-sig accounts, the last signer will be saved)
   signingKeyAddr: Key['addr'] | null
   signingKeyType: Key['type'] | null
   // this may not be set in case we haven't set it yet
@@ -64,6 +68,12 @@ export interface AccountOp {
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
   asUserOperation?: UserOperation
+  // multiple signers use case
+  // all the signers that are to sign the transaction
+  signers?: { addr: Key['addr']; type: Key['type'] }[]
+  // who are the signers that already signed this txn
+  signed?: string[]
+  safeTx?: SafeMultisigTransactionResponse
   // all kinds of custom accountOp properties that are needed in specific cases
   meta?: {
     // pass the entry point authorization signature for the deploy 4337 txn

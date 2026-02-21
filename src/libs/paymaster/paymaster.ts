@@ -25,12 +25,12 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
-import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
+import { getFeeTokenForEstimate, getSigForCalculations } from '../estimate/estimateHelpers'
 import { BundlerEstimateResult } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { UserOperation } from '../userOperation/types'
-import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
+import { getCleanUserOp } from '../userOperation/userOperation'
 import { AbstractPaymaster } from './abstractPaymaster'
 
 /**

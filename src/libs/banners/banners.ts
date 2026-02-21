@@ -1,10 +1,11 @@
-import { AccountId } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
+import { getSameNonceRequests } from '../safe/safe'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -107,7 +108,38 @@ export const getBridgeBanners = (
   return banners
 }
 
-export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[] => {
+export const getSafeMessageRequestBanners = (
+  account: Account,
+  userRequests: UserRequest[]
+): Banner[] => {
+  if (!account.safeCreation) return []
+
+  const requests = userRequests.filter(
+    (r) => ['message', 'typedMessage', 'siwe'].includes(r.kind) && r.meta.created
+  )
+  if (!requests.length) return []
+
+  return [
+    {
+      id: 'safe-message-request-banner',
+      type: 'info',
+      title: `You have ${requests.length} pending signature request${requests.length > 1 ? 's' : ''}`,
+      text: '',
+      actions: [
+        {
+          actionName: 'open-pending-dapp-requests'
+        }
+      ]
+    }
+  ]
+}
+
+export const getDappUserRequestsBanners = (
+  account: Account,
+  userRequests: UserRequest[]
+): Banner[] => {
+  if (!!account.safeCreation) return []
+
   const requests = userRequests.filter(
     (r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind)
   )
@@ -128,6 +160,30 @@ export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[
   ]
 }
 
+const getSafeBanner = ({
+  requests,
+  network,
+  selectedAccount
+}: {
+  requests: CallsUserRequest[]
+  network: Network
+  selectedAccount: Account
+}): Banner => {
+  return {
+    id: `${selectedAccount.addr}-${network.chainId.toString()}`,
+    type: 'info',
+    category: 'pending-to-be-signed-acc-op',
+    title: `Pending transactions ${network.name ? `on ${network.name}` : ''}`,
+    text: `${requests.length} transactions are mutually exclusive (Same nonce).\nYou can sign only one.`,
+    actions: [
+      {
+        actionName: 'open-accountOp',
+        meta: { requestId: requests[0]!.id }
+      }
+    ]
+  }
+}
+
 export const getAccountOpBanners = ({
   callsUserRequestsByNetwork,
   selectedAccount,
@@ -136,20 +192,34 @@ export const getAccountOpBanners = ({
   callsUserRequestsByNetwork: {
     [key: string]: CallsUserRequest[]
   }
-
-  selectedAccount: string
+  selectedAccount: Account
   networks: Network[]
 }): Banner[] => {
   if (!callsUserRequestsByNetwork) return []
+
   const txnBanners: Banner[] = []
 
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
-    requests.forEach((request) => {
+    let remainingRequests: CallsUserRequest[] = []
+    if (!!selectedAccount.safeCreation && requests.length > 1) {
+      const sameNonceRequests = getSameNonceRequests(requests)
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
+      Object.keys(sameNonceRequests).forEach((nonce) => {
+        const grouped = sameNonceRequests[nonce]!
+        if (grouped.length === 1) {
+          remainingRequests = [...remainingRequests, ...grouped]
+          return
+        }
+        txnBanners.push(getSafeBanner({ requests: grouped, network, selectedAccount }))
+      })
+    } else remainingRequests = requests
+
+    remainingRequests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
       const callCount = request.signAccountOp.accountOp.calls.length
 
       txnBanners.push({
-        id: `${selectedAccount}-${netId}`,
+        id: `${selectedAccount.addr}-${netId}`,
         type: 'info',
         category: 'pending-to-be-signed-acc-op',
         title: `${
