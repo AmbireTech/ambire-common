@@ -370,6 +370,7 @@ const shouldBuildApproval = async (
       })
     )
   } catch (e) {
+    console.log(`Checking allowance to ${userTx.approvalData.approvalTokenAddress} failed`, e)
     // if the provider fails for whatever reason, keep it safe
     // and make an approval
     return {
