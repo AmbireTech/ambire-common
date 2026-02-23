@@ -149,7 +149,8 @@ const portfolioCtrl = new PortfolioController(
 const safe = new SafeController({
   networks: networksCtrl,
   providers: providersCtrl,
-  storage: storageCtrl
+  storage: storageCtrl,
+  accounts: accountsCtrl
 })
 
 const activityCtrl = new ActivityController(

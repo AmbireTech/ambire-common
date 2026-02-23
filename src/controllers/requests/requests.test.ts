@@ -189,7 +189,8 @@ const prepareTest = async () => {
   const safe = new SafeController({
     networks: networksCtrl,
     providers: providersCtrl,
-    storage: storageCtrl
+    storage: storageCtrl,
+    accounts: accountsCtrl
   })
   const activityCtrl = new ActivityController(
     storageCtrl,
