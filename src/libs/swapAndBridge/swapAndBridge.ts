@@ -9,6 +9,7 @@ import {
 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { MAX_UINT256 } from '../../consts/deploy'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -247,7 +248,7 @@ export const getIsTokenEligibleForSwapAndBridge = (
   const amount =
     token.amountPostSimulation === 0n && token.amount > 0n
       ? token.amount
-      : token.amountPostSimulation ?? token.amount
+      : (token.amountPostSimulation ?? token.amount)
   const hasPositiveBalance = Number(amount) > 0
 
   return flagsRequirement && hasPositiveBalance
@@ -340,6 +341,49 @@ const buildRevokeApprovalIfNeeded = async (
   }
 }
 
+// check if the user the needed amount already approved and if
+// he does, do not build a new approval
+const shouldBuildApproval = async (
+  userTx: SwapAndBridgeSendTxRequest,
+  account: Account,
+  provider: RPCProvider
+): Promise<{ shouldBuild: boolean; allowance?: bigint }> => {
+  if (!userTx.approvalData)
+    return {
+      shouldBuild: false,
+      allowance: 0n
+    }
+
+  const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider)
+  const allowanceCallData = erc20Contract.interface.encodeFunctionData('allowance', [
+    account.addr,
+    userTx.approvalData.allowanceTarget
+  ])
+
+  let allowance = 0n
+  try {
+    allowance = BigInt(
+      await provider.call({
+        from: account.addr,
+        to: userTx.approvalData.approvalTokenAddress,
+        data: allowanceCallData
+      })
+    )
+  } catch (e) {
+    console.log(`Checking allowance to ${userTx.approvalData.approvalTokenAddress} failed`, e)
+    // if the provider fails for whatever reason, keep it safe
+    // and make an approval
+    return {
+      shouldBuild: true
+    }
+  }
+
+  return {
+    shouldBuild: allowance < BigInt(userTx.approvalData.minimumApprovalAmount),
+    allowance
+  }
+}
+
 const getSwapAndBridgeCalls = async (
   userTx: SwapAndBridgeSendTxRequest,
   account: Account,
@@ -347,11 +391,21 @@ const getSwapAndBridgeCalls = async (
   state: AccountOnchainState
 ): Promise<Call[]> => {
   const calls: Call[] = []
-  if (userTx.approvalData) {
+  const allowanceData = await shouldBuildApproval(userTx, account, provider)
+  if (userTx.approvalData && allowanceData.shouldBuild) {
     const erc20Interface = new Interface(ERC20.abi)
 
-    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
-    if (revokeApproval) calls.push(revokeApproval)
+    // if the allowance is not 0 and not MAX but anything between,
+    // check if we need to do a revoke first
+    // USDT on Ethereum being one example for this
+    if (
+      allowanceData.allowance !== undefined &&
+      allowanceData.allowance > 0n &&
+      allowanceData.allowance < MAX_UINT256
+    ) {
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
+      if (revokeApproval) calls.push(revokeApproval)
+    }
 
     calls.push({
       id: `${userTx.activeRouteId}-approval`,

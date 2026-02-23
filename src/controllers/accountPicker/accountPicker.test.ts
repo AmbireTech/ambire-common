@@ -238,12 +238,11 @@ describe('AccountPicker', () => {
       .filter(({ slot }) => slot === 3)
       .map(({ account }) => account.addr)
 
-    // These accounts was manually added as signers to our test accounts
+    // These accounts were manually added as signers to our test accounts
     expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
     expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
-    expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
-    expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
-    expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
+    expect(accountsOnSlot3).toContain('0xbEC6dB2638b29ffEf42df2B5B76B531d420FF18E')
+    expect(accountsOnSlot3).toContain('0x997dF27B04C89796254e61B71c112250dE87a803')
   })
 
   test('should be able to select and then deselect an account', async () => {
