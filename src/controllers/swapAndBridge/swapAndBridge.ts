@@ -753,6 +753,22 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // a chain that doesn't support our smart accounts as those funds
     // would be stuck
     if (isSmartAccount(this.#selectedAccount.account)) {
+      if (this.#selectedAccount.account?.safeCreation) {
+        return this.#cachedSupportedChains.data
+          .filter((c) => {
+            const network = this.#networks.networks.find((net) => net.chainId === BigInt(c.chainId))
+            if (!network) return false
+
+            // eligible networks are only those that safe is deployed on
+            return !!(
+              this.#selectedAccount.account &&
+              this.#accounts.accountStates[this.#selectedAccount.account.addr]?.[c.chainId]
+                ?.isDeployed
+            )
+          })
+          .map((c) => BigInt(c.chainId))
+      }
+
       return this.#cachedSupportedChains.data
         .filter((c) => {
           const network = this.#networks.networks.find((net) => net.chainId === BigInt(c.chainId))
@@ -2356,12 +2372,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
       [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
-    )
+    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const swapSponsorship = getSwapSponsorship({
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,

@@ -7,7 +7,6 @@ import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
@@ -45,8 +44,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #networks: INetworksController | null = null
 
-  #keystore: IKeystoreController | null = null
-
   #providers: IProvidersController | null = null
 
   account: Account | null = null
@@ -81,20 +78,17 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     eventEmitterRegistry,
     storage,
     accounts,
-    keystore,
     autoLogin
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
-    keystore: IKeystoreController
     autoLogin: IAutoLoginController
   }) {
     super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts
-    this.#keystore = keystore
     this.#autoLogin = autoLogin
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises

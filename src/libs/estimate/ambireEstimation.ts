@@ -9,7 +9,7 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
+import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
@@ -19,6 +19,7 @@ import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { GasTankTokenResult, TokenResult } from '../portfolio'
+import { isNative } from '../portfolio/helpers'
 import { getActivatorCall } from '../userOperation/userOperation'
 import { AmbireEstimation, EstimationFlags, FeePaymentOption } from './interfaces'
 
@@ -78,13 +79,14 @@ export async function ambireEstimateGas(
     calls.push(getActivatorCall(op.accountAddr))
   }
 
-  const isStillPureEoa = accountState.isEOA && !accountState.isSmarterEoa
+  const shouldStateOverride =
+    !network.rpcNoStateOverride && baseAcc.shouldStateOverrideDuringSimulations()
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
     [account.addr, op.nonce || 1, calls, '0x'],
     getProbableCallData(op, accountState, baseAcc.shouldIncludeActivatorCall()),
-    account.associatedKeys,
+    shouldStateOverride ? [account.addr] : account.associatedKeys,
     feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,
@@ -94,8 +96,8 @@ export async function ambireEstimateGas(
     .call('estimate', checkInnerCallsArgs, {
       from: DEPLOYLESS_SIMULATION_FROM,
       blockTag: getPendingBlockTagIfSupported(network),
-      mode: isStillPureEoa ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-      stateToOverride: isStillPureEoa ? getEoaSimulationStateOverride(account.addr) : null
+      mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+      stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(account.addr) : null
     })
     .catch(getHumanReadableEstimationError)
 
@@ -121,7 +123,7 @@ export async function ambireEstimateGas(
 
   // if there's a nonce discrepancy, it means the portfolio simulation
   // will fail so we need to update the account state and the portfolio
-  const opNonce = isStillPureEoa ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
+  const opNonce = shouldStateOverride ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
   const nonceError = getNonceDiscrepancyFailure(opNonce, outcomeNonce)
   const flags: EstimationFlags = {}
   flags.hasInitialGasLimitFailed = accountOp.initialGasLimitFailed
@@ -159,6 +161,11 @@ export async function ambireEstimateGas(
         feeTokenOutcomes[key].amount > token.amount
       )
         availableAmount = token.amount
+
+      // we make the native amount 0 as we always want to show it for better UX
+      if (isNative(token) && !baseAcc.canBroadcastByItself()) {
+        availableAmount = 0
+      }
 
       return {
         paidBy: account.addr,
@@ -198,11 +205,17 @@ export async function ambireEstimateGas(
     })
   )
 
+  const ambireAccountNonce = shouldStateOverride
+    ? Number(op.nonce!)
+    : accountOp.success
+      ? Number(outcomeNonce - 1n)
+      : Number(outcomeNonce)
+
   return {
     gasUsed,
     deploymentGas: deployment.gasUsed,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    ambireAccountNonce: accountOp.success ? Number(outcomeNonce - 1n) : Number(outcomeNonce),
+    ambireAccountNonce,
     flags
   }
 }

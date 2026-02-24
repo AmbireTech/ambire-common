@@ -1,5 +1,6 @@
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   AssetType,
@@ -12,7 +13,7 @@ import {
 
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
-  account: Account
+  baseAccount: BaseAccount
   state: AccountOnchainState
 }
 export type TokenError = string | '0x'

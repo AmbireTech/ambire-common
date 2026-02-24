@@ -4,7 +4,7 @@ import { getDomain } from 'tldts'
 import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
-import { IAccountsController } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import {
   AutoLoginPoliciesByAccount,
   AutoLoginPolicy,
@@ -293,8 +293,12 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   #getPolicyStatus(
     parsedSiwe: SiweMessageType,
-    accountKeys: Key[]
+    accountKeys: Key[],
+    account: Account
   ): 'no-policy' | 'expired' | 'valid-policy' | 'unsupported' {
+    // disable the auto login for safe accounts
+    if (account.safeCreation) return 'unsupported'
+
     const accountPolicies = this.getAccountPolicies(parsedSiwe.address)
 
     let policy = accountPolicies.find((p) => {
@@ -398,7 +402,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     const accountKeys = this.#keystore.getAccountKeys(accountData)
 
-    const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys)
+    const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys, accountData)
 
     switch (policyStatus) {
       case 'valid-policy':
@@ -443,7 +447,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       }
     })
 
-    this.#signMessage.setSigningKey(key.addr, key.type)
+    this.#signMessage.setSigners([{ addr: key.addr, type: key.type }])
 
     await this.#signMessage.sign()
 

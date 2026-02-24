@@ -189,7 +189,8 @@ export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
 export const isAmbireV2Account = (factoryAddr?: string) =>
   factoryAddr && getAddress(factoryAddr) === AMBIRE_ACCOUNT_FACTORY
 
-export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
+export const isSmartAccount = (account?: Account | null) =>
+  !!account && (!!account.creation || !!account.safeCreation)
 
 /**
  * Checks if a (basic) EOA account is a derived one,
@@ -310,7 +311,7 @@ export function getUniqueAccountsArray(accounts: Account[]) {
 // use this in cases where you strictly want to enable/disable an action for
 // EOAs (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
-  return !account.creation && !state.isSmarterEoa
+  return !account.creation && !account.safeCreation && !state.isSmarterEoa
 }
 
 const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice']
@@ -327,22 +328,21 @@ export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
 export function canBecomeSmarterOnChain(
   network: Network,
   acc: Account,
-  state: AccountOnchainState,
-  accKeys: Key[]
+  state: AccountOnchainState
 ): boolean {
   return (
     has7702(network) &&
     isBasicAccount(acc, state) &&
-    !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
+    !!state.importedAccountKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
   )
 }
 
 export function hasBecomeSmarter(account: Account, state: AccountStates) {
   if (!state[account.addr]) return false
 
-  const networks = Object.keys(state[account.addr])
+  const networks = Object.keys(state[account.addr]!)
   for (let i = 0; i < networks.length; i++) {
-    const onChainState = state[account.addr][networks[i]]
+    const onChainState = state[account.addr]![networks[i]!]
     // eslint-disable-next-line no-continue
     if (!onChainState) continue
 

@@ -26,9 +26,9 @@ import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { SafeTx } from '../../interfaces/safe'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
@@ -492,13 +492,26 @@ export async function getPlainTextSignature(
   accountState: AccountOnchainState,
   signer: KeystoreSignerInterface,
   isOG = false
-): Promise<string> {
+): Promise<{ signature: Hex; hash?: Hex }> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
-  if (!account.creation) {
-    const signature = await signer.signMessage(messageHex)
-    return signature
+  if (!!account.safeCreation) {
+    // safe always signs a typed data, even if plain sig
+    const typedData = getSafeTypedDataForIsValidSignature(
+      network.chainId,
+      account.addr as Hex,
+      hashMessage(getBytes(messageHex))
+    )
+    return {
+      signature: (await signer.signTypedData(typedData)) as Hex,
+      hash: `0x${TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+        SignTypedDataVersion.V4
+      ).toString('hex')}`
+    }
   }
+
+  if (!account.creation) return { signature: (await signer.signMessage(messageHex)) as Hex }
 
   if (!accountState.isV2) {
     const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
@@ -523,12 +536,12 @@ export async function getPlainTextSignature(
       )
     }
 
-    return wrapUnprotected(await signer.signMessage(messageHex))
+    return { signature: wrapUnprotected(await signer.signMessage(messageHex)) as Hex }
   }
 
   // if it's safe, we proceed
   if (dedicatedToOneSA) {
-    return wrapUnprotected(await signer.signMessage(messageHex))
+    return { signature: wrapUnprotected(await signer.signMessage(messageHex)) as Hex }
   }
 
   // in case of only_standard priv key, we transform the data
@@ -538,7 +551,7 @@ export async function getPlainTextSignature(
   // could be phishing him into approving an Ambire Op without him
   // knowing
   const typedData = getTypedData(network!.chainId, account.addr, hashMessage(getBytes(messageHex)))
-  return wrapStandard(await signer.signTypedData(typedData))
+  return { signature: wrapStandard(await signer.signTypedData(typedData)) as Hex }
 }
 
 export async function getEIP712Signature(
@@ -548,7 +561,7 @@ export async function getEIP712Signature(
   signer: KeystoreSignerInterface,
   network: Network,
   isOG = false
-): Promise<string> {
+): Promise<{ signature: Hex; hash?: Hex }> {
   if (!message.types.EIP712Domain) {
     throw new Error(
       'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
@@ -560,10 +573,26 @@ export async function getEIP712Signature(
     )
   }
 
-  if (!account.creation) {
-    const signature = await signer.signTypedData(message)
-    return signature
+  if (!!account.safeCreation) {
+    // safe wraps the EIP-712 message in it's own EIP-712
+    const typedData = getSafeTypedDataForIsValidSignature(
+      network.chainId,
+      account.addr as Hex,
+      `0x${TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil({ ...message }),
+        SignTypedDataVersion.V4
+      ).toString('hex')}`
+    )
+    return {
+      signature: (await signer.signTypedData(typedData)) as Hex,
+      hash: `0x${TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+        SignTypedDataVersion.V4
+      ).toString('hex')}`
+    }
   }
+
+  if (!account.creation) return { signature: (await signer.signTypedData(message)) as Hex }
 
   if (!accountState.isV2) {
     const asString = JSON.stringify(message).toLowerCase()
@@ -586,7 +615,7 @@ export async function getEIP712Signature(
       )
     }
 
-    return wrapUnprotected(await signer.signTypedData(message))
+    return { signature: wrapUnprotected(await signer.signTypedData(message)) as Hex }
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
@@ -616,10 +645,10 @@ export async function getEIP712Signature(
     )
     const ambireOperation = getTypedData(ambireReadableOperation.chainId, account.addr, hash)
     const signature = wrapStandard(await signer.signTypedData(ambireOperation))
-    return wrapWallet(signature, account.addr)
+    return { signature: wrapWallet(signature, account.addr) as Hex }
   }
 
-  return wrapUnprotected(await signer.signTypedData(message))
+  return { signature: wrapUnprotected(await signer.signTypedData(message)) as Hex }
 }
 
 // get the typedData for the first ERC-4337 deploy txn
@@ -718,4 +747,113 @@ export const toPersonalSignHex = (input: string | Uint8Array | Hex): Hex => {
   }
 
   return hexlify(input) as Hex
+}
+
+export const getSafeTypedData = (
+  chainId: bigint,
+  safeAddr: Hex,
+  safeTx: SafeTx
+): TypedMessageUserRequest['meta']['params'] => {
+  const domain: TypedDataDomain = {
+    chainId: chainId.toString(),
+    verifyingContract: safeAddr
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'chainId',
+        type: 'uint256'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      }
+    ],
+    SafeTx: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' },
+      { name: 'safeTxGas', type: 'uint256' },
+      { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' },
+      { name: 'gasToken', type: 'address' },
+      { name: 'refundReceiver', type: 'address' },
+      { name: 'nonce', type: 'uint256' }
+    ]
+  }
+
+  return {
+    domain,
+    types,
+    message: safeTx,
+    primaryType: 'SafeTx'
+  }
+}
+
+export const getSafeV1TypedData = (
+  safeAddr: Hex,
+  safeTx: SafeTx
+): TypedMessageUserRequest['meta']['params'] => {
+  const domain: TypedDataDomain = {
+    verifyingContract: safeAddr
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      }
+    ],
+    SafeTx: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' },
+      { name: 'safeTxGas', type: 'uint256' },
+      { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' },
+      { name: 'gasToken', type: 'address' },
+      { name: 'refundReceiver', type: 'address' },
+      { name: 'nonce', type: 'uint256' }
+    ]
+  }
+
+  return {
+    domain,
+    types,
+    message: safeTx,
+    primaryType: 'SafeTx'
+  }
+}
+
+export const getSafeTypedDataForIsValidSignature = (
+  chainId: bigint,
+  safeAddr: Hex,
+  hash: string
+): TypedMessageUserRequest['meta']['params'] => {
+  const domain: TypedDataDomain = {
+    chainId: chainId.toString(),
+    verifyingContract: safeAddr
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'chainId',
+        type: 'uint256'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      }
+    ],
+    SafeMessage: [{ name: 'message', type: 'bytes' }]
+  }
+
+  return {
+    domain,
+    types,
+    message: { message: hash },
+    primaryType: 'SafeMessage'
+  }
 }

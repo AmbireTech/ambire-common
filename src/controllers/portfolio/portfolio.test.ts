@@ -59,7 +59,7 @@ networks.forEach((network) => {
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()]!, network, accounts)
+      getAccountState(providers[network.chainId.toString()]!, network, accounts, [])
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {

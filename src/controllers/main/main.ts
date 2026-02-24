@@ -37,9 +37,11 @@ import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
+/* eslint-disable no-underscore-dangle */
+import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
-import { ISignMessageController } from '../../interfaces/signMessage'
+import { ISignMessageController, SignMessageStatus } from '../../interfaces/signMessage'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
@@ -50,12 +52,11 @@ import { getDefaultSelectedAccount } from '../../libs/account/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-/* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '../../libs/safe/safe'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
-/* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { SocketAPI } from '../../services/socket/api'
@@ -65,6 +66,8 @@ import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+/* eslint-disable no-await-in-loop */
+import { SignedMessage } from '../activity/types'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
@@ -83,6 +86,7 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpType } from '../signAccountOp/helper'
 import { OnboardingSuccessProps } from '../signAccountOp/signAccountOp'
@@ -177,6 +181,8 @@ export class MainController extends EventEmitter implements IMainController {
   ui: IUiController
 
   #continuousUpdates: ContinuousUpdatesController | undefined
+
+  safe: ISafeController
 
   get continuousUpdates() {
     return this.#continuousUpdates
@@ -287,11 +293,17 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry
     )
+    this.safe = new SafeController({
+      eventEmitterRegistry,
+      networks: this.networks,
+      providers: this.providers,
+      storage: this.storage,
+      accounts: this.accounts
+    })
     this.selectedAccount = new SelectedAccountController({
       eventEmitterRegistry,
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore,
       autoLogin: this.autoLogin
     })
     this.banner = new BannerController(this.storage, eventEmitterRegistry)
@@ -376,6 +388,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.networks,
       this.portfolio,
+      this.safe,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
@@ -426,7 +439,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       getUserRequests: () => this.requests.userRequests || [],
       getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
-      onBroadcastSuccess: this.#commonHandlerForBroadcastSuccess.bind(this),
+      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
     this.transfer = new TransferController(
@@ -444,7 +457,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers,
       this.phishing,
       relayerUrl,
-      this.#commonHandlerForBroadcastSuccess.bind(this),
+      this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       eventEmitterRegistry
     )
@@ -495,6 +508,7 @@ export class MainController extends EventEmitter implements IMainController {
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
+      safe: this.safe,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
       getDapp: async (id) => {
@@ -515,7 +529,7 @@ export class MainController extends EventEmitter implements IMainController {
           submittedAccountOp.accountAddr,
           submittedAccountOp.chainId
         )
-        await this.#commonHandlerForBroadcastSuccess(props)
+        await this.commonHandlerForBroadcastSuccess(props)
         // resolve dapp requests, open benzin and etc only if the main sign accountOp
         this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
@@ -583,6 +597,7 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
+        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
       }
     })
 
@@ -616,6 +631,8 @@ export class MainController extends EventEmitter implements IMainController {
       if (!this.accounts.areAccountStatesLoading) {
         this.accounts.updateAccountState(selectedAccountAddr)
       }
+
+      this.fetchSafeTxns().catch((e) => e) // we catch the error inside
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -704,6 +721,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
+
+    this.fetchSafeTxns().catch((e) => e) // we catch the error inside.catch((e) => e) // we catch the error inside
   }
 
   async #onAccountPickerSuccess() {
@@ -739,7 +758,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
   }
 
-  async #commonHandlerForBroadcastSuccess({
+  async commonHandlerForBroadcastSuccess({
     submittedAccountOp,
     accountOp,
     fromRequestId
@@ -917,6 +936,29 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
+  async #resolveSignMessage(signedMessage: SignedMessage) {
+    // The user may sign an invalid siwe message. We don't want to create policies
+    // for such messages
+    if (
+      signedMessage.content.kind === 'siwe' &&
+      signedMessage.content.parsedMessage &&
+      signedMessage.content.siweValidityStatus === 'valid'
+    ) {
+      await this.autoLogin.onSiweMessageSigned(
+        signedMessage.content.parsedMessage,
+        signedMessage.content.isAutoLoginEnabledByUser,
+        signedMessage.content.autoLoginDuration
+      )
+    }
+
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+
+    await this.requests.resolveUserRequest(
+      { hash: signedMessage.signature },
+      signedMessage.fromRequestId
+    )
+  }
+
   async handleSignMessage() {
     const accountAddr = this.signMessage.messageToSign?.accountAddr
     const chainId = this.signMessage.messageToSign?.chainId
@@ -939,31 +981,20 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     await this.signMessage.sign()
-
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
 
-    // The user may sign an invalid siwe message. We don't want to create policies
-    // for such messages
-    if (
-      signedMessage.content.kind === 'siwe' &&
-      signedMessage.content.parsedMessage &&
-      signedMessage.content.siweValidityStatus === 'valid'
-    ) {
-      await this.autoLogin.onSiweMessageSigned(
-        signedMessage.content.parsedMessage,
-        signedMessage.content.isAutoLoginEnabledByUser,
-        signedMessage.content.autoLoginDuration
-      )
+    // some accounts may not resolve immediately, like a safe acc
+    if (this.signMessage.status === SignMessageStatus.Done) {
+      await this.#resolveSignMessage(signedMessage)
+    } else if (this.signMessage.status === SignMessageStatus.Partial) {
+      // mark the request so it doesn't get removed on close
+      this.requests.setPartiallyCompleteRequest(signedMessage.fromRequestId, {
+        signed: this.signMessage.signed,
+        hash: this.signMessage.hash
+      })
     }
-
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-
-    await this.requests.resolveUserRequest(
-      { hash: signedMessage.signature },
-      signedMessage.fromRequestId
-    )
 
     await this.ui.notification.create({
       title: 'Done!',
@@ -1114,10 +1145,16 @@ export class MainController extends EventEmitter implements IMainController {
       chainsToUpdate: [],
       portfoliosToUpdate: {},
       updatedAccountsOps: [],
-      newestOpTimestamp: 0
+      newestOpTimestamp: 0,
+      shouldFetchSafeTxns: false
     }
-    const { shouldEmitUpdate, chainsToUpdate, portfoliosToUpdate, newestOpTimestamp } =
-      updatedAccountsOpsForSelectedAccount
+    const {
+      shouldEmitUpdate,
+      chainsToUpdate,
+      portfoliosToUpdate,
+      newestOpTimestamp,
+      shouldFetchSafeTxns
+    } = updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
@@ -1153,6 +1190,8 @@ export class MainController extends EventEmitter implements IMainController {
           })
         }
       }
+
+      if (shouldFetchSafeTxns) this.fetchSafeTxns().catch((e) => e) // we catch the error inside
     }
 
     return { newestOpTimestamp }
@@ -1172,32 +1211,24 @@ export class MainController extends EventEmitter implements IMainController {
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
+  // remove all keys that have this addr
   #removeAccountKeyData(address: Account['addr']) {
-    // Compute account keys that are only associated with this account
-    const accountAssociatedKeys =
-      this.accounts.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
-    const keysInKeystore = this.keystore.keys
-    const importedAccountKeys = keysInKeystore.filter((key) =>
-      accountAssociatedKeys.includes(key.addr)
-    )
-    const solelyAccountKeys = importedAccountKeys.filter((key) => {
-      const isKeyAssociatedWithOtherAccounts = this.accounts.accounts.some(
-        (acc) => acc.addr !== address && acc.associatedKeys.includes(key.addr)
-      )
-
-      return !isKeyAssociatedWithOtherAccounts
-    })
-
-    // Remove account keys from the keystore
-    solelyAccountKeys.forEach((key) => {
-      this.keystore.removeKey(key.addr, key.type).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key',
-          error: e
+    this.keystore.keys
+      .filter((key) => key.addr === address)
+      .forEach((key) => {
+        this.keystore.removeKey(key.addr, key.type).catch((e) => {
+          throw new EmittableError({
+            level: 'major',
+            message: 'Failed to remove account key',
+            error: e
+          })
         })
       })
-    })
+    // the keystore doesn't update after key removals so we
+    // force update it here. Main controller updates don't propagate
+    // to the keystore
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.keystore.forceEmitUpdate()
   }
 
   async #removeAccount(address: Account['addr']) {
@@ -1272,6 +1303,74 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
+    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
+  }
+
+  /**
+   * Fetch safe txns from safe global and make them user requests
+   * if the selected account is a safe
+   */
+  async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    if (!this.selectedAccount?.account?.safeCreation) return
+    // cache the addr here to prevent race conditions
+    const safeAddr = this.selectedAccount?.account?.addr as Hex
+
+    const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
+    if (!accountState) return
+
+    const finalChainIds = chainIds.length
+      ? chainIds
+      : this.networks.networks
+          .filter((n) => {
+            // fetch info only about deployed safes
+            const state = accountState?.[n.chainId.toString()]
+            return state?.isDeployed
+          })
+          .map((n) => n.chainId)
+
+    const networksAndThresholds = finalChainIds.map((c) => ({
+      chainId: c,
+      threshold: accountState[c.toString()]?.threshold || 0
+    }))
+
+    const res: SafeResults | null = await this.safe
+      .fetchPending(safeAddr, networksAndThresholds, !!chainIds.length || forceRefetch)
+      .catch((e) => {
+        console.log(e)
+        console.log('failed to retrieve pending safe txns')
+        return null
+      })
+
+    if (!res) return
+
+    // build txn requests
+    const txnRequest = toCallsUserRequest(safeAddr, res)
+    for (let i = 0; i < txnRequest.length; i++) {
+      // build the requests only if the selected account hasn't changed
+      if (this.selectedAccount?.account?.addr === safeAddr)
+        await this.requests.build(txnRequest[i]!).catch((e) => e)
+    }
+
+    // build and resolve message requests
+    const messageRequests = toSigMessageUserRequests(res)
+    for (let i = 0; i < messageRequests.length; i++) {
+      const req = messageRequests[i]!
+      const userRequest = this.requests.userRequests.find(
+        (u) =>
+          u.meta.accountAddr === safeAddr &&
+          u.meta.chainId === req.params.chainId &&
+          (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+          u.meta.hash === req.params.messageHash
+      )
+      if (!userRequest && !req.isConfirmed) {
+        // build the requests only if the selected account hasn't changed
+        if (this.selectedAccount?.account?.addr === safeAddr)
+          await this.requests.build(req).catch((e) => e)
+      }
+      if (userRequest && req.isConfirmed) {
+        await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+      }
+    }
   }
 
   #updateIsOffline() {
@@ -1398,7 +1497,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async resolveAccountOpRequest(
     submittedAccountOp: SubmittedAccountOp,
-    requestId: CallsUserRequest['id']
+    requestId: CallsUserRequest['id'],
+    openBenzin = true
   ) {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
@@ -1423,18 +1523,28 @@ export class MainController extends EventEmitter implements IMainController {
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    const benzinUserRequest: BenzinUserRequest = {
-      id: new Date().getTime(),
-      kind: 'benzin',
-      meta,
-      dappPromises: []
+    if (openBenzin) {
+      const benzinUserRequest: BenzinUserRequest = {
+        id: new Date().getTime(),
+        kind: 'benzin',
+        meta,
+        dappPromises: []
+      }
+      await this.requests.addUserRequests([benzinUserRequest], {
+        position: 'first',
+        skipFocus: true
+      })
     }
-    await this.requests.addUserRequests([benzinUserRequest], {
-      position: 'first',
-      skipFocus: true
-    })
 
-    await this.requests.removeUserRequests([requestId], { shouldUpdateAccount: false })
+    // upon resolving an account op, check all same nonce safe requests and remove them
+    const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id)
+
+    if (safeRequests.length) {
+      await this.requests.removeUserRequests(safeRequests, {
+        shouldUpdateAccount: false,
+        shouldRejectSafeRequests: false
+      })
+    }
 
     const dappHandlers: any[] = []
 

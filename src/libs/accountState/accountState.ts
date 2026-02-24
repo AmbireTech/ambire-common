@@ -4,13 +4,9 @@ import { concat } from 'ethers'
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ProviderError } from '../../classes/ProviderError'
 import { eip7702AmbireContracts } from '../../consts/7702'
-import {
-  EIP_7702_METAMASK,
-  ENTRY_POINT_MARKER,
-  ERC_4337_ENTRYPOINT,
-  MAX_UINT256
-} from '../../consts/deploy'
+import { EIP_7702_METAMASK, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
@@ -33,6 +29,7 @@ export async function getAccountState(
   provider: RPCProvider,
   network: Network,
   accounts: Account[],
+  keys: Key[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
   const deploylessAccountState = fromDescriptor(
@@ -52,7 +49,8 @@ export async function getAccountState(
       ...(account.creation == null
         ? ['0x0000000000000000000000000000000000000000', '0x']
         : getAccountDeployParams(account)),
-      ERC_4337_ENTRYPOINT
+      ERC_4337_ENTRYPOINT,
+      !!account.safeCreation
     ]
   })
 
@@ -102,13 +100,8 @@ export async function getAccountState(
   ])
 
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
-    const associatedKeys = accResult.associatedKeyPrivileges.map(
-      (privilege: string, keyIndex: number) => {
-        return [args[index]?.[1]?.[keyIndex], privilege]
-      }
-    )
-
     const account = accounts[index]!
+    const associatedKeys = accResult.associatedKeys.filter((k: string) => k !== ERC_4337_ENTRYPOINT)
 
     // an EOA is smarter if it either:
     // - has an active authorization
@@ -141,25 +134,17 @@ export async function getAccountState(
       nonce: !isSmartAccount(account) && !isSmarterEoa ? eoaNonces[account.addr] : accResult.nonce,
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
-      associatedKeys: Object.fromEntries(associatedKeys),
+      associatedKeys,
+      importedAccountKeys: keys.filter((key) => associatedKeys.includes(key.addr)),
       isV2: accResult.isV2,
       balance: accResult.balance,
       isEOA: accResult.isEOA,
-      isErc4337Enabled: isSmarterEoa
-        ? true
-        : !!(
-            accResult.erc4337Nonce < MAX_UINT256 &&
-            associatedKeys.find(
-              (associatedKey: string[]) =>
-                associatedKey[0] === ERC_4337_ENTRYPOINT && associatedKey[1] === ENTRY_POINT_MARKER
-            )
-          ),
+      isErc4337Enabled: accResult.isErc4337Enabled,
       currentBlock: accResult.currentBlock,
-      deployError:
-        account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
       isSmarterEoa,
       delegatedContract,
       delegatedContractName,
+      threshold: Number(accResult.threshold),
       updatedAt: Date.now()
     }
   })

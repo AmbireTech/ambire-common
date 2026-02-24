@@ -1,9 +1,22 @@
-import { Contract, hashMessage, hexlify, toUtf8Bytes, Wallet } from 'ethers'
+import {
+  concat,
+  Contract,
+  getBytes,
+  hashMessage,
+  hexlify,
+  Interface,
+  JsonRpcProvider,
+  recoverAddress,
+  toBeHex,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import Safe from '../../../contracts/compiled/Safe.json'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -30,6 +43,7 @@ import {
   getAuthorizationHash,
   getEIP712Signature,
   getPlainTextSignature,
+  getSafeTypedData,
   getTypedData,
   getVerifyMessageSignature,
   verifyMessage,
@@ -134,7 +148,7 @@ const providers = Object.fromEntries(
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()], network, accounts)
+      getAccountState(providers[network.chainId.toString()], network, accounts, [])
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -142,7 +156,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.chainId, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex]![accIndex]]
         })
       )
     ]
@@ -201,14 +215,14 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       eoaAccount,
-      accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
+      accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!,
       signer
     )
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const firstRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(firstRes).toBe(true)
@@ -217,13 +231,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       eoaAccount,
-      accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
+      accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!,
       signer
     )
     const secondRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: signatureForUint8Array,
+      signature: signatureForUint8Array.signature,
       message: toUtf8Bytes('test')
     })
     expect(secondRes).toBe(true)
@@ -232,13 +246,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hexlify(toUtf8Bytes('1')) as Hex,
       ethereumNetwork,
       eoaAccount,
-      accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
+      accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!,
       signer
     )
     const thirdRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: signatureForNumberAsString,
+      signature: signatureForNumberAsString.signature,
       message: '1'
     })
     expect(thirdRes).toBe(true)
@@ -251,23 +265,26 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
-      accountStates[smartAccount.addr][polygonNetwork.chainId.toString()],
+      accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!,
       signer
     )
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
-    expect(signatureForPlainText.slice(-2)).toEqual('00')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: smartAccount.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(res).toBe(true)
 
-    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
-    const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
+    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider) as any
+    const isValidSig = await contract.isValidSignature(
+      hashMessage('test'),
+      signatureForPlainText.signature
+    )
     expect(isValidSig).toBe(contractSuccess)
   })
   test('Signing [V1 SA]: plain text, should allow as it contains the address in the message', async () => {
@@ -279,17 +296,17 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       msg,
       polygonNetwork,
       v1Account,
-      accountStates[v1Account.addr][polygonNetwork.chainId.toString()],
+      accountStates[v1Account.addr]![polygonNetwork.chainId.toString()]!,
       signer
     )
     // the key should be 00 because it's a v1 account
-    expect(signatureForPlainText.slice(-2)).toEqual('00')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: hexStringToUint8Array(msg)
     })
     expect(res).toBe(true)
@@ -303,7 +320,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         hexlify(toUtf8Bytes('test')) as Hex,
         ethereumNetwork,
         v1Account,
-        accountStates[v1Account.addr][ethereumNetwork.chainId.toString()],
+        accountStates[v1Account.addr]![ethereumNetwork.chainId.toString()]!,
         signer
       )
       console.log('No error was thrown for [V1 SA]: plain text, but it should have')
@@ -319,7 +336,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
     const accountStates = await getAccountsInfo([v1Account])
 
-    const accountState = accountStates[v1Account.addr][ethereumNetwork.chainId.toString()]
+    const accountState = accountStates[v1Account.addr]![ethereumNetwork.chainId.toString()]!
 
     const plaintextSigNoAddrInMessage = await getPlainTextSignature(
       hexlify(toUtf8Bytes('test')) as Hex,
@@ -349,7 +366,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   })
   test('Signing [EOA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([eoaAccount])
-    const accountState = accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
+    const accountState = accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const typedDataTest = getTypedData(
@@ -368,7 +385,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const res = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData: typedDataTest
     })
     expect(res).toBe(true)
@@ -389,14 +406,14 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const secondRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: eip712SigNum,
+      signature: eip712SigNum.signature,
       typedData: typedDataNumber
     })
     expect(secondRes).toBe(true)
   })
   test('Signing [EOA]: eip-712 OrderComponents[2] array index case', async () => {
     const accountStates = await getAccountsInfo([eoaAccount])
-    const accountState = accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
+    const accountState = accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const typedDataTest: TypedMessageUserRequest['meta']['params'] = {
@@ -620,14 +637,14 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const res = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData: typedDataTest
     })
     expect(res).toBe(true)
   })
   test('Signing [Dedicated to one SA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
-    const accountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
+    const accountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const typedData = getTypedData(
@@ -643,30 +660,30 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       polygonNetwork
     )
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: smartAccount.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
 
-    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
+    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider) as any
     const isValidSig = await contract.isValidSignature(
       TypedDataUtils.eip712Hash(
         adaptTypedMessageForMetaMaskSigUtil(typedData),
         SignTypedDataVersion.V4
       ),
-      eip712Sig
+      eip712Sig.signature
     )
     expect(isValidSig).toBe(contractSuccess)
   })
   test('Signing [V1 SA]: eip-712, should pass as the smart account address is in the typed data', async () => {
     const accountStates = await getAccountsInfo([v1Account])
-    const accountState = accountStates[v1Account.addr][ethereumNetwork.chainId.toString()]
+    const accountState = accountStates[v1Account.addr]![ethereumNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
     const typedData = getTypedData(
@@ -682,20 +699,20 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       ethereumNetwork
     )
     // the key is for a v1 acc so it should be 00
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
   })
   test("Signing [V1 SA]: eip-712, should pass as the verifying contract is Uniswap's permit contract", async () => {
     const accountStates = await getAccountsInfo([v1Account])
-    const accountState = accountStates[v1Account.addr][ethereumNetwork.chainId.toString()]
+    const accountState = accountStates[v1Account.addr]![ethereumNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
     const typedData = getTypedData(ethereumNetwork.chainId, PERMIT_2_ADDRESS, hashMessage('test'))
@@ -709,20 +726,20 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       ethereumNetwork
     )
     // the key is for a v1 acc so it should be 00
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
   })
   test('Signing [V1 SA]: eip-712, should throw an error as the smart account address is NOT in the typed data', async () => {
     const accountStates = await getAccountsInfo([v1Account])
-    const accountState = accountStates[v1Account.addr][ethereumNetwork.chainId.toString()]
+    const accountState = accountStates[v1Account.addr]![ethereumNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
     const typedData = getTypedData(
@@ -742,7 +759,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   })
   test('Signing [V1 SA, V2 Signer]: signing an ambire operation', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
-    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
+    const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const ambireReadableOperation = {
@@ -772,32 +789,35 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       polygonNetwork
     )
 
-    expect(eip712Sig.slice(-2)).toEqual('02')
+    expect(eip712Sig.signature.slice(-2)).toEqual('02')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
 
     // v2 account
-    const contractV2 = new Contract(v2SmartAccAddr, AmbireAccount.abi, provider)
-    const isValidSigforv2 = await contractV2.isValidSignature(hash, eip712Sig.slice(0, 134))
+    const contractV2 = new Contract(v2SmartAccAddr, AmbireAccount.abi, provider) as any
+    const isValidSigforv2 = await contractV2.isValidSignature(
+      hash,
+      eip712Sig.signature.slice(0, 134)
+    )
     expect(isValidSigforv2).toBe(contractSuccess)
 
     // v1 account
-    const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
-    const isValidSig = await contract.isValidSignature(hash, eip712Sig)
+    const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider) as any
+    const isValidSig = await contract.isValidSignature(hash, eip712Sig.signature)
     expect(isValidSig).toBe(contractSuccess)
 
     // verify message should pass
     const res = await verifyMessage({
       provider,
       signer: v1Account.addr,
-      signature: eip712Sig,
+      signature: eip712Sig.signature,
       typedData
     })
     expect(res).toBe(true)
   })
   test('Signing [V1 SA, V2 Signer]: signing a normal EIP-712 request', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
-    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
+    const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const typedData = getTypedData(polygonNetwork.chainId, v2SmartAccAddr, hashMessage('test'))
@@ -808,10 +828,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer,
       polygonNetwork
     )
-    expect(eip712Sig.slice(-2)).toEqual('00')
+    expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-    const wrappedSig = wrapWallet(eip712Sig, smartAccount.addr)
+    const wrappedSig = wrapWallet(eip712Sig.signature, smartAccount.addr)
 
     // verify message should pass
     const res = await verifyMessage({
@@ -824,7 +844,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   })
   test('Signing [V1 SA, V2 Signer]: plain text', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
-    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
+    const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
@@ -834,10 +854,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       v2AccountState,
       signer
     )
-    expect(signatureForPlainText.slice(-2)).toEqual('00')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('00')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-    const wrappedSig = wrapWallet(signatureForPlainText, smartAccount.addr)
+    const wrappedSig = wrapWallet(signatureForPlainText.signature, smartAccount.addr)
 
     const res = await verifyMessage({
       provider,
@@ -850,7 +870,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
   test('Signing [V1 SA, V2 Signer]: a request for an AmbireReadableOperation should revert if the execution address is the same (signing for the current wallet instead of a diff wallet)', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
-    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
+    const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const ambireReadableOperation = {
@@ -892,7 +912,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signature: getVerifyMessageSignature(
         signature,
         eoaAccount,
-        accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
+        accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!
       ),
       authorization: authorizationHash
     })
@@ -911,7 +931,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signature: getVerifyMessageSignature(
         signature2,
         eoaAccount,
-        accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
+        accountStates[eoaAccount.addr]![ethereumNetwork.chainId.toString()]!
       ),
       authorization: authorizationHash2
     })
@@ -920,9 +940,9 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   test("Signing [EOA, hacked delegation]: Sign successfully on ethereum with an EOA with a hacked delegation - it should succeed as the private key's signature is respected", async () => {
     const accountStates = await getAccountsInfo([eoaAccountHackedDelegation])
     const accountState =
-      accountStates[eoaAccountHackedDelegation.addr][ethereumNetwork.chainId.toString()]
+      accountStates[eoaAccountHackedDelegation.addr]![ethereumNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(
-      eoaAccountHackedDelegation.associatedKeys[0],
+      eoaAccountHackedDelegation.associatedKeys[0]!,
       'internal'
     )
 
@@ -937,7 +957,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const firstRes = await verifyMessage({
       provider,
       signer: eoaAccountHackedDelegation.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(firstRes).toBe(true)
@@ -974,28 +994,31 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
-      accountStates[smartAccount.addr][polygonNetwork.chainId.toString()],
+      accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!,
       signer
     )
     // the key should not be dedicatedToOneSA, so we expect the signature to end in 01
-    expect(signatureForPlainText.slice(-2)).toEqual('01')
+    expect(signatureForPlainText.signature.slice(-2)).toEqual('01')
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
-    const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
+    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider) as any
+    const isValidSig = await contract.isValidSignature(
+      hashMessage('test'),
+      signatureForPlainText.signature
+    )
     expect(isValidSig).toBe(contractSuccess)
 
     const res = await verifyMessage({
       provider,
       signer: smartAccount.addr,
-      signature: signatureForPlainText,
+      signature: signatureForPlainText.signature,
       message: 'test'
     })
     expect(res).toBe(true)
   })
   test('Signing [Not dedicated to one SA]: eip-712, should throw an error', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
-    const accountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
+    const accountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const typedData = getTypedData(
@@ -1012,5 +1035,122 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
         `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
       )
     }
+  })
+})
+
+describe('Sign Message, Safe accounts', () => {
+  beforeAll(async () => {
+    const storage: Storage = produceMemoryStore()
+    const storageCtrl = new StorageController(storage)
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
+    keystore = new KeystoreController('default', storageCtrl, { internal: KeystoreSigner }, uiCtrl)
+    await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
+    await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
+    await keystore.addKeys([
+      {
+        addr: new Wallet(eoaSigner.privKey).address,
+        privateKey: eoaSigner.privKey,
+        type: 'internal' as 'internal',
+        label: 'Key 1',
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
+  })
+  test('Signing [Safe]: txn typed data', async () => {
+    const safeTxn = {
+      baseGas: toBeHex(0) as Hex,
+      data: '0xa9059cbb0000000000000000000000005d8dd39a360e5d5219f965695f9c0290862ca24a0000000000000000000000000000000000000000000000000000000000002710' as Hex,
+      gasPrice: toBeHex(0) as Hex,
+      gasToken: '0x0000000000000000000000000000000000000000' as Hex,
+      nonce: toBeHex(4n) as Hex,
+      operation: 0,
+      refundReceiver: '0x0000000000000000000000000000000000000000' as Hex,
+      safeTxGas: toBeHex(0) as Hex,
+      to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Hex,
+      value: toBeHex(0) as Hex
+    }
+    const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const safeContract = new Contract(safeAddr, Safe, baseProvider) as any
+    const validHash = await safeContract.getTransactionHash(
+      safeTxn.to,
+      safeTxn.value,
+      safeTxn.data,
+      safeTxn.operation,
+      safeTxn.safeTxGas,
+      safeTxn.baseGas,
+      safeTxn.gasPrice,
+      safeTxn.gasToken,
+      safeTxn.refundReceiver,
+      safeTxn.nonce
+    )
+
+    const typedData = getSafeTypedData(8453n, safeAddr, safeTxn)
+    const ourHash = TypedDataUtils.eip712Hash(
+      adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+      SignTypedDataVersion.V4
+    ).toString('hex')
+
+    expect(`0x${ourHash}`).toBe(validHash)
+
+    const sigs = [
+      '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b',
+      '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
+    ]
+    delete typedData.types.EIP712Domain
+    const recovered = recoverAddress(
+      validHash,
+      '0x3c43f96c5b4ad0d4ceb4ee7eee107bc68b602c50a79dac4ba673a2619ac27032296a168c06f455930c69a85ad96a29de3d79f7691ca9cb424b03f953045b9aac1b'
+    )
+    const isOwnerOne = await safeContract.isOwner(recovered)
+    expect(isOwnerOne).toBe(true)
+
+    const recovered2 = recoverAddress(
+      validHash,
+      '0x2d747b2ede426ccaa6de4fa561df8f893df3308757d719077facd35e718316fd07c26b41df74b0669f993bdc40e247937c208041d22f69b867e1d601807cc5611c'
+    )
+    const isOwnerTwo = await safeContract.isOwner(recovered2)
+    expect(isOwnerTwo).toBe(true)
+
+    const signature = concat(sigs)
+    await safeContract.checkNSignatures(validHash, '0x', signature, 2)
+    // not reverting here means success
+  })
+  test('Signing [Safe]: sign plain text message', async () => {
+    const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const msg = hexlify(toUtf8Bytes('testesetgs'))
+    const hash = hashMessage(getBytes(msg))
+    const isValidSigAbi = ['function isValidSignature(bytes32, bytes) public view returns (bytes4)']
+    const isValidSigInt = new Interface(isValidSigAbi)
+    const encodedData = isValidSigInt.encodeFunctionData('isValidSignature', [
+      hash,
+      '0x7ebeaeca3f7ed26bf23dd512f1abd9f174cfff98e41edffab851cb5beb31836574706c90e16ec80e07d03b6174966a4b0fb6ec99555871f11668a2a054c1ee5e1bff22d35ecef7ffaf72e2ab8ae27b21d803facdde1bc892ed6b0b7df6199aad5c7e792845c6c98dfb652ac252707e0e3e43d4091a62049a3556bec7cb978450be1b'
+    ])
+    const validHash = await baseProvider.call({
+      to: safeAddr,
+      data: encodedData
+    })
+    expect(validHash.substring(0, 10)).toBe('0x1626ba7e')
+  })
+  test('Signing [Safe]: sign eip-712 typed data', async () => {
+    const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const hash = `0x2ee323d41725455c8d7b63cb33c7125f91395e7f07b212358ebffd9461ec1491` // a typed data hash
+    const isValidSigAbi = ['function isValidSignature(bytes32, bytes) public view returns (bytes4)']
+    const isValidSigInt = new Interface(isValidSigAbi)
+    const encodedData = isValidSigInt.encodeFunctionData('isValidSignature', [
+      hash,
+      '0x5fa0195eab0e18f64ef65bb052b2586865edcb76e20b71f86938ab059b6971037193c2fb8ca4ce3d4b063c1174ae461c00086140108e28b5d6e70631b09ada361b85b67a7967db00f718c096f23f624f625174374f40baa82f12967bc7d20aa72c78852ed1a58acabcad8a0e9e06fb0c215afb1f7765cd4aef78ae82205ecab05d1b'
+    ])
+    const validHash = await baseProvider.call({
+      to: safeAddr,
+      data: encodedData
+    })
+    expect(validHash.substring(0, 10)).toBe('0x1626ba7e')
   })
 })
