@@ -2350,7 +2350,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (p) => p.baseCurrency === 'usd'
     )?.price
     if (!fromTokenPriceInUsd && this.quote?.selectedRoute?.inputValueInUsd && this.fromAmount) {
-      fromTokenPriceInUsd = this.quote?.selectedRoute?.inputValueInUsd / Number(this.fromAmount)
+      fromTokenPriceInUsd = this.quote.selectedRoute.inputValueInUsd / Number(this.fromAmount)
     }
 
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
