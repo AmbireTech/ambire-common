@@ -30,7 +30,8 @@
     "siwe": "3.0.0",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
-    "viem": "^2.33.3"
+    "viem": "^2.33.3",
+    "wns-utils": "^0.1.1"
   },
   "peerDependencies": {
     "@ensdomains/eth-ens-namehash": "^2.0.15",
