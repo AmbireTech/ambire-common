@@ -251,9 +251,8 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        await this.reloadSelectedAccount({
-          chainIds: networks.map((n) => n.chainId)
-        })
+        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
+        await this.reloadSelectedAccount({ chainIds: networks.map((n) => n.chainId) })
       },
       onReady: async () => {
         await this.providers.init({ networks: this.networks.allNetworks })
