@@ -245,9 +245,8 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        await this.reloadSelectedAccount({
-          chainIds: networks.map((n) => n.chainId)
-        })
+        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
+        await this.reloadSelectedAccount({ chainIds: networks.map((n) => n.chainId) })
       }
     })
 
@@ -1090,9 +1089,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
