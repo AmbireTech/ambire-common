@@ -85,7 +85,7 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
-const SWAP_AND_BRIDGE_WINDOW_SIZE = {
+const ONE_CLICK_WINDOW_SIZE = {
   width: 640,
   height: 640
 }
@@ -578,8 +578,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } else {
       let customSize
 
-      if (this.currentUserRequest?.kind === 'swapAndBridge') {
-        customSize = SWAP_AND_BRIDGE_WINDOW_SIZE
+      if (
+        this.currentUserRequest?.kind === 'swapAndBridge' ||
+        this.currentUserRequest?.kind === 'transfer'
+      ) {
+        customSize = ONE_CLICK_WINDOW_SIZE
       }
 
       try {
