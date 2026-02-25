@@ -18,7 +18,6 @@ export const dappIdsToBeRemoved = new Set([
   // unsupported or outdated protocols returned by DefiLlama
   'bridge.base.org',
   'binance.com',
-  'app.ethena.fi',
   'securitize.io',
   'gold.tether.to',
   'usdtb.money',
