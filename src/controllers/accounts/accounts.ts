@@ -294,7 +294,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             ...(newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.associatedKeys || [])
           ])
         ),
-        safeCreation: newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.safeCreation
+        safeCreation:
+          acc.safeCreation ?? newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.safeCreation
       })),
       ...newAccountsNotAddedYet.map((a) => ({ ...a, newlyAdded: true }))
     ]
