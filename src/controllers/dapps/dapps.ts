@@ -358,6 +358,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // Add predefined
     for (const pd of predefinedDapps) {
+      if (!pd.url || !isValidURL(pd.url)) continue
       const id = getDappIdFromUrl(pd.url)
 
       const prevStoredDapp = prevDapps.get(id)
