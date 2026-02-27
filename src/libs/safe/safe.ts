@@ -23,7 +23,11 @@ import SafeApiKit, {
   SafeMessageListResponse,
   SafeMultisigTransactionListResponse
 } from '@safe-global/api-kit'
-import { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import {
+  EIP712TypedData,
+  SafeMultisigConfirmationResponse,
+  SafeMultisigTransactionResponse
+} from '@safe-global/types-kit'
 
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
@@ -605,10 +609,10 @@ export function getImportedSignersThatHaveNotSigned(
   return importedOwners.filter((o) => !signed.includes(o))
 }
 
-export function getSigs(accountOp: AccountOp): Hex[] {
-  if (!accountOp.signature) return []
+export function getSigs(signature?: string | null): Hex[] {
+  if (!signature) return []
   const signed: Hex[] = []
-  const signatures = accountOp.signature.substring(2)
+  const signatures = signature.substring(2)
   for (let i = 0; i < signatures.length; i += 130) {
     signed.push(`0x${signatures.substring(i, i + 130)}` as Hex)
   }
@@ -649,15 +653,17 @@ export async function fetchExecutedTransactions(
 ): Promise<
   {
     safeTxnHash: Hex
-    transactionHash: Hex
     nonce: string
+    transactionHash?: Hex
+    confirmations?: SafeMultisigConfirmationResponse[]
   }[]
 > {
   let promises = []
   const results: {
     safeTxnHash: Hex
-    transactionHash: Hex
     nonce: string
+    transactionHash?: Hex
+    confirmations?: SafeMultisigConfirmationResponse[]
   }[] = []
 
   for (let i = 0; i < txns.length; i++) {
@@ -669,12 +675,19 @@ export async function fetchExecutedTransactions(
     if ((i + 1) % 3 === 0 || i + 1 === txns.length) {
       const responses = await Promise.all(promises)
       responses.forEach((r) => {
-        if (r.transactionHash)
+        if (r.transactionHash) {
           results.push({
             safeTxnHash: r.safeTxHash as Hex,
             transactionHash: r.transactionHash as Hex,
             nonce: r.nonce
           })
+        } else {
+          results.push({
+            safeTxnHash: r.safeTxHash as Hex,
+            nonce: r.nonce,
+            confirmations: r.confirmations
+          })
+        }
       })
       await wait(1100)
       promises = []

@@ -16,6 +16,7 @@ import { CallsUserRequest } from '../../interfaces/userRequest'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
+import { sortSigs } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -399,33 +400,56 @@ export class ContinuousUpdatesController extends EventEmitter {
       )
       if (!userR) continue
 
-      const accountOp = (userR as CallsUserRequest).signAccountOp.accountOp
-      const submittedAccountOp: SubmittedAccountOp = {
-        ...accountOp,
-        status: AccountOpStatus.BroadcastedButNotConfirmed,
-        txnId: oneConfirmed.transactionHash,
-        nonce: BigInt(oneConfirmed.nonce),
-        identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
-        timestamp: new Date().getTime()
-      }
-      const commonSuccessHandler = await this.#main
-        .commonHandlerForBroadcastSuccess({
-          type: 'default',
-          submittedAccountOp,
-          accountOp,
-          fromRequestId: userR.id
-        })
-        .catch((e: Error) => {
+      const callsUserR = userR as CallsUserRequest
+
+      if (oneConfirmed.transactionHash) {
+        const accountOp = callsUserR.signAccountOp.accountOp
+        const submittedAccountOp: SubmittedAccountOp = {
+          ...accountOp,
+          status: AccountOpStatus.BroadcastedButNotConfirmed,
+          txnId: oneConfirmed.transactionHash,
+          nonce: BigInt(oneConfirmed.nonce),
+          identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
+          timestamp: new Date().getTime()
+        }
+        const commonSuccessHandler = await this.#main
+          .commonHandlerForBroadcastSuccess({
+            type: 'default',
+            submittedAccountOp,
+            accountOp,
+            fromRequestId: userR.id
+          })
+          .catch((e: Error) => {
+            console.log('could not resolve safe global request')
+            console.log(e)
+            return e
+          })
+        if (commonSuccessHandler instanceof Error) continue
+
+        await this.#main.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
           console.log('could not resolve safe global request')
           console.log(e)
-          return e
         })
-      if (commonSuccessHandler instanceof Error) continue
 
-      await this.#main.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
-        console.log('could not resolve safe global request')
-        console.log(e)
-      })
+        continue
+      }
+
+      // we come here only if transactionHash is undefined
+      const signatures = (oneConfirmed.confirmations?.map((c) => c.signature) || []) as Hex[]
+      const sortedSigs = callsUserR.signAccountOp.accountOp.txnId
+        ? sortSigs(signatures, callsUserR.signAccountOp.accountOp.txnId)
+        : null
+      if (
+        sortedSigs &&
+        callsUserR.signAccountOp.isInRegistry() && // update only if on foreground
+        callsUserR.signAccountOp.accountOp.signature !== sortedSigs
+      ) {
+        callsUserR.signAccountOp.update({
+          accountOpData: {
+            signature: sortedSigs
+          }
+        })
+      }
     }
   }
 
