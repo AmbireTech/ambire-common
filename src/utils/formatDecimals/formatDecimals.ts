@@ -77,7 +77,7 @@ const formatDecimals = (value: number | undefined = undefined, type: FormatType 
   const withDollarPrefix = TYPES_WITH_DOLLAR_PREFIX.includes(type || '')
 
   if (value === 0) {
-    if (type === 'amount') return `${getPrefix(withDollarPrefix)}0`
+    if (type === 'amount' || type === 'noDecimal') return `${getPrefix(withDollarPrefix)}0`
 
     return `${getPrefix(withDollarPrefix)}0.00`
   }
