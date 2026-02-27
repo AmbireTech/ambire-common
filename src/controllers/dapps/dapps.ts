@@ -301,6 +301,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const prevDapps = new Map(this.#dapps)
 
     for (const dapp of fetchedDappsList) {
+      if (!dapp.url || !isValidURL(dapp.url)) continue
       if (categoriesToExclude.includes(dapp.category)) continue
       if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) continue
 
@@ -357,6 +358,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // Add predefined
     for (const pd of predefinedDapps) {
+      if (!pd.url || !isValidURL(pd.url)) continue
       const id = getDappIdFromUrl(pd.url)
 
       const prevStoredDapp = prevDapps.get(id)
