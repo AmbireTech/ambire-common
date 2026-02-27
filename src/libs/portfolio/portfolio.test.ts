@@ -27,7 +27,7 @@ const providers = Object.fromEntries(
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()], network, accounts)
+      getAccountState(providers[network.chainId.toString()], network, accounts, [])
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -35,7 +35,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.chainId.toString(), result[netIndex][accIndex]]
+          return [network.chainId.toString(), result[netIndex]![accIndex]]
         })
       )
     ]
