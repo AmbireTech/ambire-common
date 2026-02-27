@@ -5,6 +5,7 @@ import SafeApiKit, {
   SafeInfoResponse,
   SafeMessage
 } from '@safe-global/api-kit'
+import { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe'
@@ -246,8 +247,9 @@ export class SafeController extends EventEmitter implements ISafeController {
   async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<
     {
       safeTxnHash: Hex
-      transactionHash: Hex
       nonce: string
+      transactionHash?: Hex
+      confirmations?: SafeMultisigConfirmationResponse[]
     }[]
   > {
     return fetchExecutedTransactions(txns)

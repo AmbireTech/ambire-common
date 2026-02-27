@@ -1283,7 +1283,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signed = this.accountOp.signed
             ? [...new Set(...this.accountOp.signed, ...newlySigned)]
             : newlySigned
-          this.#updateAccountOp({ signature, signed })
+          this.#updateAccountOp({
+            signature: sortSigs(getSigs(signature), this.accountOp.txnId),
+            signed
+          })
         }
 
         // update all properties except calls
@@ -2514,7 +2517,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ) {
         // all's good, proceed to broadcast
       } else if (this.account.safeCreation) {
-        const prevSignedSigs = getSigs(this.accountOp)
+        const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
         const signers = this.accountOp.signers!
         const safeTxn = getSafeTxn(this.accountOp, accountState)
