@@ -483,7 +483,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     // Once we are here - it means we pass all the above validations,
     // and we are ready to change the keystore password secret
     await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
-    await this.#keyStore.removeSecret('password')
+    if (this.#keyStore.hasPasswordSecret) await this.#keyStore.removeSecret('password')
     await this.#keyStore.addSecret('password', newPassword, '', false)
 
     this.emitUpdate()
