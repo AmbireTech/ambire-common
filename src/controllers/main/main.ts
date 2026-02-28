@@ -53,6 +53,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '../../libs/safe/safe'
@@ -1609,6 +1610,18 @@ export class MainController extends EventEmitter implements IMainController {
       networks: network ? [network] : undefined
     })
     this.emitUpdate()
+  }
+
+  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
+    privKeyOrSeed,
+    seedPassphrase
+  }: {
+    privKeyOrSeed: string
+    seedPassphrase?: string | null
+  }) {
+    const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+    const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
+    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
   }
 
   // includes the getters in the stringified instance
