@@ -168,6 +168,7 @@ describe('Main Controller ', () => {
       '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     )
     controller.accountPicker.setInitParams({
+      sessionId: 'test',
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldAddNextAccountAutomatically: false
