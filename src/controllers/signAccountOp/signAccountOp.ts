@@ -13,11 +13,9 @@ import {
   isBytesLike,
   keccak256,
   toBeHex,
+  toUtf8Bytes,
   ZeroAddress
 } from 'ethers'
-
-/* eslint-disable @typescript-eslint/no-floating-promises */
-import { utf8ToBytes } from '@noble/hashes/utils'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
@@ -1760,7 +1758,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       const stateDiff = !!this.account.safeCreation
         ? {
             [privSlot(
-              keccak256(utf8ToBytes('ambire.smart.contracts.storage')),
+              keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
               'uint256',
               this.account.associatedKeys[0],
               'bytes32'
