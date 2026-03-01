@@ -294,7 +294,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     for (let i = 0; i < data.length; i++) {
       const entry = data[i]!
       const msg = await getMessage(entry).catch((e) => e)
-      if (msg instanceof Error) continue
+      if (!msg || msg instanceof Error) continue
       messages.push(msg)
     }
     return messages
