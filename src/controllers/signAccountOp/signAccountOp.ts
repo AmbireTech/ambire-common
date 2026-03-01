@@ -11,14 +11,15 @@ import {
   Interface,
   isAddress,
   isBytesLike,
+  keccak256,
   toBeHex,
+  toUtf8Bytes,
   ZeroAddress
 } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import {
@@ -103,6 +104,7 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { privSlot } from '../../libs/proxyDeploy/deploy'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -1749,11 +1751,29 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // TODO: how to handle this case?
       if (!state) return
 
+      // if the account is a safe,
+      // add an additional state override that gives privileges to the assKey;
+      // also, we changed privs storage slot to ambire.smart.contracts.storage
+      // so privs no longer override slot number 0
+      const stateDiff = !!this.account.safeCreation
+        ? {
+            [privSlot(
+              keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
+              'uint256',
+              this.account.associatedKeys[0],
+              'bytes32'
+            )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+          }
+        : undefined
+
+      // add stateOverride when using a safe as well
       const stateOverride =
-        this.accountOp.calls.length > 1 && isBasicAccount(this.account, state)
+        !!this.account.safeCreation ||
+        (this.accountOp.calls.length > 1 && isBasicAccount(this.account, state))
           ? {
               [this.account.addr]: {
-                code: AmbireAccount7702.binRuntime
+                code: AmbireAccount7702.binRuntime,
+                stateDiff
               }
             }
           : undefined
