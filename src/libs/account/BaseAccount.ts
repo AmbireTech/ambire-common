@@ -89,7 +89,7 @@ export abstract class BaseAccount {
   abstract getNonceId(): string
 
   // this is specific for v2 accounts, hardcoding a false for all else
-  shouldIncludeActivatorCall() {
+  shouldIncludeActivatorCall(paidBy?: string) {
     return false
   }
 
