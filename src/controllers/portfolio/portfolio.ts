@@ -22,6 +22,7 @@ import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   enhancePortfolioTokensWithDefiPositions,
@@ -46,6 +47,7 @@ import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
+  covertApiTokenDataToTokenDataCache,
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getFlags,
@@ -61,6 +63,7 @@ import {
   AccountState,
   ExtendedError,
   ExtendedErrorWithLevel,
+  ExternalAPITokenMarketDataResponse,
   ExternalPortfolioDiscoveryResponse,
   FormattedPortfolioDiscoveryResponse,
   GasTankTokenResult,
@@ -70,9 +73,10 @@ import {
   NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
-  PriceCache,
   TemporaryTokens,
   ToBeLearnedAssets,
+  TokenDataCache,
+  TokenDataCacheValue,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -80,7 +84,6 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -186,7 +189,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
 
-  protected priceCache: { [chainId: string]: PriceCache } = {}
+  protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
 
   #providers: IProvidersController
 
@@ -619,7 +622,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
       const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000 * 5,
+        tokenDataRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
@@ -904,16 +907,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Update the price cache so the lib can use the latest prices from velcro
     if (response.prices) {
-      const networkPriceCache = this.priceCache[chainId.toString()] || new Map()
+      const networkTokenDataCache: TokenDataCache =
+        this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
 
       for (const [key, priceData] of Object.entries(response.prices)) {
         // eslint-disable-next-line no-continue
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
-        networkPriceCache.set(key, [Date.now(), [priceData]])
+        networkTokenDataCache.set(key, [
+          Date.now(),
+          covertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
+        ])
       }
 
-      this.priceCache[chainId.toString()] = networkPriceCache
+      this.tokenDataCache[chainId.toString()] = networkTokenDataCache
     }
 
     response.lastUpdate = Date.now()
@@ -983,13 +990,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
-      const networkPriceCache = this.priceCache[network.chainId.toString()] || new Map()
+      const networkTokenDataCache = this.tokenDataCache[network.chainId.toString()] || new Map()
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
-          priceRecency: 60000 * 5,
-          priceCache: networkPriceCache,
+          tokenDataRecency: 60000 * 5,
+          tokenDataCache: networkTokenDataCache,
           blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
           ...portfolioProps,
@@ -1031,7 +1038,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const combinedErrors = [...portfolioResult.errors, ...(discoveryData?.errors || [])]
 
-      this.priceCache[network.chainId.toString()] = portfolioResult.priceCache
+      this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
