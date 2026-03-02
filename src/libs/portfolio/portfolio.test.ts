@@ -14,6 +14,7 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
+import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
@@ -60,7 +61,7 @@ describe('Portfolio', () => {
   async function getNonce(address: string) {
     const accountContract = new Contract(address, AmbireAccount.abi, provider)
     try {
-      const res = await accountContract.nonce()
+      const res = await accountContract.nonce!()
       return res
     } catch (e) {
       return '0x00'
@@ -175,8 +176,8 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: {
         accountOps: [accountOp],
-        account,
-        state: accountStates[accountOp.accountAddr]['1']
+        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -240,8 +241,12 @@ describe('Portfolio', () => {
       {
         simulation: {
           accountOps: [accountOp],
-          account,
-          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+          baseAccount: getBaseAccount(
+            account,
+            accountStates[accountOp.accountAddr]!['1']!,
+            ethereum
+          ),
+          state: accountStates[accountOp.accountAddr]![accountOp.chainId.toString()]!
         }
       }
     )
@@ -293,8 +298,8 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(acc, {
       simulation: {
         accountOps: [accountOp],
-        account,
-        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -336,8 +341,8 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(acc, {
       simulation: {
         accountOps: [accountOp],
-        account,
-        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'ETH')
@@ -382,8 +387,12 @@ describe('Portfolio', () => {
       await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         simulation: {
           accountOps: [accountOp],
-          account,
-          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+          baseAccount: getBaseAccount(
+            account,
+            accountStates[accountOp.accountAddr]!['1']!,
+            ethereum
+          ),
+          state: accountStates[accountOp.accountAddr]!['1']!
         }
       })
       // should throw an error and never come here
@@ -399,8 +408,12 @@ describe('Portfolio', () => {
       await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         simulation: {
           accountOps: [accountOp],
-          account,
-          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+          baseAccount: getBaseAccount(
+            account,
+            accountStates[accountOp.accountAddr]!['1']!,
+            ethereum
+          ),
+          state: accountStates[accountOp.accountAddr]!['1']!
         }
       })
       // should throw an error and never come here
@@ -449,8 +462,12 @@ describe('Portfolio', () => {
       await portfolio.get(acc, {
         simulation: {
           accountOps: [accountOp],
-          account,
-          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+          baseAccount: getBaseAccount(
+            account,
+            accountStates[accountOp.accountAddr]!['1']!,
+            ethereum
+          ),
+          state: accountStates[accountOp.accountAddr]!['1']!
         }
       })
     } catch (e: any) {
@@ -493,8 +510,12 @@ describe('Portfolio', () => {
       await portfolio.get(acc, {
         simulation: {
           accountOps: [accountOp],
-          account,
-          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+          baseAccount: getBaseAccount(
+            account,
+            accountStates[accountOp.accountAddr]!['1']!,
+            ethereum
+          ),
+          state: accountStates[accountOp.accountAddr]!['1']!
         }
       })
     } catch (e: any) {
@@ -542,8 +563,8 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: {
         accountOps: [accountOp],
-        account,
-        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -592,8 +613,12 @@ describe('Portfolio', () => {
       await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
         simulation: {
           accountOps: [accountOp, secondAccountOp],
-          account,
-          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+          baseAccount: getBaseAccount(
+            account,
+            accountStates[accountOp.accountAddr]!['1']!,
+            ethereum
+          ),
+          state: accountStates[accountOp.accountAddr]!['1']!
         }
       })
       // portfolio.get should revert and not come here
