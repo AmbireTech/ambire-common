@@ -167,6 +167,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     accounts?: SelectedAccountForImport[]
   } | null = null
 
+  #derivedAccountsCache: Map<string, DerivedAccountWithoutNetworkMeta> = new Map()
+
   constructor({
     eventEmitterRegistry,
     accounts,
@@ -479,6 +481,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
     if (resetInitParams) this.initParams = null
     this.keyIterator = null
+    this.#derivedAccountsCache.clear()
     this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
     this.pageSize = DEFAULT_PAGE_SIZE
@@ -1082,35 +1085,59 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       combinedBasicAndSmartAccKeys.length
     )
 
+    // Use Cache if possible
+    const cacheKey = combinedBasicAndSmartAccKeys.join(',')
+    if (this.#derivedAccountsCache.has(cacheKey)) {
+      // Though technically we should cache per-account, caching the whole page is easier
+      // and sufficient for the pagination use case.
+    }
+
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, smartAccKey] of smartAccKeys.entries()) {
       const slot = startIdx + (index + 1)
-
-      // The derived EOA (basic) account which is the key for the smart account
-      const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-      accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
+      const accountCacheKey = `smart-${smartAccKey}`
 
-      // Derive the Ambire (smart) account
-      smartAccountsPromises.push(
-        getSmartAccount(
-          [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
-          this.#alreadyImportedAccounts
+      if (this.#derivedAccountsCache.has(accountCacheKey)) {
+        accounts.push({
+          ...(this.#derivedAccountsCache.get(accountCacheKey) as any),
+          slot,
+          index: indexWithOffset
+        })
+      } else {
+        // The derived EOA (basic) account which is the key for the smart account
+        const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts)
+        accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
+
+        // Derive the Ambire (smart) account
+        smartAccountsPromises.push(
+          getSmartAccount(
+            [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
+            this.#alreadyImportedAccounts
+          )
+            .then((smartAccount) => {
+              const result = { account: smartAccount, isLinked: false, slot, index: slot - 1 }
+              this.#derivedAccountsCache.set(accountCacheKey, result as any)
+              return result
+            })
+            // If the error isn't caught here and the promise is rejected, Promise.all
+            // will be rejected entirely.
+            .catch(() => {
+              // No need for emitting an error here, because a relevant error is already
+              // emitted in the method #getAccountsUsedOnNetworks
+              return null
+            })
         )
-          .then((smartAccount) => {
-            return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
-          })
-          // If the error isn't caught here and the promise is rejected, Promise.all
-          // will be rejected entirely.
-          .catch(() => {
-            // No need for emitting an error here, because a relevant error is already
-            // emitted in the method #getAccountsUsedOnNetworks
-            return null
-          })
-      )
+      }
+
+      // Yield to event loop to keep UI responsive
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
     }
 
     const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
@@ -1123,10 +1150,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, basicAccKey] of basicAccKeys.entries()) {
       const slot = startIdx + (index + 1)
+      const accountCacheKey = `basic-${basicAccKey}`
 
-      // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
-      accounts.push({ account, isLinked: false, slot, index: slot - 1 })
+      if (this.#derivedAccountsCache.has(accountCacheKey)) {
+        accounts.push({
+          ...(this.#derivedAccountsCache.get(accountCacheKey) as any),
+          slot,
+          index: slot - 1
+        })
+      } else {
+        // The EOA (basic) account on this slot
+        const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
+        const result = { account, isLinked: false, slot, index: slot - 1 }
+        this.#derivedAccountsCache.set(accountCacheKey, result as any)
+        accounts.push(result)
+      }
     }
 
     return accounts
@@ -1200,16 +1238,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     const finalAccountsWithNetworksArray = Object.values(accountsObj)
 
-    // Preserve the original order of networks based on usedOnNetworks
+    // Optimize the sort by caching network indices
+    const networkIndexMap: { [chainId: string]: number } = {}
+    this.#networks.networks.forEach((network, index) => {
+      networkIndexMap[network.chainId.toString()] = index
+    })
+
     const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
-      const chainIdsA = (a.account.usedOnNetworks || []).map((network) => network.chainId)
-      const chainIdsB = (b.account.usedOnNetworks || []).map((network) => network.chainId)
-      const networkIndexA = this.#networks.networks.findIndex((network) =>
-        chainIdsA.includes(network.chainId)
-      )
-      const networkIndexB = this.#networks.networks.findIndex((network) =>
-        chainIdsB.includes(network.chainId)
-      )
+      const getMinIndex = (acc: DerivedAccount) => {
+        const chainIds = (acc.account.usedOnNetworks || []).map((n) => n.chainId.toString())
+        if (chainIds.length === 0) return Infinity
+        return Math.min(...chainIds.map((id) => networkIndexMap[id] ?? Infinity))
+      }
+
+      const networkIndexA = getMinIndex(a)
+      const networkIndexB = getMinIndex(b)
       return networkIndexA - networkIndexB
     })
 
