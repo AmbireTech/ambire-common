@@ -68,7 +68,7 @@ describe('Portfolio', () => {
   }
   async function getSafeSendUSDTTransaction(from: string, to: string, amount: bigint) {
     const usdtContract = new Contract(USDT_ADDRESS, ERC20, provider)
-    const usdtBalance = await usdtContract.balanceOf(from)
+    const usdtBalance = await usdtContract.balanceOf!(from)
     expect(usdtBalance).toBeGreaterThan(amount)
     return {
       to: USDT_ADDRESS,
@@ -256,10 +256,10 @@ describe('Portfolio', () => {
   })
 
   test('price cache works', async () => {
-    const { priceCache } = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    const { tokenDataCache } = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
     const resultTwo = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      priceCache,
-      priceRecency: 60000
+      tokenDataCache,
+      tokenDataRecency: 60000
     })
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)

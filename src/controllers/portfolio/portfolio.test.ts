@@ -1972,7 +1972,7 @@ describe('Portfolio Controller ', () => {
     const { controller } = await prepareTest()
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBe(undefined)
+    expect(controller.tokenDataCache['137']).toBe(undefined)
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
@@ -1982,9 +1982,9 @@ describe('Portfolio Controller ', () => {
     })
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBeDefined()
+    expect(controller.tokenDataCache['137']).toBeDefined()
     // @ts-ignore
-    expect(controller.priceCache['137'].size).toBeGreaterThan(0)
+    expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()
