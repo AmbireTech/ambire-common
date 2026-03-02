@@ -12,19 +12,6 @@ import { getHdPathFromTemplate } from '../../utils/hdPath'
 import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys'
 
-// On mobile, we use react-native-quick-crypto to speed up PBKDF2 derivation.
-// We use a dynamic require to avoid bundling issues on web.
-const getSeedFromMnemonicMobileFast = (phrase: string, password?: string | null): Buffer | null => {
-  try {
-    // eslint-disable-next-line global-require
-    const { pbkdf2Sync } = require('react-native-quick-crypto')
-    const salt = `mnemonic${password || ''}`
-    return pbkdf2Sync(phrase, salt, 2048, 64, 'sha512')
-  } catch (e) {
-    return null
-  }
-}
-
 export function isValidPrivateKey(value: string): boolean {
   try {
     return !!new Wallet(value)
@@ -39,13 +26,11 @@ export const getPrivateKeyFromSeed = (
   keyIndex: number,
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
 ) => {
-  const seedBuffer = getSeedFromMnemonicMobileFast(seed, seedPassphrase)
-  const wallet = seedBuffer
-    ? HDNodeWallet.fromSeed(seedBuffer).derivePath(getHdPathFromTemplate(hdPathTemplate, keyIndex))
-    : HDNodeWallet.fromMnemonic(
-        Mnemonic.fromPhrase(seed, seedPassphrase),
-        getHdPathFromTemplate(hdPathTemplate, keyIndex)
-      )
+  const mnemonic = Mnemonic.fromPhrase(seed, seedPassphrase)
+  const wallet = HDNodeWallet.fromMnemonic(
+    mnemonic,
+    getHdPathFromTemplate(hdPathTemplate, keyIndex)
+  )
 
   if (wallet) {
     return wallet.privateKey
@@ -96,13 +81,8 @@ export class KeyIterator implements KeyIteratorInterface {
     if (this.#cachedBaseWallet) return this.#cachedBaseWallet
     if (this.subType !== 'seed' || !this.#seedPhrase) return null
 
-    const seedBuffer = getSeedFromMnemonicMobileFast(this.#seedPhrase, this.#seedPassphrase)
-    if (seedBuffer) {
-      this.#cachedBaseWallet = HDNodeWallet.fromSeed(seedBuffer)
-    } else {
-      const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase)
-      this.#cachedBaseWallet = HDNodeWallet.fromMnemonic(mnemonic, 'm')
-    }
+    const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase)
+    this.#cachedBaseWallet = HDNodeWallet.fromMnemonic(mnemonic, 'm')
 
     return this.#cachedBaseWallet
   }
