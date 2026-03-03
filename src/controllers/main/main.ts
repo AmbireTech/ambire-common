@@ -49,7 +49,7 @@ import { ITransferController } from '../../interfaces/transfer'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount } from '../../libs/account/account'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, haveAccountOpsChanged } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
@@ -318,6 +318,9 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
+      (chainId: string, accountOps?: AccountOp[]) => {
+        return this.hasSimulationChanged(chainId, accountOps)
+      },
       eventEmitterRegistry
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
@@ -1420,6 +1423,22 @@ export class MainController extends EventEmitter implements IMainController {
     if (oldIsOffline !== this.isOffline) {
       this.emitUpdate()
     }
+  }
+
+  hasSimulationChanged(chainId: string, accountOps?: AccountOp[]): boolean {
+    if (!this.selectedAccount?.account) return false
+
+    const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
+      this.selectedAccount.account,
+      this.requests.visibleUserRequests,
+      this.networks.networks
+    )
+    const latestAccOps = accountOpsToBeSimulatedByNetwork?.[chainId]
+
+    if (accountOps === undefined && latestAccOps === undefined) return false
+    if (accountOps === undefined && latestAccOps !== undefined) return true
+    if (accountOps !== undefined && latestAccOps === undefined) return true
+    return haveAccountOpsChanged(accountOps!, latestAccOps!)
   }
 
   async updateSelectedAccountPortfolio(opts?: {

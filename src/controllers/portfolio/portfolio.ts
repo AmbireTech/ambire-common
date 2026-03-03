@@ -22,6 +22,7 @@ import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   enhancePortfolioTokensWithDefiPositions,
@@ -80,7 +81,6 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -205,6 +205,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
 
+  #hasSimulationChanged: Function
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -216,6 +218,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     velcroUrl: string,
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
+    hasSimulationChanged: Function,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -234,6 +237,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.temporaryTokens = {}
     this.#banner = banner
     this.#featureFlags = featureFlags
+    this.#hasSimulationChanged = hasSimulationChanged
     this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
@@ -945,10 +949,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     portfolioProps: Partial<GetOptions> & {
       maxDataAgeMs?: number
       isManualUpdate?: boolean
+      isSignAccountOpSimulation?: boolean
     },
     discoveryData: FormattedPortfolioDiscoveryResponse | null
   ): Promise<boolean> {
-    const { maxDataAgeMs, isManualUpdate } = portfolioProps
+    const { maxDataAgeMs, isManualUpdate, isSignAccountOpSimulation } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
@@ -1043,6 +1048,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
         lastSuccessfulUpdate = Date.now()
+      }
+
+      // always persist the simulation if it's isSignAccountOpSimulation
+      // otherwise, check for race conditions as updates happen from wherever
+      // - if the latest account opts from visibleRequests are not those
+      // passed as portfolioProps?.simulation?.accountOps, do not persist
+      // the update as it is outdated!
+      // this often happened when doing approve + action but the dapp sends
+      // the second request action immediately after txn confirmation.
+      // at that time, all kinds of portfolio update request fly in the wallet
+      // and some of them might disturb the correct, final simulation
+      if (
+        !isSignAccountOpSimulation &&
+        this.#hasSimulationChanged(network.chainId, portfolioProps?.simulation?.accountOps)
+      ) {
+        this.#setNetworkLoading(account.addr, network.chainId.toString(), false)
+        this.emitUpdate()
+        return true
       }
 
       accountState[network.chainId.toString()] = {
@@ -1286,12 +1309,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       defiMaxDataAgeMs?: number
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
+      isSignAccountOpSimulation?: boolean
     }
   ) {
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
-      isManualUpdate
+      isManualUpdate,
+      isSignAccountOpSimulation
     } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1385,6 +1410,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                   }
                 }),
               disableAutoDiscovery: true,
+              isSignAccountOpSimulation,
               ...allHints
             },
             discoveryResponse
@@ -1874,7 +1900,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         }
       : undefined
 
-    return this.updateSelectedAccount(op.accountAddr, [network], simulation)
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation, {
+      isSignAccountOpSimulation: true
+    })
   }
 
   async updateNetworksWithDefiPositions(
