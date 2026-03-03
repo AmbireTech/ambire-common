@@ -51,6 +51,7 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
@@ -496,6 +497,12 @@ const init = async (
   )
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
+  const safe = new SafeController({
+    networks: networksCtrl,
+    providers: providersCtrl,
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const activity = new ActivityController(
     storageCtrl,
     fetch,
@@ -505,6 +512,7 @@ const init = async (
     providersCtrl,
     networksCtrl,
     portfolio,
+    safe,
     () => Promise.resolve()
   )
   const estimationController = new EstimationController(
