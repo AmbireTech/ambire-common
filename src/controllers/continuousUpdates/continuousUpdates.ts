@@ -365,6 +365,9 @@ export class ContinuousUpdatesController extends EventEmitter {
     if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
       return
 
+    // do not make safe requests if the extension is locked
+    if (!this.#main.keystore.isUnlocked) return
+
     const pendingSafeTxns = this.#main.requests.userRequests
       .filter(
         (r) =>
