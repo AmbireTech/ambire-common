@@ -183,7 +183,8 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const safe = new SafeController({

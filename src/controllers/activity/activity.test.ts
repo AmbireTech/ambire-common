@@ -232,7 +232,8 @@ describe('Activity Controller ', () => {
       relayerUrl,
       velcroUrl,
       new BannerController(storageCtrl),
-      featureFlagsCtrl
+      featureFlagsCtrl,
+      () => {}
     )
 
     const autoLoginCtrl = new AutoLoginController(
