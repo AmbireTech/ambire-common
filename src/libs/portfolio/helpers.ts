@@ -849,8 +849,8 @@ export const covertApiTokenDataToTokenDataCache = (
       marketDataIn: [
         {
           baseCurrency,
-          '24hChange': baseCurrency24hChange,
-          '24hVolume': baseCurrency24hVolume,
+          change24h: baseCurrency24hChange,
+          volume24h: baseCurrency24hVolume,
           marketCap: baseCurrencyMarketCap
         }
       ],

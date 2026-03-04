@@ -118,6 +118,9 @@ export type ExternalAPITokenMarketDataResponse = {
    * cena returns the price in [usd]
    */
   usd?: number
+  /**
+   * Despite the name, this is a percentage, not USD value change.
+   */
   usd_24h_change: number
   usd_market_cap: number
   usd_24h_vol: number

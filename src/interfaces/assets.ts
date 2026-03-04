@@ -12,7 +12,7 @@ export interface TokenMarketDataByCurrency {
   /**
    * 24-hour trading volume of the token.
    */
-  '24hVolume'?: number | null
+  volume24h?: number | null
   /**
    * Market capitalization of the token.
    */
@@ -20,7 +20,7 @@ export interface TokenMarketDataByCurrency {
   /**
    * Percentage change in price over the last 24 hours.
    */
-  '24hChange'?: number | null
+  change24h?: number | null
 }
 
 export type TokenMarketData = {
