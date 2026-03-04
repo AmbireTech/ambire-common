@@ -425,7 +425,7 @@ describe('Portfolio Controller ', () => {
           new Promise((resolve) => {
             setTimeout(() => {
               queueOrder.push('updatePortfolioState - #1 call')
-              resolve(true)
+              resolve([true, null])
             }, 2000)
           })
       )
@@ -433,14 +433,14 @@ describe('Portfolio Controller ', () => {
         () =>
           new Promise((resolve) => {
             queueOrder.push('updatePortfolioState - #2 call')
-            resolve(true)
+            resolve([true, null])
           })
       )
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
             queueOrder.push('updatePortfolioState - #3 call')
-            resolve(true)
+            resolve([true, null])
           })
       )
 

@@ -111,7 +111,16 @@ export class V2 extends BaseAccount {
     return BROADCAST_OPTIONS.byBundler
   }
 
-  shouldIncludeActivatorCall() {
+  shouldIncludeActivatorCall(paidBy?: string) {
+    // if the account is not deployed and we're paying with an EOA,
+    // include the 4337 priv
+    if (
+      !this.accountState.isDeployed &&
+      paidBy &&
+      paidBy.toLowerCase() !== this.account.addr.toLowerCase()
+    )
+      return true
+
     return this.#isTransitioningTo4337()
   }
 
