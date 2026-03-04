@@ -426,7 +426,7 @@ describe('Portfolio Controller ', () => {
           new Promise((resolve) => {
             setTimeout(() => {
               queueOrder.push('updatePortfolioState - #1 call')
-              resolve(true)
+              resolve([true, null])
             }, 2000)
           })
       )
@@ -434,14 +434,14 @@ describe('Portfolio Controller ', () => {
         () =>
           new Promise((resolve) => {
             queueOrder.push('updatePortfolioState - #2 call')
-            resolve(true)
+            resolve([true, null])
           })
       )
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
             queueOrder.push('updatePortfolioState - #3 call')
-            resolve(true)
+            resolve([true, null])
           })
       )
 
@@ -1973,7 +1973,7 @@ describe('Portfolio Controller ', () => {
     const { controller } = await prepareTest()
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBe(undefined)
+    expect(controller.tokenDataCache['137']).toBe(undefined)
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
@@ -1983,9 +1983,9 @@ describe('Portfolio Controller ', () => {
     })
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBeDefined()
+    expect(controller.tokenDataCache['137']).toBeDefined()
     // @ts-ignore
-    expect(controller.priceCache['137'].size).toBeGreaterThan(0)
+    expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()

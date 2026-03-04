@@ -2514,7 +2514,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     delete this.#accountOp.activatorCall
 
     // @EntryPoint activation for SA
-    if (this.baseAccount.shouldIncludeActivatorCall()) {
+    if (this.baseAccount.shouldIncludeActivatorCall(this.accountOp.gasFeePayment.paidBy)) {
       this.#accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
     this.#updateAccountOp(this.#accountOp)

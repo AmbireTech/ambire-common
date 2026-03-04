@@ -1,5 +1,5 @@
 import { AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Price } from '../../interfaces/assets'
+import { Price, TokenMarketData } from '../../interfaces/assets'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
@@ -33,6 +33,7 @@ export type TokenResult = {
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
+  marketData: TokenMarketData
   flags: {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
@@ -66,11 +67,16 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
+export type TokenDataCacheValue = {
+  priceIn: Price[]
+  marketData: TokenMarketData
+}
+
 /**
- * Cache for prices, used to avoid redundant price fetches
- * Map<tokenAddress, [timestamp, prices]>
+ * Cache for token data
+ * <tokenAddress>: [timestamp, data]
  */
-export type PriceCache = Map<string, [number, Price[]]>
+export type TokenDataCache = Map<string, [number, TokenDataCacheValue]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
 
@@ -99,6 +105,28 @@ export interface ERC721s {
   [collectionAddress: string]: bigint[]
 }
 
+export type ExternalAPITokenMarketDataResponse = {
+  /**
+   * The relayer returns baseCurrency and price, while cena returns only usd.
+   */
+  baseCurrency?: string
+  /**
+   * The relayer returns the price in [price]
+   */
+  price?: number
+  /**
+   * cena returns the price in [usd]
+   */
+  usd?: number
+  /**
+   * Despite the name, this is a percentage, not USD value change.
+   */
+  usd_24h_change: number
+  usd_market_cap: number
+  usd_24h_vol: number
+  exchanges: string[]
+}
+
 /**
  * The portfolio fetches tokens using deployless. We provide
  * "hints" to deployless, so it knows where to look for assets. Hints are
@@ -123,7 +151,7 @@ export interface Hints {
      * not make separate requests for prices.
      */
     prices: {
-      [addr: string]: Price
+      [addr: string]: ExternalAPITokenMarketDataResponse
     }
     /**
      * When true, either the account is empty and static hints are returned,
@@ -228,7 +256,7 @@ export interface PortfolioLibGetResult {
   discoveryTime: number
   oracleCallTime: number
   priceUpdateTime: number
-  priceCache: PriceCache
+  tokenDataCache: TokenDataCache
   tokens: TokenResult[]
   feeTokens: TokenResult[]
   /**
@@ -279,7 +307,7 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'collections'
     | 'tokenErrors'
     | 'blockNumber'
-    | 'priceCache'
+    | 'tokenDataCache'
     | 'toBeLearned'
     | 'feeTokens'
     | 'priceUpdateTime'
@@ -429,9 +457,9 @@ export interface GetOptions {
    */
   blockTag: 'latest' | 'pending' | 'both' | number
   simulation?: GetOptionsSimulation
-  priceCache?: PriceCache
-  priceRecency: number
-  priceRecencyOnFailure?: number
+  tokenDataCache?: TokenDataCache
+  tokenDataRecency: number
+  tokenDataRecencyOnFailure?: number
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type

@@ -18,7 +18,6 @@ export const dappIdsToBeRemoved = new Set([
   // unsupported or outdated protocols returned by DefiLlama
   'bridge.base.org',
   'binance.com',
-  'app.ethena.fi',
   'securitize.io',
   'gold.tether.to',
   'usdtb.money',
@@ -420,7 +419,13 @@ export const defiLlamaProtocolIdsToExclude: string[] = [
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const categoriesToExclude = ['CEX', 'Developer Tools']
-export const dappsNotToFilterOutByDomain = ['snapshot.box', 'bungee.exchange', 'altitude.fi']
+export const dappsNotToFilterOutByDomain = [
+  'snapshot.box',
+  'bungee.exchange',
+  'altitude.fi',
+  'zora.co',
+  'swap.defillama.com'
+]
 
 export const CATEGORY_MAP: Record<string, string> = {
   'AI Agents': 'AI Agents',

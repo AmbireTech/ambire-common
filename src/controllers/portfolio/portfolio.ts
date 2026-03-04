@@ -47,6 +47,7 @@ import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
+  convertApiTokenDataToTokenDataCache,
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getFlags,
@@ -62,6 +63,7 @@ import {
   AccountState,
   ExtendedError,
   ExtendedErrorWithLevel,
+  ExternalAPITokenMarketDataResponse,
   ExternalPortfolioDiscoveryResponse,
   FormattedPortfolioDiscoveryResponse,
   GasTankTokenResult,
@@ -71,9 +73,10 @@ import {
   NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
-  PriceCache,
   TemporaryTokens,
   ToBeLearnedAssets,
+  TokenDataCache,
+  TokenDataCacheValue,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -186,7 +189,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
 
-  protected priceCache: { [chainId: string]: PriceCache } = {}
+  protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
 
   #providers: IProvidersController
 
@@ -623,7 +626,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
       const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000 * 5,
+        tokenDataRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
@@ -908,16 +911,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Update the price cache so the lib can use the latest prices from velcro
     if (response.prices) {
-      const networkPriceCache = this.priceCache[chainId.toString()] || new Map()
+      const networkTokenDataCache: TokenDataCache =
+        this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
 
       for (const [key, priceData] of Object.entries(response.prices)) {
         // eslint-disable-next-line no-continue
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
-        networkPriceCache.set(key, [Date.now(), [priceData]])
+        networkTokenDataCache.set(key, [
+          Date.now(),
+          convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
+        ])
       }
 
-      this.priceCache[chainId.toString()] = networkPriceCache
+      this.tokenDataCache[chainId.toString()] = networkTokenDataCache
     }
 
     response.lastUpdate = Date.now()
@@ -947,17 +954,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     network: Network,
     portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & {
+      hasKeys: boolean
       maxDataAgeMs?: number
+      defiMaxDataAgeMs?: number
       isManualUpdate?: boolean
       isSignAccountOpSimulation?: boolean
-    },
-    discoveryData: FormattedPortfolioDiscoveryResponse | null
-  ): Promise<boolean> {
+    }
+  ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
     const { maxDataAgeMs, isManualUpdate, isSignAccountOpSimulation } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
-    if (!accountState) return false
+    if (!accountState) return [false, null]
 
     if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
@@ -970,7 +978,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs
     )
 
-    if (canSkipUpdate) return false
+    if (canSkipUpdate) return [true, null]
 
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
@@ -988,15 +996,34 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
-      const networkPriceCache = this.priceCache[network.chainId.toString()] || new Map()
+      const networkTokenDataCache = this.tokenDataCache[network.chainId.toString()] || new Map()
+
+      const hintsResponse =
+        this.#state[account.addr]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
+      const discoveryData = await this.getPortfolioFromApiDiscovery({
+        chainId: network.chainId,
+        account,
+        baseCurrency: 'usd',
+        externalApiHintsResponse: hintsResponse || null,
+        isManualUpdate,
+        defiMaxDataAgeMs: portfolioProps?.defiMaxDataAgeMs,
+        hasKeys: portfolioProps.hasKeys
+      })
+      const allHints = this.getAllHints(
+        account.addr,
+        network.chainId,
+        isManualUpdate,
+        discoveryData?.data?.hints
+      )
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
-          priceRecency: 60000 * 5,
-          priceCache: networkPriceCache,
+          tokenDataRecency: 60000 * 5,
+          tokenDataCache: networkTokenDataCache,
           blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
+          ...allHints,
           ...portfolioProps,
           disableAutoDiscovery: true
         }),
@@ -1036,7 +1063,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const combinedErrors = [...portfolioResult.errors, ...(discoveryData?.errors || [])]
 
-      this.priceCache[network.chainId.toString()] = portfolioResult.priceCache
+      this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
@@ -1065,7 +1092,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       ) {
         this.#setNetworkLoading(account.addr, network.chainId.toString(), false)
         this.emitUpdate()
-        return true
+        return [true, discoveryData]
       }
 
       accountState[network.chainId.toString()] = {
@@ -1095,7 +1122,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
       this.emitUpdate()
-      return true
+      return [true, discoveryData]
     } catch (e: any) {
       this.emitError({
         level: 'silent',
@@ -1120,7 +1147,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
       this.emitUpdate()
 
-      return false
+      return [false, null]
     }
   }
 
@@ -1373,26 +1400,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             paramsMaxDataAgeMsUnused
           )
 
-          const hintsResponse =
-            this.#state[accountId]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
-          const discoveryResponse = await this.getPortfolioFromApiDiscovery({
-            chainId: network.chainId,
-            account: selectedAccount,
-            baseCurrency: 'usd',
-            externalApiHintsResponse: hintsResponse || null,
-            isManualUpdate,
-            defiMaxDataAgeMs: opts?.defiMaxDataAgeMs,
-            hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
-          })
-          const allHints = this.getAllHints(
-            accountId,
-            network.chainId,
-            isManualUpdate,
-            discoveryResponse?.data?.hints
-          )
-
           const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null
-          const isSuccessful = await this.updatePortfolioState(
+
+          const [isSuccessful, discoveryResponse] = await this.updatePortfolioState(
             selectedAccount,
             network,
             portfolioLib,
@@ -1411,9 +1421,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                 }),
               disableAutoDiscovery: true,
               isSignAccountOpSimulation,
-              ...allHints
-            },
-            discoveryResponse
+              hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
+            }
           )
 
           // Learn tokens and nfts from the portfolio lib
