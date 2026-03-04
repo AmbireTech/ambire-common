@@ -854,7 +854,7 @@ export const covertApiTokenDataToTokenDataCache = (
           marketCap: baseCurrencyMarketCap
         }
       ],
-      exchanges: (tokenData.exchanges || []).map(({ identifier }) => identifier)
+      exchanges: tokenData.exchanges || []
     }
   }
 }

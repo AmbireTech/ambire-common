@@ -121,10 +121,7 @@ export type ExternalAPITokenMarketDataResponse = {
   usd_24h_change: number
   usd_market_cap: number
   usd_24h_vol: number
-  exchanges: {
-    name: string
-    identifier: string
-  }[]
+  exchanges: string[]
 }
 
 /**
