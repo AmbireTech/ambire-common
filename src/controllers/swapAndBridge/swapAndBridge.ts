@@ -1468,6 +1468,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           canTopUpGasTank: false,
           rewardsType: null
         },
+        marketData: {
+          marketDataIn: []
+        },
         priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
 
