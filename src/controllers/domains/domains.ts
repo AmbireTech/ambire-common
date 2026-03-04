@@ -100,9 +100,9 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     await resolveENSDomain({
+      provider: ethereumProvider,
       domain,
-      bip44Item,
-      getResolver: (name) => ethereumProvider.getResolver(name)
+      bip44Item
     })
       .then(async ({ address, avatar }) => {
         if (address) {
