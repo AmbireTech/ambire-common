@@ -1,4 +1,5 @@
 import { Block, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
+import { createPublicClient, defineChain, Hex, http } from 'viem'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -325,4 +326,53 @@ export function gasPriceToBundlerFormat(gasRecommendations: GasRecommendation[])
   }
 
   return formatted as GasSpeeds
+}
+
+export async function getViemGasPrices(network: Network): Promise<GasSpeeds> {
+  const chain = defineChain({
+    id: Number(network.chainId),
+    name: network.name,
+    nativeCurrency: {
+      name: network.nativeAssetId,
+      symbol: network.nativeAssetSymbol,
+      decimals: 18
+    },
+    rpcUrls: {
+      default: {
+        http: [network.selectedRpcUrl]
+      },
+      public: {
+        http: [network.selectedRpcUrl]
+      }
+    },
+    blockExplorers: {
+      default: {
+        name: 'Block explorer',
+        url: network.explorerUrl || ''
+      }
+    }
+  })
+  const client = createPublicClient({
+    chain,
+    transport: http()
+  })
+  const data = await client.estimateFeesPerGas({ type: 'eip1559' })
+  return {
+    slow: {
+      maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
+      maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
+    },
+    medium: {
+      maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
+      maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
+    },
+    fast: {
+      maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
+      maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
+    },
+    ape: {
+      maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
+      maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
+    }
+  }
 }

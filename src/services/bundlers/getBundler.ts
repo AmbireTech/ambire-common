@@ -1,4 +1,5 @@
 import {
+  ALCHEMY,
   allBundlers,
   BICONOMY,
   BUNDLER,
@@ -9,6 +10,7 @@ import {
   PIMLICO
 } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
+import { Alchemy } from './alchemy'
 import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'
 import { Candide } from './candide'
@@ -36,6 +38,9 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
 
     case CUSTOM:
       return new CustomBundler()
+
+    case ALCHEMY:
+      return new Alchemy()
 
     default:
       throw new Error('Bundler settings error')

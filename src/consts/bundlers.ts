@@ -4,6 +4,7 @@ export const ETHERSPOT = 'etherspot'
 export const GELATO = 'gelato'
 export const CANDIDE = 'candide'
 export const CUSTOM = 'custom'
+export const ALCHEMY = 'alchemy'
 
 export type BUNDLER =
   | typeof PIMLICO
@@ -12,5 +13,6 @@ export type BUNDLER =
   | typeof GELATO
   | typeof CANDIDE
   | typeof CUSTOM
+  | typeof ALCHEMY
 
-export const allBundlers = [PIMLICO, BICONOMY, ETHERSPOT, GELATO, CANDIDE, CUSTOM]
+export const allBundlers = [PIMLICO, BICONOMY, ETHERSPOT, GELATO, CANDIDE, CUSTOM, ALCHEMY]

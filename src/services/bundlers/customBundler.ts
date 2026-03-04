@@ -1,10 +1,8 @@
 /* eslint-disable class-methods-use-this */
 
-import { toBeHex } from 'ethers'
-import { createPublicClient, defineChain, http } from 'viem'
 import { BUNDLER, CUSTOM } from '../../consts/bundlers'
-import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
+import { getViemGasPrices } from '../../libs/gasPrice/gasPrice'
 import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
@@ -15,52 +13,7 @@ export class CustomBundler extends Bundler {
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
-    const chain = defineChain({
-      id: Number(network.chainId),
-      name: network.name,
-      nativeCurrency: {
-        name: network.nativeAssetId,
-        symbol: network.nativeAssetSymbol,
-        decimals: 18
-      },
-      rpcUrls: {
-        default: {
-          http: [network.selectedRpcUrl]
-        },
-        public: {
-          http: [network.selectedRpcUrl]
-        }
-      },
-      blockExplorers: {
-        default: {
-          name: 'Block explorer',
-          url: network.explorerUrl || ''
-        }
-      }
-    })
-    const client = createPublicClient({
-      chain,
-      transport: http()
-    })
-    const data = await client.estimateFeesPerGas()
-    return {
-      slow: {
-        maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
-        maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
-      },
-      medium: {
-        maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
-        maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
-      },
-      fast: {
-        maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
-        maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
-      },
-      ape: {
-        maxFeePerGas: toBeHex(data.maxFeePerGas) as Hex,
-        maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas) as Hex
-      }
-    }
+    return getViemGasPrices(network)
   }
 
   public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {
