@@ -15,7 +15,7 @@ import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
-  covertApiTokenDataToTokenDataCache,
+  convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
   mergeERC721s,
@@ -301,7 +301,7 @@ export class Portfolio {
 
     const tokenDataCache: TokenDataCache = paramsTokenDataCache || new Map()
     for (const addr in hints.externalApi?.prices || {}) {
-      const tokenDataHint = covertApiTokenDataToTokenDataCache(
+      const tokenDataHint = convertApiTokenDataToTokenDataCache(
         hints.externalApi?.prices[addr] || null
       )
       // eslint-disable-next-line no-continue
@@ -485,7 +485,7 @@ export class Portfolio {
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
 
-          const formattedTokenData = covertApiTokenDataToTokenDataCache(tokenData)
+          const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
 
           if (
             formattedTokenData &&

@@ -47,7 +47,7 @@ import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
-  covertApiTokenDataToTokenDataCache,
+  convertApiTokenDataToTokenDataCache,
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getFlags,
@@ -916,7 +916,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
         networkTokenDataCache.set(key, [
           Date.now(),
-          covertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
+          convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
         ])
       }
 

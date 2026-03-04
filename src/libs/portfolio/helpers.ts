@@ -520,7 +520,11 @@ export const getTotal = (
       // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
       if (typeof total !== 'number' || Number.isNaN(total)) {
         console.error(
-          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`
+          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`,
+          'Price:',
+          x,
+          'Amount:',
+          tokenAmount
         )
         // eslint-disable-next-line no-continue
         continue
@@ -823,7 +827,7 @@ export const getHardcodedCitreaPrices = (address: string): Price | null => {
   return null
 }
 
-export const covertApiTokenDataToTokenDataCache = (
+export const convertApiTokenDataToTokenDataCache = (
   tokenData: ExternalAPITokenMarketDataResponse | null
 ): TokenDataCacheValue => {
   if (!tokenData) {
@@ -837,14 +841,14 @@ export const covertApiTokenDataToTokenDataCache = (
   }
 
   const baseCurrency = (tokenData.baseCurrency || 'usd') as 'usd' // stop ts from complaining, we only support usd as base currency for now
-  const price = (tokenData.price || tokenData.usd) as number
+  const price = (tokenData.price || tokenData.usd) as number | undefined
 
   const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`] || null
   const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`] || null
   const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`] || null
 
   return {
-    priceIn: [{ baseCurrency, price }],
+    priceIn: typeof price === 'number' ? [{ baseCurrency, price }] : [],
     marketData: {
       marketDataIn: [
         {
