@@ -163,4 +163,27 @@ describe('Domains', () => {
       ENS_LATEST_RESOLVER.name
     )
   })
+  // @TODO: Fix this test
+  it.skip('should use the universal resolver contract', async () => {
+    const UNIVERSAL_RESOLVER_TEST = {
+      address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+      name: 'ur.gtest.eth'
+    }
+
+    await domainsController.resolveDomain({ domain: UNIVERSAL_RESOLVER_TEST.name })
+
+    expect(domainsController.ensToAddress[UNIVERSAL_RESOLVER_TEST.name]).toBe(
+      UNIVERSAL_RESOLVER_TEST.address
+    )
+  })
+  it('should support CCIP Read', async () => {
+    const CCIP_READ_TEST = {
+      address: '0x779981590E7Ccc0CFAe8040Ce7151324747cDb97',
+      name: 'test.offchaindemo.eth'
+    }
+
+    await domainsController.resolveDomain({ domain: CCIP_READ_TEST.name })
+
+    expect(domainsController.ensToAddress[CCIP_READ_TEST.name]).toBe(CCIP_READ_TEST.address)
+  })
 })
