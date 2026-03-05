@@ -560,6 +560,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     if (
+      // todo<safe>: a way to alarm the user of this
+      !this.account.safeCreation &&
       this.accountOp.calls.some(
         (c) =>
           isAddress(c.to) &&
@@ -3382,18 +3384,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const signed = this.accountOp.signed || []
     if (signed.length >= this.threshold) return true
 
-    const hasEOAWithEnoughAmount = this.estimation.availableFeeOptions.find(
-      (option) =>
-        option.paidBy !== this.account.addr &&
-        option.availableAmount > (this.accountOp.gasFeePayment?.amount || 0)
-    )
     const notSignedImportedOwners = getImportedSignersThatHaveNotSigned(
       signed,
       this.accountKeyStoreKeys.map((k) => k.addr)
     )
-    return !!(
-      signed.length + notSignedImportedOwners.length >= this.threshold && hasEOAWithEnoughAmount
-    )
+    return !!(signed.length + notSignedImportedOwners.length >= this.threshold)
   }
 
   toJSON() {
