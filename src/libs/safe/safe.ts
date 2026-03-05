@@ -116,13 +116,13 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
     return {
       to: op.safeTx.to as Hex,
       value: toBeHex(op.safeTx.value) as Hex,
-      data: op.safeTx.data as Hex,
+      data: op.safeTx.data ? (op.safeTx.data as Hex) : '0x',
       operation: op.safeTx.operation,
       safeTxGas: toBeHex(op.safeTx.safeTxGas) as Hex,
       baseGas: toBeHex(op.safeTx.baseGas) as Hex,
       gasPrice: toBeHex(op.safeTx.gasPrice) as Hex,
       gasToken: op.safeTx.gasToken as Hex,
-      refundReceiver: op.safeTx.refundReceiver as Hex,
+      refundReceiver: op.safeTx.refundReceiver ? (op.safeTx.refundReceiver as Hex) : '0x',
       nonce: toBeHex(op.safeTx.nonce) as Hex
     }
   }
