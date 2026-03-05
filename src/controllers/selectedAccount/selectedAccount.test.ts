@@ -171,7 +171,8 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
 
   await accountsCtrl.initialLoadPromise

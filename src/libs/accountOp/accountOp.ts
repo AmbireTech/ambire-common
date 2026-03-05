@@ -229,3 +229,36 @@ export function getSignableHash(
 export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
   return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op))
 }
+
+export function haveCallsChanged(callsOne: AccountOp['calls'], callsTwo: AccountOp['calls']) {
+  const lengthDiff = callsOne.length !== callsTwo.length
+  if (lengthDiff) return true
+
+  // if some of their properties differ, then calls have changed
+  for (let i = 0; i < callsOne.length; i++) {
+    const callOne = callsOne[i]!
+    const callTwo = callsTwo[i]!
+    if (
+      callOne.to !== callTwo?.to ||
+      callOne.data !== callTwo?.data ||
+      callOne.value !== callTwo?.value ||
+      callOne.id !== callTwo?.id
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+export function haveAccountOpsChanged(accountOpsOne: AccountOp[], accountOpsTwo: AccountOp[]) {
+  const lengthDiff = accountOpsOne.length !== accountOpsTwo.length
+  if (lengthDiff) return true
+
+  for (let i = 0; i < accountOpsOne.length; i++) {
+    const oneOp = accountOpsOne[i]!
+    const twoOp = accountOpsTwo[i]!
+    if (haveCallsChanged(oneOp.calls, twoOp.calls)) return true
+  }
+
+  return false
+}

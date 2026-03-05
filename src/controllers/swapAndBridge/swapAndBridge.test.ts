@@ -143,7 +143,8 @@ const portfolioCtrl = new PortfolioController(
   relayerUrl,
   velcroUrl,
   new BannerController(storageCtrl),
-  featureFlagsCtrl
+  featureFlagsCtrl,
+  () => {}
 )
 
 const safe = new SafeController({

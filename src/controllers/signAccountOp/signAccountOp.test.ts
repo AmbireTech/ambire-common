@@ -439,7 +439,8 @@ const init = async (
     'https://staging-relayer.ambire.com',
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
   const phishing = new PhishingController({
     fetch,

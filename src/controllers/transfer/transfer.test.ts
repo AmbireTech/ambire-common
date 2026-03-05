@@ -228,7 +228,8 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
   const safe = new SafeController({
     networks: networksCtrl,

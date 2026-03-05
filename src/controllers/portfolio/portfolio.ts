@@ -208,6 +208,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
 
+  #hasSimulationChanged: Function
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -219,6 +221,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     velcroUrl: string,
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
+    hasSimulationChanged: Function,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -237,6 +240,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.temporaryTokens = {}
     this.#banner = banner
     this.#featureFlags = featureFlags
+    this.#hasSimulationChanged = hasSimulationChanged
     this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
@@ -954,9 +958,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs?: number
       defiMaxDataAgeMs?: number
       isManualUpdate?: boolean
+      isSignAccountOpSimulation?: boolean
     }
   ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
-    const { maxDataAgeMs, isManualUpdate } = portfolioProps
+    const { maxDataAgeMs, isManualUpdate, isSignAccountOpSimulation } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
@@ -968,10 +973,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
 
-    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
-      accountState[network.chainId.toString()],
-      maxDataAgeMs
-    )
+    // always persist the simulation if it's isSignAccountOpSimulation
+    // otherwise, check for race conditions as updates happen from wherever
+    // - if the latest account opts from visibleRequests are not those
+    // passed as portfolioProps?.simulation?.accountOps, do not persist
+    // the update as it is outdated!
+    // this often happened when doing approve + action but the dapp sends
+    // the second request action immediately after txn confirmation.
+    // at that time, all kinds of portfolio update request fly in the wallet
+    // and some of them might disturb the correct, final simulation
+    const hasSimalationChanged =
+      !isSignAccountOpSimulation &&
+      this.#hasSimulationChanged(
+        account.addr,
+        network.chainId,
+        portfolioProps?.simulation?.accountOps
+      )
+
+    const canSkipUpdate =
+      hasSimalationChanged ||
+      PortfolioController.#getCanSkipUpdate(accountState[network.chainId.toString()], maxDataAgeMs)
 
     if (canSkipUpdate) return [true, null]
 
@@ -1313,12 +1334,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       defiMaxDataAgeMs?: number
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
+      isSignAccountOpSimulation?: boolean
     }
   ) {
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
-      isManualUpdate
+      isManualUpdate,
+      isSignAccountOpSimulation
     } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1395,6 +1418,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                   }
                 }),
               disableAutoDiscovery: true,
+              isSignAccountOpSimulation,
               hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
             }
           )
@@ -1883,7 +1907,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         }
       : undefined
 
-    return this.updateSelectedAccount(op.accountAddr, [network], simulation)
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation, {
+      isSignAccountOpSimulation: true
+    })
   }
 
   async updateNetworksWithDefiPositions(
