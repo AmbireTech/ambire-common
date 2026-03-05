@@ -301,17 +301,25 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
 
   const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
 
+  const formatNetworkNames = (names: string[]) => {
+    if (names.length === 1) return names[0]
+    if (names.length === 2) return `${names[0]} and ${names[1]}`
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
+  }
+
+  const formattedNetworkNames = formatNetworkNames(
+    disabledNetworksWithDefiPosArray.map((n) => n.name)
+  )
+
   banners.push({
     id: defiPositionsOnDisabledNetworksBannerId,
     type: 'info',
-    title: 'DeFi positions detected on disabled networks',
-    text: `You have ${totalCount} active DeFi ${totalCount === 1 ? 'position' : 'positions'} on${
-      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
-    }: ${disabledNetworksWithDefiPosArray
-      .map((n) => n.name)
-      .join(', ')}. Would you like to enable ${
+    title: `DeFi ${totalCount === 1 ? 'position' : 'positions'} available on ${formattedNetworkNames}`,
+    text: `Ambire API data providers report ${totalCount} more DeFi ${
+      totalCount === 1 ? 'position' : 'positions'
+    }. Enable ${
       disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
-    }?`,
+    } to include ${totalCount === 1 ? 'it' : 'them'}?`,
     actions: [
       {
         actionName: 'enable-networks',
