@@ -2103,7 +2103,7 @@ describe('Portfolio Controller ', () => {
   })
   test('should do a request with a simulation; then a second request without the simulation should come and it should not be allowed to persist', async () => {
     const { controller } = await prepareTest({
-      hasSimulationChanged: (chainId: string, accountOps?: AccountOp[]) => {
+      hasSimulationChanged: (accAddr: string, chainId: string, accountOps?: AccountOp[]) => {
         if (accountOps) return false
         return true
       }

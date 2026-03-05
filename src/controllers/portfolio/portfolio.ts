@@ -973,10 +973,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
 
-    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
-      accountState[network.chainId.toString()],
-      maxDataAgeMs
-    )
+    // always persist the simulation if it's isSignAccountOpSimulation
+    // otherwise, check for race conditions as updates happen from wherever
+    // - if the latest account opts from visibleRequests are not those
+    // passed as portfolioProps?.simulation?.accountOps, do not persist
+    // the update as it is outdated!
+    // this often happened when doing approve + action but the dapp sends
+    // the second request action immediately after txn confirmation.
+    // at that time, all kinds of portfolio update request fly in the wallet
+    // and some of them might disturb the correct, final simulation
+    const hasSimalationChanged =
+      !isSignAccountOpSimulation &&
+      this.#hasSimulationChanged(
+        account.addr,
+        network.chainId,
+        portfolioProps?.simulation?.accountOps
+      )
+
+    const canSkipUpdate =
+      hasSimalationChanged ||
+      PortfolioController.#getCanSkipUpdate(accountState[network.chainId.toString()], maxDataAgeMs)
 
     if (canSkipUpdate) return [true, null]
 
@@ -1075,24 +1091,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
         lastSuccessfulUpdate = Date.now()
-      }
-
-      // always persist the simulation if it's isSignAccountOpSimulation
-      // otherwise, check for race conditions as updates happen from wherever
-      // - if the latest account opts from visibleRequests are not those
-      // passed as portfolioProps?.simulation?.accountOps, do not persist
-      // the update as it is outdated!
-      // this often happened when doing approve + action but the dapp sends
-      // the second request action immediately after txn confirmation.
-      // at that time, all kinds of portfolio update request fly in the wallet
-      // and some of them might disturb the correct, final simulation
-      if (
-        !isSignAccountOpSimulation &&
-        this.#hasSimulationChanged(network.chainId, portfolioProps?.simulation?.accountOps)
-      ) {
-        this.#setNetworkLoading(account.addr, network.chainId.toString(), false)
-        this.emitUpdate()
-        return [true, discoveryData]
       }
 
       accountState[network.chainId.toString()] = {

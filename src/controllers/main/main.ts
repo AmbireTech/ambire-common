@@ -318,8 +318,8 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
-      (chainId: string, accountOps?: AccountOp[]) => {
-        return this.hasSimulationChanged(chainId, accountOps)
+      (accAddr: string, chainId: string, accountOps?: AccountOp[]) => {
+        return this.hasSimulationChanged(accAddr, chainId, accountOps)
       },
       eventEmitterRegistry
     )
@@ -1425,8 +1425,9 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  hasSimulationChanged(chainId: string, accountOps?: AccountOp[]): boolean {
-    if (!this.selectedAccount?.account) return false
+  hasSimulationChanged(accAddr: string, chainId: string, accountOps?: AccountOp[]): boolean {
+    if (!this.selectedAccount?.account || this.selectedAccount.account.addr !== accAddr)
+      return false
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
