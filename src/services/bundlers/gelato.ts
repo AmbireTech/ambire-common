@@ -56,23 +56,24 @@ export class Gelato extends Bundler {
     const provider = this.getProvider(network)
     const prices: any = await provider.send('gelato_getUserOperationGasPrice', [])
 
-    console.log('the prices', prices)
+    // do not set a priority of 0
+    const priority = prices.maxPriorityFeePerGas === '0x0' ? '0x1' : prices.maxPriorityFeePerGas
     return {
       slow: {
         maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
+        maxPriorityFeePerGas: priority
       },
       medium: {
         maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
+        maxPriorityFeePerGas: priority
       },
       fast: {
         maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
+        maxPriorityFeePerGas: priority
       },
       ape: {
         maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
+        maxPriorityFeePerGas: priority
       }
     }
   }
