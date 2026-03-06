@@ -29,6 +29,7 @@ import {
   SafeMultisigTransactionResponse
 } from '@safe-global/types-kit'
 
+import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
@@ -695,4 +696,9 @@ export async function fetchExecutedTransactions(
   }
 
   return results
+}
+
+export async function getNonce(safeAddr: string, provider: RPCProvider): Promise<bigint> {
+  const safeInterface = new Contract(safeAddr, SafeAbi, provider) as any
+  return safeInterface.nonce()
 }
