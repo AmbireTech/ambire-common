@@ -2,7 +2,7 @@ import { parseEther } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
-import { Message, TypedMessage } from '../../interfaces/userRequest'
+import { Message, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
 import { erc20Module, erc721Module, permit2Module } from './messageModules'
 import { entryPointModule } from './messageModules/entryPointModule'
@@ -62,6 +62,17 @@ const typedMessages = {
       ],
       spender: address2,
       sigDeadline: 968187600n
+    }
+  ],
+  PermitTransferFrom: [
+    {
+      permitted: {
+        token: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+        amount: 2022432608n
+      },
+      spender: '0x1fa57f879417e029ef57d7ce915b0aa56a507c31',
+      nonce: 144965843626974229045100328034567758130n,
+      deadline: 1770952162
     }
   ],
   fallback: [
@@ -128,7 +139,9 @@ describe('typed message tests', () => {
     ]
 
     messageTemplate.content.message = typedMessages.erc721[0]!
-    ;(messageTemplate.content as TypedMessage).domain.verifyingContract = NFT_ADDRESS
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = NFT_ADDRESS
     const { fullVisualization } = erc721Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
@@ -142,12 +155,13 @@ describe('typed message tests', () => {
       getToken(WETH_ADDRESS, 1000000000000000000n),
       getDeadline(968187600n)
     ]
-    ;(messageTemplate.content as TypedMessage).types = {
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
       PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
     }
-    ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
-      '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     messageTemplate.content.message = typedMessages.permit2[0]!
     const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
@@ -166,13 +180,35 @@ describe('typed message tests', () => {
       getToken(WETH_ADDRESS, 500000000000000000n),
       getDeadline(968187600n)
     ]
-    ;(messageTemplate.content as TypedMessage).types = {
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
       PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }]
     }
-    ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
-      '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     messageTemplate.content.message = typedMessages.permit2[1]!
+    const { fullVisualization } = permit2Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedBatchVisualization)
+  })
+
+  test('permit2 module batch permit', () => {
+    const expectedBatchVisualization = [
+      getAction('Approve'),
+      getAddressVisualization('0x1fa57f879417e029ef57d7ce915b0aa56a507c31'),
+      getLabel('to use'),
+      getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 2022432608n),
+      getDeadline(1770952162n)
+    ]
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      PermitBatch: [{ name: 'details', type: 'TokenPermissions' }]
+    }
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    messageTemplate.content.message = typedMessages.PermitTransferFrom[0]!
     const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)

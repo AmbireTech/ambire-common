@@ -250,7 +250,7 @@ describe('RecurringTimeout', () => {
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
     expect(emitError).toHaveBeenCalledWith(
-      expect.objectContaining({ error: err, message: 'Recurring task failed', level: 'minor' })
+      expect.objectContaining({ error: err, message: 'Recurring task failed', level: 'silent' })
     )
 
     // after failure, next run still schedules

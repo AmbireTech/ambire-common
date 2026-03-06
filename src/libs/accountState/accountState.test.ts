@@ -1,4 +1,4 @@
-import { ethers, toBeHex } from 'ethers'
+import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -21,6 +21,8 @@ const polygon = networks.find((n) => n.chainId === 137n)
 if (!polygon) throw new Error('unable to find polygon network in consts')
 const ethereum = networks.find((n) => n.chainId === 1n)
 if (!ethereum) throw new Error('unable to find ethereum network in consts')
+const optimism = networks.find((n) => n.chainId === 10n)
+if (!optimism) throw new Error('unable to find optimism network in consts')
 const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 
 describe('AccountState', () => {
@@ -148,7 +150,7 @@ describe('AccountState', () => {
       accountErc4337,
       accountEOANonceNonZero
     ]
-    const state = await getAccountState(provider, polygon, accounts)
+    const state = await getAccountState(provider, polygon, accounts, [])
 
     expect(state.length).toBe(6)
 
@@ -193,7 +195,7 @@ describe('AccountState', () => {
     }
 
     const ethereumProvider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
-    const state = await getAccountState(ethereumProvider, ethereum, [account7702])
+    const state = await getAccountState(ethereumProvider, ethereum, [account7702], [])
 
     expect(state.length).toBe(1)
 
@@ -203,8 +205,51 @@ describe('AccountState', () => {
     expect(eoa7702.isDeployed).toBeTruthy()
     expect(eoa7702.isSmarterEoa).toBeTruthy()
     expect(eoa7702.isErc4337Enabled).toBeTruthy()
-    expect(eoa7702.associatedKeys['0xD8293ad21678c6F09Da139b4B62D38e514a03B78']).toBe(
-      toBeHex(2, 32)
-    )
+    expect(eoa7702.associatedKeys[0]).toBe('0xD8293ad21678c6F09Da139b4B62D38e514a03B78')
+    expect(eoa7702.threshold).toBe(0)
+  })
+  test('should fetch the account state for a safe account', async () => {
+    const safeAcc: Account = {
+      addr: '0x8c8979A7d79C4CdDA170C008b797d466F00dD167',
+      associatedKeys: [], // should return the correct ones regardless
+      initialPrivileges: [],
+      creation: null,
+      safeCreation: {
+        factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+        singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a',
+        setupData:
+          '0xb63e800d00000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000bd89a1ce4dde368ffab0ec35506eece0b1ffdc540000000000000000000000000000000000000000000000000000000000000160000000000000000000000000fd0732dc9e303f09fcef3a7388ad10a83459ec99000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005afe7a11e70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000a04d21b7ae298d8e4a61a507de2b7ceafd90ba010000000000000000000000005d8dd39a360e5d5219f965695f9c0290862ca24a0000000000000000000000000000000000000000000000000000000000000024fe51f64300000000000000000000000029fcb43b46531bca003ddc8fcb67ffe91900c76200000000000000000000000000000000000000000000000000000000',
+        saltNonce: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        version: '1.4.1'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
+      }
+    }
+
+    const correctAssociatedKeys = [
+      '0xB0A9723c87E1B4652D8cb9DDc4dd26e58126C125',
+      '0xa04D21b7ae298D8e4a61A507DE2b7CeafD90Ba01',
+      '0x5d8DD39A360E5d5219f965695f9C0290862CA24A'
+    ]
+
+    const optimismProvider = getRpcProvider(optimism.rpcUrls, optimism.chainId)
+    const state = await getAccountState(optimismProvider, optimism, [safeAcc], [])
+
+    expect(state.length).toBe(1)
+
+    const safe = state[0]!
+    expect(safe.isEOA).toBeFalsy()
+    expect(safe.isV2).toBeFalsy()
+    expect(safe.isDeployed).toBeTruthy()
+    expect(safe.isSmarterEoa).toBeFalsy()
+    expect(safe.isErc4337Enabled).toBeFalsy()
+    expect(safe.associatedKeys.length).toBe(3)
+    expect(safe.associatedKeys[0]).toBe(correctAssociatedKeys[0])
+    expect(safe.associatedKeys[1]).toBe(correctAssociatedKeys[1])
+    expect(safe.associatedKeys[2]).toBe(correctAssociatedKeys[2])
+    expect(safe.nonce).toBeGreaterThan(0)
+    expect(safe.threshold).toBe(2)
   })
 })

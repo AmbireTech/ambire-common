@@ -11,14 +11,15 @@ import {
   Interface,
   isAddress,
   isBytesLike,
+  keccak256,
   toBeHex,
+  toUtf8Bytes,
   ZeroAddress
 } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import {
@@ -78,6 +79,7 @@ import {
 } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { Safe } from '../../libs/account/Safe'
 import {
   AccountOp,
   AccountOpWithId,
@@ -102,6 +104,20 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { privSlot } from '../../libs/proxyDeploy/deploy'
+import {
+  confirm,
+  getAlreadySignedOwners,
+  getDefaultOwners,
+  getImportedSignersThatHaveNotSigned,
+  getNonce,
+  getSafeTxn,
+  getSafeTxnHash,
+  getSigs,
+  propose,
+  sortByAddress,
+  sortSigs
+} from '../../libs/safe/safe'
 import {
   adjustEntryPointAuthorization,
   get7702Sig,
@@ -152,7 +168,8 @@ export enum SigningStatus {
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
   WaitingForPaymaster = 'waiting-for-paymaster-response',
-  Done = 'done'
+  Done = 'done',
+  Queued = 'queued'
 }
 
 export type Status = {
@@ -197,6 +214,7 @@ export type SignAccountOpUpdateProps = {
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
   accountOpData?: Partial<AccountOp>
+  signers?: { addr: Key['addr']; type: Key['type'] }[]
 }
 
 export type OnboardingSuccessProps = {
@@ -401,17 +419,28 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
-    this.baseAccount = getBaseAccount(
-      account,
-      accounts.accountStates[account.addr]![network.chainId.toString()]!, // ! is safe as otherwise, nothing will work
-      keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-      network
-    )
+    const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
+    this.baseAccount = getBaseAccount(account, accountState, network)
     this.#network = network
     this.#activity = activity
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
+
+    if (this.#accountOp.signature && this.#accountOp.txnId) {
+      this.#accountOp.signed = getAlreadySignedOwners(
+        this.#accountOp.signature,
+        this.#accountOp.txnId
+      )
+      const notSigned = getImportedSignersThatHaveNotSigned(
+        this.#accountOp.signed,
+        accountState.importedAccountKeys.map((k) => k.addr)
+      )
+
+      // make the status queued if there are no additional owners left to sign
+      if (this.#accountOp.signed.length < accountState.threshold && !notSigned.length)
+        this.status = { type: SigningStatus.Queued }
+    }
 
     this.signedAccountOp = null
     this.replacementFeeLow = false
@@ -486,6 +515,38 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
   }
 
+  async #getDefaultSigner() {
+    // call this method during signing only
+
+    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
+      throw new Error('signing not set')
+
+    const signer = await this.#keystore.getSigner(
+      this.accountOp.signingKeyAddr,
+      this.accountOp.signingKeyType
+    )
+
+    if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+    return signer
+  }
+
+  #setDefaultSigners(accountState?: AccountOnchainState) {
+    if (!accountState || !this.account.safeCreation) return
+
+    const signers = getDefaultOwners(
+      this.accountKeyStoreKeys,
+      accountState.threshold,
+      this.accountOp.signed
+    ).map((k) => ({
+      addr: k.addr,
+      type: k.type
+    }))
+
+    this.#updateAccountOp({
+      signers
+    })
+  }
+
   #validateAccountOp(): SignAccountOpError | null {
     const invalidAccountOpError =
       'The transaction is missing essential data. Please contact support.'
@@ -500,6 +561,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     if (
+      // todo<safe>: a way to alarm the user of this
+      !this.account.safeCreation &&
       this.accountOp.calls.some(
         (c) =>
           isAddress(c.to) &&
@@ -653,6 +716,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
+      const accountState =
+        this.#accounts.accountStates[this.account.addr]![this.#network.chainId.toString()]!
+
+      // by default for safe, we're using firstly internal keys
+      // if the user has only internal keys, the goal is to allow him to
+      // broadcast easily.
+      // The user can change this setting during signing, but we're setting
+      // the default option as a "quick" broadcast way without choosing signers
+      this.#setDefaultSigners(accountState)
+
       this.#updateAccountOp({
         signingKeyAddr: this.accountKeyStoreKeys[0]!.addr,
         signingKeyType: this.accountKeyStoreKeys[0]!.type
@@ -672,7 +745,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        if (
+        // for safe accounts, always select the first not disabled EOA
+        // or the first EOA if all are disabled
+        if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
+          const notDisabled = payOptionsPaidByEOA.find(
+            (option) => !this.#getIsFeeOptionDisabled(option)
+          )
+          const selected = notDisabled ?? payOptionsPaidByEOA[0]!
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
+        } else if (
           payOptionsPaidByUsOrGasTank.length > 0 &&
           !this.#getIsFeeOptionDisabled(payOptionsPaidByUsOrGasTank[0]!)
         ) {
@@ -715,6 +797,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get errors(): SignAccountOpError[] {
+    // no errors on a signed txn
+    if (this.status?.type === SigningStatus.Queued) return []
+
     const accountOpValidationError = this.#validateAccountOp()
 
     if (accountOpValidationError) return [accountOpValidationError]
@@ -748,7 +833,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
-    if (!areGasPricesLoading && !this.gasPrices) {
+    if (!areGasPricesLoading && !this.gasPrices && this.canBroadcast) {
       errors.push({
         title:
           'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
@@ -756,10 +841,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
-    if (!this.isSponsored && !this.estimation.availableFeeOptions.length)
+    if (!this.isSponsored && !this.estimation.availableFeeOptions.length && this.canBroadcast)
       errors.push({
         title: 'Insufficient funds to cover the fee.'
       })
+
+    // if the safe txn is not deployed, display an error
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
+      errors.push({
+        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe global`
+      })
+    }
 
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
@@ -774,7 +868,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === ZeroAddress
     )
-    if (!this.isSponsored && !currentPortfolioNetworkNative)
+    if (!this.isSponsored && !currentPortfolioNetworkNative && this.canBroadcast)
       errors.push({
         title:
           'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
@@ -786,7 +880,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       !this.isSponsored &&
       !this.accountOp.gasFeePayment &&
       this.feeTokenResult &&
-      this.selectedOption
+      this.selectedOption &&
+      this.canBroadcast
     ) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       if (this.hasSpeeds(identifier))
@@ -799,7 +894,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       !this.isSponsored &&
       this.selectedOption &&
       this.accountOp.gasFeePayment &&
-      this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
+      this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount &&
+      this.canBroadcast
     ) {
       const speedCoverage = []
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
@@ -811,7 +907,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      if (speedCoverage.length === 0) {
+      if (speedCoverage.length === 0 && !!this.account.safeCreation) {
+        errors.push({
+          title:
+            this.selectedOption.paidBy === this.account.addr
+              ? 'Broadcasting transactions is possible only using an external account. Import or create one to broadcast your Safe transactions'
+              : ERRORS.eoaInsufficientFunds
+        })
+      } else if (speedCoverage.length === 0) {
         const isSA = isSmartAccount(this.account)
         const isUnableToCoverWithAllOtherTokens = this.estimation.availableFeeOptions.every(
           (option) => {
@@ -883,7 +986,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       errors.push(this.status.error)
     }
 
-    if (!this.isSponsored && !this.#feeSpeedsLoading && this.selectedOption) {
+    if (!this.isSponsored && !this.#feeSpeedsLoading && this.selectedOption && this.canBroadcast) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       if (!this.hasSpeeds(identifier)) {
         if (!this.feeTokenResult?.priceIn.length) {
@@ -899,6 +1002,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
+    // safe txn, signed, with a future nonce: display an error
+    if (
+      !!this.account.safeCreation &&
+      accountState &&
+      this.accountOp.nonce &&
+      this.accountOp.nonce !== accountState.nonce &&
+      this.#accountOp.signed &&
+      this.#accountOp.signed.length >= this.threshold
+    ) {
+      errors.push({
+        title: 'You need to broadcast pending transactions before this one.'
+      })
+    }
+
     return errors
   }
 
@@ -906,7 +1023,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return (
       !!this.status &&
       (this.status?.type === SigningStatus.ReadyToSign ||
-        this.status?.type === SigningStatus.UpdatesPaused)
+        this.status?.type === SigningStatus.UpdatesPaused ||
+        this.status?.type === SigningStatus.Queued)
     )
   }
 
@@ -1096,7 +1214,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     signedTransactionsCount,
     hasNewEstimation,
     paidByKeyType,
-    accountOpData
+    accountOpData,
+    signers
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -1162,7 +1281,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (accountOpData) {
-        const { calls, ...rest } = accountOpData
+        const { calls, signature, ...rest } = accountOpData
+
+        if (signature && this.accountOp.txnId) {
+          const newlySigned = getAlreadySignedOwners(signature, this.accountOp.txnId)
+          const signed = this.accountOp.signed
+            ? [...new Set(...this.accountOp.signed, ...newlySigned)]
+            : newlySigned
+          this.#updateAccountOp({
+            signature: sortSigs(getSigs(signature), this.accountOp.txnId),
+            signed
+          })
+        }
 
         // update all properties except calls
         // calls are handled separately below
@@ -1231,6 +1361,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (this.accountOp.gasFeePayment?.paidBy === signingKeyAddr) {
           this.accountOp.gasFeePayment.paidByKeyType = signingKeyType
         }
+      }
+
+      if (signers && signers.length) {
+        const sorted = sortByAddress(signers)
+        const firstSigner = sorted[0]!
+        this.#updateAccountOp({
+          signers,
+          signingKeyAddr: firstSigner.addr,
+          signingKeyType: firstSigner.type
+        })
       }
 
       // Set defaults, if some of the optional params are omitted
@@ -1307,6 +1447,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.status?.type === SigningStatus.InProgress ||
       this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
+
     if (isInTheMiddleOfSigning || isDone) return
 
     // if we have an estimation error, set the state so and return
@@ -1320,6 +1461,24 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.status = { type: SigningStatus.UnableToSign }
       this.emitUpdate()
       return
+    }
+
+    // change the status to SigningStatus.Queued if there are no
+    // available signers to sign
+    if (this.#accountOp.signature && this.#accountOp.txnId) {
+      this.#accountOp.signed = getAlreadySignedOwners(
+        this.#accountOp.signature,
+        this.#accountOp.txnId
+      )
+      const notSigned = getImportedSignersThatHaveNotSigned(
+        this.#accountOp.signed,
+        this.accountKeyStoreKeys.map((k) => k.addr)
+      )
+      if (this.#accountOp.signed.length < this.threshold && !notSigned.length) {
+        this.status = { type: SigningStatus.Queued }
+        this.emitUpdate()
+        return
+      }
     }
 
     if (
@@ -1369,8 +1528,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * and only one controller in the registry (so the UI listens to the active one only).
    */
   pause() {
-    this.#stopRefetching = true
+    this.#stopIntervals()
     this.unregisterFromRegistry()
+  }
+
+  #stopIntervals() {
+    this.#stopRefetching = true
     // GasPrice may be destroyed at this point if the request was rejected
     this.#gasPriceInterval.stop()
     this.#simulateAndEstimateOrSimulateInterval.stop()
@@ -1386,6 +1549,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
     const { haveCallsChanged = false } = opts || {}
 
+    // we want to restart the interval if signAccountOp is for a signed safe.
+    // the reason for this: there could be multiple signed safe txns with
+    // the same nonce waiting to be broadcast. The may want to check each
+    // out in quick succession. If he does 1 -> 2 -> 1, calls would not
+    // have changed on 1, but the simulation from 2 will persist as sadly,
+    // the simulation is account based, not accountOp based
+    const isSignedSafe = !!this.account.safeCreation && !!this.accountOp.signed?.length
+
     this.#stopRefetching = false
     this.#reestimateCounter = 0
 
@@ -1394,7 +1565,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
     })
 
-    if (haveCallsChanged) {
+    if (haveCallsChanged || isSignedSafe) {
       // The simulateAndEstimateOrSimulateInterval must be restarted if the calls have changed
       // as that forces an immediate reestimation. start() does nothing
       // if the interval is already running.
@@ -1457,15 +1628,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const aPrice = a.token?.priceIn?.[0]?.price
     const bPrice = b.token?.priceIn?.[0]?.price
+    if (aPrice && !bPrice) return -1
+    if (!aPrice && bPrice) return 1
 
-    if (!aPrice || !bPrice) return 0
-    const aBalance = formatUnits(a.availableAmount, a.token.decimals)
-    const bBalance = formatUnits(b.availableAmount, b.token.decimals)
-    const aValue = parseFloat(aBalance) * aPrice
-    const bValue = parseFloat(bBalance) * bPrice
-
-    if (aValue > bValue) return -1
-    if (aValue < bValue) return 1
     return 0
   }
 
@@ -1589,17 +1754,35 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // TODO: how to handle this case?
       if (!state) return
 
+      // if the account is a safe,
+      // add an additional state override that gives privileges to the assKey;
+      // also, we changed privs storage slot to ambire.smart.contracts.storage
+      // so privs no longer override slot number 0
+      const stateDiff = !!this.account.safeCreation
+        ? {
+            [privSlot(
+              keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
+              'uint256',
+              this.account.associatedKeys[0],
+              'bytes32'
+            )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+          }
+        : undefined
+
+      // add stateOverride when using a safe as well
       const stateOverride =
-        this.accountOp.calls.length > 1 && isBasicAccount(this.account, state)
+        !!this.account.safeCreation ||
+        (this.accountOp.calls.length > 1 && isBasicAccount(this.account, state))
           ? {
               [this.account.addr]: {
-                code: AmbireAccount7702.binRuntime
+                code: AmbireAccount7702.binRuntime,
+                stateDiff
               }
             }
           : undefined
 
       const { tokens, nfts } = await debugTraceCall(
-        this.account,
+        this.baseAccount,
         this.accountOp,
         this.#network,
         state,
@@ -1860,7 +2043,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     let updatedPaidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType || null
 
     // Update only if it's not set or it's passed as an argument
-    if (paidByKeyType || !updatedPaidByKeyType) {
+    if (this.canBroadcast && (paidByKeyType || !updatedPaidByKeyType)) {
       const key = this.#keystore.getFeePayerKey(
         this.accountOp.accountAddr,
         this.#paidBy,
@@ -1951,7 +2134,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get accountKeyStoreKeys(): Key[] {
-    return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
+    // we take signing keys from the state as safe account signers
+    // may be different per network.
+    // if the account isn't a safe, we return the hardcoded associatedKeys
+    // from the account itself in the accountState
+    const state =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (!state) return []
+    if (this.account.safeCreation) return state.importedAccountKeys
+
+    return this.#keystore.keys.filter((key) => state.associatedKeys.includes(key.addr))
   }
 
   get feePayerKeyStoreKeys(): Key[] {
@@ -2009,8 +2201,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningErrorAndResetToReadyToSign(error: string, sendCrashReport?: boolean) {
-    this.emitError({ level: 'major', message: error, error: new Error(error), sendCrashReport })
+  #emitSigningErrorAndResetToReadyToSign({
+    message,
+    sendCrashReport,
+    accountState
+  }: {
+    message: string
+    sendCrashReport?: boolean
+    accountState?: AccountOnchainState
+  }) {
+    this.#setDefaultSigners(accountState)
+    this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -2245,7 +2446,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   async sign() {
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     // when signing begings, we stop immediatelly state updates on the controller
@@ -2256,26 +2457,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     if (!this.accountOp.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
-    }
-
-    const signer = await this.#keystore.getSigner(
-      this.accountOp.signingKeyAddr,
-      this.accountOp.signingKeyType
-    )
-    if (!signer) {
-      const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     if (!this.estimation.estimation) {
       const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
     const estimation = this.estimation.estimation as FullEstimationSummary
@@ -2291,6 +2483,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
+    // in safe, you won't have to choose the signers, and they could be multiple
+    // we need to take the signers from the account state
+    // check which we have in the extension (they will be in keystore)
+    // decide what to do from that point onwards
+
     const isExternalSignerInvolved =
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
@@ -2305,8 +2502,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
-
-    if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
 
     // just in-case: before signing begins, we delete the feeCall;
     // if there's a need for it, it will be added later on in the code.
@@ -2334,15 +2529,104 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (!accountState) {
       const message = `Unable to sign the transaction. During the preparation step, required transaction information was found missing (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign(message)
+      return this.#emitSigningErrorAndResetToReadyToSign({ message, accountState })
     }
 
     try {
-      // plain EOA
       if (
+        this.account.safeCreation &&
+        this.#accountOp.signed &&
+        this.#accountOp.signed.length >= this.threshold
+      ) {
+        // all's good, proceed to broadcast
+      } else if (this.account.safeCreation) {
+        // if the safe txn is not already signed, fetch the latest nonce
+        // as we don't have a mechanism for fixing nonces for safe accounts
+        // during the estimation phase itself
+        if (!this.accountOp.safeTx) {
+          const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
+            (e) => {
+              console.log('failed to retrieve the latest nonce for safe')
+              console.log(e)
+              return null
+            }
+          )
+          if (latestNonce) {
+            this.#updateAccountOp({
+              nonce: latestNonce
+            })
+          }
+        }
+
+        const prevSignedSigs = getSigs(this.accountOp.signature)
+        const nowSignedSigs: Hex[] = []
+        const signers = this.accountOp.signers!
+        const safeTxn = getSafeTxn(this.accountOp, accountState)
+        const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
+        const safeTxnHash = getSafeTxnHash(typedData)
+
+        for (let i = 0; i < signers.length; i++) {
+          // sign with the current signer
+          const safeKey = signers[i]!
+          const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
+          if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
+          const signature = (await safeSigner.signTypedData(typedData)) as Hex
+          nowSignedSigs.push(signature)
+
+          // emit update only if the loop is to continue
+          if (i + 1 < signers.length) {
+            const nextKey = signers[i + 1]!
+            this.#updateAccountOp({
+              signingKeyAddr: nextKey.addr,
+              signingKeyType: nextKey.type
+            })
+            this.emitUpdate()
+          }
+        }
+
+        // all the signers that have signed
+        const allSigners = this.accountOp.signed
+          ? this.accountOp.signed.concat(signers.map((s) => s.addr))
+          : signers.map((s) => s.addr)
+
+        // if the user cannot broadcast because he doesn't meet the threshold,
+        // we push the txn to safe global
+        if (!this.canBroadcast || (this.#accountOp.nonce || 0n) > accountState.nonce) {
+          // todo: create intervals for this on error
+          for (let i = 0; i < signers.length; i++) {
+            const safeKey = signers[i]!
+            const sig = nowSignedSigs[i]!
+
+            if (!prevSignedSigs.length) {
+              // propose the txn to safe global upon first entry
+              await propose(
+                safeTxn,
+                this.accountOp.chainId,
+                this.account.addr as Hex,
+                safeKey.addr as Hex,
+                sig,
+                safeTxnHash
+              )
+            } else {
+              // add extra confirmations
+              await confirm(this.accountOp.chainId, sig, safeTxnHash)
+            }
+          }
+
+          this.status = { type: SigningStatus.Queued }
+          this.#stopIntervals()
+        }
+
+        this.#updateAccountOp({
+          signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
+          signed: allSigners,
+          txnId: safeTxnHash
+        })
+      } else if (
         broadcastOption === BROADCAST_OPTIONS.bySelf ||
         broadcastOption === BROADCAST_OPTIONS.bySelf7702
       ) {
+        // plain EOA
         // rawTxn, No SA signatures
         // or 7702, calling executeBySender(). No SA signatures
         this.#updateAccountOp({ signature: '0x' })
@@ -2358,7 +2642,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
         this.#updateAccountOp({
-          signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+          signature: await getExecuteSignature(
+            this.#network,
+            this.accountOp,
+            accountState,
+            await this.#getDefaultSigner()
+          )
         })
       } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
         // a delegation request has been made
@@ -2373,6 +2662,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (this.accountOp.meta) {
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
+
+          const signer = await this.#getDefaultSigner()
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
@@ -2391,6 +2682,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
+        const signer = await this.#getDefaultSigner()
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
         const paymaster = erc4337Estimation.paymaster
@@ -2453,7 +2745,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#updateAccountOp({ meta: {} })
           }
           if (this.accountOp.meta)
-            this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
+            this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+              epSignature.signature
+            )
 
           // after signing is complete, go to paymaster mode
           if (isUsingPaymaster) {
@@ -2517,6 +2811,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
         }
       } else {
+        const signer = await this.#getDefaultSigner()
+
         // Relayer
         this.#addFeePayment()
 
@@ -2533,12 +2829,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      this.status = { type: SigningStatus.Done }
+      if (this.status && this.status.type !== SigningStatus.Queued)
+        this.status = { type: SigningStatus.Done }
+
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
-      this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
+      this.#emitSigningErrorAndResetToReadyToSign({
+        message,
+        sendCrashReport: error?.sendCrashReport,
+        accountState
+      })
     }
   }
 
@@ -2613,12 +2915,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       return this.throwBroadcastAccountOp({ message, accountState })
     }
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.#keystore.getAccountKeys(account),
-      this.#network
-    )
     let transactionRes: {
       txnId?: string
       nonce: number
@@ -2667,7 +2963,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           signer.init(this.#externalSignerControllers[gasFeePayment.paidByKeyType])
         }
 
-        const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
+        const txnLength = this.baseAccount.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
         if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
@@ -2770,7 +3066,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const switcher = this.bundlerSwitcher
         this.updateStatus(SigningStatus.ReadyToSign)
 
-        if (switcher.canSwitch(baseAcc)) {
+        if (switcher.canSwitch(this.baseAccount)) {
           switcher.switch()
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
           this.#silentGasPriceUpdate()
@@ -3018,6 +3314,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#onBroadcastFailed(this.#accountOp)
     }
 
+    // reset the signers upon failure if the account is a safe;
+    // otherwise, the user cannot choose new ones
+    this.#setDefaultSigners(accountState)
+
     this.emitError({
       level: 'major',
       message,
@@ -3086,6 +3386,30 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return banners
   }
 
+  get canAccountBroadcastByItself(): boolean {
+    return this.baseAccount.canBroadcastByItself()
+  }
+
+  get threshold(): number {
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]![this.#network.chainId.toString()]
+    if (!accountState) return 0
+    return accountState.threshold
+  }
+
+  get canBroadcast() {
+    if (!this.account.safeCreation) return true
+
+    const signed = this.accountOp.signed || []
+    if (signed.length >= this.threshold) return true
+
+    const notSignedImportedOwners = getImportedSignersThatHaveNotSigned(
+      signed,
+      this.accountKeyStoreKeys.map((k) => k.addr)
+    )
+    return !!(signed.length + notSignedImportedOwners.length >= this.threshold)
+  }
+
   toJSON() {
     return {
       ...this,
@@ -3107,7 +3431,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isSignInProgress: this.isSignInProgress,
       isBroadcastInProgress: this.isBroadcastInProgress,
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
-      banners: this.banners
+      banners: this.banners,
+      canAccountBroadcastByItself: this.canAccountBroadcastByItself,
+      threshold: this.threshold,
+      canBroadcast: this.canBroadcast
     }
   }
 }

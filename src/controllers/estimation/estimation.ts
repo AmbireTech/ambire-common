@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -8,6 +7,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
+import { isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
@@ -112,12 +112,7 @@ export class EstimationController extends EventEmitter {
       return
     }
 
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.#keystore.getAccountKeys(account),
-      network
-    )
+    const baseAcc = getBaseAccount(account, accountState, network)
 
     // Take the fee tokens from two places: the user's tokens and his gasTank
     // The gasTank tokens participate on each network as they belong everywhere
@@ -156,14 +151,26 @@ export class EstimationController extends EventEmitter {
     // in all cases EXCEPT the case where we're making an estimation for
     // the view only account itself. In all other, view only accounts options
     // should not be present as the user cannot pay the fee with them (no key)
-    const nativeToCheck = account.creation
+    const nativeToCheck = baseAcc.canBroadcastByOtherEOA()
       ? this.#accounts.accounts
           .filter(
             (acc) =>
-              !acc.creation &&
+              !isSmartAccount(acc) &&
               (acc.addr === op.accountAddr ||
                 !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
           )
+          // internal keys first
+          .sort((a, b) => {
+            const aKeyInternal = this.#keystore.keys.find(
+              (k) => k.type === 'internal' && k.addr === a.addr
+            )
+            const bKeyInternal = this.#keystore.keys.find(
+              (k) => k.type === 'internal' && k.addr === b.addr
+            )
+            if (aKeyInternal && !bKeyInternal) return -1
+            if (!aKeyInternal && bKeyInternal) return 1
+            return 0
+          })
           .map((acc) => acc.addr)
       : []
 

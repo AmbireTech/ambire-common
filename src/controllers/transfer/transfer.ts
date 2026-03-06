@@ -68,6 +68,12 @@ const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
 }
 
+type SignAccountOpControllerMethods = {
+  [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
+    ? K
+    : never]: SignAccountOpController[K]
+}
+
 export class TransferController extends EventEmitter implements ITransferController {
   #callRelayer: Function
 
@@ -104,7 +110,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
-  isReady = false
+  areDefaultsSet = false
 
   isRecipientAddressUnknown = false
 
@@ -229,7 +235,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
         this.#setDefaultSelectedToken()
 
-        if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady) this.isReady = true
+        if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady)
+          this.areDefaultsSet = true
       }
 
       this.propagateUpdate(forceEmit)
@@ -244,7 +251,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const nextIsTopUp = view.currentRoute === 'top-up-gas-tank'
     const searchParams = view.searchParams
 
-    const isFormInitialized = this.hasPersistedState && this.isReady
+    const isFormInitialized = this.hasPersistedState && this.areDefaultsSet
     const isSameMode = this.isTopUp === nextIsTopUp
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
@@ -263,7 +270,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.isTopUp = nextIsTopUp
     this.#setTokens()
     this.#setDefaultSelectedToken(tokenParams)
-    this.isReady = true
+    this.areDefaultsSet = true
   }
 
   #ensureTransferSessionId() {
@@ -797,7 +804,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!accountState) {
       const error = new Error(
-        `Failed to fetch account on-chain state for network with chainId ${network.chainId}`
+        `Failed to fetch account onchain state for network with chainId ${network.chainId}`
       )
 
       this.emitError({
@@ -809,13 +816,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
-    )
-
+    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const accountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
@@ -904,6 +905,15 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
   }
 
+  async callSignAccountOpMethod<M extends keyof SignAccountOpControllerMethods>(
+    method: M,
+    args: Parameters<SignAccountOpControllerMethods[M]>
+  ) {
+    if (!this.signAccountOpController) return
+
+    await (this.signAccountOpController[method] as any)(...args)
+  }
+
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
     this.emitUpdate()
@@ -943,7 +953,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#tokens = []
     this.selectedToken = null
-    this.isReady = false
+    this.areDefaultsSet = false
 
     this.destroyLatestBroadcastedAccountOp(true)
     this.resetForm(destroyAccountOp)

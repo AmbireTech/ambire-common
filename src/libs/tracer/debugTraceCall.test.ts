@@ -1,9 +1,10 @@
-import { Interface, MaxUint256, solidityPackedKeccak256, toBeHex } from 'ethers'
+import { Interface, MaxUint256, solidityPackedKeccak256 } from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
@@ -77,19 +78,18 @@ describe('Debug tracecall detection for transactions', () => {
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
       isV2: true,
-      associatedKeys: {
-        '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA': toBeHex(1, 32)
-      },
+      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
       isSmarterEoa: false,
       balance: 989858878709479465n,
       isEOA: false,
       isErc4337Enabled: false,
       currentBlock: 60529438n,
-      deployError: false,
       isErc4337Nonce: false,
       delegatedContract: null,
       delegatedContractName: null,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      importedAccountKeys: [],
+      threshold: 0
     }
   })
 
@@ -149,11 +149,12 @@ describe('Debug tracecall detection for transactions', () => {
       }
     }
 
-    const res = await debugTraceCall(account, accountOp, network, state, true, overrideData)
+    const baseAccount = getBaseAccount(account, state, network)
+    const res = await debugTraceCall(baseAccount, accountOp, network, state, true, overrideData)
 
     expect(res.nfts.length).toBe(1)
-    expect(res.nfts[0][0]).toBe(NFT_ADDRESS)
-    expect(res.nfts[0][1]).toContain(25n)
+    expect(res.nfts[0]![0]).toBe(NFT_ADDRESS)
+    expect(res.nfts[0]![1]).toContain(25n)
     expect(res.tokens.length).toBe(2)
     expect(res.tokens).toContain(USDC_ADDRESS_OPTIMISM)
     expect(res.tokens).toContain(USDT_ADDRESS_OPTIMISM)
