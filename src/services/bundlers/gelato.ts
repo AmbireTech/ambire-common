@@ -45,6 +45,7 @@ export class Gelato extends Bundler {
       }
 
       const json = await response.json()
+      if (json.error) throw new Error(json.error.message || 'Bundler request failed')
       return json.result
     }
 
@@ -127,6 +128,6 @@ export class Gelato extends Bundler {
   }
 
   public shouldReestimateBeforeBroadcast(network: Network): boolean {
-    return false
+    return true
   }
 }
