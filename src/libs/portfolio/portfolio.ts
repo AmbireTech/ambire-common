@@ -15,6 +15,7 @@ import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
+  convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
   mergeERC721s,
@@ -28,7 +29,8 @@ import {
   Limits,
   LimitsOptions,
   PortfolioLibGetResult,
-  PriceCache,
+  TokenDataCache,
+  TokenDataCacheValue,
   TokenError,
   TokenResult
 } from './interfaces'
@@ -103,9 +105,9 @@ export const getEmptyHints = (): Hints => ({
 const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
-  priceRecency: 0,
+  tokenDataRecency: 0,
   fetchPinned: true,
-  priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
+  tokenDataRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
 
 export class Portfolio {
@@ -238,15 +240,15 @@ export class Portfolio {
       specialErc20Hints,
       specialErc721Hints,
       blockTag,
-      priceRecencyOnFailure,
-      priceCache: paramsPriceCache,
-      priceRecency
+      tokenDataRecencyOnFailure,
+      tokenDataCache: paramsTokenDataCache,
+      tokenDataRecency
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
       erc721s: {}
     }
-    if (simulation && simulation.account.addr !== accountAddr)
+    if (simulation && simulation.baseAccount.getAccount().addr !== accountAddr)
       throw new Error('wrong account passed')
 
     const start = Date.now()
@@ -297,14 +299,15 @@ export class Portfolio {
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
-    // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
-    const priceCache: PriceCache = paramsPriceCache || new Map()
+    const tokenDataCache: TokenDataCache = paramsTokenDataCache || new Map()
     for (const addr in hints.externalApi?.prices || {}) {
-      const priceHint = hints.externalApi?.prices[addr]
+      const tokenDataHint = convertApiTokenDataToTokenDataCache(
+        hints.externalApi?.prices[addr] || null
+      )
       // eslint-disable-next-line no-continue
-      if (!priceHint) continue
-      // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
-      priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
+      if (!tokenDataHint) continue
+
+      tokenDataCache.set(addr, [start, tokenDataHint])
     }
     const discoveryDone = Date.now()
 
@@ -349,21 +352,33 @@ export class Portfolio {
     const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
-    const getPriceFromCache = (address: string, _priceRecency: number = priceRecency) => {
+    const getTokenDataFromCache = (
+      address: string,
+      _tokenDataRecency: number = tokenDataRecency
+    ): TokenDataCacheValue | null => {
       // hardcode citrea prices
       if (this.network.chainId === 4114n) {
         const citreaTokenPrice = getHardcodedCitreaPrices(address)
-        if (citreaTokenPrice) return [citreaTokenPrice]
+        if (citreaTokenPrice)
+          return {
+            marketData: {
+              marketDataIn: []
+            },
+            priceIn: [citreaTokenPrice]
+          }
       }
 
-      const cached = priceCache.get(address)
+      const cached = tokenDataCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached
-      const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
+      const eligible = entry.priceIn.find((p) => p.baseCurrency === baseCurrency)
+
+      if (!eligible) return null
+
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      const isStale = start - timestamp > _priceRecency
-      return isStale ? null : eligible
+      const isStale = start - timestamp > _tokenDataRecency
+      return isStale ? null : entry
     }
 
     const nativeToken = tokensWithErrResult.find(
@@ -410,13 +425,14 @@ export class Portfolio {
       })
 
     const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
-      const address = collectionsHints[i][0] as unknown as string
+      const address = collectionsHints[i]![0] as unknown as string
       return [
         error,
         {
           ...x,
           address,
-          priceIn: getPriceFromCache(address) || []
+          // We don't store market data for collections, apart from priceIn
+          priceIn: getTokenDataFromCache(address)?.priceIn || []
         }
       ] as [string, CollectionResult]
     })
@@ -437,28 +453,31 @@ export class Portfolio {
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
     const tokensWithPrices: TokenResult[] = await Promise.all(
-      tokensWithoutPrices.map(async (token: { address: string }) => {
-        let priceIn: TokenResult['priceIn'] = []
-        const cachedPriceIn = getPriceFromCache(token.address)
+      tokensWithoutPrices.map(async (token: Omit<TokenResult, 'priceIn' | 'marketData'>) => {
+        let hasPrice = false
+        const cachedTokenData = getTokenDataFromCache(token.address, tokenDataRecencyOnFailure)
 
-        if (cachedPriceIn && cachedPriceIn !== null) {
-          priceIn = cachedPriceIn
+        if (cachedTokenData && cachedTokenData.priceIn && cachedTokenData.priceIn.length > 0) {
+          hasPrice = true
 
           return {
             ...(token as TokenResult),
-            priceIn
+            ...cachedTokenData
           }
         }
 
         if (!this.network.platformId) {
           return {
-            ...(token as TokenResult),
-            priceIn
+            ...token,
+            priceIn: [],
+            marketData: {
+              marketDataIn: []
+            }
           }
         }
 
         try {
-          const priceData = await this.batchedGecko({
+          const tokenData = await this.batchedGecko({
             ...token,
             network: this.network,
             baseCurrency,
@@ -466,15 +485,37 @@ export class Portfolio {
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
 
-          priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
-            baseCurrency: baseCurr,
-            price: price as number
-          }))
-          priceCache.set(token.address, [Date.now(), priceIn])
+          const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+          if (
+            formattedTokenData &&
+            formattedTokenData.priceIn &&
+            formattedTokenData.priceIn.length > 0
+          ) {
+            hasPrice = true
+          }
+
+          tokenDataCache.set(token.address, [Date.now(), formattedTokenData])
+
+          return {
+            ...token,
+            ...formattedTokenData
+          }
         } catch (error: any) {
           const errorMessage = error?.message || 'Unknown error'
 
-          priceIn = getPriceFromCache(token.address, priceRecencyOnFailure) || []
+          const olderCachedTokenData = getTokenDataFromCache(
+            token.address,
+            tokenDataRecencyOnFailure
+          )
+
+          if (
+            olderCachedTokenData &&
+            olderCachedTokenData.priceIn &&
+            olderCachedTokenData.priceIn.length > 0
+          ) {
+            hasPrice = true
+          }
 
           if (
             // Avoid duplicate errors, because this.bachedGecko is called for each token and if
@@ -484,7 +525,7 @@ export class Portfolio {
                 x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
             ) &&
             // Don't display an error if there is a cached price
-            !priceIn.length
+            !hasPrice
           ) {
             errors.push({
               name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
@@ -492,11 +533,12 @@ export class Portfolio {
               level: 'warning'
             })
           }
-        }
 
-        return {
-          ...(token as TokenResult),
-          priceIn
+          return {
+            ...token,
+            priceIn: olderCachedTokenData?.priceIn || [],
+            marketData: olderCachedTokenData?.marketData || { marketDataIn: [] }
+          }
         }
       })
     )
@@ -510,7 +552,7 @@ export class Portfolio {
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,
       priceUpdateTime: priceUpdateDone - oracleCallDone,
-      priceCache,
+      tokenDataCache,
       tokens: tokensWithPrices,
       feeTokens: tokensWithPrices.filter((t) => {
         // return the native token

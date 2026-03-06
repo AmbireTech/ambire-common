@@ -102,13 +102,20 @@ const prepareTest = async () => {
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
 
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
 
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
 
   // Purposefully mocking these methods as they are not used
   // and listeners result in a memory leak warning in tests
@@ -151,7 +158,6 @@ const prepareTest = async () => {
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore,
     autoLogin: autoLoginCtrl
   })
   const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
@@ -165,7 +171,8 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
 
   await accountsCtrl.initialLoadPromise

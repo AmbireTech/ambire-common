@@ -30,6 +30,7 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
@@ -121,9 +122,16 @@ const prepareTest = async () => {
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
@@ -151,7 +159,6 @@ const prepareTest = async () => {
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore: keystoreCtrl,
     autoLogin: autoLoginCtrl
   })
 
@@ -176,9 +183,16 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
   const callRelayer = relayerCall.bind({ url: '', fetch })
+  const safe = new SafeController({
+    networks: networksCtrl,
+    providers: providersCtrl,
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const activityCtrl = new ActivityController(
     storageCtrl,
     fetch,
@@ -188,6 +202,7 @@ const prepareTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    safe,
     () => Promise.resolve()
   )
 
@@ -334,6 +349,7 @@ const prepareTest = async () => {
       transfer: transferCtrl,
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
+      safe,
       autoLogin: autoLoginCtrl,
       getDapp: async () => undefined,
       updateSelectedAccountPortfolio: () => Promise.resolve(),

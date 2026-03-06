@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import '@nomicfoundation/hardhat-chai-matchers'
 import '@nomicfoundation/hardhat-ethers'
 import '@nomicfoundation/hardhat-verify'
@@ -65,6 +64,10 @@ const config: HardhatUserConfig = {
     },
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    linea: {
+      url: 'https://linea-rpc.publicnode.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     binance: {
@@ -273,6 +276,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.worldscan.org/',
           browserURL: 'https://worldscan.org/'
+        }
+      },
+      {
+        network: 'linea',
+        chainId: 59144,
+        urls: {
+          apiURL: 'https://api.lineascan.build/api',
+          browserURL: 'https://lineascan.build'
         }
       }
     ]

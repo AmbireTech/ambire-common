@@ -71,6 +71,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
   /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetworks: (networks: Network[]) => void
 
+  #onReady: () => Promise<void>
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
@@ -83,7 +85,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
     fetch,
     relayerUrl,
     useTempProvider,
-    onAddOrUpdateNetworks
+    onAddOrUpdateNetworks,
+    onReady
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
@@ -98,6 +101,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       callback: (provider: RPCProvider) => Promise<void>
     ) => Promise<void>
     onAddOrUpdateNetworks: (networks: Network[]) => void
+    onReady: () => Promise<void>
   }) {
     super(eventEmitterRegistry)
     if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
@@ -106,6 +110,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#useTempProvider = useTempProvider
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
+    this.#onReady = onReady
+
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -210,6 +216,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
         {} as { [key: string]: Network }
       )
       this.#networks = finalNetworks
+
+      await this.#onReady()
       this.emitUpdate()
     }
 

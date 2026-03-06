@@ -31,38 +31,54 @@ import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } f
 // }
 
 interface PermitDetails {
-  token: string
-  amount: bigint
-  expiration: bigint
-  nonce: bigint
-}
-
-interface PermitGist {
-  token: string
-  amount: bigint
-}
-
-const getPermitData = (permit: PermitDetails): PermitGist => {
-  return { token: permit.token, amount: permit.amount }
+  token?: string
+  amount?: bigint
+  expiration?: bigint
+  nonce?: bigint
 }
 
 export const permit2Module: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
   const tm = message.content
   if (
-    tm?.domain?.verifyingContract &&
-    [PERMIT_2_ADDRESS.toLowerCase(), PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(
+    !tm?.domain?.verifyingContract ||
+    ![PERMIT_2_ADDRESS.toLowerCase(), PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(
       tm.domain.verifyingContract.toLowerCase()
     )
-  ) {
-    const messageType = tm?.types?.PermitSingle?.[0]?.type || tm?.types?.PermitBatch?.[0]?.type
-    if (!['PermitDetails', 'PermitDetails[]'].includes(messageType))
-      return { fullVisualization: [] }
+  )
+    return { fullVisualization: [] }
 
-    const permits: PermitGist[] =
-      messageType === 'PermitDetails'
-        ? [getPermitData(tm.message.details)]
-        : tm.message.details.map((permitDetails: PermitDetails) => getPermitData(permitDetails))
+  const messageType =
+    tm?.types?.PermitSingle?.[0]?.type ||
+    tm?.types?.PermitBatch?.[0]?.type ||
+    tm.types?.PermitTransferFrom?.[0]?.type
+
+  if (!messageType) return { fullVisualization: [] }
+  if (messageType === 'TokenPermissions') {
+    const { spender, nonce, deadline, permitted } = tm.message
+    if ([spender, nonce, deadline, permitted].some((a) => a === undefined))
+      return { fullVisualization: [] }
+    const { token, amount } = permitted
+    if (token === undefined || amount === undefined) return { fullVisualization: [] }
+    return {
+      fullVisualization: [
+        getAction('Approve'),
+        getAddressVisualization(spender),
+        getLabel('to use'),
+        getToken(token, amount),
+        getDeadline(deadline)
+      ]
+    }
+  } else if (['PermitDetails', 'PermitDetails[]'].includes(messageType)) {
+    if (!tm.message.details) return { fullVisualization: [] }
+    const permits: { token: string; amount: bigint }[] = (
+      messageType === 'PermitDetails' ? [tm.message.details] : tm.message.details
+    ).map((d: PermitDetails) => ({
+      token: d.token,
+      amount: d.amount
+    }))
+    if (permits.some((p) => p.amount === undefined || p.token === undefined))
+      return { fullVisualization: [] }
 
     if (!permits.length) return { fullVisualization: [] }
 

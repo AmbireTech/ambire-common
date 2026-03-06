@@ -6,7 +6,7 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Price } from '../../interfaces/assets'
+import { Price, TokenMarketData } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AssetType } from '../defiPositions/types'
@@ -15,6 +15,7 @@ import {
   AccountState,
   ERC721s,
   ExtendedErrorWithLevel,
+  ExternalAPITokenMarketDataResponse,
   ExternalHintsAPIResponse,
   FormattedExternalHintsAPIResponse,
   GetOptions,
@@ -25,6 +26,8 @@ import {
   PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
+  TokenDataCache,
+  TokenDataCacheValue,
   TokenResult,
   TokenValidationResult,
   Total
@@ -517,7 +520,11 @@ export const getTotal = (
       // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
       if (typeof total !== 'number' || Number.isNaN(total)) {
         console.error(
-          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`
+          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`,
+          'Price:',
+          x,
+          'Amount:',
+          tokenAmount
         )
         // eslint-disable-next-line no-continue
         continue
@@ -818,4 +825,40 @@ export const getHardcodedCitreaPrices = (address: string): Price | null => {
   }
 
   return null
+}
+
+export const convertApiTokenDataToTokenDataCache = (
+  tokenData: ExternalAPITokenMarketDataResponse | null
+): TokenDataCacheValue => {
+  if (!tokenData) {
+    return {
+      priceIn: [],
+      marketData: {
+        marketDataIn: [],
+        exchanges: []
+      }
+    }
+  }
+
+  const baseCurrency = (tokenData.baseCurrency || 'usd') as 'usd' // stop ts from complaining, we only support usd as base currency for now
+  const price = (tokenData.price || tokenData.usd) as number | undefined
+
+  const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`] || null
+  const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`] || null
+  const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`] || null
+
+  return {
+    priceIn: typeof price === 'number' ? [{ baseCurrency, price }] : [],
+    marketData: {
+      marketDataIn: [
+        {
+          baseCurrency,
+          change24h: baseCurrency24hChange,
+          volume24h: baseCurrency24hVolume,
+          marketCap: baseCurrencyMarketCap
+        }
+      ],
+      exchanges: tokenData.exchanges || []
+    }
+  }
 }

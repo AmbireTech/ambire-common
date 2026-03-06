@@ -294,6 +294,10 @@ export default class EventEmitter {
     this.#registry?.delete(this.id)
   }
 
+  isInRegistry(): boolean {
+    return !!this.#registry?.has(this.id)
+  }
+
   toJSON() {
     return {
       ...this,

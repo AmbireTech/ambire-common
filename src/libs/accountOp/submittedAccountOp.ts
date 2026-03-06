@@ -107,19 +107,17 @@ export async function fetchFrontRanTxnId(
   if (counter >= 5) return foundTxnId
 
   const userOpHash = identifiedBy.identifier
-  const bundler = identifiedBy.bundler
-    ? getBundlerByName(identifiedBy.bundler)
-    : getDefaultBundler(network)
-  const bundlerResult = await bundler.getStatus(network, userOpHash)
+  const bundler = getDefaultBundler(network) // rely on pimlico for front running
+  const bundlerResult = await bundler.getReceipt(userOpHash, network)
   if (
-    !bundlerResult.transactionHash ||
-    bundlerResult.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
+    !bundlerResult.receipt ||
+    bundlerResult.receipt.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
   ) {
     await wait(2000)
     return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1)
   }
 
-  return bundlerResult.transactionHash
+  return bundlerResult.receipt.transactionHash
 }
 
 export function hasTimePassedSinceBroadcast(op: SubmittedAccountOp, mins: number): boolean {
