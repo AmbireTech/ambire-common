@@ -110,6 +110,7 @@ import {
   getAlreadySignedOwners,
   getDefaultOwners,
   getImportedSignersThatHaveNotSigned,
+  getNonce,
   getSafeTxn,
   getSafeTxnHash,
   getSigs,
@@ -2539,6 +2540,24 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ) {
         // all's good, proceed to broadcast
       } else if (this.account.safeCreation) {
+        // if the safe txn is not already signed, fetch the latest nonce
+        // as we don't have a mechanism for fixing nonces for safe accounts
+        // during the estimation phase itself
+        if (!this.accountOp.safeTx) {
+          const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
+            (e) => {
+              console.log('failed to retrieve the latest nonce for safe')
+              console.log(e)
+              return null
+            }
+          )
+          if (latestNonce) {
+            this.#updateAccountOp({
+              nonce: latestNonce
+            })
+          }
+        }
+
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
         const signers = this.accountOp.signers!
