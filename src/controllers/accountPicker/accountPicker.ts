@@ -1102,11 +1102,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const accountCacheKey = `smart-${smartAccKey}`
 
       if (this.#derivedAccountsCache.has(accountCacheKey)) {
-        accounts.push({
-          ...(this.#derivedAccountsCache.get(accountCacheKey) as any),
-          slot,
-          index: indexWithOffset
-        })
+        const cached = this.#derivedAccountsCache.get(accountCacheKey)! // would always exist inside if
+        accounts.push({ ...cached, slot, index: indexWithOffset })
       } else {
         // The derived EOA (basic) account which is the key for the smart account
         const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts)
@@ -1120,7 +1117,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           )
             .then((smartAccount) => {
               const result = { account: smartAccount, isLinked: false, slot, index: slot - 1 }
-              this.#derivedAccountsCache.set(accountCacheKey, result as any)
+              this.#derivedAccountsCache.set(accountCacheKey, result)
               return result
             })
             // If the error isn't caught here and the promise is rejected, Promise.all
@@ -1135,9 +1132,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
       // Yield to event loop to keep UI responsive
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => {
-        setTimeout(resolve, 0)
-      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
     const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
@@ -1153,16 +1148,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const accountCacheKey = `basic-${basicAccKey}`
 
       if (this.#derivedAccountsCache.has(accountCacheKey)) {
-        accounts.push({
-          ...(this.#derivedAccountsCache.get(accountCacheKey) as any),
-          slot,
-          index: slot - 1
-        })
+        const cached = this.#derivedAccountsCache.get(accountCacheKey)! // would always exist inside if
+        accounts.push({ ...cached, slot, index: slot - 1 })
       } else {
         // The EOA (basic) account on this slot
         const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
         const result = { account, isLinked: false, slot, index: slot - 1 }
-        this.#derivedAccountsCache.set(accountCacheKey, result as any)
+        this.#derivedAccountsCache.set(accountCacheKey, result)
         accounts.push(result)
       }
     }
