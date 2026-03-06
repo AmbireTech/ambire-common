@@ -116,6 +116,9 @@ export class KeyIterator implements KeyIteratorInterface {
         throw new Error('keyIterator: invalid or missing arguments')
 
       if (this.#privateKey) {
+        // Before v4.31.0, private keys for accounts used as smart account keys
+        // were derived. That's no longer the case. Importing private keys
+        // does not generate smart accounts anymore.
         const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
         if (!shouldDerive) keys.push(new Wallet(this.#privateKey).address)
       }
