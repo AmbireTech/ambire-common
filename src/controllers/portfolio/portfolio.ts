@@ -61,6 +61,7 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  ExchangeInfoMap,
   ExtendedError,
   ExtendedErrorWithLevel,
   ExternalAPITokenMarketDataResponse,
@@ -208,6 +209,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
 
+  exchangeState: {
+    exchanges: ExchangeInfoMap | null
+    updatedAt: number | null
+    isLoading: boolean
+    retryCount: number
+  } = {
+    exchanges: null,
+    updatedAt: null,
+    isLoading: false,
+    retryCount: 0
+  }
+
   #hasSimulationChanged: Function
 
   constructor(
@@ -294,6 +307,48 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     })
   }
 
+  async updateExchangeList() {
+    if (this.exchangeState.isLoading || this.exchangeState.retryCount >= 5) return
+
+    this.exchangeState.isLoading = true
+
+    this.emitUpdate()
+
+    try {
+      const response = await this.#fetch('https://cena.ambire.com/api/v3/exchanges')
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch exchange list: ${response.statusText}`)
+      }
+
+      const exchanges: ExchangeInfoMap = (await response.json()).data
+
+      this.exchangeState = {
+        exchanges,
+        updatedAt: Date.now(),
+        isLoading: false,
+        retryCount: 0
+      }
+    } catch (e: any) {
+      this.exchangeState.isLoading = false
+      this.exchangeState.retryCount += 1
+      this.emitError({
+        level: 'silent',
+        error: e,
+        message: `Error while fetching exchange list: ${e.message}`
+      })
+
+      setTimeout(
+        async () => {
+          await this.updateExchangeList()
+        },
+        10 * 60 * 1000
+      )
+    } finally {
+      this.emitUpdate()
+    }
+  }
+
   async #load() {
     try {
       await this.#networks.initialLoadPromise
@@ -331,6 +386,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
 
     this.emitUpdate()
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateExchangeList()
   }
 
   #getHasFundedHotAccount(): boolean {
@@ -757,7 +815,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       amount: BigInt(t.amount || 0),
       chainId: BigInt(t.chainId || 1),
       availableAmount: BigInt(t.availableAmount || 0),
-      flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
+      flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol),
+      marketDataIn: []
     }))
 
     accountState.gasTank = {

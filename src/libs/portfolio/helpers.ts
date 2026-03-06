@@ -6,7 +6,7 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Price, TokenMarketData } from '../../interfaces/assets'
+import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AssetType } from '../defiPositions/types'
@@ -26,7 +26,6 @@ import {
   PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
-  TokenDataCache,
   TokenDataCacheValue,
   TokenResult,
   TokenValidationResult,
@@ -394,9 +393,9 @@ export const validateERC20Token = async (
   let decimals
   try {
     ;[balance, symbol, decimals] = await Promise.all([
-      erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
-      erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
-      erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+      erc20.balanceOf!(accountId).catch((e) => handleERC20Error(e, 'balance')),
+      erc20.symbol!().catch((e) => handleERC20Error(e, 'symbol')),
+      erc20.decimals!().catch((e) => handleERC20Error(e, 'decimals'))
     ])
   } catch (e) {
     handleERC20Error(e, 'token validation')
@@ -833,10 +832,7 @@ export const convertApiTokenDataToTokenDataCache = (
   if (!tokenData) {
     return {
       priceIn: [],
-      marketData: {
-        marketDataIn: [],
-        exchanges: []
-      }
+      marketDataIn: []
     }
   }
 
@@ -846,19 +842,22 @@ export const convertApiTokenDataToTokenDataCache = (
   const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`] || null
   const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`] || null
   const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`] || null
+  const website = tokenData.homepage ? tokenData.homepage[0] : undefined
 
   return {
     priceIn: typeof price === 'number' ? [{ baseCurrency, price }] : [],
-    marketData: {
-      marketDataIn: [
-        {
-          baseCurrency,
-          change24h: baseCurrency24hChange,
-          volume24h: baseCurrency24hVolume,
-          marketCap: baseCurrencyMarketCap
-        }
-      ],
-      exchanges: tokenData.exchanges || []
+    marketDataIn: [
+      {
+        baseCurrency,
+        change24h: baseCurrency24hChange,
+        volume24h: baseCurrency24hVolume,
+        marketCap: baseCurrencyMarketCap,
+        totalSupply: tokenData.total_supply || null
+      }
+    ],
+    meta: {
+      exchanges: tokenData.exchanges || [],
+      website: website
     }
   }
 }

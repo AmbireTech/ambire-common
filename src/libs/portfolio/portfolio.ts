@@ -361,9 +361,7 @@ export class Portfolio {
         const citreaTokenPrice = getHardcodedCitreaPrices(address)
         if (citreaTokenPrice)
           return {
-            marketData: {
-              marketDataIn: []
-            },
+            marketDataIn: [],
             priceIn: [citreaTokenPrice]
           }
       }
@@ -453,94 +451,94 @@ export class Portfolio {
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
     const tokensWithPrices: TokenResult[] = await Promise.all(
-      tokensWithoutPrices.map(async (token: Omit<TokenResult, 'priceIn' | 'marketData'>) => {
-        let hasPrice = false
-        const cachedTokenData = getTokenDataFromCache(token.address, tokenDataRecencyOnFailure)
+      tokensWithoutPrices.map(
+        async (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => {
+          let hasPrice = false
+          const cachedTokenData = getTokenDataFromCache(token.address, tokenDataRecencyOnFailure)
 
-        if (cachedTokenData && cachedTokenData.priceIn && cachedTokenData.priceIn.length > 0) {
-          hasPrice = true
+          if (cachedTokenData && cachedTokenData.priceIn && cachedTokenData.priceIn.length > 0) {
+            hasPrice = true
 
-          return {
-            ...(token as TokenResult),
-            ...cachedTokenData
+            return {
+              ...(token as TokenResult),
+              ...cachedTokenData
+            }
           }
-        }
 
-        if (!this.network.platformId) {
-          return {
-            ...token,
-            priceIn: [],
-            marketData: {
+          if (!this.network.platformId) {
+            return {
+              ...token,
+              priceIn: [],
+              marketDataIn: []
+            }
+          }
+
+          try {
+            const tokenData = await this.batchedGecko({
+              ...token,
+              network: this.network,
+              baseCurrency,
+              // this is what to look for in the coingecko response object
+              responseIdentifier: geckoResponseIdentifier(token.address, this.network)
+            })
+
+            const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+            if (
+              formattedTokenData &&
+              formattedTokenData.priceIn &&
+              formattedTokenData.priceIn.length > 0
+            ) {
+              hasPrice = true
+            }
+
+            tokenDataCache.set(token.address, [Date.now(), formattedTokenData])
+
+            return {
+              ...token,
+              ...formattedTokenData
+            }
+          } catch (error: any) {
+            const errorMessage = error?.message || 'Unknown error'
+
+            const olderCachedTokenData = getTokenDataFromCache(
+              token.address,
+              tokenDataRecencyOnFailure
+            )
+
+            if (
+              olderCachedTokenData &&
+              olderCachedTokenData.priceIn &&
+              olderCachedTokenData.priceIn.length > 0
+            ) {
+              hasPrice = true
+            }
+
+            if (
+              // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+              // there is an error it will most likely be the same for all tokens
+              !errors.find(
+                (x) =>
+                  x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
+              ) &&
+              // Don't display an error if there is a cached price
+              !hasPrice
+            ) {
+              errors.push({
+                name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+                message: errorMessage,
+                level: 'warning'
+              })
+            }
+
+            return {
+              ...token,
+              priceIn: olderCachedTokenData?.priceIn || [],
               marketDataIn: []
             }
           }
         }
-
-        try {
-          const tokenData = await this.batchedGecko({
-            ...token,
-            network: this.network,
-            baseCurrency,
-            // this is what to look for in the coingecko response object
-            responseIdentifier: geckoResponseIdentifier(token.address, this.network)
-          })
-
-          const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
-
-          if (
-            formattedTokenData &&
-            formattedTokenData.priceIn &&
-            formattedTokenData.priceIn.length > 0
-          ) {
-            hasPrice = true
-          }
-
-          tokenDataCache.set(token.address, [Date.now(), formattedTokenData])
-
-          return {
-            ...token,
-            ...formattedTokenData
-          }
-        } catch (error: any) {
-          const errorMessage = error?.message || 'Unknown error'
-
-          const olderCachedTokenData = getTokenDataFromCache(
-            token.address,
-            tokenDataRecencyOnFailure
-          )
-
-          if (
-            olderCachedTokenData &&
-            olderCachedTokenData.priceIn &&
-            olderCachedTokenData.priceIn.length > 0
-          ) {
-            hasPrice = true
-          }
-
-          if (
-            // Avoid duplicate errors, because this.bachedGecko is called for each token and if
-            // there is an error it will most likely be the same for all tokens
-            !errors.find(
-              (x) =>
-                x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
-            ) &&
-            // Don't display an error if there is a cached price
-            !hasPrice
-          ) {
-            errors.push({
-              name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
-              message: errorMessage,
-              level: 'warning'
-            })
-          }
-
-          return {
-            ...token,
-            priceIn: olderCachedTokenData?.priceIn || [],
-            marketData: olderCachedTokenData?.marketData || { marketDataIn: [] }
-          }
-        }
-      })
+      )
     )
 
     const priceUpdateDone = Date.now()
