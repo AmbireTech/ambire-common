@@ -3265,11 +3265,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           .catch((e) => e)
       } else if (
         originalMessage.includes('underpriced') ||
-        originalMessage.includes('Fee confirmation failed')
+        originalMessage.includes('Fee confirmation failed') ||
+        originalMessage.includes('maxFeePerGas') ||
+        originalMessage.includes('maxPriorityFeePerGas')
       ) {
-        if (originalMessage.includes('underpriced')) {
-          message =
-            'Transaction fee underpriced. Please select a higher transaction speed and try again'
+        if (
+          originalMessage.includes('underpriced') ||
+          originalMessage.includes('maxFeePerGas') ||
+          originalMessage.includes('maxPriorityFeePerGas')
+        ) {
+          message = 'Transaction fees changed. Please try again'
         }
 
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
