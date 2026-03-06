@@ -839,9 +839,10 @@ export const convertApiTokenDataToTokenDataCache = (
   const baseCurrency = (tokenData.baseCurrency || 'usd') as 'usd' // stop ts from complaining, we only support usd as base currency for now
   const price = (tokenData.price || tokenData.usd) as number | undefined
 
-  const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`] || null
-  const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`] || null
-  const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`] || null
+  const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`]
+  const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`]
+  const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`]
+  const fullyDilutedValuation = tokenData[`${baseCurrency}_fully_diluted_valuation`]
   const website = tokenData.homepage ? tokenData.homepage[0] : undefined
 
   return {
@@ -852,7 +853,8 @@ export const convertApiTokenDataToTokenDataCache = (
         change24h: baseCurrency24hChange,
         volume24h: baseCurrency24hVolume,
         marketCap: baseCurrencyMarketCap,
-        totalSupply: tokenData.total_supply || null
+        fullyDilutedValuation: fullyDilutedValuation,
+        totalSupply: tokenData.total_supply
       }
     ],
     meta: {

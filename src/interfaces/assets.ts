@@ -12,21 +12,21 @@ export interface TokenMarketDataByCurrency {
   /**
    * 24-hour trading volume of the token.
    */
-  volume24h?: number | null
+  volume24h?: number
   /**
    * Market capitalization of the token.
    */
-  marketCap?: number | null
+  marketCap?: number
   /**
    * Percentage change in price over the last 24 hours.
    */
-  change24h?: number | null
+  change24h?: number
   /**
    * Fully diluted valuation of the token
    */
-  fullyDilutedValuation?: number | null
+  fullyDilutedValuation?: number
   /**
    * The total supply of the token
    */
-  totalSupply?: number | null
+  totalSupply?: number
 }

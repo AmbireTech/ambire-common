@@ -534,7 +534,7 @@ export class Portfolio {
             return {
               ...token,
               priceIn: olderCachedTokenData?.priceIn || [],
-              marketDataIn: []
+              marketDataIn: olderCachedTokenData?.marketDataIn || []
             }
           }
         }
