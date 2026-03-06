@@ -129,9 +129,7 @@ export class KeyIterator implements KeyIteratorInterface {
           // Yield to the event loop every 2 derivations to keep UI responsive
           if (i > from && i % 2 === 0) {
             // eslint-disable-next-line no-await-in-loop
-            await new Promise((resolve) => {
-              setTimeout(resolve, 0)
-            })
+            await new Promise((resolve) => setTimeout(resolve, 0))
           }
           const path = getHdPathFromTemplate(hdPathTemplate, i).replace('m/', '')
           const wallet = baseWallet.derivePath(path)
