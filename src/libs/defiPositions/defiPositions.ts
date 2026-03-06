@@ -405,9 +405,7 @@ const enhancePortfolioTokensWithDefiPositions = (
               notYetHandledTokensToAdd.push({
                 amount: asset.amount,
                 latestAmount: asset.amount,
-                marketData: {
-                  marketDataIn: []
-                },
+                marketDataIn: [],
                 // Only list the borrowed asset with no price
                 priceIn:
                   asset.type === AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
