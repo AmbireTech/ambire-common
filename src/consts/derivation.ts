@@ -19,11 +19,20 @@ export const BIP44_LEDGER_DERIVATION_TEMPLATE = "m/44'/60'/<account>'/0/0"
  */
 export const LEGACY_POPULAR_DERIVATION_TEMPLATE = "m/44'/60'/0'/<account>"
 
+/**
+ * BIP44 for Ethereum test networks (Sepolia, Holesky) as implemented by Trezor.
+ * Same structure as the standard BIP44 path, but uses the testnet coin_type (1')
+ * instead of Ethereum mainnet (60'):
+ *   m / purpose' / coin_type' / account' / change / address_index
+ */
+export const BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE = "m/44'/1'/0'/0/<account>"
+
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export type HD_PATH_TEMPLATE_TYPE =
   | typeof BIP44_STANDARD_DERIVATION_TEMPLATE
   | typeof BIP44_LEDGER_DERIVATION_TEMPLATE
   | typeof LEGACY_POPULAR_DERIVATION_TEMPLATE
+  | typeof BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE
 
 export interface DerivationOption {
   label: string
@@ -46,6 +55,12 @@ export const DERIVATION_OPTIONS: DerivationOption[] = [
     label: 'Ledger Legacy',
     value: LEGACY_POPULAR_DERIVATION_TEMPLATE,
     description: 'Ledger Legacy: HD path used by MEW / MyCrypto.'
+  },
+  {
+    label: 'Trezor Testnets',
+    value: BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE,
+    description:
+      "Trezor Testnets: BIP44 path using testnet coin type (1') for Ethereum test networks."
   }
 ]
 
