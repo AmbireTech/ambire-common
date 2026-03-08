@@ -2002,7 +2002,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     let updatedPaidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType || null
 
     // Update only if it's not set or it's passed as an argument
-    if (this.canBroadcast && (paidByKeyType || !updatedPaidByKeyType)) {
+    if (paidByKeyType || !updatedPaidByKeyType) {
       const key = this.#keystore.getFeePayerKey(
         this.accountOp.accountAddr,
         this.#paidBy,
