@@ -108,14 +108,12 @@ import { privSlot } from '../../libs/proxyDeploy/deploy'
 import {
   confirm,
   getAlreadySignedOwners,
-  getDefaultOwners,
   getImportedSignersThatHaveNotSigned,
   getNonce,
   getSafeTxn,
   getSafeTxnHash,
   getSigs,
   propose,
-  sortByAddress,
   sortSigs
 } from '../../libs/safe/safe'
 import {
@@ -214,7 +212,6 @@ export type SignAccountOpUpdateProps = {
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
   accountOpData?: Partial<AccountOp>
-  signers?: { addr: Key['addr']; type: Key['type'] }[]
 }
 
 export type OnboardingSuccessProps = {
@@ -530,23 +527,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return signer
   }
 
-  #setDefaultSigners(accountState?: AccountOnchainState) {
-    if (!accountState || !this.account.safeCreation) return
-
-    const signers = getDefaultOwners(
-      this.accountKeyStoreKeys,
-      accountState.threshold,
-      this.accountOp.signed
-    ).map((k) => ({
-      addr: k.addr,
-      type: k.type
-    }))
-
-    this.#updateAccountOp({
-      signers
-    })
-  }
-
   #validateAccountOp(): SignAccountOpError | null {
     const invalidAccountOpError =
       'The transaction is missing essential data. Please contact support.'
@@ -716,16 +696,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
-      const accountState =
-        this.#accounts.accountStates[this.account.addr]![this.#network.chainId.toString()]!
-
-      // by default for safe, we're using firstly internal keys
-      // if the user has only internal keys, the goal is to allow him to
-      // broadcast easily.
-      // The user can change this setting during signing, but we're setting
-      // the default option as a "quick" broadcast way without choosing signers
-      this.#setDefaultSigners(accountState)
-
       this.#updateAccountOp({
         signingKeyAddr: this.accountKeyStoreKeys[0]!.addr,
         signingKeyType: this.accountKeyStoreKeys[0]!.type
@@ -1214,8 +1184,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     signedTransactionsCount,
     hasNewEstimation,
     paidByKeyType,
-    accountOpData,
-    signers
+    accountOpData
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -1361,16 +1330,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (this.accountOp.gasFeePayment?.paidBy === signingKeyAddr) {
           this.accountOp.gasFeePayment.paidByKeyType = signingKeyType
         }
-      }
-
-      if (signers && signers.length) {
-        const sorted = sortByAddress(signers)
-        const firstSigner = sorted[0]!
-        this.#updateAccountOp({
-          signers,
-          signingKeyAddr: firstSigner.addr,
-          signingKeyType: firstSigner.type
-        })
       }
 
       // Set defaults, if some of the optional params are omitted
@@ -2210,7 +2169,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     sendCrashReport?: boolean
     accountState?: AccountOnchainState
   }) {
-    this.#setDefaultSigners(accountState)
     this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
@@ -2560,63 +2518,41 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
-        const signers = this.accountOp.signers!
+
+        const safeSigner = await this.#keystore.getSigner(
+          this.accountOp.signingKeyAddr,
+          this.accountOp.signingKeyType
+        )
+        if (safeSigner.init)
+          safeSigner.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+
         const safeTxn = getSafeTxn(this.accountOp, accountState)
         const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
         const safeTxnHash = getSafeTxnHash(typedData)
-
-        for (let i = 0; i < signers.length; i++) {
-          // sign with the current signer
-          const safeKey = signers[i]!
-          const safeSigner = await this.#keystore.getSigner(safeKey.addr, safeKey.type)
-          if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[safeKey.type])
-          const signature = (await safeSigner.signTypedData(typedData)) as Hex
-          nowSignedSigs.push(signature)
-
-          // emit update only if the loop is to continue
-          if (i + 1 < signers.length) {
-            const nextKey = signers[i + 1]!
-            this.#updateAccountOp({
-              signingKeyAddr: nextKey.addr,
-              signingKeyType: nextKey.type
-            })
-            this.emitUpdate()
-          }
-        }
+        const signature = (await safeSigner.signTypedData(typedData)) as Hex
+        nowSignedSigs.push(signature)
 
         // all the signers that have signed
         const allSigners = this.accountOp.signed
-          ? this.accountOp.signed.concat(signers.map((s) => s.addr))
-          : signers.map((s) => s.addr)
+          ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
+          : [this.accountOp.signingKeyAddr]
 
-        // if the user cannot broadcast because he doesn't meet the threshold,
-        // we push the txn to safe global
-        if (!this.canBroadcast || (this.#accountOp.nonce || 0n) > accountState.nonce) {
-          // todo: create intervals for this on error
-          for (let i = 0; i < signers.length; i++) {
-            const safeKey = signers[i]!
-            const sig = nowSignedSigs[i]!
-
-            if (!prevSignedSigs.length) {
-              // propose the txn to safe global upon first entry
-              await propose(
-                safeTxn,
-                this.accountOp.chainId,
-                this.account.addr as Hex,
-                safeKey.addr as Hex,
-                sig,
-                safeTxnHash
-              )
-            } else {
-              // add extra confirmations
-              await confirm(this.accountOp.chainId, sig, safeTxnHash)
-            }
-          }
-
-          this.status = { type: SigningStatus.Queued }
-          this.#stopIntervals()
+        if (!prevSignedSigs.length) {
+          // propose the txn to safe global upon first entry
+          await propose(
+            safeTxn,
+            this.accountOp.chainId,
+            this.account.addr as Hex,
+            this.#accountOp.signingKeyAddr as Hex,
+            signature,
+            safeTxnHash
+          )
+        } else {
+          // add extra confirmations
+          await confirm(this.accountOp.chainId, signature, safeTxnHash)
         }
 
+        this.status = { type: SigningStatus.Queued }
         this.#updateAccountOp({
           signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
           signed: allSigners,
@@ -3194,6 +3130,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
         await this.broadcastPromise
       }
+      if (
+        this.status &&
+        this.status.type === SigningStatus.Queued &&
+        (this.accountOp.signed || []).length >= this.threshold
+      ) {
+        this.status.type = SigningStatus.ReadyToSign
+        this.emitUpdate()
+      }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
     })
@@ -3319,10 +3263,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#onBroadcastFailed(this.#accountOp)
     }
 
-    // reset the signers upon failure if the account is a safe;
-    // otherwise, the user cannot choose new ones
-    this.#setDefaultSigners(accountState)
-
     this.emitError({
       level: 'major',
       message,
@@ -3405,14 +3345,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   get canBroadcast() {
     if (!this.account.safeCreation) return true
 
-    const signed = this.accountOp.signed || []
-    if (signed.length >= this.threshold) return true
-
-    const notSignedImportedOwners = getImportedSignersThatHaveNotSigned(
-      signed,
-      this.accountKeyStoreKeys.map((k) => k.addr)
-    )
-    return !!(signed.length + notSignedImportedOwners.length >= this.threshold)
+    return (this.accountOp.signed || []).length >= this.threshold
   }
 
   toJSON() {
