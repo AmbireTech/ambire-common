@@ -33,7 +33,6 @@ import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
@@ -212,35 +211,6 @@ export function sortByAddress<T extends { addr: string }>(sortableKeys: T[]): T[
     const bBig = BigInt(b.addr.toLowerCase())
     return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
   })
-}
-
-/**
- * Get internal keys first
- */
-export function getDefaultOwners(
-  keys: Key[],
-  threshold: number,
-  alreadySignedAddrs: string[] = []
-): Key[] {
-  const notSinged = keys.filter((k) => !alreadySignedAddrs.includes(k.addr))
-
-  // we do not set default signers when:
-  // - we have more than two hw types that are left so sign
-  // - we don't have enough internal keys to sign the remaining
-  // reason for this is that we cannot select the hardware wallet automatically,
-  // the user needs to do it manually
-  const internal = notSinged.filter((k) => k.type === 'internal')
-  const hwTypes = [...new Set(notSinged.filter((k) => k.type !== 'internal').map((k) => k.type))]
-  const leftToSign = threshold - alreadySignedAddrs.length
-  if (hwTypes.length > 1 && internal.length < leftToSign) return []
-
-  return notSinged
-    .sort((a, b) => {
-      const isAInternal = a.type === 'internal'
-      const isBInternal = b.type === 'internal'
-      return isAInternal && !isBInternal ? -1 : !isAInternal && isBInternal ? 1 : 0
-    })
-    .slice(0, leftToSign)
 }
 
 export function getSafeTxnHash(typedData: TypedMessageUserRequest['meta']['params']) {

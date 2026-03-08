@@ -25,7 +25,6 @@ import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import {
   addMessage,
   addMessageSignature,
-  getDefaultOwners,
   getImportedSignersThatHaveNotSigned,
   sortSigs
 } from '../../libs/safe/safe'
@@ -86,8 +85,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
    * the signed hash
    */
   hash?: Hex
-
-  existsInSafeGlobal: boolean = false
 
   status: SignMessageStatus
 
@@ -168,24 +165,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       if (this.#account.safeCreation) {
-        // safe account have their default signers set here
-        // if they cannot be chosen, signers are undefined
-        this.signers = getDefaultOwners(
-          accountState.importedAccountKeys,
-          accountState.threshold,
-          this.signed
-        ).map((k) => ({
-          addr: k.addr,
-          type: k.type
-        }))
-
         const notSigned = getImportedSignersThatHaveNotSigned(
           this.signed,
           accountState.importedAccountKeys.map((k) => k.addr)
         )
         if (this.signed.length && notSigned.length === 0) this.status = SignMessageStatus.Partial
         this.hash = hash
-        this.existsInSafeGlobal = !!hash
       } else {
         // if the account is not safe & view only, set a default signer
         // the default signer should be the internal key if any
@@ -330,7 +315,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.push(signed.signature)
             this.signed.push(signerKey.addr)
             if (signed.hash) this.hash = signed.hash
-            if (this.existsInSafeGlobal && this.hash) {
+            if (this.signed.length > 1 && this.hash) {
               await addMessageSignature(this.network.chainId, this.hash, signed.signature)
             }
           }
@@ -342,7 +327,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
+          if (this.signed.length === 1 && signatures.length < accountState.threshold) {
             await addMessage(
               this.network.chainId,
               this.#account.addr as Hex,
@@ -381,7 +366,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.push(signed.signature)
             this.signed.push(signerKey.addr)
             if (signed.hash) this.hash = signed.hash
-            if (this.existsInSafeGlobal && this.hash) {
+            if (this.signed.length > 1 && this.hash) {
               await addMessageSignature(this.network.chainId, this.hash, signed.signature)
             }
           }
@@ -391,7 +376,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
 
           // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (!this.existsInSafeGlobal && signatures.length < accountState.threshold) {
+          if (this.signed.length === 1 && signatures.length < accountState.threshold) {
             await addMessage(
               this.network.chainId,
               this.#account.addr as Hex,
