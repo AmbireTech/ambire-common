@@ -1,5 +1,5 @@
 import { AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Price, TokenMarketData } from '../../interfaces/assets'
+import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
@@ -21,6 +21,17 @@ export type TokenError = string | '0x'
 export type AccountAssetsState = { [chainId: string]: boolean }
 export type SuspectedType = 'suspected' | null
 
+export type ExchangeInfo = {
+  id: string
+  name: string
+  url: string
+  image: string
+}
+
+export type ExchangeInfoMap = {
+  [exchangeId: string]: ExchangeInfo
+}
+
 export type TokenResult = {
   symbol: string
   name: string
@@ -33,7 +44,14 @@ export type TokenResult = {
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
-  marketData: TokenMarketData
+  marketDataIn: TokenMarketDataByCurrency[]
+  meta?: {
+    /**
+     * Ids of exchanges where the token is traded.
+     */
+    exchanges?: string[]
+    website?: string
+  }
   flags: {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
@@ -67,10 +85,7 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
-export type TokenDataCacheValue = {
-  priceIn: Price[]
-  marketData: TokenMarketData
-}
+export type TokenDataCacheValue = Pick<TokenResult, 'marketDataIn' | 'priceIn' | 'meta'>
 
 /**
  * Cache for token data
@@ -121,10 +136,13 @@ export type ExternalAPITokenMarketDataResponse = {
   /**
    * Despite the name, this is a percentage, not USD value change.
    */
+  usd_fully_diluted_valuation?: number
   usd_24h_change: number
   usd_market_cap: number
   usd_24h_vol: number
+  total_supply?: number
   exchanges: string[]
+  homepage?: string[]
 }
 
 /**
