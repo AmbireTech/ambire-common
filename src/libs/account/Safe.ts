@@ -34,6 +34,13 @@ export class Safe extends BaseAccount {
    */
   EXTRA_ESTIMATION_GAS = 15000n
 
+  /**
+   * If the account makes calls to itself (owner/threshold changes),
+   * add extra gas per call to self as we're state overriding the estimation
+   * and calls to self end up calculate as close to 0 gas
+   */
+  CALL_TO_SELF_GAS = 40000n
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
@@ -65,7 +72,22 @@ export class Safe extends BaseAccount {
     if (isError || !estimation.ambireEstimation) return 0n
 
     const ambireBroaddcastGas = getBroadcastGas(this, options.op)
-    return ambireBroaddcastGas + estimation.ambireEstimation.gasUsed + this.EXTRA_ESTIMATION_GAS
+
+    // each call to self results in a 0 estimate bcz of state overrides
+    let callToSelfGas = 0n
+    for (let i = 0; i < options.op.calls.length; i++) {
+      const call = options.op.calls[i]!
+      if (call.to && call.to.toLowerCase() === this.account.addr.toLowerCase()) {
+        callToSelfGas += this.CALL_TO_SELF_GAS
+      }
+    }
+
+    return (
+      ambireBroaddcastGas +
+      estimation.ambireEstimation.gasUsed +
+      callToSelfGas +
+      this.EXTRA_ESTIMATION_GAS
+    )
   }
 
   getBroadcastOption(): string {

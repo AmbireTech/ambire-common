@@ -1752,15 +1752,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // we're allowing updates only on the signature field for
         // already signed accountOps
         if (meta.safeTxnProps) {
-          if (meta.safeTxnProps.signature !== existingUserRequest.signAccountOp.accountOp.signature)
+          const safeGlobalSig = meta.safeTxnProps.signature
+          const accOpSig = existingUserRequest.signAccountOp.accountOp.signature
+          if ((accOpSig?.length || 0) < safeGlobalSig.length) {
             existingUserRequest.signAccountOp.update({
               accountOpData: {
-                signature: meta.safeTxnProps.signature,
+                signature: safeGlobalSig,
                 txnId: meta.safeTxnProps.txnId,
                 nonce: meta.safeTxnProps.nonce,
                 safeTx: meta.safeTx
               }
             })
+          }
 
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
