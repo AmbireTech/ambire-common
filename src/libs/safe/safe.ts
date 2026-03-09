@@ -341,7 +341,13 @@ export async function getLatestMessages(
     ordering: '-created',
     limit: 15
   })
-  return { ...response, chainId, type: 'message' }
+  const currentTime = new Date().getTime()
+  const oneWeek = 7 * 24 * 60 * 60 * 1000
+  // filter messages older than one week
+  const finalRes = response.results.filter(
+    (m) => new Date(m.created).getTime() + oneWeek > currentTime
+  )
+  return { ...response, results: finalRes, chainId, type: 'message' }
 }
 
 export async function getTransaction(

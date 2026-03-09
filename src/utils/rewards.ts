@@ -149,9 +149,7 @@ export const getProjectedRewardsStatsAndToken = (
         canTopUpGasTank: false,
         isFeeToken: false
       },
-      marketData: {
-        marketDataIn: []
-      }
+      marketDataIn: []
     },
     data
   }
