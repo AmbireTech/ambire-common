@@ -51,6 +51,7 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
@@ -386,9 +387,16 @@ const init = async (
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
@@ -412,7 +420,6 @@ const init = async (
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore,
     autoLogin: autoLoginCtrl
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
@@ -432,7 +439,8 @@ const init = async (
     'https://staging-relayer.ambire.com',
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    () => {}
   )
   const phishing = new PhishingController({
     fetch,
@@ -485,11 +493,16 @@ const init = async (
   const baseAccount = getBaseAccount(
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
-    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
     network
   )
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
+  const safe = new SafeController({
+    networks: networksCtrl,
+    providers: providersCtrl,
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const activity = new ActivityController(
     storageCtrl,
     fetch,
@@ -499,6 +512,7 @@ const init = async (
     providersCtrl,
     networksCtrl,
     portfolio,
+    safe,
     () => Promise.resolve()
   )
   const estimationController = new EstimationController(

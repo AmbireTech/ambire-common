@@ -121,4 +121,15 @@ export class V1 extends BaseAccount {
   ): Promise<bigint> {
     return getRelayerNonce(activity, op, provider)
   }
+
+  /**
+   * The Ambire estimation is made to work perfectly with Ambire SA
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return false
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return true
+  }
 }

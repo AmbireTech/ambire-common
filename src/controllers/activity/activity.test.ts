@@ -25,6 +25,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
@@ -137,6 +138,12 @@ const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 
 const prepareTest = async () => {
+  const safe = new SafeController({
+    networks: networksCtrl,
+    providers: providersCtrl,
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const controller = new ActivityController(
     storageCtrl,
     fetch,
@@ -146,6 +153,7 @@ const prepareTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    safe,
     () => Promise.resolve()
   )
 
@@ -161,6 +169,12 @@ const prepareTest = async () => {
 }
 
 const prepareSignedMessagesTest = async () => {
+  const safe = new SafeController({
+    networks: networksCtrl,
+    providers: providersCtrl,
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const controller = new ActivityController(
     storageCtrl,
     fetch,
@@ -170,6 +184,7 @@ const prepareSignedMessagesTest = async () => {
     providersCtrl,
     networksCtrl,
     portfolioCtrl,
+    safe,
     () => Promise.resolve()
   )
 
@@ -198,9 +213,16 @@ describe('Activity Controller ', () => {
         nets.forEach((n) => {
           providersCtrl.setProvider(n)
         })
+      },
+      onReady: async () => {
+        await providersCtrl.init({ networks: networksCtrl.allNetworks })
       }
     })
-    providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+    providersCtrl = new ProvidersController({
+      storage: storageCtrl,
+      getNetworks: () => networksCtrl.allNetworks,
+      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    })
 
     const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
     accountsCtrl = new AccountsController(
@@ -225,7 +247,8 @@ describe('Activity Controller ', () => {
       relayerUrl,
       velcroUrl,
       new BannerController(storageCtrl),
-      featureFlagsCtrl
+      featureFlagsCtrl,
+      () => {}
     )
 
     const autoLoginCtrl = new AutoLoginController(
@@ -240,7 +263,6 @@ describe('Activity Controller ', () => {
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
       accounts: accountsCtrl,
-      keystore,
       autoLogin: autoLoginCtrl
     })
 
@@ -919,6 +941,12 @@ describe('Activity Controller ', () => {
     })
   })
   test('removeAccountData', async () => {
+    const safe = new SafeController({
+      networks: networksCtrl,
+      providers: providersCtrl,
+      storage: storageCtrl,
+      accounts: accountsCtrl
+    })
     const controller = new ActivityController(
       storageCtrl,
       fetch,
@@ -928,6 +956,7 @@ describe('Activity Controller ', () => {
       providersCtrl,
       networksCtrl,
       portfolioCtrl,
+      safe,
       () => Promise.resolve()
     )
 

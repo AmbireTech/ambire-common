@@ -8,6 +8,7 @@ import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getSafeBroadcastTxn } from '../../libs/safe/safe'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -127,6 +128,14 @@ export async function getTxnData(
   nonce: number,
   call?: Call
 ): Promise<{ to: Hex; value: bigint; data: Hex; gasLimit?: bigint }> {
+  if (account.safeCreation) {
+    const safeData = getSafeBroadcastTxn(op, accountState)
+    return {
+      ...safeData,
+      gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
+    }
+  }
+
   // no need to estimate gas for delegation, it's already estimated
   if (broadcastOption === BROADCAST_OPTIONS.delegation) {
     if (op.calls.length > 1) {

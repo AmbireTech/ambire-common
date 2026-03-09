@@ -5,11 +5,10 @@ import { EOA_SIMULATION_NONCE } from '../consts/deployless'
 import { privSlot } from '../libs/proxyDeploy/deploy'
 
 /**
- *
- * @param accountAddr account address
- * @returns the state override object required for transaction simulation and estimation
+ * Get the state override needed for accounts that are not Ambire smart accounts
+ * like EOA, 7702 EOA that haven't become 7702, yet, or Safe accounts
  */
-export function getEoaSimulationStateOverride(accountAddr: string) {
+export function getNotAmbireStateOverride(accountAddr: string) {
   return {
     [accountAddr]: {
       code: AmbireAccount.binRuntime,
