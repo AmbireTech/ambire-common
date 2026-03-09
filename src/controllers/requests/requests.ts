@@ -899,7 +899,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account || !account.safeCreation) return
 
-        if (meta.created) safeRejectIds.push(`${meta.hash}-${meta.created}`)
+        safeRejectIds.push(`${meta.hash}`)
       }
     })
 

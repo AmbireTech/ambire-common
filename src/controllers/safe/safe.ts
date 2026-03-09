@@ -189,7 +189,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   getMessageId(msg: SafeMessage): string {
-    return `${msg.messageHash}-${new Date(msg.created).getTime()}`
+    return `${msg.messageHash}`
   }
 
   #filterOutHidden(pending: SafeResults, safeAddr: string): SafeResults {
@@ -211,6 +211,7 @@ export class SafeController extends EventEmitter implements ISafeController {
               return (
                 // filter out rejected msgs by the user
                 !hiddenTxns.includes(this.getMessageId(m)) &&
+                !hiddenTxns.includes(`${this.getMessageId(m)}-${new Date(m.created).getTime()}`) &&
                 // and those that the user cannot sign
                 importedKeysLength > m.confirmations.length
               )

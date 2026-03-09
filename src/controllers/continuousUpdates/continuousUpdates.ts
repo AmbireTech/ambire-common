@@ -439,17 +439,18 @@ export class ContinuousUpdatesController extends EventEmitter {
 
       // we come here only if transactionHash is undefined
       const signatures = (oneConfirmed.confirmations?.map((c) => c.signature) || []) as Hex[]
-      const sortedSigs = callsUserR.signAccountOp.accountOp.txnId
+      const safeGlobalSigs = callsUserR.signAccountOp.accountOp.txnId
         ? sortSigs(signatures, callsUserR.signAccountOp.accountOp.txnId)
         : null
       if (
-        sortedSigs &&
+        safeGlobalSigs &&
         callsUserR.signAccountOp.isInRegistry() && // update only if on foreground
-        callsUserR.signAccountOp.accountOp.signature !== sortedSigs
+        callsUserR.signAccountOp.accountOp.signature !== safeGlobalSigs &&
+        (callsUserR.signAccountOp.accountOp.signature?.length || 0) < safeGlobalSigs.length
       ) {
         callsUserR.signAccountOp.update({
           accountOpData: {
-            signature: sortedSigs
+            signature: safeGlobalSigs
           }
         })
       }
