@@ -314,8 +314,7 @@ export async function getPendingTransactions(
     apiKey: process.env.SAFE_API_KEY
   })
 
-  const response = await apiKit.getMultisigTransactions(safeAddress, {
-    executed: false,
+  const response = await apiKit.getPendingTransactions(safeAddress, {
     ordering: 'nonce'
   })
   return { ...response, chainId, type: 'txn' }
@@ -366,32 +365,23 @@ export async function fetchAllPending(
   networks: { chainId: bigint; threshold: number }[],
   safeAddr: Hex
 ): Promise<SafeResults | null> {
-  let promises = []
   const results: SafeResults = {}
   for (let i = 0; i < networks.length; i++) {
     const network = networks[i]!
-    promises.push(getPendingTransactions(network.chainId, safeAddr))
-    promises.push(getLatestMessages(network.chainId, safeAddr))
+    const responses = await Promise.all([
+      getPendingTransactions(network.chainId, safeAddr),
+      getLatestMessages(network.chainId, safeAddr)
+    ])
+    responses.forEach((r) => {
+      if (!results[r.chainId.toString()]) results[r.chainId.toString()] = { txns: [], messages: [] }
 
-    // when we assemble 4 promises, we make 4 requests to the API,
-    // take the results and wait an additional second.
-    // this is because we're allowed 5 requests per second
-    if (promises.length === 4 || i + 1 === networks.length) {
-      const responses = await Promise.all(promises)
-      responses.forEach((r) => {
-        if (!results[r.chainId.toString()])
-          results[r.chainId.toString()] = { txns: [], messages: [] }
-
-        if (r.type === 'txn')
-          results[r.chainId.toString()]!.txns = r.results as SafeMultisigTransactionResponse[]
-        else
-          results[r.chainId.toString()]!.messages = r.results.map((r) => {
-            return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
-          }) as ExtendedSafeMessage[]
-      })
-      await wait(1000)
-      promises = []
-    }
+      if (r.type === 'txn')
+        results[r.chainId.toString()]!.txns = r.results as SafeMultisigTransactionResponse[]
+      else
+        results[r.chainId.toString()]!.messages = r.results.map((r) => {
+          return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
+        }) as ExtendedSafeMessage[]
+    })
   }
 
   return results

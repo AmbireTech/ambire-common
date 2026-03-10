@@ -724,8 +724,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
-
-    this.fetchSafeTxns().catch((e) => e) // we catch the error inside.catch((e) => e) // we catch the error inside
   }
 
   async #onAccountPickerSuccess() {
@@ -1194,7 +1192,9 @@ export class MainController extends EventEmitter implements IMainController {
         }
       }
 
-      if (shouldFetchSafeTxns) this.fetchSafeTxns().catch((e) => e) // we catch the error inside
+      if (shouldFetchSafeTxns) {
+        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
+      }
     }
 
     return { newestOpTimestamp }
@@ -1318,6 +1318,11 @@ export class MainController extends EventEmitter implements IMainController {
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
+    // skip if conditions are met
+    const shouldFetch =
+      !!chainIds.length || forceRefetch || !this.safe.shouldSkipFetchPending(safeAddr)
+    if (!shouldFetch) return
+
     const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
     if (!accountState) return
 
@@ -1336,42 +1341,48 @@ export class MainController extends EventEmitter implements IMainController {
       threshold: accountState[c.toString()]?.threshold || 0
     }))
 
-    const res: SafeResults | null = await this.safe
-      .fetchPending(safeAddr, networksAndThresholds, !!chainIds.length || forceRefetch)
-      .catch((e) => {
-        console.log(e)
-        console.log('failed to retrieve pending safe txns')
-        return null
-      })
+    for (let i = 0; i < networksAndThresholds.length; i++) {
+      // wait a second to not hit 5 request per minute API limit
+      if (i !== 0) await wait(600)
 
-    if (!res) return
+      const firstBatch = networksAndThresholds[i]!
+      const res: SafeResults | null = await this.safe
+        .fetchPending(safeAddr, [firstBatch])
+        .catch((e) => {
+          console.log(e)
+          console.log('failed to retrieve pending safe txns')
+          return null
+        })
 
-    // build txn requests
-    const txnRequest = toCallsUserRequest(safeAddr, res)
-    for (let i = 0; i < txnRequest.length; i++) {
-      // build the requests only if the selected account hasn't changed
-      if (this.selectedAccount?.account?.addr === safeAddr)
-        await this.requests.build(txnRequest[i]!).catch((e) => e)
-    }
+      if (!res) continue
 
-    // build and resolve message requests
-    const messageRequests = toSigMessageUserRequests(res)
-    for (let i = 0; i < messageRequests.length; i++) {
-      const req = messageRequests[i]!
-      const userRequest = this.requests.userRequests.find(
-        (u) =>
-          u.meta.accountAddr === safeAddr &&
-          u.meta.chainId === req.params.chainId &&
-          (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-          u.meta.hash === req.params.messageHash
-      )
-      if (!userRequest && !req.isConfirmed) {
+      // build txn requests
+      const txnRequest = toCallsUserRequest(safeAddr, res)
+      for (let i = 0; i < txnRequest.length; i++) {
         // build the requests only if the selected account hasn't changed
         if (this.selectedAccount?.account?.addr === safeAddr)
-          await this.requests.build(req).catch((e) => e)
+          await this.requests.build(txnRequest[i]!).catch((e) => e)
       }
-      if (userRequest && req.isConfirmed) {
-        await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+
+      // build and resolve message requests
+      const messageRequests = toSigMessageUserRequests(res)
+      for (let i = 0; i < messageRequests.length; i++) {
+        const req = messageRequests[i]!
+        const userRequest = this.requests.userRequests.find(
+          (u) =>
+            u.meta.accountAddr === safeAddr &&
+            u.meta.chainId === req.params.chainId &&
+            (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+            u.meta.hash === req.params.messageHash
+        )
+        if (!userRequest && !req.isConfirmed) {
+          // build the requests only if the selected account hasn't changed
+          if (this.selectedAccount?.account?.addr === safeAddr)
+            await this.requests.build(req).catch((e) => e)
+        }
+        if (userRequest && req.isConfirmed) {
+          await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+        }
       }
     }
   }

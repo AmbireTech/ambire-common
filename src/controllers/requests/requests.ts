@@ -1730,6 +1730,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (existingUserRequest) {
       // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.
       if (existingUserRequest.signAccountOp.signAndBroadcastPromise) {
+        // if the update is coming from safe global, just ignore it
+        if (meta.safeTxnProps) return
+
         const errorMessage =
           'Please wait until the previous transaction is fully processed before adding a new one.'
 
