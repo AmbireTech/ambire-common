@@ -490,6 +490,16 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     }
   }
 
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.statuses.sign = 'INITIAL'
+    this.emitUpdate()
+  }
+
   #onAbortOperation() {
     if (this.signer?.signingCleanup) {
       this.signer.signingCleanup()
