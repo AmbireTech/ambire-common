@@ -1,6 +1,5 @@
 export type FormatType = 'value' | 'price' | 'amount' | 'default' | 'precise' | 'noDecimal'
 
-const DEFAULT_DECIMALS = 2
 const DECIMAL_RULES = {
   value: {
     min: 2,
@@ -49,13 +48,16 @@ const getPrefix = (widthDollarPrefix: boolean) => (widthDollarPrefix ? '$' : '')
 const formatNumber = (
   value: number,
   withDollarPrefix: boolean,
-  decimals: number,
+  maxDecimals: number,
   sign: string,
   type: FormatType
 ) => {
-  const minimumFractionDigits = DECIMAL_RULES[type].min
-  let maximumFractionDigits = Math.max(minimumFractionDigits, decimals) // we make sure minimumFractionDigits <= maximumFractionDigits
-  maximumFractionDigits = Math.min(maximumFractionDigits, MAX_SUPPORTED_DECIMALS_BY_FORMATTER)
+  // maxDecimals could be less than DECIMAL_RULES[type].min
+  const minimumFractionDigits = Math.min(DECIMAL_RULES[type].min, maxDecimals)
+  const maximumFractionDigits = Math.min(
+    Math.max(minimumFractionDigits, maxDecimals),
+    MAX_SUPPORTED_DECIMALS_BY_FORMATTER
+  )
 
   let keyForCache = `${minimumFractionDigits}:${maximumFractionDigits}`
   if (!cacheForNumberFormatters[keyForCache])
@@ -89,11 +91,17 @@ const formatDecimals = (value: number | undefined = undefined, type: FormatType 
   const sign = value < 0 ? '-' : ''
 
   if (type === 'value') {
+    let decimals = DECIMAL_RULES[type].max
+
     if (absoluteValue < 0.01) {
       return `${sign}<$0.01`
     }
 
-    return formatNumber(absoluteValue, withDollarPrefix, DEFAULT_DECIMALS, sign, type)
+    if (absoluteValue > 10000) {
+      decimals = 0
+    }
+
+    return formatNumber(absoluteValue, withDollarPrefix, decimals, sign, type)
   }
 
   if (type === 'amount') {
