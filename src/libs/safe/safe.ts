@@ -314,8 +314,7 @@ export async function getPendingTransactions(
     apiKey: process.env.SAFE_API_KEY
   })
 
-  const response = await apiKit.getMultisigTransactions(safeAddress, {
-    executed: false,
+  const response = await apiKit.getPendingTransactions(safeAddress, {
     ordering: 'nonce'
   })
   return { ...response, chainId, type: 'txn' }

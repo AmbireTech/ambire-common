@@ -1343,7 +1343,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     for (let i = 0; i < networksAndThresholds.length; i++) {
       // wait a second to not hit 5 request per minute API limit
-      if (i !== 0 && i % 2 === 0) await wait(1000)
+      if (i !== 0) await wait(600)
 
       const firstBatch = networksAndThresholds[i]!
       const res: SafeResults | null = await this.safe
@@ -1354,7 +1354,7 @@ export class MainController extends EventEmitter implements IMainController {
           return null
         })
 
-      if (!res) return
+      if (!res) continue
 
       // build txn requests
       const txnRequest = toCallsUserRequest(safeAddr, res)
