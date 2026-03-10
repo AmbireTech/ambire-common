@@ -92,7 +92,7 @@ const getOwnerChangeHumanization = (
         getAddressVisualization(removedOwner),
         getBreak(),
         getAction('Set new owner'),
-        getLabel(newOwner)
+        getAddressVisualization(newOwner)
       ]
     )
     warnings.push(getWarning(`Owner configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'))
