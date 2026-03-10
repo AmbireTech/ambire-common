@@ -3280,6 +3280,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.traceCallDiscoveryStatus = status
   }
 
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.signPromise = undefined
+    this.broadcastPromise = undefined
+    this.signAndBroadcastPromise = undefined
+    this.status = { type: SigningStatus.ReadyToSign }
+    this.emitUpdate()
+  }
+
   get type() {
     return this.#type
   }
