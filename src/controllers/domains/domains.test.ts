@@ -163,11 +163,10 @@ describe('Domains', () => {
       ENS_LATEST_RESOLVER.name
     )
   })
-  // @TODO: Fix this test
-  it.skip('should use the universal resolver contract', async () => {
+  it('should use the universal resolver contract', async () => {
     const UNIVERSAL_RESOLVER_TEST = {
-      address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-      name: 'ur.gtest.eth'
+      address: '0x2222222222222222222222222222222222222222',
+      name: 'ur.integration-tests.eth'
     }
 
     await domainsController.resolveDomain({ domain: UNIVERSAL_RESOLVER_TEST.name })
