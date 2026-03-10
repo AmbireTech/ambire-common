@@ -222,19 +222,18 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
-  async fetchPending(
-    safeAddr: Hex,
-    networks: { chainId: bigint; threshold: number }[],
-    forceFetch = false
-  ): Promise<SafeResults | null> {
-    if (
-      !forceFetch &&
-      this.#updatedAt &&
+  shouldSkipFetchPending(safeAddr: string): boolean {
+    return (
+      !!this.#updatedAt &&
       this.#updatedAt.addr === safeAddr &&
       Date.now() - this.#updatedAt.time < FETCH_SAFE_TXNS
     )
-      return null
+  }
 
+  async fetchPending(
+    safeAddr: Hex,
+    networks: { chainId: bigint; threshold: number }[]
+  ): Promise<SafeResults | null> {
     this.#updatedAt = {
       time: Date.now(),
       addr: safeAddr
