@@ -1,6 +1,5 @@
-import { ethers, Wallet, ZeroAddress } from 'ethers'
+import { getAddress, Interface, Wallet, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
-import { getAddress } from 'viem'
 
 import { describe, expect, jest } from '@jest/globals'
 
@@ -21,7 +20,6 @@ import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
-import { Portfolio } from '../../libs/portfolio'
 import {
   erc721CollectionToLearnedAssetKeys,
   learnedErc721sToHints
@@ -34,7 +32,7 @@ import {
   PortfolioNetworkResult,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -59,7 +57,7 @@ networks.forEach((network) => {
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()]!, network, accounts)
+      getAccountState(providers[network.chainId.toString()]!, network, accounts, [])
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -297,9 +295,13 @@ const getKeystoreKeys = (): StoredKey[] => {
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-const prepareTest = async (
+const prepareTest = async ({
+  initialSetStorage,
+  hasSimulationChanged
+}: {
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
-) => {
+  hasSimulationChanged?: Function
+} = {}) => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [
@@ -323,9 +325,16 @@ const prepareTest = async (
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
     },
-    onAddOrUpdateNetworks: () => {}
+    onAddOrUpdateNetworks: () => {},
+    onReady: async () => {
+      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+    }
   })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+  providersCtrl = new ProvidersController({
+    storage: storageCtrl,
+    getNetworks: () => networksCtrl.allNetworks,
+    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  })
   await providersCtrl.initialLoadPromise
   const accountsCtrl = new AccountsController(
     storageCtrl,
@@ -349,7 +358,8 @@ const prepareTest = async (
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    hasSimulationChanged ? hasSimulationChanged : () => {}
   )
 
   await accountsCtrl.initialLoadPromise
@@ -371,7 +381,7 @@ describe('Portfolio Controller ', () => {
   })
   async function getAccountOp() {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
-    const iface = new ethers.Interface(ABI)
+    const iface = new Interface(ABI)
     const data = iface.encodeFunctionData('transferFrom', [
       '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -760,9 +770,9 @@ describe('Portfolio Controller ', () => {
         erc721s: {}
       }
 
-      const { controller, storageCtrl } = await prepareTest((storageC) =>
-        storageC.set('learnedAssets', startingLearnedAssets)
-      )
+      const { controller, storageCtrl } = await prepareTest({
+        initialSetStorage: (storageC) => storageC.set('learnedAssets', startingLearnedAssets)
+      })
 
       const nextBatchOf30 = generateRandomAddresses(30)
       const allCurrentlyOwned = [...firstBatchOf50.slice(0, 20), ...nextBatchOf30]
@@ -806,9 +816,9 @@ describe('Portfolio Controller ', () => {
         }
       }
 
-      const { controller, storageCtrl } = await prepareTest((storageC) =>
-        storageC.set('learnedAssets', startingLearnedAssets)
-      )
+      const { controller, storageCtrl } = await prepareTest({
+        initialSetStorage: (storageC) => storageC.set('learnedAssets', startingLearnedAssets)
+      })
 
       const nextRandomCollections = generateRandomAddresses(30).reduce(
         (acc, addr, index) => {
@@ -1246,8 +1256,10 @@ describe('Portfolio Controller ', () => {
           }
         }
       }
-      const { controller } = await prepareTest(async (storageCtrl) => {
-        await storageCtrl.set('learnedAssets', initialLearnedAssets)
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageCtrl) => {
+          await storageCtrl.set('learnedAssets', initialLearnedAssets)
+        }
       })
 
       // @ts-ignore
@@ -1417,9 +1429,9 @@ describe('Portfolio Controller ', () => {
         },
         fromExternalAPI: {}
       }
-      const { controller, storageCtrl } = await prepareTest((storage) =>
-        storage.set('previousHints', previousHints)
-      )
+      const { controller, storageCtrl } = await prepareTest({
+        initialSetStorage: (storage) => storage.set('previousHints', previousHints)
+      })
 
       const learnedAssets = await storageCtrl.get('learnedAssets', null)
       expect(learnedAssets).toBe(null)
@@ -1447,10 +1459,12 @@ describe('Portfolio Controller ', () => {
     test('Learned assets from view-only account are not returned', async () => {
       const learnedAssets = getMultipleAccountsLearnedAssets()
 
-      const { controller } = await prepareTest(async (storageController) => {
-        await storageController.set('learnedAssets', learnedAssets)
-        // Get rid of the second account's key (to make it view-only)
-        await storageController.set('keystoreKeys', getKeystoreKeys().slice(0, 1))
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageController) => {
+          await storageController.set('learnedAssets', learnedAssets)
+          // Get rid of the second account's key (to make it view-only)
+          await storageController.set('keystoreKeys', getKeystoreKeys().slice(0, 1))
+        }
       })
 
       // @ts-ignore
@@ -1465,10 +1479,12 @@ describe('Portfolio Controller ', () => {
     test('Learned assets from other imported accounts are not returned if the update is not manual', async () => {
       const learnedAssets = getMultipleAccountsLearnedAssets()
 
-      const { controller } = await prepareTest(async (storageController) => {
-        await storageController.set('learnedAssets', learnedAssets)
-        // Get rid of the second account's key (to make it view-only)
-        await storageController.set('keystoreKeys', getKeystoreKeys())
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageController) => {
+          await storageController.set('learnedAssets', learnedAssets)
+          // Get rid of the second account's key (to make it view-only)
+          await storageController.set('keystoreKeys', getKeystoreKeys())
+        }
       })
 
       // @ts-ignore
@@ -1483,10 +1499,12 @@ describe('Portfolio Controller ', () => {
     test('Learned assets are added from other imported accounts on a manual update', async () => {
       const learnedAssets = getMultipleAccountsLearnedAssets()
 
-      const { controller } = await prepareTest(async (storageController) => {
-        await storageController.set('learnedAssets', learnedAssets)
-        // Get rid of the second account's key (to make it view-only)
-        await storageController.set('keystoreKeys', getKeystoreKeys())
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageController) => {
+          await storageController.set('learnedAssets', learnedAssets)
+          // Get rid of the second account's key (to make it view-only)
+          await storageController.set('keystoreKeys', getKeystoreKeys())
+        }
       })
 
       // @ts-ignore
@@ -1965,19 +1983,19 @@ describe('Portfolio Controller ', () => {
     const { controller } = await prepareTest()
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBe(undefined)
+    expect(controller.tokenDataCache['137']).toBe(undefined)
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd'
     })
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBeDefined()
+    expect(controller.tokenDataCache['137']).toBeDefined()
     // @ts-ignore
-    expect(controller.priceCache['137'].size).toBeGreaterThan(0)
+    expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()
@@ -1996,12 +2014,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
@@ -2021,12 +2041,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(2)
     expect(formatted.data).toBe(null)
@@ -2045,7 +2067,7 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
@@ -2055,6 +2077,8 @@ describe('Portfolio Controller ', () => {
         hasHints: true
       }
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)
@@ -2076,5 +2100,49 @@ describe('Portfolio Controller ', () => {
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(Object.keys(controller.getNetworksWithAssets(account.addr)).length).toEqual(0)
+  })
+  test('should do a request with a simulation; then a second request without the simulation should come and it should not be allowed to persist', async () => {
+    const { controller } = await prepareTest({
+      hasSimulationChanged: (accAddr: string, chainId: string, accountOps?: AccountOp[]) => {
+        if (accountOps) return false
+        return true
+      }
+    })
+    const ethereum = networks.find((n) => n.chainId === 1n)!
+    const accountOpsOnEthereum = await getAccountOp()
+    const accountStates = await getAccountsInfo([account])
+
+    // update and persist the simulation
+    await controller.updateSelectedAccount(
+      account.addr,
+      [ethereum],
+      {
+        accountOps: accountOpsOnEthereum,
+        states: accountStates[account.addr]!
+      },
+      { isManualUpdate: true, isSignAccountOpSimulation: true }
+    )
+    // make sure the simulation is there
+    const hasItems = (obj: any) => !!Object.keys(obj).length
+    const portfolioState = controller.getAccountPortfolioState(account.addr)
+    expect(hasItems(portfolioState)).toBeTruthy()
+    expect(portfolioState['1']).not.toBe(undefined)
+    const ethereumPortfolioState = portfolioState['1']!
+    expect(ethereumPortfolioState.accountOps).not.toBe(undefined)
+    expect(ethereumPortfolioState.accountOps).not.toBe(null)
+    expect(ethereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
+
+    // update the selected account again and make sure this
+    // request doesn't get persisted
+    await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+      isManualUpdate: true
+    })
+    const newPortfolioState = controller.getAccountPortfolioState(account.addr)
+    expect(hasItems(newPortfolioState)).toBeTruthy()
+    expect(newPortfolioState['1']).not.toBe(undefined)
+    const newEthereumPortfolioState = newPortfolioState['1']!
+    expect(newEthereumPortfolioState.accountOps).not.toBe(undefined)
+    expect(newEthereumPortfolioState.accountOps).not.toBe(null)
+    expect(newEthereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
   })
 })

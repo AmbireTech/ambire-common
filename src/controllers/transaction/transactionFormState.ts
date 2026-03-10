@@ -481,6 +481,7 @@ export class TransactionFormState extends EventEmitter {
           canTopUpGasTank: false,
           rewardsType: null
         },
+        marketDataIn: [],
         priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
 
