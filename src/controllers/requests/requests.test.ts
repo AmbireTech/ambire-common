@@ -1,9 +1,6 @@
-import { ZeroAddress } from 'ethers'
-
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
-import { waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
@@ -16,8 +13,6 @@ import {
 import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { RequestsController } from './requests'
-
-const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
@@ -70,13 +65,39 @@ const accounts = [
 ]
 
 const prepareTest = async () => {
-  const { mainCtrl } = await makeMainController(
-    async (storageCtrl) => {
-      await storageCtrl.set('accounts', accounts)
-      await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    },
-    { skipAccountStateLoad: false }
-  )
+  const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
+
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('accounts', accounts)
+    await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+  })
+
+  // Mock account states for all accounts
+  for (const account of mainCtrl.accounts.accounts) {
+    mainCtrl.accounts.accountStates[account.addr] = {}
+    for (const network of mainCtrl.networks.networks) {
+      mainCtrl.accounts.accountStates[account.addr]![network.chainId.toString()] = {
+        accountAddr: account.addr,
+        isDeployed: true,
+        eoaNonce: null,
+        nonce: 0n,
+        erc4337Nonce: 0n,
+        associatedKeys: [],
+        importedAccountKeys: [],
+        balance: 0n,
+        isEOA: false,
+        isErc4337Enabled: false,
+        isErc4337Nonce: false,
+        isV2: true,
+        currentBlock: 0n,
+        isSmarterEoa: false,
+        delegatedContract: null,
+        delegatedContractName: null,
+        threshold: 1,
+        updatedAt: 0
+      } as any
+    }
+  }
 
   const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
 
@@ -94,7 +115,7 @@ const prepareTest = async () => {
     const account = mainCtrl.accounts.accounts.find((a) => a.addr === addr)!
     const network = mainCtrl.networks.networks.find((n) => n.chainId === chainId)!
 
-    return new SignAccountOpController({
+    const signAccountOp = new SignAccountOpController({
       type: 'default',
       callRelayer: mainCtrl.callRelayer,
       accounts: mainCtrl.accounts,
@@ -132,6 +153,10 @@ const prepareTest = async () => {
       onBroadcastSuccess: async () => {},
       onBroadcastFailed: () => {}
     })
+    // Prevent the recurring estimation timer from reaching V1.getAvailableFeeOptions
+    // (which throws for accounts with no ETH on the test networks).
+    jest.spyOn(signAccountOp.estimation, 'estimate').mockResolvedValue(undefined)
+    return signAccountOp
   }
 
   const getCallsRequest = async ({ addr, chainId }: { addr: string; chainId: bigint }) => {
@@ -172,8 +197,7 @@ const prepareTest = async () => {
     keystore: mainCtrl.keystore,
     transfer: mainCtrl.transfer,
     swapAndBridge: mainCtrl.swapAndBridge,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ui: uiManager as any,
+    ui: uiManager as any, // eslint-disable-line @typescript-eslint/no-explicit-any
     safe: mainCtrl.safe,
     autoLogin: mainCtrl.autoLogin,
     getDapp: async () => undefined,
@@ -190,7 +214,9 @@ const prepareTest = async () => {
     selectedAccountCtrl: mainCtrl.selectedAccount,
     controller: requestsController,
     getSignAccountOp,
-    getCallsRequest
+    getCallsRequest,
+    event,
+    getWindowId
   }
 }
 
@@ -442,7 +468,7 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
   })
   test('should focus out and then focus on the current request window', async () => {
-    const { controller } = await prepareTest()
+    const { controller, event, getWindowId } = await prepareTest()
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     event.emit('windowFocusChange', 'random-window-id')
