@@ -3,10 +3,113 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { SafeV2 } from '../../const/abis/Safe'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken, getWarning } from '../../utils'
+import {
+  HumanizerCallModule,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from '../../interfaces'
+import {
+  getAction,
+  getAddressVisualization,
+  getBreak,
+  getLabel,
+  getToken,
+  getWarning
+} from '../../utils'
 
 const iface = new Interface(SafeV2)
+
+export const getOwnerChangeHumanization = (
+  data?: string
+): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
+  if (!data) return
+
+  const selector = data.substring(0, 10)
+  const fullVisualization: HumanizerVisualization[] = []
+  const warnings: HumanizerWarning[] = []
+
+  const addOwnerWithThreshold = iface.getFunction('addOwnerWithThreshold')?.selector
+  if (selector === addOwnerWithThreshold) {
+    const decoded = iface.decodeFunctionData('addOwnerWithThreshold', data)
+    const newOwner = decoded[0]
+    const newThreshold = decoded[1]
+    fullVisualization.push(
+      ...[
+        getAction('Add owner'),
+        getAddressVisualization(newOwner),
+        getAction('and set threshold to'),
+        getLabel(newThreshold)
+      ]
+    )
+    warnings.push(
+      getWarning(`Owner & threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE')
+    )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  const changeThreshold = iface.getFunction('changeThreshold')?.selector
+  if (selector === changeThreshold) {
+    const decoded = iface.decodeFunctionData('changeThreshold', data)
+    const newThreshold = decoded[0]
+    fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
+    warnings.push(
+      getWarning(`Threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE')
+    )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  const removeOwner = iface.getFunction('removeOwner')?.selector
+  if (selector === removeOwner) {
+    const decoded = iface.decodeFunctionData('removeOwner', data)
+    const removedOwner = decoded[1]
+    const newThreshold = decoded[2]
+    fullVisualization.push(
+      ...[
+        getAction('Remove owner'),
+        getAddressVisualization(removedOwner),
+        getAction('and set threshold to'),
+        getLabel(newThreshold)
+      ]
+    )
+    warnings.push(
+      getWarning(`Owner & threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE')
+    )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  const swapOwner = iface.getFunction('swapOwner')?.selector
+  if (selector === swapOwner) {
+    const decoded = iface.decodeFunctionData('swapOwner', data)
+    const removedOwner = decoded[1]
+    const newOwner = decoded[2]
+    fullVisualization.push(
+      ...[
+        getAction('Remove owner'),
+        getAddressVisualization(removedOwner),
+        getBreak(),
+        getAction('Set new owner'),
+        getAddressVisualization(newOwner)
+      ]
+    )
+    warnings.push(getWarning(`Owner configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'))
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  return undefined
+}
 
 const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
   const matcher = {
@@ -28,6 +131,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         signatures
       } = iface.parseTransaction(call)!.args
 
+      const ownerHumanization = getOwnerChangeHumanization(data)
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -35,22 +139,39 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         getLabel('to'),
         getAddressVisualization(to)
       ]
+
       if (value)
         fullVisualization.push(
           ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, value)]
         )
+
+      const warnings: HumanizerWarning[] = []
+
+      if (ownerHumanization) {
+        if (ownerHumanization.visuals)
+          fullVisualization.push(getBreak(), ...ownerHumanization.visuals)
+        if (ownerHumanization.warnings) warnings.push(...ownerHumanization.warnings)
+      }
+
       if (operation === 1n)
-        return {
-          ...call,
-          fullVisualization,
-          warnings: [
-            getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
-          ]
-        }
-      return { ...call, fullVisualization }
+        warnings.push(
+          getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
+        )
+
+      return { ...call, fullVisualization, warnings }
     }
   }
   const newCalls = calls.map((call) => {
+    // the owner decoding takes proceedance
+    const ownerHumanization = getOwnerChangeHumanization(call.data)
+    if (ownerHumanization) {
+      return {
+        ...call,
+        fullVisualization: ownerHumanization.visuals,
+        warnings: ownerHumanization.warnings
+      }
+    }
+
     const match = matcher[call.data.slice(0, 10)]
     if (call.fullVisualization || !match) return call
     const newCall = match(call)
