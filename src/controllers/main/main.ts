@@ -1118,6 +1118,46 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitQr(
+    QrKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: string | Uint8Array
+  ) {
+    try {
+      const qrCtrl = this.#externalSignerControllers.qr
+
+      if (!qrCtrl) {
+        const message =
+          'Could not initialize connection with your QR hardware wallet. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+
+      const keyIterator = new QrKeyIterator({ controller: qrCtrl })
+      await keyIterator.importAccount(payload)
+
+      this.accountPicker.setInitParams({
+        keyIterator,
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
+      })
+    } catch (error: any) {
+      const message =
+        error?.message || 'Could not import the QR hardware wallet account. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitQr(
+    QrKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: string | Uint8Array
+  ) {
+    await this.withStatus('handleAccountPickerInitQr', async () =>
+      this.#handleAccountPickerInitQr(QrKeyIterator, payload)
+    )
+  }
+
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.initialLoadPromise
 
@@ -1125,8 +1165,9 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount =
-      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {

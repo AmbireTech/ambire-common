@@ -35,16 +35,16 @@ export interface ExternalSignerController {
   type: string
   deviceModel: string
   deviceId: string
-  isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
-  unlock: (
+  isUnlocked?: (path?: string, expectedKeyOnThisPath?: string) => boolean
+  unlock?: (
     path: ReturnType<typeof getHdPathFromTemplate>,
     expectedKeyOnThisPath?: string,
     shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
-  unlockedPath: string
-  unlockedPathKeyAddr: string
+  unlockedPath?: string
+  unlockedPathKeyAddr?: string
   walletSDK?: any // Either the wallet own SDK or its session, each wallet having specifics
-  cleanUp: () => void // Trezor and Ledger specific
+  cleanUp?: () => void // Trezor and Ledger specific
   signingCleanup?: () => Promise<void> // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
@@ -143,9 +143,12 @@ export type InternalKey = {
   }
 }
 
+export type QrWalletType = 'keystone' | 'onekey' | 'imkey' | 'ngrave' | 'airgap'
+export type QrProtocolType = 'ur' | 'airgap'
+
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice'
+  type: 'trezor' | 'ledger' | 'lattice' | 'qr'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -154,6 +157,13 @@ export type ExternalKey = {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
     createdAt: number | null
+
+    qrWalletType?: QrWalletType
+    qrProtocol?: QrProtocolType
+    originHdPath?: string // for accounts imported from QR, to store the original path used on the wallet, as some wallets (like Keystone) don't provide the possibility to retrieve the key by xpub, but only by path, so we need to keep track of it in order to be able to retrieve the key later on
+    // TODO: check do we need this?
+    masterFingerprint?: string // for Ledger, optional for others, as it can be used for additional info but is not required to retrieve the key
+
     [key: string]: any
   }
 }
@@ -200,3 +210,22 @@ export type KeyPreferences = {
 }
 
 export type EIP712Types = Record<string, TypedDataField[]>
+
+export type ParsedQrImportedAccount = {
+  addr?: string
+  xpub?: string
+  index?: number
+  hdPath?: string
+}
+
+export type ParsedQrAccount = {
+  masterFingerprint?: string
+  deviceModel?: string
+  deviceId?: string
+  hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
+  accounts: ParsedQrImportedAccount[]
+}
+
+export interface QrAccountImportController {
+  importAccountQR: (payload: string | Uint8Array) => Promise<ParsedQrAccount>
+}
