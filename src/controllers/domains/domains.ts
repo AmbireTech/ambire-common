@@ -195,9 +195,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     try {
       let ensAvatar: string | undefined | null
 
-      const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider), {
-        timeoutMs: 15000
-      })
+      // Debugging: Disable ENS lookup, as it fails in CI + LavaMoat
+      const ens = null
 
       if (ens) {
         // We need the ens name to resolve the avatar
