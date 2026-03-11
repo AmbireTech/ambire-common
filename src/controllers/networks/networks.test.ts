@@ -1,19 +1,10 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { ProvidersController } from '../../controllers/providers/providers'
-import { UiController } from '../../controllers/ui/ui'
 import { INetworksController } from '../../interfaces/network'
-import { IProvidersController } from '../../interfaces/provider'
-import { StorageController } from '../storage/storage'
-import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {
   let networksController: INetworksController
@@ -22,31 +13,8 @@ describe('Networks Controller', () => {
   beforeEach(async () => {
     if (skipBeforeEach) return
 
-    const storage = produceMemoryStore()
-    const storageCtrl = new StorageController(storage)
-    let providersCtrl: IProvidersController
-
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
-
-    networksController = new NetworksController({
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
-      },
-      onAddOrUpdateNetworks: () => {},
-      onReady: async () => {
-        await providersCtrl.init({ networks: networksController.allNetworks })
-      }
-    })
-    providersCtrl = new ProvidersController({
-      storage: storageCtrl,
-      getNetworks: () => networksController.allNetworks,
-      sendUiMessage: () => uiCtrl.message.sendUiMessage
-    })
-    await providersCtrl.initialLoadPromise
+    const { mainCtrl } = await makeMainController(undefined)
+    networksController = mainCtrl.networks
   })
 
   test('should initialize with predefined networks if storage is empty', async () => {
@@ -125,36 +93,13 @@ describe('Networks Controller', () => {
 
   test('should work in testnet mode', async () => {
     skipBeforeEach = true
-    const storage = produceMemoryStore()
-    const storageCtrl = new StorageController(storage)
-    let providersCtrl: IProvidersController
-
-    const testnetNetworksController = new NetworksController({
-      defaultNetworksMode: 'testnet',
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
-      },
-      onAddOrUpdateNetworks: () => {},
-      onReady: async () => {
-        await providersCtrl.init({ networks: testnetNetworksController.allNetworks })
-      }
-    })
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
-    providersCtrl = new ProvidersController({
-      storage: storageCtrl,
-      getNetworks: () => testnetNetworksController.allNetworks,
-      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    const { mainCtrl } = await makeMainController(undefined, {
+      overrides: { featureFlags: { testnetMode: true } }
     })
 
-    await testnetNetworksController.initialLoadPromise
-    expect(testnetNetworksController.networks.find((n) => n.chainId === 1n)).toBe(undefined)
-    expect(testnetNetworksController.networks.find((n) => n.chainId === 11155111n)).not.toBe(
-      undefined
-    )
+    await mainCtrl.networks.initialLoadPromise
+    expect(mainCtrl.networks.networks.find((n) => n.chainId === 1n)).toBe(undefined)
+    expect(mainCtrl.networks.networks.find((n) => n.chainId === 11155111n)).not.toBe(undefined)
   })
 
   // TODO: Refactor Fantom test as well
