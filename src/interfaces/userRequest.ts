@@ -14,6 +14,7 @@ import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
+import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
@@ -62,6 +63,8 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     topUpAmount?: bigint
     safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
     safeTx?: SafeMultisigTransactionResponse
+    swapTxn?: SwapAndBridgeSendTxRequest
+    quote?: SwapAndBridgeQuote
   }
   signAccountOp: ISignAccountOpController
 }
