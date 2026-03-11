@@ -20,6 +20,7 @@ import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
 import { airdropsModule } from './modules/Airdrops'
+import AllowanceModule from './modules/Allowance'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
@@ -32,6 +33,7 @@ import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
 import { LifiModule } from './modules/Lifi'
+import ModuleProxyFactoryModule from './modules/ModuleProxyFactory'
 import { openSeaModule } from './modules/OpenSea'
 import PancakeModule from './modules/Pancake'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
@@ -73,6 +75,8 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   aaveHumanizer,
   WALLETModule,
   SafeModule,
+  AllowanceModule,
+  ModuleProxyFactoryModule,
   privilegeHumanizer,
   sushiSwapModule,
   legendsModule,

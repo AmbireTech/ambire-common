@@ -20,7 +20,7 @@ import {
 
 const iface = new Interface(SafeV2)
 
-export const getOwnerChangeHumanization = (
+export const getSafeHumanization = (
   data?: string
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data) return
@@ -108,6 +108,43 @@ export const getOwnerChangeHumanization = (
     }
   }
 
+  const enableModule = iface.getFunction('enableModule')?.selector
+  if (selector === enableModule) {
+    const decoded = iface.decodeFunctionData('enableModule', data)
+    const module = decoded[0]
+    fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
+    warnings.push(
+      getWarning(
+        `Modules can execute transactions if conditions are met`,
+        'SAFE{WALLET}_CONFIG_CHANGE'
+      )
+    )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  const disableModule = iface.getFunction('disableModule')?.selector
+  if (selector === disableModule) {
+    const decoded = iface.decodeFunctionData('disableModule', data)
+    const module = decoded[1]
+    fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
+    return {
+      visuals: fullVisualization
+    }
+  }
+
+  const setGuard = iface.getFunction('setGuard')?.selector
+  if (selector === setGuard) {
+    const decoded = iface.decodeFunctionData('setGuard', data)
+    const guard = decoded[0]
+    fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
+    return {
+      visuals: fullVisualization
+    }
+  }
+
   return undefined
 }
 
@@ -131,7 +168,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         signatures
       } = iface.parseTransaction(call)!.args
 
-      const ownerHumanization = getOwnerChangeHumanization(data)
+      const ownerHumanization = getSafeHumanization(data)
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -163,7 +200,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
   }
   const newCalls = calls.map((call) => {
     // the owner decoding takes proceedance
-    const ownerHumanization = getOwnerChangeHumanization(call.data)
+    const ownerHumanization = getSafeHumanization(call.data)
     if (ownerHumanization) {
       return {
         ...call,

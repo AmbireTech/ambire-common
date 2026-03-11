@@ -2,7 +2,7 @@ import { isAddress } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
-import { getOwnerChangeHumanization } from '../modules/Safe'
+import { getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import { getAction, getAddressVisualization, getBreak, getLabel, getWarning } from '../utils'
 
@@ -14,7 +14,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
   const humanizedCalls = genericErc20Humanizer({ accountAddr }, [{ to, value, data }])
-  const ownerHumanization = getOwnerChangeHumanization(data)
+  const ownerHumanization = getSafeHumanization(data)
   const fullVisualization: HumanizerVisualization[] = []
   if (!isAddress(verifyingContract)) return {}
   fullVisualization.push(
