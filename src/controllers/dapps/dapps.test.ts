@@ -4,6 +4,7 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
@@ -162,6 +163,7 @@ describe('DappsController', () => {
     expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(false)
   })
   test('should retry on fetch and update fail', async () => {
+    const { restore } = suppressConsole()
     jest.useFakeTimers()
     const callCount: Record<string, number> = {}
     const { controller } = await prepareTest(
@@ -225,6 +227,7 @@ describe('DappsController', () => {
     expect(controller.dapps.length).toBeGreaterThan(predefinedDapps.length)
     jest.useRealTimers()
     jest.clearAllTimers()
+    restore()
   })
   test('should add dapp to connect and update blacklisted status', async () => {
     const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
@@ -235,7 +238,7 @@ describe('DappsController', () => {
       meta: { params: {} },
       dappPromises: [
         {
-          dapp: null,
+          id: '',
           resolve: () => {},
           reject: () => {},
           meta: {},

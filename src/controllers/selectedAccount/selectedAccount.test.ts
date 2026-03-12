@@ -398,6 +398,10 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['137']!.criticalError = new Error('Mock error')
       await forceBannerRecalculation(providersCtrl)
 
+      if (selectedAccountCtrl.balanceAffectingErrors.length > 0) {
+        console.error('Balance affecting errors:', selectedAccountCtrl.balanceAffectingErrors)
+      }
+
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
       // There is a critical error and lastSuccessfulUpdate is more than 10 minutes ago

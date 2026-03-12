@@ -374,6 +374,7 @@ export const validateERC20Token = async (
   let type: 'network' | 'validation' | null = null
 
   const handleERC20Error = (e: any, operation: string) => {
+    console.error('Error during ERC20 validation operation:', operation, e)
     if (isNetworkError(e)) {
       hasNetworkError = true
       isValid = false

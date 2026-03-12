@@ -1,7 +1,10 @@
 import fetch from 'node-fetch'
 
 import { AccountsController } from '../../src/controllers/accounts/accounts'
+import { DappsController } from '../../src/controllers/dapps/dapps'
 import { MainController } from '../../src/controllers/main/main'
+import { NetworksController } from '../../src/controllers/networks/networks'
+import { PhishingController } from '../../src/controllers/phishing/phishing'
 import { PortfolioController } from '../../src/controllers/portfolio/portfolio'
 import { StorageController } from '../../src/controllers/storage/storage'
 import { KeystoreSigner } from '../../src/libs/keystoreSigner/keystoreSigner'
@@ -32,6 +35,8 @@ export interface MakeMainControllerOpts {
   skipPortfolioUpdateOnLoad?: boolean
   /** Mock `domains.reverseLookup` to a no-op, preventing real domain resolution on load. Default: `true`. */
   skipDomainsResolveOnLoad?: boolean
+  /** Whether to update the app catalog on load. Default: `true`. */
+  skipAppsFetchOnLoad?: boolean
   /** Override any `MainController` constructor params. */
   overrides?: {
     appVersion?: string
@@ -63,6 +68,7 @@ export const makeMainController = async (
     awaitInitialLoad = true,
     skipPortfolioUpdateOnLoad = true,
     skipDomainsResolveOnLoad = true,
+    skipAppsFetchOnLoad = true,
     overrides = {}
   } = opts
 
@@ -84,6 +90,8 @@ export const makeMainController = async (
       })
   }
 
+  // Stop all continuous updates to prevent interference with tests and avoid lingering timers after tests complete
+
   jest
     .spyOn(AccountsController.prototype, 'setViewOnlyAccountIdentitiesIfNeeded')
     .mockImplementation(async () => {
@@ -99,6 +107,22 @@ export const makeMainController = async (
   jest.spyOn(PortfolioController.prototype, 'updateExchangeList').mockImplementation(async () => {
     await wait(1)
   })
+
+  if (skipAppsFetchOnLoad) {
+    jest.spyOn(DappsController.prototype, 'fetchAndUpdateDapps').mockImplementation(async () => {
+      await wait(1)
+    })
+  }
+
+  jest.spyOn(NetworksController.prototype, 'synchronizeNetworks').mockImplementation(async () => {
+    await wait(1)
+  })
+
+  jest
+    .spyOn(PhishingController.prototype, 'continuouslyUpdatePhishing')
+    .mockImplementation(async () => {
+      await wait(1)
+    })
 
   const featureFlags: Partial<FeatureFlags> = {
     withContinuousUpdatesController: !skipContinuousUpdates,
