@@ -21,14 +21,30 @@ import {
 const iface = new Interface(SafeV2)
 
 export const getSafeHumanization = (
+  safeAddr?: string,
+  to?: string,
+  value?: string | number | bigint,
   data?: string
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data) return
 
-  const selector = data.substring(0, 10)
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []
 
+  if (
+    to &&
+    safeAddr &&
+    to.toLowerCase() === safeAddr.toLowerCase() &&
+    value?.toString() === '0' &&
+    data === '0x'
+  ) {
+    fullVisualization.push(...[getAction('Reject currently queued transaction')])
+    return {
+      visuals: fullVisualization
+    }
+  }
+
+  const selector = data.substring(0, 10)
   const addOwnerWithThreshold = iface.getFunction('addOwnerWithThreshold')?.selector
   if (selector === addOwnerWithThreshold) {
     const decoded = iface.decodeFunctionData('addOwnerWithThreshold', data)
@@ -168,7 +184,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         signatures
       } = iface.parseTransaction(call)!.args
 
-      const ownerHumanization = getSafeHumanization(data)
+      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, value, data)
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -184,10 +200,10 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
 
       const warnings: HumanizerWarning[] = []
 
-      if (ownerHumanization) {
-        if (ownerHumanization.visuals)
-          fullVisualization.push(getBreak(), ...ownerHumanization.visuals)
-        if (ownerHumanization.warnings) warnings.push(...ownerHumanization.warnings)
+      if (safeSpecificHumanization) {
+        if (safeSpecificHumanization.visuals)
+          fullVisualization.push(getBreak(), ...safeSpecificHumanization.visuals)
+        if (safeSpecificHumanization.warnings) warnings.push(...safeSpecificHumanization.warnings)
       }
 
       if (operation === 1n)
@@ -199,13 +215,17 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
     }
   }
   const newCalls = calls.map((call) => {
-    // the owner decoding takes proceedance
-    const ownerHumanization = getSafeHumanization(call.data)
-    if (ownerHumanization) {
+    const safeSpecificHumanization = getSafeHumanization(
+      accOp.accountAddr,
+      call.to,
+      call.value,
+      call.data
+    )
+    if (safeSpecificHumanization) {
       return {
         ...call,
-        fullVisualization: ownerHumanization.visuals,
-        warnings: ownerHumanization.warnings
+        fullVisualization: safeSpecificHumanization.visuals,
+        warnings: safeSpecificHumanization.warnings
       }
     }
 

@@ -14,7 +14,12 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
   const humanizedCalls = genericErc20Humanizer({ accountAddr }, [{ to, value, data }])
-  const ownerHumanization = getSafeHumanization(data)
+  const safeStandardHumanization = getSafeHumanization(
+    verifyingContract ?? undefined,
+    to,
+    value,
+    data
+  )
   const fullVisualization: HumanizerVisualization[] = []
   if (!isAddress(verifyingContract)) return {}
   fullVisualization.push(
@@ -23,8 +28,8 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
       getLabel('from'),
       getAddressVisualization(verifyingContract)
     ],
-    ...(ownerHumanization && ownerHumanization.visuals
-      ? [getBreak(), ...ownerHumanization.visuals]
+    ...(safeStandardHumanization && safeStandardHumanization.visuals
+      ? [getBreak(), ...safeStandardHumanization.visuals]
       : [])
   )
   if (humanizedCalls[0]?.fullVisualization) {
@@ -41,6 +46,9 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
 
   return {
     fullVisualization,
-    warnings: ownerHumanization && ownerHumanization.warnings ? ownerHumanization.warnings : []
+    warnings:
+      safeStandardHumanization && safeStandardHumanization.warnings
+        ? safeStandardHumanization.warnings
+        : []
   }
 }
