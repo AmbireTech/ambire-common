@@ -48,6 +48,7 @@ export interface MakeMainControllerOpts {
     keystoreSigners?: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     relayerUrl?: string
     velcroUrl?: string
+    fetch?: any
   }
 }
 
@@ -131,10 +132,10 @@ export const makeMainController = async (
 
   const { uiManager } = mockUiManager()
   const mainCtrl = new MainController({
-    appVersion: overrides.appVersion ?? '5.31.0',
-    platform: overrides.platform ?? 'default',
+    appVersion: overrides.appVersion ?? '1.0.0',
+    platform: overrides.platform ?? 'browser-webkit',
     storageAPI: storage,
-    fetch,
+    fetch: overrides.fetch ?? fetch,
     relayerUrl: overrides.relayerUrl ?? relayerUrl,
     velcroUrl: overrides.velcroUrl ?? velcroUrl,
     liFiApiKey: overrides.liFiApiKey ?? '',
