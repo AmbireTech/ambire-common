@@ -14,7 +14,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
   const humanizedCalls = genericErc20Humanizer({ accountAddr }, [{ to, value, data }])
-  const ownerHumanization = getSafeHumanization(data)
+  const ownerHumanization = getSafeHumanization(verifyingContract ?? undefined, to, value, data)
   const fullVisualization: HumanizerVisualization[] = []
   if (!isAddress(verifyingContract)) return {}
   fullVisualization.push(
