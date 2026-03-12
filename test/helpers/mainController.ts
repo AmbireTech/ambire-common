@@ -1,9 +1,11 @@
 import fetch from 'node-fetch'
 
+import { AccountsController } from '../../src/controllers/accounts/accounts'
 import { MainController } from '../../src/controllers/main/main'
+import { PortfolioController } from '../../src/controllers/portfolio/portfolio'
 import { StorageController } from '../../src/controllers/storage/storage'
-import * as accountStateLib from '../../src/libs/accountState/accountState'
 import { KeystoreSigner } from '../../src/libs/keystoreSigner/keystoreSigner'
+import wait from '../../src/utils/wait'
 import { relayerUrl, velcroUrl } from '../config'
 import { produceMemoryStore } from '../helpers'
 import { mockUiManager } from './ui'
@@ -16,7 +18,6 @@ import type {
 } from '../../src/interfaces/keystore'
 import type { Platform } from '../../src/interfaces/platform'
 import type { Storage } from '../../src/interfaces/storage'
-
 export interface MakeMainControllerOpts {
   /** Mock `getAccountState` to return `[]`, skipping real RPC calls. Default: `true`. */
   skipAccountStateLoad?: boolean
@@ -27,8 +28,6 @@ export interface MakeMainControllerOpts {
    * using fake timers so you can apply post-construction mocks first. Default: `true`.
    */
   awaitInitialLoad?: boolean
-  /** Also await `accounts.accountStateInitialLoadPromise` (ignored when `skipAccountStateLoad` is true). Default: `false`. */
-  awaitAccountStates?: boolean
   /** Mock `portfolio.updateSelectedAccount` to a no-op, preventing real network calls on load. Default: `true`. */
   skipPortfolioUpdateOnLoad?: boolean
   /** Mock `domains.reverseLookup` to a no-op, preventing real domain resolution on load. Default: `true`. */
@@ -52,8 +51,6 @@ export interface MakeMainControllerResult {
   storage: Storage
   /** The `StorageController` passed to `initialSetStorage`. Note: `mainCtrl.storage` is a separate instance wrapping the same underlying map. */
   storageCtrl: StorageController
-  /** Restores spies set up by the factory. Call in `afterEach`, or use `jest.restoreAllMocks()`. */
-  restore: () => void
 }
 
 export const makeMainController = async (
@@ -64,7 +61,6 @@ export const makeMainController = async (
     skipAccountStateLoad = true,
     skipContinuousUpdates = true,
     awaitInitialLoad = true,
-    awaitAccountStates = true,
     skipPortfolioUpdateOnLoad = true,
     skipDomainsResolveOnLoad = true,
     overrides = {}
@@ -77,12 +73,32 @@ export const makeMainController = async (
   const storageCtrl = new StorageController(storage)
   if (initialSetStorage) await initialSetStorage(storageCtrl)
 
-  // Must be set up before MainController is constructed since AccountsController.#load()
-  // fires from the constructor and unconditionally calls getAccountState.
+  // Must be set up before MainController is constructed
   let accountStateSpy: jest.SpyInstance | undefined
   if (skipAccountStateLoad) {
-    accountStateSpy = jest.spyOn(accountStateLib, 'getAccountState').mockResolvedValue([])
+    accountStateSpy = jest
+      // @ts-ignore
+      .spyOn(AccountsController.prototype, 'updateAccountStates')
+      .mockImplementation(async () => {
+        await wait(1)
+      })
   }
+
+  jest
+    .spyOn(AccountsController.prototype, 'setViewOnlyAccountIdentitiesIfNeeded')
+    .mockImplementation(async () => {
+      await wait(1)
+    })
+
+  jest
+    .spyOn(AccountsController.prototype, 'createSmartAccountIdentitiesIfNeeded')
+    .mockImplementation(async () => {
+      await wait(1)
+    })
+
+  jest.spyOn(PortfolioController.prototype, 'updateExchangeList').mockImplementation(async () => {
+    await wait(1)
+  })
 
   const featureFlags: Partial<FeatureFlags> = {
     withContinuousUpdatesController: !skipContinuousUpdates,
@@ -108,7 +124,7 @@ export const makeMainController = async (
   // Applied synchronously before any async callbacks run, so the initial load
   // will use the mocked versions.
   if (skipPortfolioUpdateOnLoad) {
-    mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
+    mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockResolvedValue(undefined)
   }
   if (skipDomainsResolveOnLoad) {
     mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
@@ -118,14 +134,13 @@ export const makeMainController = async (
     await mainCtrl.initialLoadPromise
   }
 
-  if (awaitAccountStates && !skipAccountStateLoad) {
-    await mainCtrl.accounts.accountStateInitialLoadPromise
-  }
+  await mainCtrl.accounts.accountStateInitialLoadPromise
+
+  accountStateSpy?.mockRestore()
 
   return {
     mainCtrl,
     storage,
-    storageCtrl,
-    restore: () => accountStateSpy?.mockRestore()
+    storageCtrl
   }
 }

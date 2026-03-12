@@ -75,13 +75,14 @@ const waitNextControllerUpdate = (ctrl: EventEmitter) => {
 }
 
 const prepareTest = async () => {
-  const { mainCtrl } = await makeMainController(
-    async (storageCtrl) => {
-      await storageCtrl.set('accounts', accounts)
-      await storageCtrl.set('selectedAccount', accounts[0]!.addr)
-    },
-    { awaitAccountStates: true, skipAccountStateLoad: false }
-  )
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('accounts', accounts)
+    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
+  })
+
+  await mainCtrl.selectedAccount.initialLoadPromise
+  await mainCtrl.autoLogin.initialLoadPromise
+  await mainCtrl.portfolio.initialLoadPromise
 
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,

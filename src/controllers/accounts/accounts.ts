@@ -149,7 +149,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
     // --------------------------------------------------
-    this.accountStateInitialLoadPromise = this.#updateAccountStates(
+    this.accountStateInitialLoadPromise = this.updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
     ).finally(() => {
       this.accountStateInitialLoadPromise = undefined
@@ -180,10 +180,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
-    await this.#updateAccountStates([accountData], blockTag, networks)
+    await this.updateAccountStates([accountData], blockTag, networks)
   }
 
-  async #updateAccountStates(
+  private async updateAccountStates(
     accounts: Account[],
     blockTag: string | number = 'latest',
     updateOnlyNetworksWithIds: bigint[] = []
@@ -307,7 +307,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     // update the state of new accounts. Otherwise, the user needs to restart his extension
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#updateAccountStates(newAccountsNotAddedYet)
+    this.updateAccountStates(newAccountsNotAddedYet)
 
     this.emitUpdate()
   }

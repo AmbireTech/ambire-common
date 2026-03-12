@@ -16,7 +16,7 @@ import { Account } from '../../interfaces/account'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import wait from '../../utils/wait'
-import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
 
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },
@@ -55,9 +55,10 @@ const basicAccount: Account = {
 const prepareTest = async () => {
   const { mainCtrl } = await makeMainController()
 
+  await mainCtrl.keystore.initialLoadPromise
+
   return {
-    controller: mainCtrl.accountPicker as AccountPickerController,
-    storageCtrl: null
+    controller: mainCtrl.accountPicker
   }
 }
 
