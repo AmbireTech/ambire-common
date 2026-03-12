@@ -696,9 +696,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
+      // always try to select the hotkey, if any, as default
+      // as the ui doesn't need to switch if the user doesn't need to
+      const hotKey = this.accountKeyStoreKeys.find((k) => k.type === 'internal')
+      const defaultKey = hotKey ?? this.accountKeyStoreKeys[0]!
       this.#updateAccountOp({
-        signingKeyAddr: this.accountKeyStoreKeys[0]!.addr,
-        signingKeyType: this.accountKeyStoreKeys[0]!.type
+        signingKeyAddr: defaultKey.addr,
+        signingKeyType: defaultKey.type
       })
     }
 
