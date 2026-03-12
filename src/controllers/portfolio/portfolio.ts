@@ -1,7 +1,12 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
 
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { STK_WALLET } from '../../consts/addresses'
+import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   Account,
   AccountId,
@@ -76,6 +81,7 @@ import {
   PreviousHintsStorage,
   TemporaryTokens,
   ToBeLearnedAssets,
+  TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
   TokenResult,
@@ -223,6 +229,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #hasSimulationChanged: Function
 
+  #blacklist: TokenBlacklist = { blacklistAddrs: {}, blacklistBySymbols: [], updatedAt: null }
+
+  #blacklistInterval: IRecurringTimeout
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -254,6 +264,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.#hasSimulationChanged = hasSimulationChanged
+    this.#blacklistInterval = new RecurringTimeout(
+      this.#fetchBlacklist.bind(this),
+      BLACKLIST_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
+    this.#blacklistInterval.start()
     this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
@@ -349,6 +365,51 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
+  async #fetchBlacklist(): Promise<void> {
+    try {
+      const response = await this.#fetch('https://cena.ambire.com/api/v3/tokens/black-list')
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch token blacklist: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error('Token blacklist response returned success: false')
+      }
+
+      const rawAddrs: Record<string, string[]> = data.blacklistAddrs || {}
+      const checksummedAddrs: Record<string, string[]> = {}
+      for (const chainId of Object.keys(rawAddrs)) {
+        checksummedAddrs[chainId] = (rawAddrs[chainId] || []).reduce<string[]>((acc, addr) => {
+          try {
+            acc.push(getAddress(addr))
+          } catch {
+            // skip malformed addresses
+          }
+          return acc
+        }, [])
+      }
+
+      this.#blacklist = {
+        blacklistAddrs: checksummedAddrs,
+        blacklistBySymbols: data.blacklistBySymbols || [],
+        updatedAt: Date.now()
+      }
+
+      await this.#storage.set('tokenBlacklist', this.#blacklist)
+
+      this.emitUpdate()
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to fetch token blacklist: ${e.message}`,
+        error: e
+      })
+    }
+  }
+
   async #load() {
     try {
       await this.#networks.initialLoadPromise
@@ -375,6 +436,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       )
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
+      }
+
+      const storedBlacklist = await this.#storage.get('tokenBlacklist', null)
+      if (storedBlacklist) {
+        this.#blacklist = storedBlacklist
+        if (
+          storedBlacklist.updatedAt &&
+          Date.now() - storedBlacklist.updatedAt > BLACKLIST_UPDATE_INTERVAL
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#fetchBlacklist()
+        }
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchBlacklist()
       }
     } catch (e: any) {
       this.emitError({
@@ -1100,7 +1176,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
-          disableAutoDiscovery: true
+          disableAutoDiscovery: true,
+          blacklist: this.#blacklist
         }),
         getCustomProviderPositions(
           account.addr,

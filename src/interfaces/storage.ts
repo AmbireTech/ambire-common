@@ -4,7 +4,8 @@ import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
-  PreviousHintsStorage
+  PreviousHintsStorage,
+  TokenBlacklist
 } from '../libs/portfolio/interfaces'
 import { Account, AccountId, AccountPreferences } from './account'
 import { ControllerInterface } from './controller'
@@ -51,6 +52,7 @@ export type StorageProps = {
   selectedAccount: string | null
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
   termsState?: object
+  tokenBlacklist: TokenBlacklist
 }
 
 export interface Storage {

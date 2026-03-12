@@ -465,6 +465,17 @@ export type TemporaryTokens = {
 
 type SpecialHintType = 'custom' | 'hidden' | 'learn'
 
+/**
+ * Addresses and symbol patterns that should be excluded from the portfolio.
+ * Addresses are keyed by chainId (string) and must be checksummed.
+ * Symbol patterns are matched case-insensitively as substrings.
+ */
+export interface TokenBlacklist {
+  blacklistAddrs: Record<string, string[]>
+  blacklistBySymbols: string[]
+  updatedAt: number | null
+}
+
 export interface GetOptions {
   baseCurrency: string
   /**
@@ -503,6 +514,11 @@ export interface GetOptions {
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean
+  /**
+   * Dynamic token blacklist fetched from the API, merged with the static
+   * blacklist defined in the portfolio library.
+   */
+  blacklist?: TokenBlacklist
 }
 
 /**
