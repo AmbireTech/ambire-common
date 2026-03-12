@@ -38,7 +38,6 @@ export const getSafeHumanization = (
     value?.toString() === '0' &&
     data === '0x'
   ) {
-    console.log('entering actually')
     fullVisualization.push(...[getAction('Reject currently queued transaction')])
     return {
       visuals: fullVisualization
