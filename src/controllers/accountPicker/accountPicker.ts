@@ -863,13 +863,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const deviceIds: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceId || '',
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
-        lattice: this.#externalSignerControllers?.lattice?.deviceId || ''
+        lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
+        qr: this.#externalSignerControllers.qr?.deviceId || ''
       }
 
       const deviceModels: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
-        lattice: this.#externalSignerControllers.lattice?.deviceModel || ''
+        lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
+        qr: this.#externalSignerControllers.qr?.deviceModel || ''
       }
 
       const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(

@@ -1138,7 +1138,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.accountPicker.setInitParams({
         keyIterator,
-        hdPathTemplate,
+        hdPathTemplate: keyIterator.walletConfig!.hdPathTemplate,
         pageSize: 5,
         shouldAddNextAccountAutomatically: false
       })

@@ -143,7 +143,7 @@ export type InternalKey = {
   }
 }
 
-export type QrWalletType = 'keystone' | 'onekey' | 'imkey' | 'ngrave' | 'airgap'
+export type QrWalletType = 'keystone' | 'imtoken' // We can add more supported QR wallets here in the future, and they will be handled by the QrProtocolAdapter implementations, which are specific to each wallet type
 export type QrProtocolType = 'ur' | 'airgap'
 
 export type ExternalKey = {
@@ -161,7 +161,6 @@ export type ExternalKey = {
     qrWalletType?: QrWalletType
     qrProtocol?: QrProtocolType
     originHdPath?: string // for accounts imported from QR, to store the original path used on the wallet, as some wallets (like Keystone) don't provide the possibility to retrieve the key by xpub, but only by path, so we need to keep track of it in order to be able to retrieve the key later on
-    // TODO: check do we need this?
     masterFingerprint?: string // for Ledger, optional for others, as it can be used for additional info but is not required to retrieve the key
 
     [key: string]: any
@@ -220,6 +219,7 @@ export type ParsedQrImportedAccount = {
 
 export type ParsedQrAccount = {
   masterFingerprint?: string
+  walletType?: QrWalletType
   deviceModel?: string
   deviceId?: string
   hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
