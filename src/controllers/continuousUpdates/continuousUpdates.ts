@@ -208,10 +208,6 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #updatePortfolio() {
     await this.initialLoadPromise
 
-    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
-      : []
-    if (selectedAccountBroadcastedButNotConfirmed?.length) return
     await this.#main.updateSelectedAccountPortfolio({
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000

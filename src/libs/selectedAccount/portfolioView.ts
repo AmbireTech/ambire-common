@@ -2,7 +2,7 @@ import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOpWithId } from '../accountOp/accountOp'
 import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
 import {
@@ -26,7 +26,7 @@ export default class PortfolioViewBuilder {
 
   private balancePerNetwork: Record<string, number> = {}
 
-  private networkSimulatedAccountOp: Record<string, AccountOp> = {}
+  private networkSimulatedAccountOp: Record<string, AccountOpWithId> = {}
 
   private isAllReady = true
 

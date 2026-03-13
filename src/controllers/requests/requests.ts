@@ -55,7 +55,7 @@ import {
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
-import { getAccountOpsForSimulation } from '../../libs/main/main'
+import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
@@ -545,6 +545,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.currentUserRequest.kind === 'calls' &&
       this.currentUserRequest.signAccountOp
     ) {
+      if (!getShouldSimulateInTheBackground(this.currentUserRequest.signAccountOp.account)) {
+        this.#portfolio.overrideSimulationResults(this.currentUserRequest.signAccountOp.accountOp)
+      }
       this.currentUserRequest.signAccountOp.pause()
     }
 
@@ -814,14 +817,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ids: UserRequest['id'][],
     options?: {
       shouldRemoveSwapAndBridgeRoute?: boolean
-      shouldUpdateAccount?: boolean
       shouldOpenNextRequest?: boolean
       shouldRejectSafeRequests?: boolean
     }
   ) {
     const {
       shouldRemoveSwapAndBridgeRoute = true,
-      shouldUpdateAccount = true,
       shouldOpenNextRequest = true,
       shouldRejectSafeRequests = true
     } = options || {}
@@ -841,16 +842,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // update the pending stuff to be signed
       const { kind, meta } = req
       if (kind === 'calls') {
-        const network = this.#networks.networks.find((net) => net.chainId === meta.chainId)!
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account)
           throw new Error(
             `removeUserRequests: tried to run for non-existent account ${meta.accountAddr}`
           )
-
-        if (shouldUpdateAccount) {
-          this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-        }
 
         if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
           req.signAccountOp.accountOp.calls.forEach((c) => {
@@ -958,9 +954,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   ) {
     this.userRequests
       .filter((r) => requestIds.includes(r.id))
-      .forEach((r) =>
+      .forEach((r) => {
         r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
-      )
+
+        // Done here because remove handles approved requests too. We want this logic only on reject
+        if (r.kind === 'calls') {
+          this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
+        }
+      })
 
     await this.removeUserRequests(requestIds, options)
   }
@@ -1874,22 +1875,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           },
           shouldSimulate: this.#shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
-            const accountOpsForSimulation = getAccountOpsForSimulation(
-              account,
-              this.visibleUserRequests,
-              this.#networks.networks
-            )
-
-            await this.#portfolio.updateSelectedAccount(
-              account.addr,
-              [network],
-              accountOpsForSimulation
-                ? {
-                    accountOps: accountOpsForSimulation,
-                    states: await this.#accounts.getOrFetchAccountStates(account.addr)
-                  }
-                : undefined
-            )
+            await this.#portfolio.updateSelectedAccount(account.addr, [network])
           },
           onBroadcastSuccess: this.#onBroadcastSuccess,
           onBroadcastFailed: this.#onBroadcastFailed
