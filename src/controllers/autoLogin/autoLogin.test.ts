@@ -1,48 +1,13 @@
 import { hexlify, toUtf8Bytes, ZeroAddress } from 'ethers'
-import fetch from 'node-fetch'
 import { createSiweMessage, CreateSiweMessageParameters } from 'viem/siwe'
 
-import { relayerUrl } from '../../../test/config'
-import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
+import { mockInternalKeys } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AutoLoginPolicy, AutoLoginSettings } from '../../interfaces/autoLogin'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { AccountsController } from '../accounts/accounts'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { AutoLoginController } from './autoLogin'
-
-const storage: Storage = produceMemoryStore()
-let providersCtrl: IProvidersController
-const storageCtrl = new StorageController(storage)
-const networksCtrl = new NetworksController({
-  storage: storageCtrl,
-  fetch,
-  relayerUrl,
-  useTempProvider: (props, cb) => {
-    return providersCtrl.useTempProvider(props, cb)
-  },
-  onAddOrUpdateNetworks: () => {},
-  onReady: async () => {
-    await providersCtrl.init({ networks: networksCtrl.allNetworks })
-  }
-})
-
-const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
-providersCtrl = new ProvidersController({
-  storage: storageCtrl,
-  getNetworks: () => networksCtrl.allNetworks,
-  sendUiMessage: () => uiCtrl.message.sendUiMessage
-})
 
 const EOA_ACC = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -67,55 +32,14 @@ const prepareTest = async (
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
 ) => {
   const mockEOAKeys = mockInternalKeys([EOA_ACC])
-  await storage.set('keystoreKeys', mockEOAKeys)
-  await storage.set('accounts', accounts)
-
-  const keystore = new KeystoreController(
-    'default',
-    storageCtrl,
-    { internal: KeystoreSigner },
-    uiCtrl
-  )
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-
-  await networksCtrl.initialLoadPromise
-  await accountsCtrl.initialLoadPromise
-  await keystore.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  if (initialSetStorage) await initialSetStorage(storageCtrl)
-
-  await accountsCtrl.addAccounts(accounts)
-
-  const autoLogin = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({
-      relayerUrl,
-      fetch,
-      storage: storageCtrl
-    })
-  )
-
-  await autoLogin.initialLoadPromise
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('keystoreKeys', mockEOAKeys)
+    await storageCtrl.set('accounts', accounts)
+    if (initialSetStorage) await initialSetStorage(storageCtrl)
+  })
 
   return {
-    storage,
-    controller: autoLogin
+    controller: mainCtrl.autoLogin
   }
 }
 

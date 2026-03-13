@@ -1,43 +1,15 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
 
-import { hexlify, randomBytes } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
-import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PhishingController } from '../phishing/phishing'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SafeController } from '../safe/safe'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -66,220 +38,20 @@ const account = {
   }
 }
 
-// TODO - this mocks are being duplicated across the tests. Should reuse it.
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
-
-class LedgerSigner {
-  key
-
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  constructor(_key: Key) {
-    this.key = _key
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
-
-const { uiManager } = mockUiManager()
-
 const getTokens = () => {
   return structuredClone(ETHEREUM_TOKENS.concat(POLYGON_TOKENS))
 }
 
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  const storageCtrl = new StorageController(storage)
-
-  const accounts = [account]
-
-  const mockKeys = mockInternalKeys(accounts as Account[])
-
-  storage.set('keystoreKeys', mockKeys)
-
-  storageCtrl.set('accounts', accounts)
-
-  let providersCtrl: any
-
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('accounts', [account])
+    await storageCtrl.set('selectedAccount', account.addr)
   })
-
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-
-  const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-  const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystoreController,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystoreController,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    autoLogin: autoLoginCtrl
-  })
-
-  const addressBookController = new AddressBookController(
-    storageCtrl,
-    accountsCtrl,
-    selectedAccountCtrl
-  )
-
-  const callRelayer = relayerCall.bind({ url: '', fetch })
-
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const portfolioController = new PortfolioController(
-    storageCtrl,
-    fetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystoreController,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl,
-    () => {}
-  )
-  const safe = new SafeController({
-    networks: networksCtrl,
-    providers: providersCtrl,
-    storage: storageCtrl,
-    accounts: accountsCtrl
-  })
-  const activity = new ActivityController(
-    storageCtrl,
-    fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioController,
-    safe,
-    () => Promise.resolve()
-  )
-
-  const phishing = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    addressBook: addressBookController
-  })
-
-  const transferController = new TransferController(
-    () => {},
-    storageCtrl,
-    humanizerInfo as HumanizerMeta,
-    selectedAccountCtrl,
-    networksCtrl,
-    addressBookController,
-    accountsCtrl,
-    keystoreController,
-    portfolioController,
-    activity,
-    {},
-    providersCtrl,
-    phishing,
-    relayerUrl,
-    () => Promise.resolve(),
-    uiCtrl
-  )
-
-  await selectedAccountCtrl.initialLoadPromise
-  await selectedAccountCtrl.setAccount(account)
+  await mainCtrl.selectedAccount.setAccount(account)
+  mainCtrl.transfer.resetForm()
 
   return {
-    transferController,
+    transferController: mainCtrl.transfer as TransferController,
     tokens: getTokens()
   }
 }
@@ -463,7 +235,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }]
+    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }],
+    marketDataIn: []
   },
   {
     amount: 0n,
@@ -480,7 +253,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }],
+    marketDataIn: []
   },
   {
     amount: 0n,
@@ -497,7 +271,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }],
+    marketDataIn: []
   },
   {
     amount: 58316260607759458104900n,
@@ -514,7 +289,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }],
+    marketDataIn: []
   }
 ]
 
@@ -534,6 +310,7 @@ const POLYGON_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }],
+    marketDataIn: []
   }
 ]

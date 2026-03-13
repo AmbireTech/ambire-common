@@ -1,18 +1,11 @@
-import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import wait from '../../utils/wait'
 import { MainController } from './main'
-
-const uiManager = mockUiManager().uiManager
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -48,33 +41,12 @@ describe('Main Controller ', () => {
     }
   ]
 
-  const storage = produceMemoryStore()
-  const email = 'unufri@ambire.com'
-  storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {
-    controller = new MainController({
-      appVersion: '5.31.0',
-      platform: 'default',
-      storageAPI: storage,
-      fetch,
-      relayerUrl,
-      liFiApiKey: '',
-      bungeeApiKey: '',
-      featureFlags: {},
-      keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      uiManager,
-      velcroUrl
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
     })
-    // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => {
-      const unsubscribe = controller.onUpdate(() => {
-        unsubscribe()
-        resolve(null)
-      })
-    })
-    // console.dir(controller.accountStates, { depth: null })
+    controller = mainCtrl
     // @TODO
     // expect(states).to
   })
@@ -103,7 +75,7 @@ describe('Main Controller ', () => {
     // console.log(
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
-    controller.emailVault?.uploadKeyStoreSecret(email)
+    void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => {
       if (controller.emailVault) {
@@ -135,19 +107,8 @@ describe('Main Controller ', () => {
   // })
 
   test('should add an account from the account picker and persist it in accounts', async () => {
-    controller = new MainController({
-      appVersion: '5.31.0',
-      platform: 'default',
-      storageAPI: storage,
-      fetch,
-      relayerUrl,
-      liFiApiKey: '',
-      bungeeApiKey: '',
-      featureFlags: {},
-      uiManager,
-      keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      velcroUrl
+    const { mainCtrl: controller } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
     })
 
     let retries = 0
@@ -197,20 +158,7 @@ describe('Main Controller ', () => {
   // FIXME: This test works when fired standalone, but it throws an error when
   // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
-    const mainCtrl = new MainController({
-      appVersion: '5.31.0',
-      platform: 'default',
-      storageAPI: storage,
-      fetch,
-      relayerUrl,
-      liFiApiKey: '',
-      bungeeApiKey: '',
-      featureFlags: {},
-      uiManager,
-      keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      velcroUrl
-    })
+    const mainCtrl = new MainController({} as any)
 
     mainCtrl.accounts.accounts = [
       {

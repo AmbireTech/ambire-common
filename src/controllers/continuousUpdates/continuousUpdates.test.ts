@@ -1,15 +1,10 @@
 /* eslint-disable no-await-in-loop */
-import fetch from 'node-fetch'
 
-/* eslint-disable prettier/prettier */
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+/* eslint-disable prettier/prettier */
+import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import * as accountStateLib from '../../libs/accountState/accountState'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -79,29 +74,14 @@ const submittedAccountOp = {
 } as SubmittedAccountOp
 
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  await storage.set('accounts', accounts)
-  await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-
-  const uiManager = mockUiManager().uiManager
-  jest.spyOn(accountStateLib, 'getAccountState').mockImplementation(async () => {
-    return []
-  })
   jest.spyOn(SwapProviderParallelExecutor.prototype, 'getSupportedChains').mockResolvedValue([])
-  const mainCtrl = new MainController({
-    appVersion: '5.31.0',
-    platform: 'default',
-    storageAPI: storage,
-    fetch,
-    relayerUrl,
-    featureFlags: {},
-    liFiApiKey: '',
-    bungeeApiKey: '',
-    keystoreSigners: { internal: KeystoreSigner },
-    externalSignerControllers: {},
-    uiManager,
-    velcroUrl
-  })
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    },
+    { skipContinuousUpdates: false, awaitInitialLoad: false }
+  )
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
   mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockImplementation(async () => {
     await wait(500)

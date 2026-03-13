@@ -1,14 +1,11 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { Wallet } from 'ethers'
-import fetch from 'node-fetch'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -16,18 +13,10 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
 
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },
@@ -64,61 +53,12 @@ const basicAccount: Account = {
 }
 
 const prepareTest = async () => {
-  const storage: Storage = produceMemoryStore()
-  let providersCtrl: IProvidersController
-  const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
+  const { mainCtrl } = await makeMainController()
 
-  const keystoreController = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystoreController,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-
-  await accountsCtrl.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  await networksCtrl.initialLoadPromise
-
-  const controller: AccountPickerController = new AccountPickerController({
-    accounts: accountsCtrl,
-    keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl),
-    networks: networksCtrl,
-    providers: providersCtrl,
-    relayerUrl,
-    fetch,
-    externalSignerControllers: {},
-    onAddAccountsSuccessCallback: () => Promise.resolve()
-  })
+  await mainCtrl.keystore.initialLoadPromise
 
   return {
-    controller,
-    storageCtrl
+    controller: mainCtrl.accountPicker
   }
 }
 
