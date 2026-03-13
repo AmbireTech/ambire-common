@@ -63,7 +63,7 @@ function getSwapSponsorshipEstimationData(): PaymasterEstimationData {
     ...paymasterData,
     sponsor: {
       name: 'Ambire Wallet',
-      icon: 'https://velcro.ambire.com/public/ambire-logos/symbol-color.svg'
+      icon: 'https://cena.ambire.com/public/ambire-logos/symbol-color.svg'
     }
   }
 }
