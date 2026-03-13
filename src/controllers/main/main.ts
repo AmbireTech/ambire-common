@@ -49,12 +49,11 @@ import { ITransferController } from '../../interfaces/transfer'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount } from '../../libs/account/account'
-import { AccountOp, haveAccountOpsChanged } from '../../libs/accountOp/accountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '../../libs/safe/safe'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
@@ -318,9 +317,6 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
-      (accAddr: string, chainId: string, accountOps?: AccountOp[]) => {
-        return this.hasSimulationChanged(accAddr, chainId, accountOps)
-      },
       eventEmitterRegistry
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
@@ -1175,7 +1171,8 @@ export class MainController extends EventEmitter implements IMainController {
       chainsToUpdate,
       portfoliosToUpdate,
       newestOpTimestamp,
-      shouldFetchSafeTxns
+      shouldFetchSafeTxns,
+      updatedAccountsOps
     } = updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
@@ -1196,7 +1193,13 @@ export class MainController extends EventEmitter implements IMainController {
             networks?.map((net) => net.chainId)
           )
 
-          await this.updateSelectedAccountPortfolio({ networks })
+          const finalizedAccountOps = updatedAccountsOps.filter(
+            (op) =>
+              op.status !== AccountOpStatus.Pending &&
+              op.status !== AccountOpStatus.BroadcastedButNotConfirmed
+          )
+
+          await this.portfolio.discardSimulation(finalizedAccountOps)
 
           // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
           this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
@@ -1457,23 +1460,6 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  hasSimulationChanged(accAddr: string, chainId: string, accountOps?: AccountOp[]): boolean {
-    if (!this.selectedAccount?.account || this.selectedAccount.account.addr !== accAddr)
-      return false
-
-    const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-      this.selectedAccount.account,
-      this.requests.visibleUserRequests,
-      this.networks.networks
-    )
-    const latestAccOps = accountOpsToBeSimulatedByNetwork?.[chainId]
-
-    if (accountOps === undefined && latestAccOps === undefined) return false
-    if (accountOps === undefined && latestAccOps !== undefined) return true
-    if (accountOps !== undefined && latestAccOps === undefined) return true
-    return haveAccountOpsChanged(accountOps!, latestAccOps!)
-  }
-
   async updateSelectedAccountPortfolio(opts?: {
     networks?: Network[]
     isManualUpdate?: boolean
@@ -1493,21 +1479,10 @@ export class MainController extends EventEmitter implements IMainController {
     const canUpdateSignAccountOp = !signAccountOp || signAccountOp.canUpdate()
     if (!canUpdateSignAccountOp) return
 
-    const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-      this.selectedAccount.account,
-      this.requests.visibleUserRequests,
-      this.networks.networks
-    )
-
     await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
       networks,
-      accountOpsToBeSimulatedByNetwork
-        ? {
-            accountOps: accountOpsToBeSimulatedByNetwork,
-            states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
-          }
-        : undefined,
+      undefined,
       { maxDataAgeMs, maxDataAgeMsUnused, defiMaxDataAgeMs, isManualUpdate }
     )
     this.#updateIsOffline()
@@ -1593,7 +1568,6 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (safeRequests.length) {
       await this.requests.removeUserRequests(safeRequests, {
-        shouldUpdateAccount: false,
         shouldRejectSafeRequests: false
       })
     }
@@ -1611,13 +1585,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false,
-      // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
-      // we don't want to update the account portfolio immediately, as we would lose the simulation.
-      // The simulation is required to calculate the pending badges (see: calculatePendingAmounts()).
-      // Once the transaction is confirmed, delayed, or the user manually refreshes the portfolio,
-      // the account will be updated automatically.
-      shouldUpdateAccount: false
+      shouldRemoveSwapAndBridgeRoute: false
     })
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)

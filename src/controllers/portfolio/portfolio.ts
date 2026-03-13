@@ -21,7 +21,12 @@ import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
-import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpWithId,
+  areAccountOpsEqual,
+  getAccountOpId
+} from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
@@ -221,8 +226,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     retryCount: 0
   }
 
-  #hasSimulationChanged: Function
-
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -234,7 +237,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     velcroUrl: string,
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
-    hasSimulationChanged: Function,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -253,7 +255,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.temporaryTokens = {}
     this.#banner = banner
     this.#featureFlags = featureFlags
-    this.#hasSimulationChanged = hasSimulationChanged
     this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
@@ -541,7 +542,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   /**
-   * Removes simulation results from the portfolio state
+   * Removes simulation results from the portfolio state. This function is used when
+   * all simulated account ops should be discarded for a network-account pair. It does
+   * not update the portfolio but simply removes the simulation results from the state.
+   *
+   * If you instead need to remove a specific accountOp from the simulation results, use `discardSimulation`
+   * (e.g., after an account op is broadcasted and confirmed)
    */
   overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
@@ -569,7 +575,67 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       networkState.result.defiPositions
     )
 
+    delete networkState.accountOps
+
     this.emitUpdate()
+  }
+
+  /**
+   * Removes a specific simulated account op from the portfolio state and updates
+   * the portfolio for the corresponding account and networks.
+   *
+   * The function protects against race conditions by removing specific accountOps
+   *
+   * Example usage: after an account op is broadcasted and confirmed
+   */
+  async discardSimulation(accountOps: AccountOp[]) {
+    let networksToUpdate: Network[] = []
+    let accountAddrToUpdate: string | null = null
+    let accountOpsAfterUpdate: { [key: string]: AccountOpWithId[] } = {}
+
+    accountOps.forEach((accountOp) => {
+      const accountOpId = getAccountOpId(accountOp)
+
+      const { accountAddr, chainId } = accountOp
+
+      if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
+
+      const networkState = this.#state[accountAddr][chainId.toString()]!
+
+      if (!networkState.result || !networkState.accountOps) return
+      if (!accountOpsAfterUpdate) {
+        accountOpsAfterUpdate = {}
+      }
+
+      accountOpsAfterUpdate[chainId.toString()] = structuredClone(networkState.accountOps || [])
+
+      const accountOpIndex = accountOpsAfterUpdate[chainId.toString()]!.findIndex(
+        (op) => op.id === accountOpId
+      )
+
+      if (accountOpIndex === -1) return
+
+      accountOpsAfterUpdate[chainId.toString()]!.splice(accountOpIndex, 1)
+      const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
+
+      if (!networkData) {
+        this.emitError({
+          level: 'silent',
+          message: `Network with chainId ${chainId} not found while discarding simulation results.`,
+          error: new Error(`portfolio.discardSimulation: Network with chainId ${chainId} not found`)
+        })
+        return
+      }
+
+      networksToUpdate.push(networkData)
+      accountAddrToUpdate = accountAddr
+    })
+
+    if (!accountAddrToUpdate || networksToUpdate.length === 0) return
+
+    await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
+      accountOps: accountOpsAfterUpdate
+    })
   }
 
   async updateTokenValidationByStandard(
@@ -1017,10 +1083,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs?: number
       defiMaxDataAgeMs?: number
       isManualUpdate?: boolean
-      isSignAccountOpSimulation?: boolean
     }
   ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
-    const { maxDataAgeMs, isManualUpdate, isSignAccountOpSimulation } = portfolioProps
+    const { maxDataAgeMs, isManualUpdate } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
@@ -1032,26 +1097,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
 
-    // always persist the simulation if it's isSignAccountOpSimulation
-    // otherwise, check for race conditions as updates happen from wherever
-    // - if the latest account opts from visibleRequests are not those
-    // passed as portfolioProps?.simulation?.accountOps, do not persist
-    // the update as it is outdated!
-    // this often happened when doing approve + action but the dapp sends
-    // the second request action immediately after txn confirmation.
-    // at that time, all kinds of portfolio update request fly in the wallet
-    // and some of them might disturb the correct, final simulation
-    const hasSimalationChanged =
-      !isSignAccountOpSimulation &&
-      this.#hasSimulationChanged(
-        account.addr,
-        network.chainId,
-        portfolioProps?.simulation?.accountOps
-      )
-
-    const canSkipUpdate =
-      hasSimalationChanged ||
-      PortfolioController.#getCanSkipUpdate(accountState[network.chainId.toString()], maxDataAgeMs)
+    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
+      accountState[network.chainId.toString()],
+      maxDataAgeMs
+    )
 
     if (canSkipUpdate) return [true, null]
 
@@ -1370,9 +1419,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return hasAssetsOnNetwork ? maxDataAgeMs : maxDataAgeUnused
   }
 
-  // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
-  // controller doesn't have to update this controller every time that those are updated
-
   // The recommended behavior of the application that this API encourages is:
   // 1) when the user selects an account, update it's portfolio on all networks by calling updateSelectedAccount
   // 2) every time the user has a change in their pending (to be signed or to be mined) bundle(s) on a
@@ -1381,26 +1427,35 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   // it will also use a high `priceRecency` to make sure we don't lose time in updating prices (since we care about running the simulations)
 
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
+
+  /**
+   * Updates the portfolio of the passed account on the specified networks, or on all networks if none is specified.
+   * If a simulation object is passed, it will be used to perform the update.
+   *
+   * @param accountId - the account for which the portfolio should be updated
+   * @param networks - update only for these networks. If not passed, the portfolio will be updated for all networks in the wallet
+   * @param simulation - simulation data. If not passed the portfolio will use the last passed simulation data
+   * until it's overwritten by a new one or discarded using `discardSimulation(op)`
+   * @param opts
+   */
   async updateSelectedAccount(
     accountId: AccountId,
     networks?: Network[],
     simulation?: {
       accountOps: { [key: string]: AccountOp[] }
-      states: { [chainId: string]: AccountOnchainState }
+      states?: { [chainId: string]: AccountOnchainState }
     },
     opts?: {
       maxDataAgeMs?: number
       defiMaxDataAgeMs?: number
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
-      isSignAccountOpSimulation?: boolean
     }
   ) {
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
-      isManualUpdate,
-      isSignAccountOpSimulation
+      isManualUpdate
     } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1425,11 +1480,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           network
         )
 
-        const currentAccountOps = simulation?.accountOps[network.chainId.toString()]?.filter(
-          (op) => op.accountAddr === accountId
-        )
-        const state = simulation?.states?.[network.chainId.toString()]
-        const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
+        const currentAccountOps = simulation?.accountOps[network.chainId.toString()]
+          ?.filter((op) => op.accountAddr === accountId)
+          .map((op) => ({
+            ...op,
+            id: getAccountOpId(op)
+          }))
 
         if (!this.#queue?.[accountId]?.[network.chainId.toString()])
           this.#queue[accountId] = {
@@ -1438,15 +1494,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           }
 
         const updatePromise = async (): Promise<void> => {
-          // We are performing the following extended check because both (or one of both) variables may have an undefined value.
-          // If both variables contain AccountOps, we can simply compare for changes in the AccountOps intent.
-          // However, when one of the variables is not set, two cases arise:
-          // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
-          // 2. No change occurs if both variables are undefined.
+          const networkAccountState =
+            this.#accounts.accountStates?.[accountId]?.[network.chainId.toString()]
+          const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
+          const accountOpsToSimulate = currentAccountOps || simulatedAccountOps
+
+          // Compare the ids of the account ops
           const areAccountOpsChanged =
-            currentAccountOps && simulatedAccountOps
-              ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
-              : currentAccountOps !== simulatedAccountOps
+            !!currentAccountOps && areAccountOpsEqual(currentAccountOps, simulatedAccountOps || [])
+
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
           const maxDataAgeMs = this.#getMaxDataAgeMs(
@@ -1456,6 +1512,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             paramsMaxDataAgeMs,
             paramsMaxDataAgeMsUnused
           )
+          const state = simulation?.states?.[network.chainId.toString()] || networkAccountState
 
           const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null
 
@@ -1467,17 +1524,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               maxDataAgeMs,
               isManualUpdate,
               blockTag: 'both',
-              ...(currentAccountOps &&
+              ...(accountOpsToSimulate &&
+                accountOpsToSimulate.length &&
                 baseAcc &&
                 state && {
                   simulation: {
                     baseAccount: baseAcc,
-                    accountOps: currentAccountOps,
+                    accountOps: accountOpsToSimulate,
                     state
                   }
                 }),
               disableAutoDiscovery: true,
-              isSignAccountOpSimulation,
               hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
             }
           )
@@ -1966,9 +2023,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         }
       : undefined
 
-    return this.updateSelectedAccount(op.accountAddr, [network], simulation, {
-      isSignAccountOpSimulation: true
-    })
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation)
   }
 
   async updateNetworksWithDefiPositions(

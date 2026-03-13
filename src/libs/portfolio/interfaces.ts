@@ -1,7 +1,7 @@
 import { AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
 import { BaseAccount } from '../account/BaseAccount'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, AccountOpWithId } from '../accountOp/accountOp'
 import {
   AssetType,
   NetworkState as DefiNetworkState,
@@ -11,8 +11,8 @@ import {
 // @TODO: Move most of these interfaces to src/interfaces and
 // figure out how to restructure portfolio/defiPositions types
 
-export interface GetOptionsSimulation {
-  accountOps: AccountOp[]
+export interface GetOptionsSimulation<T = AccountOpWithId[]> {
+  accountOps: T
   baseAccount: BaseAccount
   state: AccountOnchainState
 }
@@ -420,7 +420,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
-  accountOps?: AccountOp[]
+  accountOps?: AccountOpWithId[]
 }
 
 export type AccountState = {
@@ -570,7 +570,7 @@ export interface PreviousHintsStorage {
 }
 
 export interface NetworkSimulatedAccountOp {
-  [chainId: string]: AccountOp
+  [chainId: string]: AccountOpWithId
 }
 
 export type PendingAmounts = {
