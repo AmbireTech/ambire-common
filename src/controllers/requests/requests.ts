@@ -1616,6 +1616,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
 
         this.#swapAndBridge.resetForm()
+        if (openActionWindow) {
+          this.#swapAndBridge.unloadScreen('popup', true)
+        }
       },
       true
     )
