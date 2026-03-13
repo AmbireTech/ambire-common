@@ -2769,7 +2769,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      if (this.status && this.status.type !== SigningStatus.Queued)
+      if (!this.status || this.status.type !== SigningStatus.Queued)
         this.status = { type: SigningStatus.Done }
 
       this.emitUpdate()
