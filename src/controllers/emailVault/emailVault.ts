@@ -15,7 +15,6 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
-import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { classifyEmailVaultError, friendlyEmailVaultMessage } from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
@@ -658,45 +657,6 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
   get banners(): Banner[] {
     const banners: Banner[] = []
-
-    const now = Date.now()
-    const ONE_WEEK = 1000 * 60 * 60 * 24 * 7
-
-    const isDismissed =
-      this.#setupBannerDismissedAt > 0 && now - this.#setupBannerDismissedAt < ONE_WEEK
-    const hasConfiguredKeystoreAndHotWallet =
-      this.#keyStore.hasPasswordSecret && this.#keyStore.keys.find((key) => key.type === 'internal')
-    const isKeystoreRecoveryEnabled = this.hasKeystoreRecovery
-
-    if (hasConfiguredKeystoreAndHotWallet && !isKeystoreRecoveryEnabled && !isDismissed) {
-      banners.push({
-        id: 'keystore-secret-backup',
-        type: 'info',
-        title: 'Enable extension password reset via email',
-        text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
-        actions: [
-          {
-            actionName: 'backup-keystore-secret'
-          }
-        ],
-        dismissAction: {
-          actionName: 'dismiss-email-vault'
-        }
-      })
-    }
-
-    Object.keys(this.emailVaultStates.email).forEach((email) => {
-      const emailVaultData = this.emailVaultStates?.email?.[email]
-      Object.values(emailVaultData.availableAccounts || {}).forEach((accInfo) => {
-        const keystoreKeys = this.#keyStore.keys.filter((key) =>
-          accInfo.associatedKeys.includes(key.addr)
-        )
-
-        if (keystoreKeys.length) return
-        banners.push(getKeySyncBanner(accInfo.addr, email, accInfo.associatedKeys))
-      })
-    })
-
     return banners
   }
 
