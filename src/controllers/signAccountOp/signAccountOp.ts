@@ -249,6 +249,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   // this is not used in the controller directly but it's being read outside
   fromRequestId: UserRequest['id']
 
+  hasSafeApiFailed: boolean = false
+
   /**
    * Never modify this directly, use #updateAccountOp instead.
    * Otherwise the accountOp will be out of sync with the one stored
@@ -2550,10 +2552,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#accountOp.signingKeyAddr as Hex,
             signature,
             safeTxnHash
-          )
+          ).catch((e) => {
+            this.hasSafeApiFailed = true
+            console.log('Safe API: failed to propose txn', e)
+          })
         } else {
           // add extra confirmations
-          await confirm(this.accountOp.chainId, signature, safeTxnHash)
+          await confirm(this.accountOp.chainId, signature, safeTxnHash).catch((e) => {
+            this.hasSafeApiFailed = true
+            console.log('Safe API: faield to confirm txn', e)
+          })
         }
 
         this.status = { type: SigningStatus.Queued }
@@ -3389,7 +3397,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
       threshold: this.threshold,
-      canBroadcast: this.canBroadcast
+      canBroadcast: this.canBroadcast,
+      hasSafeApiFailed: this.hasSafeApiFailed
     }
   }
 }
