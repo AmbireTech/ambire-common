@@ -22,6 +22,7 @@ import AcrossModule from './modules/Across'
 import { airdropsModule } from './modules/Airdrops'
 import AllowanceModule from './modules/Allowance'
 import asciiModule from './modules/AsciiModule'
+import Bundler3Module from './modules/Bundler3'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
 import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
@@ -75,6 +76,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   aaveHumanizer,
   WALLETModule,
   SafeModule,
+  Bundler3Module,
   AllowanceModule,
   ModuleProxyFactoryModule,
   privilegeHumanizer,
