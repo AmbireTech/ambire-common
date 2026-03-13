@@ -4,7 +4,7 @@ import { TokenResult } from '../libs/portfolio'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
-import { SwapAndBridgeActiveRoute } from './swapAndBridge'
+import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge'
 import { CallsUserRequest, RequestExecutionType, RequestPosition } from './userRequest'
 
 export type IRequestsController = ControllerInterface<
@@ -53,6 +53,7 @@ export type BuildRequest =
         openActionWindow: boolean
         activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
         windowId?: number
+        quote?: SwapAndBridgeQuote
       }
     }
   | {

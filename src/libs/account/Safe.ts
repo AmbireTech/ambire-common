@@ -41,6 +41,16 @@ export class Safe extends BaseAccount {
    */
   CALL_TO_SELF_GAS = 40000n
 
+  /**
+   * Add 20k additional gas when setting the nonce for the first time
+   */
+  NONCE_ZERO_GAS = 20000n
+
+  /**
+   * Add 5k additional gas for nonce > 0
+   */
+  NONCE_GAS = 5000n
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
@@ -72,6 +82,7 @@ export class Safe extends BaseAccount {
     if (isError || !estimation.ambireEstimation) return 0n
 
     const ambireBroaddcastGas = getBroadcastGas(this, options.op)
+    const nonceGas = this.accountState.nonce === 0n ? this.NONCE_ZERO_GAS : this.NONCE_GAS
 
     // each call to self results in a 0 estimate bcz of state overrides
     let callToSelfGas = 0n
@@ -86,7 +97,8 @@ export class Safe extends BaseAccount {
       ambireBroaddcastGas +
       estimation.ambireEstimation.gasUsed +
       callToSelfGas +
-      this.EXTRA_ESTIMATION_GAS
+      this.EXTRA_ESTIMATION_GAS +
+      nonceGas
     )
   }
 
