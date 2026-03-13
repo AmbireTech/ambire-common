@@ -458,11 +458,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         userRequestsToAdd.push(req)
 
-        const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
+        this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
