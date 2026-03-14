@@ -8,7 +8,7 @@ contract Deployless {
         assembly {
             toCall := create(0, add(contractCode, 0x20), mload(contractCode))
         }
-        if (toCall.code.length == 0) revert DeployFailed();
+        // if (toCall.code.length == 0) revert DeployFailed();
         // We don't care about `bool success`
         (, bytes memory returnData) = toCall.call(data);
         uint size = returnData.length;
