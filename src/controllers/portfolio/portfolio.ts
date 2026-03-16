@@ -21,12 +21,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
-import {
-  AccountOp,
-  AccountOpWithId,
-  areAccountOpsEqual,
-  getAccountOpId
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
@@ -591,11 +586,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   async discardSimulation(accountOps: AccountOp[]) {
     let networksToUpdate: Network[] = []
     let accountAddrToUpdate: string | null = null
-    let accountOpsAfterUpdate: { [key: string]: AccountOpWithId[] } = {}
+    let accountOpsAfterUpdate: { [key: string]: AccountOp[] } = {}
 
     accountOps.forEach((accountOp) => {
-      const accountOpId = getAccountOpId(accountOp)
-
       const { accountAddr, chainId } = accountOp
 
       if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
@@ -610,7 +603,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountOpsAfterUpdate[chainId.toString()] = structuredClone(networkState.accountOps || [])
 
       const accountOpIndex = accountOpsAfterUpdate[chainId.toString()]!.findIndex(
-        (op) => op.id === accountOpId
+        (op) => op.id === accountOp.id
       )
 
       if (accountOpIndex === -1) return
@@ -1480,12 +1473,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           network
         )
 
-        const currentAccountOps = simulation?.accountOps[network.chainId.toString()]
-          ?.filter((op) => op.accountAddr === accountId)
-          .map((op) => ({
-            ...op,
-            id: getAccountOpId(op)
-          }))
+        const currentAccountOps = simulation?.accountOps[network.chainId.toString()]?.filter(
+          (op) => op.accountAddr === accountId
+        )
 
         if (!this.#queue?.[accountId]?.[network.chainId.toString()])
           this.#queue[accountId] = {

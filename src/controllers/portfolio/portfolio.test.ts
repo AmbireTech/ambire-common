@@ -14,12 +14,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
-import {
-  AccountOp,
-  AccountOpWithId,
-  areAccountOpsEqual,
-  getAccountOpId
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
@@ -39,6 +34,7 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
@@ -408,6 +404,7 @@ describe('Portfolio Controller ', () => {
     const calls = [{ to: collectibleAddress, value: BigInt(0), data }]
 
     const op = {
+      id: generateUuid(),
       accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
       gasLimit: null,
@@ -419,13 +416,8 @@ describe('Portfolio Controller ', () => {
     } as AccountOp
 
     return {
-      '1': [
-        {
-          id: getAccountOpId(op),
-          ...op
-        }
-      ]
-    } as Record<string, AccountOpWithId[]>
+      '1': [op]
+    } as Record<string, AccountOp[]>
   }
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
