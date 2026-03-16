@@ -10,7 +10,7 @@ import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -92,7 +92,7 @@ export class EstimationController extends EventEmitter {
     )
   }
 
-  async estimate(op: AccountOpWithId) {
+  async estimate(op: AccountOp) {
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 

@@ -8,7 +8,6 @@ import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
-import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call } from './types'
 
@@ -41,6 +40,7 @@ export interface GasFeePayment {
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
+  id: string
   accountAddr: string
   chainId: bigint
   // this may not be defined, in case the user has not picked a key yet
@@ -101,8 +101,6 @@ export interface AccountOp {
   }
 }
 
-export type AccountOpWithId = AccountOp & { id: string }
-
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or
@@ -156,28 +154,6 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   return true
 }
 
-/**
- * Compare two AccountOps intents.
- *
- * By 'intent,' we are referring to the sender of the transaction, the network it is sent on, and the included calls.
- *
- * Since we are comparing the intents, we exclude any other properties of the AccountOps.
- */
-export function isAccountOpsIntentEqual(
-  accountOps1: AccountOp[],
-  accountOps2: AccountOp[]
-): boolean {
-  const createIntent = (accountOps: AccountOp[]) => {
-    return accountOps.map(({ accountAddr, chainId, calls }) => ({
-      accountAddr,
-      chainId,
-      calls
-    }))
-  }
-
-  return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
-}
-
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
@@ -229,6 +205,19 @@ export function getSignableHash(
  */
 export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
   return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op))
+}
+
+export const areAccountOpsEqual = (ops1: AccountOp[], ops2: AccountOp[]) => {
+  if (ops1.length !== ops2.length) return false
+
+  const ops2Ids = new Set(ops2.map((op) => op.id))
+
+  for (const op1 of ops1) {
+    if (!ops2Ids.has(op1.id)) return false
+
+    if (op1.nonce !== ops2.find((op2) => op2.id === op1.id)?.nonce) return false
+  }
+  return true
 }
 
 export function haveCallsChanged(callsOne: AccountOp['calls'], callsTwo: AccountOp['calls']) {
