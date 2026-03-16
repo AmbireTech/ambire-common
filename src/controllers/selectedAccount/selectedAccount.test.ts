@@ -389,18 +389,22 @@ describe('SelectedAccount Controller', () => {
       ).toBeDefined()
     })
     it('Portfolio error banner lastSuccessfulUpdate logic is working properly', async () => {
-      const { selectedAccountCtrl, portfolioCtrl, providersCtrl } = await prepareTest()
+      const { selectedAccountCtrl, portfolioCtrl, providersCtrl, accountsCtrl } =
+        await prepareTest()
       selectedAccountCtrl.resetSelectedAccountPortfolio()
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
+      // Mock account state
+      accountsCtrl.accountStates[accountAddr] = {
+        '137': {
+          updatedAt: Date.now()
+        } as any
+      }
+
       // There is a critical error but lastSuccessfulUpdate is less than 10 minutes ago
       selectedAccountCtrl.portfolio.portfolioState['137']!.criticalError = new Error('Mock error')
       await forceBannerRecalculation(providersCtrl)
-
-      if (selectedAccountCtrl.balanceAffectingErrors.length > 0) {
-        console.error('Balance affecting errors:', selectedAccountCtrl.balanceAffectingErrors)
-      }
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
