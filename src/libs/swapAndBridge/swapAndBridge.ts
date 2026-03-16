@@ -436,7 +436,8 @@ const getSwapAndBridgeRequestParams = async (
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState,
-  paymasterService?: PaymasterService
+  paymasterService?: PaymasterService,
+  quote?: SwapAndBridgeQuote
 ): Promise<{
   calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
@@ -448,7 +449,9 @@ const getSwapAndBridgeRequestParams = async (
       accountAddr: account.addr,
       activeRouteId: userTx.activeRouteId,
       isSwapAndBridgeCall: true,
-      paymasterService
+      paymasterService,
+      swapTxn: userTx,
+      quote
     }
   }
 }

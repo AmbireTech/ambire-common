@@ -131,7 +131,7 @@ export class KeyIterator implements KeyIteratorInterface {
             // eslint-disable-next-line no-await-in-loop
             await new Promise((resolve) => setTimeout(resolve, 0))
           }
-          const path = getHdPathFromTemplate(hdPathTemplate, i).replace('m/', '')
+          const path = getHdPathFromTemplate(hdPathTemplate, i)
           const wallet = baseWallet.derivePath(path)
           keys.push(wallet.address)
         }
@@ -166,7 +166,7 @@ export class KeyIterator implements KeyIteratorInterface {
             return []
           }
 
-          const path = getHdPathFromTemplate(hdPathTemplate, index).replace('m/', '')
+          const path = getHdPathFromTemplate(hdPathTemplate, index)
           const privateKey = baseWallet.derivePath(path).privateKey
 
           return [

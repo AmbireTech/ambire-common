@@ -249,6 +249,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   // this is not used in the controller directly but it's being read outside
   fromRequestId: UserRequest['id']
 
+  hasSafeApiFailed: boolean = false
+
   /**
    * Never modify this directly, use #updateAccountOp instead.
    * Otherwise the accountOp will be out of sync with the one stored
@@ -696,9 +698,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
+      // always try to select the hotkey, if any, as default
+      // as the ui doesn't need to switch if the user doesn't need to
+      const hotKey = this.accountKeyStoreKeys.find((k) => k.type === 'internal')
+      const defaultKey = hotKey ?? this.accountKeyStoreKeys[0]!
       this.#updateAccountOp({
-        signingKeyAddr: this.accountKeyStoreKeys[0]!.addr,
-        signingKeyType: this.accountKeyStoreKeys[0]!.type
+        signingKeyAddr: defaultKey.addr,
+        signingKeyType: defaultKey.type
       })
     }
 
@@ -2546,10 +2552,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#accountOp.signingKeyAddr as Hex,
             signature,
             safeTxnHash
-          )
+          ).catch((e) => {
+            this.hasSafeApiFailed = true
+            console.log('Safe API: failed to propose txn', e)
+          })
         } else {
           // add extra confirmations
-          await confirm(this.accountOp.chainId, signature, safeTxnHash)
+          await confirm(this.accountOp.chainId, signature, safeTxnHash).catch((e) => {
+            this.hasSafeApiFailed = true
+            console.log('Safe API: faield to confirm txn', e)
+          })
         }
 
         this.status = { type: SigningStatus.Queued }
@@ -2765,7 +2777,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
 
-      if (this.status && this.status.type !== SigningStatus.Queued)
+      if (!this.status || this.status.type !== SigningStatus.Queued)
         this.status = { type: SigningStatus.Done }
 
       this.emitUpdate()
@@ -3385,7 +3397,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
       threshold: this.threshold,
-      canBroadcast: this.canBroadcast
+      canBroadcast: this.canBroadcast,
+      hasSafeApiFailed: this.hasSafeApiFailed
     }
   }
 }

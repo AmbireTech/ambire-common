@@ -26,6 +26,7 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
+  SwapAndBridgeQuote,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
@@ -1527,10 +1528,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #buildSwapAndBridgeUserRequest({
     openActionWindow,
-    activeRouteId
+    activeRouteId,
+    quote
   }: {
     openActionWindow: boolean
     activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
+    quote?: SwapAndBridgeQuote
   }) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
@@ -1579,7 +1582,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#selectedAccount.account,
           this.#providers.providers[network.chainId.toString()]!,
           accountState,
-          getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+          getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+          quote
         )
 
         const userRequest = await this.#createOrUpdateCallsUserRequest(
@@ -1611,6 +1615,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
 
         this.#swapAndBridge.resetForm()
+        if (openActionWindow) {
+          this.#swapAndBridge.unloadScreen('popup', true)
+        }
       },
       true
     )
