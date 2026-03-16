@@ -1,5 +1,4 @@
 import fetch from 'node-fetch'
-import { generateUuid } from 'utils/uuid'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -18,6 +17,7 @@ import {
 } from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { generateUuid } from '../../utils/uuid'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
