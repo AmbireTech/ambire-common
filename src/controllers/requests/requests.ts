@@ -545,7 +545,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.currentUserRequest.kind === 'calls' &&
       this.currentUserRequest.signAccountOp
     ) {
-      if (!getShouldSimulateInTheBackground(this.currentUserRequest.signAccountOp.account)) {
+      if (
+        !getShouldSimulateInTheBackground(
+          this.currentUserRequest,
+          this.visibleUserRequests.filter((r) => r.kind === 'calls')
+        )
+      ) {
         this.#portfolio.overrideSimulationResults(this.currentUserRequest.signAccountOp.accountOp)
       }
       this.currentUserRequest.signAccountOp.pause()

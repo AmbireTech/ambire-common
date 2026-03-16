@@ -1,4 +1,4 @@
-import { Account } from '../../interfaces/account'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 
 export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
@@ -6,7 +6,23 @@ export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
  * Whether to simulate account ops if the request window is closed or the current
  * request is different.
  */
-export const getShouldSimulateInTheBackground = (account: Account) => {
-  // Only if it IS NOT a safe account
-  return !account.safeCreation
+export const getShouldSimulateInTheBackground = (
+  currentReq: CallsUserRequest,
+  callUserRequests: CallsUserRequest[]
+) => {
+  // simulations should get persisted for all non-safe accounts
+  if (!currentReq.signAccountOp.account.safeCreation) return true
+
+  // check if there are other requests with a conflicting nonce to this one.
+  // If there are, do not simulate this in the background
+  const currentReqNonce = currentReq.signAccountOp.accountOp.safeTx
+    ? currentReq.signAccountOp.accountOp.safeTx.nonce
+    : currentReq.signAccountOp.accountOp.nonce
+  const conflictingNonceUserRequests = callUserRequests.filter((r) => {
+    r.id !== currentReq.id &&
+      r.signAccountOp.accountOp.chainId === currentReq.signAccountOp.accountOp.chainId &&
+      r.signAccountOp.accountOp.safeTx?.nonce === currentReqNonce
+  })
+
+  return !conflictingNonceUserRequests.length
 }
