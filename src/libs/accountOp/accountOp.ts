@@ -8,7 +8,6 @@ import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
-import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call } from './types'
 
@@ -41,6 +40,7 @@ export interface GasFeePayment {
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
+  id: string
   accountAddr: string
   chainId: bigint
   // this may not be defined, in case the user has not picked a key yet
@@ -100,8 +100,6 @@ export interface AccountOp {
     hideActivityBanner?: boolean
   }
 }
-
-export type AccountOpWithId = AccountOp & { id: string }
 
 /**
  * If we want to deploy a contract, the to field of Call will actually
@@ -209,19 +207,7 @@ export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Arra
   return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op))
 }
 
-export function getAccountOpId(accountOp: AccountOp): string {
-  const { accountAddr, chainId } = accountOp
-  const abiCoder = new AbiCoder()
-
-  return keccak256(
-    abiCoder.encode(
-      ['address', 'uint', 'tuple(address, uint, bytes)[]'],
-      [accountAddr, chainId, getSignableCalls(accountOp)]
-    )
-  )
-}
-
-export const areAccountOpsEqual = (ops1: AccountOpWithId[], ops2: AccountOpWithId[]) => {
+export const areAccountOpsEqual = (ops1: AccountOp[], ops2: AccountOp[]) => {
   if (ops1.length !== ops2.length) return false
 
   const ops2Ids = new Set(ops2.map((op) => op.id))

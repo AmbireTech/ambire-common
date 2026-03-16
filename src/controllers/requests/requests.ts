@@ -73,6 +73,7 @@ import {
   getMintVestingRequestParams,
   getTransferRequestParams
 } from '../../libs/transfer/userRequest'
+import { generateUuid } from '../../utils/uuid'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -1854,6 +1855,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           phishing: this.#phishing,
           fromRequestId: requestId,
           accountOp: {
+            id: generateUuid(),
             accountAddr: meta.accountAddr,
             chainId: meta.chainId,
             signingKeyAddr: null,
