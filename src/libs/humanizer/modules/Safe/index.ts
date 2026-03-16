@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface, ZeroAddress } from 'ethers'
+import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
 
+import { allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { SafeV2 } from '../../const/abis/Safe'
 import {
@@ -206,9 +207,15 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         if (safeSpecificHumanization.warnings) warnings.push(...safeSpecificHumanization.warnings)
       }
 
-      if (operation === 1n)
+      if (
+        operation === 1n &&
+        (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
+      )
         warnings.push(
-          getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
+          getWarning(
+            'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+            'SAFE{WALLET}_DELEGATE_CALL'
+          )
         )
 
       return { ...call, fullVisualization, warnings }
