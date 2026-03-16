@@ -55,6 +55,12 @@ export interface ExternalSignerController {
   appName?: string // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
+  masterFingerprint?: string // Optional for some wallets, but can be used for additional info
+  // TODO: fix the type
+  currentRequest?: any //Qr based specific
+  signingStep?: string //Qr based specific
+  moveToResponseScan: () => void //Qr based specific
+  submitSignatureResponse: (payload: string | Uint8Array) => void
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 

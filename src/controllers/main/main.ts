@@ -1131,8 +1131,6 @@ export class MainController extends EventEmitter implements IMainController {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
-
       const keyIterator = new QrKeyIterator({ controller: qrCtrl })
       await keyIterator.importAccount(payload)
 
@@ -1147,6 +1145,17 @@ export class MainController extends EventEmitter implements IMainController {
         error?.message || 'Could not import the QR hardware wallet account. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
     }
+  }
+
+  handleMoveToResponseScan() {
+    const qrCtrl = this.#externalSignerControllers.qr
+    if (!qrCtrl) {
+      const message =
+        'Could not initialize connection with your QR hardware wallet. Please try again later or contact Ambire support.'
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    qrCtrl.moveToResponseScan()
   }
 
   async handleAccountPickerInitQr(

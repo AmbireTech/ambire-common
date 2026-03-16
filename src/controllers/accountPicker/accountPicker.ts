@@ -874,6 +874,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         qr: this.#externalSignerControllers.qr?.deviceModel || ''
       }
 
+      const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
+
       const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
         ({ account, accountKeys }) =>
           accountKeys.map(({ addr, index }, i) => ({
@@ -890,6 +892,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             meta: {
               deviceId: deviceIds[keyType],
               deviceModel: deviceModels[keyType],
+              masterFingerprint: masterFingerprint,
               // always defined in the case of external keys
               hdPathTemplate: this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE,
               index,
