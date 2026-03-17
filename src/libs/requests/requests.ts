@@ -1,4 +1,3 @@
-import { AccountId } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
@@ -6,7 +5,6 @@ import {
   SwitchAccountRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { Call } from '../accountOp/types'
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
   if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'

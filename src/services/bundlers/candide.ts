@@ -19,39 +19,7 @@ export class Candide extends Bundler {
       throw new Error('Candide API key is not set')
     }
 
-    if (network.chainId === 1n) {
-      return `https://api.candide.dev/bundler/v3/ethereum/${API_KEY}`
-    }
-
-    if (network.chainId === 42220n) {
-      return `https://api.candide.dev/bundler/v3/celo/${API_KEY}`
-    }
-
-    if (network.chainId === 10n) {
-      return `https://api.candide.dev/bundler/v3/optimism/${API_KEY}`
-    }
-
-    if (network.chainId === 56n) {
-      return `https://api.candide.dev/bundler/v3/bsc/${API_KEY}`
-    }
-
-    if (network.chainId === 100n) {
-      return `https://api.candide.dev/bundler/v3/gnosis/${API_KEY}`
-    }
-
-    if (network.chainId === 137n) {
-      return `https://api.candide.dev/bundler/v3/polygon/${API_KEY}`
-    }
-
-    if (network.chainId === 480n) {
-      return `https://api.candide.dev/bundler/v3/worldchain/${API_KEY}`
-    }
-
-    if (network.chainId === 8453n) {
-      return `https://api.candide.dev/bundler/v3/base/${API_KEY}`
-    }
-
-    return `https://api.candide.dev/bundler/v3/arbitrum/${API_KEY}`
+    return `https://api.candide.dev/api/v3/${network.chainId.toString()}/${API_KEY}`
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {

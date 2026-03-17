@@ -30,12 +30,19 @@ const networksCtrl = new NetworksController({
   useTempProvider: (props, cb) => {
     return providersCtrl.useTempProvider(props, cb)
   },
-  onAddOrUpdateNetworks: () => {}
+  onAddOrUpdateNetworks: () => {},
+  onReady: async () => {
+    await providersCtrl.init({ networks: networksCtrl.allNetworks })
+  }
 })
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+providersCtrl = new ProvidersController({
+  storage: storageCtrl,
+  getNetworks: () => networksCtrl.allNetworks,
+  sendUiMessage: () => uiCtrl.message.sendUiMessage
+})
 
 const EOA_ACC = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',

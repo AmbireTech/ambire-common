@@ -236,17 +236,43 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
                 getAddressVisualization(params.recipient)
               ])
             } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
-              const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
-              const params = extractParams(inputsDetails, inputs[index])
-              const path = params.path
+              try {
+                const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
+                const params = extractParams(inputsDetails, inputs[index])
+                const path = params.path
 
-              parsed.push([
-                getAction('Swap'),
-                getToken(path[0], params.amountIn),
-                getLabel('for at least'),
-                getToken(path[path.length - 1], params.amountOutMin),
-                getDeadline(deadline)
-              ])
+                parsed.push([
+                  getAction('Swap'),
+                  getToken(path[0], params.amountIn),
+                  getLabel('for at least'),
+                  getToken(path[path.length - 1], params.amountOutMin),
+                  getDeadline(deadline)
+                ])
+              } catch (e) {
+                // alternative encoding, handled here
+                // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=158&end=160
+                // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=223&end=259
+                const params = extractParams(
+                  [
+                    { type: 'address', name: 'user' },
+                    { type: 'uint256', name: 'amountIn' },
+                    { type: 'uint256', name: 'amountOut' },
+                    { type: 'bytes', name: 'path' },
+                    { type: 'bool', name: 'isUserPayer' },
+                    { type: 'bool', name: 'isUni' }
+                  ],
+                  inputs[index]
+                )
+
+                if ((params.path.length / (2 + 40)) % 1 === 0) {
+                  parsed.push([
+                    getAction('Swap'),
+                    getToken(params.path.slice(0, 42), params.amountIn),
+                    getLabel('for'),
+                    getToken('0x' + params.path.slice(-40), params.amountOut)
+                  ])
+                }
+              }
             } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
               const params = extractParams(inputsDetails, inputs[index])

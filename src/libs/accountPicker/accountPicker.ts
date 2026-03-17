@@ -1,4 +1,5 @@
-import { AccountIdentityResponse } from '../../interfaces/account'
+import { Account, AccountIdentityResponse } from '../../interfaces/account'
+import { AmbireLinkedAccounts } from './interfaces'
 
 /**
  * Parses an identity response from the Ambire Relayer API and extracts identity data.
@@ -29,5 +30,33 @@ export function normalizeIdentityResponse(addr: string, response?: AccountIdenti
     // - ambire smart v1: `initialPrivileges` would be set upon re-importing
     // account with key as a linked account
     initialPrivileges: []
+  }
+}
+
+/**
+ * Get linked v1 or v2 smart accounts existing in the relayer itself.
+ * Fetch only for passed accounts
+ */
+export async function getRelayerLinkedAccounts(
+  accounts: Account[],
+  callRelayer: Function
+): Promise<{
+  linkedAccounts: AmbireLinkedAccounts
+  errorMessage?: string
+}> {
+  const keys = accounts.map((acc) => `keys[]=${acc.addr}`).join('&')
+  const url = `/v2/account-by-key/linked/accounts?${keys}`
+  try {
+    const response = await callRelayer(url)
+    return {
+      linkedAccounts: response.data.accounts
+    }
+  } catch (e: any) {
+    const upstreamError = e?.message || ''
+    let errorMessage = 'The attempt to discover linked ambire smart accounts failed.'
+    return {
+      linkedAccounts: {},
+      errorMessage: (errorMessage += upstreamError ? ` Error details: <${upstreamError}>` : '')
+    }
   }
 }

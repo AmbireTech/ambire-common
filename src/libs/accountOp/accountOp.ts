@@ -1,12 +1,13 @@
-import { AbiCoder, getBytes, Interface, isAddress, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
+
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
-import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
+import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
-import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call } from './types'
 
@@ -39,9 +40,12 @@ export interface GasFeePayment {
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
+  id: string
   accountAddr: string
   chainId: bigint
   // this may not be defined, in case the user has not picked a key yet
+  // also, this represents the last signer (if it's only 1, the only signer,
+  // but in case of multi-sig accounts, the last signer will be saved)
   signingKeyAddr: Key['addr'] | null
   signingKeyType: Key['type'] | null
   // this may not be set in case we haven't set it yet
@@ -64,12 +68,19 @@ export interface AccountOp {
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
   asUserOperation?: UserOperation
+  // multiple signers use case
+  // all the signers that are to sign the transaction
+  signers?: { addr: Key['addr']; type: Key['type'] }[]
+  // who are the signers that already signed this txn
+  signed?: string[]
+  safeTx?: SafeMultisigTransactionResponse
   // all kinds of custom accountOp properties that are needed in specific cases
   meta?: {
     // pass the entry point authorization signature for the deploy 4337 txn
     entryPointAuthorization?: string
     paymasterService?: PaymasterService
     swapTxn?: SwapAndBridgeSendTxRequest
+    quote?: SwapAndBridgeQuote
     walletSendCallsVersion?: string
     delegation?: EIP7702Auth
     setDelegation?: boolean
@@ -89,8 +100,6 @@ export interface AccountOp {
     hideActivityBanner?: boolean
   }
 }
-
-export type AccountOpWithId = AccountOp & { id: string }
 
 /**
  * If we want to deploy a contract, the to field of Call will actually
@@ -145,28 +154,6 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   return true
 }
 
-/**
- * Compare two AccountOps intents.
- *
- * By 'intent,' we are referring to the sender of the transaction, the network it is sent on, and the included calls.
- *
- * Since we are comparing the intents, we exclude any other properties of the AccountOps.
- */
-export function isAccountOpsIntentEqual(
-  accountOps1: AccountOp[],
-  accountOps2: AccountOp[]
-): boolean {
-  const createIntent = (accountOps: AccountOp[]) => {
-    return accountOps.map(({ accountAddr, chainId, calls }) => ({
-      accountAddr,
-      chainId,
-      calls
-    }))
-  }
-
-  return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
-}
-
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
@@ -218,4 +205,50 @@ export function getSignableHash(
  */
 export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
   return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op))
+}
+
+export const areAccountOpsEqual = (ops1: AccountOp[], ops2: AccountOp[]) => {
+  if (ops1.length !== ops2.length) return false
+
+  const ops2Ids = new Set(ops2.map((op) => op.id))
+
+  for (const op1 of ops1) {
+    if (!ops2Ids.has(op1.id)) return false
+
+    if (op1.nonce !== ops2.find((op2) => op2.id === op1.id)?.nonce) return false
+  }
+  return true
+}
+
+export function haveCallsChanged(callsOne: AccountOp['calls'], callsTwo: AccountOp['calls']) {
+  const lengthDiff = callsOne.length !== callsTwo.length
+  if (lengthDiff) return true
+
+  // if some of their properties differ, then calls have changed
+  for (let i = 0; i < callsOne.length; i++) {
+    const callOne = callsOne[i]!
+    const callTwo = callsTwo[i]!
+    if (
+      callOne.to !== callTwo?.to ||
+      callOne.data !== callTwo?.data ||
+      callOne.value !== callTwo?.value ||
+      callOne.id !== callTwo?.id
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+export function haveAccountOpsChanged(accountOpsOne: AccountOp[], accountOpsTwo: AccountOp[]) {
+  const lengthDiff = accountOpsOne.length !== accountOpsTwo.length
+  if (lengthDiff) return true
+
+  for (let i = 0; i < accountOpsOne.length; i++) {
+    const oneOp = accountOpsOne[i]!
+    const twoOp = accountOpsTwo[i]!
+    if (haveCallsChanged(oneOp.calls, twoOp.calls)) return true
+  }
+
+  return false
 }

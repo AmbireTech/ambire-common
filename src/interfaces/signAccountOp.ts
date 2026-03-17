@@ -12,7 +12,7 @@ type Warning = {
   type?: Type
 }
 
-type Type = 'error' | 'warning' | 'info3'
+type Type = 'error' | 'warning' | 'info'
 
 type SignAccountOpError = {
   title: string

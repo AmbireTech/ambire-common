@@ -115,9 +115,16 @@ describe('SignMessageController', () => {
       useTempProvider: (props, cb) => {
         return providersCtrl.useTempProvider(props, cb)
       },
-      onAddOrUpdateNetworks: () => {}
+      onAddOrUpdateNetworks: () => {},
+      onReady: async () => {
+        await providersCtrl.init({ networks: networksCtrl.allNetworks })
+      }
     })
-    providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+    providersCtrl = new ProvidersController({
+      storage: storageCtrl,
+      getNetworks: () => networksCtrl.allNetworks,
+      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    })
 
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -155,8 +162,7 @@ describe('SignMessageController', () => {
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(signMessageController.messageToSign).toBeNull()
     expect(signMessageController.signedMessage).toBeNull()
-    expect(signMessageController.signingKeyAddr).toBeNull()
-    expect(signMessageController.signingKeyType).toBeNull()
+    expect(signMessageController.signer).toBeUndefined()
   })
 
   test('should not initialize with an invalid message kind', async () => {
@@ -184,10 +190,12 @@ describe('SignMessageController', () => {
     const signingKeyAddr = account.addr
 
     await signMessageController.init({ messageToSign })
-    signMessageController.setSigningKey(signingKeyAddr, 'internal')
+    signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
 
-    expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
-    expect(signMessageController.signingKeyType).toBe('internal')
+    expect(signMessageController.signers).not.toBe(undefined)
+    expect(signMessageController.signers?.length).toBe(1)
+    expect(signMessageController.signers![0]!.addr).toBe(signingKeyAddr)
+    expect(signMessageController.signers![0]!.type).toBe('internal')
   })
 
   // TODO: Would be better to test the signing via the Main controller -> handleSignMessage instead
@@ -206,7 +214,7 @@ describe('SignMessageController', () => {
     const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
 
     await signMessageController.init({ messageToSign })
-    signMessageController.setSigningKey(signingKeyAddr, 'internal')
+    signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
 
     await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest')
 

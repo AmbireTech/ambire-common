@@ -15,6 +15,7 @@ import {
   AccountState,
   ERC721s,
   ExtendedErrorWithLevel,
+  ExternalAPITokenMarketDataResponse,
   ExternalHintsAPIResponse,
   FormattedExternalHintsAPIResponse,
   GetOptions,
@@ -25,6 +26,7 @@ import {
   PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
+  TokenDataCacheValue,
   TokenResult,
   TokenValidationResult,
   Total
@@ -391,9 +393,9 @@ export const validateERC20Token = async (
   let decimals
   try {
     ;[balance, symbol, decimals] = await Promise.all([
-      erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
-      erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
-      erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+      erc20.balanceOf!(accountId).catch((e) => handleERC20Error(e, 'balance')),
+      erc20.symbol!().catch((e) => handleERC20Error(e, 'symbol')),
+      erc20.decimals!().catch((e) => handleERC20Error(e, 'decimals'))
     ])
   } catch (e) {
     handleERC20Error(e, 'token validation')
@@ -517,7 +519,11 @@ export const getTotal = (
       // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
       if (typeof total !== 'number' || Number.isNaN(total)) {
         console.error(
-          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`
+          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`,
+          'Price:',
+          x,
+          'Amount:',
+          tokenAmount
         )
         // eslint-disable-next-line no-continue
         continue
@@ -818,4 +824,42 @@ export const getHardcodedCitreaPrices = (address: string): Price | null => {
   }
 
   return null
+}
+
+export const convertApiTokenDataToTokenDataCache = (
+  tokenData: ExternalAPITokenMarketDataResponse | null
+): TokenDataCacheValue => {
+  if (!tokenData) {
+    return {
+      priceIn: [],
+      marketDataIn: []
+    }
+  }
+
+  const baseCurrency = (tokenData.baseCurrency || 'usd') as 'usd' // stop ts from complaining, we only support usd as base currency for now
+  const price = (tokenData.price || tokenData.usd) as number | undefined
+
+  const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`]
+  const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`]
+  const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`]
+  const fullyDilutedValuation = tokenData[`${baseCurrency}_fully_diluted_valuation`]
+  const website = tokenData.homepage ? tokenData.homepage[0] : undefined
+
+  return {
+    priceIn: typeof price === 'number' ? [{ baseCurrency, price }] : [],
+    marketDataIn: [
+      {
+        baseCurrency,
+        change24h: baseCurrency24hChange,
+        volume24h: baseCurrency24hVolume,
+        marketCap: baseCurrencyMarketCap,
+        fullyDilutedValuation: fullyDilutedValuation,
+        totalSupply: tokenData.total_supply
+      }
+    ],
+    meta: {
+      exchanges: tokenData.exchanges || [],
+      website: website
+    }
+  }
 }
