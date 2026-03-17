@@ -405,7 +405,7 @@ export class Portfolio {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
         // Symbol-based blacklist: skip custom tokens so user-added assets are never hidden
-        if (allBlacklistedSymbols.length > 0 && !_tokensWithErrResult[1].flags.isCustom) {
+        if (allBlacklistedSymbols.length > 0 && !_tokensWithErrResult[1]?.flags?.isCustom) {
           const symbolLower = _tokensWithErrResult[1].symbol.toLowerCase()
           if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return false
         }
@@ -460,7 +460,7 @@ export class Portfolio {
         if (!isValidToken(error, collection)) return acc
 
         // Never filter custom collections, even tho we don't support them atm
-        if (allBlacklistedSymbols.length > 0 && !collection.flags.isCustom) {
+        if (allBlacklistedSymbols.length > 0 && !collection?.flags?.isCustom) {
           const symbolLower = collection.symbol.toLowerCase()
           if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return acc
         }
