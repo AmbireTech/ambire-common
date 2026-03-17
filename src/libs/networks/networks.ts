@@ -84,8 +84,7 @@ export function getProviderBatchMaxCount(network: Network, rpcUrl: string): numb
   // if the RPC hasn't changed
   if (!hasUserChangedRpc && network.suggestedRpcBatchCount) return network.suggestedRpcBatchCount
 
-  // No limit for invictus if suggestedRpcBatchCount is not provied
-  if (rpcUrl.includes('invictus.ambire.com')) return undefined
+  if (rpcUrl.includes('invictus.ambire.com')) return 20
 
   // no batching for custom networks
   if (!network.predefinedConfigVersion) return 1
