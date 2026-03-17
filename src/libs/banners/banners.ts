@@ -92,7 +92,8 @@ export const getBridgeBanners = (
       text,
       actions: [
         {
-          actionName: 'view-bridge'
+          actionName: 'view-bridge',
+          label: 'View'
         }
       ],
       dismissAction: {
@@ -125,7 +126,8 @@ export const getSafeMessageRequestBanners = (
       text: '',
       actions: [
         {
-          actionName: 'open-pending-dapp-requests'
+          actionName: 'open-pending-dapp-requests',
+          label: 'Open'
         }
       ]
     }
@@ -151,7 +153,8 @@ export const getDappUserRequestsBanners = (
       text: '',
       actions: [
         {
-          actionName: 'open-pending-dapp-requests'
+          actionName: 'open-pending-dapp-requests',
+          label: 'Open'
         }
       ]
     }
@@ -172,11 +175,12 @@ const getSafeBanner = ({
     type: 'info',
     category: 'pending-to-be-signed-acc-op',
     title: `Pending transactions ${network.name ? `on ${network.name}` : ''}`,
-    text: `${requests.length} transactions are mutually exclusive (Same nonce).\nYou can sign only one.`,
+    text: `${requests.length} transactions are mutually exclusive (Same nonce). You can sign only one.`,
     actions: [
       {
         actionName: 'open-accountOp',
-        meta: { requestId: requests[0]!.id }
+        meta: { requestId: requests[0]!.id },
+        label: 'Open'
       }
     ]
   }
@@ -222,12 +226,13 @@ export const getAccountOpBanners = ({
         category: 'pending-to-be-signed-acc-op',
         title: `${
           callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on \n${network.name}` : ''}`,
+        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
         text: '',
         actions: [
           {
             actionName: 'open-accountOp',
-            meta: { requestId: request.id }
+            meta: { requestId: request.id },
+            label: 'Open'
           }
         ],
         dismissAction: {
@@ -257,7 +262,8 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     actions: [
       {
         actionName: 'sync-keys',
-        meta: { email, keys }
+        meta: { email, keys },
+        label: 'Sync'
       }
     ]
   }
@@ -321,7 +327,8 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
     actions: [
       {
         actionName: 'enable-networks',
-        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
+        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) },
+        label: totalCount === 1 ? `Enable ${formattedNetworkNames}` : 'Enable All'
       }
     ],
     dismissAction: {

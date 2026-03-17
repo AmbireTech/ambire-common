@@ -26,7 +26,13 @@ export interface Banner {
   title: string
   text?: string
   // Force a single action on purpose
-  actions: [Action] | []
+  actions:
+    | [
+        Action & {
+          label: string
+        }
+      ]
+    | []
   dismissAction?: Action
   meta?: {
     accountAddr?: string
