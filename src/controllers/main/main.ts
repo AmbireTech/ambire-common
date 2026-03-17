@@ -1147,17 +1147,6 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  handleMoveToResponseScan() {
-    const qrCtrl = this.#externalSignerControllers.qr
-    if (!qrCtrl) {
-      const message =
-        'Could not initialize connection with your QR hardware wallet. Please try again later or contact Ambire support.'
-      throw new EmittableError({ message, level: 'major', error: new Error(message) })
-    }
-
-    qrCtrl.moveToResponseScan()
-  }
-
   async handleAccountPickerInitQr(
     QrKeyIterator: any, // TODO: KeyIterator type mismatch
     payload: string | Uint8Array
