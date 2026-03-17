@@ -6,7 +6,7 @@ import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
-import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
+import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
@@ -80,6 +80,7 @@ export interface AccountOp {
     entryPointAuthorization?: string
     paymasterService?: PaymasterService
     swapTxn?: SwapAndBridgeSendTxRequest
+    quote?: SwapAndBridgeQuote
     walletSendCallsVersion?: string
     delegation?: EIP7702Auth
     setDelegation?: boolean

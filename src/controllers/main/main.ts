@@ -798,7 +798,28 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     if (accountOp.meta?.swapTxn) {
-      this.swapAndBridge.addActiveRoute({ userTxIndex: accountOp.meta?.swapTxn.userTxIndex })
+      // we need a quote to be able to add an active route
+      const quote = accountOp.meta.quote || this.swapAndBridge.quote
+      if (quote) {
+        try {
+          this.swapAndBridge.addActiveRoute({
+            quote,
+            userTxIndex: accountOp.meta?.swapTxn.userTxIndex,
+            routeStatus: !!quote?.selectedRoute ? 'in-progress' : 'ready'
+          })
+          if (quote.selectedRoute) {
+            this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
+              userTxHash: submittedAccountOp.txnId,
+              identifiedBy: submittedAccountOp.identifiedBy
+            })
+          }
+        } catch (e) {
+          console.log('failed to add an active route', e)
+        }
+      }
+
+      // no need to keep it in storage
+      delete accountOp.meta.quote
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
