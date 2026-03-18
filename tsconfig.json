@@ -39,5 +39,8 @@
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true
   },
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
+  },
   "exclude": ["node_modules", "dist"]
 }
