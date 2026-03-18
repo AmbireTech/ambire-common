@@ -33,7 +33,6 @@ import {
   SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -749,35 +748,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   get supportedChainIds(): Network['chainId'][] {
-    // if the account is smart, do not allow the user to bridge to
-    // a chain that doesn't support our smart accounts as those funds
-    // would be stuck
-    if (isSmartAccount(this.#selectedAccount.account)) {
-      if (this.#selectedAccount.account?.safeCreation) {
-        return this.#cachedSupportedChains.data
-          .filter((c) => {
-            const network = this.#networks.networks.find((net) => net.chainId === BigInt(c.chainId))
-            if (!network) return false
-
-            // eligible networks are only those that safe is deployed on
-            return !!(
-              this.#selectedAccount.account &&
-              this.#accounts.accountStates[this.#selectedAccount.account.addr]?.[c.chainId]
-                ?.isDeployed
-            )
-          })
-          .map((c) => BigInt(c.chainId))
-      }
-
-      return this.#cachedSupportedChains.data
-        .filter((c) => {
-          const network = this.#networks.networks.find((net) => net.chainId === BigInt(c.chainId))
-          if (!network) return false
-          return network.areContractsDeployed && (network.hasRelayer || network.erc4337.enabled)
-        })
-        .map((c) => BigInt(c.chainId))
-    }
-
     return this.#cachedSupportedChains.data.map((c) => BigInt(c.chainId))
   }
 
