@@ -294,12 +294,14 @@ const prepareTest = async (opts?: {
   fetchOverride?: typeof fetch
   skipBlacklistFetch?: boolean
   awaitInitialLoad?: boolean
+  skipAccountStateFetch?: boolean
 }) => {
   const {
     initialSetStorage,
     awaitInitialLoad = true,
     fetchOverride,
-    skipBlacklistFetch = true
+    skipBlacklistFetch = true,
+    skipAccountStateFetch = true
   } = opts || {}
 
   const { mainCtrl } = await makeMainController(
@@ -328,6 +330,7 @@ const prepareTest = async (opts?: {
     {
       awaitInitialLoad: awaitInitialLoad,
       skipPortfolioFetchBlacklistOnLoad: skipBlacklistFetch,
+      skipAccountStateLoad: skipAccountStateFetch,
       overrides: {
         fetch: fetchOverride
       }
@@ -480,7 +483,7 @@ describe('Portfolio Controller ', () => {
 
   describe('Pending tokens', () => {
     test('Pending tokens + simulation are fetched and kept in the controller', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -508,7 +511,7 @@ describe('Portfolio Controller ', () => {
     })
     test('Pending tokens are re-fetched, if `forceUpdate` flag is set, no matter if AccountOp is the same or changer', async () => {
       const done = jest.fn(() => null)
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
 
       let state1: any
@@ -543,7 +546,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed (omitted, i.e. undefined)', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -567,7 +570,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -608,7 +611,7 @@ describe('Portfolio Controller ', () => {
       )
 
     test('overrideSimulationResults removes the current simulation result and stored accountOps', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -642,7 +645,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('overrideSimulationResults is a no-op when there is no matching simulated state', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
 
       expect(() => controller.overrideSimulationResults(accountOp['1']![0]!)).not.toThrow()
@@ -674,7 +677,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('discardSimulation is a no-op when the account op is not part of the current simulation', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -695,7 +698,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('discardSimulation does not affect a different account op, even if they are called together', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const ethereum = networks.find((network) => network.chainId === 1n)!
       const oldAccountOp = await getAccountOp()
       const toBeDiscardedAccountOp = await getAccountOp(
@@ -719,7 +722,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('discardSimulation does not discard a newer simulation when it is queued first', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const ethereum = networks.find((network) => network.chainId === 1n)!
       const oldAccountOp = await getAccountOp()
       const newAccountOp = await getAccountOp('0x932261f9fc8da46c4a22e31b45c4de60623848bf', 39118)
@@ -743,7 +746,7 @@ describe('Portfolio Controller ', () => {
       expect(areAccountOpsEqual(stateAfter.accountOps!, newAccountOp['1']!)).toBe(true)
     })
     test('discardSimulation is not affected by account op nonces being updated in between', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const ethereum = networks.find((network) => network.chainId === 1n)!
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
