@@ -1,5 +1,5 @@
 import { getAddress, parseUnits } from 'ethers'
-import isEmail from 'validator/es/lib/isEmail'
+import isEmail from 'validator/lib/isEmail'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'

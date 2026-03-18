@@ -203,7 +203,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #featureFlags: IFeatureFlagsController
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise?: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   defiSessionIds: string[] = []
 
@@ -298,8 +298,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
-    this.#initialLoadPromise = this.#load().finally(() => {
-      this.#initialLoadPromise = undefined
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
     })
   }
 
@@ -413,7 +413,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const isTokenAlreadyAdded = this.customTokens.some(
       ({ address, chainId }) =>
         address.toLowerCase() === customToken.address.toLowerCase() &&
@@ -436,7 +436,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     this.customTokens = this.customTokens.filter(
       (token) =>
         !(
@@ -466,7 +466,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     const existingPreference = this.tokenPreferences.find(
       ({ address, chainId }) =>
@@ -636,7 +636,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountId: AccountId,
     allNetworks: boolean = false
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
@@ -1450,7 +1450,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
       isManualUpdate
     } = opts || {}
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount)
       throw new Error(
@@ -1842,7 +1842,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     key: `${string}:${string}`,
     chainId: bigint
   ): Promise<boolean> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!tokensWithBalance) return false
 
     if (!this.#learnedAssets.erc20s[key]) this.#learnedAssets.erc20s[key] = {}
@@ -1898,7 +1898,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountAddr: string,
     chainId: bigint
   ): Promise<boolean> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!nftsData?.length) return false
     const key = `${chainId.toString()}:${accountAddr}`
 

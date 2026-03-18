@@ -371,12 +371,6 @@ export class MainController extends EventEmitter implements IMainController {
       addressBook: this.addressBook
     })
 
-    this.selectedAccount.initControllers({
-      portfolio: this.portfolio,
-      networks: this.networks,
-      providers: this.providers
-    })
-
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.storage,
@@ -647,6 +641,15 @@ export class MainController extends EventEmitter implements IMainController {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
+    await this.portfolio.initialLoadPromise
+    await this.keystore.initialLoadPromise
+
+    this.selectedAccount.initControllers({
+      portfolio: this.portfolio,
+      networks: this.networks,
+      providers: this.providers
+    })
+
     await this.selectedAccount.initialLoadPromise
 
     this.updateSelectedAccountPortfolio()
