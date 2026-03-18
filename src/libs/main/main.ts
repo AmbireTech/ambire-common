@@ -1,52 +1,28 @@
-import { Account } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
-import { UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
-import { getSameNonceRequests } from '../safe/safe'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 
 export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
-export const getAccountOpsForSimulation = (
-  account: Account,
-  visibleUserRequests: UserRequest[],
-  networks: Network[]
-): { [key: string]: AccountOp[] } | undefined => {
-  let callRequests = visibleUserRequests.filter((r) => r.kind === 'calls')
+/**
+ * Whether to simulate account ops if the request window is closed or the current
+ * request is different.
+ */
+export const getShouldSimulateInTheBackground = (
+  currentReq: CallsUserRequest,
+  callUserRequests: CallsUserRequest[]
+) => {
+  // simulations should get persisted for all non-safe accounts
+  if (!currentReq.signAccountOp.account.safeCreation) return true
 
-  // filter out the safe requests with conflicting nonces (same nonce)
-  // from the simulation as the user will have to choose and broadcast only one
-  if (!!account.safeCreation) {
-    const sameNonceRequestsIds = Object.values(getSameNonceRequests(callRequests))
-      .filter((grouped) => grouped.length > 1) // length of 1 means no conflict
-      .flat()
-      .map((r) => r.id)
-    callRequests = callRequests.filter(
-      (r) => !sameNonceRequestsIds.includes(r.id) || r.signAccountOp.isInRegistry()
-    )
-  }
+  // check if there are other requests with a conflicting nonce to this one.
+  // If there are, do not simulate this in the background
+  const currentReqNonce = currentReq.signAccountOp.accountOp.safeTx
+    ? currentReq.signAccountOp.accountOp.safeTx.nonce
+    : currentReq.signAccountOp.accountOp.nonce
+  const conflictingNonceUserRequests = callUserRequests.filter((r) => {
+    r.id !== currentReq.id &&
+      r.signAccountOp.accountOp.chainId === currentReq.signAccountOp.accountOp.chainId &&
+      r.signAccountOp.accountOp.safeTx?.nonce === currentReqNonce
+  })
 
-  const isSmart = isSmartAccount(account)
-  const accountOps = callRequests
-    .map((a) => a.signAccountOp.accountOp)
-    .filter((op) => {
-      if (op.accountAddr !== account.addr) return false
-
-      const networkData = networks.find((n) => n.chainId === op.chainId)
-
-      // We cannot simulate if the account isn't smart and the network's RPC doesn't support
-      // state override
-      return isSmart || (networkData && !networkData.rpcNoStateOverride)
-    })
-
-  if (!accountOps.length) return undefined
-
-  return accountOps.reduce((acc: any, accountOp) => {
-    const { chainId } = accountOp
-
-    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
-
-    acc[chainId.toString()].push(accountOp)
-    return acc
-  }, {})
+  return !conflictingNonceUserRequests.length
 }

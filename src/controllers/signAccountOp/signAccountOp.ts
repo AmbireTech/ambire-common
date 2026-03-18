@@ -80,12 +80,7 @@ import {
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
-import {
-  AccountOp,
-  AccountOpWithId,
-  GasFeePayment,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
@@ -260,7 +255,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * Otherwise the accountOp will be out of sync with the one stored
    * in requests/actions.
    */
-  #accountOp: AccountOpWithId
+  #accountOp: AccountOp
 
   gasPrices?: GasSpeeds
 
@@ -428,7 +423,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#activity = activity
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
-    this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
+    this.#accountOp = structuredClone(accountOp)
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
@@ -502,7 +497,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return !!this.#updateBlacklistedStatusPromise
   }
 
-  get accountOp(): Readonly<AccountOpWithId> {
+  get accountOp(): Readonly<AccountOp> {
     return this.#accountOp
   }
 
@@ -2488,7 +2483,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (this.baseAccount.shouldIncludeActivatorCall(this.accountOp.gasFeePayment.paidBy)) {
       this.#accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
-    this.#updateAccountOp(this.#accountOp)
 
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       this.accountOp.accountAddr,

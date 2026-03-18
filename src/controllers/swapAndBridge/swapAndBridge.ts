@@ -2432,6 +2432,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     const accountOp: AccountOp = {
+      id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
