@@ -1,5 +1,6 @@
-import { isAddress } from 'ethers'
+import { getAddress, isAddress } from 'ethers'
 
+import { allowedMulticallContracts } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getSafeHumanization } from '../modules/Safe'
@@ -35,11 +36,17 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   if (humanizedCalls[0]?.fullVisualization) {
     fullVisualization.push(...humanizedCalls[0].fullVisualization)
   }
-  if (operation === 1) {
+  if (
+    operation === 1 &&
+    (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
+  ) {
     return {
       fullVisualization,
       warnings: [
-        getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
+        getWarning(
+          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          'SAFE{WALLET}_DELEGATE_CALL'
+        )
       ]
     }
   }

@@ -37,6 +37,7 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
+import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -818,6 +819,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const accountOp = {
+      id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,

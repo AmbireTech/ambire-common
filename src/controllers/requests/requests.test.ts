@@ -1,3 +1,5 @@
+import { generateUuid } from 'utils/uuid'
+
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
@@ -131,6 +133,7 @@ const prepareTest = async () => {
       phishing: mainCtrl.phishing,
       fromRequestId: requestId,
       accountOp: {
+        id: generateUuid(),
         accountAddr: addr,
         signingKeyAddr: null,
         signingKeyType: null,
@@ -285,13 +288,13 @@ describe('RequestsController ', () => {
       type: 'transferRequest',
       params: {
         selectedToken: {
+          marketDataIn: [],
           address: '0x0000000000000000000000000000000000000000',
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,
           decimals: 18,
-          marketDataIn: [],
           priceIn: [],
           flags: {
             onGasTank: false,

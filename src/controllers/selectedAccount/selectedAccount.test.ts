@@ -289,7 +289,7 @@ describe('SelectedAccount Controller', () => {
           usd: 0
         },
         discoveryTime: 0,
-        priceCache: new Map(),
+        tokenDataCache: new Map(),
         tokenErrors: [],
         collections: [],
         blockNumber: 0,
