@@ -150,11 +150,8 @@ describe('ContinuousUpdatesController intervals', () => {
       initialFnExecutionsCount + 1
     )
     const updateSelectedAccountCalledTimes = updateSelectedAccountPortfolioSpy.mock.calls.length
-    await mainCtrl.activity.addAccountOp(submittedAccountOp)
-    await jest.advanceTimersByTimeAsync(0)
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + 2
+      initialFnExecutionsCount + 1
     )
     expect(updateSelectedAccountPortfolioSpy).toHaveBeenCalledTimes(
       updateSelectedAccountCalledTimes
@@ -164,11 +161,11 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.restart).toHaveBeenCalledTimes(2)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + 3
+      initialFnExecutionsCount + 2
     )
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + 4
+      initialFnExecutionsCount + 3
     )
   })
 

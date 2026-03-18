@@ -1,5 +1,3 @@
-import { generateUuid } from 'utils/uuid'
-
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
@@ -12,6 +10,7 @@ import {
   DappConnectRequest,
   UserRequest
 } from '../../interfaces/userRequest'
+import { generateUuid } from '../../utils/uuid'
 import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { RequestsController } from './requests'
