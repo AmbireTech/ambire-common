@@ -769,13 +769,12 @@ export class MainController extends EventEmitter implements IMainController {
       const calls = submittedAccountOp.calls.map((oneCall, i) => {
         const localCall = { ...oneCall }
 
-        // no tx id = failure
+        // if there's no tx id, we set it to Rejected and continue.
+        // it means broadcast has failed
         if (!(i in txnIds)) {
           localCall.status = AccountOpStatus.Rejected
           return localCall
         }
-
-        // maybe we can set it to fialure
 
         localCall.txnId = txnIds[i] as Hex
         localCall.status = AccountOpStatus.BroadcastedButNotConfirmed

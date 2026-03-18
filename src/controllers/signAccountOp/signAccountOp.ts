@@ -2938,8 +2938,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
             })
           } else {
-            const response = await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
-            multipleTxnsBroadcastRes.push(response)
+            multipleTxnsBroadcastRes.push(
+              await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
+            )
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
