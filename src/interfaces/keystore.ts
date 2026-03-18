@@ -168,7 +168,7 @@ export type ExternalKey = {
     qrProtocol?: QrProtocolType
     originHdPath?: string // for accounts imported from QR, to store the original path used on the wallet, as some wallets (like Keystone) don't provide the possibility to retrieve the key by xpub, but only by path, so we need to keep track of it in order to be able to retrieve the key later on
     masterFingerprint?: string // for Ledger, optional for others, as it can be used for additional info but is not required to retrieve the key
-
+    relativePathTemplate?: string // QR related
     [key: string]: any
   }
 }

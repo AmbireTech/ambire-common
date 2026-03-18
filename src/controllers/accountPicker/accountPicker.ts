@@ -24,7 +24,7 @@ import {
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
-import { KeyIterator } from '../../interfaces/keyIterator'
+import { KeyIterator, QrWalletConfig } from '../../interfaces/keyIterator'
 import {
   dedicatedToOneSAPriv,
   ExternalKey,
@@ -875,6 +875,20 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       }
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
+      const qrWalletConfig = keyType === 'qr' ? this.keyIterator.walletConfig : undefined
+      const qrParsedOriginHdPath =
+        keyType === 'qr'
+          ? this.keyIterator.parsedAccount?.hdPath ||
+            this.keyIterator.parsedAccount?.accounts?.[0]?.hdPath
+          : undefined
+      const hdPathTemplate = (
+        keyType === 'qr' && qrWalletConfig
+          ? qrWalletConfig.hdPathTemplate || this.hdPathTemplate
+          : this.hdPathTemplate
+      ) as HD_PATH_TEMPLATE_TYPE
+      const relativePathTemplate =
+        keyType === 'qr' ? qrWalletConfig?.relativePathTemplate || '' : ''
+      const originPath = keyType === 'qr' ? qrParsedOriginHdPath || '' : ''
 
       const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
         ({ account, accountKeys }) =>
@@ -892,9 +906,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             meta: {
               deviceId: deviceIds[keyType],
               deviceModel: deviceModels[keyType],
-              masterFingerprint: masterFingerprint,
+              masterFingerprint,
               // always defined in the case of external keys
-              hdPathTemplate: this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE,
+              hdPathTemplate: hdPathTemplate,
+              relativePathTemplate: relativePathTemplate,
+              originHdPath: originPath,
               index,
               createdAt: new Date().getTime()
             }

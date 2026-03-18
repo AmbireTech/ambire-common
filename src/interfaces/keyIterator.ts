@@ -1,6 +1,21 @@
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { SelectedAccountForImport } from './account'
-import { ExternalSignerController, Key } from './keystore'
+import { ExternalSignerController, Key, QrProtocolType, QrWalletType } from './keystore'
+
+export type QrWalletConfig = {
+  walletType: QrWalletType
+  protocol: QrProtocolType
+  label: string
+  hdPathTemplate: string
+  relativePathTemplate: string
+}
+
+type QrParsedAccountMeta = {
+  hdPath?: string
+  accounts?: Array<{
+    hdPath?: string
+  }>
+}
 
 export interface KeyIterator {
   type: Key['type']
@@ -9,6 +24,9 @@ export interface KeyIterator {
   walletSDK?: any
   /** Needed for the hardware wallets only */
   controller?: ExternalSignerController
+  /** QR-specific optional metadata */
+  walletConfig?: QrWalletConfig
+  parsedAccount?: QrParsedAccountMeta
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],
