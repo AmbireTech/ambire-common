@@ -23,7 +23,6 @@ import { getPaymasterDataForEstimate } from '../../libs/paymaster/paymaster'
 import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getActivatorCall, getUserOperation } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
-import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'
 import { getDefaultBundler } from './getBundler'
 import { Pimlico } from './pimlico'
@@ -237,155 +236,6 @@ describe('Bundler tests', () => {
       expect(filecoinShouldNotBeSupported).toBe(false)
     })
   })
-  describe('Estimation tests: arbitrum, biconomy, undeployed account', () => {
-    test('should estimate a deploy userOp', async () => {
-      const opArb: AccountOp = {
-        accountAddr: smartAccNew.addr,
-        signingKeyAddr: smartAccNew.associatedKeys[0]!,
-        signingKeyType: null,
-        gasLimit: null,
-        gasFeePayment: null,
-        chainId: arbitrum.chainId,
-        nonce: 0n,
-        signature: '0x',
-        calls: [{ to, value: 10000000000000n, data: '0x' }]
-      }
-      const usedNetworks = [arbitrum]
-      const providers = {
-        [arbitrum.chainId.toString()]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-      }
-      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
-      const accountState = accountStates[opArb.accountAddr]![opArb.chainId.toString()]!
-      const bundler = new Biconomy()
-      const userOp = getUserOperation({
-        account: smartAccNew,
-        accountState,
-        accountOp: opArb,
-        bundler: bundler.getName(),
-        entryPointSig:
-          '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
-      })
-      const ambireInterface = new Interface(AmbireAccount.abi)
-      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-        getSignableCalls(opArb)
-      ])
-      const paymasterAndData = getPaymasterDataForEstimate()
-      userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = toBeHex(100000)
-      userOp.paymasterPostOpGasLimit = toBeHex(0)
-      userOp.paymasterData = paymasterAndData.paymasterData
-      userOp.nonce = toBeHex(0)
-      userOp.signature = getSigForCalculations()
-      const bundlerEstimate = await bundler.estimate(userOp, arbitrum)
-      expect(bundlerEstimate).toHaveProperty('preVerificationGas')
-      expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
-      expect(bundlerEstimate).toHaveProperty('callGasLimit')
-      expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
-      expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
-    })
-    test('should fails as the call is not from the entry point with a generic server response 400 Bad Request', async () => {
-      expect.assertions(1)
-      const opArb: AccountOp = {
-        accountAddr: smartAccNew.addr,
-        signingKeyAddr: smartAccNew.associatedKeys[0]!,
-        signingKeyType: null,
-        gasLimit: null,
-        gasFeePayment: null,
-        chainId: arbitrum.chainId,
-        nonce: 0n,
-        signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }]
-      }
-      const usedNetworks = [arbitrum]
-      const providers = {
-        [arbitrum.chainId.toString()]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-      }
-      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
-      const accountState = accountStates[opArb.accountAddr]![opArb.chainId.toString()]!
-      const bundler = new Biconomy()
-      const userOp = getUserOperation({
-        account: smartAccNew,
-        accountState,
-        accountOp: opArb,
-        bundler: bundler.getName(),
-        entryPointSig:
-          '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
-      })
-      const ambireInterface = new Interface(AmbireAccount.abi)
-      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-        getSignableCalls(opArb)
-      ])
-      const paymasterAndData = getPaymasterDataForEstimate()
-      userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterData = paymasterAndData.paymasterData
-      userOp.nonce = toBeHex(0)
-      userOp.signature = getSigForCalculations()
-      // override the factoryData so it deploy without entry point privs
-      const factoryInterface = new Interface(AmbireFactory.abi)
-      userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
-        smartAccNew.creation!.bytecode,
-        smartAccNew.creation!.salt
-      ])
-      try {
-        await bundler.estimate(userOp, arbitrum)
-      } catch (e: any) {
-        expect(e.message.indexOf('server response 400 Bad Request')).not.toBe(-1)
-      }
-    })
-    test.skip('should revert because we are trying to send USDT and the account does not have USDT with a generic server response 400 Bad Request', async () => {
-      expect.assertions(1)
-      const ERC20Interface = new Interface(ERC20.abi)
-      const opArb: AccountOp = {
-        accountAddr: smartAccNew.addr,
-        signingKeyAddr: smartAccNew.associatedKeys[0]!,
-        signingKeyType: null,
-        gasLimit: null,
-        gasFeePayment: null,
-        chainId: arbitrum.chainId,
-        nonce: 0n,
-        signature: '0x',
-        calls: [
-          // native, passes
-          { to, value: 1n, data: '0x' },
-          // USDT, reverts
-          {
-            to: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
-            value: 0n,
-            data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
-          }
-        ]
-      }
-      const usedNetworks = [arbitrum]
-      const providers = {
-        [arbitrum.chainId.toString()]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-      }
-      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
-      const accountState = accountStates[opArb.accountAddr]![opArb.chainId.toString()]!
-      const bundler = new Biconomy()
-      const userOp = getUserOperation({
-        account: smartAccNew,
-        accountState,
-        accountOp: opArb,
-        bundler: bundler.getName(),
-        entryPointSig:
-          '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
-      })
-      const ambireInterface = new Interface(AmbireAccount.abi)
-      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-        getSignableCalls(opArb)
-      ])
-      const paymasterAndData = getPaymasterDataForEstimate()
-      userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterData = paymasterAndData.paymasterData
-      userOp.nonce = toBeHex(0)
-      userOp.signature = getSigForCalculations()
-      try {
-        await bundler.estimate(userOp, arbitrum)
-      } catch (e: any) {
-        expect(e.message.indexOf('server response 400 Bad Request')).not.toBe(-1)
-      }
-    })
-  })
   describe('Estimation tests: optimism, pimlico, undeployed account', () => {
     test('should estimate a deploy userOp', async () => {
       const privs = [
@@ -396,6 +246,7 @@ describe('Bundler tests', () => {
       ]
       const smartAcc = await getSmartAccount(privs, [])
       const opOptimism: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -453,6 +304,7 @@ describe('Bundler tests', () => {
       ]
       const smartAcc = await getSmartAccount(privs, [])
       const opOptimism: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -510,6 +362,7 @@ describe('Bundler tests', () => {
       const smartAcc = await getSmartAccount(privs, [])
       const ERC20Interface = new Interface(ERC20.abi)
       const opOptimism: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -568,6 +421,7 @@ describe('Bundler tests', () => {
     // NOTE: we no longer do this
     test.skip('should estimate successfully because of state override on base sepolia', async () => {
       const opBaseSepolia: AccountOp = {
+        id: '1',
         accountAddr: smartAccDeployedOnGnosisButNo4337.addr,
         signingKeyAddr: smartAccDeployedOnGnosisButNo4337.associatedKeys[0]!,
         signingKeyType: null,
@@ -612,6 +466,7 @@ describe('Bundler tests', () => {
     })
     test('should revert on gnosis as it does not support state override', async () => {
       const opGnosis: AccountOp = {
+        id: '1',
         accountAddr: smartAccDeployedOnGnosisButNo4337.addr,
         signingKeyAddr: smartAccDeployedOnGnosisButNo4337.associatedKeys[0]!,
         signingKeyType: null,
@@ -664,6 +519,7 @@ describe('Bundler tests', () => {
       ]
       const smartAcc = await getSmartAccount(privs, [])
       const opMantle: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -713,6 +569,7 @@ describe('Bundler tests', () => {
       const smartAcc = await getSmartAccount(privs, [])
       const ERC20Interface = new Interface(ERC20.abi)
       const opMantle: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -777,6 +634,7 @@ describe('Bundler tests', () => {
       ]
       const smartAcc = await getSmartAccount(privs, [])
       const opBase: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -827,6 +685,7 @@ describe('Bundler tests', () => {
   describe('Estimation tests: base, deployed account', () => {
     test('should estimate successfully', async () => {
       const opBase: AccountOp = {
+        id: '1',
         accountAddr: smartAccDeployed.addr,
         signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
         signingKeyType: null,
