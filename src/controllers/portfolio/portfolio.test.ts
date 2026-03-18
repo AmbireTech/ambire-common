@@ -8,6 +8,7 @@ import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -297,11 +298,23 @@ const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 const prepareTest = async ({
   initialSetStorage,
-  hasSimulationChanged
+  hasSimulationChanged,
+  fetchOverride,
+  skipBlacklistFetch = true
 }: {
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
   hasSimulationChanged?: Function
+  fetchOverride?: typeof fetch
+  skipBlacklistFetch?: boolean
 } = {}) => {
+  if (skipBlacklistFetch) {
+    jest
+      // @ts-ignore
+      .spyOn(PortfolioController.prototype, 'fetchBlacklist')
+      .mockImplementation(async () => {
+        await wait(1)
+      })
+  }
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [
@@ -317,10 +330,11 @@ const prepareTest = async ({
   if (initialSetStorage) await initialSetStorage(storageCtrl)
 
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
+  const controllerFetch = fetchOverride || fetch
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
-    fetch,
+    fetch: controllerFetch,
     relayerUrl,
     useTempProvider: (props, cb) => {
       return providersCtrl.useTempProvider(props, cb)
@@ -345,12 +359,12 @@ const prepareTest = async ({
     () => {},
     () => {},
     relayerUrl,
-    fetch
+    controllerFetch
   )
   const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
   const controller = new PortfolioController(
     storageCtrl,
-    fetch,
+    controllerFetch,
     providersCtrl,
     networksCtrl,
     accountsCtrl,
@@ -365,11 +379,7 @@ const prepareTest = async ({
   await accountsCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
   await networksCtrl.initialLoadPromise
-
-  if (initialSetStorage) {
-    // The initial load promise is not exposed so we wait 500ms for the storage to be set
-    await wait(500)
-  }
+  await controller.initialLoadPromise
 
   return { storageCtrl, controller, networksCtrl }
 }
@@ -428,6 +438,7 @@ describe('Portfolio Controller ', () => {
           new Promise((resolve) => {
             setTimeout(() => {
               queueOrder.push('updatePortfolioState - #1 call')
+              // @ts-ignore
               resolve([true, null])
             }, 2000)
           })
@@ -2144,5 +2155,232 @@ describe('Portfolio Controller ', () => {
     expect(newEthereumPortfolioState.accountOps).not.toBe(undefined)
     expect(newEthereumPortfolioState.accountOps).not.toBe(null)
     expect(newEthereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
+  })
+
+  describe('Blacklisting', () => {
+    const mockBlacklistResponse = {
+      success: true,
+      blacklistAddrs: {
+        '1': ['0x956f824b5a37673c6fc4a6904186cb3ba499349b'],
+        '10': ['0x0B91B07bEb67333225A5bA0259D55AeE10E3A578'],
+        '137': ['0x0b91b07beb67333225a5ba0259d55aee10e3a578']
+      },
+      blacklistBySymbols: [
+        'visit to',
+        'claim bonus',
+        'free claim',
+        'visit',
+        'claim your special rewards',
+        'thefork',
+        'claim'
+      ],
+      updatedAt: Date.now()
+    }
+
+    const BLACKLIST_URL = 'https://cena.ambire.com/api/v3/tokens/black-list'
+
+    const createJsonResponse = (body: unknown, ok = true, statusText = 'OK') => ({
+      ok,
+      statusText,
+      json: () => Promise.resolve(body)
+    })
+
+    const createBlacklistFetchOverride = (
+      handler: (
+        url: string,
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1]
+      ) => any
+    ) =>
+      jest.fn((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = typeof input === 'string' ? input : input.toString()
+
+        if (url === BLACKLIST_URL) return handler(url, input, init)
+
+        return fetch(input as any, init as any)
+      }) as unknown as typeof fetch
+
+    const waitForBlacklist = async (
+      controller: PortfolioController,
+      advanceTime?: (ms: number) => Promise<void>
+    ) => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        // @ts-ignore - access private getter
+        const blacklist = controller.blacklist
+        if (!blacklist.isLoading && blacklist.updatedAt) return blacklist
+
+        if (advanceTime) {
+          await advanceTime(25)
+        } else {
+          await wait(25)
+        }
+      }
+
+      // @ts-ignore - access private getter
+      return controller.blacklist
+    }
+
+    const wasBlacklistFetched = (fetchOverride: typeof fetch) => {
+      const calls = (fetchOverride as unknown as jest.Mock).mock.calls as [unknown, unknown?][]
+
+      return calls.some(([url]) => url === BLACKLIST_URL)
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('should fetch blacklist from API successfully', async () => {
+      const { restore } = suppressConsole()
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.resolve(
+          createJsonResponse({
+            ...mockBlacklistResponse,
+            blacklistAddrs: {
+              ...mockBlacklistResponse.blacklistAddrs,
+              '42161': ['bad-address', '0xaf88d065e77c8cC2239327C5EDb3A432268e5831']
+            }
+          })
+        )
+      )
+
+      const { controller, storageCtrl } = await prepareTest({
+        fetchOverride,
+        skipBlacklistFetch: false
+      })
+      const blacklist = await waitForBlacklist(controller)
+      const storedBlacklist = await storageCtrl.get('tokenBlacklist', null)
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      expect(blacklist).toEqual({
+        blacklistAddrs: {
+          '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)],
+          '10': [getAddress(mockBlacklistResponse.blacklistAddrs['10'][0]!)],
+          '137': [getAddress(mockBlacklistResponse.blacklistAddrs['137'][0]!)],
+          // Bad address should be filtered out
+          '42161': [getAddress('0xaf88d065e77c8cC2239327C5EDb3A432268e5831')]
+        },
+        blacklistBySymbols: mockBlacklistResponse.blacklistBySymbols,
+        updatedAt: expect.any(Number),
+        isLoading: false
+      })
+      expect(storedBlacklist).toEqual({
+        blacklistAddrs: blacklist.blacklistAddrs,
+        blacklistBySymbols: blacklist.blacklistBySymbols,
+        updatedAt: blacklist.updatedAt
+      })
+      restore()
+    })
+
+    test('should not persist blacklist when the API does not work at all', async () => {
+      const { restore } = suppressConsole()
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.reject(new Error('blacklist unavailable'))
+      )
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        skipBlacklistFetch: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+      restore()
+    })
+
+    test('should keep cached blacklist if refresh fails during initialization', async () => {
+      const { restore } = suppressConsole()
+      const staleCachedBlacklist = {
+        blacklistAddrs: { '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)] },
+        blacklistBySymbols: ['claim'],
+        updatedAt: Date.now() - BLACKLIST_UPDATE_INTERVAL - 60 * 1000
+      }
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.reject(new Error('refresh failed'))
+      )
+
+      const { controller, storageCtrl } = await prepareTest({
+        fetchOverride,
+        initialSetStorage: async (storageCtrlInner) => {
+          await storageCtrlInner.set('tokenBlacklist', staleCachedBlacklist)
+        },
+        skipBlacklistFetch: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      // @ts-ignore - access private getter
+      expect(controller.blacklist).toEqual({ ...staleCachedBlacklist, isLoading: false })
+      expect(await storageCtrl.get('tokenBlacklist', null)).toEqual(staleCachedBlacklist)
+      restore()
+    })
+
+    test('should recover when the API fails on the first try and succeeds on the next try', async () => {
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
+
+      try {
+        let call = 0
+        const fetchOverride = createBlacklistFetchOverride(() => {
+          if (call === 0) {
+            call++
+            return Promise.reject(new Error('blacklist unavailable'))
+          }
+
+          return Promise.resolve(createJsonResponse(mockBlacklistResponse))
+        })
+        const { controller, storageCtrl } = await prepareTest({
+          fetchOverride,
+          skipBlacklistFetch: false
+        })
+
+        expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+
+        // Advance time by 5 minutes to trigger the retry (controller retries after 5 minutes on initial failure)
+        await jest.advanceTimersByTimeAsync(5 * 60 * 1000)
+
+        const blacklist = await waitForBlacklist(controller, (ms) =>
+          jest.advanceTimersByTimeAsync(ms)
+        )
+        const storedBlacklist = await storageCtrl.get('tokenBlacklist', null)
+
+        expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+        expect(blacklist).toEqual({
+          blacklistAddrs: {
+            '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)],
+            '10': [getAddress(mockBlacklistResponse.blacklistAddrs['10'][0]!)],
+            '137': [getAddress(mockBlacklistResponse.blacklistAddrs['137'][0]!)]
+          },
+          blacklistBySymbols: mockBlacklistResponse.blacklistBySymbols,
+          updatedAt: expect.any(Number),
+          isLoading: false
+        })
+        expect(storedBlacklist).toEqual({
+          blacklistAddrs: blacklist.blacklistAddrs,
+          blacklistBySymbols: blacklist.blacklistBySymbols,
+          updatedAt: blacklist.updatedAt
+        })
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
+    })
+
+    test('should ignore malformed or unsuccessful API responses', async () => {
+      const { restore } = suppressConsole()
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.resolve(
+          createJsonResponse({ success: false, blacklistAddrs: {}, blacklistBySymbols: [] })
+        )
+      )
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        skipBlacklistFetch: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+      restore()
+    })
   })
 })

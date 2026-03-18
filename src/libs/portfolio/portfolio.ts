@@ -465,9 +465,8 @@ export class Portfolio {
           if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return acc
         }
 
-        if (!collection.collectibles.length) return acc
-
-        if (!toBeLearned.erc721s[collection.address]) {
+        // Important note: Collections with 0 collectibles are allow to pass through the filter.
+        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length > 0) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 

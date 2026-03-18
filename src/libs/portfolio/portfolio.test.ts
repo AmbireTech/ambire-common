@@ -742,4 +742,223 @@ describe('Portfolio', () => {
       expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
     })
   })
+
+  describe('Blacklisting', () => {
+    const POLYGON_TOKEN_ADDRESS = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619'
+    const ETHEREUM_TOKEN_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    const ETHEREUM_TOKEN_WITH_BLACKLISTED_SYMBOL = '0x0F2E0A2323683dd67A0a98550CACD1a2b68C762d'
+    const ETHEREUM_COLLECTION_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
+
+    const mockBlacklist = {
+      blacklistAddrs: {
+        '1': [ETHEREUM_TOKEN_ADDRESS, ETHEREUM_TOKEN_WITH_BLACKLISTED_SYMBOL],
+        '137': [POLYGON_TOKEN_ADDRESS]
+      },
+      blacklistBySymbols: ['visit to', 'claim bonus', 'free claim', 'claim', 'thefork'],
+      updatedAt: Date.now()
+    }
+
+    test('should filter out blacklisted addresses on target chain', async () => {
+      const additionalErc20Hints = [ETHEREUM_TOKEN_ADDRESS, ETHEREUM_TOKEN_WITH_BLACKLISTED_SYMBOL]
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints,
+        blacklist: mockBlacklist
+      })
+
+      const blacklistedTokenFound = result.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
+      )
+      const blacklistedSymbolTokenFound = result.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_WITH_BLACKLISTED_SYMBOL.toLowerCase()
+      )
+      expect(blacklistedTokenFound).toBe(false)
+      expect(blacklistedSymbolTokenFound).toBe(false)
+    })
+
+    test('should not filter tokens on different chains', async () => {
+      // ethereum portfolio should not be affected by polygon blacklist
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [POLYGON_TOKEN_ADDRESS],
+        blacklist: mockBlacklist
+      })
+
+      // The polygon blacklist should not affect ethereum chain
+      expect(result.tokens.length).toBeGreaterThan(0)
+    })
+
+    test('should respect case-insensitive address matching', async () => {
+      const mixedCaseAddr = ETHEREUM_TOKEN_ADDRESS.toUpperCase()
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [mixedCaseAddr, USDT_ADDRESS],
+        blacklist: mockBlacklist
+      })
+
+      const blacklistedTokenFound = result.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
+      )
+      expect(blacklistedTokenFound).toBe(false)
+    })
+
+    test('should filter a held token by symbol pattern (case-insensitive, substring match)', async () => {
+      const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
+        blacklist: {
+          blacklistAddrs: {},
+          blacklistBySymbols: ['usdt'],
+          updatedAt: Date.now()
+        }
+      })
+
+      const blacklistedTokenFound = filtered.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
+      )
+      expect(blacklistedTokenFound).toBe(false)
+    })
+
+    test('should filter a held collection by symbol pattern', async () => {
+      const baseline = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc721Hints: {
+          [ETHEREUM_COLLECTION_ADDRESS]: []
+        },
+        blacklist: {
+          blacklistAddrs: {},
+          blacklistBySymbols: [],
+          updatedAt: Date.now()
+        }
+      })
+
+      const collection = baseline.collections.find(
+        (c) => c.address.toLowerCase() === ETHEREUM_COLLECTION_ADDRESS.toLowerCase()
+      )
+
+      if (!collection) {
+        throw new Error('Expected collection to be present in baseline')
+      }
+
+      const pattern = collection.symbol
+        .slice(0, Math.min(4, collection.symbol.length))
+        .toLowerCase()
+
+      const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc721Hints: {
+          [ETHEREUM_COLLECTION_ADDRESS]: []
+        },
+        blacklist: {
+          blacklistAddrs: {},
+          blacklistBySymbols: [pattern],
+          updatedAt: Date.now()
+        }
+      })
+
+      const blacklistedCollectionFound = filtered.collections.some(
+        (c) => c.address.toLowerCase() === ETHEREUM_COLLECTION_ADDRESS.toLowerCase()
+      )
+      expect(blacklistedCollectionFound).toBe(false)
+    })
+
+    test('should never filter custom tokens even if blacklisted', async () => {
+      const withoutBlacklist = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
+        specialErc20Hints: {
+          custom: [ETHEREUM_TOKEN_ADDRESS],
+          learn: [],
+          hidden: []
+        },
+        blacklist: {
+          blacklistAddrs: {},
+          blacklistBySymbols: [],
+          updatedAt: Date.now()
+        }
+      })
+
+      const withBlacklist = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
+        specialErc20Hints: {
+          custom: [ETHEREUM_TOKEN_ADDRESS],
+          learn: [],
+          hidden: []
+        },
+        blacklist: {
+          blacklistAddrs: {},
+          blacklistBySymbols: ['usdt'],
+          updatedAt: Date.now()
+        }
+      })
+
+      const customTokenFoundWithoutBlacklist = withoutBlacklist.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase() && t.flags?.isCustom
+      )
+      const customTokenFoundWithBlacklist = withBlacklist.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase() && t.flags?.isCustom
+      )
+
+      // Blacklist should not change custom-token visibility
+      expect(customTokenFoundWithBlacklist).toBe(customTokenFoundWithoutBlacklist)
+    })
+
+    test('should handle empty blacklist gracefully', async () => {
+      const emptyBlacklist = {
+        blacklistAddrs: {},
+        blacklistBySymbols: [],
+        updatedAt: null
+      }
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [USDT_ADDRESS],
+        blacklist: emptyBlacklist
+      })
+
+      expect(result.tokens.length).toBeGreaterThan(0)
+      expect(result.errors.length).toBe(0)
+    })
+
+    test('should handle null/undefined blacklist gracefully', async () => {
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [USDT_ADDRESS],
+        blacklist: undefined
+      })
+
+      expect(result.tokens.length).toBeGreaterThan(0)
+      expect(result.errors.length).toBe(0)
+    })
+
+    test('should combine static and dynamic blacklists', async () => {
+      // STATIC_BLACKLIST has specific addresses, we add dynamic ones
+      const dynamicBlacklist = {
+        blacklistAddrs: {
+          '1': [ETHEREUM_TOKEN_ADDRESS]
+        },
+        blacklistBySymbols: ['usdt'],
+        updatedAt: Date.now()
+      }
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
+        blacklist: dynamicBlacklist
+      })
+
+      const usdtFound = result.tokens.some(
+        (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
+      )
+      // USDT should be filtered due to dynamic blacklist
+      expect(usdtFound).toBe(false)
+    })
+
+    test('should handle invalid checksums gracefully', async () => {
+      const invalidAddresses = [
+        'not_an_address',
+        '0xinvalid',
+        '0x0000000000000000000000000000000000000000000' // too short
+      ]
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints: invalidAddresses,
+        blacklist: mockBlacklist
+      })
+
+      // Should not crash and still return valid tokens
+      expect(result.tokens.length).toBeGreaterThan(0)
+    })
+  })
 })

@@ -209,7 +209,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #featureFlags: IFeatureFlagsController
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise?: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   defiSessionIds: string[] = []
 
@@ -229,7 +229,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #hasSimulationChanged: Function
 
-  #blacklist: TokenBlacklist = { blacklistAddrs: {}, blacklistBySymbols: [], updatedAt: null }
+  #blacklist: TokenBlacklist & {
+    isLoading: boolean
+  } = {
+    blacklistAddrs: {},
+    blacklistBySymbols: [],
+    updatedAt: null,
+    isLoading: false
+  }
 
   #blacklistInterval: IRecurringTimeout
 
@@ -265,7 +272,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#featureFlags = featureFlags
     this.#hasSimulationChanged = hasSimulationChanged
     this.#blacklistInterval = new RecurringTimeout(
-      this.#fetchBlacklist.bind(this),
+      this.fetchBlacklist.bind(this),
       BLACKLIST_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -318,8 +325,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
-    this.#initialLoadPromise = this.#load().finally(() => {
-      this.#initialLoadPromise = undefined
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
     })
   }
 
@@ -365,8 +372,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
-  async #fetchBlacklist(): Promise<void> {
+  private async fetchBlacklist(): Promise<void> {
     try {
+      if (this.#blacklist.isLoading) return
+      this.#blacklist.isLoading = true
+
       const response = await this.#fetch('https://cena.ambire.com/api/v3/tokens/black-list')
 
       if (!response.ok) {
@@ -395,19 +405,43 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#blacklist = {
         blacklistAddrs: checksummedAddrs,
         blacklistBySymbols: data.blacklistBySymbols || [],
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        isLoading: false
       }
+      // Reset the retry interval to the default value after a successful fetch
+      this.#blacklistInterval.updateTimeout({
+        timeout: BLACKLIST_UPDATE_INTERVAL
+      })
 
-      await this.#storage.set('tokenBlacklist', this.#blacklist)
+      await this.#storage.set('tokenBlacklist', {
+        blacklistAddrs: this.#blacklist.blacklistAddrs,
+        blacklistBySymbols: this.#blacklist.blacklistBySymbols,
+        updatedAt: this.#blacklist.updatedAt
+      })
 
       this.emitUpdate()
     } catch (e: any) {
+      // Update the retry interval based on whether we have a previously updated blacklist or not.
+      if (!this.#blacklist.updatedAt) {
+        this.#blacklistInterval.updateTimeout({
+          timeout: 5 * 60 * 1000
+        })
+      } else {
+        this.#blacklistInterval.updateTimeout({
+          timeout: 30 * 60 * 1000
+        })
+      }
+      this.#blacklist.isLoading = false
       this.emitError({
         level: 'silent',
         message: `Failed to fetch token blacklist: ${e.message}`,
         error: e
       })
     }
+  }
+
+  private get blacklist(): TokenBlacklist & { isLoading: boolean } {
+    return this.#blacklist
   }
 
   async #load() {
@@ -440,17 +474,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const storedBlacklist = await this.#storage.get('tokenBlacklist', null)
       if (storedBlacklist) {
-        this.#blacklist = storedBlacklist
+        this.#blacklist = {
+          ...storedBlacklist,
+          isLoading: false
+        }
         if (
           storedBlacklist.updatedAt &&
           Date.now() - storedBlacklist.updatedAt > BLACKLIST_UPDATE_INTERVAL
         ) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#fetchBlacklist()
+          this.fetchBlacklist()
         }
       } else {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#fetchBlacklist()
+        this.fetchBlacklist()
       }
     } catch (e: any) {
       this.emitError({
@@ -493,7 +530,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const isTokenAlreadyAdded = this.customTokens.some(
       ({ address, chainId }) =>
         address.toLowerCase() === customToken.address.toLowerCase() &&
@@ -516,7 +553,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     this.customTokens = this.customTokens.filter(
       (token) =>
         !(
@@ -546,7 +583,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     const existingPreference = this.tokenPreferences.find(
       ({ address, chainId }) =>
@@ -653,7 +690,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountId: AccountId,
     allNetworks: boolean = false
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
@@ -1479,7 +1516,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isManualUpdate,
       isSignAccountOpSimulation
     } = opts || {}
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount)
       throw new Error(
@@ -1872,7 +1909,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     key: `${string}:${string}`,
     chainId: bigint
   ): Promise<boolean> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!tokensWithBalance) return false
 
     if (!this.#learnedAssets.erc20s[key]) this.#learnedAssets.erc20s[key] = {}
@@ -1928,7 +1965,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountAddr: string,
     chainId: bigint
   ): Promise<boolean> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!nftsData?.length) return false
     const key = `${chainId.toString()}:${accountAddr}`
 
