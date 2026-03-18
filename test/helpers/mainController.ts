@@ -35,8 +35,10 @@ export interface MakeMainControllerOpts {
   skipPortfolioUpdateOnLoad?: boolean
   /** Mock `domains.reverseLookup` to a no-op, preventing real domain resolution on load. Default: `true`. */
   skipDomainsResolveOnLoad?: boolean
-  /** Whether to update the app catalog on load. Default: `true`. */
+  /** Don't update the app catalog on load. Default: `true`. */
   skipAppsFetchOnLoad?: boolean
+  /** Don't fetch the portfolio blacklist on load. Default: `true`. */
+  skipPortfolioFetchBlacklistOnLoad?: boolean
   /** Override any `MainController` constructor params. */
   overrides?: {
     appVersion?: string
@@ -70,6 +72,7 @@ export const makeMainController = async (
     skipPortfolioUpdateOnLoad = true,
     skipDomainsResolveOnLoad = true,
     skipAppsFetchOnLoad = true,
+    skipPortfolioFetchBlacklistOnLoad = true,
     overrides = {}
   } = opts
 
@@ -108,6 +111,13 @@ export const makeMainController = async (
   jest.spyOn(PortfolioController.prototype, 'updateExchangeList').mockImplementation(async () => {
     await wait(1)
   })
+
+  if (skipPortfolioFetchBlacklistOnLoad) {
+    // @ts-ignore
+    jest.spyOn(PortfolioController.prototype, 'fetchBlacklist').mockImplementation(async () => {
+      await wait(1)
+    })
+  }
 
   if (skipAppsFetchOnLoad) {
     jest.spyOn(DappsController.prototype, 'fetchAndUpdateDapps').mockImplementation(async () => {

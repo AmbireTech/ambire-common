@@ -3,10 +3,9 @@ import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { getNonce, produceMemoryStore } from '../../../test/helpers'
+import { getNonce } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
@@ -37,14 +36,7 @@ import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portf
 import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { BannerController } from '../banner/banner'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { PortfolioController } from './portfolio'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
@@ -297,101 +289,62 @@ const getKeystoreKeys = (): StoredKey[] => {
   ]
 }
 
-const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
-const prepareTest = async ({
-  initialSetStorage,
-  fetchOverride,
-  skipBlacklistFetch = true
-}: {
+const prepareTest = async (opts?: {
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
-  hasSimulationChanged?: Function
   fetchOverride?: typeof fetch
   skipBlacklistFetch?: boolean
-} = {}) => {
-  if (skipBlacklistFetch) {
-    jest
-      // @ts-ignore
-      .spyOn(PortfolioController.prototype, 'fetchBlacklist')
-      .mockImplementation(async () => {
-        await wait(1)
+  awaitInitialLoad?: boolean
+}) => {
+  const {
+    initialSetStorage,
+    awaitInitialLoad = true,
+    fetchOverride,
+    skipBlacklistFetch = true
+  } = opts || {}
+
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', [
+        account,
+        account2,
+        account3,
+        account4,
+        emptyAccount,
+        ambireV2Account,
+        accountWithManyAssets,
+        DEFI_TEST_ACCOUNT
+      ])
+      await storageCtrl.set('learnedAssets', {
+        erc20s: {},
+        erc721s: {
+          '1:0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
+            '0x932261f9Fc8DA46C4a22e31B45c4De60623848bF:39118': Date.now(),
+            '0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065:2442': Date.now()
+          }
+        }
       })
-  }
-  const storage = produceMemoryStore()
-  const storageCtrl = new StorageController(storage)
-  await storageCtrl.set('accounts', [
-    account,
-    account2,
-    account3,
-    account4,
-    emptyAccount,
-    ambireV2Account,
-    accountWithManyAssets,
-    DEFI_TEST_ACCOUNT
-  ])
-  await storageCtrl.set('learnedAssets', {
-    erc20s: {},
-    erc721s: {
-      '1:0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
-        '0x932261f9Fc8DA46C4a22e31B45c4De60623848bF:39118': Date.now(),
-        '0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065:2442': Date.now()
+      if (initialSetStorage) await initialSetStorage(storageCtrl)
+    },
+    {
+      awaitInitialLoad: awaitInitialLoad,
+      skipPortfolioFetchBlacklistOnLoad: skipBlacklistFetch,
+      overrides: {
+        fetch: fetchOverride
       }
     }
-  })
-  if (initialSetStorage) await initialSetStorage(storageCtrl)
-
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  const controllerFetch = fetchOverride || fetch
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch: controllerFetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-  await providersCtrl.initialLoadPromise
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    controllerFetch
-  )
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const controller = new PortfolioController(
-    storageCtrl,
-    controllerFetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystore,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl
   )
 
-  await accountsCtrl.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  await networksCtrl.initialLoadPromise
-  await controller.initialLoadPromise
+  await mainCtrl.accounts.initialLoadPromise
+  await mainCtrl.providers.initialLoadPromise
+  await mainCtrl.networks.initialLoadPromise
+  await mainCtrl.portfolio.initialLoadPromise
 
-  return { storageCtrl, controller, networksCtrl, accountsCtrl }
+  return {
+    controller: mainCtrl.portfolio as PortfolioController,
+    storageCtrl: mainCtrl.storage,
+    networksCtrl: mainCtrl.networks,
+    accountsCtrl: mainCtrl.accounts
+  }
 }
 
 describe('Portfolio Controller ', () => {
@@ -1999,6 +1952,7 @@ describe('Portfolio Controller ', () => {
   })
 
   test('Check Token Validity - erc20, erc1155', async () => {
+    const { restore } = suppressConsole()
     const { controller } = await prepareTest()
     const token = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
@@ -2021,6 +1975,8 @@ describe('Portfolio Controller ', () => {
       expect(tokenIsNotValid).toBeFalsy()
       expect(tokenIsValid).toBeTruthy()
     })
+
+    restore()
   })
 
   test('Add and remove custom token', async () => {
@@ -2425,7 +2381,8 @@ describe('Portfolio Controller ', () => {
 
       const { controller, storageCtrl } = await prepareTest({
         fetchOverride,
-        skipBlacklistFetch: false
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
       })
       const blacklist = await waitForBlacklist(controller)
       const storedBlacklist = await storageCtrl.get('tokenBlacklist', null)
@@ -2459,7 +2416,8 @@ describe('Portfolio Controller ', () => {
 
       const { storageCtrl } = await prepareTest({
         fetchOverride,
-        skipBlacklistFetch: false
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
       })
 
       expect(wasBlacklistFetched(fetchOverride)).toBe(true)
@@ -2483,7 +2441,8 @@ describe('Portfolio Controller ', () => {
         initialSetStorage: async (storageCtrlInner) => {
           await storageCtrlInner.set('tokenBlacklist', staleCachedBlacklist)
         },
-        skipBlacklistFetch: false
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
       })
 
       expect(wasBlacklistFetched(fetchOverride)).toBe(true)
@@ -2509,7 +2468,8 @@ describe('Portfolio Controller ', () => {
         })
         const { controller, storageCtrl } = await prepareTest({
           fetchOverride,
-          skipBlacklistFetch: false
+          skipBlacklistFetch: false,
+          awaitInitialLoad: false
         })
 
         expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
@@ -2554,7 +2514,8 @@ describe('Portfolio Controller ', () => {
 
       const { storageCtrl } = await prepareTest({
         fetchOverride,
-        skipBlacklistFetch: false
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
       })
 
       expect(wasBlacklistFetched(fetchOverride)).toBe(true)
