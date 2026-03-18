@@ -51,7 +51,7 @@ import { BenzinUserRequest, CallsUserRequest } from '../../interfaces/userReques
 import { getDefaultSelectedAccount } from '../../libs/account/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus, Call } from '../../libs/accountOp/types'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -769,18 +769,20 @@ export class MainController extends EventEmitter implements IMainController {
       submittedAccountOp.identifiedBy.type === 'MultipleTxns'
     if (isBasicAccountBroadcastingMultiple) {
       const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls
-        .map((oneCall, i) => {
-          const localCall = { ...oneCall }
+      const calls = submittedAccountOp.calls.map((oneCall, i) => {
+        const localCall = { ...oneCall }
 
-          // we're cutting off calls the user didn't sign / weren't broadcast
-          if (!(i in txnIds)) return null
-
-          localCall.txnId = txnIds[i] as Hex
-          localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+        // if there's no tx id, we set it to Rejected and continue.
+        // it means broadcast has failed
+        if (!(i in txnIds)) {
+          localCall.status = AccountOpStatus.Rejected
           return localCall
-        })
-        .filter((aCall) => aCall !== null) as Call[]
+        }
+
+        localCall.txnId = txnIds[i] as Hex
+        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+        return localCall
+      })
       // eslint-disable-next-line no-param-reassign
       submittedAccountOp.calls = calls
 
