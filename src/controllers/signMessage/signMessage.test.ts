@@ -1,13 +1,10 @@
 /* eslint-disable class-methods-use-this */
 
 import { hexlify, randomBytes } from 'ethers'
-import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
@@ -17,13 +14,6 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
-import { AccountsController } from '../accounts/accounts'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
 class InternalSigner {
@@ -96,50 +86,18 @@ describe('SignMessageController', () => {
   let inviteCtrl: IInviteController
 
   beforeAll(async () => {
-    const storage = produceMemoryStore()
-    const storageCtrl = new StorageController(storage)
-    await storageCtrl.set('accounts', [account])
-    await storageCtrl.set('selectedAccount', account.addr)
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
-    keystoreCtrl = new KeystoreController(
-      'default',
-      storageCtrl,
-      { internal: InternalSigner },
-      uiCtrl
-    )
-    networksCtrl = new NetworksController({
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
+    const { mainCtrl } = await makeMainController(
+      async (storageCtrl) => {
+        await storageCtrl.set('accounts', [account])
+        await storageCtrl.set('selectedAccount', account.addr)
       },
-      onAddOrUpdateNetworks: () => {},
-      onReady: async () => {
-        await providersCtrl.init({ networks: networksCtrl.allNetworks })
-      }
-    })
-    providersCtrl = new ProvidersController({
-      storage: storageCtrl,
-      getNetworks: () => networksCtrl.allNetworks,
-      sendUiMessage: () => uiCtrl.message.sendUiMessage
-    })
-
-    accountsCtrl = new AccountsController(
-      storageCtrl,
-      providersCtrl,
-      networksCtrl,
-      keystoreCtrl,
-      () => {},
-      () => {},
-      () => {},
-      relayerUrl,
-      fetch
+      { skipAccountStateLoad: false, overrides: { keystoreSigners: { internal: InternalSigner } } }
     )
-    inviteCtrl = new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-
-    await waitForAccountsCtrlFirstLoad(accountsCtrl)
+    keystoreCtrl = mainCtrl.keystore
+    networksCtrl = mainCtrl.networks
+    providersCtrl = mainCtrl.providers
+    accountsCtrl = mainCtrl.accounts
+    inviteCtrl = mainCtrl.invite
   })
 
   beforeEach(async () => {

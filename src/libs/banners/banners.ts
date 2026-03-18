@@ -97,6 +97,7 @@ export const getBridgeBanners = (
         }
       ],
       dismissAction: {
+        label: 'Dismiss',
         actionName: 'close-bridge',
         meta: {
           activeRouteIds: allRoutes.map((r) => r.activeRouteId),
@@ -236,6 +237,7 @@ export const getAccountOpBanners = ({
           }
         ],
         dismissAction: {
+          label: 'Reject',
           actionName: 'reject-accountOp',
           meta: {
             err: 'User rejected the transaction request.',
@@ -332,6 +334,7 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
       }
     ],
     dismissAction: {
+      label: 'Dismiss',
       actionName: 'dismiss-defi-positions-banner'
     },
     meta: {
