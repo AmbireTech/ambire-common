@@ -228,8 +228,7 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl,
-    () => {}
+    featureFlagsCtrl
   )
   const safe = new SafeController({
     networks: networksCtrl,
@@ -463,7 +462,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }]
+    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }],
+    marketDataIn: []
   },
   {
     amount: 0n,
@@ -480,7 +480,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }],
+    marketDataIn: []
   },
   {
     amount: 0n,
@@ -497,7 +498,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }],
+    marketDataIn: []
   },
   {
     amount: 58316260607759458104900n,
@@ -514,7 +516,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }],
+    marketDataIn: []
   }
 ]
 
@@ -534,6 +537,7 @@ const POLYGON_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }],
+    marketDataIn: []
   }
 ]

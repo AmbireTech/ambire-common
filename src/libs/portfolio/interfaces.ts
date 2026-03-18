@@ -11,8 +11,8 @@ import {
 // @TODO: Move most of these interfaces to src/interfaces and
 // figure out how to restructure portfolio/defiPositions types
 
-export interface GetOptionsSimulation {
-  accountOps: AccountOp[]
+export interface GetOptionsSimulation<T = AccountOp[]> {
+  accountOps: T
   baseAccount: BaseAccount
   state: AccountOnchainState
 }

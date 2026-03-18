@@ -171,8 +171,7 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl,
-    () => {}
+    featureFlagsCtrl
   )
 
   await accountsCtrl.initialLoadPromise
@@ -393,7 +392,7 @@ describe('SelectedAccount Controller', () => {
           usd: 0
         },
         discoveryTime: 0,
-        priceCache: new Map(),
+        tokenDataCache: new Map(),
         tokenErrors: [],
         collections: [],
         blockNumber: 0,

@@ -6,7 +6,7 @@ import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import { yieldToMain } from '../../utils/scheduler'
 import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
-import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
@@ -15,6 +15,7 @@ import { mapToken } from './helpers'
 import {
   CollectionResult,
   GetOptions,
+  GetOptionsSimulation,
   LimitsOptions,
   MetaData,
   TokenError,
@@ -104,7 +105,10 @@ function handleSimulationError(
 export function getDeploylessOpts(
   accountAddr: string,
   supportsStateOverride: boolean,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag'>
+  opts: {
+    simulation?: GetOptionsSimulation<AccountOp[]>
+    blockTag?: GetOptions['blockTag']
+  }
 ) {
   const shouldStateOverride =
     supportsStateOverride &&
@@ -204,7 +208,7 @@ export async function getNFTs(
     before.collections.map((beforeToken: any, i: number) => {
       const simulationToken = simulationTokens
         ? simulationTokens.find(
-            (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+            (token: any) => token.addr.toLowerCase() === tokenAddrs[i]![0].toLowerCase()
           )
         : null
 

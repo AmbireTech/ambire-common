@@ -35,3 +35,11 @@ export const multiSendAddr = '0x9641d764fc13c8B624c04430C7356C1C7C8102e2'
  * This is the latest contract and it's safe to use across versions
  */
 export const safeNullOwner = '0x0000000000000000000000000000000000000002'
+
+export const allowedMulticallContracts = [
+  multiSendAddr,
+  '0xA83c336B20401Af773B6219BA5027174338D1836',
+  '0x40A2aCCbd92BCA938b02010E17A5b8929b49130D',
+  '0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B',
+  '0x8D29bE29923b68abfDD21e541b9374737B49cdAD'
+]

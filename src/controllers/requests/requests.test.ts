@@ -17,6 +17,7 @@ import {
 } from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { generateUuid } from '../../utils/uuid'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -183,8 +184,7 @@ const prepareTest = async () => {
     relayerUrl,
     velcroUrl,
     new BannerController(storageCtrl),
-    featureFlagsCtrl,
-    () => {}
+    featureFlagsCtrl
   )
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const safe = new SafeController({
@@ -284,6 +284,7 @@ const prepareTest = async () => {
       phishing: phishingCtrl,
       fromRequestId: requestId,
       accountOp: {
+        id: generateUuid(),
         accountAddr: addr,
         signingKeyAddr: null,
         signingKeyType: null,
@@ -430,6 +431,7 @@ describe('RequestsController ', () => {
       type: 'transferRequest',
       params: {
         selectedToken: {
+          marketDataIn: [],
           address: '0x0000000000000000000000000000000000000000',
           amount: 1n,
           symbol: 'ETH',

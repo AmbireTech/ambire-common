@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface, ZeroAddress } from 'ethers'
+import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
 
+import { allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { SafeV2 } from '../../const/abis/Safe'
 import {
@@ -19,6 +20,23 @@ import {
 } from '../../utils'
 
 const iface = new Interface(SafeV2)
+
+export const getDelegateCallWarning = (operation: bigint, to?: string): HumanizerWarning[] => {
+  const warnings: HumanizerWarning[] = []
+
+  if (
+    operation === 1n &&
+    (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
+  )
+    warnings.push(
+      getWarning(
+        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        'SAFE{WALLET}_DELEGATE_CALL'
+      )
+    )
+
+  return warnings
+}
 
 export const getSafeHumanization = (
   safeAddr?: string,
@@ -206,10 +224,8 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         if (safeSpecificHumanization.warnings) warnings.push(...safeSpecificHumanization.warnings)
       }
 
-      if (operation === 1n)
-        warnings.push(
-          getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
-        )
+      const delegateCallWarnings = getDelegateCallWarning(operation, to)
+      if (delegateCallWarnings.length) warnings.push(...delegateCallWarnings)
 
       return { ...call, fullVisualization, warnings }
     }
@@ -235,6 +251,16 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
     if (!newCall) return call
     return newCall
   })
+
+  if (accOp.safeTx) {
+    const warningInSafeTx = getDelegateCallWarning(BigInt(accOp.safeTx.operation), accOp.safeTx.to)
+    if (warningInSafeTx.length && newCalls.length) {
+      const firstCall = newCalls[0]!
+      const firstCallWarnings: HumanizerWarning[] = firstCall.warnings || []
+      warningInSafeTx.push(...firstCallWarnings)
+      firstCall.warnings = warningInSafeTx
+    }
+  }
 
   return newCalls
 }
