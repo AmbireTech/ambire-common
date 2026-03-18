@@ -560,7 +560,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
               txIds.push(
                 ...accountOp.calls
-                  .filter((call) => !!call.status)
+                  .filter((call) => !!call.status && call.txnId)
                   .map((call) => call.txnId)
                   .slice(0, limit)
               )
