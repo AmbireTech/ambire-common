@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { ethers, ZeroAddress } from 'ethers'
 
 import { describe, test } from '@jest/globals'
@@ -34,7 +33,7 @@ const accountOp: AccountOp = {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   // humanizerMeta: {}
-}
+} as any
 
 const accounts: Account[] = [
   {
@@ -284,7 +283,6 @@ describe('Humanizer main function', () => {
 
     accountOp.calls = [...transactions.erc20.slice(0, 3)]
     const irCalls = humanizeAccountOp(accountOp)
-    console.log(irCalls[0]?.fullVisualization)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })

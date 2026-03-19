@@ -86,7 +86,13 @@ export const fallbackHumanizer: HumanizerCallModule = (
       }
     }
 
-    if (call.value) {
+    if (
+      call.value &&
+      (!fullVisualization.length ||
+        !['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to vault', 'Wrap'].includes(
+          fullVisualization[0]?.content || ''
+        ))
+    ) {
       if (fullVisualization.length) fullVisualization.push(getLabel('and'))
       fullVisualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
       if (call.data === '0x' && call.to)
