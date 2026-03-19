@@ -40,9 +40,6 @@ export const asciiModule: HumanizerCallModule = (
     let messageAsText = tryGetMEssageAsText(call.data)
     if (!messageAsText) return call
 
-    const sendNativeHumanization = call.value
-      ? [getLabel('and'), getAction('Send'), getToken(ZeroAddress, call.value)]
-      : []
     return {
       ...call,
       fullVisualization: call.to
@@ -50,10 +47,9 @@ export const asciiModule: HumanizerCallModule = (
             getAction('Send this message'),
             getLabel('to'),
             getAddressVisualization(call.to),
-            getText(messageAsText),
-            ...sendNativeHumanization
+            getText(messageAsText)
           ]
-        : [getAction('Send this message'), getText(messageAsText), ...sendNativeHumanization]
+        : [getAction('Send this message'), getText(messageAsText)]
     }
   })
   return newCalls
