@@ -258,7 +258,14 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
 
-    if (shouldKeepExistingForm) return
+    if (shouldKeepExistingForm) {
+      if (!this.areDefaultsSet) {
+        this.areDefaultsSet = true
+        this.emitUpdate()
+      }
+
+      return
+    }
 
     const tokenParams =
       searchParams && searchParams.address && searchParams.chainId
@@ -272,6 +279,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#setTokens()
     this.#setDefaultSelectedToken(tokenParams)
     this.areDefaultsSet = true
+    this.emitUpdate()
   }
 
   #ensureTransferSessionId() {
@@ -357,9 +365,10 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.chainId !== newSelectedToken.chainId)
     ) {
       this.selectedToken = newSelectedToken
-
-      // Emit update to reflect possible changes in the UI
-      this.emitUpdate()
+      // 4. Or if the user has no tokens
+    } else if (!newSelectedToken) {
+      this.selectedToken = null
+      this.areDefaultsSet = true
     }
   }
 
