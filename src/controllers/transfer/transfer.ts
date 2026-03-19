@@ -961,6 +961,15 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.resetForm(destroyAccountOp)
   }
 
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.signAccountOpController?.cancelSignReq()
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
