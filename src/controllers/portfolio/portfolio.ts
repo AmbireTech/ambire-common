@@ -1,7 +1,12 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
 
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { STK_WALLET } from '../../consts/addresses'
+import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   Account,
   AccountId,
@@ -76,6 +81,7 @@ import {
   PreviousHintsStorage,
   TemporaryTokens,
   ToBeLearnedAssets,
+  TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
   TokenResult,
@@ -221,6 +227,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     retryCount: 0
   }
 
+  #blacklist: TokenBlacklist & {
+    isLoading: boolean
+  } = {
+    blacklistAddrs: {},
+    blacklistBySymbols: [],
+    updatedAt: null,
+    isLoading: false
+  }
+
+  #blacklistInterval: IRecurringTimeout
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -250,6 +267,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.temporaryTokens = {}
     this.#banner = banner
     this.#featureFlags = featureFlags
+    this.#blacklistInterval = new RecurringTimeout(
+      this.fetchBlacklist.bind(this),
+      BLACKLIST_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
+    this.#blacklistInterval.start()
     this.batchedPortfolioDiscovery = batcher(
       fetch,
       (queue) => {
@@ -345,6 +368,78 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
+  private async fetchBlacklist(): Promise<void> {
+    try {
+      if (this.#blacklist.isLoading) return
+      this.#blacklist.isLoading = true
+
+      const response = await this.#fetch('https://cena.ambire.com/api/v3/tokens/black-list')
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch token blacklist: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error('Token blacklist response returned success: false')
+      }
+
+      const rawAddrs: Record<string, string[]> = data.blacklistAddrs || {}
+      const checksummedAddrs: Record<string, string[]> = {}
+      for (const chainId of Object.keys(rawAddrs)) {
+        checksummedAddrs[chainId] = (rawAddrs[chainId] || []).reduce<string[]>((acc, addr) => {
+          try {
+            acc.push(getAddress(addr))
+          } catch {
+            // skip malformed addresses
+          }
+          return acc
+        }, [])
+      }
+
+      this.#blacklist = {
+        blacklistAddrs: checksummedAddrs,
+        blacklistBySymbols: data.blacklistBySymbols || [],
+        updatedAt: Date.now(),
+        isLoading: false
+      }
+      // Reset the retry interval to the default value after a successful fetch
+      this.#blacklistInterval.updateTimeout({
+        timeout: BLACKLIST_UPDATE_INTERVAL
+      })
+
+      await this.#storage.set('tokenBlacklist', {
+        blacklistAddrs: this.#blacklist.blacklistAddrs,
+        blacklistBySymbols: this.#blacklist.blacklistBySymbols,
+        updatedAt: this.#blacklist.updatedAt
+      })
+
+      this.emitUpdate()
+    } catch (e: any) {
+      // Update the retry interval based on whether we have a previously updated blacklist or not.
+      if (!this.#blacklist.updatedAt) {
+        this.#blacklistInterval.updateTimeout({
+          timeout: 5 * 60 * 1000
+        })
+      } else {
+        this.#blacklistInterval.updateTimeout({
+          timeout: 30 * 60 * 1000
+        })
+      }
+      this.#blacklist.isLoading = false
+      this.emitError({
+        level: 'silent',
+        message: `Failed to fetch token blacklist: ${e.message}`,
+        error: e
+      })
+    }
+  }
+
+  private get blacklist(): TokenBlacklist & { isLoading: boolean } {
+    return this.#blacklist
+  }
+
   async #load() {
     try {
       await this.#networks.initialLoadPromise
@@ -371,6 +466,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       )
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
+      }
+
+      const storedBlacklist = await this.#storage.get('tokenBlacklist', null)
+      if (storedBlacklist) {
+        this.#blacklist = {
+          ...storedBlacklist,
+          isLoading: false
+        }
+        if (
+          storedBlacklist.updatedAt &&
+          Date.now() - storedBlacklist.updatedAt > BLACKLIST_UPDATE_INTERVAL
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.fetchBlacklist()
+        }
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.fetchBlacklist()
       }
     } catch (e: any) {
       this.emitError({
@@ -1142,7 +1255,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
-          disableAutoDiscovery: true
+          disableAutoDiscovery: true,
+          blacklist: this.#blacklist
         }),
         getCustomProviderPositions(
           account.addr,
