@@ -890,6 +890,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         keyType === 'qr' ? qrWalletConfig?.relativePathTemplate || '' : ''
       const originPath = keyType === 'qr' ? qrParsedOriginHdPath || '' : ''
 
+      const qrWalletConfig = keyType === 'qr' ? this.keyIterator.walletConfig : undefined
+      const qrParsedOriginHdPath =
+        keyType === 'qr'
+          ? this.keyIterator.parsedAccount?.hdPath ||
+            this.keyIterator.parsedAccount?.accounts?.[0]?.hdPath
+          : undefined
+      const hdPathTemplate = (
+        keyType === 'qr' && qrWalletConfig
+          ? qrWalletConfig.hdPathTemplate || this.hdPathTemplate
+          : this.hdPathTemplate
+      ) as HD_PATH_TEMPLATE_TYPE
+      const relativePathTemplate =
+        keyType === 'qr' ? qrWalletConfig?.relativePathTemplate || '' : ''
+      const originPath = keyType === 'qr' ? qrParsedOriginHdPath || '' : ''
+
       const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
         ({ account, accountKeys }) =>
           accountKeys.map(({ addr, index }, i) => ({
