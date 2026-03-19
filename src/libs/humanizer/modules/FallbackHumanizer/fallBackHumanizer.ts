@@ -9,13 +9,7 @@ import {
   HumanizerVisualization,
   IrCall
 } from '../../interfaces'
-import {
-  checkIfUnknownAction,
-  getAction,
-  getAddressVisualization,
-  getLabel,
-  getToken
-} from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 function extractAddresses(data: string, _selector: string): string[] {
   const selector = _selector.startsWith('function') ? _selector : `function ${_selector}`

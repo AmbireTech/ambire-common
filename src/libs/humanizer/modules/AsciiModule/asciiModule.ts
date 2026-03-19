@@ -3,14 +3,7 @@ import { getBytes, toUtf8String, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import {
-  checkIfUnknownAction,
-  getAction,
-  getAddressVisualization,
-  getLabel,
-  getText,
-  getToken
-} from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getText, getToken } from '../../utils'
 
 function tryGetMEssageAsText(msg: string) {
   const bytes = getBytes(msg)
@@ -32,7 +25,7 @@ export const asciiModule: HumanizerCallModule = (
 ) => {
   const newCalls = currentIrCalls.map((call) => {
     if (!call.data || call.data === '0x') return call
-    if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
+    if (call.fullVisualization) return call
     // assuming that if there are only 4 bytes it is probably just contract method call
     // and further logic is irrelevant
     if (call.data.length === '0x12345678'.length) return call
