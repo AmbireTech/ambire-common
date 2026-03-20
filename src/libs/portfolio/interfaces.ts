@@ -520,7 +520,7 @@ export interface GetOptions {
    */
   blacklist?: TokenBlacklist
   /**
-   * Used to prevent blacklisting of Monerium Euro sp the assetInfo service can get symbol
+   * Used to prevent blacklisting of Monerium Euro so the assetInfo service can get symbol
    * and decimals from the portfolio
    */
   preventTokenBlacklisting?: true
