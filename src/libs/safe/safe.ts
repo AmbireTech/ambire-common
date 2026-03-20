@@ -506,6 +506,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     messageHash: Hex
     signature: Hex
     created: number
+    signatures: Hex[]
   }
   isConfirmed: boolean
 }[] {
@@ -518,6 +519,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
       messageHash: Hex
       signature: Hex
       created: number
+      signatures: Hex[]
     }
     isConfirmed: boolean
   }[] = []
@@ -544,7 +546,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations.map((c) => c.signature) as Hex[],
             message.messageHash
           ),
-          created: new Date(message.created).getTime()
+          created: new Date(message.created).getTime(),
+          signatures: message.confirmations.map((c) => c.signature) as Hex[]
         },
         isConfirmed: !!message.isConfirmed
       })
