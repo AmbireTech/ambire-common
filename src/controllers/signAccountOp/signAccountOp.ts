@@ -424,7 +424,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
         this.#accountOp.signature,
-        this.#accountOp.txnId
+        this.#accountOp.txnId,
+        this.#accountOp.safeTx
       )
       const notSigned = getImportedSignersThatHaveNotSigned(
         this.#accountOp.signed,
@@ -1254,12 +1255,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const { calls, signature, ...rest } = accountOpData
 
         if (signature && this.accountOp.txnId) {
-          const newlySigned = getAlreadySignedOwners(signature, this.accountOp.txnId)
+          const newlySigned = getAlreadySignedOwners(
+            signature,
+            this.accountOp.txnId,
+            this.accountOp.safeTx
+          )
           const signed = this.accountOp.signed
             ? [...new Set(...this.accountOp.signed, ...newlySigned)]
             : newlySigned
           this.#updateAccountOp({
-            signature: sortSigs(getSigs(signature), this.accountOp.txnId),
+            signature: sortSigs(
+              getSigs(signature),
+              this.accountOp.txnId,
+              this.accountOp.safeTx?.confirmations
+            ),
             signed
           })
         }
@@ -1428,7 +1437,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
         this.#accountOp.signature,
-        this.#accountOp.txnId
+        this.#accountOp.txnId,
+        this.#accountOp.safeTx
       )
       const notSigned = getImportedSignersThatHaveNotSigned(
         this.#accountOp.signed,
@@ -2560,7 +2570,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         this.status = { type: SigningStatus.Queued }
         this.#updateAccountOp({
-          signature: sortSigs(prevSignedSigs.concat(nowSignedSigs), safeTxnHash),
+          signature: sortSigs(
+            prevSignedSigs.concat(nowSignedSigs),
+            safeTxnHash,
+            this.accountOp.safeTx?.confirmations
+          ),
           signed: allSigners,
           txnId: safeTxnHash
         })

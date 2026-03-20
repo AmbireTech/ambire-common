@@ -80,5 +80,6 @@ export type BuildRequest =
         message: Hex | EIP712TypedData
         messageHash: Hex
         created: number
+        signatures: Hex[]
       }
     }

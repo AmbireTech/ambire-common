@@ -506,6 +506,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     messageHash: Hex
     signature: Hex
     created: number
+    signatures: Hex[]
   }
   isConfirmed: boolean
 }[] {
@@ -518,6 +519,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
       messageHash: Hex
       signature: Hex
       created: number
+      signatures: Hex[]
     }
     isConfirmed: boolean
   }[] = []
@@ -542,9 +544,11 @@ export function toSigMessageUserRequests(response: SafeResults): {
           messageHash: message.messageHash as Hex,
           signature: sortSigs(
             message.confirmations.map((c) => c.signature) as Hex[],
-            message.messageHash
+            message.messageHash,
+            message.confirmations
           ),
-          created: new Date(message.created).getTime()
+          created: new Date(message.created).getTime(),
+          signatures: message.confirmations.map((c) => c.signature) as Hex[]
         },
         isConfirmed: !!message.isConfirmed
       })
@@ -554,17 +558,42 @@ export function toSigMessageUserRequests(response: SafeResults): {
   return userRequests
 }
 
+function getOwnerFromSafeTx(
+  sig: string,
+  confirmations?: { owner: string; signature: string }[]
+): string | undefined {
+  return confirmations?.find((c) => c.signature === sig)?.owner
+}
+
+function recoverOwner(
+  sig: string,
+  hash: string,
+  confirmations?: { owner: string; signature: string }[]
+) {
+  // a transaction from safe global may have signatures that are not
+  // ecdsa; therefore, we cannot extract the owner from them by using
+  // a plain recoverAddress. We rely on the safe global information
+  const safeOwner = getOwnerFromSafeTx(sig, confirmations)
+  if (safeOwner) return safeOwner
+
+  // an ambire sig is always ecdsa
+  return recoverAddress(hash, sig)
+}
+
 // the signature is 130 x number_of_sigs + 2 (0x) symbols long
 // so we cut the hex (0x) from the beginning
 // then take each sig (substring(0, 130)) and recover the address
 // finally, we update everything
-export function getAlreadySignedOwners(signature: string, hash: string): string[] {
+export function getAlreadySignedOwners(
+  signature: string,
+  hash: string,
+  safeTx?: SafeMultisigTransactionResponse
+): string[] {
   const signatures = signature.substring(2)
   const signed = []
   for (let i = 0; i < signatures.length; i += 130) {
     const sig = `0x${signatures.substring(i, i + 130)}`
-    const owner = recoverAddress(hash, sig)
-    signed.push(owner)
+    signed.push(recoverOwner(sig, hash, safeTx?.confirmations))
   }
   return signed
 }
@@ -586,13 +615,16 @@ export function getSigs(signature?: string | null): Hex[] {
   return signed
 }
 
-export function sortSigs(signatures: Hex[], hash: string): Hex {
+export function sortSigs(
+  signatures: Hex[],
+  hash: string,
+  confirmations?: { owner: string; signature: string }[]
+): Hex {
   const signed: { sig: string; addr: string }[] = []
 
   for (let i = 0; i < signatures.length; i++) {
     const sig = signatures[i]!
-    const owner = recoverAddress(hash, sig)
-    signed.push({ sig, addr: owner })
+    signed.push({ sig, addr: recoverOwner(sig, hash, confirmations) })
   }
 
   const sorted = sortByAddress(signed)
