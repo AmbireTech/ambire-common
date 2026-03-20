@@ -1,5 +1,4 @@
-/* eslint-disable no-console */
-import { ethers } from 'ethers'
+import { ethers, ZeroAddress } from 'ethers'
 
 import { describe, test } from '@jest/globals'
 
@@ -34,7 +33,7 @@ const accountOp: AccountOp = {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   // humanizerMeta: {}
-}
+} as any
 
 const accounts: Account[] = [
   {
@@ -73,6 +72,12 @@ const transactions = {
   ],
   // currently with USDT
   erc20: [
+    // approve erc-20 token USDT with hidden eth send
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: 10n ** 18n,
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
     // approve erc-20 token USDT
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
@@ -240,6 +245,43 @@ describe('Humanizer main function', () => {
     ]
 
     accountOp.calls = [...transactions.generic]
+    const irCalls = humanizeAccountOp(accountOp)
+    compareHumanizerVisualizations(irCalls, expectedVisualizations)
+  })
+
+  test('erc20 humanize end to end', async () => {
+    // const ir: Ir = []
+    const expectedVisualizations = [
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
+        getLabel('to'),
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
+        getLabel('and'),
+        getAction('Send'),
+        getToken(ZeroAddress, 10n ** 18n),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
+      ],
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getLabel('to'),
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
+      ],
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getLabel('to'),
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
+      ]
+    ]
+
+    accountOp.calls = [...transactions.erc20.slice(0, 3)]
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
