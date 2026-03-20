@@ -165,7 +165,10 @@ export default class EventEmitter {
     // simultaneous actions can lead to unintended side effects. The 'allowConcurrentActions' flag is provided to enable
     // concurrent execution at the main controller level. This is useful when multiple actions need to modify the state
     // of different sub-controllers simultaneously.
-    if ((someStatusIsLoading && !allowConcurrentActions) || this.statuses[callName] !== 'INITIAL') {
+    if (
+      (someStatusIsLoading && !allowConcurrentActions) ||
+      !['INITIAL', 'SUCCESS'].includes(this.statuses[callName] as any)
+    ) {
       this.emitError({
         level: errorLevel,
         message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
@@ -175,6 +178,10 @@ export default class EventEmitter {
       })
 
       return
+    }
+
+    if (this.statuses[callName] === 'SUCCESS') {
+      await wait(2) // to let the INITIAL status be fired from the prev session
     }
 
     this.statuses[callName] = 'LOADING'
