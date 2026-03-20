@@ -79,6 +79,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   // applicable on Safe message
   signed: string[] = []
 
+  // the already signed signatures
+  // applicable on Safe message
+  signatures: Hex[] = []
+
   signers?: { addr: Key['addr']; type: Key['type'] }[]
 
   /**
@@ -112,7 +116,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     dapp,
     messageToSign,
     signed,
-    hash
+    hash,
+    signatures
   }: {
     dapp?: { name: string; icon: string }
     messageToSign: Message
@@ -120,6 +125,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     // applicable on Safe message
     signed?: string[]
     hash?: Hex
+    signatures?: Hex[]
   }) {
     // In the unlikely case that the signMessage controller was already
     // initialized, but not reset, force reset it to prevent misleadingly
@@ -134,6 +140,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.signed = signed || []
+      this.signatures = signatures || []
       this.isInitialized = true
 
       this.#account = this.#accounts.accounts.find(
@@ -246,6 +253,23 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     return this.isInitialized && !!this.messageToSign
   }
 
+  async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
+    if (!this.network || !this.#account) return
+
+    // send only to safe global if it doesn't already exists and if the threshold is not met
+    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig).catch((e) => {
+      console.log('failed to send message to safe global: ', e)
+    })
+  }
+
+  async addSigToSafeGlobal(sig: string, hash: string) {
+    if (!this.network) return
+
+    await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+      console.log('failed to send message to safe global: ', e)
+    })
+  }
+
   /*
    * ⚠️ IMPORTANT: If you make changes here and they involve async operations,
    * make sure to check `isSigningOperationValidAfterAsyncOperation` afterwards
@@ -262,6 +286,16 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     if (!this.signers?.length) {
       return SignMessageController.#throwMissingSigningKey()
+    }
+
+    // we're always signing with the first signer
+    // the goal was to have an array of signers that sign simultaneously
+    // but it was too confusing, so we threw it away
+    // the array of signers should be changed back to a single signer
+    const signerKey = this.signers[0]!
+    this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    if (this.signer.init) {
+      this.signer.init(this.#externalSignerControllers[signerKey.type])
     }
 
     try {
@@ -293,30 +327,26 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           this.messageToSign.content.kind === 'message' ||
           this.messageToSign.content.kind === 'siwe'
         ) {
-          const signatures: Hex[] = []
+          const signed = await getPlainTextSignature(
+            this.messageToSign.content.message,
+            this.network,
+            this.#account,
+            accountState,
+            this.signer,
+            this.#invite.isOG
+          )
+          this.signatures.push(signed.signature)
+          this.signed.push(signerKey.addr)
 
-          for (let i = 0; i < this.signers.length; i++) {
-            const signerKey = this.signers[i]!
-            this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
-            if (this.signer.init) {
-              this.signer.init(this.#externalSignerControllers[signerKey.type])
-            }
-            // announce the signer
-            this.emitUpdate()
-
-            const signed = await getPlainTextSignature(
-              this.messageToSign.content.message,
-              this.network,
-              this.#account,
-              accountState,
-              this.signer,
-              this.#invite.isOG
-            )
-            signatures.push(signed.signature)
-            this.signed.push(signerKey.addr)
-            if (signed.hash) this.hash = signed.hash
-            if (this.signed.length > 1 && this.hash) {
-              await addMessageSignature(this.network.chainId, this.hash, signed.signature)
+          if (!!this.#account.safeCreation && signed.hash) {
+            this.hash = signed.hash
+            if (this.signed.length === 1) {
+              await this.addMsgToSafeGlobal(
+                signed.signature,
+                toUtf8String(this.messageToSign.content.message)
+              )
+            } else {
+              await this.addSigToSafeGlobal(signed.signature, signed.hash)
             }
           }
 
@@ -324,17 +354,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
           // get the final signature
           signature =
-            signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
-
-          // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (this.signed.length === 1 && signatures.length < accountState.threshold) {
-            await addMessage(
-              this.network.chainId,
-              this.#account.addr as Hex,
-              toUtf8String(this.messageToSign.content.message),
-              signature
-            )
-          }
+            this.signatures.length === 1 || !signed.hash
+              ? this.signatures[0]!
+              : sortSigs(this.signatures, signed.hash)
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
@@ -344,46 +366,35 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             )
           }
 
-          const signatures: Hex[] = []
-          for (let i = 0; i < this.signers.length; i++) {
-            const signerKey = this.signers[i]!
-            this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
-            if (this.signer.init) {
-              this.signer.init(this.#externalSignerControllers[signerKey.type])
-            }
-            // announce the signer
-            this.emitUpdate()
+          const signed = await getEIP712Signature(
+            this.messageToSign.content,
+            this.#account,
+            accountState,
+            this.signer,
+            this.network,
+            this.#invite.isOG
+          )
+          this.signatures.push(signed.signature)
+          this.signed.push(signerKey.addr)
 
-            const signed = await getEIP712Signature(
-              this.messageToSign.content,
-              this.#account,
-              accountState,
-              this.signer,
-              this.network,
-              this.#invite.isOG
-            )
-
-            signatures.push(signed.signature)
-            this.signed.push(signerKey.addr)
-            if (signed.hash) this.hash = signed.hash
-            if (this.signed.length > 1 && this.hash) {
-              await addMessageSignature(this.network.chainId, this.hash, signed.signature)
+          if (!!this.#account.safeCreation && signed.hash) {
+            this.hash = signed.hash
+            if (this.signed.length === 1) {
+              await this.addMsgToSafeGlobal(
+                signed.signature,
+                this.messageToSign.content.message as EIP712TypedData
+              )
+            } else {
+              await this.addSigToSafeGlobal(signed.signature, signed.hash)
             }
           }
+
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
 
           signature =
-            signatures.length === 1 || !this.hash ? signatures[0]! : sortSigs(signatures, this.hash)
-
-          // send only to safe global if it doesn't already exists and if the threshold is not met
-          if (this.signed.length === 1 && signatures.length < accountState.threshold) {
-            await addMessage(
-              this.network.chainId,
-              this.#account.addr as Hex,
-              this.messageToSign.content.message as EIP712TypedData,
-              signature
-            )
-          }
+            this.signatures.length === 1 || !signed.hash
+              ? this.signatures[0]!
+              : sortSigs(this.signatures, signed.hash)
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
