@@ -79,6 +79,7 @@ export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappP
     signed?: string[]
     hash?: Hex
     created?: number
+    signatures?: Hex[]
   }
 }
 
@@ -117,6 +118,7 @@ export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromi
     signed?: string[]
     hash?: Hex
     created?: number
+    signatures?: Hex[]
   }
 }
 
