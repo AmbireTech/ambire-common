@@ -29,7 +29,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         (data: string): HumanizerVisualization[] => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
-          return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
+          return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
         }
       )
       const res = uniReduce(parsed)
@@ -48,7 +48,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         const sigHash = data.slice(0, 10)
 
         const humanizer = mappingResult[sigHash]
-        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
+        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
       })
       return uniReduce(parsed)
     },
@@ -65,7 +65,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         (data: string): HumanizerVisualization[] => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
-          return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
+          return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
         }
       )
       return parsed.length
@@ -324,7 +324,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       const parsed = calls.map((data: string): HumanizerVisualization[] => {
         const sigHash = data.slice(0, 10)
         const humanizer = mappingResult[sigHash]
-        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
+        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
       })
 
       return parsed.length
