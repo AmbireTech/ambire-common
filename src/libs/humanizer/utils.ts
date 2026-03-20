@@ -104,10 +104,6 @@ export function getLink(url: string, content: string): HumanizerVisualization {
   return { type: 'link', url, content, id: randomId() }
 }
 
-export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean {
-  return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
-}
-
 export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Wrap'), getToken(address, amount)]
 }

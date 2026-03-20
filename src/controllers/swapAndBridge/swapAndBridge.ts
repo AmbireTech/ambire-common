@@ -2684,6 +2684,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     })
   }
 
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.signAccountOpController?.cancelSignReq()
+  }
+
   toJSON() {
     return {
       ...this,

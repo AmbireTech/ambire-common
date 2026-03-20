@@ -88,8 +88,8 @@ const STATUS_WRAPPED_METHODS = {
 } as const
 
 const ONE_CLICK_WINDOW_SIZE = {
-  width: 640,
-  height: 640
+  width: 600,
+  height: 600
 }
 
 /**
