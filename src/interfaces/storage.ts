@@ -39,6 +39,7 @@ export type StorageProps = {
   lastDappsUpdateVersion: string | null
   invite: object
   isPinned: boolean
+  isPrivacyModeEnabled: boolean
   isSetupComplete: boolean
   keyStoreUid: string | null
   keystoreSecrets: MainKeyEncryptedWithSecret[]
