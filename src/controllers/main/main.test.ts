@@ -1,10 +1,10 @@
+import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import wait from '@/utils/wait'
 import { describe, expect, test } from '@jest/globals'
+import { makeMainController } from '@test/helpers/mainController'
 
-import { makeMainController } from '../../../test/helpers/mainController'
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import wait from '../../utils/wait'
 import { MainController } from './main'
 
 describe('Main Controller ', () => {

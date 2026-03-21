@@ -88,8 +88,8 @@ const STATUS_WRAPPED_METHODS = {
 } as const
 
 const ONE_CLICK_WINDOW_SIZE = {
-  width: 640,
-  height: 640
+  width: 600,
+  height: 600
 }
 
 /**
@@ -1403,13 +1403,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     signed,
     message,
     messageHash,
-    created
+    created,
+    signatures
   }: {
     chainId: bigint
     signed: string[]
     message: Hex | EIP712TypedData
     messageHash: Hex
     created: number
+    signatures: Hex[]
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1427,7 +1429,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           keepRequestAlive: true,
           signed,
           hash: messageHash,
-          created
+          created,
+          signatures
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1457,7 +1460,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         keepRequestAlive: true,
         signed,
         hash: messageHash,
-        created
+        created,
+        signatures
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })

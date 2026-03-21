@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import fetch from 'node-fetch'
+import { ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
@@ -51,8 +51,10 @@ const prepareTest = async () => {
   mainCtrl.transfer.resetForm()
 
   return {
-    transferController: mainCtrl.transfer as TransferController,
-    tokens: getTokens()
+    transferController: mainCtrl.transfer,
+    tokens: getTokens(),
+    uiCtrl: mainCtrl.ui,
+    selectedAccountCtrl: mainCtrl.selectedAccount
   }
 }
 
@@ -216,6 +218,426 @@ describe('Transfer Controller', () => {
 
     const json = transferController.toJSON()
     expect(json).toBeDefined()
+  })
+})
+
+describe('Transfer Controller defaults logic', () => {
+  const getDefaultPortfolioState = () => {
+    return {
+      tokens: getTokens(),
+      isReadyToVisualize: true,
+      isAllReady: true
+    }
+  }
+
+  test('should initialize defaults and transfer session on updateView to transfer', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    expect(transferController.transferSessionId).not.toBe(null)
+    expect(transferController.areDefaultsSet).toBe(true)
+    expect(transferController.selectedToken).not.toBe(null)
+    expect(transferController.isTopUp).toBe(false)
+  })
+
+  test('should keep existing form when re-entering same mode with persisted state and no search params', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        isDomainResolving: false
+      }
+    })
+
+    const initialSessionId = transferController.transferSessionId
+    const initialAmount = transferController.amount
+    const initialRecipient = transferController.recipientAddress
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: false,
+      searchParams: {}
+    })
+
+    expect(transferController.transferSessionId).toBe(initialSessionId)
+    expect(transferController.amount).toBe(initialAmount)
+    expect(transferController.recipientAddress).toBe(initialRecipient)
+  })
+
+  test('should reinitialize defaults when transfer route has token search params', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      selectedToken: getTokens().find((t) => t.address === STK_WALLET_ADDRESS && t.chainId === 1n),
+      amount: '2'
+    })
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {
+        address: ZeroAddress,
+        chainId: '1'
+      }
+    })
+
+    expect(transferController.selectedToken?.address).toBe(ZeroAddress)
+    expect(transferController.selectedToken?.chainId).toBe(1n)
+    expect(transferController.amount).toBe('')
+  })
+
+  test('should unload transfer state on navigate-out via updateView when there is no other transfer view', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        isDomainResolving: false
+      }
+    })
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'dashboard',
+      isReady: true,
+      searchParams: {}
+    })
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.areDefaultsSet).toBe(false)
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.amount).toBe('')
+  })
+
+  test('should preserve popup form state on removeView when form is persisted', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        isDomainResolving: false
+      }
+    })
+
+    uiCtrl.removeView('popup')
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.amount).toBe('1')
+    expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
+    expect(transferController.areDefaultsSet).toBe(true)
+  })
+
+  test('should reset transfer state on popup removeView when form is not persisted', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    expect(transferController.selectedToken).not.toBeNull()
+
+    uiCtrl.removeView('popup')
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.areDefaultsSet).toBe(false)
+    expect(transferController.selectedToken).toBeNull()
+  })
+
+  test('should not unload on removeView when another transfer view is open', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'transfer-tab-1',
+      type: 'tab',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.addView({
+      id: 'transfer-tab-2',
+      type: 'tab',
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    uiCtrl.updateView('transfer-tab-1', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        isDomainResolving: false
+      }
+    })
+
+    const activeSessionId = transferController.transferSessionId
+    uiCtrl.removeView('transfer-tab-1')
+
+    expect(transferController.transferSessionId).toBe(activeSessionId)
+    expect(transferController.amount).toBe('1')
+    expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
+  })
+
+  test('should ignore selectedAccount updates when transfer session is not active', async () => {
+    const { transferController, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should set default token on selectedAccount force update when transfer session is active', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.transferSessionId).not.toBe(null)
+    expect(transferController.selectedToken).not.toBeNull()
+    expect(transferController.areDefaultsSet).toBe(true)
+  })
+
+  test('should not update defaults on selectedAccount force update when user has proceeded', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+    transferController.setUserProceeded(true)
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should not set default token when portfolio is not ready to visualize', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      tokens: getTokens(),
+      isReadyToVisualize: false,
+      isAllReady: true
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should set areDefaultsSet when portfolio isAllReady but no tokens are available', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      tokens: [],
+      isReadyToVisualize: true,
+      isAllReady: true
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(true)
   })
 })
 

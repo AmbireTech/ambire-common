@@ -2,6 +2,10 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "baseUrl": "src/",
+    "paths": {
+      "@/*": ["*"],
+      "@test/*": ["../test/*"]
+    },
     "outDir": "./dist",
     "noEmit": false,
     "noEmitOnError": true,
@@ -34,6 +38,9 @@
     "strictPropertyInitialization": true,
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true
+  },
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
   },
   "exclude": ["node_modules", "dist"]
 }
