@@ -297,6 +297,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     if (this.signer.init) {
       this.signer.init(this.#externalSignerControllers[signerKey.type])
     }
+    this.emitUpdate() // pass the signer to the UI
 
     try {
       if (!this.#isSigningOperationValidAfterAsyncOperation()) return
