@@ -776,6 +776,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   #updateStateWithTheLatestFromAccounts() {
+    // Account preferences (e.g. label/name) can change while this controller is alive.
+    // If we keep using cached derived accounts, the FE can show stale account names.
+    // Clearing forces #deriveAccounts() to rebuild cached entries using the latest accounts.
+    this.#derivedAccountsCache.clear()
+
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
 
     this.addedAccountsFromCurrentSession = Array.from(
