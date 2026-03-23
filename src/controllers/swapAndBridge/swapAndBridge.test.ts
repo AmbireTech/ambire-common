@@ -182,6 +182,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
+    marketDataIn: [],
     symbol: 'USDT',
     name: 'Tether'
   },
@@ -192,6 +193,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
     chainId: 8453n,
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
+    marketDataIn: [],
     symbol: 'cbBTC',
     name: 'Coinbase wrapped BTC'
   },
@@ -202,6 +204,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+    marketDataIn: [],
     symbol: 'ETH',
     name: 'Ether'
   }

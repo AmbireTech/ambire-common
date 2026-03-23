@@ -1468,6 +1468,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           canTopUpGasTank: false,
           rewardsType: null
         },
+        marketDataIn: [],
         priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
 
@@ -1948,38 +1949,53 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.emitUpdate()
   }
 
-  addActiveRoute({ userTxIndex }: { userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex'] }) {
-    if (!this.quote || !this.quote.selectedRoute) {
+  addActiveRoute({
+    userTxIndex,
+    quote,
+    routeStatus = 'ready'
+  }: {
+    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
+    quote?: SwapAndBridgeQuote
+    routeStatus?:
+      | 'waiting-approval-to-resolve'
+      | 'in-progress'
+      | 'ready'
+      | 'completed'
+      | 'failed'
+      | 'refunded'
+  }) {
+    const finalQuote = quote || this.quote
+    if (!finalQuote || !finalQuote.selectedRoute) {
       const message = 'Unexpected swap & bridge error: no quote found. Please contact support'
       throw new EmittableError({ error: new Error(message), level: 'major', message })
     }
 
     try {
-      const route = this.quote.selectedRoute
+      const route = finalQuote.selectedRoute
       this.activeRoutes.push({
-        serviceProviderId: this.quote.selectedRoute.providerId,
+        serviceProviderId: finalQuote.selectedRoute.providerId,
         activeRouteId: route.routeId.toString(),
         userTxIndex,
-        routeStatus: 'ready',
+        routeStatus,
         userTxHash: null,
         fromAsset: {
-          ...this.quote.fromAsset,
-          icon: this.quote.fromAsset.icon || '',
-          logoURI: this.quote.fromAsset.icon || ''
+          ...finalQuote.fromAsset,
+          icon: finalQuote.fromAsset.icon || '',
+          logoURI: finalQuote.fromAsset.icon || ''
         },
         toAsset: {
-          ...this.quote.toAsset,
-          icon: this.quote.toAsset.icon || '',
-          logoURI: this.quote.toAsset.icon || ''
+          ...finalQuote.toAsset,
+          icon: finalQuote.toAsset.icon || '',
+          logoURI: finalQuote.toAsset.icon || ''
         },
-        fromAssetAddress: this.quote.fromAsset.address,
-        toAssetAddress: this.quote.toAsset.address,
+        fromAssetAddress: finalQuote.fromAsset.address,
+        toAssetAddress: finalQuote.toAsset.address,
         steps: route.steps,
         sender: route.userAddress,
         identifiedBy: null,
         route: {
           ...route,
-          routeStatus: 'ready',
+          routeStatus,
           transactionData: null
         }
       })
@@ -2416,6 +2432,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     const accountOp: AccountOp = {
+      id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
@@ -2665,6 +2682,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#updateActiveRoutesInterval.updateTimeout({
       timeout: startTimeout < ceiling ? startTimeout : ceiling
     })
+  }
+
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.signAccountOpController?.cancelSignReq()
   }
 
   toJSON() {

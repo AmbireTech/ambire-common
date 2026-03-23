@@ -1,5 +1,5 @@
 import { AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Price, TokenMarketData } from '../../interfaces/assets'
+import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
@@ -11,8 +11,8 @@ import {
 // @TODO: Move most of these interfaces to src/interfaces and
 // figure out how to restructure portfolio/defiPositions types
 
-export interface GetOptionsSimulation {
-  accountOps: AccountOp[]
+export interface GetOptionsSimulation<T = AccountOp[]> {
+  accountOps: T
   baseAccount: BaseAccount
   state: AccountOnchainState
 }
@@ -20,6 +20,17 @@ export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
 export type SuspectedType = 'suspected' | null
+
+export type ExchangeInfo = {
+  id: string
+  name: string
+  url: string
+  image: string
+}
+
+export type ExchangeInfoMap = {
+  [exchangeId: string]: ExchangeInfo
+}
 
 export type TokenResult = {
   symbol: string
@@ -33,7 +44,14 @@ export type TokenResult = {
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
-  marketData: TokenMarketData
+  marketDataIn: TokenMarketDataByCurrency[]
+  meta?: {
+    /**
+     * Ids of exchanges where the token is traded.
+     */
+    exchanges?: string[]
+    website?: string
+  }
   flags: {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
@@ -67,10 +85,7 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
-export type TokenDataCacheValue = {
-  priceIn: Price[]
-  marketData: TokenMarketData
-}
+export type TokenDataCacheValue = Pick<TokenResult, 'marketDataIn' | 'priceIn' | 'meta'>
 
 /**
  * Cache for token data
@@ -121,10 +136,13 @@ export type ExternalAPITokenMarketDataResponse = {
   /**
    * Despite the name, this is a percentage, not USD value change.
    */
+  usd_fully_diluted_valuation?: number
   usd_24h_change: number
   usd_market_cap: number
   usd_24h_vol: number
+  total_supply?: number
   exchanges: string[]
+  homepage?: string[]
 }
 
 /**
@@ -447,6 +465,17 @@ export type TemporaryTokens = {
 
 type SpecialHintType = 'custom' | 'hidden' | 'learn'
 
+/**
+ * Addresses and symbol patterns that should be excluded from the portfolio.
+ * Addresses are keyed by chainId (string) and must be checksummed.
+ * Symbol patterns are matched case-insensitively as substrings.
+ */
+export interface TokenBlacklist {
+  blacklistAddrs: Record<string, string[]>
+  blacklistBySymbols: string[]
+  updatedAt: number | null
+}
+
 export interface GetOptions {
   baseCurrency: string
   /**
@@ -485,6 +514,16 @@ export interface GetOptions {
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean
+  /**
+   * Dynamic token blacklist fetched from the API, merged with the static
+   * blacklist defined in the portfolio library.
+   */
+  blacklist?: TokenBlacklist
+  /**
+   * Used to prevent blacklisting of Monerium Euro so the assetInfo service can get symbol
+   * and decimals from the portfolio
+   */
+  preventTokenBlacklisting?: true
 }
 
 /**

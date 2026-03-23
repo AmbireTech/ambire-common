@@ -1,105 +1,25 @@
-import fetch from 'node-fetch'
-
 import { expect } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
-import { AccountsController } from '../accounts/accounts'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { PhishingController } from './phishing'
+import { makeMainController } from '../../../test/helpers/mainController'
 
 const prepareTest = async () => {
-  const storage: Storage = produceMemoryStore()
-  const storageCtrl = new StorageController(storage)
-
-  await storageCtrl.set('domainsBlacklistedStatus', {
-    'foourmemez.com': {
-      status: 'BLACKLISTED',
-      updatedAt: Date.now()
-    },
-    'rewards.ambire.com': {
-      status: 'VERIFIED',
-      updatedAt: Date.now()
-    }
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('domainsBlacklistedStatus', {
+      'foourmemez.com': { status: 'BLACKLISTED', updatedAt: Date.now() },
+      'rewards.ambire.com': { status: 'VERIFIED', updatedAt: Date.now() }
+    })
+    await storageCtrl.set('addressesBlacklistedStatus', {
+      '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e': {
+        status: 'BLACKLISTED',
+        updatedAt: Date.now()
+      },
+      '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45': {
+        status: 'VERIFIED',
+        updatedAt: Date.now()
+      }
+    })
   })
-  await storageCtrl.set('addressesBlacklistedStatus', {
-    '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e': {
-      status: 'BLACKLISTED',
-      updatedAt: Date.now()
-    },
-    '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45': {
-      status: 'VERIFIED',
-      updatedAt: Date.now()
-    }
-  })
-
-  let providersCtrl: IProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    autoLogin: autoLoginCtrl
-  })
-  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
-
-  const controller = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    addressBook: addressBookCtrl
-  })
-  await controller.initialLoadPromise
-
-  return { controller }
+  return { controller: mainCtrl.phishing }
 }
 
 describe('PhishingController', () => {

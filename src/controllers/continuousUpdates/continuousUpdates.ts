@@ -208,10 +208,6 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #updatePortfolio() {
     await this.initialLoadPromise
 
-    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
-      : []
-    if (selectedAccountBroadcastedButNotConfirmed?.length) return
     await this.#main.updateSelectedAccountPortfolio({
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
@@ -439,17 +435,22 @@ export class ContinuousUpdatesController extends EventEmitter {
 
       // we come here only if transactionHash is undefined
       const signatures = (oneConfirmed.confirmations?.map((c) => c.signature) || []) as Hex[]
-      const sortedSigs = callsUserR.signAccountOp.accountOp.txnId
-        ? sortSigs(signatures, callsUserR.signAccountOp.accountOp.txnId)
+      const safeGlobalSigs = callsUserR.signAccountOp.accountOp.txnId
+        ? sortSigs(
+            signatures,
+            callsUserR.signAccountOp.accountOp.txnId,
+            callsUserR.signAccountOp.accountOp.safeTx?.confirmations
+          )
         : null
       if (
-        sortedSigs &&
+        safeGlobalSigs &&
         callsUserR.signAccountOp.isInRegistry() && // update only if on foreground
-        callsUserR.signAccountOp.accountOp.signature !== sortedSigs
+        callsUserR.signAccountOp.accountOp.signature !== safeGlobalSigs &&
+        (callsUserR.signAccountOp.accountOp.signature?.length || 0) < safeGlobalSigs.length
       ) {
         callsUserR.signAccountOp.update({
           accountOpData: {
-            signature: sortedSigs
+            signature: safeGlobalSigs
           }
         })
       }

@@ -26,6 +26,7 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
+  SwapAndBridgeQuote,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
@@ -54,7 +55,7 @@ import {
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
-import { getAccountOpsForSimulation } from '../../libs/main/main'
+import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
@@ -72,6 +73,7 @@ import {
   getMintVestingRequestParams,
   getTransferRequestParams
 } from '../../libs/transfer/userRequest'
+import { generateUuid } from '../../utils/uuid'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -86,8 +88,8 @@ const STATUS_WRAPPED_METHODS = {
 } as const
 
 const ONE_CLICK_WINDOW_SIZE = {
-  width: 640,
-  height: 640
+  width: 600,
+  height: 600
 }
 
 /**
@@ -457,11 +459,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         userRequestsToAdd.push(req)
 
-        const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
+        this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
@@ -544,6 +545,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.currentUserRequest.kind === 'calls' &&
       this.currentUserRequest.signAccountOp
     ) {
+      if (
+        !getShouldSimulateInTheBackground(
+          this.currentUserRequest,
+          this.visibleUserRequests.filter((r) => r.kind === 'calls')
+        )
+      ) {
+        this.#portfolio.overrideSimulationResults(this.currentUserRequest.signAccountOp.accountOp)
+      }
       this.currentUserRequest.signAccountOp.pause()
     }
 
@@ -813,14 +822,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ids: UserRequest['id'][],
     options?: {
       shouldRemoveSwapAndBridgeRoute?: boolean
-      shouldUpdateAccount?: boolean
       shouldOpenNextRequest?: boolean
       shouldRejectSafeRequests?: boolean
     }
   ) {
     const {
       shouldRemoveSwapAndBridgeRoute = true,
-      shouldUpdateAccount = true,
       shouldOpenNextRequest = true,
       shouldRejectSafeRequests = true
     } = options || {}
@@ -840,16 +847,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // update the pending stuff to be signed
       const { kind, meta } = req
       if (kind === 'calls') {
-        const network = this.#networks.networks.find((net) => net.chainId === meta.chainId)!
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account)
           throw new Error(
             `removeUserRequests: tried to run for non-existent account ${meta.accountAddr}`
           )
-
-        if (shouldUpdateAccount) {
-          this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-        }
 
         if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
           req.signAccountOp.accountOp.calls.forEach((c) => {
@@ -899,7 +901,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account || !account.safeCreation) return
 
-        if (meta.created) safeRejectIds.push(`${meta.hash}-${meta.created}`)
+        safeRejectIds.push(`${meta.hash}`)
       }
     })
 
@@ -957,9 +959,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   ) {
     this.userRequests
       .filter((r) => requestIds.includes(r.id))
-      .forEach((r) =>
+      .forEach((r) => {
         r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
-      )
+
+        // Done here because remove handles approved requests too. We want this logic only on reject
+        if (r.kind === 'calls') {
+          this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
+        }
+      })
 
     await this.removeUserRequests(requestIds, options)
   }
@@ -1396,13 +1403,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     signed,
     message,
     messageHash,
-    created
+    created,
+    signatures
   }: {
     chainId: bigint
     signed: string[]
     message: Hex | EIP712TypedData
     messageHash: Hex
     created: number
+    signatures: Hex[]
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1420,7 +1429,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           keepRequestAlive: true,
           signed,
           hash: messageHash,
-          created
+          created,
+          signatures
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1450,7 +1460,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         keepRequestAlive: true,
         signed,
         hash: messageHash,
-        created
+        created,
+        signatures
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1527,10 +1538,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #buildSwapAndBridgeUserRequest({
     openActionWindow,
-    activeRouteId
+    activeRouteId,
+    quote
   }: {
     openActionWindow: boolean
     activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
+    quote?: SwapAndBridgeQuote
   }) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
@@ -1579,7 +1592,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#selectedAccount.account,
           this.#providers.providers[network.chainId.toString()]!,
           accountState,
-          getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+          getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+          quote
         )
 
         const userRequest = await this.#createOrUpdateCallsUserRequest(
@@ -1611,6 +1625,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
 
         this.#swapAndBridge.resetForm()
+        if (openActionWindow) {
+          this.#swapAndBridge.unloadScreen('popup', true)
+        }
       },
       true
     )
@@ -1730,6 +1747,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (existingUserRequest) {
       // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.
       if (existingUserRequest.signAccountOp.signAndBroadcastPromise) {
+        // if the update is coming from safe global, just ignore it
+        if (meta.safeTxnProps) return
+
         const errorMessage =
           'Please wait until the previous transaction is fully processed before adding a new one.'
 
@@ -1752,15 +1772,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // we're allowing updates only on the signature field for
         // already signed accountOps
         if (meta.safeTxnProps) {
-          if (meta.safeTxnProps.signature !== existingUserRequest.signAccountOp.accountOp.signature)
+          const safeGlobalSig = meta.safeTxnProps.signature
+          const accOpSig = existingUserRequest.signAccountOp.accountOp.signature
+          if ((accOpSig?.length || 0) < safeGlobalSig.length) {
             existingUserRequest.signAccountOp.update({
               accountOpData: {
-                signature: meta.safeTxnProps.signature,
+                signature: safeGlobalSig,
                 txnId: meta.safeTxnProps.txnId,
                 nonce: meta.safeTxnProps.nonce,
                 safeTx: meta.safeTx
               }
             })
+          }
 
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
@@ -1841,6 +1864,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           phishing: this.#phishing,
           fromRequestId: requestId,
           accountOp: {
+            id: generateUuid(),
             accountAddr: meta.accountAddr,
             chainId: meta.chainId,
             signingKeyAddr: null,
@@ -1864,22 +1888,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           },
           shouldSimulate: this.#shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
-            const accountOpsForSimulation = getAccountOpsForSimulation(
-              account,
-              this.visibleUserRequests,
-              this.#networks.networks
-            )
-
-            await this.#portfolio.updateSelectedAccount(
-              account.addr,
-              [network],
-              accountOpsForSimulation
-                ? {
-                    accountOps: accountOpsForSimulation,
-                    states: await this.#accounts.getOrFetchAccountStates(account.addr)
-                  }
-                : undefined
-            )
+            await this.#portfolio.updateSelectedAccount(account.addr, [network])
           },
           onBroadcastSuccess: this.#onBroadcastSuccess,
           onBroadcastFailed: this.#onBroadcastFailed

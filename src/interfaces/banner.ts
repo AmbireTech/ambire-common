@@ -38,7 +38,7 @@ export interface Banner {
 
 export type MarketingBannerTypes = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
-export type Action =
+export type Action = (
   | {
       actionName: 'open-pending-dapp-requests'
     }
@@ -112,3 +112,6 @@ export type Action =
       actionName: 'dismiss-defi-positions-banner'
     }
   | { actionName: 'open-link'; meta: { url: string } }
+) & {
+  label?: string
+}

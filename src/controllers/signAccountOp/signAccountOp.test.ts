@@ -35,6 +35,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
@@ -87,6 +88,7 @@ const createEOAAccountOp = (account: Account) => {
       chainId: 1n,
       decimals: 18,
       priceIn: [],
+      marketDataIn: [],
       flags: {
         onGasTank: false,
         rewardsType: null,
@@ -97,6 +99,7 @@ const createEOAAccountOp = (account: Account) => {
   ]
 
   const op = {
+    id: generateUuid(),
     accountAddr: account.addr,
     signingKeyAddr: null,
     signingKeyType: null,
@@ -151,6 +154,7 @@ const createAccountOp = (
       chainId: 1n,
       decimals: 18,
       priceIn: [],
+      marketDataIn: [],
       flags: {
         onGasTank: false,
         rewardsType: null,
@@ -161,6 +165,7 @@ const createAccountOp = (
   ]
 
   const op: AccountOp = {
+    id: generateUuid(),
     accountAddr: account.addr,
     signingKeyAddr: null,
     signingKeyType: null,
@@ -179,6 +184,7 @@ const usdcFeeToken: TokenResult = {
   amount: 54409383n,
   chainId: 137n,
   decimals: Number(6),
+  marketDataIn: [],
   priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
   symbol: 'USDC',
   name: 'USD Coin',
@@ -220,6 +226,7 @@ const nativeFeeTokenPolygon: TokenResult = {
   amount: 1000n,
   chainId: 137n,
   decimals: Number(18),
+  marketDataIn: [],
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
     onGasTank: false,
@@ -314,6 +321,7 @@ const nativeFeeToken: TokenResult = {
   amount: 1000n,
   chainId: 1n,
   decimals: Number(18),
+  marketDataIn: [],
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
     onGasTank: false,
@@ -330,6 +338,7 @@ const gasTankToken: TokenResult = {
   amount: 323871237812612123123n,
   chainId: 1n,
   decimals: Number(18),
+  marketDataIn: [],
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
     onGasTank: true,
@@ -466,6 +475,7 @@ const init = async (
           canTopUpGasTank: true,
           isFeeToken: true
         },
+        marketDataIn: [],
         priceIn: [{ baseCurrency: 'usd', price: 1000.0 }] //  For the sake of simplicity we mocked 1 ETH = 1000 USD
       },
       {
@@ -481,6 +491,7 @@ const init = async (
           canTopUpGasTank: true,
           isFeeToken: true
         },
+        marketDataIn: [],
         priceIn: [{ baseCurrency: 'usd', price: 1.0 }]
       }
     ]
@@ -580,6 +591,7 @@ describe('SignAccountOp Controller ', () => {
           chainId: 137n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -600,6 +612,7 @@ describe('SignAccountOp Controller ', () => {
           name: 'USD Token',
           chainId: 137n,
           decimals: 6,
+          marketDataIn: [],
           priceIn: [
             {
               baseCurrency: 'usd',
@@ -624,6 +637,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdc',
           name: 'USD Coin',
+          marketDataIn: [],
           chainId: 137n,
           decimals: 6,
           priceIn: [
@@ -788,6 +802,7 @@ describe('SignAccountOp Controller ', () => {
           chainId: 1n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -883,6 +898,7 @@ describe('SignAccountOp Controller ', () => {
           chainId: 1n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -964,6 +980,7 @@ describe('SignAccountOp Controller ', () => {
           chainId: 1n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1044,6 +1061,7 @@ describe('SignAccountOp Controller ', () => {
           chainId: 137n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1070,6 +1088,7 @@ describe('SignAccountOp Controller ', () => {
               price: 1
             }
           ],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1096,6 +1115,7 @@ describe('SignAccountOp Controller ', () => {
               price: 1
             }
           ],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1216,6 +1236,7 @@ describe('Negative cases', () => {
       name: 'USD Coin',
       chainId: 137n,
       decimals: 6,
+      marketDataIn: [],
       // we make the priceIn empty for this test
       priceIn: [],
       flags: {
@@ -1318,6 +1339,7 @@ describe('Negative cases', () => {
           chainId: 1n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: true,
             rewardsType: null,
@@ -1339,6 +1361,7 @@ describe('Negative cases', () => {
           chainId: 1n,
           decimals: 6,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1360,6 +1383,7 @@ describe('Negative cases', () => {
           chainId: 137n,
           decimals: 6,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1471,6 +1495,7 @@ describe('Negative cases', () => {
           chainId: 137n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1492,6 +1517,7 @@ describe('Negative cases', () => {
           chainId: 137n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1513,6 +1539,7 @@ describe('Negative cases', () => {
           chainId: 137n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -1648,6 +1675,7 @@ describe('Negative cases', () => {
           chainId: 137n,
           decimals: 18,
           priceIn: [],
+          marketDataIn: [],
           flags: {
             onGasTank: false,
             rewardsType: null,
@@ -2036,6 +2064,7 @@ test('Signing [V1 with EOA payment]: working case', async () => {
         name: 'Ether',
         chainId: 1n,
         decimals: 18,
+        marketDataIn: [],
         priceIn: [],
         flags: {
           onGasTank: false,

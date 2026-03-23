@@ -92,10 +92,12 @@ export const getBridgeBanners = (
       text,
       actions: [
         {
-          actionName: 'view-bridge'
+          actionName: 'view-bridge',
+          label: 'View'
         }
       ],
       dismissAction: {
+        label: 'Dismiss',
         actionName: 'close-bridge',
         meta: {
           activeRouteIds: allRoutes.map((r) => r.activeRouteId),
@@ -114,9 +116,7 @@ export const getSafeMessageRequestBanners = (
 ): Banner[] => {
   if (!account.safeCreation) return []
 
-  const requests = userRequests.filter(
-    (r) => ['message', 'typedMessage', 'siwe'].includes(r.kind) && r.meta.created
-  )
+  const requests = userRequests.filter((r) => ['message', 'typedMessage', 'siwe'].includes(r.kind))
   if (!requests.length) return []
 
   return [
@@ -127,7 +127,8 @@ export const getSafeMessageRequestBanners = (
       text: '',
       actions: [
         {
-          actionName: 'open-pending-dapp-requests'
+          actionName: 'open-pending-dapp-requests',
+          label: 'Open'
         }
       ]
     }
@@ -153,7 +154,8 @@ export const getDappUserRequestsBanners = (
       text: '',
       actions: [
         {
-          actionName: 'open-pending-dapp-requests'
+          actionName: 'open-pending-dapp-requests',
+          label: 'Open'
         }
       ]
     }
@@ -174,11 +176,12 @@ const getSafeBanner = ({
     type: 'info',
     category: 'pending-to-be-signed-acc-op',
     title: `Pending transactions ${network.name ? `on ${network.name}` : ''}`,
-    text: `${requests.length} transactions are mutually exclusive (Same nonce).\nYou can sign only one.`,
+    text: `${requests.length} transactions are mutually exclusive (Same nonce). You can sign only one.`,
     actions: [
       {
         actionName: 'open-accountOp',
-        meta: { requestId: requests[0]!.id }
+        meta: { requestId: requests[0]!.id },
+        label: 'Open'
       }
     ]
   }
@@ -224,15 +227,17 @@ export const getAccountOpBanners = ({
         category: 'pending-to-be-signed-acc-op',
         title: `${
           callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on \n${network.name}` : ''}`,
+        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
         text: '',
         actions: [
           {
             actionName: 'open-accountOp',
-            meta: { requestId: request.id }
+            meta: { requestId: request.id },
+            label: 'Open'
           }
         ],
         dismissAction: {
+          label: 'Reject',
           actionName: 'reject-accountOp',
           meta: {
             err: 'User rejected the transaction request.',
@@ -259,7 +264,8 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     actions: [
       {
         actionName: 'sync-keys',
-        meta: { email, keys }
+        meta: { email, keys },
+        label: 'Sync'
       }
     ]
   }
@@ -301,24 +307,34 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
 
   const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
 
+  const formatNetworkNames = (names: string[]) => {
+    if (names.length === 1) return names[0]
+    if (names.length === 2) return `${names[0]} and ${names[1]}`
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
+  }
+
+  const formattedNetworkNames = formatNetworkNames(
+    disabledNetworksWithDefiPosArray.map((n) => n.name)
+  )
+
   banners.push({
     id: defiPositionsOnDisabledNetworksBannerId,
     type: 'info',
-    title: 'DeFi positions detected on disabled networks',
-    text: `You have ${totalCount} active DeFi ${totalCount === 1 ? 'position' : 'positions'} on${
-      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
-    }: ${disabledNetworksWithDefiPosArray
-      .map((n) => n.name)
-      .join(', ')}. Would you like to enable ${
+    title: `DeFi ${totalCount === 1 ? 'position' : 'positions'} available on ${formattedNetworkNames}`,
+    text: `Ambire API data providers report ${totalCount} more DeFi ${
+      totalCount === 1 ? 'position' : 'positions'
+    }. Enable ${
       disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
-    }?`,
+    } to include ${totalCount === 1 ? 'it' : 'them'}?`,
     actions: [
       {
         actionName: 'enable-networks',
-        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
+        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) },
+        label: totalCount === 1 ? `Enable ${formattedNetworkNames}` : 'Enable All'
       }
     ],
     dismissAction: {
+      label: 'Dismiss',
       actionName: 'dismiss-defi-positions-banner'
     },
     meta: {

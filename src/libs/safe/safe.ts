@@ -29,10 +29,10 @@ import {
   SafeMultisigTransactionResponse
 } from '@safe-global/types-kit'
 
+import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
@@ -116,13 +116,13 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
     return {
       to: op.safeTx.to as Hex,
       value: toBeHex(op.safeTx.value) as Hex,
-      data: op.safeTx.data as Hex,
+      data: op.safeTx.data ? (op.safeTx.data as Hex) : '0x',
       operation: op.safeTx.operation,
       safeTxGas: toBeHex(op.safeTx.safeTxGas) as Hex,
       baseGas: toBeHex(op.safeTx.baseGas) as Hex,
       gasPrice: toBeHex(op.safeTx.gasPrice) as Hex,
       gasToken: op.safeTx.gasToken as Hex,
-      refundReceiver: op.safeTx.refundReceiver as Hex,
+      refundReceiver: op.safeTx.refundReceiver ? (op.safeTx.refundReceiver as Hex) : '0x',
       nonce: toBeHex(op.safeTx.nonce) as Hex
     }
   }
@@ -211,35 +211,6 @@ export function sortByAddress<T extends { addr: string }>(sortableKeys: T[]): T[
     const bBig = BigInt(b.addr.toLowerCase())
     return aBig < bBig ? -1 : aBig > bBig ? 1 : 0
   })
-}
-
-/**
- * Get internal keys first
- */
-export function getDefaultOwners(
-  keys: Key[],
-  threshold: number,
-  alreadySignedAddrs: string[] = []
-): Key[] {
-  const notSinged = keys.filter((k) => !alreadySignedAddrs.includes(k.addr))
-
-  // we do not set default signers when:
-  // - we have more than two hw types that are left so sign
-  // - we don't have enough internal keys to sign the remaining
-  // reason for this is that we cannot select the hardware wallet automatically,
-  // the user needs to do it manually
-  const internal = notSinged.filter((k) => k.type === 'internal')
-  const hwTypes = [...new Set(notSinged.filter((k) => k.type !== 'internal').map((k) => k.type))]
-  const leftToSign = threshold - alreadySignedAddrs.length
-  if (hwTypes.length > 1 && internal.length < leftToSign) return []
-
-  return notSinged
-    .sort((a, b) => {
-      const isAInternal = a.type === 'internal'
-      const isBInternal = b.type === 'internal'
-      return isAInternal && !isBInternal ? -1 : !isAInternal && isBInternal ? 1 : 0
-    })
-    .slice(0, leftToSign)
 }
 
 export function getSafeTxnHash(typedData: TypedMessageUserRequest['meta']['params']) {
@@ -343,8 +314,7 @@ export async function getPendingTransactions(
     apiKey: process.env.SAFE_API_KEY
   })
 
-  const response = await apiKit.getMultisigTransactions(safeAddress, {
-    executed: false,
+  const response = await apiKit.getPendingTransactions(safeAddress, {
     ordering: 'nonce'
   })
   return { ...response, chainId, type: 'txn' }
@@ -370,7 +340,13 @@ export async function getLatestMessages(
     ordering: '-created',
     limit: 15
   })
-  return { ...response, chainId, type: 'message' }
+  const currentTime = new Date().getTime()
+  const oneWeek = 7 * 24 * 60 * 60 * 1000
+  // filter messages older than one week
+  const finalRes = response.results.filter(
+    (m) => new Date(m.created).getTime() + oneWeek > currentTime
+  )
+  return { ...response, results: finalRes, chainId, type: 'message' }
 }
 
 export async function getTransaction(
@@ -389,32 +365,23 @@ export async function fetchAllPending(
   networks: { chainId: bigint; threshold: number }[],
   safeAddr: Hex
 ): Promise<SafeResults | null> {
-  let promises = []
   const results: SafeResults = {}
   for (let i = 0; i < networks.length; i++) {
     const network = networks[i]!
-    promises.push(getPendingTransactions(network.chainId, safeAddr))
-    promises.push(getLatestMessages(network.chainId, safeAddr))
+    const responses = await Promise.all([
+      getPendingTransactions(network.chainId, safeAddr),
+      getLatestMessages(network.chainId, safeAddr)
+    ])
+    responses.forEach((r) => {
+      if (!results[r.chainId.toString()]) results[r.chainId.toString()] = { txns: [], messages: [] }
 
-    // when we assemble 4 promises, we make 4 requests to the API,
-    // take the results and wait an additional second.
-    // this is because we're allowed 5 requests per second
-    if (promises.length === 4 || i + 1 === networks.length) {
-      const responses = await Promise.all(promises)
-      responses.forEach((r) => {
-        if (!results[r.chainId.toString()])
-          results[r.chainId.toString()] = { txns: [], messages: [] }
-
-        if (r.type === 'txn')
-          results[r.chainId.toString()]!.txns = r.results as SafeMultisigTransactionResponse[]
-        else
-          results[r.chainId.toString()]!.messages = r.results.map((r) => {
-            return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
-          }) as ExtendedSafeMessage[]
-      })
-      await wait(1000)
-      promises = []
-    }
+      if (r.type === 'txn')
+        results[r.chainId.toString()]!.txns = r.results as SafeMultisigTransactionResponse[]
+      else
+        results[r.chainId.toString()]!.messages = r.results.map((r) => {
+          return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
+        }) as ExtendedSafeMessage[]
+    })
   }
 
   return results
@@ -539,6 +506,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
     messageHash: Hex
     signature: Hex
     created: number
+    signatures: Hex[]
   }
   isConfirmed: boolean
 }[] {
@@ -551,6 +519,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
       messageHash: Hex
       signature: Hex
       created: number
+      signatures: Hex[]
     }
     isConfirmed: boolean
   }[] = []
@@ -575,9 +544,11 @@ export function toSigMessageUserRequests(response: SafeResults): {
           messageHash: message.messageHash as Hex,
           signature: sortSigs(
             message.confirmations.map((c) => c.signature) as Hex[],
-            message.messageHash
+            message.messageHash,
+            message.confirmations
           ),
-          created: new Date(message.created).getTime()
+          created: new Date(message.created).getTime(),
+          signatures: message.confirmations.map((c) => c.signature) as Hex[]
         },
         isConfirmed: !!message.isConfirmed
       })
@@ -587,17 +558,42 @@ export function toSigMessageUserRequests(response: SafeResults): {
   return userRequests
 }
 
+function getOwnerFromSafeTx(
+  sig: string,
+  confirmations?: { owner: string; signature: string }[]
+): string | undefined {
+  return confirmations?.find((c) => c.signature === sig)?.owner
+}
+
+function recoverOwner(
+  sig: string,
+  hash: string,
+  confirmations?: { owner: string; signature: string }[]
+) {
+  // a transaction from safe global may have signatures that are not
+  // ecdsa; therefore, we cannot extract the owner from them by using
+  // a plain recoverAddress. We rely on the safe global information
+  const safeOwner = getOwnerFromSafeTx(sig, confirmations)
+  if (safeOwner) return safeOwner
+
+  // an ambire sig is always ecdsa
+  return recoverAddress(hash, sig)
+}
+
 // the signature is 130 x number_of_sigs + 2 (0x) symbols long
 // so we cut the hex (0x) from the beginning
 // then take each sig (substring(0, 130)) and recover the address
 // finally, we update everything
-export function getAlreadySignedOwners(signature: string, hash: string): string[] {
+export function getAlreadySignedOwners(
+  signature: string,
+  hash: string,
+  safeTx?: SafeMultisigTransactionResponse
+): string[] {
   const signatures = signature.substring(2)
   const signed = []
   for (let i = 0; i < signatures.length; i += 130) {
     const sig = `0x${signatures.substring(i, i + 130)}`
-    const owner = recoverAddress(hash, sig)
-    signed.push(owner)
+    signed.push(recoverOwner(sig, hash, safeTx?.confirmations))
   }
   return signed
 }
@@ -619,13 +615,16 @@ export function getSigs(signature?: string | null): Hex[] {
   return signed
 }
 
-export function sortSigs(signatures: Hex[], hash: string): Hex {
+export function sortSigs(
+  signatures: Hex[],
+  hash: string,
+  confirmations?: { owner: string; signature: string }[]
+): Hex {
   const signed: { sig: string; addr: string }[] = []
 
   for (let i = 0; i < signatures.length; i++) {
     const sig = signatures[i]!
-    const owner = recoverAddress(hash, sig)
-    signed.push({ sig, addr: owner })
+    signed.push({ sig, addr: recoverOwner(sig, hash, confirmations) })
   }
 
   const sorted = sortByAddress(signed)
@@ -695,4 +694,9 @@ export async function fetchExecutedTransactions(
   }
 
   return results
+}
+
+export async function getNonce(safeAddr: string, provider: RPCProvider): Promise<bigint> {
+  const safeInterface = new Contract(safeAddr, SafeAbi, provider) as any
+  return safeInterface.nonce()
 }

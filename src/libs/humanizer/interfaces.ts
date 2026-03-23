@@ -17,6 +17,7 @@ export type HumanizerVisualization = (
         | 'image'
         | 'link'
         | 'text'
+        | 'break'
       url?: string
       address?: string
       content?: string

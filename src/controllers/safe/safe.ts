@@ -189,7 +189,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   getMessageId(msg: SafeMessage): string {
-    return `${msg.messageHash}-${new Date(msg.created).getTime()}`
+    return `${msg.messageHash}`
   }
 
   #filterOutHidden(pending: SafeResults, safeAddr: string): SafeResults {
@@ -203,7 +203,6 @@ export class SafeController extends EventEmitter implements ISafeController {
       {},
       ...Object.keys(pending).map((chainId) => {
         const state = this.#accounts.accountStates[safeAddr]?.[chainId]
-        const importedKeysLength = state?.importedAccountKeys.length || 0
         return {
           [chainId]: {
             txns: pending[chainId]!.txns.filter((r) => !hiddenTxns.includes(r.safeTxHash)),
@@ -211,8 +210,9 @@ export class SafeController extends EventEmitter implements ISafeController {
               return (
                 // filter out rejected msgs by the user
                 !hiddenTxns.includes(this.getMessageId(m)) &&
+                !hiddenTxns.includes(`${this.getMessageId(m)}-${new Date(m.created).getTime()}`) &&
                 // and those that the user cannot sign
-                importedKeysLength > m.confirmations.length
+                (state?.threshold || 0) > m.confirmations.length
               )
             })
           }
@@ -221,19 +221,18 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
-  async fetchPending(
-    safeAddr: Hex,
-    networks: { chainId: bigint; threshold: number }[],
-    forceFetch = false
-  ): Promise<SafeResults | null> {
-    if (
-      !forceFetch &&
-      this.#updatedAt &&
+  shouldSkipFetchPending(safeAddr: string): boolean {
+    return (
+      !!this.#updatedAt &&
       this.#updatedAt.addr === safeAddr &&
       Date.now() - this.#updatedAt.time < FETCH_SAFE_TXNS
     )
-      return null
+  }
 
+  async fetchPending(
+    safeAddr: Hex,
+    networks: { chainId: bigint; threshold: number }[]
+  ): Promise<SafeResults | null> {
     this.#updatedAt = {
       time: Date.now(),
       addr: safeAddr

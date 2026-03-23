@@ -31,7 +31,7 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       tokenErrors,
       toBeLearned,
       lastExternalApiUpdateData,
-      priceCache,
+      tokenDataCache,
       defiPositions,
       ...result
     } = networkState.result

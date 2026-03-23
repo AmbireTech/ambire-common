@@ -73,6 +73,7 @@ describe('Bundler estimation tests', () => {
       ]
       const smartAcc = await getSmartAccount(privs, [])
       const opOptimism: AccountOp = {
+        id: '1',
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0]!,
         signingKeyType: null,
@@ -111,7 +112,8 @@ describe('Bundler estimation tests', () => {
             rewardsType: null,
             canTopUpGasTank: true,
             isFeeToken: true
-          }
+          },
+          marketDataIn: []
         }
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
@@ -143,6 +145,7 @@ describe('Bundler estimation tests', () => {
   describe('Estimation tests: optimism, deployed', () => {
     test('should estimate a valid userOp', async () => {
       const opOptimism: AccountOp = {
+        id: '1',
         accountAddr: smartAccDeployed.addr,
         signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
         signingKeyType: null,
@@ -174,7 +177,8 @@ describe('Bundler estimation tests', () => {
             rewardsType: null,
             canTopUpGasTank: true,
             isFeeToken: true
-          }
+          },
+          marketDataIn: []
         }
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
@@ -203,6 +207,7 @@ describe('Bundler estimation tests', () => {
     })
     test('should try to estimate an userOp with Biconomy by sending more ETH than the account has which is not allowed and should trigger reestimate by Pimlico who will allow it to pass', async () => {
       const opOptimism: AccountOp = {
+        id: '1',
         accountAddr: smartAccDeployed.addr,
         signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
         signingKeyType: null,
@@ -234,7 +239,8 @@ describe('Bundler estimation tests', () => {
             rewardsType: null,
             canTopUpGasTank: true,
             isFeeToken: true
-          }
+          },
+          marketDataIn: []
         }
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
@@ -280,8 +286,10 @@ describe('Bundler fallback tests', () => {
     }
   }
 
-  test('send a valid userOp on base but make the pimlico bundler return an internal server error - the bunlder switcher should switch to biconomy and proceed without the user noticing', async () => {
+  // we're skipping this test as we have only 1 bundler available at the moment on all networks: pimlico
+  test.skip('send a valid userOp on base but make the pimlico bundler return an internal server error - the bunlder switcher should switch to biconomy and proceed without the user noticing', async () => {
     const opBase: AccountOp = {
+      id: '1',
       accountAddr: smartAccDeployed.addr,
       signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
       signingKeyType: null,
@@ -313,7 +321,8 @@ describe('Bundler fallback tests', () => {
           rewardsType: null,
           canTopUpGasTank: true,
           isFeeToken: true
-        }
+        },
+        marketDataIn: []
       }
     ]
     const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO])
