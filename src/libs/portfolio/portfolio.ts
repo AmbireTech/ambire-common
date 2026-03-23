@@ -247,7 +247,8 @@ export class Portfolio {
       tokenDataRecencyOnFailure,
       tokenDataCache: paramsTokenDataCache,
       tokenDataRecency,
-      blacklist
+      blacklist,
+      preventTokenBlacklisting
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
@@ -300,10 +301,9 @@ export class Portfolio {
     const staticBlacklistedAddrs = STATIC_BLACKLIST.blacklistAddrs[chainIdStr] || []
     const dynamicBlacklistedAddrs = blacklist?.blacklistAddrs[chainIdStr] || []
     const allBlacklistedAddrs = new Set([...staticBlacklistedAddrs, ...dynamicBlacklistedAddrs])
-    const filteredChecksummedHints =
-      allBlacklistedAddrs.size > 0
-        ? checksummedErc20Hints.filter((addr) => !allBlacklistedAddrs.has(addr))
-        : checksummedErc20Hints
+    const filteredChecksummedHints = preventTokenBlacklisting
+      ? checksummedErc20Hints
+      : checksummedErc20Hints.filter((addr) => !allBlacklistedAddrs.has(addr))
 
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
