@@ -40,10 +40,17 @@ export class EOA7702 extends BaseAccount {
   getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
     // the critical error should be from the provider if we can broadcast in EOA only mode
     if (!this.accountState.isSmarterEoa && op.calls.length === 1) {
-      if (estimation.provider instanceof Error) {
-        return estimation.ambire instanceof Error ? estimation.ambire : estimation.provider
-      }
+      const estimateGasError = estimation.provider instanceof Error
+      const ambireError = estimation.ambire instanceof Error
+      const bundlerError = estimation.bundler instanceof Error
 
+      // if one estimation is succeeding, allow the user to proceed
+      if (!estimateGasError || !ambireError || !bundlerError) return null
+
+      if (ambireError) return estimation.ambire as Error
+      if (estimateGasError) return estimation.provider as Error
+
+      // if only the bundler is failing, allow the estimation
       return null
     }
 
