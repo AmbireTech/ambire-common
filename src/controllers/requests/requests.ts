@@ -551,7 +551,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.visibleUserRequests.filter((r) => r.kind === 'calls')
         )
       ) {
-        this.#portfolio.overrideSimulationResults(this.currentUserRequest.signAccountOp.accountOp)
+        await this.#portfolio.overrideSimulationResults(
+          this.currentUserRequest.signAccountOp.accountOp
+        )
       }
       this.currentUserRequest.signAccountOp.pause()
     }
@@ -959,12 +961,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   ) {
     this.userRequests
       .filter((r) => requestIds.includes(r.id))
-      .forEach((r) => {
+      .forEach(async (r) => {
         r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
 
         // Done here because remove handles approved requests too. We want this logic only on reject
         if (r.kind === 'calls') {
-          this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
+          await this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
         }
       })
 

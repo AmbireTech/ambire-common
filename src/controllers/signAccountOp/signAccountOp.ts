@@ -84,7 +84,11 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
-import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
+import {
+  BROADCAST_OPTIONS,
+  broadcastTransaction,
+  buildRawTransaction
+} from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -1123,7 +1127,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // if there's an estimation error, override the pending results
     if (this.estimation.status === EstimationStatus.Error) {
-      this.#portfolio.overrideSimulationResults(this.accountOp)
+      await this.#portfolio.overrideSimulationResults(this.accountOp)
     }
   }
 
@@ -2948,7 +2952,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
             })
           } else {
-            multipleTxnsBroadcastRes.push(await this.provider.broadcastTransaction(signedTxn))
+            multipleTxnsBroadcastRes.push(
+              await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
+            )
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 

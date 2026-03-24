@@ -2,92 +2,19 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { suppressConsole } from '../../../test/helpers/console'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
-import { IProvidersController } from '../../interfaces/provider'
-import { IStorageController, Storage } from '../../interfaces/storage'
+import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
-import { AccountsController } from '../accounts/accounts'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PhishingController } from '../phishing/phishing'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { DappsController } from './dapps'
 
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
   getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
 ) => {
-  const storage: Storage = produceMemoryStore()
-  const storageCtrl = new StorageController(storage)
-
-  !!storageInit && (await storageInit(storageCtrl))
-
-  let providersCtrl: IProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    autoLogin: autoLoginCtrl
-  })
-  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
-
-  const phishingCtrl = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    addressBook: addressBookCtrl
-  })
-
   const mockFetch = jest.fn()
 
   if (getMockFetchImplementation) {
@@ -113,14 +40,23 @@ const prepareTest = async (
       return fetch(url, ...args)
     })
   }
-  const controller = new DappsController({
-    fetch: mockFetch,
-    appVersion: '1.0.0',
-    storage: storageCtrl,
-    networks: networksCtrl,
-    phishing: phishingCtrl,
-    ui: uiCtrl
-  })
+
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      if (storageInit) {
+        await storageInit(storageCtrl)
+      }
+    },
+    {
+      awaitInitialLoad: false,
+      skipAppsFetchOnLoad: false,
+      overrides: {
+        fetch: mockFetch
+      }
+    }
+  )
+  const controller = mainCtrl.dapps
+
   await controller.initialLoadPromise
 
   return { controller }
@@ -162,6 +98,7 @@ describe('DappsController', () => {
     expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(false)
   })
   test('should retry on fetch and update fail', async () => {
+    const { restore } = suppressConsole()
     jest.useFakeTimers()
     const callCount: Record<string, number> = {}
     const { controller } = await prepareTest(
@@ -225,6 +162,7 @@ describe('DappsController', () => {
     expect(controller.dapps.length).toBeGreaterThan(predefinedDapps.length)
     jest.useRealTimers()
     jest.clearAllTimers()
+    restore()
   })
   test('should add dapp to connect and update blacklisted status', async () => {
     const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
@@ -235,7 +173,7 @@ describe('DappsController', () => {
       meta: { params: {} },
       dappPromises: [
         {
-          dapp: null,
+          id: '',
           resolve: () => {},
           reject: () => {},
           meta: {},
