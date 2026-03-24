@@ -657,7 +657,7 @@ describe('Portfolio Controller ', () => {
       expect(areAccountOpsEqual(stateBefore.accountOps!, accountOp['1']!)).toBe(true)
       expect(collectionBefore?.amountPostSimulation).toBe(0n)
 
-      controller.overrideSimulationResults(accountOp['1']![0]!)
+      await controller.overrideSimulationResults(accountOp['1']![0]!)
 
       const stateAfter = getEthereumPortfolioState(controller)
       const collectionAfter = getSimulatedCollection(controller)
@@ -673,6 +673,30 @@ describe('Portfolio Controller ', () => {
             token.amountPostSimulation !== undefined || token.simulationAmount !== undefined
         )
       ).toBe(false)
+    })
+
+    test('calling overrideSimulationResults during a portfolio update still removes the simulation result and stored accountOps', async () => {
+      const { controller } = await prepareTest()
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      const updatePromise = controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      // Wait a short period
+      await wait(50)
+
+      // We call overrideSimulationResults in the middle of the updateSelectedAccount flow, to make sure it can handle that case
+      const overridePromise = controller.overrideSimulationResults(accountOp['1']![0]!)
+
+      await updatePromise
+      await overridePromise
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(stateAfter.accountOps).toBeUndefined()
     })
 
     test('overrideSimulationResults is a no-op when there is no matching simulated state', async () => {
@@ -795,6 +819,33 @@ describe('Portfolio Controller ', () => {
       const stateAfter = controller.getAccountPortfolioState(account.addr)['1']!
 
       expect(stateAfter.accountOps).toBeUndefined()
+    })
+    test('discardSimulation removes the account ops from state even if the portfolio update fails', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      expect(controller.getAccountPortfolioState(account.addr)['1']!.accountOps).toBeDefined()
+
+      // Mock getAllHints error which will cause the update to fail
+      // @ts-ignore
+      jest.spyOn(controller, 'getAllHints').mockImplementationOnce(() => {
+        throw new Error('Failed to get hints')
+      })
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = controller.getAccountPortfolioState(account.addr)['1']!
+
+      expect(stateAfter.accountOps).toBeUndefined()
+      restore()
     })
   })
 
