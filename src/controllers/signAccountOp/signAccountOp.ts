@@ -1127,7 +1127,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // if there's an estimation error, override the pending results
     if (this.estimation.status === EstimationStatus.Error) {
-      this.#portfolio.overrideSimulationResults(this.accountOp)
+      await this.#portfolio.overrideSimulationResults(this.accountOp)
     }
   }
 

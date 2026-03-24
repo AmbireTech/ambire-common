@@ -930,10 +930,11 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }, 'transfer')
 
-    this.signAccountOpController.onError((error) => {
-      if (this.signAccountOpController)
-        this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
+    this.signAccountOpController.onError(async (error) => {
       this.emitError(error)
+
+      if (this.signAccountOpController)
+        await this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
     })
   }
 

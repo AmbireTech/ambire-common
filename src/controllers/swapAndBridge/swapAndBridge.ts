@@ -2472,15 +2472,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }, 'swap-and-bridge')
 
-    this.#signAccountOpController.onError((error) => {
+    this.#signAccountOpController.onError(async (error) => {
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
       // that is ALWAYS up-to-date with the current quote and the current form state.
       // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      if (this.#signAccountOpController)
-        this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
-
       this.emitError(error)
+
+      if (this.#signAccountOpController)
+        await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
     })
     // if the estimation emits an error, handle it
     this.#signAccountOpController.estimation.onUpdate(() => {

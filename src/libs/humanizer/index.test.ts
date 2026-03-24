@@ -253,14 +253,14 @@ describe('Humanizer main function', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
+        getAction('Send'),
+        getToken(ZeroAddress, 10n ** 18n),
+        getLabel('and'),
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
-        getLabel('and'),
-        getAction('Send'),
-        getToken(ZeroAddress, 10n ** 18n),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ],
       [
