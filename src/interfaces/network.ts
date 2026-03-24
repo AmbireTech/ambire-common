@@ -117,6 +117,11 @@ export interface Network {
   customBundlerUrl?: string
 }
 
+export interface SupportedNetworks extends Network {
+  isNotSupported?: boolean
+  notSupportedReason?: string
+}
+
 export interface AddNetworkRequestParams {
   name: Network['name']
   rpcUrls: Network['rpcUrls']
