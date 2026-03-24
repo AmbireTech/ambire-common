@@ -73,6 +73,7 @@ export interface AbiFragment {
 }
 
 export interface HumanizerMetaAddress {
+  logo?: string
   name?: string
   // undefined means it is not a token
   token?: { symbol: string; decimals?: number }
