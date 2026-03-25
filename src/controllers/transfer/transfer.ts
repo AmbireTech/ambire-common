@@ -489,14 +489,35 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
+      // if the recipientAcc is an account in the extension
+      // & the account state is not fetched for it, fetch it
+      // so that we could validate the account properly
+      // example: safe accounts may not be deployed on certain networks
+      const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
+      if (recipientAcc && this.selectedToken?.chainId) {
+        const state =
+          this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
+        if (!state) {
+          this.#accounts
+            .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
+            .catch((e) => {
+              console.log('Failed to get the account on chain state:', e)
+            })
+        }
+      }
+
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccount.account?.addr,
+        this.#selectedAccount.account.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
         isEnsAddress,
         this.addressState.isDomainResolving,
+        this.#networks.networks,
+        this.#accounts.accountStates,
+        recipientAcc,
+        this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt
       )
