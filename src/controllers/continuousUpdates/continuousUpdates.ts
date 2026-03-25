@@ -361,7 +361,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
       return
 
-    // do not make safe requests if the extension is locked
+    // do not make Safe requests if the extension is locked
     if (!this.#main.keystore.isUnlocked) return
 
     const pendingSafeTxns = this.#main.requests.userRequests
@@ -383,7 +383,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     if (!pendingSafeTxns.length) return
 
     const confirmed = await this.#main.safe.fetchExecuted(pendingSafeTxns).catch((e) => {
-      console.log('failed to retrieve executed safe txns')
+      console.log('failed to retrieve executed Safe txns')
       return []
     })
     if (!confirmed.length) return
@@ -419,14 +419,14 @@ export class ContinuousUpdatesController extends EventEmitter {
             fromRequestId: userR.id
           })
           .catch((e: Error) => {
-            console.log('could not resolve safe global request')
+            console.log('could not resolve Safe Global request')
             console.log(e)
             return e
           })
         if (commonSuccessHandler instanceof Error) continue
 
         await this.#main.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
-          console.log('could not resolve safe global request')
+          console.log('could not resolve Safe Global request')
           console.log(e)
         })
 

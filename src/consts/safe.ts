@@ -1,6 +1,6 @@
 /**
- * A non-exclusive list of networks that safe accounts are supported on.
- * We will use this list to know where to search for safe accounts
+ * A non-exclusive list of networks that Safe accounts are supported on.
+ * We will use this list to know where to search for Safe accounts
  * and in accordance with the enabled user networks
  */
 export const SAFE_NETWORKS = [
@@ -9,7 +9,7 @@ export const SAFE_NETWORKS = [
 ]
 
 /**
- * Information about safe contract addresses by their versions
+ * Information about Safe contract addresses by their versions
  */
 const vOneThree = {
   singleton: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552'
@@ -25,14 +25,14 @@ export const execTransactionAbi = [
   'function execTransaction(address to,uint256 value,bytes calldata data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address payable refundReceiver,bytes memory signatures)'
 ]
 /**
- * In order to do batching, safe needs an extra contract helper called multisend
- * This is the latest contract and it's safe to use across versions
+ * In order to do batching, Safe needs an extra contract helper called multisend
+ * This is the latest contract and it's Safe to use across versions
  */
 export const multiSendAddr = '0x9641d764fc13c8B624c04430C7356C1C7C8102e2'
 
 /**
- * In order to do batching, safe needs an extra contract helper called multisend
- * This is the latest contract and it's safe to use across versions
+ * In order to do batching, Safe needs an extra contract helper called multisend
+ * This is the latest contract and it's Safe to use across versions
  */
 export const safeNullOwner = '0x0000000000000000000000000000000000000002'
 
