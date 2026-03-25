@@ -74,7 +74,7 @@ export async function getCalculatedSafeAddress(
     proxyCreationCode = await (factory as any).proxyCreationCode()
   } catch (e) {
     console.error(
-      `failed to call proxyCreationCode on safe factory with addr: ${creation.factoryAddress}`
+      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`
     )
     return null
   }
@@ -88,7 +88,7 @@ export async function getCalculatedSafeAddress(
 
 /**
  * The setup() method is the same for v1.3, 1.4.1, 1.5. We decode it
- * to fetch the initial owners of the safe so that we could put them
+ * to fetch the initial owners of the Safe so that we could put them
  * in the account associatedKeys
  */
 export function decodeSetupData(setupData: Hex): Hex[] {
@@ -100,7 +100,7 @@ export function decodeSetupData(setupData: Hex): Hex[] {
   try {
     decoded = setupMethodInterface.decodeFunctionData('setup', setupData)
   } catch (e) {
-    console.error('failed to decode the safe setup data')
+    console.error('failed to decode the Safe setup data')
     return []
   }
 
@@ -108,10 +108,10 @@ export function decodeSetupData(setupData: Hex): Hex[] {
 }
 
 /**
- * Construct a safe txn for signing
+ * Construct a Safe txn for signing
  */
 export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
-  // todo: we're blindly trusting the returned txn from safe global, is this OK?
+  // todo: we're blindly trusting the returned txn from Safe Global, is this OK?
   if (op.safeTx) {
     return {
       to: op.safeTx.to as Hex,
@@ -201,7 +201,7 @@ export function getSafeBroadcastTxn(
 }
 
 /**
- * In safe, the signatures need to be in order, starting with
+ * In Safe, the signatures need to be in order, starting with
  * the smallest ecrecover(sig) owner, ascending. Here, we
  * sort the owners in that way
  */
@@ -570,9 +570,9 @@ function recoverOwner(
   hash: string,
   confirmations?: { owner: string; signature: string }[]
 ) {
-  // a transaction from safe global may have signatures that are not
+  // a transaction from Safe Global may have signatures that are not
   // ecdsa; therefore, we cannot extract the owner from them by using
-  // a plain recoverAddress. We rely on the safe global information
+  // a plain recoverAddress. We rely on the Safe Global information
   const safeOwner = getOwnerFromSafeTx(sig, confirmations)
   if (safeOwner) return safeOwner
 
