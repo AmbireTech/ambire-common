@@ -296,7 +296,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     accountKeys: Key[],
     account: Account
   ): 'no-policy' | 'expired' | 'valid-policy' | 'unsupported' {
-    // disable the auto login for safe accounts
+    // disable the auto login for Safe accounts
     if (account.safeCreation) return 'unsupported'
 
     const accountPolicies = this.getAccountPolicies(parsedSiwe.address)

@@ -1008,7 +1008,7 @@ export class MainController extends EventEmitter implements IMainController {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
 
-    // some accounts may not resolve immediately, like a safe acc
+    // some accounts may not resolve immediately, like a Safe acc
     if (this.signMessage.status === SignMessageStatus.Done) {
       await this.#resolveSignMessage(signedMessage)
     } else if (this.signMessage.status === SignMessageStatus.Partial) {
@@ -1378,7 +1378,7 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Fetch safe txns from safe global and make them user requests
+   * Fetch Safe txns from Safe Global and make them user requests
    * if the selected account is a safe
    */
   async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
@@ -1418,7 +1418,7 @@ export class MainController extends EventEmitter implements IMainController {
         .fetchPending(safeAddr, [firstBatch])
         .catch((e) => {
           console.log(e)
-          console.log('failed to retrieve pending safe txns')
+          console.log('failed to retrieve pending Safe txns')
           return null
         })
 
@@ -1607,7 +1607,7 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    // upon resolving an account op, check all same nonce safe requests and remove them
+    // upon resolving an account op, check all same nonce Safe requests and remove them
     const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id)
 
     if (safeRequests.length) {
