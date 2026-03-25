@@ -26,7 +26,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable @typescript-eslint/no-shadow */
-import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
@@ -657,35 +657,62 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * If you instead need to remove a specific accountOp from the simulation results, use `discardSimulation`
    * (e.g., after an account op is broadcasted and confirmed)
    */
-  overrideSimulationResults(accountOp: AccountOp) {
+  async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
 
-    if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
+    const updatePromise = async () => {
+      if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
 
-    const networkState = this.#state[accountAddr][chainId.toString()]!
+      const networkState = this.#state[accountAddr][chainId.toString()]!
 
-    if (!networkState.result) return
+      if (!networkState.result) return
 
-    networkState.result.tokens = networkState.result.tokens.map((token) => {
-      const { amountPostSimulation, simulationAmount, ...rest } = token
+      networkState.result.tokens = networkState.result.tokens.map((token) => {
+        const { amountPostSimulation, simulationAmount, ...rest } = token
 
-      return rest
+        return rest
+      })
+
+      networkState.result.collections = (networkState.result.collections || []).map(
+        (collection) => {
+          const { amountPostSimulation, postSimulation, simulationAmount, ...rest } = collection
+
+          return rest
+        }
+      )
+
+      networkState.result.total = getTotal(
+        networkState.result.tokens,
+        networkState.result.defiPositions
+      )
+
+      delete networkState.accountOps
+
+      this.emitUpdate()
+    }
+
+    // overrideSimulationResults is a synchronous function that updates the state by removing the simulation results.
+    // However, there may be a portfolio update in progress that will override the state with the simulation results again. To prevent
+    // this, we use a queue to ensure that if there is an update in progress, the override of the simulation results will be executed after the update is finished.
+    // And that subsequent updates will wait for the override to be finished before updating the state again.
+
+    if (!this.#queue?.[accountAddr]?.[chainId.toString()])
+      this.#queue[accountAddr] = {
+        ...this.#queue[accountAddr],
+        [chainId.toString()]: Promise.resolve()
+      }
+
+    // Chain the new updatePromise to the current queue
+    this.#queue[accountAddr][chainId.toString()] = this.#queue?.[accountAddr]?.[
+      chainId.toString()
+    ]!.then(updatePromise).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error(error)
+      return updatePromise()
     })
 
-    networkState.result.collections = (networkState.result.collections || []).map((collection) => {
-      const { amountPostSimulation, postSimulation, simulationAmount, ...rest } = collection
-
-      return rest
-    })
-
-    networkState.result.total = getTotal(
-      networkState.result.tokens,
-      networkState.result.defiPositions
-    )
-
-    delete networkState.accountOps
-
-    this.emitUpdate()
+    // Ensure the method waits for the entire queue to resolve
+    await this.#queue[accountAddr][chainId.toString()]
   }
 
   /**
@@ -709,9 +736,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       const networkState = this.#state[accountAddr][chainId.toString()]!
 
       if (!networkState.result || !networkState.accountOps) return
-      if (!accountOpsAfterUpdate) {
-        accountOpsAfterUpdate = {}
-      }
 
       accountOpsAfterUpdate[chainId.toString()] = structuredClone(networkState.accountOps || [])
 
@@ -738,7 +762,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     })
 
     if (!accountAddrToUpdate || networksToUpdate.length === 0) return
-
     await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
       accountOps: accountOpsAfterUpdate
     })
@@ -1309,9 +1332,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
       accountState[network.chainId.toString()] = {
-        // We cache the previously simulated AccountOps
-        // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
-        // This allows us to identify any differences between the two.
         accountOps: portfolioProps?.simulation?.accountOps,
         isReady: true,
         isLoading: false,
@@ -1342,6 +1362,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
         error: e
       })
+      state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
       // Convert the error to an object because the portfolio state is cloned
       // using structuredClone() which doesn't preserve custom error properties
@@ -1503,11 +1524,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #getMaxDataAgeMs(
     accountId: AccountId,
     chainId: bigint,
-    areAccountOpsChanged: boolean,
+    isSimulating: boolean,
     maxDataAgeMs?: number,
     maxDataAgeUnused?: number
   ): number | undefined {
-    if (areAccountOpsChanged) return undefined
+    if (isSimulating) return undefined
 
     // maxDataAgeMsUnused is optional so we fall back to maxDataAgeMs if not provided
     if (typeof maxDataAgeUnused !== 'number') return maxDataAgeMs
@@ -1603,16 +1624,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
           const accountOpsToSimulate = currentAccountOps || simulatedAccountOps
 
-          // Compare the ids of the account ops
-          const areAccountOpsChanged =
-            !!currentAccountOps && areAccountOpsEqual(currentAccountOps, simulatedAccountOps || [])
-
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
           const maxDataAgeMs = this.#getMaxDataAgeMs(
             accountId,
             network.chainId,
-            areAccountOpsChanged,
+            !!currentAccountOps,
             paramsMaxDataAgeMs,
             paramsMaxDataAgeMsUnused
           )

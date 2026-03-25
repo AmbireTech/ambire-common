@@ -181,7 +181,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #currentUserRequest: UserRequest | null = null
 
-  #shouldSimulateAccountOps = true
+  private shouldSimulateAccountOps = true
 
   get currentUserRequest() {
     return this.#currentUserRequest
@@ -281,7 +281,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
-    this.#shouldSimulateAccountOps = shouldSimulateAccountOps
+    this.shouldSimulateAccountOps = shouldSimulateAccountOps
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
@@ -461,14 +461,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
+        if (this.shouldSimulateAccountOps)
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
         ) as PlainTextMessageUserRequest | TypedMessageUserRequest | undefined
 
-        // remove the request only if it's not a safe req
+        // remove the request only if it's not a Safe req
         if (existingMessageRequest && !this.#selectedAccount.account?.safeCreation) {
           existingMessageRequest.meta.accountAddr
           await this.rejectUserRequests('User rejected the message request', [
@@ -551,7 +552,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.visibleUserRequests.filter((r) => r.kind === 'calls')
         )
       ) {
-        this.#portfolio.overrideSimulationResults(this.currentUserRequest.signAccountOp.accountOp)
+        await this.#portfolio.overrideSimulationResults(
+          this.currentUserRequest.signAccountOp.accountOp
+        )
       }
       this.currentUserRequest.signAccountOp.pause()
     }
@@ -859,7 +862,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        // if it's a safe txn:
+        // if it's a Safe txn:
         // - reject it upon a normal reject req;
         // - resolve it on accountOp resolve
 
@@ -905,7 +908,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     })
 
-    // reject all safe txns so they do not appear by accident again
+    // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
     if (safeResolveIds.length) await this.#safe.resolveTxnId(safeResolveIds)
 
@@ -959,12 +962,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   ) {
     this.userRequests
       .filter((r) => requestIds.includes(r.id))
-      .forEach((r) => {
+      .forEach(async (r) => {
         r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
 
         // Done here because remove handles approved requests too. We want this logic only on reject
         if (r.kind === 'calls') {
-          this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
+          await this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
         }
       })
 
@@ -1448,7 +1451,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       dappPromises: [],
       meta: {
         // basically, it's the same eip-712 message but one is coming
-        // from safe with the safe typehints, and other is ethers
+        // from Safe with the Safe typehints, and other is ethers
         params: typedData as {
           domain: TypedDataDomain
           types: Record<string, Array<TypedDataField>>
@@ -1747,7 +1750,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (existingUserRequest) {
       // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.
       if (existingUserRequest.signAccountOp.signAndBroadcastPromise) {
-        // if the update is coming from safe global, just ignore it
+        // if the update is coming from Safe Global, just ignore it
         if (meta.safeTxnProps) return
 
         const errorMessage =
@@ -1839,7 +1842,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           : new Promise(() => {}) // Explicitly never-resolving promise
       ])) as any
 
-      // do not build requests for expired safe txns
+      // do not build requests for expired Safe txns
       if (meta.safeTxnProps?.nonce && meta.safeTxnProps?.nonce < accountState.nonce) return
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
@@ -1886,7 +1889,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             safeTx: meta.safeTx,
             meta
           },
-          shouldSimulate: this.#shouldSimulateAccountOps,
+          shouldSimulate: this.shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
             await this.#portfolio.updateSelectedAccount(account.addr, [network])
           },

@@ -492,7 +492,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       // if the recipientAcc is an account in the extension
       // & the account state is not fetched for it, fetch it
       // so that we could validate the account properly
-      // example: safe accounts may not be deployed on certain networks
+      // example: Safe accounts may not be deployed on certain networks
       const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
       if (recipientAcc && this.selectedToken?.chainId) {
         const state =
@@ -930,10 +930,11 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }, 'transfer')
 
-    this.signAccountOpController.onError((error) => {
-      if (this.signAccountOpController)
-        this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
+    this.signAccountOpController.onError(async (error) => {
       this.emitError(error)
+
+      if (this.signAccountOpController)
+        await this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
     })
   }
 
