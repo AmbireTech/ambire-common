@@ -181,7 +181,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #currentUserRequest: UserRequest | null = null
 
-  #shouldSimulateAccountOps = true
+  private shouldSimulateAccountOps = true
 
   get currentUserRequest() {
     return this.#currentUserRequest
@@ -281,7 +281,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
-    this.#shouldSimulateAccountOps = shouldSimulateAccountOps
+    this.shouldSimulateAccountOps = shouldSimulateAccountOps
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
@@ -461,8 +461,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
+        if (this.shouldSimulateAccountOps)
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
@@ -1888,7 +1889,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             safeTx: meta.safeTx,
             meta
           },
-          shouldSimulate: this.#shouldSimulateAccountOps,
+          shouldSimulate: this.shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
             await this.#portfolio.updateSelectedAccount(account.addr, [network])
           },
