@@ -14,6 +14,7 @@ export type QrWalletConfig = {
   label: string
   hdPathTemplate: string
   relativePathTemplate: string
+  tutorialUrl?: string
 }
 
 type QrParsedAccountMeta = {
