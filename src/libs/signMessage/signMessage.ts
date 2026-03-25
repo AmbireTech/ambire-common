@@ -496,7 +496,7 @@ export async function getPlainTextSignature(
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
   if (!!account.safeCreation) {
-    // safe always signs a typed data, even if plain sig
+    // Safe always signs a typed data, even if plain sig
     const typedData = getSafeTypedDataForIsValidSignature(
       network.chainId,
       account.addr as Hex,
@@ -574,7 +574,7 @@ export async function getEIP712Signature(
   }
 
   if (!!account.safeCreation) {
-    // safe wraps the EIP-712 message in it's own EIP-712
+    // Safe wraps the EIP-712 message in it's own EIP-712
     const typedData = getSafeTypedDataForIsValidSignature(
       network.chainId,
       account.addr as Hex,

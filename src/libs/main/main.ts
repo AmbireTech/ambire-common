@@ -10,7 +10,7 @@ export const getShouldSimulateInTheBackground = (
   currentReq: CallsUserRequest,
   callUserRequests: CallsUserRequest[]
 ) => {
-  // simulations should get persisted for all non-safe accounts
+  // simulations should get persisted for all non-Safe accounts
   if (!currentReq.signAccountOp.account.safeCreation) return true
 
   // check if there are other requests with a conflicting nonce to this one.
