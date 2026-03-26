@@ -1042,11 +1042,11 @@ export class MainController extends EventEmitter implements IMainController {
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
       // a new session when retrieving keys, in case there already is one.
-      if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
+      if (ledgerCtrl.walletSDK && ledgerCtrl.cleanUp) await ledgerCtrl.cleanUp()
 
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
       const pathToUnlock = getHdPathFromTemplate(hdPathTemplate, 0)
-      await ledgerCtrl.unlock(pathToUnlock)
+      if (ledgerCtrl.unlock) await ledgerCtrl.unlock(pathToUnlock)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
@@ -1186,9 +1186,8 @@ export class MainController extends EventEmitter implements IMainController {
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
-      addressesWithPendingOps
-    )
+    const updatedAccountsOpsByAccount =
+      await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
