@@ -721,7 +721,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        // for safe accounts, always select the first not disabled EOA
+        // for Safe accounts, always select the first not disabled EOA
         // or the first EOA if all are disabled
         if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
           const notDisabled = payOptionsPaidByEOA.find(
@@ -822,12 +822,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // if the safe txn is not deployed, display an error
+    // if the Safe txn is not deployed, display an error
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
       errors.push({
-        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe global`
+        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe Global`
       })
     }
 
@@ -978,7 +978,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    // safe txn, signed, with a future nonce: display an error
+    // Safe txn, signed, with a future nonce: display an error
     if (
       !!this.account.safeCreation &&
       accountState &&
@@ -1523,8 +1523,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
     const { haveCallsChanged = false } = opts || {}
 
-    // we want to restart the interval if signAccountOp is for a signed safe.
-    // the reason for this: there could be multiple signed safe txns with
+    // we want to restart the interval if signAccountOp is for a signed Safe.
+    // the reason for this: there could be multiple signed Safe txns with
     // the same nonce waiting to be broadcast. The may want to check each
     // out in quick succession. If he does 1 -> 2 -> 1, calls would not
     // have changed on 1, but the simulation from 2 will persist as sadly,
@@ -1728,7 +1728,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // TODO: how to handle this case?
       if (!state) return
 
-      // if the account is a safe,
+      // if the account is a Safe,
       // add an additional state override that gives privileges to the assKey;
       // also, we changed privs storage slot to ambire.smart.contracts.storage
       // so privs no longer override slot number 0
@@ -1743,7 +1743,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         : undefined
 
-      // add stateOverride when using a safe as well
+      // add stateOverride when using a Safe as well
       const stateOverride =
         !!this.account.safeCreation ||
         (this.accountOp.calls.length > 1 && isBasicAccount(this.account, state))
@@ -2108,9 +2108,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   get accountKeyStoreKeys(): Key[] {
-    // we take signing keys from the state as safe account signers
+    // we take signing keys from the state as Safe account signers
     // may be different per network.
-    // if the account isn't a safe, we return the hardcoded associatedKeys
+    // if the account isn't a Safe, we return the hardcoded associatedKeys
     // from the account itself in the accountState
     const state =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -2456,7 +2456,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    // in safe, you won't have to choose the signers, and they could be multiple
+    // in Safe, you won't have to choose the signers, and they could be multiple
     // we need to take the signers from the account state
     // check which we have in the extension (they will be in keystore)
     // decide what to do from that point onwards
@@ -2512,13 +2512,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ) {
         // all's good, proceed to broadcast
       } else if (this.account.safeCreation) {
-        // if the safe txn is not already signed, fetch the latest nonce
-        // as we don't have a mechanism for fixing nonces for safe accounts
+        // if the Safe txn is not already signed, fetch the latest nonce
+        // as we don't have a mechanism for fixing nonces for Safe accounts
         // during the estimation phase itself
         if (!this.accountOp.safeTx) {
           const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
             (e) => {
-              console.log('failed to retrieve the latest nonce for safe')
+              console.log('failed to retrieve the latest nonce for Safe')
               console.log(e)
               return null
             }
@@ -2552,7 +2552,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           : [this.accountOp.signingKeyAddr]
 
         if (!prevSignedSigs.length) {
-          // propose the txn to safe global upon first entry
+          // propose the txn to Safe Global upon first entry
           await propose(
             safeTxn,
             this.accountOp.chainId,

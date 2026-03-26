@@ -489,7 +489,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
 
-    // we should fetch safe txns again upon failure
+    // we should fetch Safe txns again upon failure
     let shouldFetchSafeTxns = false
 
     // Use this flag to make the auto-refresh slower with the passege of time.
@@ -632,7 +632,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
                     }
                   } else {
-                    // if the txn resulted in a failure, unresolve all safe txns
+                    // if the txn resulted in a failure, unresolve all Safe txns
                     // with the same nonce so that the user can retry
                     const acc = this.#accounts.accounts.find(
                       (a) => a.addr === accountOp.accountAddr
