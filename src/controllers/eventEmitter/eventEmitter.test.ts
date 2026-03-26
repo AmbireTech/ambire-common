@@ -169,4 +169,86 @@ describe('EventEmitter', () => {
       expect(oldController.onErrorIds).toHaveLength(0)
     })
   })
+
+  describe('Property tracking', () => {
+    it('should track updated keys after emitUpdate', () => {
+      const emitter = new (class extends EventEmitter {
+        foo = ''
+        baz = 0
+        emit() {
+          this.emitUpdate()
+        }
+      })() as any
+      emitter.emit()
+      emitter.getUpdatedKeys() // clear initial
+      emitter.foo = 'bar'
+      emitter.baz = 123
+      emitter.emit()
+      expect(emitter.getUpdatedKeys()).toEqual(['foo', 'baz'])
+      expect(emitter.getUpdatedKeys()).toEqual([])
+    })
+
+    it('should not track private-looking keys', () => {
+      const emitter = new (class extends EventEmitter {
+        _internal = ''
+        emit() {
+          this.emitUpdate()
+        }
+      })()
+      emitter.emit()
+      emitter.getUpdatedKeys() // clear initial
+      emitter._internal = 'something'
+      emitter.emit()
+      expect(emitter.getUpdatedKeys()).toEqual([])
+    })
+
+    it('should handle native private fields correctly with shallow comparison', () => {
+      class TestEmitter extends EventEmitter {
+        #privateVal = 'secret'
+
+        getMyPrivateVal() {
+          return this.#privateVal
+        }
+
+        emit() {
+          this.emitUpdate()
+        }
+      }
+      const emitter = new TestEmitter()
+      emitter.emit() // Initial update
+      emitter.getUpdatedKeys() // Clear initial
+      expect(emitter.getMyPrivateVal()).toBe('secret')
+      expect(emitter.getUpdatedKeys()).toEqual([])
+    })
+
+    it('should NOT track updated keys during the first emitUpdate', () => {
+      const emitter = new (class extends EventEmitter {
+        foo = 'bar'
+        get baz() { return 'qux' }
+        emit() {
+          this.emitUpdate()
+        }
+      })() as any
+
+      // Before first emit, should be empty
+      expect(emitter.getUpdatedKeys()).toEqual([])
+
+      // Track keys during the first emit
+      let keysDuringFirstEmit: string[] = []
+      emitter.onUpdate(() => {
+        keysDuringFirstEmit = emitter.getUpdatedKeys()
+      })
+
+      emitter.emit()
+      // Should be empty because it is the first emit
+      expect(keysDuringFirstEmit).toEqual([])
+
+      // After first emit, tracking should work
+      emitter.foo = 'new'
+      emitter.emit()
+      // baz is a getter, so it is always included if tracking has started
+      expect(emitter.getUpdatedKeys()).toContain('foo')
+      expect(emitter.getUpdatedKeys()).toContain('baz')
+    })
+  })
 })

@@ -6,6 +6,48 @@ import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
+// Cache to ensure referential stability. When a nested object is accessed multiple times,
+// it should return the same Proxy instance, preventing infinite re-render loops in React
+// caused by unstable references in selectors.
+const proxyCache = new WeakMap<any, any>()
+
+function createDeepProxy(target: any, topLevelKey: string, updatedKeys: Set<string>): any {
+  if (!isPlainObjectOrArray(target)) {
+    return target
+  }
+
+  const cachedProxy = proxyCache.get(target)
+  if (cachedProxy) return cachedProxy
+
+  const proxy = new Proxy(target, {
+    get(obj, prop) {
+      const value = Reflect.get(obj, prop)
+      if (isPlainObjectOrArray(value)) {
+        return createDeepProxy(value, topLevelKey, updatedKeys)
+      }
+      return value
+    },
+    set(obj, prop, value, receiver) {
+      const currentValue = Reflect.get(obj, prop)
+      if (currentValue !== value) {
+        Reflect.set(obj, prop, value, receiver)
+        updatedKeys.add(topLevelKey)
+      }
+      return true
+    }
+  })
+
+  proxyCache.set(target, proxy)
+  return proxy
+}
+
+function isPlainObjectOrArray(value: any): boolean {
+  if (value === null || typeof value !== 'object') return false
+  const proto = Object.getPrototypeOf(value)
+  // Only return true for {} and []
+  return proto === Object.prototype || proto === Array.prototype || proto === null
+}
+
 export default class EventEmitter {
   id: string
 
@@ -28,6 +70,12 @@ export default class EventEmitter {
   #errors: ErrorRef[] = []
 
   statuses: Statuses<string> = {}
+
+  #updatedKeys: Set<string> = new Set()
+
+  #lastState: { [key: string]: any } = {}
+
+  #hasEmittedUpdate: boolean = false
 
   /**
    *
@@ -67,6 +115,64 @@ export default class EventEmitter {
     return this.#errors
   }
 
+  getUpdatedKeys(): string[] {
+    if (!this.#hasEmittedUpdate) {
+      this.#updatedKeys.clear()
+      return []
+    }
+
+    const keys = new Set(this.#updatedKeys)
+
+    for (const key of Object.keys(this)) {
+      if (key.startsWith('_') || key.startsWith('#')) continue
+
+      const val = (this as any)[key]
+      if (val instanceof Set || val instanceof Map) {
+        keys.add(key)
+      }
+    }
+
+    const getterKeys = this.#getGettersKeys()
+    for (const key of getterKeys) {
+      keys.add(key)
+    }
+
+    this.#updatedKeys.clear()
+
+    return Array.from(keys)
+  }
+
+  #getGettersKeys(): string[] {
+    const proto = Object.getPrototypeOf(this)
+    const descriptors = Object.getOwnPropertyDescriptors(proto)
+    return Object.keys(descriptors).filter((key) => {
+      if (key.startsWith('#') || key.startsWith('_') || key === 'toJSON') return false
+      return typeof descriptors[key]?.get === 'function'
+    })
+  }
+
+  protected trackUpdates() {
+    for (const key of Object.keys(this)) {
+      if (key === 'updatedKeys' || key.startsWith('_') || key.startsWith('#')) continue
+
+      const currentValue = (this as any)[key]
+      if (typeof currentValue === 'function') continue
+
+      if (currentValue !== this.#lastState[key]) {
+        this.#updatedKeys.add(key)
+
+        // Wrap objects/arrays in a proxy and reassign back to `this` so direct mutations are caught
+        if (isPlainObjectOrArray(currentValue)) {
+          const proxiedValue = createDeepProxy(currentValue, key, this.#updatedKeys)
+          ;(this as any)[key] = proxiedValue
+          this.#lastState[key] = proxiedValue
+        } else {
+          this.#lastState[key] = currentValue
+        }
+      }
+    }
+  }
+
   /**
    * Emits an update immediately, bypassing both background batching
    * (where updates on the same tick are debounced and batched for performance)
@@ -79,6 +185,7 @@ export default class EventEmitter {
    * normal batching may skip intermediate states and only emit the first and last ones.
    */
   async forceEmitUpdate() {
+    this.trackUpdates()
     // Bypassing background batching on the same tick
     await wait(1)
 
@@ -87,13 +194,18 @@ export default class EventEmitter {
     for (const i of this.#callbacksWithId) i.cb(true)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb(true)
+
+    this.#hasEmittedUpdate = true
   }
 
   protected emitUpdate() {
+    this.trackUpdates()
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb()
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb()
+
+    this.#hasEmittedUpdate = true
   }
 
   /**
@@ -123,10 +235,13 @@ export default class EventEmitter {
    *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
    */
   protected propagateUpdate(forceEmit?: boolean) {
+    this.trackUpdates()
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb(forceEmit)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb(forceEmit)
+
+    this.#hasEmittedUpdate = true
   }
 
   protected emitError(error: ErrorRef) {
