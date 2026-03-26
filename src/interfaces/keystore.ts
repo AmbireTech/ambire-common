@@ -59,8 +59,8 @@ export interface ExternalSignerController {
   // TODO: fix the type
   currentRequest?: any //Qr based specific
   signingStep?: string //Qr based specific
-  moveToResponseScan: () => void //Qr based specific
-  submitSignatureResponse: (payload: string | Uint8Array) => void
+  moveToResponseScan?: () => void //Qr based specific
+  submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
