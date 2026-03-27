@@ -1141,7 +1141,7 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
-  async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
+  async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
     const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
@@ -1159,74 +1159,65 @@ export class MainController extends EventEmitter implements IMainController {
       }
     )
 
-    if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
+    Object.entries(updatedAccountsOpsByAccount).forEach(
+      async ([
+        accountAddr,
+        {
+          shouldEmitUpdate,
+          chainsToUpdate,
+          portfoliosToUpdate,
+          shouldFetchSafeTxns,
+          updatedAccountsOps
+        }
+      ]) => {
+        if (shouldEmitUpdate) {
+          this.emitUpdate()
 
-    const updatedAccountsOpsForSelectedAccount = updatedAccountsOpsByAccount[
-      this.selectedAccount.account.addr
-    ] || {
-      shouldEmitUpdate: false,
-      chainsToUpdate: [],
-      portfoliosToUpdate: {},
-      updatedAccountsOps: [],
-      newestOpTimestamp: 0,
-      shouldFetchSafeTxns: false
-    }
-    const {
-      shouldEmitUpdate,
-      chainsToUpdate,
-      portfoliosToUpdate,
-      newestOpTimestamp,
-      shouldFetchSafeTxns,
-      updatedAccountsOps
-    } = updatedAccountsOpsForSelectedAccount
+          if (chainsToUpdate.length) {
+            const networks = chainsToUpdate
+              ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
+              : undefined
 
-    if (shouldEmitUpdate) {
-      this.emitUpdate()
+            if (networks?.length) {
+              // The account state must be updated before the portfolio
+              // as the portfolio has internal checks whether the nonce has changed
+              // to decide if to force refetch certain data
+              await this.accounts.updateAccountState(
+                accountAddr,
+                'latest',
+                networks?.map((net) => net.chainId)
+              )
 
-      if (chainsToUpdate.length) {
-        const networks = chainsToUpdate
-          ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
-          : undefined
+              const finalizedAccountOps = updatedAccountsOps.filter(
+                (op) =>
+                  op.status !== AccountOpStatus.Pending &&
+                  op.status !== AccountOpStatus.BroadcastedButNotConfirmed
+              )
 
-        if (networks?.length) {
-          // The account state must be updated before the portfolio
-          // as the portfolio has internal checks whether the nonce has changed
-          // to decide if to force refetch certain data
-          await this.accounts.updateAccountState(
-            this.selectedAccount.account.addr,
-            'latest',
-            networks?.map((net) => net.chainId)
-          )
+              await this.portfolio.discardSimulation(finalizedAccountOps)
 
-          const finalizedAccountOps = updatedAccountsOps.filter(
-            (op) =>
-              op.status !== AccountOpStatus.Pending &&
-              op.status !== AccountOpStatus.BroadcastedButNotConfirmed
-          )
+              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+                accountAddr,
+                updatedAccountsOps
+              )
 
-          await this.portfolio.discardSimulation(finalizedAccountOps)
+              Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                this.portfolio.updateSelectedAccount(
+                  accountAddr,
+                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                )
+              })
+            }
+          }
+        }
 
-          // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-          this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
-            this.selectedAccount.account.addr,
-            updatedAccountsOpsForSelectedAccount.updatedAccountsOps
-          )
-
-          Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-            this.portfolio.updateSelectedAccount(
-              accountAddr,
-              this.networks.networks.filter((n) => chainIds.includes(n.chainId))
-            )
-          })
+        if (shouldFetchSafeTxns) {
+          this.fetchSafeTxns().catch((e) => e) // we catch the error inside
         }
       }
-
-      if (shouldFetchSafeTxns) {
-        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
-      }
-    }
-
-    return { newestOpTimestamp }
+    )
   }
 
   // call this function after a call to the singleton has been made

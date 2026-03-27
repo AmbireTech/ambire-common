@@ -20,7 +20,6 @@ import {
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
-  getCalculatedSafeAddress,
   getMessage,
   SafeResults
 } from '../../libs/safe/safe'
@@ -144,18 +143,6 @@ export class SafeController extends EventEmitter implements ISafeController {
       apiKit.getSafeCreationInfo(safeAddr).catch((e) => e)
     ])
     if (safeInfo instanceof Error || safeCreationInfo instanceof Error) {
-      this.importError = {
-        address: safeAddr,
-        message: 'Failed to retrieve information about the Safe. Please try again'
-      }
-      return
-    }
-
-    const calculatedAddr = await getCalculatedSafeAddress(
-      safeCreationInfo,
-      this.#providers.providers[deployedOn.chainId.toString()]!
-    )
-    if (!calculatedAddr || calculatedAddr.toLowerCase() !== safeAddr.toLowerCase()) {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the Safe. Please try again'

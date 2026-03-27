@@ -1,8 +1,9 @@
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import wait from '@/utils/wait'
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
 import { MainController } from './main'
@@ -243,5 +244,212 @@ describe('Main Controller ', () => {
 
     const eth3 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth3.areContractsDeployed).toEqual(true)
+  })
+
+  describe('updateAccountsOpsStatuses', () => {
+    const senderAccount = accounts[0]!.addr
+    const selectedAccountAddr = accounts[1]!.addr
+    const recipientAccount = accounts[2]!.addr
+
+    const flushAsyncUpdates = async () => {
+      await wait(10)
+    }
+
+    const setupController = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+
+      // Avoid noisy side effects from this call while keeping the update flow realistic.
+      jest
+        .spyOn(mainCtrl.portfolio, 'reportMissedPortfolioUpdateAfterUpdatedAccountOp')
+        .mockImplementation(() => {})
+
+      jest
+        .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
+        .mockImplementation(() => {})
+
+      return mainCtrl
+    }
+
+    test('should fetch safe txns when shouldEmitUpdate is false and shouldFetchSafeTxns is true', async () => {
+      const mainCtrl = await setupController()
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: false,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: { [recipientAccount]: [1n] },
+          shouldFetchSafeTxns: true,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [
+            {
+              id: '1',
+              accountAddr: senderAccount,
+              chainId: 1n,
+              status: AccountOpStatus.Success,
+              calls: []
+            } as any
+          ]
+        }
+      })
+
+      const fetchSafeTxnsSpy = jest.spyOn(mainCtrl, 'fetchSafeTxns').mockResolvedValue(undefined)
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledTimes(1)
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(discardSimulationSpy).not.toHaveBeenCalled()
+      expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
+    })
+
+    test('should update account state for account address and discard finalized simulations', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+      const pendingAccountOp = {
+        id: 'pending-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Pending,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [pendingAccountOp] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [pendingAccountOp, finalizedAccountOp]
+        }
+      })
+
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+    })
+
+    test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {
+            [recipientAccount]: [1n]
+          },
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.portfolio, 'discardSimulation').mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
+        recipientAccount,
+        expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+      )
+    })
+
+    test('should update account state and discard simulation even when selected account is different', async () => {
+      const mainCtrl = await setupController()
+
+      await mainCtrl.selectedAccount.setAccount(mainCtrl.accounts.accounts[1]!)
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        // Different account than the selected one, but it should still update and discard simulations for it
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+    })
   })
 })
