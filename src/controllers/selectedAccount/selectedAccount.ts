@@ -12,6 +12,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   ISelectedAccountController,
+  SelectedAccountBalanceByAccount,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
@@ -54,6 +55,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    * It is updated when the portfolio or defi positions controllers are updated.
    */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  balanceByAccounts: SelectedAccountBalanceByAccount = {}
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
@@ -331,6 +334,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
 
     this.portfolio = newSelectedAccountPortfolio
+    this.balanceByAccounts[this.account.addr] = this.portfolio.totalBalance
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {

@@ -75,3 +75,7 @@ export interface SelectedAccountPortfolio {
   portfolioState: SelectedAccountPortfolioState
   projectedRewardsStats: ProjectedRewardsStats | null
 }
+
+export type SelectedAccountBalanceByAccount = {
+  [accountId: string]: number
+}
