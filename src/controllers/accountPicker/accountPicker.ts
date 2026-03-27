@@ -24,7 +24,7 @@ import {
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
-import { KeyIterator, QrWalletConfig } from '../../interfaces/keyIterator'
+import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   dedicatedToOneSAPriv,
   ExternalKey,
@@ -1080,7 +1080,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
     // accounts out of the private key (with another approach - salt and
     // extra entropy) was creating confusion.
-    const shouldRetrieveSmartAccountIndices = this.keyIterator.subType !== 'private-key'
+    //
+    // + no smart accounts for QR wallets. Reasons:
+    // - some hws sign only if the signer is imported
+    // - we are generally moving in another direction
+    const shouldRetrieveSmartAccountIndices =
+      this.keyIterator.subType !== 'private-key' && this.type !== 'qr'
     if (shouldRetrieveSmartAccountIndices) {
       // Indices for the smart accounts.
       indicesToRetrieve.push({

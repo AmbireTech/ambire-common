@@ -84,7 +84,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
-import { AccountOpStatus, Call } from '@/libs/accountOp/types'
+import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { relayerCall } from '@/libs/relayerCall/relayerCall'
@@ -1161,7 +1161,8 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator,
         hdPathTemplate: keyIterator.walletConfig!.hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldAddNextAccountAutomatically: false,
+        shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
       const message =
