@@ -1,101 +1,101 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
-import EmittableError from '../../classes/EmittableError'
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import EmittableError from '@/classes/EmittableError'
+import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE
-} from '../../consts/derivation'
-import { FeatureFlags } from '../../consts/featureFlags'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Account, IAccountsController } from '../../interfaces/account'
-import { IAccountPickerController } from '../../interfaces/accountPicker'
-import { IActivityController } from '../../interfaces/activity'
-import { IAddressBookController } from '../../interfaces/addressBook'
-import { IAutoLoginController } from '../../interfaces/autoLogin'
-import { IBannerController } from '../../interfaces/banner'
-import { IContractNamesController } from '../../interfaces/contractNames'
-import { IDappsController } from '../../interfaces/dapp'
-import { IDomainsController } from '../../interfaces/domains'
-import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
-import { IFeatureFlagsController } from '../../interfaces/featureFlags'
-import { Fetch } from '../../interfaces/fetch'
-import { Hex } from '../../interfaces/hex'
-import { IInviteController } from '../../interfaces/invite'
+} from '@/consts/derivation'
+import { FeatureFlags } from '@/consts/featureFlags'
+import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
+import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
+import { AccountsController } from '@/controllers/accounts/accounts'
+import { ActivityController } from '@/controllers/activity/activity'
+/* eslint-disable no-await-in-loop */
+import { SignedMessage } from '@/controllers/activity/types'
+import { AddressBookController } from '@/controllers/addressBook/addressBook'
+import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
+import { BannerController } from '@/controllers/banner/banner'
+import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
+import { ContractNamesController } from '@/controllers/contractNames/contractNames'
+import { DappsController } from '@/controllers/dapps/dapps'
+import { DomainsController } from '@/controllers/domains/domains'
+import { EmailVaultController } from '@/controllers/emailVault/emailVault'
+import { EstimationStatus } from '@/controllers/estimation/types'
+import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
+import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
+import { InviteController } from '@/controllers/invite/invite'
+import { KeystoreController } from '@/controllers/keystore/keystore'
+import { NetworksController } from '@/controllers/networks/networks'
+import { PhishingController } from '@/controllers/phishing/phishing'
+import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { ProvidersController } from '@/controllers/providers/providers'
+import { RequestsController } from '@/controllers/requests/requests'
+import { SafeController } from '@/controllers/safe/safe'
+import { SelectedAccountController } from '@/controllers/selectedAccount/selectedAccount'
+import { SignAccountOpType } from '@/controllers/signAccountOp/helper'
+import { OnboardingSuccessProps } from '@/controllers/signAccountOp/signAccountOp'
+import { SignMessageController } from '@/controllers/signMessage/signMessage'
+import { StorageController } from '@/controllers/storage/storage'
+import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
+import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
+import { TransferController } from '@/controllers/transfer/transfer'
+import { UiController } from '@/controllers/ui/ui'
+import { Account, IAccountsController } from '@/interfaces/account'
+import { IAccountPickerController } from '@/interfaces/accountPicker'
+import { IActivityController } from '@/interfaces/activity'
+import { IAddressBookController } from '@/interfaces/addressBook'
+import { IAutoLoginController } from '@/interfaces/autoLogin'
+import { IBannerController } from '@/interfaces/banner'
+import { IContractNamesController } from '@/interfaces/contractNames'
+import { IDappsController } from '@/interfaces/dapp'
+import { IDomainsController } from '@/interfaces/domains'
+import { IEmailVaultController } from '@/interfaces/emailVault'
+import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
+import { IFeatureFlagsController } from '@/interfaces/featureFlags'
+import { Fetch } from '@/interfaces/fetch'
+import { Hex } from '@/interfaces/hex'
+import { IInviteController } from '@/interfaces/invite'
 import {
   ExternalSignerControllers,
   IKeystoreController,
   Key,
   KeystoreSignerType
-} from '../../interfaces/keystore'
-import { IMainController, STATUS_WRAPPED_METHODS } from '../../interfaces/main'
-import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
-import { IPhishingController } from '../../interfaces/phishing'
-import { Platform } from '../../interfaces/platform'
-import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
-import { IRequestsController } from '../../interfaces/requests'
+} from '@/interfaces/keystore'
+import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
+import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
+import { IPhishingController } from '@/interfaces/phishing'
+import { Platform } from '@/interfaces/platform'
+import { IPortfolioController } from '@/interfaces/portfolio'
+import { IProvidersController } from '@/interfaces/provider'
+import { IRequestsController } from '@/interfaces/requests'
 /* eslint-disable no-underscore-dangle */
-import { ISafeController } from '../../interfaces/safe'
-import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { ISignAccountOpController } from '../../interfaces/signAccountOp'
-import { ISignMessageController, SignMessageStatus } from '../../interfaces/signMessage'
-import { IStorageController, Storage } from '../../interfaces/storage'
-import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
-import { ITransactionManagerController } from '../../interfaces/transactionManager'
-import { ITransferController } from '../../interfaces/transfer'
-import { IUiController, UiManager, View } from '../../interfaces/ui'
-import { BenzinUserRequest, CallsUserRequest } from '../../interfaces/userRequest'
-import { getDefaultSelectedAccount } from '../../libs/account/account'
-import { AccountOp } from '../../libs/accountOp/accountOp'
-import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '../../libs/safe/safe'
-import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
-import { LiFiAPI } from '../../services/lifi/api'
-import { paymasterFactory } from '../../services/paymaster'
-import { SocketAPI } from '../../services/socket/api'
-import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
-import { getHdPathFromTemplate } from '../../utils/hdPath'
-import wait from '../../utils/wait'
-import { AccountPickerController } from '../accountPicker/accountPicker'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-/* eslint-disable no-await-in-loop */
-import { SignedMessage } from '../activity/types'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
-import { ContractNamesController } from '../contractNames/contractNames'
-import { DappsController } from '../dapps/dapps'
-import { DomainsController } from '../domains/domains'
-import { EmailVaultController } from '../emailVault/emailVault'
-import { EstimationStatus } from '../estimation/types'
-import EventEmitter from '../eventEmitter/eventEmitter'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PhishingController } from '../phishing/phishing'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { RequestsController } from '../requests/requests'
-import { SafeController } from '../safe/safe'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { SignAccountOpType } from '../signAccountOp/helper'
-import { OnboardingSuccessProps } from '../signAccountOp/signAccountOp'
-import { SignMessageController } from '../signMessage/signMessage'
-import { StorageController } from '../storage/storage'
-import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
-import { TransactionManagerController } from '../transaction/transactionManager'
-import { TransferController } from '../transfer/transfer'
-import { UiController } from '../ui/ui'
+import { ISafeController } from '@/interfaces/safe'
+import { ISelectedAccountController } from '@/interfaces/selectedAccount'
+import { ISignAccountOpController } from '@/interfaces/signAccountOp'
+import { ISignMessageController, SignMessageStatus } from '@/interfaces/signMessage'
+import { IStorageController, Storage } from '@/interfaces/storage'
+import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
+import { ITransactionManagerController } from '@/interfaces/transactionManager'
+import { ITransferController } from '@/interfaces/transfer'
+import { IUiController, UiManager, View } from '@/interfaces/ui'
+import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
+import { getDefaultSelectedAccount } from '@/libs/account/account'
+import { AccountOp } from '@/libs/accountOp/accountOp'
+import { getDappIdentifier, SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
+import { AccountOpStatus, Call } from '@/libs/accountOp/types'
+import { HumanizerMeta } from '@/libs/humanizer/interfaces'
+import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { relayerCall } from '@/libs/relayerCall/relayerCall'
+import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
+import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import { LiFiAPI } from '@/services/lifi/api'
+import { paymasterFactory } from '@/services/paymaster'
+import { SocketAPI } from '@/services/socket/api'
+import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
+import { getHdPathFromTemplate } from '@/utils/hdPath'
+import wait from '@/utils/wait'
 
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
@@ -1008,7 +1008,7 @@ export class MainController extends EventEmitter implements IMainController {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
 
-    // some accounts may not resolve immediately, like a safe acc
+    // some accounts may not resolve immediately, like a Safe acc
     if (this.signMessage.status === SignMessageStatus.Done) {
       await this.#resolveSignMessage(signedMessage)
     } else if (this.signMessage.status === SignMessageStatus.Partial) {
@@ -1339,7 +1339,7 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Fetch safe txns from safe global and make them user requests
+   * Fetch Safe txns from Safe Global and make them user requests
    * if the selected account is a safe
    */
   async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
@@ -1379,7 +1379,7 @@ export class MainController extends EventEmitter implements IMainController {
         .fetchPending(safeAddr, [firstBatch])
         .catch((e) => {
           console.log(e)
-          console.log('failed to retrieve pending safe txns')
+          console.log('failed to retrieve pending Safe txns')
           return null
         })
 
@@ -1568,7 +1568,7 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    // upon resolving an account op, check all same nonce safe requests and remove them
+    // upon resolving an account op, check all same nonce Safe requests and remove them
     const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id)
 
     if (safeRequests.length) {

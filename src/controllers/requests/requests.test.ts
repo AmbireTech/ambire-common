@@ -1,8 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
 import { makeMainController } from '../../../test/helpers/mainController'
-import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import {
   BenzinUserRequest,
@@ -11,9 +9,7 @@ import {
   UserRequest
 } from '../../interfaces/userRequest'
 import { generateUuid } from '../../utils/uuid'
-import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { RequestsController } from './requests'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
@@ -66,12 +62,12 @@ const accounts = [
 ]
 
 const prepareTest = async () => {
-  const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
-
-  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    await storageCtrl.set('accounts', accounts)
-    await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-  })
+  const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    }
+  )
 
   // Mock account states for all accounts
   for (const account of mainCtrl.accounts.accounts) {
@@ -99,8 +95,6 @@ const prepareTest = async () => {
       } as any
     }
   }
-
-  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
 
   const getSignAccountOp = async ({
     addr,
@@ -185,40 +179,14 @@ const prepareTest = async () => {
     } as CallsUserRequest
   }
 
-  const requestsController = new RequestsController({
-    relayerUrl,
-    callRelayer: mainCtrl.callRelayer,
-    portfolio: mainCtrl.portfolio,
-    externalSignerControllers: {},
-    activity: mainCtrl.activity,
-    phishing: mainCtrl.phishing,
-    accounts: mainCtrl.accounts,
-    networks: mainCtrl.networks,
-    providers: mainCtrl.providers,
-    selectedAccount: mainCtrl.selectedAccount,
-    keystore: mainCtrl.keystore,
-    transfer: mainCtrl.transfer,
-    swapAndBridge: mainCtrl.swapAndBridge,
-    ui: uiManager as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-    safe: mainCtrl.safe,
-    autoLogin: mainCtrl.autoLogin,
-    getDapp: async () => undefined,
-    updateSelectedAccountPortfolio: () => Promise.resolve(),
-    addTokensToBeLearned: () => {},
-    onSetCurrentUserRequest: () => {},
-    onBroadcastSuccess: async () => {},
-    onBroadcastFailed: () => {},
-    eventEmitterRegistry,
-    shouldSimulateAccountOps: false
-  })
-
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
-    controller: requestsController,
+    controller: mainCtrl.requests,
     getSignAccountOp,
     getCallsRequest,
-    event,
-    getWindowId
+    event: eventEmitter,
+    getWindowId,
+    uiCtrl: mainCtrl.ui
   }
 }
 
@@ -240,11 +208,6 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
 describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
-  })
-  test('Init controller', async () => {
-    const { controller } = await prepareTest()
-    expect(controller.initialLoadPromise).toBeInstanceOf(Promise)
-    await expect(controller.initialLoadPromise).resolves.toBeUndefined()
   })
 
   test('Add and then remove a user request', async () => {

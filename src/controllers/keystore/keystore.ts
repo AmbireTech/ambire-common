@@ -1078,6 +1078,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
+  get hasBiometricsSecret() {
+    return this.#keystoreSecrets.some((x) => x.id === 'biometrics')
+  }
+
   get hasKeystoreTempSeed() {
     return !!this.#tempSeed
   }
@@ -1192,6 +1196,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       keys: this.keys,
       seeds: this.seeds,
       hasPasswordSecret: this.hasPasswordSecret,
+      hasBiometricsSecret: this.hasBiometricsSecret,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
       hasTempSeed: this.hasTempSeed,
       isReadyToStoreKeys: this.isReadyToStoreKeys

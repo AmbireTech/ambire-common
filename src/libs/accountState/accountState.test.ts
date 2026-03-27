@@ -208,7 +208,7 @@ describe('AccountState', () => {
     expect(eoa7702.associatedKeys[0]).toBe('0xD8293ad21678c6F09Da139b4B62D38e514a03B78')
     expect(eoa7702.threshold).toBe(0)
   })
-  test('should fetch the account state for a safe account', async () => {
+  test('should fetch the account state for a Safe account', async () => {
     const safeAcc: Account = {
       addr: '0x8c8979A7d79C4CdDA170C008b797d466F00dD167',
       associatedKeys: [], // should return the correct ones regardless
