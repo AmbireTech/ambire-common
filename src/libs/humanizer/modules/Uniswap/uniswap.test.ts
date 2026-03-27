@@ -226,7 +226,8 @@ describe('uniswap', () => {
         getAddressVisualization('0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'),
         getDeadline(1691677015n),
         getLabel('and'),
-        getAction('Refund')
+        getAction('Withdraw'),
+        getToken(ZeroAddress, 0n)
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
