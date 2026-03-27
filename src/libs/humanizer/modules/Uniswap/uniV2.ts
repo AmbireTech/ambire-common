@@ -19,7 +19,7 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     return [
       getAction('Swap'),
       getToken(path[0], amountIn),
-      getLabel('for at least'),
+      getLabel('for'),
       getToken(outputAsset, amountOutMin),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
@@ -47,7 +47,7 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     return [
       getAction('Swap'),
       getToken(ZeroAddress, value),
-      getLabel('for at least'),
+      getLabel('for'),
       getToken(outputAsset, amountOutMin),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
@@ -69,7 +69,7 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     return [
       getAction('Swap'),
       getToken(path[0], amountIn),
-      getLabel('for at least'),
+      getLabel('for'),
       getToken(ZeroAddress, amountOutMin),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
