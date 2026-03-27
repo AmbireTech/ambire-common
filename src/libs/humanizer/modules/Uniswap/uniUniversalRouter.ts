@@ -47,11 +47,11 @@ function parseV4Actions(
   actions: string,
   totalParams: string[],
   accountAddr: string
-): HumanizerVisualization[][] {
+): HumanizerVisualization[] {
   const parsedActions = parseCommands(actions)
   const parsed: HumanizerVisualization[][] = []
-  if (!parsedActions) return [[getAction('Unknown Uniswap V4 action')]]
-  if (parsedActions.length !== totalParams.length) return [[getAction('Unknown Uniswap V4 action')]]
+  if (!parsedActions) return [getAction('Unknown Uniswap V4 action')]
+  if (parsedActions.length !== totalParams.length) return [getAction('Unknown Uniswap V4 action')]
   const zippedData = parsedActions.map((_, i) => ({
     action: parsedActions[i],
     param: totalParams[i]
@@ -149,7 +149,7 @@ function parseV4Actions(
       parsed.push([getAction('Unknown uniswap V4 action')])
     }
   })
-  return parsed
+  return uniReduce(parsed)
 }
 
 const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
@@ -173,7 +173,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
             parsed.push([
               getAction('Swap'),
               getToken(path[0], params.amountIn),
-              getLabel('for at least'),
+              getLabel('for'),
               getToken(path[path.length - 1], params.amountOutMin),
               getDeadline(deadline)
             ])
@@ -243,7 +243,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])
@@ -322,7 +322,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
               params.params,
               accountOp.accountAddr
             )
-            parsed.push(...v4NewHumanization)
+            parsed.push(v4NewHumanization)
           } else {
             if (!call.to)
               throw Error('Humanizer: should not be inside the uniswap module when !call.to')

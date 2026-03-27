@@ -120,6 +120,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         (callJ[1].value === callI[3].value || callI[3].value === 0n)
       ) {
         callI[3].address = ZeroAddress
+        if (callI[3].value === 0n && callJ[1].value) callI[3].value = callJ[1].value
         calls.splice(j, 1)
       }
 
