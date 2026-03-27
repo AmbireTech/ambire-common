@@ -14,8 +14,10 @@ import {
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
-const uniV32Mapping = (): HumanizerUniMatcher => {
-  const ifaceV32 = new Interface(UniV3Router2)
+const ifaceV32 = new Interface(UniV3Router2)
+const ifaceV3 = new Interface(UniV3Router)
+
+const uniV3Mapping = (): HumanizerUniMatcher => {
   return {
     // 0x5ae401dc
     [ifaceV32.getFunction('multicall(uint256 deadline,bytes[])')?.selector!]: (
@@ -24,7 +26,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
     ) => {
       if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
       const [deadline, calls] = ifaceV32.parseTransaction(call)?.args || []
-      const mappingResult = uniV32Mapping()
+      const mappingResult = uniV3Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
         (data: string): HumanizerVisualization[] => {
           const sigHash = data.slice(0, 10)
@@ -43,7 +45,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       call: IrCall
     ): HumanizerVisualization[] => {
       const [calls] = ifaceV32.parseTransaction(call)?.args || []
-      const mappingResult = uniV32Mapping()
+      const mappingResult = uniV3Mapping()
       const parsed = calls.map((data: string): HumanizerVisualization[] => {
         const sigHash = data.slice(0, 10)
 
@@ -60,7 +62,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
 
       const [, calls] = ifaceV32.parseTransaction(call)?.args || []
-      const mappingResult = uniV32Mapping()
+      const mappingResult = uniV3Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
         (data: string): HumanizerVisualization[] => {
           const sigHash = data.slice(0, 10)
@@ -82,7 +84,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
@@ -96,7 +98,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
@@ -112,7 +114,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(path[path.length - 1], params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
@@ -190,7 +192,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(path[path.length - 1], amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
@@ -304,51 +306,9 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         ...getRecipientText(accountOp.accountAddr, recipient),
         getDeadline(deadline)
       ]
-    }
-  }
-}
-
-const uniV3Mapping = (): HumanizerUniMatcher => {
-  const ifaceV3 = new Interface(UniV3Router)
-  return {
-    // 0xac9650d8
-    [ifaceV3.getFunction('multicall')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ): HumanizerVisualization[] => {
-      if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
-
-      const args = ifaceV3.parseTransaction(call)?.args || []
-      const calls = args[args.length - 1]
-      const mappingResult = uniV3Mapping()
-      const parsed = calls.map((data: string): HumanizerVisualization[] => {
-        const sigHash = data.slice(0, 10)
-        const humanizer = mappingResult[sigHash]
-        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
-      })
-
-      return parsed.length
-        ? uniReduce(parsed)
-        : [getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)]
     },
     // -------------------------------------------------------------------------------------------------
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
-    // 0x414bf389
-    [ifaceV3.getFunction('exactInputSingle')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ): HumanizerVisualization[] => {
-      const [params] = ifaceV3.parseTransaction(call)?.args || []
-      // @TODO: consider fees
-      return [
-        getAction('Swap'),
-        getToken(params.tokenIn, params.amountIn),
-        getLabel('for at least'),
-        getToken(params.tokenOut, params.amountOutMinimum),
-        ...getUniRecipientText(accountOp.accountAddr, params.recipient),
-        getDeadline(params.deadline)
-      ]
-    },
     // 0xc04b8d59
     [ifaceV3.getFunction('exactInput')?.selector!]: (
       accountOp: AccountOp,
@@ -359,23 +319,8 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], params.amountIn),
-        getLabel('for at least'),
-        getToken(path[path.length - 1], params.amountOutMinimum),
-        ...getUniRecipientText(accountOp.accountAddr, params.recipient),
-        getDeadline(params.deadline)
-      ]
-    },
-    // 0xdb3e2198
-    [ifaceV3.getFunction('exactOutputSingle')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ): HumanizerVisualization[] => {
-      const [params] = ifaceV3.parseTransaction(call)?.args || []
-      return [
-        getAction('Swap up to'),
-        getToken(params.tokenIn, params.amountInMaximum),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOut),
+        getToken(path[path.length - 1], params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
@@ -396,18 +341,6 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         getDeadline(params.deadline)
       ]
     },
-    // 0x49404b7c
-    [ifaceV3.getFunction('unwrapWETH9')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ): HumanizerVisualization[] => {
-      const [amountMin, recipient] = ifaceV3.parseTransaction(call)?.args || []
-      return [
-        getAction('Unwrap'),
-        getToken(ZeroAddress, amountMin),
-        ...getUniRecipientText(accountOp.accountAddr, recipient)
-      ]
-    },
     // 0x9b2c0a37
     [ifaceV3.getFunction('unwrapWETH9WithFee')?.selector!]: (
       accountOp: AccountOp,
@@ -424,12 +357,8 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         getAddressVisualization(feeRecipient),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
       ]
-    },
-    // 0x12210e8a
-    [ifaceV3.getFunction('refundETH()')?.selector!]: (): HumanizerVisualization[] => {
-      return [getAction('Refund')]
     }
   }
 }
 
-export { uniV32Mapping, uniV3Mapping }
+export { uniV3Mapping }
