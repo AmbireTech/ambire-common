@@ -339,10 +339,8 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            if (!protocolAsset) return
-
             const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
-              const isSameAddress = t.address === protocolAsset.address
+              const isSameAddress = t.address === protocolAsset?.address
 
               if (isSameAddress) return true
 
@@ -360,7 +358,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                   )
                 : undefined
 
-              if (protocolAsset.address) {
+              if (protocolAsset?.address) {
                 return (
                   !t.flags.rewardsType &&
                   !t.flags.onGasTank &&
@@ -394,6 +392,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                 priceIn: asset.priceIn ? [asset.priceIn] : []
               })
             } else if (
+              protocolAsset &&
               'address' in protocolAsset &&
               'decimals' in protocolAsset &&
               'symbol' in protocolAsset &&
