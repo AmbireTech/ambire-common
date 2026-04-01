@@ -881,11 +881,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           ? this.keyIterator.parsedAccount?.hdPath ||
             this.keyIterator.parsedAccount?.accounts?.[0]?.hdPath
           : undefined
+
+      if (keyType === 'qr' && !qrParsedOriginHdPath) {
+        throw new EmittableError({
+          message: 'QR account import missing origin hdPath',
+          level: 'major',
+          error: new Error('QR account import missing origin hdPath')
+        })
+      }
+
       const hdPathTemplate = (
         keyType === 'qr' && qrWalletConfig
           ? qrWalletConfig.hdPathTemplate || this.hdPathTemplate
           : this.hdPathTemplate
       ) as HD_PATH_TEMPLATE_TYPE
+
       const relativePathTemplate =
         keyType === 'qr' ? qrWalletConfig?.relativePathTemplate || '' : ''
       const originPath = keyType === 'qr' ? qrParsedOriginHdPath || '' : ''
