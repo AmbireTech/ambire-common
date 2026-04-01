@@ -545,7 +545,11 @@ export const getTotal = (
     // thus we must exclude them from the defi total to avoid double counting
     const positionsToExclude: string[] = t
       .filter(
-        (token) => token.flags.defiPositionId && token.flags.defiTokenType === AssetType.Collateral
+        (token) =>
+          token.flags.defiPositionId &&
+          token.flags.defiTokenType === AssetType.Collateral &&
+          // If the token doesn't have a price we must add the value from the position to the total
+          token.priceIn.length > 0
       )
       .map((token) => token.flags.defiPositionId!)
 
