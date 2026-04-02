@@ -229,7 +229,8 @@ const swapAndBridgeController = new SwapAndBridgeController({
   getUserRequests: () => [],
   getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
   onBroadcastSuccess: () => Promise.resolve(),
-  onBroadcastFailed: () => {}
+  onBroadcastFailed: () => {},
+  ui: uiCtrl
 })
 
 const transferCtrl = new TransferController(
