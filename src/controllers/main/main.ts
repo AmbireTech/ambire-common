@@ -433,7 +433,8 @@ export class MainController extends EventEmitter implements IMainController {
       getUserRequests: () => this.requests.userRequests || [],
       getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
-      onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      ui: this.ui
     })
     this.transfer = new TransferController(
       this.callRelayer,

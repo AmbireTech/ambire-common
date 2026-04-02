@@ -19,6 +19,7 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 /* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController, View } from '../../interfaces/ui'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
@@ -83,6 +84,8 @@ type SwapAndBridgeErrorType = {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
+
+const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -269,6 +272,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #onBroadcastFailed: OnBroadcastFailed
 
+  #ui: IUiController
+
+  #isOnSwapAndBridgeRoute: boolean = false
+
   constructor({
     eventEmitterRegistry,
     callRelayer,
@@ -289,7 +296,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     getVisibleUserRequests,
     swapProvider,
     onBroadcastSuccess,
-    onBroadcastFailed
+    onBroadcastFailed,
+    ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     callRelayer: Function
@@ -311,6 +319,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     swapProvider: SwapProvider
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
+    ui: IUiController
   }) {
     super(eventEmitterRegistry)
 
@@ -334,6 +343,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#getVisibleUserRequests = getVisibleUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
+    this.#ui = ui
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
@@ -351,6 +361,29 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       BRIDGE_STATUS_INTERVAL,
       this.emitError.bind(this)
     )
+
+    this.#ui.uiEvent.on('updateView', (view: View) => {
+      if (isSwapAndBridge(view.currentRoute)) {
+        this.#isOnSwapAndBridgeRoute = true
+        // Fetch a fresh quote immediately if the form is ready and the last
+        // quote is older than 20 seconds (e.g. user was away on another screen).
+        // If the user just briefly switched screens, skip the immediate fetch
+        // and let the normal interval handle the next update.
+        const isQuoteStale = Date.now() - this.updateQuoteInterval.startedRunningAt > 20_000
+        this.updateQuoteInterval.restart({
+          runImmediately: !!this.#shouldAutoUpdateQuote && isQuoteStale
+        })
+      } else if (isSwapAndBridge(view.previousRoute)) {
+        this.#isOnSwapAndBridgeRoute = false
+        this.updateQuoteInterval.stop()
+      }
+    })
+
+    this.#ui.uiEvent.on('removeView', (view: View) => {
+      if (!isSwapAndBridge(view.currentRoute)) return
+      this.#isOnSwapAndBridgeRoute = false
+      this.updateQuoteInterval.stop()
+    })
   }
 
   #emitUpdateIfNeeded(forceUpdate: boolean = false) {
@@ -2576,6 +2609,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get #shouldAutoUpdateQuote() {
     return (
+      this.#isOnSwapAndBridgeRoute &&
       this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
       !this.hasProceeded &&
       this.quote &&
