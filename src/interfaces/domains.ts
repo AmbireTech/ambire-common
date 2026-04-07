@@ -7,12 +7,14 @@ export type IDomainsController = ControllerInterface<
 type AddressState = {
   fieldValue: string
   ensAddress: string
+  namoshiAddress: string
   isDomainResolving: boolean
 }
 
 type AddressStateOptional = {
   fieldValue?: AddressState['fieldValue']
   ensAddress?: AddressState['ensAddress']
+  namoshiAddress?: AddressState['namoshiAddress']
   isDomainResolving?: AddressState['isDomainResolving']
 }
 

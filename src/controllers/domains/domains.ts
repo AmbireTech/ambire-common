@@ -3,13 +3,23 @@ import { getAddress, isAddress } from 'ethers'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { RPCProviders } from '../../interfaces/provider'
-import { getEnsAvatar, resolveENSDomain, reverseLookupEns } from '../../services/ensDomains'
+import {
+  getEnsAvatar,
+  getIsNamoshiDomain,
+  NAMOSHI_UNIVERSAL_RESOLVER,
+  resolveENSDomain,
+  reverseLookupEns
+} from '../../services/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
   [address: string]: {
     ens: string | null
+    namoshi: string | null
+    /**
+     * ENS or Namoshi avatar URL
+     */
     ensAvatar?: string | null
     createdAt?: number
     updatedAt?: number
@@ -35,8 +45,15 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   /** Maps domain names to account addresses; necessary because the 'domains' state
    * only indexes by address, making getting an address for an existing domain name inefficient.
+   * And is also problematic if a domain name that has been resolved doesn't have a corresponding address
+   * (because no one owns it). We don't want to keep trying to resolve it every time.
    */
-  ensToAddress: { [ensName: string]: string } = {}
+  domainToAddresses: {
+    [domain: string]: {
+      address: string | undefined
+      type: 'ens' | 'namoshi'
+    }
+  } = {}
 
   loadingAddresses: string[] = []
 
@@ -69,11 +86,19 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   /**
    * Resolves an ENS domain and persists it to state only if resolution succeeds.
    */
-  async resolveDomain({ domain, bip44Item }: { domain: string; bip44Item?: number[][] }) {
-    const ethereumProvider =
-      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+  async resolveDomain({ domain }: { domain: string }) {
+    const isNamoshiDomain = getIsNamoshiDomain(domain)
+    const providerChainId = isNamoshiDomain
+      ? '4114'
+      : this.#defaultNetworksMode === 'mainnet'
+        ? '1'
+        : '11155111'
+    const provider = this.#providers[providerChainId]
 
-    if (!ethereumProvider) {
+    if (!provider) {
+      // Don't emit an error if the citrea provider is missing
+      if (isNamoshiDomain) return
+
       this.emitError({
         error: new Error('domains.resolveDomain: Ethereum provider is not available'),
         message: 'The RPC provider for Ethereum is not available.',
@@ -92,7 +117,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.resolveDomainsStatus[domain] = 'LOADING'
     await this.forceEmitUpdate()
 
-    if (this.ensToAddress[domain]) {
+    if (this.domainToAddresses[domain]) {
       this.resolveDomainsStatus[domain] = 'RESOLVED'
       await this.forceEmitUpdate()
       this.resolveDomainsStatus[domain] = undefined
@@ -100,13 +125,25 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     await resolveENSDomain({
-      provider: ethereumProvider,
+      provider: provider,
       domain,
-      bip44Item
+      options: isNamoshiDomain
+        ? { universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER }
+        : undefined
     })
       .then(async ({ address, avatar }) => {
+        this.domainToAddresses[domain] = {
+          address: address ? getAddress(address) : undefined,
+          type: isNamoshiDomain ? 'namoshi' : 'ens'
+        }
+
         if (address) {
-          this.#saveResolvedDomain({ address, ensAvatar: avatar, domain, type: 'ens' })
+          this.#saveResolvedDomain({
+            address,
+            ensAvatar: avatar,
+            domain,
+            type: isNamoshiDomain ? 'namoshi' : 'ens'
+          })
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
         await this.forceEmitUpdate()
@@ -132,7 +169,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     address: string
     domain: string
     ensAvatar: string | null
-    type: 'ens'
+    type: 'ens' | 'namoshi'
   }) {
     const checksummedAddress = getAddress(address)
     const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null }
@@ -140,10 +177,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     const existing = this.domains[checksummedAddress]
     const now = Date.now()
 
-    this.ensToAddress[domain] = checksummedAddress
     this.domains[checksummedAddress] = {
       ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
       ens: type === 'ens' ? domain : prevEns,
+      namoshi: type === 'namoshi' ? domain : (existing?.namoshi ?? null),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
     }
@@ -169,6 +206,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   async #reverseLookup(address: string, emitUpdate = true) {
     const ethereumProvider =
       this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+    const citreaProvider = this.#providers['4114']
 
     if (!ethereumProvider) {
       this.emitError({
@@ -195,22 +233,57 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     try {
       let ensAvatar: string | undefined | null
 
-      const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider), {
-        timeoutMs: 15000
-      })
+      const [ens, namoshi] = await Promise.all([
+        withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider), {
+          timeoutMs: 15000
+        }),
+        withTimeout(
+          () => {
+            if (!citreaProvider) return Promise.resolve(null)
+
+            return reverseLookupEns(checksummedAddress, citreaProvider, {
+              universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
+            }).catch((e) => {
+              const shortMessage = e?.cause?.shortMessage ?? e?.cause?.message ?? ''
+
+              // Ignore, the user simply doesn't have a namoshi domain
+              if (typeof shortMessage === 'string' && shortMessage.includes('data="0x77209fe8'))
+                return null
+
+              console.warn('reverse Namoshi lookup failed', e)
+              return null
+            })
+          },
+          {
+            timeoutMs: 15000
+          }
+        )
+      ])
 
       if (ens) {
         // We need the ens name to resolve the avatar
         ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider), {
           timeoutMs: 15000
         })
-        this.ensToAddress[ens] = checksummedAddress
+        this.domainToAddresses[ens] = { address: checksummedAddress, type: 'ens' }
+      } else if (namoshi) {
+        ensAvatar = await withTimeout(
+          () =>
+            getEnsAvatar(namoshi, ethereumProvider, {
+              universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
+            }),
+          {
+            timeoutMs: 15000
+          }
+        )
+        this.domainToAddresses[namoshi] = { address: checksummedAddress, type: 'namoshi' }
       }
 
       const now = Date.now()
       const existing = this.domains[checksummedAddress]
       this.domains[checksummedAddress] = {
         ens,
+        namoshi,
         ensAvatar,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
@@ -223,7 +296,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       if (hasBeenResolvedOnce) {
         this.domains[checksummedAddress]!.updateFailedAt = Date.now()
       } else {
-        this.domains[checksummedAddress] = { ens: null, updateFailedAt: Date.now() }
+        this.domains[checksummedAddress] = { ens: null, namoshi: null, updateFailedAt: Date.now() }
       }
     }
 
