@@ -1,7 +1,12 @@
 import { AddressState } from '../interfaces/domains'
 
-const getAddressFromAddressState = (addressState: AddressState) => {
-  return (addressState.ensAddress || addressState.fieldValue || '').trim()
+const getAddressFromAddressState = (addressState: Omit<AddressState, 'isDomainResolving'>) => {
+  return (
+    addressState.ensAddress ||
+    addressState.namoshiAddress ||
+    addressState.fieldValue ||
+    ''
+  ).trim()
 }
 
 export { getAddressFromAddressState }

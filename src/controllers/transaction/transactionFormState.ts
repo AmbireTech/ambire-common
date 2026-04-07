@@ -48,6 +48,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
   ensAddress: '',
+  namoshiAddress: '',
   interopAddress: '',
   isDomainResolving: false
 }
@@ -842,15 +843,13 @@ export class TransactionFormState extends EventEmitter {
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccountData) {
-      const isEnsAddress = !!this.addressState.ensAddress
-
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
         this.#selectedAccountData.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isEnsAddress,
+        !!this.addressState.ensAddress || !!this.addressState.namoshiAddress,
         this.addressState.isDomainResolving,
         this.dependencies.networks.networks,
         this.dependencies.accounts.accountStates,

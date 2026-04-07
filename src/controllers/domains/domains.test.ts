@@ -235,7 +235,6 @@ describe('Domains', () => {
 
     await domainsController.resolveDomain({ domain: TEST.name })
 
-    // namoshi resolution shouldn't be saved to ensToAddress mapping
     expect(domainsController.domainToAddresses[TEST.name]?.address).toBe(TEST.address)
     expect(domainsController.domainToAddresses[TEST.name]?.type).toBe('namoshi')
     expect(domainsController.domains[TEST.address]!.namoshi).toBe(TEST.name)

@@ -41,6 +41,7 @@ export class IntentController extends EventEmitter {
         inputAmount: currentState.fromAmount,
         recipient:
           currentState.addressState.ensAddress ||
+          currentState.addressState.namoshiAddress ||
           currentState.addressState.interopAddress ||
           currentState.addressState.fieldValue,
         sender: this.dependencies.selectedAccount.account?.addr
