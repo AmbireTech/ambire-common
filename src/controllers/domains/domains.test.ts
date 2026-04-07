@@ -227,7 +227,7 @@ describe('Domains', () => {
       CCIP_READ_TEST.address
     )
   })
-  it('should resolve btc domain on citrea network', async () => {
+  it('should resolve .citrea domain on citrea network', async () => {
     const TEST = {
       address: getAddress('0x4f0b5579136f88135572010276c2a4a884729e7b'),
       name: 'nemo.citrea'

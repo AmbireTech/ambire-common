@@ -207,6 +207,7 @@ describe('Transfer Controller', () => {
     expect(transferController.addressState).toEqual({
       fieldValue: '',
       ensAddress: '',
+      namoshiAddress: '',
       isDomainResolving: false
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)

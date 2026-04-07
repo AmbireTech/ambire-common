@@ -16,6 +16,11 @@ export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
+/**
+ * Resolves an ENS/Namoshi domain to an address and avatar.
+ *
+ * Can work with a custom universal resolver if the domain is a Namoshi domain, otherwise it defaults to the ENS universal resolver.
+ */
 async function resolveENSDomain({
   provider,
   domain,

@@ -863,6 +863,7 @@ export class TransactionFormState extends EventEmitter {
   get recipientAddress() {
     return (
       this.addressState.ensAddress ||
+      this.addressState.namoshiAddress ||
       this.addressState.interopAddress ||
       this.addressState.fieldValue
     )

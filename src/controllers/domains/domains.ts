@@ -16,6 +16,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 interface Domains {
   [address: string]: {
     ens: string | null
+    /**
+     * Namoshi domains are fully compatible with the ENS implementation, they just use a different universal resolver contract
+     * and have different TLDs (.btc and .citrea).
+     */
     namoshi: string | null
     /**
      * ENS or Namoshi avatar URL
@@ -289,8 +293,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         updatedAt: now
       }
     } catch (e: any) {
+      const shortMessage = e?.cause?.shortMessage ?? e?.cause?.message ?? ''
       // Fail silently with a console error, no biggie, since that would get retried
-      console.warn('reverse ENS lookup failed', e)
+      // Ignore, the user simply doesn't have a namoshi domain
+      if (typeof shortMessage !== 'string' || !shortMessage.includes('data="0x77209fe8')) {
+        console.warn('reverse ENS lookup failed', e)
+      }
 
       const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
       if (hasBeenResolvedOnce) {
