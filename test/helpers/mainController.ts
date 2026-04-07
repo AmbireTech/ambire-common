@@ -1,5 +1,7 @@
 import fetch from 'node-fetch'
 
+import { EventEmitterRegistryController } from '@/controllers/eventEmitterRegistry/eventEmitterRegistry'
+
 import { AccountsController } from '../../src/controllers/accounts/accounts'
 import { DappsController } from '../../src/controllers/dapps/dapps'
 import { MainController } from '../../src/controllers/main/main'
@@ -59,6 +61,9 @@ export interface MakeMainControllerResult {
   storage: Storage
   /** The `StorageController` passed to `initialSetStorage`. Note: `mainCtrl.storage` is a separate instance wrapping the same underlying map. */
   storageCtrl: StorageController
+  eventEmitterRegistry: EventEmitterRegistryController
+  eventEmitter: ReturnType<typeof mockUiManager>['eventEmitter']
+  getWindowId: ReturnType<typeof mockUiManager>['getWindowId']
 }
 
 export const makeMainController = async (
@@ -75,6 +80,7 @@ export const makeMainController = async (
     skipPortfolioFetchBlacklistOnLoad = true,
     overrides = {}
   } = opts
+  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
 
   const storage: Storage = produceMemoryStore()
 
@@ -140,7 +146,7 @@ export const makeMainController = async (
     ...overrides.featureFlags
   }
 
-  const { uiManager } = mockUiManager()
+  const { uiManager, eventEmitter, getWindowId } = mockUiManager()
   const mainCtrl = new MainController({
     appVersion: overrides.appVersion ?? '1.0.0',
     platform: overrides.platform ?? 'browser-webkit',
@@ -153,8 +159,13 @@ export const makeMainController = async (
     featureFlags,
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},
-    uiManager
+    uiManager,
+    eventEmitterRegistry
   })
+
+  // Disable simulation in requests' signAccountOps
+  // @ts-ignore
+  mainCtrl.requests.shouldSimulateAccountOps = false
 
   // Applied synchronously before any async callbacks run, so the initial load
   // will use the mocked versions.
@@ -170,12 +181,14 @@ export const makeMainController = async (
   }
 
   await mainCtrl.accounts.accountStateInitialLoadPromise
-
   accountStateSpy?.mockRestore()
 
   return {
     mainCtrl,
     storage,
-    storageCtrl
+    storageCtrl,
+    eventEmitterRegistry,
+    eventEmitter,
+    getWindowId
   }
 }

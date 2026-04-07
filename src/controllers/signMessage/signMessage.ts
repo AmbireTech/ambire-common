@@ -256,9 +256,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
     if (!this.network || !this.#account) return
 
-    // send only to safe global if it doesn't already exists and if the threshold is not met
+    // send only to Safe Global if it doesn't already exists and if the threshold is not met
     await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig).catch((e) => {
-      console.log('failed to send message to safe global: ', e)
+      console.log('failed to send message to Safe Global: ', e)
     })
   }
 
@@ -266,7 +266,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     if (!this.network) return
 
     await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
-      console.log('failed to send message to safe global: ', e)
+      console.log('failed to send message to Safe Global: ', e)
     })
   }
 
@@ -422,8 +422,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
 
-      if (!this.#account.safeCreation) {
-        // todo: configure this to work with Safes
+      // skip the message verification for safe accounts & EOAs. Reasons:
+      // * for EOAs: bcz it's a privacy issue
+      // * for Safes: bcz the Safe API will return an error on invalid sig
+      if (!this.#account.safeCreation && !accountState.isEOA) {
         const verifyMessageParams = {
           provider,
           // the signer is always the account even if the actual

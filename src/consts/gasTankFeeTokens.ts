@@ -338,6 +338,13 @@ export default [
     hiddenOnError: true
   },
   {
+    address: '0x6440f144b7e50D6a8439336510312d2F54beB01D',
+    symbol: 'BOLD',
+    chainId: 1n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/56069/standard/BOLD_logo.png?1748265087'
+  },
+  {
     address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     symbol: 'wmatic',
     chainId: 137n,

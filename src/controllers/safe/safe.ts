@@ -39,7 +39,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   #providers: IProvidersController
 
   /**
-   * The last time a request to fetch pending safe txn was made
+   * The last time a request to fetch pending Safe txn was made
    */
   #updatedAt?: { time: number; addr: string }
 
@@ -100,7 +100,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   /**
    * Check if the passed safeAddr is deployed on any chain that:
    * - the user has enabled in the extension +
-   * - safe contracts are deployed on and are in our config, SAFE_NETWORKS
+   * - Safe contracts are deployed on and are in our config, SAFE_NETWORKS
    * If deployed, get its config and check if we support it.
    * If we do, allow import of that safe
    */
@@ -108,7 +108,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.importError = undefined
     this.safeInfo = undefined
 
-    // search enabled networks that are safe supported
+    // search enabled networks that are Safe supported
     const safeNetworks = this.#networks.networks.filter(
       (n) =>
         SAFE_NETWORKS.includes(Number(n.chainId)) &&
@@ -126,7 +126,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (!deployedOn) {
       this.importError = {
         address: safeAddr,
-        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(',')}. Please deploy it from Safe global on at least one network before continuing`
+        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(',')}. Please deploy it from Safe Global on at least one network before continuing`
       }
       return
     }
@@ -145,7 +145,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (safeInfo instanceof Error || safeCreationInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
-        message: 'Failed to retrieve information about the safe. Please try again'
+        message: 'Failed to retrieve information about the Safe. Please try again'
       }
       return
     }
@@ -180,7 +180,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   #filterOutHidden(pending: SafeResults, safeAddr: string): SafeResults {
-    // filter out all resolved & rejected safe txns
+    // filter out all resolved & rejected Safe txns
     const hiddenTxns = [
       ...this.#rejectedSafeTxns,
       ...this.#automaticallyResolvedSafeTxns.map((row) => row.txnIds).flat()
@@ -261,7 +261,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   /**
-   * Upon failure, unresolve all safe txns with the same nonce
+   * Upon failure, unresolve all Safe txns with the same nonce
    */
   async unresolve(nonce: bigint) {
     // reset the counter so we could fetch immediately

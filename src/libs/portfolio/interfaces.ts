@@ -519,6 +519,11 @@ export interface GetOptions {
    * blacklist defined in the portfolio library.
    */
   blacklist?: TokenBlacklist
+  /**
+   * Used to prevent blacklisting of Monerium Euro so the assetInfo service can get symbol
+   * and decimals from the portfolio
+   */
+  preventTokenBlacklisting?: true
 }
 
 /**

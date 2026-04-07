@@ -27,9 +27,9 @@ import { BaseAccount } from './BaseAccount'
 // to 7702 either because the network or the hardware wallet doesnt' support it
 export class Safe extends BaseAccount {
   /**
-   * We state override the safe during estimate with the ambire SA
+   * We state override the Safe during estimate with the ambire SA
    * so that we could easily perform estimation. There's about a 15k
-   * diff between ambire and safe account gas usage. We add this
+   * diff between ambire and Safe account gas usage. We add this
    * extra to the gas to make sure txns are passing
    */
   EXTRA_ESTIMATION_GAS = 15000n
@@ -156,7 +156,7 @@ export class Safe extends BaseAccount {
   }
 
   getNonceId(): string {
-    // the safe will move only its own smart account nonce as we don't have 4337
+    // the Safe will move only its own smart account nonce as we don't have 4337
     return `${this.accountState.nonce.toString()}`
   }
 
@@ -171,7 +171,7 @@ export class Safe extends BaseAccount {
     op: AccountOp,
     provider: RPCProvider
   ): Promise<bigint> {
-    // the safe account nonce
+    // the Safe account nonce
     return op.nonce as bigint
   }
 
