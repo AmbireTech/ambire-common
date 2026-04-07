@@ -26,6 +26,9 @@ export function getImage(content: string): HumanizerVisualization {
 export function getBreak(): HumanizerVisualization {
   return { type: 'break', id: randomId() }
 }
+export function getEditApproval(): HumanizerVisualization {
+  return { type: 'editApproval', id: randomId() }
+}
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
   return { type: 'address', address, id: randomId() }

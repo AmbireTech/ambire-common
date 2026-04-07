@@ -3,7 +3,14 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getBreak,
+  getEditApproval,
+  getLabel,
+  getToken
+} from '../../utils'
 
 const ERC721_INTERFACE = new Interface(ERC721)
 const ERC20_INTERFACE = new Interface(ERC20)
@@ -83,7 +90,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     return matcher[call.data.substring(0, 10)]
       ? {
           ...call,
-          fullVisualization: matcher[call.data.substring(0, 10)](call)
+          fullVisualization: matcher[call.data.substring(0, 10)]!(call)
         }
       : call
   })
@@ -104,7 +111,9 @@ export const genericErc20Humanizer = (
             getLabel('for'),
             getToken(call.to, args[1]),
             getLabel('to'),
-            getAddressVisualization(args[0])
+            getAddressVisualization(args[0]),
+            getBreak(),
+            getEditApproval()
           ]
         : [
             getAction('Revoke approval'),

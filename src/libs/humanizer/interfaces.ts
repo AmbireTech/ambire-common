@@ -18,6 +18,7 @@ export type HumanizerVisualization = (
         | 'link'
         | 'text'
         | 'break'
+        | 'editApproval'
       url?: string
       address?: string
       content?: string
