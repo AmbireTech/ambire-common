@@ -113,7 +113,7 @@ export const genericErc20Humanizer = (
             getLabel('to'),
             getAddressVisualization(args[0]),
             getBreak(),
-            getEditApproval()
+            getEditApproval(call.to)
           ]
         : [
             getAction('Revoke approval'),
