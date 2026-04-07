@@ -6,6 +6,7 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AssetType } from '../defiPositions/types'
@@ -14,6 +15,7 @@ import {
   AccountState,
   ERC721s,
   ExtendedErrorWithLevel,
+  ExternalAPITokenMarketDataResponse,
   ExternalHintsAPIResponse,
   FormattedExternalHintsAPIResponse,
   GetOptions,
@@ -24,6 +26,7 @@ import {
   PortfolioNetworkResult,
   SuspectedType,
   ToBeLearnedAssets,
+  TokenDataCacheValue,
   TokenResult,
   TokenValidationResult,
   Total
@@ -371,6 +374,7 @@ export const validateERC20Token = async (
   let type: 'network' | 'validation' | null = null
 
   const handleERC20Error = (e: any, operation: string) => {
+    console.error('Error during ERC20 validation operation:', operation, e)
     if (isNetworkError(e)) {
       hasNetworkError = true
       isValid = false
@@ -390,9 +394,9 @@ export const validateERC20Token = async (
   let decimals
   try {
     ;[balance, symbol, decimals] = await Promise.all([
-      erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
-      erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
-      erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+      erc20.balanceOf!(accountId).catch((e) => handleERC20Error(e, 'balance')),
+      erc20.symbol!().catch((e) => handleERC20Error(e, 'symbol')),
+      erc20.decimals!().catch((e) => handleERC20Error(e, 'decimals'))
     ])
   } catch (e) {
     handleERC20Error(e, 'token validation')
@@ -516,7 +520,11 @@ export const getTotal = (
       // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
       if (typeof total !== 'number' || Number.isNaN(total)) {
         console.error(
-          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`
+          `Invalid total for token ${token.symbol} (${token.address}) on chain ${token.chainId}`,
+          'Price:',
+          x,
+          'Amount:',
+          tokenAmount
         )
         // eslint-disable-next-line no-continue
         continue
@@ -537,7 +545,11 @@ export const getTotal = (
     // thus we must exclude them from the defi total to avoid double counting
     const positionsToExclude: string[] = t
       .filter(
-        (token) => token.flags.defiPositionId && token.flags.defiTokenType === AssetType.Collateral
+        (token) =>
+          token.flags.defiPositionId &&
+          token.flags.defiTokenType === AssetType.Collateral &&
+          // If the token doesn't have a price we must add the value from the position to the total
+          token.priceIn.length > 0
       )
       .map((token) => token.flags.defiPositionId!)
 
@@ -800,5 +812,59 @@ export const getHintsError = (
       : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
     message: errorMessage,
     level: isLastUpdateTooOld ? 'critical' : 'silent'
+  }
+}
+
+export const getHardcodedCitreaPrices = (address: string): Price | null => {
+  const stables = [
+    '0x8D82c4E3c936C7B5724A382a9c5a4E6Eb7aB6d5D',
+    '0xE045e6c36cF77FAA2CfB54466D71A3aEF7bbE839',
+    '0x9f3096Bac87e7F03DC09b0B416eB0DF837304dc4'
+  ]
+  if (stables.indexOf(address) !== -1) {
+    return {
+      baseCurrency: 'usd',
+      price: 1
+    }
+  }
+
+  return null
+}
+
+export const convertApiTokenDataToTokenDataCache = (
+  tokenData: ExternalAPITokenMarketDataResponse | null
+): TokenDataCacheValue => {
+  if (!tokenData) {
+    return {
+      priceIn: [],
+      marketDataIn: []
+    }
+  }
+
+  const baseCurrency = (tokenData.baseCurrency || 'usd') as 'usd' // stop ts from complaining, we only support usd as base currency for now
+  const price = (tokenData.price || tokenData.usd) as number | undefined
+
+  const baseCurrency24hChange = tokenData[`${baseCurrency}_24h_change`]
+  const baseCurrency24hVolume = tokenData[`${baseCurrency}_24h_vol`]
+  const baseCurrencyMarketCap = tokenData[`${baseCurrency}_market_cap`]
+  const fullyDilutedValuation = tokenData[`${baseCurrency}_fully_diluted_valuation`]
+  const website = tokenData.homepage ? tokenData.homepage[0] : undefined
+
+  return {
+    priceIn: typeof price === 'number' ? [{ baseCurrency, price }] : [],
+    marketDataIn: [
+      {
+        baseCurrency,
+        change24h: baseCurrency24hChange,
+        volume24h: baseCurrency24hVolume,
+        marketCap: baseCurrencyMarketCap,
+        fullyDilutedValuation: fullyDilutedValuation,
+        totalSupply: tokenData.total_supply
+      }
+    ],
+    meta: {
+      exchanges: tokenData.exchanges || [],
+      website: website
+    }
   }
 }

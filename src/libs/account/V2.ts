@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Interface } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -20,8 +21,8 @@ import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
 import { privSlot } from '../proxyDeploy/deploy'
 import { UserOperation } from '../userOperation/types'
-import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
+import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
@@ -110,7 +111,16 @@ export class V2 extends BaseAccount {
     return BROADCAST_OPTIONS.byBundler
   }
 
-  shouldIncludeActivatorCall() {
+  shouldIncludeActivatorCall(paidBy?: string) {
+    // if the account is not deployed and we're paying with an EOA,
+    // include the 4337 priv
+    if (
+      !this.accountState.isDeployed &&
+      paidBy &&
+      paidBy.toLowerCase() !== this.account.addr.toLowerCase()
+    )
+      return true
+
     return this.#isTransitioningTo4337()
   }
 
@@ -173,5 +183,16 @@ export class V2 extends BaseAccount {
     provider: RPCProvider
   ): Promise<bigint> {
     return op.nonce as bigint
+  }
+
+  /**
+   * The Ambire estimation is made to work perfectly with Ambire SA
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return false
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return true
   }
 }

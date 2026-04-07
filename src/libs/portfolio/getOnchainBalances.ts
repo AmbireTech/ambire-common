@@ -4,11 +4,10 @@ import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 /* eslint-disable no-console */
 import { yieldToMain } from '../../utils/scheduler'
-import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
-import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
-import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
+import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
+import { getAccountDeployParams } from '../account/account'
+import { AccountOp, callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
-/* eslint-disable import/no-cycle */
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
@@ -16,6 +15,7 @@ import { mapToken } from './helpers'
 import {
   CollectionResult,
   GetOptions,
+  GetOptionsSimulation,
   LimitsOptions,
   MetaData,
   TokenError,
@@ -93,7 +93,7 @@ function handleSimulationError(
       if (a > b) return 1
       return -1
     })
-  if (nonces.length && afterNonce < nonces[nonces.length - 1] + 1n) {
+  if (nonces.length && afterNonce < nonces[nonces.length - 1]! + 1n) {
     throw new SimulationError(
       'simulation error: Failed to increment the nonce to the final account op nonce',
       beforeNonce,
@@ -105,20 +105,21 @@ function handleSimulationError(
 export function getDeploylessOpts(
   accountAddr: string,
   supportsStateOverride: boolean,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag'>
+  opts: {
+    simulation?: GetOptionsSimulation<AccountOp[]>
+    blockTag?: GetOptions['blockTag']
+  }
 ) {
-  const hasEOAOverride =
-    opts.simulation && shouldUseStateOverrideForEOA(opts.simulation.account, opts.simulation.state)
+  const shouldStateOverride =
+    supportsStateOverride &&
+    opts.simulation &&
+    opts.simulation.baseAccount.shouldStateOverrideDuringSimulations()
 
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
-    mode:
-      supportsStateOverride && hasEOAOverride
-        ? DeploylessMode.StateOverride
-        : DeploylessMode.Detect,
-    stateToOverride:
-      supportsStateOverride && hasEOAOverride ? getEoaSimulationStateOverride(accountAddr) : null
+    mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+    stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr) : null
   }
 }
 
@@ -164,21 +165,21 @@ export async function getNFTs(
     return [collections.map((token: any) => [token.error, mapNft(token)]), {}]
   }
 
-  const { accountOps, account, state } = opts.simulation
+  const { accountOps, baseAccount, state } = opts.simulation
+  const account = baseAccount.getAccount()
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-
+  const shouldStateOverride =
+    !network.rpcNoStateOverride && baseAccount.shouldStateOverrideDuringSimulations()
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
-    // EOA starts from a fake, specified nonce
-    nonce: !shouldUseStateOverrideForEOA(account, state)
-      ? nonce
-      : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+    // state overriden accounts start from a fake, specified nonce
+    nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(toSingletonCall).map(callToTuple)
   }))
   const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
-      account.associatedKeys,
+      shouldStateOverride ? [account.addr] : account.associatedKeys,
       tokenAddrs.map(([address]) => address),
       tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
       limits.erc721Tokens,
@@ -207,7 +208,7 @@ export async function getNFTs(
     before.collections.map((beforeToken: any, i: number) => {
       const simulationToken = simulationTokens
         ? simulationTokens.find(
-            (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+            (token: any) => token.addr.toLowerCase() === tokenAddrs[i]![0].toLowerCase()
           )
         : null
 
@@ -282,12 +283,13 @@ export async function getTokens(
       return deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
     }
 
-    const { accountOps, account, state } = opts.simulation || {}
+    const { accountOps, baseAccount, state } = opts.simulation || {}
+    const account = baseAccount.getAccount()
+    const shouldStateOverride =
+      !network.rpcNoStateOverride && baseAccount.shouldStateOverrideDuringSimulations()
     const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
-      // EOA starts from a fake, specified nonce
-      nonce: !shouldUseStateOverrideForEOA(account, state)
-        ? nonce
-        : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+      // state overriden accounts start from a fake, specified nonce
+      nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
       calls: calls.map(toSingletonCall).map(callToTuple)
     }))
     const [factory, factoryCalldata] = getAccountDeployParams(account)
@@ -298,7 +300,7 @@ export async function getTokens(
         'simulateAndGetBalances',
         [
           accountAddr,
-          account.associatedKeys,
+          shouldStateOverride ? [account.addr] : account.associatedKeys,
           tokenAddrs,
           factory,
           factoryCalldata,

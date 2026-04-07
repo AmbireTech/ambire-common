@@ -67,6 +67,16 @@ const modifyDappPropsIfNeeded = (
       onModify(uniswap)
     }
   }
+
+  if (id === 'zora.co') {
+    const zora = dappsMap.get(id)
+    if (zora) {
+      zora.name = 'Zora'
+      zora.description =
+        "The world's attention market. Trade any trending topic, idea, meme, or moment."
+      onModify(zora)
+    }
+  }
 }
 
 function getDappNameFromId(id: string) {

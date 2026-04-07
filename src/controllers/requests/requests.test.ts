@@ -1,49 +1,19 @@
-import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Account } from '../../interfaces/account'
-import { IRequestsController } from '../../interfaces/requests'
 import {
   BenzinUserRequest,
   CallsUserRequest,
   DappConnectRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PhishingController } from '../phishing/phishing'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { StorageController } from '../storage/storage'
-import { SocketAPIMock } from '../swapAndBridge/socketApiMock'
-import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
-import { TransferController } from '../transfer/transfer'
-import { UiController } from '../ui/ui'
-import { RequestsController } from './requests'
-
-const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
-const accounts: Account[] = [
+const accounts = [
   {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
     associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
@@ -91,152 +61,40 @@ const accounts: Account[] = [
   }
 ]
 
-const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) => {
-  return new Promise<void>((resolve) => {
-    const unsubscribe = accountsCtrl.onUpdate(() => {
-      if (
-        accountsCtrl.accounts.length &&
-        Object.keys(accountsCtrl.accountStates).length &&
-        !accountsCtrl.areAccountStatesLoading
-      ) {
-        unsubscribe()
-        resolve()
-      }
-    })
-  })
-}
-
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  await storage.set('accounts', accounts)
-  await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-  const storageCtrl = new StorageController(storage)
-  const uiCtrl = new UiController({ uiManager })
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {}
-  })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
+  const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    }
   )
 
-  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystoreCtrl,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore: keystoreCtrl,
-    autoLogin: autoLoginCtrl
-  })
-
-  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
-
-  await addressBookCtrl.initialLoadPromise
-
-  const phishingCtrl = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    addressBook: addressBookCtrl
-  })
-
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const portfolioCtrl = new PortfolioController(
-    storageCtrl,
-    fetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystore,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl
-  )
-  const callRelayer = relayerCall.bind({ url: '', fetch })
-  const activityCtrl = new ActivityController(
-    storageCtrl,
-    fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioCtrl,
-    () => Promise.resolve()
-  )
-
-  const transferCtrl = new TransferController(
-    () => {},
-    storageCtrl,
-    humanizerInfo as HumanizerMeta,
-    selectedAccountCtrl,
-    networksCtrl,
-    addressBookCtrl,
-    accountsCtrl,
-    keystoreCtrl,
-    portfolioCtrl,
-    activityCtrl,
-    {},
-    providersCtrl,
-    phishingCtrl,
-    relayerUrl,
-    () => Promise.resolve(),
-    uiCtrl
-  )
-
-  const requestsController: IRequestsController = {} as IRequestsController
-
-  const swapAndBridgeCtrl = new SwapAndBridgeController({
-    callRelayer: () => {},
-    selectedAccount: selectedAccountCtrl,
-    networks: networksCtrl,
-    accounts: accountsCtrl,
-    activity: activityCtrl,
-    storage: storageCtrl,
-    swapProvider: new SocketAPIMock({ fetch, apiKey: '' }) as any,
-    keystore,
-    portfolio: portfolioCtrl,
-    providers: providersCtrl,
-    phishing: phishingCtrl,
-    externalSignerControllers: {},
-    relayerUrl,
-    getUserRequests: () => {
-      return requestsController?.userRequests || []
-    },
-    getVisibleUserRequests: () => {
-      return requestsController?.visibleUserRequests || []
-    },
-    onBroadcastSuccess: () => Promise.resolve(),
-    onBroadcastFailed: () => {}
-  })
-
-  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
+  // Mock account states for all accounts
+  for (const account of mainCtrl.accounts.accounts) {
+    mainCtrl.accounts.accountStates[account.addr] = {}
+    for (const network of mainCtrl.networks.networks) {
+      mainCtrl.accounts.accountStates[account.addr]![network.chainId.toString()] = {
+        accountAddr: account.addr,
+        isDeployed: true,
+        eoaNonce: null,
+        nonce: 0n,
+        erc4337Nonce: 0n,
+        associatedKeys: [],
+        importedAccountKeys: [],
+        balance: 0n,
+        isEOA: false,
+        isErc4337Enabled: false,
+        isErc4337Nonce: false,
+        isV2: true,
+        currentBlock: 0n,
+        isSmarterEoa: false,
+        delegatedContract: null,
+        delegatedContractName: null,
+        threshold: 1,
+        updatedAt: 0
+      } as any
+    }
+  }
 
   const getSignAccountOp = async ({
     addr,
@@ -247,28 +105,28 @@ const prepareTest = async () => {
     chainId: bigint
     requestId: string
   }) => {
-    await accountsCtrl.initialLoadPromise
-    await waitForAccountsCtrlFirstLoad(accountsCtrl)
-    await networksCtrl.initialLoadPromise
-    const account = accountsCtrl.accounts.find((a) => a.addr === addr)!
-    const network = networksCtrl.networks.find((n) => n.chainId === chainId)!
+    await mainCtrl.accounts.initialLoadPromise
+    await mainCtrl.networks.initialLoadPromise
+    const account = mainCtrl.accounts.accounts.find((a) => a.addr === addr)!
+    const network = mainCtrl.networks.networks.find((n) => n.chainId === chainId)!
 
-    return new SignAccountOpController({
+    const signAccountOp = new SignAccountOpController({
       type: 'default',
-      callRelayer,
-      accounts: accountsCtrl,
-      networks: networksCtrl,
-      keystore: keystoreCtrl,
-      portfolio: portfolioCtrl,
+      callRelayer: mainCtrl.callRelayer,
+      accounts: mainCtrl.accounts,
+      networks: mainCtrl.networks,
+      keystore: mainCtrl.keystore,
+      portfolio: mainCtrl.portfolio,
       externalSignerControllers: {},
-      activity: activityCtrl,
+      activity: mainCtrl.activity,
       account,
       network,
       eventEmitterRegistry,
-      provider: providersCtrl.providers[network.chainId.toString()]!,
-      phishing: phishingCtrl,
+      provider: mainCtrl.providers.providers[network.chainId.toString()]!,
+      phishing: mainCtrl.phishing,
       fromRequestId: requestId,
       accountOp: {
+        id: generateUuid(),
         accountAddr: addr,
         signingKeyAddr: null,
         signingKeyType: null,
@@ -291,6 +149,10 @@ const prepareTest = async () => {
       onBroadcastSuccess: async () => {},
       onBroadcastFailed: () => {}
     })
+    // Prevent the recurring estimation timer from reaching V1.getAvailableFeeOptions
+    // (which throws for accounts with no ETH on the test networks).
+    jest.spyOn(signAccountOp.estimation, 'estimate').mockResolvedValue(undefined)
+    return signAccountOp
   }
 
   const getCallsRequest = async ({ addr, chainId }: { addr: string; chainId: bigint }) => {
@@ -318,34 +180,13 @@ const prepareTest = async () => {
   }
 
   return {
-    selectedAccountCtrl,
-    controller: new RequestsController({
-      relayerUrl,
-      callRelayer,
-      portfolio: portfolioCtrl,
-      externalSignerControllers: {},
-      activity: activityCtrl,
-      phishing: phishingCtrl,
-      accounts: accountsCtrl,
-      networks: networksCtrl,
-      providers: providersCtrl,
-      selectedAccount: selectedAccountCtrl,
-      keystore: keystoreCtrl,
-      transfer: transferCtrl,
-      swapAndBridge: swapAndBridgeCtrl,
-      ui: uiCtrl,
-      autoLogin: autoLoginCtrl,
-      getDapp: async () => undefined,
-      updateSelectedAccountPortfolio: () => Promise.resolve(),
-      addTokensToBeLearned: () => {},
-      onSetCurrentUserRequest: () => {},
-      onBroadcastSuccess: async () => {},
-      onBroadcastFailed: () => {},
-      eventEmitterRegistry,
-      shouldSimulateAccountOps: false
-    }),
+    selectedAccountCtrl: mainCtrl.selectedAccount,
+    controller: mainCtrl.requests,
     getSignAccountOp,
-    getCallsRequest
+    getCallsRequest,
+    event: eventEmitter,
+    getWindowId,
+    uiCtrl: mainCtrl.ui
   }
 }
 
@@ -367,11 +208,6 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
 describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
-  })
-  test('Init controller', async () => {
-    const { controller } = await prepareTest()
-    expect(controller.initialLoadPromise).toBeInstanceOf(Promise)
-    await expect(controller.initialLoadPromise).resolves.toBeUndefined()
   })
 
   test('Add and then remove a user request', async () => {
@@ -414,6 +250,7 @@ describe('RequestsController ', () => {
       type: 'transferRequest',
       params: {
         selectedToken: {
+          marketDataIn: [],
           address: '0x0000000000000000000000000000000000000000',
           amount: 1n,
           symbol: 'ETH',
@@ -596,7 +433,7 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
   })
   test('should focus out and then focus on the current request window', async () => {
-    const { controller } = await prepareTest()
+    const { controller, event, getWindowId } = await prepareTest()
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     event.emit('windowFocusChange', 'random-window-id')

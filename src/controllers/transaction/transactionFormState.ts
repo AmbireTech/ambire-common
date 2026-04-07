@@ -481,6 +481,7 @@ export class TransactionFormState extends EventEmitter {
           canTopUpGasTank: false,
           rewardsType: null
         },
+        marketDataIn: [],
         priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
 
@@ -850,7 +851,11 @@ export class TransactionFormState extends EventEmitter {
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
         isEnsAddress,
-        this.addressState.isDomainResolving
+        this.addressState.isDomainResolving,
+        this.dependencies.networks.networks,
+        this.dependencies.accounts.accountStates,
+        this.dependencies.accounts.accounts.find((a) => a.addr === this.recipientAddress),
+        this.toChainId ? BigInt(this.toChainId) : undefined
       )
     }
     return validationFormMsgsNew

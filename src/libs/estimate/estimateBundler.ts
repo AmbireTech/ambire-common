@@ -22,7 +22,8 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { fetchNonce } from '../userOperation/fetchEntryPointNonce'
 import { UserOperation } from '../userOperation/types'
-import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
+import { getUserOperation } from '../userOperation/userOperation'
+import { getSigForCalculations } from './estimateHelpers'
 import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
 
 export async function fetchBundlerGasPrice(

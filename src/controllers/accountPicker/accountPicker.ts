@@ -33,7 +33,7 @@ import {
   Key,
   ReadyToAddKeys
 } from '../../interfaces/keystore'
-import { INetworksController, Network } from '../../interfaces/network'
+import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   getAccountImportStatus,
@@ -44,6 +44,7 @@ import {
   isDerivedForSmartAccountKeyOnly,
   isSmartAccount
 } from '../../libs/account/account'
+import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -1093,10 +1094,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, smartAccKey] of smartAccKeys.entries()) {
       const slot = startIdx + (index + 1)
+      const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 
       // The derived EOA (basic) account which is the key for the smart account
       const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts)
-      const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
       // Derive the Ambire (smart) account
@@ -1105,9 +1106,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
           this.#alreadyImportedAccounts
         )
-          .then((smartAccount) => {
-            return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
-          })
+          .then((smartAccount) => ({
+            account: smartAccount,
+            isLinked: false,
+            slot,
+            index: slot - 1
+          }))
           // If the error isn't caught here and the promise is rejected, Promise.all
           // will be rejected entirely.
           .catch(() => {
@@ -1116,6 +1120,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             return null
           })
       )
+
+      // Yield to event loop to keep UI responsive
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
     const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
@@ -1128,10 +1136,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, basicAccKey] of basicAccKeys.entries()) {
       const slot = startIdx + (index + 1)
-
       // The EOA (basic) account on this slot
       const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
-      accounts.push({ account, isLinked: false, slot, index: slot - 1 })
+      const result = { account, isLinked: false, slot, index: slot - 1 }
+      accounts.push(result)
     }
 
     return accounts
@@ -1159,7 +1167,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const provider = this.#providers.providers[chainId]
       if (!provider) return
 
-      const accountState = await getAccountState(provider, network, accountsList).catch(() => {
+      const accountState = await getAccountState(
+        provider,
+        network,
+        accountsList,
+        this.#keystore.keys
+      ).catch(() => {
         if (this.page !== page) return
         if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
         this.networksWithAccountStateError.push(BigInt(chainId))
@@ -1200,16 +1213,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     const finalAccountsWithNetworksArray = Object.values(accountsObj)
 
-    // Preserve the original order of networks based on usedOnNetworks
+    // Optimize the sort by caching network indices
+    const networkIndexMap: { [chainId: string]: number } = {}
+    this.#networks.networks.forEach((network, index) => {
+      networkIndexMap[network.chainId.toString()] = index
+    })
+
     const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
-      const chainIdsA = (a.account.usedOnNetworks || []).map((network) => network.chainId)
-      const chainIdsB = (b.account.usedOnNetworks || []).map((network) => network.chainId)
-      const networkIndexA = this.#networks.networks.findIndex((network) =>
-        chainIdsA.includes(network.chainId)
-      )
-      const networkIndexB = this.#networks.networks.findIndex((network) =>
-        chainIdsB.includes(network.chainId)
-      )
+      const getMinIndex = (acc: DerivedAccount) => {
+        const chainIds = (acc.account.usedOnNetworks || []).map((n) => n.chainId.toString())
+        if (chainIds.length === 0) return Infinity
+        return Math.min(...chainIds.map((id) => networkIndexMap[id] ?? Infinity))
+      }
+
+      const networkIndexA = getMinIndex(a)
+      const networkIndexB = getMinIndex(b)
       return networkIndexA - networkIndexB
     })
 
@@ -1242,31 +1260,22 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.linkedAccountsError = ''
     this.emitUpdate()
 
-    const keys = accounts.map((acc) => `keys[]=${acc.addr}`).join('&')
-    const url = `/v2/account-by-key/linked/accounts?${keys}`
-
-    // Relayer linked accounts found on the keys against we're meant to check
-    let relayerLinkedAccounts = []
-    try {
-      const response = await this.#callRelayer(url)
-      relayerLinkedAccounts = response.data.accounts
-    } catch (e: any) {
-      const upstreamError = e?.message || ''
-      let errorMessage = 'The attempt to discover linked smart accounts failed.'
-      errorMessage += upstreamError ? ` Error details: <${upstreamError}>` : ''
-      this.linkedAccountsError = errorMessage
+    const ambireLinkedAccData = await getRelayerLinkedAccounts(accounts, this.#callRelayer)
+    if (ambireLinkedAccData.errorMessage) {
+      this.linkedAccountsError = ambireLinkedAccData.errorMessage
     }
+    const ambireLinkedAccounts = ambireLinkedAccData.linkedAccounts
 
     if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
 
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
-      relayerLinkedAccounts
+      ambireLinkedAccounts
     ).flatMap((addr: string) => {
       // In extremely rare cases, on the Relayer, the identity data could be
       // missing in the identities table but could exist in the logs table.
       // When this happens, the account data will be `null`.
-      const isIdentityDataMissing = !relayerLinkedAccounts[addr]
-      if (isIdentityDataMissing) {
+      const ambireLinkedAccount = ambireLinkedAccounts[addr]
+      if (!ambireLinkedAccount) {
         // Same error for both cases, because most prob
         this.emitError({
           level: 'minor',
@@ -1279,7 +1288,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         return []
       }
 
-      const { factoryAddr, bytecode, salt, associatedKeys } = relayerLinkedAccounts[addr]
+      const { factoryAddr, bytecode, salt, associatedKeys } = ambireLinkedAccount
       // Checks whether the account.addr matches the addr generated from the
       // factory. Should never happen, but could be a possible attack vector.
       const isInvalidAddress =
@@ -1298,13 +1307,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
-            initialPrivileges: relayerLinkedAccounts[addr].initialPrivilegesAddrs.map(
-              (address: string) => [
-                address,
-                // this is a default privilege hex we add on account creation
-                '0x0000000000000000000000000000000000000000000000000000000000000001'
-              ]
-            ),
+            initialPrivileges: ambireLinkedAccount.initialPrivilegesAddrs.map((address: string) => [
+              address,
+              // this is a default privilege hex we add on account creation
+              '0x0000000000000000000000000000000000000000000000000000000000000001'
+            ]),
             creation: {
               factoryAddr,
               bytecode,

@@ -17,6 +17,7 @@ export type HumanizerVisualization = (
         | 'image'
         | 'link'
         | 'text'
+        | 'break'
       url?: string
       address?: string
       content?: string
@@ -72,6 +73,7 @@ export interface AbiFragment {
 }
 
 export interface HumanizerMetaAddress {
+  logo?: string
   name?: string
   // undefined means it is not a token
   token?: { symbol: string; decimals?: number }

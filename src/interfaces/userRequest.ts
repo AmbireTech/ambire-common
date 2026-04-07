@@ -4,6 +4,8 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
@@ -12,6 +14,7 @@ import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
+import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
@@ -58,16 +61,25 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
+    safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
+    safeTx?: SafeMultisigTransactionResponse
+    swapTxn?: SwapAndBridgeSendTxRequest
+    quote?: SwapAndBridgeQuote
   }
   signAccountOp: ISignAccountOpController
 }
 
-export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'message'
   meta: UserRequestBase['meta'] & {
     params: { message: Hex }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: Hex
+    created?: number
+    signatures?: Hex[]
   }
 }
 
@@ -84,10 +96,14 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: Hex
+    created?: number
   }
 }
 
-export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'typedMessage'
   meta: UserRequestBase['meta'] & {
     params: {
@@ -98,6 +114,11 @@ export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> 
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: Hex
+    created?: number
+    signatures?: Hex[]
   }
 }
 

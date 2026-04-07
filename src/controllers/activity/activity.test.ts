@@ -2,32 +2,12 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
-import { IAccountsController } from '../../interfaces/account'
-import { INetworksController } from '../../interfaces/network'
-import { IPortfolioController } from '../../interfaces/portfolio'
-import { RPCProviders } from '../../interfaces/provider'
-import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IMainController } from '../../interfaces/main'
+import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { getRpcProvider } from '../../services/provider'
-import { AccountsController } from '../accounts/accounts'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -115,37 +95,21 @@ const SIGNED_MESSAGE: SignedMessage = {
   chainId: 1n
 }
 
-const providers: RPCProviders = {}
-
-networks.forEach((network) => {
-  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.chainId.toString()]!.isWorking = true
-})
-
-const callRelayer = relayerCall.bind({ url: '', fetch })
-
-let providersCtrl: ProvidersController
-let portfolioCtrl: IPortfolioController
-let accountsCtrl: IAccountsController
-let selectedAccountCtrl: ISelectedAccountController
-let networksCtrl: INetworksController
-
-const storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-
-const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
+let mainCtrl: IMainController
+let storageCtrl: IStorageController
+let storage: Storage
 
 const prepareTest = async () => {
   const controller = new ActivityController(
-    storageCtrl,
+    mainCtrl.storage,
     fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioCtrl,
+    mainCtrl.callRelayer,
+    mainCtrl.accounts,
+    mainCtrl.selectedAccount,
+    mainCtrl.providers,
+    mainCtrl.networks,
+    mainCtrl.portfolio,
+    mainCtrl.safe,
     () => Promise.resolve()
   )
 
@@ -162,14 +126,15 @@ const prepareTest = async () => {
 
 const prepareSignedMessagesTest = async () => {
   const controller = new ActivityController(
-    storageCtrl,
+    mainCtrl.storage,
     fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioCtrl,
+    mainCtrl.callRelayer,
+    mainCtrl.accounts,
+    mainCtrl.selectedAccount,
+    mainCtrl.providers,
+    mainCtrl.networks,
+    mainCtrl.portfolio,
+    mainCtrl.safe,
     () => Promise.resolve()
   )
 
@@ -185,67 +150,10 @@ describe('Activity Controller ', () => {
   // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
   // errors
   beforeAll(async () => {
-    await storageCtrl.set('accounts', ACCOUNTS)
-
-    networksCtrl = new NetworksController({
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
-      },
-      onAddOrUpdateNetworks: (nets) => {
-        nets.forEach((n) => {
-          providersCtrl.setProvider(n)
-        })
-      }
-    })
-    providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-
-    const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-    accountsCtrl = new AccountsController(
-      storageCtrl,
-      providersCtrl,
-      networksCtrl,
-      keystore,
-      () => {},
-      () => {},
-      () => {},
-      relayerUrl,
-      fetch
-    )
-    const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-    portfolioCtrl = new PortfolioController(
-      storageCtrl,
-      fetch,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      keystore,
-      relayerUrl,
-      velcroUrl,
-      new BannerController(storageCtrl),
-      featureFlagsCtrl
-    )
-
-    const autoLoginCtrl = new AutoLoginController(
-      storageCtrl,
-      keystore,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      {},
-      new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-    )
-    selectedAccountCtrl = new SelectedAccountController({
-      storage: storageCtrl,
-      accounts: accountsCtrl,
-      keystore,
-      autoLogin: autoLoginCtrl
-    })
-
-    await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(ACCOUNTS[1]!)
+    ;({ mainCtrl, storageCtrl, storage } = await makeMainController(async (s) => {
+      await s.set('accounts', ACCOUNTS)
+    }))
+    await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
   })
 
   // Clear activity storage after each test
@@ -493,7 +401,9 @@ describe('Activity Controller ', () => {
           {
             ...accountOp,
             status: 'success',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber
+            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
           }
         ], //  we expect success here
         itemsTotal: 1,
@@ -545,7 +455,9 @@ describe('Activity Controller ', () => {
           {
             ...accountOp,
             status: 'failure',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber
+            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
           }
         ], // we expect failure here
         itemsTotal: 1,
@@ -741,7 +653,7 @@ describe('Activity Controller ', () => {
 
       expect(controllerAccountsOps1!.filter(({ chainId }) => chainId === 56n).length).toBe(5)
 
-      await networksCtrl.updateNetwork({ disabled: true }, 56n)
+      await mainCtrl.networks.updateNetwork({ disabled: true }, 56n)
 
       await controller.filterAccountsOps(sessionId, INIT_PARAMS, {
         fromPage: 0,
@@ -755,7 +667,7 @@ describe('Activity Controller ', () => {
           .length
       ).toBe(0)
 
-      await networksCtrl.updateNetwork({ disabled: false }, 56n)
+      await mainCtrl.networks.updateNetwork({ disabled: false }, 56n)
     })
 
     test('Keeps no more than 1000 items', async () => {
@@ -916,14 +828,15 @@ describe('Activity Controller ', () => {
   })
   test('removeAccountData', async () => {
     const controller = new ActivityController(
-      storageCtrl,
+      mainCtrl.storage,
       fetch,
-      callRelayer,
-      accountsCtrl,
-      selectedAccountCtrl,
-      providersCtrl,
-      networksCtrl,
-      portfolioCtrl,
+      mainCtrl.callRelayer,
+      mainCtrl.accounts,
+      mainCtrl.selectedAccount,
+      mainCtrl.providers,
+      mainCtrl.networks,
+      mainCtrl.portfolio,
+      mainCtrl.safe,
       () => Promise.resolve()
     )
 

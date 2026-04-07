@@ -1,4 +1,4 @@
-import { Interface, isAddress, TransactionReceipt, ZeroAddress } from 'ethers'
+import { Interface, isAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
@@ -55,6 +55,8 @@ export interface SubmittedAccountOp extends AccountOp {
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
   blockNumber?: number
+  blockHash?: string
+  gasUsed?: string
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
@@ -83,15 +85,21 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
   call: Call
   callIndex: number
 } {
+  let lastWithTxId
+  let callIndex = 0
+
   // get the first BroadcastedButNotConfirmed call if any
   for (let i = 0; i < op.calls.length; i++) {
     const currentCall = op.calls[i]!
     if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
       return { call: currentCall, callIndex: i }
+
+    lastWithTxId = currentCall
+    callIndex = i
   }
 
   // if no BroadcastedButNotConfirmed, get the last one
-  return { call: op.calls[op.calls.length - 1]!, callIndex: op.calls.length - 1 }
+  return { call: lastWithTxId!, callIndex }
 }
 
 export async function fetchFrontRanTxnId(
@@ -105,19 +113,17 @@ export async function fetchFrontRanTxnId(
   if (counter >= 5) return foundTxnId
 
   const userOpHash = identifiedBy.identifier
-  const bundler = identifiedBy.bundler
-    ? getBundlerByName(identifiedBy.bundler)
-    : getDefaultBundler(network)
-  const bundlerResult = await bundler.getStatus(network, userOpHash)
+  const bundler = getDefaultBundler(network) // rely on pimlico for front running
+  const bundlerResult = await bundler.getReceipt(userOpHash, network)
   if (
-    !bundlerResult.transactionHash ||
-    bundlerResult.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
+    !bundlerResult.receipt ||
+    bundlerResult.receipt.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
   ) {
     await wait(2000)
     return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1)
   }
 
-  return bundlerResult.transactionHash
+  return bundlerResult.receipt.transactionHash
 }
 
 export function hasTimePassedSinceBroadcast(op: SubmittedAccountOp, mins: number): boolean {
@@ -150,7 +156,7 @@ export async function fetchTxnId(
     const txnIds = identifiedBy.identifier.split('-')
     return {
       status: 'success',
-      txnId: txnIds[txnIds.length - 1]
+      txnId: txnIds[txnIds.length - 1]!
     }
   }
 
@@ -282,18 +288,33 @@ export function updateOpStatus(
   if (opReference.identifiedBy.type === 'MultipleTxns') {
     const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
     // eslint-disable-next-line no-param-reassign
-    opReference.calls[callIndex].status = status
+    opReference.calls[callIndex]!.status = status
 
     // if there's a receipt, add the fee
     if (receipt) {
       // eslint-disable-next-line no-param-reassign
-      opReference.calls[callIndex].fee = {
+      opReference.calls[callIndex]!.fee = {
         inToken: ZeroAddress,
         amount: receipt.fee
       }
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockHash = receipt.blockHash
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockNumber = receipt.blockNumber
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.blockHash = receipt.blockHash
+
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex]!.gasUsed = toBeHex(receipt.gasUsed)
     }
 
-    if (callIndex === opReference.calls.length - 1) {
+    const left = !!opReference.calls.find(
+      (c) => c.status === AccountOpStatus.BroadcastedButNotConfirmed
+    )
+    if (!left) {
       // eslint-disable-next-line no-param-reassign
       opReference.status = status
       return opReference

@@ -1,5 +1,4 @@
-/* eslint-disable no-console */
-import { ethers } from 'ethers'
+import { ethers, ZeroAddress } from 'ethers'
 
 import { describe, test } from '@jest/globals'
 
@@ -34,7 +33,7 @@ const accountOp: AccountOp = {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   // humanizerMeta: {}
-}
+} as any
 
 const accounts: Account[] = [
   {
@@ -73,6 +72,12 @@ const transactions = {
   ],
   // currently with USDT
   erc20: [
+    // approve erc-20 token USDT with hidden eth send
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: 10n ** 18n,
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
     // approve erc-20 token USDT
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
@@ -195,7 +200,13 @@ const transactions = {
       data: '0xd96a094a0000000000000000000000000000000000000000000000000000000064c233bf'
     }
   ],
-
+  aave: [
+    {
+      to: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
+      value: 0n,
+      data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000002428530a47000000000000000000000000000000000000000000000000000000000000002b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000084617ba03700000000000000000000000068749665ff8d2d112fa859aa293f07a622782f3800000000000000000000000000000000000000000000000000000000000003e8000000000000000000000000084bb31443b6da9c6007e4b11a5a5c4a019ea5df000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    }
+  ],
   accountOrKeyArg: [
     // approve erc-20 token USDT
     {
@@ -240,6 +251,59 @@ describe('Humanizer main function', () => {
     ]
 
     accountOp.calls = [...transactions.generic]
+    const irCalls = humanizeAccountOp(accountOp)
+    compareHumanizerVisualizations(irCalls, expectedVisualizations)
+  })
+
+  test('erc20 humanize end to end', async () => {
+    // const ir: Ir = []
+    const expectedVisualizations = [
+      [
+        getAction('Send'),
+        getToken(ZeroAddress, 10n ** 18n),
+        getLabel('and'),
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
+        getLabel('to'),
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
+      ],
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getLabel('to'),
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
+      ],
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getLabel('to'),
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
+      ]
+    ]
+
+    accountOp.calls = [...transactions.erc20.slice(0, 3)]
+    const irCalls = humanizeAccountOp(accountOp)
+    compareHumanizerVisualizations(irCalls, expectedVisualizations)
+  })
+
+  test('aave not to be parsed by uniswap', async () => {
+    // const ir: Ir = []
+    const expectedVisualizations = [
+      [
+        getAction('Call multicall'),
+        getLabel('from'),
+        getAddressVisualization('0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2'),
+        getToken('0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2', 0n, true)
+      ]
+    ]
+
+    accountOp.calls = [...transactions.aave]
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })

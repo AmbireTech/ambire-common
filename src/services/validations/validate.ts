@@ -1,5 +1,9 @@
 import { getAddress, parseUnits } from 'ethers'
-import isEmail from 'validator/es/lib/isEmail'
+import isEmail from 'validator/lib/isEmail'
+
+import { Account, AccountStates } from '@/interfaces/account'
+import { Network } from '@/interfaces/network'
+import { getSupportedNetworks } from '@/libs/networks/networks'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -88,12 +92,16 @@ function getTimeAgo(date: Date): string {
 
 const validateSendTransferAddress = (
   address: string,
-  selectedAcc: string,
+  selectedAccAddr: string,
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
+  networks: Network[],
+  accountStates: AccountStates,
+  recepientAccount?: Account,
+  chainId?: bigint,
   isRecipientAddressFirstTimeSend?: boolean,
   lastRecipientTransactionDate?: Date | null
 ): Validation => {
@@ -105,10 +113,22 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
+  if (address.toLowerCase() === selectedAccAddr.toLowerCase()) {
     return {
       message: "You're about to send funds back to yourself.",
       severity: 'warning'
+    }
+  }
+
+  // check if the account is supported on the receiving network
+  if (chainId) {
+    const accountNetworks = getSupportedNetworks(networks, accountStates, recepientAccount)
+    const foundNetwork = accountNetworks.find((n) => n.chainId === chainId)
+    if (foundNetwork && foundNetwork.isNotSupported && foundNetwork.notSupportedReason) {
+      return {
+        message: foundNetwork.notSupportedReason,
+        severity: 'warning'
+      }
     }
   }
 
@@ -236,10 +256,10 @@ function isValidURL(url: string) {
 
 export {
   isEmail,
-  validateAddAuthSignerAddress,
-  validateSendTransferAddress,
-  validateSendTransferAmount,
   isValidCode,
   isValidPassword,
-  isValidURL
+  isValidURL,
+  validateAddAuthSignerAddress,
+  validateSendTransferAddress,
+  validateSendTransferAmount
 }

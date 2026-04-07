@@ -117,6 +117,11 @@ export interface Network {
   customBundlerUrl?: string
 }
 
+export interface SupportedNetworks extends Network {
+  isNotSupported?: boolean
+  notSupportedReason?: string
+}
+
 export interface AddNetworkRequestParams {
   name: Network['name']
   rpcUrls: Network['rpcUrls']
@@ -179,14 +184,12 @@ export type RelayerNetwork = {
     symbol: string
     name: string
     coingeckoId: string
-    icon: string
     decimals: number
     wrapped: {
       address: string
       symbol: string
       name: string
       coingeckoId: string
-      icon: string
       decimals: number
     }
     oldNativeAssetSymbols?: string[]

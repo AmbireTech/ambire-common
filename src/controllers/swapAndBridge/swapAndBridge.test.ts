@@ -28,6 +28,7 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { TransferController } from '../transfer/transfer'
@@ -83,12 +84,19 @@ const networksCtrl = new NetworksController({
   useTempProvider: (props, cb) => {
     return providersCtrl.useTempProvider(props, cb)
   },
-  onAddOrUpdateNetworks: () => {}
+  onAddOrUpdateNetworks: () => {},
+  onReady: async () => {
+    await providersCtrl.init({ networks: networksCtrl.allNetworks })
+  }
 })
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+providersCtrl = new ProvidersController({
+  storage: storageCtrl,
+  getNetworks: () => networksCtrl.allNetworks,
+  sendUiMessage: () => uiCtrl.message.sendUiMessage
+})
 
 const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
@@ -117,7 +125,6 @@ const autoLoginCtrl = new AutoLoginController(
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore,
   autoLogin: autoLoginCtrl
 })
 
@@ -139,6 +146,13 @@ const portfolioCtrl = new PortfolioController(
   featureFlagsCtrl
 )
 
+const safe = new SafeController({
+  networks: networksCtrl,
+  providers: providersCtrl,
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
+
 const activityCtrl = new ActivityController(
   storageCtrl,
   fetch,
@@ -148,6 +162,7 @@ const activityCtrl = new ActivityController(
   providersCtrl,
   networksCtrl,
   portfolioCtrl,
+  safe,
   () => Promise.resolve()
 )
 
@@ -167,6 +182,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
+    marketDataIn: [],
     symbol: 'USDT',
     name: 'Tether'
   },
@@ -177,6 +193,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
     chainId: 8453n,
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
+    marketDataIn: [],
     symbol: 'cbBTC',
     name: 'Coinbase wrapped BTC'
   },
@@ -187,6 +204,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+    marketDataIn: [],
     symbol: 'ETH',
     name: 'Ether'
   }
@@ -211,7 +229,8 @@ const swapAndBridgeController = new SwapAndBridgeController({
   getUserRequests: () => [],
   getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
   onBroadcastSuccess: () => Promise.resolve(),
-  onBroadcastFailed: () => {}
+  onBroadcastFailed: () => {},
+  ui: uiCtrl
 })
 
 const transferCtrl = new TransferController(
@@ -248,6 +267,7 @@ requestsCtrl = new RequestsController({
   transfer: transferCtrl,
   swapAndBridge: swapAndBridgeController,
   ui: uiCtrl,
+  safe,
   autoLogin: autoLoginCtrl,
   getDapp: async () => undefined,
   updateSelectedAccountPortfolio: () => Promise.resolve(),
@@ -457,7 +477,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
+    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(1)
   })
   it('should continuously update active routes', async () => {
     const { restore } = suppressConsole()

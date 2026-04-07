@@ -1,4 +1,4 @@
-import { Interface, toQuantity } from 'ethers'
+import { Interface, toQuantity, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -8,6 +8,7 @@ import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getSafeBroadcastTxn } from '../../libs/safe/safe'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -22,6 +23,11 @@ export const BROADCAST_OPTIONS = {
   byRelayer: 'relayer', // execute
   byOtherEOA: 'otherEOA', // execute + standard
   delegation: 'delegation' // txn type 4
+}
+
+async function waitBeforeRetry(chainId: bigint) {
+  // block time at ethereum is bigger, so we wait 3s per failures
+  await wait(chainId === 1n ? 3000 : 1500)
 }
 
 export function getByOtherEOATxnData(
@@ -57,6 +63,7 @@ async function estimateGas(
   from: string,
   call: Call,
   nonce: number,
+  chainId: bigint,
   error?: Error,
   counter: number = 0
 ): Promise<bigint> {
@@ -110,8 +117,8 @@ async function estimateGas(
     if (gasLimit instanceof Error && gasLimit.message.includes('INSUFFICIENT_PRIVILEGE'))
       throw gasLimit
 
-    await wait(1500)
-    return estimateGas(provider, from, call, nonce, gasLimit, counter + 1)
+    await waitBeforeRetry(chainId)
+    return estimateGas(provider, from, call, nonce, chainId, gasLimit, counter + 1)
   }
 
   // add a 10% overhead to prevent OOG
@@ -127,6 +134,14 @@ export async function getTxnData(
   nonce: number,
   call?: Call
 ): Promise<{ to: Hex; value: bigint; data: Hex; gasLimit?: bigint }> {
+  if (account.safeCreation) {
+    const safeData = getSafeBroadcastTxn(op, accountState)
+    return {
+      ...safeData,
+      gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
+    }
+  }
+
   // no need to estimate gas for delegation, it's already estimated
   if (broadcastOption === BROADCAST_OPTIONS.delegation) {
     if (op.calls.length > 1) {
@@ -154,7 +169,7 @@ export async function getTxnData(
     // for each one seperately
     let gasLimit: bigint | undefined = (op.gasFeePayment as GasFeePayment).simulatedGasLimit
     if (op.calls.length > 1) {
-      gasLimit = await estimateGas(provider, account.addr, call, nonce)
+      gasLimit = await estimateGas(provider, account.addr, call, nonce, op.chainId)
     }
 
     const singleCallTxn = {
@@ -173,7 +188,8 @@ export async function getTxnData(
       provider,
       (op.gasFeePayment as GasFeePayment).paidBy,
       otherEOACall,
-      nonce
+      nonce,
+      op.chainId
     )
     return { ...otherEOACall, gasLimit }
   }
@@ -225,4 +241,20 @@ export async function buildRawTransaction(
   }
 
   return rawTxn
+}
+
+export async function broadcastTransaction(
+  provider: RPCProvider,
+  signedTx: string,
+  chainId: bigint,
+  counter: number = 0
+): Promise<TransactionResponse> {
+  if (counter > 2) throw new Error('broadcast failed')
+  try {
+    return provider.broadcastTransaction(signedTx)
+  } catch (e) {
+    console.log('broadcast failed: ', e)
+    await waitBeforeRetry(chainId)
+    return broadcastTransaction(provider, signedTx, chainId, counter + 1)
+  }
 }

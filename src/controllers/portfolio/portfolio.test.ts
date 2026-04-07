@@ -1,27 +1,25 @@
-import { ethers, Wallet, ZeroAddress } from 'ethers'
+import { getAddress, Interface, Wallet, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
-import { getAddress } from 'viem'
 
 import { describe, expect, jest } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { getNonce, produceMemoryStore } from '../../../test/helpers'
+import { getNonce } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountStates } from '../../interfaces/account'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
-import { Portfolio } from '../../libs/portfolio'
 import {
   erc721CollectionToLearnedAssetKeys,
   learnedErc721sToHints
@@ -34,17 +32,11 @@ import {
   PortfolioNetworkResult,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { BannerController } from '../banner/banner'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { PortfolioController } from './portfolio'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
@@ -56,10 +48,12 @@ networks.forEach((network) => {
   providers[network.chainId.toString()]!.isWorking = true
 })
 
+const ethereum = networks.find((network) => network.chainId === 1n)!
+
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()]!, network, accounts)
+      getAccountState(providers[network.chainId.toString()]!, network, accounts, [])
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -229,23 +223,29 @@ const getMultipleAccountsLearnedAssets = () => {
   const tokenHints2 = generateRandomAddresses(10)
 
   const turnHintsToLearnedAssets = (hints: string[]) => {
-    return hints.reduce((acc, addr) => {
-      acc[addr] = Date.now()
+    return hints.reduce(
+      (acc, addr) => {
+        acc[addr] = Date.now()
 
-      return acc
-    }, {} as LearnedAssets['erc20s'][string])
+        return acc
+      },
+      {} as LearnedAssets['erc20s'][string]
+    )
   }
 
   const turnCollectionsToLearnedAssetKeys = (
     collections: [string, bigint[]][]
   ): LearnedAssets['erc721s'][string] => {
-    return collections.reduce((acc, nft) => {
-      erc721CollectionToLearnedAssetKeys(nft).forEach((key) => {
-        acc[key] = Date.now()
-      })
+    return collections.reduce(
+      (acc, nft) => {
+        erc721CollectionToLearnedAssetKeys(nft).forEach((key) => {
+          acc[key] = Date.now()
+        })
 
-      return acc
-    }, {} as LearnedAssets['erc721s'][string])
+        return acc
+      },
+      {} as LearnedAssets['erc721s'][string]
+    )
   }
 
   return {
@@ -289,73 +289,65 @@ const getKeystoreKeys = (): StoredKey[] => {
   ]
 }
 
-const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
-const prepareTest = async (
+const prepareTest = async (opts?: {
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
-) => {
-  const storage = produceMemoryStore()
-  const storageCtrl = new StorageController(storage)
-  await storageCtrl.set('accounts', [
-    account,
-    account2,
-    account3,
-    account4,
-    emptyAccount,
-    ambireV2Account,
-    accountWithManyAssets,
-    DEFI_TEST_ACCOUNT
-  ])
-  if (initialSetStorage) await initialSetStorage(storageCtrl)
+  fetchOverride?: typeof fetch
+  skipBlacklistFetch?: boolean
+  awaitInitialLoad?: boolean
+  skipAccountStateFetch?: boolean
+}) => {
+  const {
+    initialSetStorage,
+    awaitInitialLoad = true,
+    fetchOverride,
+    skipBlacklistFetch = true,
+    skipAccountStateFetch = true
+  } = opts || {}
 
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', [
+        account,
+        account2,
+        account3,
+        account4,
+        emptyAccount,
+        ambireV2Account,
+        accountWithManyAssets,
+        DEFI_TEST_ACCOUNT
+      ])
+      await storageCtrl.set('learnedAssets', {
+        erc20s: {},
+        erc721s: {
+          '1:0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
+            '0x932261f9Fc8DA46C4a22e31B45c4De60623848bF:39118': Date.now(),
+            '0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065:2442': Date.now()
+          }
+        }
+      })
+      if (initialSetStorage) await initialSetStorage(storageCtrl)
     },
-    onAddOrUpdateNetworks: () => {}
-  })
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-  await providersCtrl.initialLoadPromise
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const controller = new PortfolioController(
-    storageCtrl,
-    fetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystore,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl
+    {
+      awaitInitialLoad: awaitInitialLoad,
+      skipPortfolioFetchBlacklistOnLoad: skipBlacklistFetch,
+      skipAccountStateLoad: skipAccountStateFetch,
+      overrides: {
+        fetch: fetchOverride
+      }
+    }
   )
 
-  await accountsCtrl.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  await networksCtrl.initialLoadPromise
+  await mainCtrl.accounts.initialLoadPromise
+  await mainCtrl.providers.initialLoadPromise
+  await mainCtrl.networks.initialLoadPromise
+  await mainCtrl.portfolio.initialLoadPromise
 
-  if (initialSetStorage) {
-    // The initial load promise is not exposed so we wait 500ms for the storage to be set
-    await wait(500)
+  return {
+    controller: mainCtrl.portfolio as PortfolioController,
+    storageCtrl: mainCtrl.storage,
+    networksCtrl: mainCtrl.networks,
+    accountsCtrl: mainCtrl.accounts
   }
-
-  return { storageCtrl, controller, networksCtrl }
 }
 
 describe('Portfolio Controller ', () => {
@@ -363,32 +355,37 @@ describe('Portfolio Controller ', () => {
     jest.restoreAllMocks()
     jest.clearAllMocks()
   })
-  async function getAccountOp() {
+  async function getAccountOp(
+    collectibleAddress: string = '0xcf30def37dcb65d244f14e075dc0ce875ccfa065',
+    tokenId: number = 2442
+  ) {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
-    const iface = new ethers.Interface(ABI)
+    const iface = new Interface(ABI)
     const data = iface.encodeFunctionData('transferFrom', [
       '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      137
+      tokenId
     ])
 
     const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1']!)
-    const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
+    const calls = [{ to: collectibleAddress, value: BigInt(0), data }]
+
+    const op = {
+      id: generateUuid(),
+      accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      gasLimit: null,
+      gasFeePayment: null,
+      signingKeyType: 'internal',
+      chainId: 1n,
+      nonce,
+      signature: '0x',
+      calls
+    } as AccountOp
 
     return {
-      '1': [
-        {
-          accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-          gasLimit: null,
-          gasFeePayment: null,
-          chainId: 1n,
-          nonce,
-          signature: '0x',
-          calls
-        } as AccountOp
-      ]
-    }
+      '1': [op]
+    } as Record<string, AccountOp[]>
   }
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
@@ -412,7 +409,8 @@ describe('Portfolio Controller ', () => {
           new Promise((resolve) => {
             setTimeout(() => {
               queueOrder.push('updatePortfolioState - #1 call')
-              resolve(true)
+              // @ts-ignore
+              resolve([true, null])
             }, 2000)
           })
       )
@@ -420,14 +418,14 @@ describe('Portfolio Controller ', () => {
         () =>
           new Promise((resolve) => {
             queueOrder.push('updatePortfolioState - #2 call')
-            resolve(true)
+            resolve([true, null])
           })
       )
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
             queueOrder.push('updatePortfolioState - #3 call')
-            resolve(true)
+            resolve([true, null])
           })
       )
 
@@ -485,7 +483,7 @@ describe('Portfolio Controller ', () => {
 
   describe('Pending tokens', () => {
     test('Pending tokens + simulation are fetched and kept in the controller', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -513,7 +511,7 @@ describe('Portfolio Controller ', () => {
     })
     test('Pending tokens are re-fetched, if `forceUpdate` flag is set, no matter if AccountOp is the same or changer', async () => {
       const done = jest.fn(() => null)
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
 
       let state1: any
@@ -548,7 +546,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed (omitted, i.e. undefined)', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -572,7 +570,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed', async () => {
-      const { controller } = await prepareTest()
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -586,7 +584,7 @@ describe('Portfolio Controller ', () => {
 
       const accountOp2 = await getAccountOp()
       // Change the address
-      accountOp2['1'][0]!.accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
+      accountOp2['1']![0]!.accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp2,
@@ -597,6 +595,226 @@ describe('Portfolio Controller ', () => {
       )['1']!
 
       expect(state2.result?.updateStarted).toBeGreaterThan(state1.result?.updateStarted!)
+    })
+  })
+
+  describe('Simulation discarding', () => {
+    const getEthereumPortfolioState = (controller: PortfolioController) =>
+      controller.getAccountPortfolioState(account.addr)['1']!
+
+    const getSimulatedCollection = (
+      controller: PortfolioController,
+      address: string = '0xcf30def37dcb65d244f14e075dc0ce875ccfa065'
+    ) =>
+      getEthereumPortfolioState(controller).result?.collections?.find(
+        (collection: CollectionResult) => collection.address.toLowerCase() === address
+      )
+
+    test('overrideSimulationResults removes the current simulation result and stored accountOps', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      const stateBefore = getEthereumPortfolioState(controller)
+      const collectionBefore = getSimulatedCollection(controller)
+
+      expect(areAccountOpsEqual(stateBefore.accountOps!, accountOp['1']!)).toBe(true)
+      expect(collectionBefore?.amountPostSimulation).toBe(0n)
+
+      await controller.overrideSimulationResults(accountOp['1']![0]!)
+
+      const stateAfter = getEthereumPortfolioState(controller)
+      const collectionAfter = getSimulatedCollection(controller)
+
+      expect(stateAfter.accountOps).toBeUndefined()
+      expect(collectionAfter).toBeTruthy()
+      expect(collectionAfter?.amountPostSimulation).toBeUndefined()
+      expect(collectionAfter?.postSimulation).toBeUndefined()
+      expect(collectionAfter?.simulationAmount).toBeUndefined()
+      expect(
+        stateAfter.result?.tokens.some(
+          (token) =>
+            token.amountPostSimulation !== undefined || token.simulationAmount !== undefined
+        )
+      ).toBe(false)
+    })
+
+    test('calling overrideSimulationResults during a portfolio update still removes the simulation result and stored accountOps', async () => {
+      const { controller } = await prepareTest()
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      const updatePromise = controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      // Wait a short period
+      await wait(50)
+
+      // We call overrideSimulationResults in the middle of the updateSelectedAccount flow, to make sure it can handle that case
+      const overridePromise = controller.overrideSimulationResults(accountOp['1']![0]!)
+
+      await updatePromise
+      await overridePromise
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(stateAfter.accountOps).toBeUndefined()
+    })
+
+    test('overrideSimulationResults is a no-op when there is no matching simulated state', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const accountOp = await getAccountOp()
+
+      expect(() => controller.overrideSimulationResults(accountOp['1']![0]!)).not.toThrow()
+      expect(controller.getAccountPortfolioState(account.addr)).toEqual({})
+    })
+
+    test('discardSimulation removes the matching simulated account op and refreshes the portfolio', async () => {
+      const { controller } = await prepareTest()
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      const stateBefore = getEthereumPortfolioState(controller)
+      expect(stateBefore.accountOps).toStrictEqual(accountOp['1'])
+      expect(getSimulatedCollection(controller)?.amountPostSimulation).toBe(0n)
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(stateAfter.accountOps).toBeUndefined()
+      expect(stateAfter.result?.updateStarted).toBeGreaterThan(stateBefore.result?.updateStarted!)
+      expect(getSimulatedCollection(controller)?.amountPostSimulation).toBeUndefined()
+      expect(stateAfter.accountOps).toBeUndefined()
+    })
+
+    test('discardSimulation is a no-op when the account op is not part of the current simulation', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      const updateSelectedAccountSpy = jest.spyOn(controller, 'updateSelectedAccount')
+      const nonMatchingAccountOp = structuredClone(accountOp['1']![0]!)
+      nonMatchingAccountOp.accountAddr = account2.addr
+
+      await controller.discardSimulation([nonMatchingAccountOp])
+
+      expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
+      expect(getEthereumPortfolioState(controller).accountOps).toStrictEqual(accountOp['1'])
+      expect(getSimulatedCollection(controller)?.amountPostSimulation).toBe(0n)
+    })
+
+    test('discardSimulation does not affect a different account op, even if they are called together', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+      const oldAccountOp = await getAccountOp()
+      const toBeDiscardedAccountOp = await getAccountOp(
+        '0x932261f9fc8da46c4a22e31b45c4de60623848bf',
+        39118
+      )
+      const accountStates = await getAccountsInfo([account])
+
+      const updatePromise = controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: oldAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      const discardPromise = controller.discardSimulation(toBeDiscardedAccountOp['1']!)
+
+      await Promise.all([updatePromise, discardPromise])
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(areAccountOpsEqual(stateAfter.accountOps!, oldAccountOp['1']!)).toBe(true)
+    })
+
+    test('discardSimulation does not discard a newer simulation when it is queued first', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+      const oldAccountOp = await getAccountOp()
+      const newAccountOp = await getAccountOp('0x932261f9fc8da46c4a22e31b45c4de60623848bf', 39118)
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: oldAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      const discardPromise = controller.discardSimulation(oldAccountOp['1']!)
+      const updatePromise = controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: newAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      await Promise.all([discardPromise, updatePromise])
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(areAccountOpsEqual(stateAfter.accountOps!, newAccountOp['1']!)).toBe(true)
+    })
+    test('discardSimulation is not affected by account op nonces being updated in between', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      const updatedAccountOp = structuredClone(accountOp)
+      ;(updatedAccountOp['1']![0]!.nonce as bigint) += 1n
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = controller.getAccountPortfolioState(account.addr)['1']!
+
+      expect(stateAfter.accountOps).toBeUndefined()
+    })
+    test('discardSimulation removes the account ops from state even if the portfolio update fails', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: accountOp,
+        states: accountStates[account.addr]!
+      })
+
+      expect(controller.getAccountPortfolioState(account.addr)['1']!.accountOps).toBeDefined()
+
+      // Mock getAllHints error which will cause the update to fail
+      // @ts-ignore
+      jest.spyOn(controller, 'getAllHints').mockImplementationOnce(() => {
+        throw new Error('Failed to get hints')
+      })
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = controller.getAccountPortfolioState(account.addr)['1']!
+
+      expect(stateAfter.accountOps).toBeUndefined()
+      restore()
     })
   })
 
@@ -741,19 +959,22 @@ describe('Portfolio Controller ', () => {
       const firstBatchOf50 = generateRandomAddresses(50)
       const startingLearnedAssets: LearnedAssets = {
         erc20s: {
-          [`${1}:${account.addr}`]: firstBatchOf50.reduce((acc, addr, index) => {
-            // First 20 are still owned, last 30 are no longer owned
-            acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+          [`${1}:${account.addr}`]: firstBatchOf50.reduce(
+            (acc, addr, index) => {
+              // First 20 are still owned, last 30 are no longer owned
+              acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
 
-            return acc
-          }, {} as LearnedAssets['erc20s'][string])
+              return acc
+            },
+            {} as LearnedAssets['erc20s'][string]
+          )
         },
         erc721s: {}
       }
 
-      const { controller, storageCtrl } = await prepareTest((storageC) =>
-        storageC.set('learnedAssets', startingLearnedAssets)
-      )
+      const { controller, storageCtrl } = await prepareTest({
+        initialSetStorage: (storageC) => storageC.set('learnedAssets', startingLearnedAssets)
+      })
 
       const nextBatchOf30 = generateRandomAddresses(30)
       const allCurrentlyOwned = [...firstBatchOf50.slice(0, 20), ...nextBatchOf30]
@@ -771,35 +992,44 @@ describe('Portfolio Controller ', () => {
     test('To be learned erc721 cleanup mechanism works', async () => {
       // A total of 80 collections are added. 30 of them are "no longer owned"
       // but only 10 of them should be removed as the threshold of unowned is 20
-      const firstRandomCollections = generateRandomAddresses(50).reduce((acc, addr, index) => {
-        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+      const firstRandomCollections = generateRandomAddresses(50).reduce(
+        (acc, addr, index) => {
+          acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
 
-        return acc
-      }, [] as [string, bigint[]][])
+          return acc
+        },
+        [] as [string, bigint[]][]
+      )
 
       const keys = firstRandomCollections.map((c) => erc721CollectionToLearnedAssetKeys(c)).flat()
 
       const startingLearnedAssets: LearnedAssets = {
         erc20s: {},
         erc721s: {
-          [`${1}:${account.addr}`]: keys.reduce((acc, key, index) => {
-            // First 20 are still owned, last 30 are no longer owned
-            acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+          [`${1}:${account.addr}`]: keys.reduce(
+            (acc, key, index) => {
+              // First 20 are still owned, last 30 are no longer owned
+              acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
 
-            return acc
-          }, {} as LearnedAssets['erc721s'][string])
+              return acc
+            },
+            {} as LearnedAssets['erc721s'][string]
+          )
         }
       }
 
-      const { controller, storageCtrl } = await prepareTest((storageC) =>
-        storageC.set('learnedAssets', startingLearnedAssets)
+      const { controller, storageCtrl } = await prepareTest({
+        initialSetStorage: (storageC) => storageC.set('learnedAssets', startingLearnedAssets)
+      })
+
+      const nextRandomCollections = generateRandomAddresses(30).reduce(
+        (acc, addr, index) => {
+          acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+
+          return acc
+        },
+        [] as [string, bigint[]][]
       )
-
-      const nextRandomCollections = generateRandomAddresses(30).reduce((acc, addr, index) => {
-        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
-
-        return acc
-      }, [] as [string, bigint[]][])
 
       const allCurrentlyOwnedCollections = [
         ...firstRandomCollections.slice(0, 20),
@@ -1043,9 +1273,9 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getAccountPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'
-        )
+        [
+          '1'
+        ]?.result?.tokens.find((token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b')
 
       expect(toBeLearnedToken).toBeTruthy()
 
@@ -1090,10 +1320,9 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getAccountPortfolioState(account2.addr)
-        ['137']?.result?.tokens.find(
-          (token) =>
-            token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n
-        )
+        [
+          '137'
+        ]?.result?.tokens.find((token) => token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n)
       expect(toBeLearnedToken).toBeTruthy()
 
       const key = `${137}:${account2.addr}`
@@ -1112,9 +1341,9 @@ describe('Portfolio Controller ', () => {
       networksCtrl.networks.forEach((network) => {
         const nativeToken = controller
           .getAccountPortfolioState(account.addr)
-          [network.chainId.toString()]?.result?.tokens.find(
-            (token) => token.address === ZeroAddress
-          )
+          [
+            network.chainId.toString()
+          ]?.result?.tokens.find((token) => token.address === ZeroAddress)
 
         if (!nativeToken) {
           console.error('Native token not found for network:', network.name)
@@ -1229,8 +1458,10 @@ describe('Portfolio Controller ', () => {
           }
         }
       }
-      const { controller } = await prepareTest(async (storageCtrl) => {
-        await storageCtrl.set('learnedAssets', initialLearnedAssets)
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageCtrl) => {
+          await storageCtrl.set('learnedAssets', initialLearnedAssets)
+        }
       })
 
       // @ts-ignore
@@ -1400,9 +1631,12 @@ describe('Portfolio Controller ', () => {
         },
         fromExternalAPI: {}
       }
-      const { controller, storageCtrl } = await prepareTest((storage) =>
-        storage.set('previousHints', previousHints)
-      )
+      const { controller, storageCtrl } = await prepareTest({
+        initialSetStorage: async (storage) => {
+          await storage.set('previousHints', previousHints)
+          await storage.remove('learnedAssets') // Make sure learnedAssets is empty to test the migration logic
+        }
+      })
 
       const learnedAssets = await storageCtrl.get('learnedAssets', null)
       expect(learnedAssets).toBe(null)
@@ -1430,10 +1664,12 @@ describe('Portfolio Controller ', () => {
     test('Learned assets from view-only account are not returned', async () => {
       const learnedAssets = getMultipleAccountsLearnedAssets()
 
-      const { controller } = await prepareTest(async (storageController) => {
-        await storageController.set('learnedAssets', learnedAssets)
-        // Get rid of the second account's key (to make it view-only)
-        await storageController.set('keystoreKeys', getKeystoreKeys().slice(0, 1))
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageController) => {
+          await storageController.set('learnedAssets', learnedAssets)
+          // Get rid of the second account's key (to make it view-only)
+          await storageController.set('keystoreKeys', getKeystoreKeys().slice(0, 1))
+        }
       })
 
       // @ts-ignore
@@ -1448,10 +1684,12 @@ describe('Portfolio Controller ', () => {
     test('Learned assets from other imported accounts are not returned if the update is not manual', async () => {
       const learnedAssets = getMultipleAccountsLearnedAssets()
 
-      const { controller } = await prepareTest(async (storageController) => {
-        await storageController.set('learnedAssets', learnedAssets)
-        // Get rid of the second account's key (to make it view-only)
-        await storageController.set('keystoreKeys', getKeystoreKeys())
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageController) => {
+          await storageController.set('learnedAssets', learnedAssets)
+          // Get rid of the second account's key (to make it view-only)
+          await storageController.set('keystoreKeys', getKeystoreKeys())
+        }
       })
 
       // @ts-ignore
@@ -1466,10 +1704,12 @@ describe('Portfolio Controller ', () => {
     test('Learned assets are added from other imported accounts on a manual update', async () => {
       const learnedAssets = getMultipleAccountsLearnedAssets()
 
-      const { controller } = await prepareTest(async (storageController) => {
-        await storageController.set('learnedAssets', learnedAssets)
-        // Get rid of the second account's key (to make it view-only)
-        await storageController.set('keystoreKeys', getKeystoreKeys())
+      const { controller } = await prepareTest({
+        initialSetStorage: async (storageController) => {
+          await storageController.set('learnedAssets', learnedAssets)
+          // Get rid of the second account's key (to make it view-only)
+          await storageController.set('keystoreKeys', getKeystoreKeys())
+        }
       })
 
       // @ts-ignore
@@ -1766,6 +2006,7 @@ describe('Portfolio Controller ', () => {
   })
 
   test('Check Token Validity - erc20, erc1155', async () => {
+    const { restore } = suppressConsole()
     const { controller } = await prepareTest()
     const token = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
@@ -1788,6 +2029,8 @@ describe('Portfolio Controller ', () => {
       expect(tokenIsNotValid).toBeFalsy()
       expect(tokenIsValid).toBeTruthy()
     })
+
+    restore()
   })
 
   test('Add and remove custom token', async () => {
@@ -1808,9 +2051,9 @@ describe('Portfolio Controller ', () => {
     const getCustomTokenFromPortfolio = () => {
       return controller
         .getAccountPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) => token.address === customToken.address && token.chainId === customToken.chainId
-        )
+        [
+          '1'
+        ]?.result?.tokens.find((token) => token.address === customToken.address && token.chainId === customToken.chainId)
     }
 
     expect(tokenIsSet).toEqual(customToken)
@@ -1870,12 +2113,9 @@ describe('Portfolio Controller ', () => {
 
     const hiddenToken = controller
       .getAccountPortfolioState(account.addr)
-      ['1']?.result?.tokens.find(
-        (token) =>
-          token.address === preference.address &&
-          token.chainId === preference.chainId &&
-          token.flags.isHidden
-      )
+      [
+        '1'
+      ]?.result?.tokens.find((token) => token.address === preference.address && token.chainId === preference.chainId && token.flags.isHidden)
     expect(hiddenToken).toBeTruthy()
   })
   test('Calling toggleHideToken a second time deletes the preference', async () => {
@@ -1951,19 +2191,19 @@ describe('Portfolio Controller ', () => {
     const { controller } = await prepareTest()
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBe(undefined)
+    expect(controller.tokenDataCache['137']).toBe(undefined)
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd'
     })
 
     // @ts-ignore
-    expect(controller.priceCache['137']).toBeDefined()
+    expect(controller.tokenDataCache['137']).toBeDefined()
     // @ts-ignore
-    expect(controller.priceCache['137'].size).toBeGreaterThan(0)
+    expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()
@@ -1982,12 +2222,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
@@ -2007,12 +2249,14 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
       isManualUpdate: false
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(2)
     expect(formatted.data).toBe(null)
@@ -2031,7 +2275,7 @@ describe('Portfolio Controller ', () => {
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
-      accountAddr: account.addr,
+      account,
       hasKeys: true,
       baseCurrency: 'usd',
       defiMaxDataAgeMs: 6000000,
@@ -2041,6 +2285,8 @@ describe('Portfolio Controller ', () => {
         hasHints: true
       }
     })
+
+    if (!formatted) throw new Error('Portfolio API Discovery response should not be null')
 
     expect(formatted.errors.length).toBe(1)
     expect(formatted.errors[0]!.name).toBe(PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError)
@@ -2062,5 +2308,273 @@ describe('Portfolio Controller ', () => {
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(Object.keys(controller.getNetworksWithAssets(account.addr)).length).toEqual(0)
+  })
+  test('should do a request with a simulation; then a second request without the simulation should come and it should not be allowed to persist', async () => {
+    const { controller, accountsCtrl } = await prepareTest()
+    // We need account state for the simulation to be persisted
+    await accountsCtrl.updateAccountState(account.addr, 'latest', [1n])
+    const ethereum = networks.find((n) => n.chainId === 1n)!
+    const accountOpsOnEthereum = await getAccountOp()
+    const accountStates = await getAccountsInfo([account])
+
+    // update and persist the simulation
+    await controller.updateSelectedAccount(account.addr, [ethereum], {
+      accountOps: accountOpsOnEthereum,
+      states: accountStates[account.addr]!
+    })
+    // make sure the simulation is there
+    const hasItems = (obj: any) => !!Object.keys(obj).length
+    const portfolioState = controller.getAccountPortfolioState(account.addr)
+    expect(hasItems(portfolioState)).toBeTruthy()
+    expect(portfolioState['1']).not.toBe(undefined)
+    const ethereumPortfolioState = portfolioState['1']!
+    expect(ethereumPortfolioState.accountOps).not.toBe(undefined)
+    expect(ethereumPortfolioState.accountOps).not.toBe(null)
+    expect(ethereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
+
+    // update the selected account again and make sure this
+    // request doesn't get persisted
+    await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+      isManualUpdate: true
+    })
+    const newPortfolioState = controller.getAccountPortfolioState(account.addr)
+    expect(hasItems(newPortfolioState)).toBeTruthy()
+    expect(newPortfolioState['1']).not.toBe(undefined)
+    const newEthereumPortfolioState = newPortfolioState['1']!
+    expect(newEthereumPortfolioState.accountOps).not.toBe(undefined)
+    expect(newEthereumPortfolioState.accountOps).not.toBe(null)
+    expect(newEthereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
+  })
+
+  describe('Blacklisting', () => {
+    const mockBlacklistResponse = {
+      success: true,
+      blacklistAddrs: {
+        '1': ['0x956f824b5a37673c6fc4a6904186cb3ba499349b'],
+        '10': ['0x0B91B07bEb67333225A5bA0259D55AeE10E3A578'],
+        '137': ['0x0b91b07beb67333225a5ba0259d55aee10e3a578']
+      },
+      blacklistBySymbols: [
+        'visit to',
+        'claim bonus',
+        'free claim',
+        'visit',
+        'claim your special rewards',
+        'thefork',
+        'claim'
+      ],
+      updatedAt: Date.now()
+    }
+
+    const BLACKLIST_URL = 'https://cena.ambire.com/api/v3/tokens/black-list'
+
+    const createJsonResponse = (body: unknown, ok = true, statusText = 'OK') => ({
+      ok,
+      statusText,
+      json: () => Promise.resolve(body)
+    })
+
+    const createBlacklistFetchOverride = (
+      handler: (
+        url: string,
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1]
+      ) => any
+    ) =>
+      jest.fn((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = typeof input === 'string' ? input : input.toString()
+
+        if (url === BLACKLIST_URL) return handler(url, input, init)
+
+        return fetch(input as any, init as any)
+      }) as unknown as typeof fetch
+
+    const waitForBlacklist = async (
+      controller: PortfolioController,
+      advanceTime?: (ms: number) => Promise<void>
+    ) => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        // @ts-ignore - access private getter
+        const blacklist = controller.blacklist
+        if (!blacklist.isLoading && blacklist.updatedAt) return blacklist
+
+        if (advanceTime) {
+          await advanceTime(25)
+        } else {
+          await wait(25)
+        }
+      }
+
+      // @ts-ignore - access private getter
+      return controller.blacklist
+    }
+
+    const wasBlacklistFetched = (fetchOverride: typeof fetch) => {
+      const calls = (fetchOverride as unknown as jest.Mock).mock.calls as [unknown, unknown?][]
+
+      return calls.some(([url]) => url === BLACKLIST_URL)
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('should fetch blacklist from API successfully', async () => {
+      const { restore } = suppressConsole()
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.resolve(
+          createJsonResponse({
+            ...mockBlacklistResponse,
+            blacklistAddrs: {
+              ...mockBlacklistResponse.blacklistAddrs,
+              '42161': ['bad-address', '0xaf88d065e77c8cC2239327C5EDb3A432268e5831']
+            }
+          })
+        )
+      )
+
+      const { controller, storageCtrl } = await prepareTest({
+        fetchOverride,
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+      const blacklist = await waitForBlacklist(controller)
+      const storedBlacklist = await storageCtrl.get('tokenBlacklist', null)
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      expect(blacklist).toEqual({
+        blacklistAddrs: {
+          '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)],
+          '10': [getAddress(mockBlacklistResponse.blacklistAddrs['10'][0]!)],
+          '137': [getAddress(mockBlacklistResponse.blacklistAddrs['137'][0]!)],
+          // Bad address should be filtered out
+          '42161': [getAddress('0xaf88d065e77c8cC2239327C5EDb3A432268e5831')]
+        },
+        blacklistBySymbols: mockBlacklistResponse.blacklistBySymbols,
+        updatedAt: expect.any(Number),
+        isLoading: false
+      })
+      expect(storedBlacklist).toEqual({
+        blacklistAddrs: blacklist.blacklistAddrs,
+        blacklistBySymbols: blacklist.blacklistBySymbols,
+        updatedAt: blacklist.updatedAt
+      })
+      restore()
+    })
+
+    test('should not persist blacklist when the API does not work at all', async () => {
+      const { restore } = suppressConsole()
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.reject(new Error('blacklist unavailable'))
+      )
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+      restore()
+    })
+
+    test('should keep cached blacklist if refresh fails during initialization', async () => {
+      const { restore } = suppressConsole()
+      const staleCachedBlacklist = {
+        blacklistAddrs: { '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)] },
+        blacklistBySymbols: ['claim'],
+        updatedAt: Date.now() - BLACKLIST_UPDATE_INTERVAL - 60 * 1000
+      }
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.reject(new Error('refresh failed'))
+      )
+
+      const { controller, storageCtrl } = await prepareTest({
+        fetchOverride,
+        initialSetStorage: async (storageCtrlInner) => {
+          await storageCtrlInner.set('tokenBlacklist', staleCachedBlacklist)
+        },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      // @ts-ignore - access private getter
+      expect(controller.blacklist).toEqual({ ...staleCachedBlacklist, isLoading: false })
+      expect(await storageCtrl.get('tokenBlacklist', null)).toEqual(staleCachedBlacklist)
+      restore()
+    })
+
+    test('should recover when the API fails on the first try and succeeds on the next try', async () => {
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
+
+      try {
+        let call = 0
+        const fetchOverride = createBlacklistFetchOverride(() => {
+          if (call === 0) {
+            call++
+            return Promise.reject(new Error('blacklist unavailable'))
+          }
+
+          return Promise.resolve(createJsonResponse(mockBlacklistResponse))
+        })
+        const { controller, storageCtrl } = await prepareTest({
+          fetchOverride,
+          skipBlacklistFetch: false,
+          awaitInitialLoad: false
+        })
+
+        expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+
+        // Advance time by 5 minutes to trigger the retry (controller retries after 5 minutes on initial failure)
+        await jest.advanceTimersByTimeAsync(5 * 60 * 1000)
+
+        const blacklist = await waitForBlacklist(controller, (ms) =>
+          jest.advanceTimersByTimeAsync(ms)
+        )
+        const storedBlacklist = await storageCtrl.get('tokenBlacklist', null)
+
+        expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+        expect(blacklist).toEqual({
+          blacklistAddrs: {
+            '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)],
+            '10': [getAddress(mockBlacklistResponse.blacklistAddrs['10'][0]!)],
+            '137': [getAddress(mockBlacklistResponse.blacklistAddrs['137'][0]!)]
+          },
+          blacklistBySymbols: mockBlacklistResponse.blacklistBySymbols,
+          updatedAt: expect.any(Number),
+          isLoading: false
+        })
+        expect(storedBlacklist).toEqual({
+          blacklistAddrs: blacklist.blacklistAddrs,
+          blacklistBySymbols: blacklist.blacklistBySymbols,
+          updatedAt: blacklist.updatedAt
+        })
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
+    })
+
+    test('should ignore malformed or unsuccessful API responses', async () => {
+      const { restore } = suppressConsole()
+      const fetchOverride = createBlacklistFetchOverride(() =>
+        Promise.resolve(
+          createJsonResponse({ success: false, blacklistAddrs: {}, blacklistBySymbols: [] })
+        )
+      )
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(true)
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+      restore()
+    })
   })
 })

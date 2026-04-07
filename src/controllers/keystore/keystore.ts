@@ -1078,6 +1078,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
+  get hasBiometricsSecret() {
+    return this.#keystoreSecrets.some((x) => x.id === 'biometrics')
+  }
+
   get hasKeystoreTempSeed() {
     return !!this.#tempSeed
   }
@@ -1152,14 +1156,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     keyType: Key['type']
   }) => {
     const signer = await this.getSigner(keyAddr, keyType)
-    if (!signer.decrypt) throw new Error(`This account uses a key type (${keyType}) that does not support getting encryption public key.`)
+    if (!signer.decrypt)
+      throw new Error(
+        `This account uses a key type (${keyType}) that does not support getting encryption public key.`
+      )
 
     try {
       return signer.decrypt(encryptedMessage)
     } catch (e) {
       const message = `Failed to decrypt message. Error details: <${e}>`
-      throw new EmittableError({ message, level: 'major', error: new Error(`keystore: ${e}`)
-      })
+      throw new EmittableError({ message, level: 'major', error: new Error(`keystore: ${e}`) })
     }
   }
 
@@ -1190,6 +1196,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       keys: this.keys,
       seeds: this.seeds,
       hasPasswordSecret: this.hasPasswordSecret,
+      hasBiometricsSecret: this.hasBiometricsSecret,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
       hasTempSeed: this.hasTempSeed,
       isReadyToStoreKeys: this.isReadyToStoreKeys

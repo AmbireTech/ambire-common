@@ -23,6 +23,9 @@ export function getAction(
 export function getImage(content: string): HumanizerVisualization {
   return { type: 'image', content, id: randomId() }
 }
+export function getBreak(): HumanizerVisualization {
+  return { type: 'break', id: randomId() }
+}
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
   return { type: 'address', address, id: randomId() }
@@ -99,10 +102,6 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
 }
 export function getLink(url: string, content: string): HumanizerVisualization {
   return { type: 'link', url, content, id: randomId() }
-}
-
-export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean {
-  return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
 }
 
 export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
