@@ -942,7 +942,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (res.data.banner) {
       const banner = res.data.banner
-
+      let actions: Banner['actions'] = banner.url
+        ? [
+            {
+              actionName: 'open-link',
+              meta: { url: banner.url }
+            }
+          ]
+        : banner.surveyId && banner.require
+          ? [
+              {
+                actionName: 'survey',
+                meta: { surveyId: banner.surveyId, requirements: banner.require }
+              }
+            ]
+          : []
       const formattedBanner: Banner = {
         // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
@@ -953,14 +967,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         },
         ...(banner.text && { text: banner.text }),
         ...(banner.title && { title: banner.title }),
-        ...(banner.url && {
-          actions: [
-            {
-              actionName: 'open-link',
-              meta: { url: banner.url }
-            }
-          ]
-        })
+        actions
       }
 
       this.#banner.addBanner(formattedBanner)

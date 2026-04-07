@@ -112,6 +112,18 @@ export type Action = (
       actionName: 'dismiss-defi-positions-banner'
     }
   | { actionName: 'open-link'; meta: { url: string } }
+  | {
+      actionName: 'survey'
+      meta: {
+        surveyId: string
+        requirements: {
+          minBalanceTotal?: number
+          maxBalanceTotal?: number
+          minTxnsTotal?: number
+          maxTxnsTotal?: number
+        }
+      }
+    }
 ) & {
   label?: string
 }

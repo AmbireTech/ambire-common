@@ -949,15 +949,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
     numberOfItems
   }: {
     accountAddr?: string
-    from: number
-    numberOfItems: number
+    from?: number
+    numberOfItems?: number
   }) {
     if (!accountAddr) return []
 
-    return Object.values(this.#accountsOps[accountAddr] || {})
+    let allAccountOps = Object.values(this.#accountsOps[accountAddr] || {})
       .flat()
       .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(from, from + numberOfItems)
+
+    if (typeof from === 'number' && typeof numberOfItems === 'number')
+      return allAccountOps.slice(from, from + numberOfItems)
+    return allAccountOps
   }
 
   toJSON() {

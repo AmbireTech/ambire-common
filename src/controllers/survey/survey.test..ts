@@ -1,0 +1,211 @@
+import fetch from 'node-fetch'
+
+import { expect } from '@jest/globals'
+
+import { suppressConsole } from '../../../test/helpers/console'
+import { makeMainController } from '../../../test/helpers/mainController'
+import { Session } from '../../classes/session'
+import { predefinedDapps } from '../../consts/dapps/dapps'
+import mockChains from '../../consts/dapps/mockChains'
+import mockDapps from '../../consts/dapps/mockDapps'
+import { IStorageController } from '../../interfaces/storage'
+import { DappConnectRequest } from '../../interfaces/userRequest'
+
+const prepareTest = async (
+  storageInit?: (storageController: IStorageController) => Promise<void>,
+  getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
+) => {
+  const mockFetch = jest.fn()
+
+  if (getMockFetchImplementation) {
+    mockFetch.mockImplementation(getMockFetchImplementation)
+  } else {
+    mockFetch.mockImplementation(async (url: string, ...args) => {
+      if (url === 'https://api.llama.fi/protocols') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => mockDapps
+        }
+      }
+
+      if (url === 'https://api.llama.fi/v2/chains') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => mockChains
+        }
+      }
+
+      return fetch(url, ...args)
+    })
+  }
+
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      if (storageInit) {
+        await storageInit(storageCtrl)
+      }
+    },
+    {
+      awaitInitialLoad: false,
+      skipAppsFetchOnLoad: false,
+      overrides: {
+        fetch: mockFetch
+      }
+    }
+  )
+  const controller = mainCtrl.dapps
+
+  await controller.initialLoadPromise
+
+  return { controller }
+}
+
+describe('DappsController', () => {
+  test('should initialize', async () => {
+    const { controller } = await prepareTest()
+    expect(controller).toBeDefined()
+  })
+  test('should fetch and update dapps', async () => {
+    const { controller } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+    })
+    expect(controller.dapps.length).toBe(predefinedDapps.length)
+    expect(controller.isReadyToDisplayDapps).toBe(false) // fetch and update is already running
+    expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(false)
+    await controller.fetchAndUpdatePromise
+    expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(true)
+    expect(controller.dapps.length).toBeGreaterThan(predefinedDapps.length)
+    expect(controller.categories).not.toContain('CEX')
+    expect(controller.dapps.some((d) => d.name === 'Binance CEX')).toBe(false)
+    expect(controller.dapps.some((d) => d.name === 'WBTC')).toBe(false)
+    expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(true)
+    const lido = controller.dapps.find((d) => d.name === 'Lido')!
+    expect(lido.chainIds).toEqual([1]) // other networks should be excluded because the are not in our networks list
+    expect(lido.blacklisted).toEqual('VERIFIED')
+  })
+  test('should skip fetch and update', async () => {
+    const { controller } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+    expect(controller.dapps.length).toBe(predefinedDapps.length)
+    expect(controller.isReadyToDisplayDapps).toBe(true) // fetch and update is already running
+    expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(false)
+    expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(false)
+    expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(false)
+  })
+  test('should retry on fetch and update fail', async () => {
+    const { restore } = suppressConsole()
+    jest.useFakeTimers()
+    const callCount: Record<string, number> = {}
+    const { controller } = await prepareTest(
+      async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      },
+      async (url: string, ...args: any) => {
+        callCount[url] = (callCount[url] || 0) + 1
+
+        await jest.advanceTimersByTimeAsync(1)
+
+        // Fail the first time for protocols
+        if (url === 'https://api.llama.fi/protocols') {
+          if (callCount[url] === 1) {
+            return { ok: false, status: 500, json: async () => ({}) }
+          }
+          return { ok: true, status: 200, json: async () => mockDapps }
+        }
+
+        // Fail the first time for chains if you want, otherwise always succeed
+        if (url === 'https://api.llama.fi/v2/chains') {
+          if (callCount[url] === 1) {
+            return { ok: false, status: 500, json: async () => ({}) }
+          }
+          return { ok: true, status: 200, json: async () => mockChains }
+        }
+
+        // fallback to real fetch
+        return fetch(url, ...args)
+      }
+    )
+    expect(controller.dapps.length).toBe(predefinedDapps.length)
+    expect(controller.isReadyToDisplayDapps).toBe(false) // fetch and update is already running
+    expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(false)
+    expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(false)
+    expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(false)
+    try {
+      await controller.fetchAndUpdatePromise
+    } catch (error) {
+      // silent fail
+    }
+    await jest.advanceTimersByTimeAsync(0)
+    expect(controller.shouldRetryFetchAndUpdate).toBe(true)
+    expect(controller.retryFetchAndUpdateInterval.running).toBe(true)
+    expect(controller.isReadyToDisplayDapps).toBe(true)
+    expect(controller.dapps.length).toBe(predefinedDapps.length)
+    // Advance time by 5 minutes to trigger the retry
+    await jest.advanceTimersByTimeAsync(5 * 60 * 1000)
+    expect(controller.retryFetchAndUpdateInterval.running).toBe(true)
+    expect(controller.retryFetchAndUpdateInterval.fnExecutionsCount).toBe(1)
+    expect(controller.isReadyToDisplayDapps).toBe(false)
+    try {
+      await controller.fetchAndUpdatePromise
+    } catch (error) {
+      // silent fail
+    }
+    expect(controller.retryFetchAndUpdateInterval.running).toBe(false)
+    expect(controller.retryFetchAndUpdateInterval.fnExecutionsCount).toBe(1)
+    expect(controller.isReadyToDisplayDapps).toBe(true)
+    expect(controller.dapps.length).toBeGreaterThan(predefinedDapps.length)
+    jest.useRealTimers()
+    jest.clearAllTimers()
+    restore()
+  })
+  test('should add dapp to connect and update blacklisted status', async () => {
+    const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+    MOCK_SESSION.setProp({ name: 'Test Dapp' })
+    const DAPP_CONNECT_REQUEST: DappConnectRequest = {
+      id: 1,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          id: '',
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session: MOCK_SESSION
+        }
+      ]
+    }
+
+    const { controller } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+    await controller.initialLoadPromise
+
+    controller.setDappToConnectIfNeeded(DAPP_CONNECT_REQUEST)
+
+    await new Promise((resolve) => {
+      let emitCounter = 0
+      const unsubscribe = controller.onUpdate(() => {
+        if (emitCounter === 0) {
+          expect(controller.dappToConnect).not.toBe(null)
+          expect(controller.dappToConnect!.name).toBe(MOCK_SESSION.name)
+          expect(controller.dappToConnect!.blacklisted).toBe('LOADING')
+        }
+        if (emitCounter === 1) {
+          expect(controller.dappToConnect!.blacklisted).toBe('VERIFIED')
+          unsubscribe()
+          resolve(null)
+        }
+
+        emitCounter++
+      })
+    })
+  })
+})

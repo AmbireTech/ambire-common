@@ -16,7 +16,7 @@ import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
-import { BannerController } from '@/controllers/banner/banner'
+import { AccountData, BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
@@ -76,6 +76,7 @@ import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 import { ISignAccountOpController } from '@/interfaces/signAccountOp'
 import { ISignMessageController, SignMessageStatus } from '@/interfaces/signMessage'
 import { IStorageController, Storage } from '@/interfaces/storage'
+import { ISurveyController } from '@/interfaces/survey'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
@@ -87,6 +88,7 @@ import { getDappIdentifier, SubmittedAccountOp } from '@/libs/accountOp/submitte
 import { AccountOpStatus, Call } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { getAccountKeysCount } from '@/libs/keys/keys'
 import { relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -96,6 +98,8 @@ import { SocketAPI } from '@/services/socket/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
+
+import { SurveyController } from '../survey/survey'
 
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
@@ -169,6 +173,8 @@ export class MainController extends EventEmitter implements IMainController {
   requests: IRequestsController
 
   banner: IBannerController
+
+  survey: ISurveyController
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -305,7 +311,28 @@ export class MainController extends EventEmitter implements IMainController {
       accounts: this.accounts,
       autoLogin: this.autoLogin
     })
-    this.banner = new BannerController(this.storage, eventEmitterRegistry)
+    this.banner = new BannerController(
+      this.storage,
+      (): AccountData => {
+        const currentSelectedAcc = this.selectedAccount.account
+        if (!currentSelectedAcc) return { status: 'no-selected-account' }
+        let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
+        let numberOfTransactions = this.activity.getAccountOpsForAccount({
+          accountAddr: currentSelectedAcc.addr
+        }).length
+        const hasKeys =
+          getAccountKeysCount({
+            accountAddr: currentSelectedAcc.addr,
+            keys: this.keystore.keys,
+            accounts: this.accounts.accounts
+          }) > 0
+        return { status: 'has-selected-account', numberOfTransactions, totalUsdBalance, hasKeys }
+      },
+      eventEmitterRegistry
+    )
+
+    this.survey = new SurveyController({ fetch: this.fetch, relayerUrl, eventEmitterRegistry })
+
     this.portfolio = new PortfolioController(
       this.storage,
       this.fetch,
