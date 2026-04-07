@@ -912,7 +912,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           if (isV1) {
             errors.push({
               title:
-                'Broadcasting Ambire v1 transactions is possible only by using an ЕОА. Import or create one to broadcast your transactions.'
+                'Broadcasting Ambire v1 transactions is possible only by using an EOA. Import or create one to broadcast your transactions.'
             })
           } else {
             let skippedTokensCount = 0
