@@ -9,7 +9,14 @@ import { TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getEditApproval,
+  getLabel,
+  getToken
+} from './utils'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -67,7 +74,8 @@ const transactions = {
     {
       to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: BigInt(0),
-      data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+      data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      id: 'generic-one'
     }
   ],
   // currently with USDT
@@ -76,19 +84,22 @@ const transactions = {
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: 10n ** 18n,
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'erc20-0'
     },
     // approve erc-20 token USDT
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'erc20-1'
     },
     // revoke approval  erc-20 token USDT
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'erc20-2'
     },
     // transferFrom A to me  erc-20 token USDT
     {
@@ -96,7 +107,8 @@ const transactions = {
       value: BigInt(0),
       data: `0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000${accountOp.accountAddr.substring(
         2
-      )}000000000000000000000000000000000000000000000000000000003b9aca00`
+      )}000000000000000000000000000000000000000000000000000000003b9aca00`,
+      id: 'erc20-3'
     },
     // transferFrom A to B (bad example - B is USDT) erc-20 token USDT
     {
@@ -212,12 +224,14 @@ const transactions = {
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b3000000000000000000000000aabbbC841f29Dc6B09eF9F6c8fD59da807Bc6248000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b3000000000000000000000000aabbbC841f29Dc6B09eF9F6c8fD59da807Bc6248000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'key-0'
     },
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b3000000000000000000000000ABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b3000000000000000000000000ABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'key-1'
     }
   ]
 }
@@ -244,6 +258,12 @@ describe('Humanizer main function', () => {
           '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
           115792089237316195423570985008687907853269984665640564039457584007913129639935n
         ),
+        getEditApproval(
+          '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+          '0xe5c783ee536cf5e63e792988335c4255169be4e1',
+          115792089237316195423570985008687907853269984665640564039457584007913129639935n,
+          'generic-one'
+        ),
         getLabel('to'),
         getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1'),
         getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
@@ -265,6 +285,12 @@ describe('Humanizer main function', () => {
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
+        getEditApproval(
+          '0xdac17f958d2ee523a2206206994597c13d831ec7',
+          '0x46705dfff24256421a05d056c29e81bdc09723b8',
+          10n ** 9n,
+          'erc20-0'
+        ),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -273,6 +299,12 @@ describe('Humanizer main function', () => {
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getEditApproval(
+          '0xdac17f958d2ee523a2206206994597c13d831ec7',
+          '0x46705dfff24256421a05d056c29e81bdc09723b8',
+          1000000000n,
+          'erc20-1'
+        ),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -281,6 +313,12 @@ describe('Humanizer main function', () => {
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getEditApproval(
+          '0xdac17f958d2ee523a2206206994597c13d831ec7',
+          '0x46705dfff24256421a05d056c29e81bdc09723b8',
+          1000000000n,
+          'erc20-2'
+        ),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -377,6 +415,12 @@ describe('with (Account | Key)[] arg', () => {
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getEditApproval(
+          '0xdac17f958d2ee523a2206206994597c13d831ec7',
+          accounts[0]!.addr.toLowerCase(),
+          1000000000n,
+          'key-0'
+        ),
         getLabel('to'),
         getAddressVisualization(accounts[0]!.addr.toLowerCase()),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -385,6 +429,12 @@ describe('with (Account | Key)[] arg', () => {
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getEditApproval(
+          '0xdac17f958d2ee523a2206206994597c13d831ec7',
+          keys[0]!.addr.toLowerCase(),
+          1000000000n,
+          'key-1'
+        ),
         getLabel('to'),
         getAddressVisualization(keys[0]!.addr.toLowerCase()),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
