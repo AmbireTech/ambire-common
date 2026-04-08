@@ -21,7 +21,7 @@ export const getMessageFromTrezorErrorCode = (
     context?.isLedgerLiveSmartAccountForbiddenPath &&
     errorMsg?.toLowerCase()?.includes('forbidden key path')
   ) {
-    return 'Please disable "Safety checks" in Trezor Suite (Settings - Device) to use your Trezor (with Ledger Live HD paths) as a key for your Ambire smart account. This is flagged as non-standard and blocked otherwise.'
+    return 'Please set "Safety checks" to "Prompt" in Trezor Suite (Settings - Device) to use your Trezor (with Ledger Live HD paths) as a key for your Ambire smart account. This is flagged as non-standard and blocked otherwise.'
   }
 
   if (errorCode === 'Method_Interrupted')
