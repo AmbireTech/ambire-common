@@ -270,10 +270,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           timeoutMs: 15000
         })
         this.domainToAddresses[ens] = { address: checksummedAddress, type: 'ens' }
-      } else if (namoshi) {
+      } else if (namoshi && citreaProvider) {
         ensAvatar = await withTimeout(
           () =>
-            getEnsAvatar(namoshi, ethereumProvider, {
+            getEnsAvatar(namoshi, citreaProvider, {
               universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
             }),
           {
@@ -297,7 +297,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       // Fail silently with a console error, no biggie, since that would get retried
       // Ignore, the user simply doesn't have a namoshi domain
       if (typeof shortMessage !== 'string' || !shortMessage.includes('data="0x77209fe8')) {
-        console.warn('reverse ENS lookup failed', e)
+        console.warn('reverse ENS/Namoshi lookup failed for address', checksummedAddress, e)
       }
 
       const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
