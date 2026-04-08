@@ -518,8 +518,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.emitUpdate()
   }
 
-  async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
-    if (this.hdPathTemplate === hdPathTemplate) return
+  async setHDPathTemplateAndPage({
+    hdPathTemplate,
+    page = this.page
+  }: {
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    page: number
+  }) {
+    const arePropsUnchanged = this.hdPathTemplate === hdPathTemplate && page === this.page
+    if (arePropsUnchanged) return
 
     this.hdPathTemplate = hdPathTemplate
     // Reset the currently selected accounts, because for the keys of these
@@ -531,10 +538,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.emitUpdate()
 
     await this.setPage({
-      page: DEFAULT_PAGE,
+      page,
       shouldGetAccountsUsedOnNetworks: DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
       shouldSearchForLinkedAccounts: DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
-    }) // takes the user back on the first page
+    })
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
@@ -718,12 +725,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     try {
       const derivedAccounts = await this.#deriveAccounts()
-      // FIXME: for some reason, when changing derivation - Trezor device emits an error:
-      // Trezor device busy. Please make sure there are no pending requests on the device.
-      // However, it succeeds to retrieve accounts with different than standard derivation.
-      // So as a workaround, clean any prev pageErrors that might have been occur.
-      this.pageError = null
-      this.emitUpdate()
 
       if (this.page !== page) return
 
