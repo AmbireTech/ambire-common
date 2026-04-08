@@ -30,7 +30,8 @@ export function getEditApproval(
   tokenAddr: string,
   spenderAddr: string,
   amount: bigint,
-  callId?: string
+  callId?: string,
+  expiration?: number
 ): HumanizerVisualization {
   return {
     type: 'editApproval',
@@ -38,7 +39,8 @@ export function getEditApproval(
     address: tokenAddr,
     spenderAddr,
     value: amount,
-    callId
+    callId,
+    expiration
   }
 }
 export function getAddressVisualization(_address: string): HumanizerVisualization {

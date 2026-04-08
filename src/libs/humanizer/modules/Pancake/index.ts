@@ -3,7 +3,14 @@ import { Interface } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Pancake } from '../../const/abis/Pancake'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getEditApproval,
+  getLabel,
+  getToken
+} from '../../utils'
 
 const iface = new Interface(Pancake)
 
@@ -20,6 +27,7 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
           getAddressVisualization(spender),
           getLabel('to use'),
           getToken(token, amount),
+          getEditApproval(token, spender, amount, call.id, expiration),
           expirationHumanization
         ]
       return [
@@ -32,7 +40,7 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   }
   const newCalls = calls.map((call) => {
     if (call.fullVisualization || !matcher[call.data.slice(0, 10)]) return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
+    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)]!(call) }
   })
 
   return newCalls

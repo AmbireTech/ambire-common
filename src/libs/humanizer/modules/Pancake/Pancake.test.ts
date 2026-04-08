@@ -1,9 +1,16 @@
-import OneInchModule from '.'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getEditApproval,
+  getLabel,
+  getToken
+} from '../../utils'
+import OneInchModule from './'
 
 const transactions = [
   {
@@ -21,6 +28,7 @@ const accountOp: AccountOp = {
   // this may not be set in case we haven't set it yet
   nonce: null,
   calls: [],
+  id: 'pancake-id',
   gasLimit: null,
   signature: null,
   gasFeePayment: null
@@ -40,6 +48,13 @@ describe('Pancake', () => {
         getToken(
           '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
           1461501637330902918203684832716283019655932542975n
+        ),
+        getEditApproval(
+          '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+          '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912',
+          1461501637330902918203684832716283019655932542975n,
+          'pancake-id',
+          1746289513
         ),
         getDeadline(1746289513n)
       ]
