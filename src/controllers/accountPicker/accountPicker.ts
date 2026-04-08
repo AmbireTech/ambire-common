@@ -48,6 +48,7 @@ import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { getParentHdPathFromTemplate } from '../../utils/hdPath'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_PAGE = 1
@@ -919,8 +920,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
               masterFingerprint,
               // always defined in the case of external keys
               hdPathTemplate: hdPathTemplate,
-              relativePathTemplate: relativePathTemplate,
-              originHdPath: originPath,
+              ...(keyType === 'qr'
+                ? {
+                  relativePathTemplate: relativePathTemplate,
+                    originHdPath: originPath
+                  }
+                : {}),
               index,
               createdAt: new Date().getTime()
             }
