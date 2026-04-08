@@ -38,6 +38,8 @@ export type HumanizerVisualization = (
   content?: string
   isBold?: boolean
   verification?: BlacklistedStatus
+  callId?: string
+  spenderAddr?: string
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
