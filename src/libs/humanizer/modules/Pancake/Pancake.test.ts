@@ -53,8 +53,8 @@ describe('Pancake', () => {
           '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
           '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912',
           1461501637330902918203684832716283019655932542975n,
-          'pancake-id',
-          1746289513
+          undefined,
+          1746289513n
         ),
         getDeadline(1746289513n)
       ]

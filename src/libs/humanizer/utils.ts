@@ -31,7 +31,7 @@ export function getEditApproval(
   spenderAddr: string,
   amount: bigint,
   callId?: string,
-  expiration?: number
+  expiration?: bigint
 ): HumanizerVisualization {
   return {
     type: 'editApproval',

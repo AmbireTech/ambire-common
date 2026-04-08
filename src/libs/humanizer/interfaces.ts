@@ -40,7 +40,7 @@ export type HumanizerVisualization = (
   verification?: BlacklistedStatus
   callId?: string
   spenderAddr?: string
-  expiration?: number
+  expiration?: bigint
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
