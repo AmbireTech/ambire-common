@@ -6,7 +6,6 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
-  getBreak,
   getEditApproval,
   getLabel,
   getToken
@@ -110,10 +109,9 @@ export const genericErc20Humanizer = (
             getAction('Grant approval'),
             getLabel('for'),
             getToken(call.to, args[1]),
+            getEditApproval(call.to, args[0], args[1], call.id),
             getLabel('to'),
-            getAddressVisualization(args[0]),
-            getBreak(),
-            getEditApproval(call.to, args[0], args[1], call.id)
+            getAddressVisualization(args[0])
           ]
         : [
             getAction('Revoke approval'),
