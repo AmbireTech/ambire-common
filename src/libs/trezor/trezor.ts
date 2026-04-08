@@ -48,3 +48,9 @@ export const normalizeTrezorMessage = (error?: string): string => {
 
   return error
 }
+
+// Temporarily, until Trezor makes their error types consistent
+export const getTrezorErrorMessageFromPayload = (trezorUnsuccessfulPayload: any): string => {
+  // Trezor SDK TS promises "error", but Trezor Suite the message comes as "message"
+  return trezorUnsuccessfulPayload?.error || trezorUnsuccessfulPayload?.message
+}
