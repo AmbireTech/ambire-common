@@ -6,13 +6,15 @@ export type IDomainsController = ControllerInterface<
 
 type AddressState = {
   fieldValue: string
-  ensAddress: string
+  resolvedAddress: string
+  resolvedAddressType: 'ens' | 'namoshi' | null
   isDomainResolving: boolean
 }
 
 type AddressStateOptional = {
   fieldValue?: AddressState['fieldValue']
-  ensAddress?: AddressState['ensAddress']
+  resolvedAddress?: AddressState['resolvedAddress']
+  resolvedAddressType?: AddressState['resolvedAddressType']
   isDomainResolving?: AddressState['isDomainResolving']
 }
 
