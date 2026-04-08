@@ -3,8 +3,19 @@
  * human-readable messages. Although there is a message incoming from Trezor,
  * it's not self-explanatory and can be difficult for the end users to understand.
  */
-export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: string): string => {
+export const getMessageFromTrezorErrorCode = (
+  errorCode?: string,
+  errorMsg?: string,
+  context?: { isLedgerLiveSmartAccountForbiddenPath?: boolean }
+): string => {
   if (!errorCode && !errorMsg) return 'Could not connect to your Trezor device. Please try again.'
+
+  if (
+    context?.isLedgerLiveSmartAccountForbiddenPath &&
+    errorMsg?.toLowerCase()?.includes('forbidden key path')
+  ) {
+    return 'Please disable "Safety checks" in Trezor Suite (Settings - Device) to use your Trezor (with Ledger Live HD paths) as a key for your Ambire smart account. This is flagged as non-standard and blocked otherwise.'
+  }
 
   if (errorCode === 'Method_Interrupted')
     return 'Closing the Trezor popup interrupted the connection.'
