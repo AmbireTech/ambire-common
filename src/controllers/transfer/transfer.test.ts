@@ -64,7 +64,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -75,7 +76,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -88,7 +90,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: XWALLET_ADDRESS,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -126,7 +129,8 @@ describe('Transfer Controller', () => {
       selectedToken: xwalletOnEthereum,
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -187,7 +191,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: FEE_COLLECTOR,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -206,8 +211,8 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
-      ensAddress: '',
-      namoshiAddress: '',
+      resolvedAddress: '',
+      resolvedAddressType: null,
       isDomainResolving: false
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
@@ -284,7 +289,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -369,7 +375,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -411,7 +418,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -487,7 +495,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })

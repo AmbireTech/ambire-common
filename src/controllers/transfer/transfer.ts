@@ -44,10 +44,10 @@ import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/si
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
-const DEFAULT_ADDRESS_STATE = {
+const DEFAULT_ADDRESS_STATE: AddressState = {
   fieldValue: '',
-  ensAddress: '',
-  namoshiAddress: '',
+  resolvedAddress: '',
+  resolvedAddressType: null,
   isDomainResolving: false
 }
 
@@ -511,7 +511,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        !!this.addressState.ensAddress || !!this.addressState.namoshiAddress,
+        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.#networks.networks,
         this.#accounts.accountStates,

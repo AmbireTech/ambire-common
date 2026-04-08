@@ -47,8 +47,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
-  ensAddress: '',
-  namoshiAddress: '',
+  resolvedAddress: '',
+  resolvedAddressType: null,
   interopAddress: '',
   isDomainResolving: false
 }
@@ -849,7 +849,7 @@ export class TransactionFormState extends EventEmitter {
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        !!this.addressState.ensAddress || !!this.addressState.namoshiAddress,
+        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.dependencies.networks.networks,
         this.dependencies.accounts.accountStates,
@@ -862,8 +862,7 @@ export class TransactionFormState extends EventEmitter {
 
   get recipientAddress() {
     return (
-      this.addressState.ensAddress ||
-      this.addressState.namoshiAddress ||
+      this.addressState.resolvedAddress ||
       this.addressState.interopAddress ||
       this.addressState.fieldValue
     )
