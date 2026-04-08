@@ -1157,7 +1157,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const keyIterator = new QrKeyIterator({ controller: qrCtrl })
       // Initialize the QR iterator from payload before AccountPicker init.
-      // This populates QR-specific iterator state (walletConfig, xpub, parsedAccount) t
+      // This populates QR-specific iterator state (walletConfig, xpub, parsedAccount)
       // that AccountPicker needs to configure derivation and retrieval.
       await keyIterator.initFromQrPayload(payload)
 
