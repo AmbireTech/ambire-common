@@ -244,8 +244,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         !domainsBlacklistedStatus || domainsBlacklistedStatus[dappId] === undefined
           ? 'FAILED_TO_GET'
           : domainsBlacklistedStatus[dappId]
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
+            ? 'BLACKLISTED'
+            : 'VERIFIED'
       )
     })
 
@@ -366,8 +366,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         !addressesBlacklistedStatus || addressesBlacklistedStatus[addr] === undefined
           ? 'FAILED_TO_GET'
           : addressesBlacklistedStatus[addr]
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
+            ? 'BLACKLISTED'
+            : 'VERIFIED'
       )
     })
 
@@ -397,11 +397,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async updateAddressesBlacklistedStatus(
-    urls: string[],
+    addresses: string[],
     callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     try {
-      await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
+      await this.#fetchAndSetAddressesBlacklistedStatus(addresses, callback)
     } catch (err: any) {
       this.emitError({
         message: 'Failed to fetch and update addresses blacklisted status',

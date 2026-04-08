@@ -627,7 +627,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   humanize() {
-    this.humanization = humanizeAccountOp(this.accountOp)
+    this.humanization = humanizeAccountOp(this.accountOp, this.emitError)
     const currentHumanizationId = Date.now()
     this.humanizationId = currentHumanizationId
     if (this.humanization.length) {
@@ -639,7 +639,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
                 .filter((v) => v.type === 'token' || v.type === 'address')
                 .map((v) => v.address)
             )
-            .filter((addr): addr is string => Boolean(addr)),
+            .filter((addr): addr is string => Boolean(addr))
+            .map((addr) => addr.toLowerCase()),
           (addressesStatus) => {
             if (this.humanizationId !== currentHumanizationId) return
 
@@ -647,12 +648,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               if (!call.fullVisualization) continue
 
               for (const vis of call.fullVisualization) {
+                const lowerCaseAddr = vis.address?.toLowerCase()
                 if (
                   (vis.type === 'token' || vis.type === 'address') &&
-                  vis.address &&
-                  addressesStatus[vis.address]
+                  lowerCaseAddr &&
+                  addressesStatus[lowerCaseAddr]
                 ) {
-                  vis.verification = addressesStatus[vis.address]
+                  vis.verification = addressesStatus[lowerCaseAddr]
                 }
               }
             }

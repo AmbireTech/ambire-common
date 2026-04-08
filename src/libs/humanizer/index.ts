@@ -1,3 +1,5 @@
+import { ErrorRef } from '@/interfaces/eventEmitter'
+
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -108,14 +110,21 @@ const humanizerTMModules = [
   snapshotModule
 ]
 
-const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {
+const humanizeAccountOp = (_accountOp: AccountOp, emitError?: (e: ErrorRef) => void): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
 
   let currentCalls: IrCall[] = accountOp.calls
-  humanizerCallModules.forEach((hm) => {
+  humanizerCallModules.forEach((hm, i) => {
     try {
       currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta)
-    } catch (error) {
+    } catch (error: any) {
+      emitError &&
+        emitError({
+          message: `Humanizer: Failed to parse tx. Module id ${i} `,
+          level: 'minor',
+          sendCrashReport: true,
+          error
+        })
       console.error(error)
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
     }

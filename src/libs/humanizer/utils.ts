@@ -26,21 +26,19 @@ export function getImage(content: string): HumanizerVisualization {
 export function getBreak(): HumanizerVisualization {
   return { type: 'break', id: randomId() }
 }
-export function getAddressVisualization(_address: string): HumanizerVisualization {
-  const address = _address.toLowerCase()
-  return { type: 'address', address, id: randomId() }
+export function getAddressVisualization(address: string): HumanizerVisualization {
+  return { type: 'address', address: getAddress(address), id: randomId() }
 }
 
 export function getToken(
-  _address: string,
+  address: string,
   amount: bigint,
   isHidden?: boolean,
   chainId?: bigint
 ): HumanizerVisualization {
-  const address = _address.toLowerCase()
   return {
     type: 'token',
-    address,
+    address: getAddress(address),
     value: BigInt(amount),
     id: randomId(),
     isHidden,
