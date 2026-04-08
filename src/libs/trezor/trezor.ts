@@ -6,9 +6,16 @@
 export const getMessageFromTrezorErrorCode = (
   errorCode?: string,
   errorMsg?: string,
-  context?: { isLedgerLiveSmartAccountForbiddenPath?: boolean }
+  context?: {
+    isLedgerLiveSmartAccountForbiddenPath?: boolean
+    isHyperEvmForbiddenPath?: boolean
+  }
 ): string => {
   if (!errorCode && !errorMsg) return 'Could not connect to your Trezor device. Please try again.'
+
+  if (context?.isHyperEvmForbiddenPath && errorMsg?.toLowerCase()?.includes('forbidden key path')) {
+    return 'Please set "Safety checks" to "Prompt" in Trezor Suite (Settings - Device) to use your Trezor on HyperEVM chain. This is flagged as non-standard and blocked otherwise.'
+  }
 
   if (
     context?.isLedgerLiveSmartAccountForbiddenPath &&
