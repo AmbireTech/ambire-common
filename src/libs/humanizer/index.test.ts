@@ -260,7 +260,7 @@ describe('Humanizer main function', () => {
         ),
         getEditApproval(
           '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          '0xe5c783ee536cf5e63e792988335c4255169be4e1',
+          '0xE5c783EE536cf5E63E792988335c4255169be4E1',
           115792089237316195423570985008687907853269984665640564039457584007913129639935n,
           'generic-one'
         ),
@@ -287,7 +287,7 @@ describe('Humanizer main function', () => {
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
         getEditApproval(
           '0xdac17f958d2ee523a2206206994597c13d831ec7',
-          '0x46705dfff24256421a05d056c29e81bdc09723b8',
+          '0x46705dfff24256421A05D056c29E81Bdc09723B8',
           10n ** 9n,
           'erc20-0'
         ),
@@ -301,7 +301,7 @@ describe('Humanizer main function', () => {
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getEditApproval(
           '0xdac17f958d2ee523a2206206994597c13d831ec7',
-          '0x46705dfff24256421a05d056c29e81bdc09723b8',
+          '0x46705dfff24256421A05D056c29E81Bdc09723B8',
           1000000000n,
           'erc20-1'
         ),
@@ -315,7 +315,7 @@ describe('Humanizer main function', () => {
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getEditApproval(
           '0xdac17f958d2ee523a2206206994597c13d831ec7',
-          '0x46705dfff24256421a05d056c29e81bdc09723b8',
+          '0x46705dfff24256421A05D056c29E81Bdc09723B8',
           1000000000n,
           'erc20-2'
         ),
@@ -417,7 +417,7 @@ describe('with (Account | Key)[] arg', () => {
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getEditApproval(
           '0xdac17f958d2ee523a2206206994597c13d831ec7',
-          accounts[0]!.addr.toLowerCase(),
+          accounts[0]!.addr,
           1000000000n,
           'key-0'
         ),
@@ -431,7 +431,7 @@ describe('with (Account | Key)[] arg', () => {
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getEditApproval(
           '0xdac17f958d2ee523a2206206994597c13d831ec7',
-          keys[0]!.addr.toLowerCase(),
+          keys[0]!.addr,
           1000000000n,
           'key-1'
         ),
