@@ -1161,15 +1161,20 @@ export class MainController extends EventEmitter implements IMainController {
       // that AccountPicker needs to configure derivation and retrieval.
       await keyIterator.initFromQrPayload(payload)
 
-      const hdPathTemplate = keyIterator.walletConfig?.hdPathTemplate
-      if (!hdPathTemplate) {
+      const relativePathTemplate = keyIterator.walletConfig?.relativePathTemplate
+
+      if (!relativePathTemplate) {
         const message = 'Invalid QR hardware wallet payload. Please try again.'
-        throw new EmittableError({ message, level: 'major', error: new Error('Missing hdPathTemplate') })
+        throw new EmittableError({
+          message,
+          level: 'major',
+          error: new Error('Missing hdPathTemplate')
+        })
       }
 
       this.accountPicker.setInitParams({
         keyIterator,
-        hdPathTemplate,
+        hdPathTemplate: relativePathTemplate,
         pageSize: 5,
         shouldAddNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false

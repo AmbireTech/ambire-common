@@ -878,22 +878,22 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
       const qrWalletConfig = keyType === 'qr' ? this.keyIterator.walletConfig : undefined
       const qrParsedOriginHdPath =
-      keyType === 'qr'
-        ? this.keyIterator.parsedAccount?.hdPath ||
-          this.keyIterator.parsedAccount?.accounts?.[0]?.hdPath
-        : undefined
+        keyType === 'qr'
+          ? this.keyIterator.parsedAccount?.hdPath ||
+            this.keyIterator.parsedAccount?.accounts?.[0]?.hdPath
+          : undefined
 
-    if (keyType === 'qr' && !qrParsedOriginHdPath) {
-      throw new EmittableError({
-        message: 'QR account import missing origin hdPath',
-        level: 'major',
-        error: new Error('QR account import missing origin hdPath')
-      })
-    }
+      if (keyType === 'qr' && !qrParsedOriginHdPath) {
+        throw new EmittableError({
+          message: 'QR account import missing origin hdPath',
+          level: 'major',
+          error: new Error('QR account import missing origin hdPath')
+        })
+      }
 
       const hdPathTemplate = (
         keyType === 'qr' && qrWalletConfig
-          ? qrWalletConfig.hdPathTemplate || this.hdPathTemplate
+          ? this.hdPathTemplate || qrWalletConfig.hdPathTemplate
           : this.hdPathTemplate
       ) as HD_PATH_TEMPLATE_TYPE
 
@@ -923,7 +923,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
                 ? {
                     relativePathTemplate: relativePathTemplate,
                     originHdPath: originPath,
-                    masterFingerprint: masterFingerprint,
+                    masterFingerprint: masterFingerprint
                   }
                 : {}),
               index,
