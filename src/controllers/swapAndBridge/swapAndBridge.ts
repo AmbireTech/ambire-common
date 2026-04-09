@@ -1,5 +1,8 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
+/* eslint-disable no-await-in-loop */
+import { getAccountNetworks } from '@/libs/networks/networks'
+
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -16,10 +19,8 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-/* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View } from '../../interfaces/ui'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
@@ -33,6 +34,7 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -1077,13 +1079,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !isSelectedTokenFalsyBeforeListUpdate &&
       shouldUpdateFromSelectedToken
     ) {
+      // get the networks that account is supported on and select
+      // one from that list, not only the providers lists of networks
+      const accNetworks = getAccountNetworks(
+        this.#networks.networks,
+        this.#accounts.accountStates,
+        this.#selectedAccount.account
+      ).map((n) => n.chainId)
       const nextFromSelectedToken =
         fromSelectedTokenInNextPortfolio ||
         // Select the first token in the portfolio that is not the same as the "to" token
         this.portfolioTokenList.find(
           (t) =>
             t.address !== this.toSelectedToken?.address &&
-            this.supportedChainIds.includes(t.chainId)
+            this.supportedChainIds.includes(t.chainId) &&
+            accNetworks.includes(t.chainId)
         ) ||
         null
 
