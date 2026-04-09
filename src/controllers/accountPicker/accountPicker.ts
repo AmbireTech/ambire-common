@@ -885,9 +885,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
       if (keyType === 'qr' && !qrParsedOriginHdPath) {
         throw new EmittableError({
-          message: 'QR account import missing origin hdPath',
+          message: `Can’t import account. This QR code is missing required account data (HD path) from your QR hardware wallet. Should never happen. DeviceModel: ${deviceModels[keyType]}`,
           level: 'major',
-          error: new Error('QR account import missing origin hdPath')
+          error: new Error(
+            `Can’t import account. This QR code is missing required account data (HD path) from your QR hardware wallet. Should never happen. DeviceModel: ${deviceModels[keyType]}`
+          )
         })
       }
 
