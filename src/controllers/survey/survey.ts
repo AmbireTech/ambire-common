@@ -210,12 +210,14 @@ export class SurveyController extends EventEmitter implements ISurveyController 
             answer
           }))
         }
-        await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
-
-        this.sourceBannerId = undefined
-        this.status = 'success-submitted'
-        await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
+        this.status = 'loading-sending'
         this.emitUpdate()
+
+        await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
+        this.status = 'success-submitted'
+        this.emitUpdate()
+        await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
+        this.sourceBannerId = undefined
       } catch (e: any) {
         this.emitError({
           message: 'Failed to submit response.',
@@ -278,7 +280,6 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   }
 
   get hasPersistentState() {
-    console.log('hasPersistentState', this.status)
     return this.status !== 'not-started'
   }
 
