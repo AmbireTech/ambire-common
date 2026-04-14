@@ -422,8 +422,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
 
-      if (!this.#account.safeCreation) {
-        // todo: configure this to work with Safes
+      // skip the message verification for safe accounts & EOAs. Reasons:
+      // * for EOAs: bcz it's a privacy issue
+      // * for Safes: bcz the Safe API will return an error on invalid sig
+      if (!this.#account.safeCreation && !accountState.isEOA) {
         const verifyMessageParams = {
           provider,
           // the signer is always the account even if the actual

@@ -1,104 +1,93 @@
-import '@ensdomains/ethers-patch-v6'
+import { isAddress } from 'viem'
+import { normalize } from 'viem/ens'
 
-// @ts-ignore
-import constants from 'bip44-constants'
-import { EnsResolver, isAddress } from 'ethers'
+import { RPCProvider } from '@/interfaces/provider'
+import { getViemClientForProvider } from '@/services/provider'
 
-// @ts-ignore
-import { normalize } from '@ensdomains/eth-ens-namehash'
-
-import { RPCProvider } from '../../interfaces/provider'
-
-const BIP44_BASE_VALUE = 2147483648
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
+const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
+export const NAMOSHI_UNIVERSAL_RESOLVER = '0xc5Ed1fA34AD1F23F0cD2E36DB288290488B1B493'
 
-const normalizeDomain = (domain: string) => {
-  try {
-    return normalize(domain)
-  } catch (e) {
-    return null
-  }
-}
-
-function getNormalisedCoinType(bip44Item: number[][]) {
-  const firstItem = bip44Item[0]
-
-  if (!firstItem) return null
-  return firstItem.length && firstItem[0] ? firstItem[0] - BIP44_BASE_VALUE : null
-}
-
-async function resolveForCoin(resolver: any, bip44Item?: number[][]) {
-  if (bip44Item && bip44Item.length === 1) {
-    const coinType = getNormalisedCoinType(bip44Item)
-    if (!coinType) return null
-    return resolver.getAddress(coinType)
-  }
-  return resolver.getAddress()
+export function getIsNamoshiDomain(domain: string) {
+  return domain.endsWith('.btc') || domain.endsWith('.citrea')
 }
 
 export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
+/**
+ * Resolves an ENS/Namoshi domain to an address and avatar.
+ *
+ * Can work with a custom universal resolver if the domain is a Namoshi domain, otherwise it defaults to the ENS universal resolver.
+ */
 async function resolveENSDomain({
   provider,
   domain,
-  bip44Item
+  options
 }: {
   provider: RPCProvider
   domain: string
-  bip44Item?: number[][]
+  options?: {
+    universalResolverAddress?: string
+  }
 }): Promise<{
   address: string
   avatar: string | null
 }> {
-  const normalizedDomainName = normalizeDomain(domain)
+  const normalizedDomainName = normalize(domain)
   if (!normalizedDomainName) return { address: '', avatar: null }
-  const resolver = await EnsResolver.fromName(provider, normalizedDomainName).catch(() => null)
 
-  if (!resolver)
-    return {
-      address: '',
-      avatar: null
-    }
+  const client = getViemClientForProvider(provider)
 
-  try {
-    const [ethAddress, avatar] = await Promise.all([
-      resolver.getAddress().catch(() => null),
-      resolver.getAvatar().catch(() => null)
-    ])
-    const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
+  const [address, avatar] = await Promise.all([
+    client.getEnsAddress({
+      name: normalizedDomainName,
+      universalResolverAddress: options?.universalResolverAddress || ENS_UNIVERSAL_RESOLVER
+    }),
+    client.getEnsAvatar({
+      name: normalizedDomainName,
+      universalResolverAddress: options?.universalResolverAddress || ENS_UNIVERSAL_RESOLVER
+    })
+  ])
 
-    return {
-      address: isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || '',
-      avatar
-    }
-  } catch (e: any) {
-    // If the error comes from an internal server error don't
-    // show it to the user, because it happens when a domain
-    // doesn't exist and we already show a message for that.
-    // https://dnssec-oracle.ens.domains/ 500 (ISE)
-    if (e.message?.includes('500_SERVER_ERROR'))
-      return {
-        address: '',
-        avatar: null
-      }
-
-    throw e
+  return {
+    address: address || '',
+    avatar
   }
 }
 
-function getBip44Items(coinTicker: string) {
-  if (!coinTicker) return null
-  return constants.filter((item: string[]) => item[1] === coinTicker)
+async function reverseLookupEns(
+  address: string,
+  provider: RPCProvider,
+  options?: {
+    universalResolverAddress?: string
+  }
+) {
+  const client = getViemClientForProvider(provider)
+
+  return client.getEnsName({
+    address: address as `0x${string}`,
+    universalResolverAddress: options?.universalResolverAddress || ENS_UNIVERSAL_RESOLVER
+  })
 }
 
-async function reverseLookupEns(address: string, provider: RPCProvider) {
-  return provider.lookupAddress(address)
+async function getEnsAvatar(
+  name: string,
+  provider: RPCProvider,
+  options?: {
+    universalResolverAddress?: string
+  }
+) {
+  const normalizedName = normalize(name)
+  if (!normalizedName) return null
+
+  const client = getViemClientForProvider(provider)
+
+  return client.getEnsAvatar({
+    name: normalizedName,
+    universalResolverAddress: options?.universalResolverAddress || ENS_UNIVERSAL_RESOLVER
+  })
 }
 
-async function getEnsAvatar(name: string, provider: RPCProvider) {
-  return provider.getAvatar(name)
-}
-
-export { resolveENSDomain, getBip44Items, getEnsAvatar, reverseLookupEns }
+export { resolveENSDomain, getEnsAvatar, reverseLookupEns }
