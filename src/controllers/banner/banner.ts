@@ -1,3 +1,5 @@
+import { ISurveyController } from '@/interfaces/survey'
+
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IStorageController } from '../../interfaces/storage'
@@ -19,6 +21,9 @@ export class BannerController extends EventEmitter implements IBannerController 
   #dismissedBanners: (string | number)[] = []
 
   #storage: IStorageController
+
+  #survey: ISurveyController
+
   #getAccountData: () => AccountData
 
   // Used for testing
@@ -30,10 +35,12 @@ export class BannerController extends EventEmitter implements IBannerController 
   constructor(
     storage: IStorageController,
     getAccountData: () => AccountData,
+    survey: ISurveyController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
+    this.#survey = survey
     this.#getAccountData = getAccountData
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -44,7 +51,6 @@ export class BannerController extends EventEmitter implements IBannerController 
 
   #getValidBanners(banners: Banner[]) {
     return banners.filter(({ meta, id }) => {
-      console.log(id, this.#dismissedBanners.includes(id))
       if (this.#dismissedBanners.includes(id)) return false
 
       const endTime = meta && meta.endTime
@@ -52,7 +58,6 @@ export class BannerController extends EventEmitter implements IBannerController 
       if (!endTime) return true
 
       const isExpired = Date.now() > endTime
-      console.log(Date.now() > endTime)
       return !isExpired
     })
   }
@@ -65,8 +70,6 @@ export class BannerController extends EventEmitter implements IBannerController 
   }
 
   #notSurveyOrValidSurvey(banner: Banner) {
-    console.log(banner)
-
     if (!banner.actions || !banner.actions[0]) return true
     let action = banner.actions[0]
     // if not survey return it
@@ -80,18 +83,18 @@ export class BannerController extends EventEmitter implements IBannerController 
     if (maxBalanceTotal && accData.totalUsdBalance > maxBalanceTotal) return false
     if (minTxnsTotal && accData.numberOfTransactions < minTxnsTotal) return false
     if (maxTxnsTotal && accData.numberOfTransactions > maxTxnsTotal) return false
+    if (!this.#survey.isReady) return false
+
+    if (this.#survey.isSurveyAnswered(action.meta.surveyId)) return false
 
     return true
   }
 
   get banners(): Banner[] {
     // Always return one banner at a time
-    console.log(this.#banners)
-    return (
-      this.#getValidBanners(this.#banners)
-        // .filter((b) => this.#notSurveyOrValidSurvey(b))
-        .slice(0, this.maxBannerCount)
-    )
+    return this.#getValidBanners(this.#banners)
+      .filter((b) => this.#notSurveyOrValidSurvey(b))
+      .slice(0, this.maxBannerCount)
   }
 
   async #saveDismissedToStorage() {

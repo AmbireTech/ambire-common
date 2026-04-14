@@ -19,10 +19,6 @@ export interface Survey {
   }[]
 }
 
-export type SurveyFetchingStatus =
-  | {
-      status: 'empty'
-    }
-  | { surveyId: string; status: 'loading' }
-  | { surveyId: string; status: 'error'; error: Error }
-  | { surveyId: string; status: 'success'; survey: Survey }
+export type SurveyAnswers = {
+  [questionId: number]: { questionPosition: number; answer: number | string }
+}

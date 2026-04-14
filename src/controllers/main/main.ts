@@ -38,6 +38,7 @@ import { SignAccountOpType } from '@/controllers/signAccountOp/helper'
 import { OnboardingSuccessProps } from '@/controllers/signAccountOp/signAccountOp'
 import { SignMessageController } from '@/controllers/signMessage/signMessage'
 import { StorageController } from '@/controllers/storage/storage'
+import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
@@ -98,8 +99,6 @@ import { SocketAPI } from '@/services/socket/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
-
-import { SurveyController } from '../survey/survey'
 
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
@@ -311,6 +310,14 @@ export class MainController extends EventEmitter implements IMainController {
       accounts: this.accounts,
       autoLogin: this.autoLogin
     })
+
+    this.survey = new SurveyController({
+      fetch: this.fetch,
+      relayerUrl,
+      storage: this.storage,
+      eventEmitterRegistry
+    })
+
     this.banner = new BannerController(
       this.storage,
       (): AccountData => {
@@ -328,10 +335,9 @@ export class MainController extends EventEmitter implements IMainController {
           }) > 0
         return { status: 'has-selected-account', numberOfTransactions, totalUsdBalance, hasKeys }
       },
+      this.survey,
       eventEmitterRegistry
     )
-
-    this.survey = new SurveyController({ fetch: this.fetch, relayerUrl, eventEmitterRegistry })
 
     this.portfolio = new PortfolioController(
       this.storage,
