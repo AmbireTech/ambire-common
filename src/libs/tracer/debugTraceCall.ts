@@ -1,6 +1,9 @@
-import { getAddress, Interface, toQuantity } from 'ethers'
+import { getAddress, Interface, keccak256, toQuantity, toUtf8Bytes } from 'ethers'
+
+import { privSlot } from '@/libs/proxyDeploy/deploy'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
@@ -17,10 +20,49 @@ import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
+
+export function getStateOverride(
+  account: Account,
+  op: AccountOp,
+  accountState: AccountOnchainState
+) {
+  // if the account is a Safe,
+  // add an additional state override that gives privileges to the assKey;
+  // also, we changed privs storage slot to ambire.smart.contracts.storage
+  // so privs no longer override slot number 0
+  const stateDiff = !!account.safeCreation
+    ? {
+        [privSlot(
+          keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
+          'uint256',
+          account.associatedKeys[0],
+          'bytes32'
+        )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+      }
+    : undefined
+
+  // add stateOverride when using a Safe as well
+  const stateOverride =
+    !!account.safeCreation || (op.calls.length > 1 && isBasicAccount(account, accountState))
+      ? {
+          [account.addr]: {
+            code: AmbireAccount7702.binRuntime,
+            stateDiff
+          }
+        }
+      : undefined
+
+  return stateOverride
+}
+
 // if using EOA, use the first and only call of the account op
 // if it's SA, make the data execute or deployAndExecute,
 // set the spoof+addr and pass all the calls
-function getFunctionParams(account: Account, op: AccountOp, accountState: AccountOnchainState) {
+export function getFunctionParams(
+  account: Account,
+  op: AccountOp,
+  accountState: AccountOnchainState
+) {
   if (isBasicAccount(account, accountState) && op.calls.length === 1) {
     const call = op.calls[0]!
     return {
