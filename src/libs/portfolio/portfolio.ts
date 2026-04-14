@@ -442,20 +442,7 @@ export class Portfolio {
         return result
       })
 
-    const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
-      const address = collectionsHints[i]![0] as unknown as string
-      return [
-        error,
-        {
-          ...x,
-          address,
-          // We don't store market data for collections, apart from priceIn
-          priceIn: getTokenDataFromCache(address)?.priceIn || []
-        }
-      ] as [string, CollectionResult]
-    })
-
-    const collections = unfilteredCollections.reduce<CollectionResult[]>(
+    const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
         if (!isValidToken(error, collection)) return acc
 
@@ -470,7 +457,10 @@ export class Portfolio {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
-        acc.push(collection)
+        acc.push({
+          ...collection,
+          priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
+        })
         return acc
       },
       []
@@ -596,8 +586,11 @@ export class Portfolio {
       afterNonce,
       blockNumber,
       tokenErrors: tokensWithErrResult
-        .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')
+        .filter(([error, result]: [string, TokenResult]) => !isValidToken(error, result))
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
+      collectionErrors: collectionsWithErrResult
+        .filter(([error, result]: [string, CollectionResult]) => !isValidToken(error, result))
+        .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
   }
