@@ -13,7 +13,7 @@ export const compareHumanizerVisualizations = (
   )
   expect(calls.length).toBe(expectedVisualizations.length)
   calls.forEach((call, i) => {
-    expect(call.fullVisualization?.length || 0).toBe(expectedVisualizations[i].length)
+    expect(call.fullVisualization?.length || 0).toBe(expectedVisualizations[i]!.length)
     expect(call.fullVisualization || []).toEqual(expectedVisualizations[i])
   })
 }
