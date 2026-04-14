@@ -1732,6 +1732,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
 
       if (shouldUseAccessList) {
+        console.log('Debug: using eth_createAccessList for asset discovery')
         const addresses = await createAccessListCall(
           this.baseAccount,
           this.accountOp,
@@ -1741,6 +1742,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         erc20s = addresses
         erc721s = addresses.map((address) => [address, []])
       } else {
+        console.log('Debug: using debug_traceCall for asset discovery')
         const { tokens, nfts } = await debugTraceCall(
           this.baseAccount,
           this.accountOp,
