@@ -1,7 +1,9 @@
 import { AddressState } from '../interfaces/domains'
 
-const getAddressFromAddressState = (addressState: AddressState) => {
-  return (addressState.ensAddress || addressState.fieldValue || '').trim()
+const getAddressFromAddressState = (
+  addressState: Pick<AddressState, 'resolvedAddress' | 'fieldValue'>
+) => {
+  return (addressState.resolvedAddress || addressState.fieldValue || '').trim()
 }
 
 export { getAddressFromAddressState }

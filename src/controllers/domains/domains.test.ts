@@ -1,3 +1,5 @@
+import { getAddress } from 'ethers'
+
 import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
@@ -10,9 +12,45 @@ import {
   PERSIST_DOMAIN_FOR_IN_MS
 } from './domains'
 
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
+const citrea = {
+  predefinedConfigVersion: 5,
+  chainId: 4114n,
+  platformId: 'citrea',
+  name: 'Citrea Mainnet',
+  nativeAssetSymbol: 'wBTC',
+  nativeAssetName: 'Wrapped Citrea Bitcoin',
+  iconUrls: ['https://cena.ambire.com/public/networks/citrea-logo.png'],
+  explorerUrl: 'https://explorer.mainnet.citrea.xyz',
+  rpcUrls: ['https://rpc.mainnet.citrea.xyz'],
+  selectedRpcUrl: 'https://rpc.mainnet.citrea.xyz',
+  rpcNoStateOverride: false,
+  isOptimistic: false,
+  disableEstimateGas: true,
+  feeOptions: {
+    is1559: true
+  },
+  isSAEnabled: true,
+  areContractsDeployed: true,
+  hasRelayer: false,
+  erc4337: {
+    enabled: true,
+    hasPaymaster: true,
+    hasBundlerSupport: true,
+    bundlers: ['pimlico'],
+    defaultBundler: 'pimlico'
+  },
+  nativeAssetId: 'bitcoin',
+  hasSingleton: true,
+  features: [],
+  predefined: true,
+  wrappedAddr: '0x0000000000000000000000000000000000000000',
+  has7702: true
+}
+
+const providers = {
+  ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n),
+  ['4114']: getRpcProvider(citrea.rpcUrls, citrea.chainId)
+}
 
 // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
 const ENS_OLDEST_RESOLVER = {
@@ -61,7 +99,8 @@ describe('Domains', () => {
 
     await domainsController.resolveDomain({ domain: name })
 
-    expect(domainsController.ensToAddress[name]).toBe(address)
+    expect(domainsController.domainToAddresses[name]?.address).toBe(address)
+    expect(domainsController.domainToAddresses[name]?.type).toBe('ens')
   })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
@@ -171,9 +210,10 @@ describe('Domains', () => {
 
     await domainsController.resolveDomain({ domain: UNIVERSAL_RESOLVER_TEST.name })
 
-    expect(domainsController.ensToAddress[UNIVERSAL_RESOLVER_TEST.name]).toBe(
+    expect(domainsController.domainToAddresses[UNIVERSAL_RESOLVER_TEST.name]?.address).toBe(
       UNIVERSAL_RESOLVER_TEST.address
     )
+    expect(domainsController.domainToAddresses[UNIVERSAL_RESOLVER_TEST.name]?.type).toBe('ens')
   })
   it('should support CCIP Read', async () => {
     const CCIP_READ_TEST = {
@@ -183,6 +223,36 @@ describe('Domains', () => {
 
     await domainsController.resolveDomain({ domain: CCIP_READ_TEST.name })
 
-    expect(domainsController.ensToAddress[CCIP_READ_TEST.name]).toBe(CCIP_READ_TEST.address)
+    expect(domainsController.domainToAddresses[CCIP_READ_TEST.name]?.address).toBe(
+      CCIP_READ_TEST.address
+    )
+  })
+  it('should resolve .citrea domain on citrea network', async () => {
+    const TEST = {
+      address: getAddress('0x4f0b5579136f88135572010276c2a4a884729e7b'),
+      name: 'nemo.citrea'
+    }
+
+    await domainsController.resolveDomain({ domain: TEST.name })
+
+    expect(domainsController.domainToAddresses[TEST.name]?.address).toBe(TEST.address)
+    expect(domainsController.domainToAddresses[TEST.name]?.type).toBe('namoshi')
+    expect(domainsController.domains[TEST.address]!.namoshi).toBe(TEST.name)
+  })
+  it('controller works without a citrea provider', async () => {
+    const controllerWithoutCitrea = new DomainsController({
+      providers: {
+        ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
+      }
+    })
+
+    const TEST = {
+      address: getAddress('0x4f0b5579136f88135572010276c2a4a884729e7b'),
+      name: 'nemo.citrea'
+    }
+
+    await controllerWithoutCitrea.resolveDomain({ domain: TEST.name })
+
+    expect(controllerWithoutCitrea.domains[TEST.address]).toBeUndefined()
   })
 })
