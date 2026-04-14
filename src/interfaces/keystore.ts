@@ -61,6 +61,7 @@ export interface ExternalSignerController {
   signingStep?: string //Qr based specific
   moveToResponseScan?: () => void //Qr based specific
   submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
+  parseAndSetAccountFromQR?: (payload: string | Uint8Array) => Promise<ParsedQrAccount> //Qr based specific
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
@@ -167,7 +168,7 @@ export type ExternalKey = {
     qrWalletType?: QrWalletType
     qrProtocol?: QrProtocolType
     originHdPath?: string // for accounts imported from QR, to store the original path used on the wallet, as some wallets (like Keystone) don't provide the possibility to retrieve the key by xpub, but only by path, so we need to keep track of it in order to be able to retrieve the key later on
-    masterFingerprint?: string // QR related
+    masterFingerprint?: string // BIP32 root fingerprint used to identify/verify the originating QR-based hardware wallet account set in QR flows
     relativePathTemplate?: string // QR related
     [key: string]: any
   }
@@ -230,8 +231,4 @@ export type ParsedQrAccount = {
   deviceId?: string
   hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
   accounts: ParsedQrImportedAccount[]
-}
-
-export interface QrAccountImportController {
-  importAccountQR: (payload: string | Uint8Array) => Promise<ParsedQrAccount>
 }

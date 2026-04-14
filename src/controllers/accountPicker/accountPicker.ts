@@ -48,7 +48,6 @@ import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { getParentHdPathFromTemplate } from '../../utils/hdPath'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_PAGE = 1
@@ -877,31 +876,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
       const qrWalletConfig = keyType === 'qr' ? this.keyIterator.walletConfig : undefined
-      const qrParsedOriginHdPath =
-        keyType === 'qr'
-          ? this.keyIterator.parsedAccount?.hdPath ||
-            this.keyIterator.parsedAccount?.accounts?.[0]?.hdPath
-          : undefined
 
-      if (keyType === 'qr' && !qrParsedOriginHdPath) {
-        throw new EmittableError({
-          message: `Can’t import account. This QR code is missing required account data (HD path) from your QR hardware wallet. Should never happen. DeviceModel: ${deviceModels[keyType]}`,
-          level: 'major',
-          error: new Error(
-            `Can’t import account. This QR code is missing required account data (HD path) from your QR hardware wallet. Should never happen. DeviceModel: ${deviceModels[keyType]}`
-          )
-        })
-      }
-
-      const hdPathTemplate = (
-        keyType === 'qr' && qrWalletConfig
-          ? this.hdPathTemplate || qrWalletConfig.hdPathTemplate
-          : this.hdPathTemplate
-      ) as HD_PATH_TEMPLATE_TYPE
-
-      const relativePathTemplate =
-        keyType === 'qr' ? qrWalletConfig?.relativePathTemplate || '' : ''
-      const originPath = keyType === 'qr' ? qrParsedOriginHdPath || '' : ''
+      const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
 
       const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
         ({ account, accountKeys }) =>
@@ -920,12 +896,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
               deviceId: deviceIds[keyType],
               deviceModel: deviceModels[keyType],
               // always defined in the case of external keys
-              hdPathTemplate: hdPathTemplate,
+              hdPathTemplate,
               ...(keyType === 'qr'
                 ? {
-                    relativePathTemplate: relativePathTemplate,
-                    originHdPath: originPath,
-                    masterFingerprint: masterFingerprint
+                    masterFingerprint
                   }
                 : {}),
               index,
