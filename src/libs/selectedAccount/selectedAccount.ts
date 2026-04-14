@@ -29,6 +29,7 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       tokens,
       collections,
       tokenErrors,
+      collectionErrors,
       toBeLearned,
       lastExternalApiUpdateData,
       tokenDataCache,

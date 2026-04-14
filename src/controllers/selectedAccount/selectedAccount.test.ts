@@ -291,6 +291,7 @@ describe('SelectedAccount Controller', () => {
         discoveryTime: 0,
         tokenDataCache: new Map(),
         tokenErrors: [],
+        collectionErrors: [],
         collections: [],
         blockNumber: 0,
         toBeLearned: {
