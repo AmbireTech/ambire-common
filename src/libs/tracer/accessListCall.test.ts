@@ -164,7 +164,7 @@ describe('accessListCall helpers', () => {
     })
 
     it('normalizes and deduplicates addresses', () => {
-      const lower = '0x4E83c8e7982Aa51A3f8dB0be6F373621C9A84E1f'
+      const lower = '0x982f2df63fe38ab8d55f4b1464e8cfdc8ea5dec8'
       const checksum = getAddress(lower)
 
       const parsed = parseAccessList([
@@ -176,7 +176,7 @@ describe('accessListCall helpers', () => {
     })
 
     it('ignores malformed addresses and keeps valid ones', () => {
-      const valid = '0x4E83c8e7982Aa51A3f8dB0be6F373621C9A84E1f'
+      const valid = '0x982f2df63fe38ab8d55f4b1464e8cfdc8ea5dec8'
       const parsed = parseAccessList([
         { address: valid, storageKeys: [] },
         { address: 'not-an-address', storageKeys: [] }
