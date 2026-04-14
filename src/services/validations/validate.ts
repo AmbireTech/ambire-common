@@ -96,7 +96,7 @@ const validateSendTransferAddress = (
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  isEnsAddress: boolean,
+  isDomain: boolean,
   isRecipientDomainResolving: boolean,
   networks: Network[],
   accountStates: AccountStates,
@@ -156,7 +156,7 @@ const validateSendTransferAddress = (
     isRecipientAddressUnknown &&
     isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
-    !isEnsAddress &&
+    !isDomain &&
     !isRecipientDomainResolving
   ) {
     return {
@@ -169,7 +169,7 @@ const validateSendTransferAddress = (
     isRecipientAddressUnknown &&
     isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
-    isEnsAddress &&
+    isDomain &&
     !isRecipientDomainResolving
   ) {
     return {
