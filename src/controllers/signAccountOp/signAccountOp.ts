@@ -125,7 +125,7 @@ import {
   wrapUnprotected
 } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
-import { createAccessListCall } from '../../libs/tracer/accessListCall'
+import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -1729,8 +1729,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       let erc721s: [string, bigint[]][] = []
 
       const stateOverride = getStateOverride(this.account, this.accountOp, state)
+      const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
 
-      if (!stateOverride) {
+      if (shouldUseAccessList) {
         const addresses = await createAccessListCall(
           this.baseAccount,
           this.accountOp,
