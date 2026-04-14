@@ -45,6 +45,7 @@ describe('Debug tracecall detection for transactions', () => {
       newlyAdded: false
     }
     accountOp = {
+      id: 'test-id',
       accountAddr: ACCOUNT_ADDRESS,
       chainId: 10n,
       signingKeyAddr: '"0x02be1F941b6B777D4c30f110E997704fFc26B379"',

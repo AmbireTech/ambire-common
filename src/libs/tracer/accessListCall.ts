@@ -23,7 +23,7 @@ const multiSendIface = new Interface(multiSendAbi)
 const SAFE_CALL_OPERATION = 0
 const SAFE_DELEGATE_CALL_OPERATION = 1
 
-function getSimulateTxnAccessor(version?: string): string | null {
+export function getSimulateTxnAccessor(version?: string): string | null {
   if (!version) return null
 
   if (version.startsWith('1.3')) return safeSimulateTxAccessor['v1.3.0']
@@ -52,7 +52,7 @@ export function getShouldUseAccessListCall(account: Account, needsStateOverride:
  * can easily select the right one based on the Safe version and fall back to debug_traceCall if the version is not supported
  * All deployments: https://github.com/safe-global/safe-deployments/blob/main/src/deployments.ts
  */
-function getSafeAccessListCallParams(
+export function getSafeAccessListCallParams(
   baseAcc: BaseAccount,
   op: AccountOp,
   accountState: AccountOnchainState
@@ -85,6 +85,8 @@ function getSafeAccessListCallParams(
 
   const simulateTxAccessor = getSimulateTxnAccessor(account.safeCreation.version)
 
+  if (!simulateTxAccessor) return null
+
   const simulatePayload = simulateAccessorIface.encodeFunctionData('simulate', [
     to,
     value,
@@ -108,7 +110,7 @@ function getSafeAccessListCallParams(
 /**
  * Parses an access list and extracts unique contract addresses
  */
-function parseAccessList(
+export function parseAccessList(
   accessList: Array<{ address: string; storageKeys: string[] }> | undefined
 ): string[] {
   if (!accessList || accessList.length === 0) {
@@ -139,7 +141,7 @@ interface CreateAccessListResponse {
   gasUsed: string
 }
 
-async function sendCreateAccessList(
+export async function sendCreateAccessList(
   provider: RPCProvider,
   params: { to: string; value: number | string; data: string; from: string },
   network: Network,
