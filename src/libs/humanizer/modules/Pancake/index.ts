@@ -3,14 +3,7 @@ import { Interface } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Pancake } from '../../const/abis/Pancake'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getAddressVisualization,
-  getDeadline,
-  getEditApproval,
-  getLabel,
-  getToken
-} from '../../utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
 
 const iface = new Interface(Pancake)
 
@@ -26,8 +19,11 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
           getAction('Approve'),
           getAddressVisualization(spender),
           getLabel('to use'),
-          getToken(token, amount),
-          getEditApproval(token, spender, amount, call.id, expiration),
+          getToken(token, amount, undefined, undefined, {
+            callId: call.id,
+            spenderAddr: spender,
+            expiration
+          }),
           expirationHumanization
         ]
       return [

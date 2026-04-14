@@ -2,14 +2,7 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import {
-  getAction,
-  getAddressVisualization,
-  getDeadline,
-  getEditApproval,
-  getLabel,
-  getToken
-} from '../../utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
 import OneInchModule from './'
 
 const transactions = [
@@ -47,14 +40,13 @@ describe('Pancake', () => {
         getLabel('to use'),
         getToken(
           '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-          1461501637330902918203684832716283019655932542975n
-        ),
-        getEditApproval(
-          '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-          '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912',
           1461501637330902918203684832716283019655932542975n,
           undefined,
-          1746289513n
+          undefined,
+          {
+            spenderAddr: '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912',
+            expiration: 1746289513n
+          }
         ),
         getDeadline(1746289513n)
       ]

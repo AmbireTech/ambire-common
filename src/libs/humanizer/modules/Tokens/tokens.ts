@@ -3,13 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getAddressVisualization,
-  getEditApproval,
-  getLabel,
-  getToken
-} from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 const ERC721_INTERFACE = new Interface(ERC721)
 const ERC20_INTERFACE = new Interface(ERC20)
@@ -108,8 +102,10 @@ export const genericErc20Humanizer = (
         ? [
             getAction('Grant approval'),
             getLabel('for'),
-            getToken(call.to, args[1]),
-            getEditApproval(call.to, args[0], args[1], call.id),
+            getToken(call.to, args[1], undefined, undefined, {
+              callId: call.id,
+              spenderAddr: args[0]
+            }),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]
