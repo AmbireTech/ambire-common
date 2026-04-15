@@ -20,6 +20,7 @@ import {
   DefiLlamaChain,
   DefiLlamaProtocol,
   GetCurrentDappRes,
+  HasUnverifiedDappsRes,
   IDappsController
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -743,6 +744,29 @@ export class DappsController extends EventEmitter implements IDappsController {
       requestId,
       ok: true,
       res: dapp
+    }
+
+    this.#ui.message.sendUiMessage(message)
+  }
+
+  protected hasUnverifiedDappUrls(dapps: string[]): boolean {
+    const verifiedDapps = Array.from(this.#dapps.values()).filter(
+      (dapp) => dapp.blacklisted === 'VERIFIED'
+    )
+    const verifiedDappUrlsSet = new Set(verifiedDapps.map((dapp) => dapp.url.toLowerCase()))
+
+    return dapps.some((dappUrl) => {
+      if (!dappUrl) return false
+      return !verifiedDappUrlsSet.has(dappUrl.toLowerCase())
+    })
+  }
+
+  async hasUnverifiedDappsAndSendResToUi({ dapps }: { dapps: string[] }) {
+    const hasUnverifiedDapps = this.hasUnverifiedDappUrls(dapps)
+    const message: HasUnverifiedDappsRes = {
+      type: 'HasUnverifiedDappsRes',
+      ok: true,
+      res: hasUnverifiedDapps
     }
 
     this.#ui.message.sendUiMessage(message)
