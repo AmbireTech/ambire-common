@@ -315,6 +315,7 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       relayerUrl,
       storage: this.storage,
+      ui: this.ui,
       eventEmitterRegistry
     })
 

@@ -1,4 +1,5 @@
 import { IStorageController } from '@/interfaces/storage'
+import { IUiController } from '@/interfaces/ui'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -37,17 +38,25 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     fetch,
     relayerUrl,
     storage,
-    eventEmitterRegistry
+    eventEmitterRegistry,
+    ui
   }: {
     fetch: Fetch
     relayerUrl: string
     storage: IStorageController
+    ui: IUiController
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#storage = storage
     this.#initialLoadPromise = this.#load().finally(() => (this.#initialLoadPromise = undefined))
+
+    ui.uiEvent.on('removeView', () => {
+      if (this.status === 'success-submitted') {
+        this.clearSurveyState()
+      }
+    })
   }
 
   async #load() {
