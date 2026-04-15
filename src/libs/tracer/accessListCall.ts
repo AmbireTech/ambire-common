@@ -10,7 +10,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { BaseAccount } from '../account/BaseAccount'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp } from '../accountOp/accountOp'
 import { encodeCalls } from '../safe/safe'
 
 const safeSimulateTxAccessorAbi = [
@@ -56,7 +56,7 @@ export function getSafeAccessListCallParams(
   const account = baseAcc.getAccount()
   if (!account.safeCreation || !accountState.isDeployed) return null
 
-  if (!getSignableCalls(op).length) return null
+  if (!op.calls.length) return null
 
   const { to, value, data, operation } = encodeCalls(op)
 
