@@ -31,6 +31,8 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     | 'success-fetched'
     | 'success-submitted' = 'not-started'
 
+  errorMessage?: string
+
   constructor({
     fetch,
     relayerUrl,
@@ -80,7 +82,6 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         5000
       )
     } catch (e: any) {
-      console.error(`relayer error for getting survey ${surveyId}`)
       this.status = 'error-fetching'
       this.emitError({
         error: e,
@@ -88,13 +89,13 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         message: 'Failed to fetch survey',
         sendCrashReport: true
       })
+      this.errorMessage = e.message
       this.emitUpdate()
       return
     }
 
     const parsedSurvey = parseSurvey(res.survey as unknown)
     if (!parsedSurvey.ok) {
-      console.log(`Error with parsing a survey ${parsedSurvey.error}`)
       this.emitError({
         message: 'There was error fetching the survey.',
         level: 'major',
@@ -103,6 +104,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         error: Error(`Error with parsing a survey ${parsedSurvey.error}`)
       })
       this.status = 'error-fetching'
+      this.errorMessage = parsedSurvey.error
       this.emitUpdate()
       return
     }
@@ -141,6 +143,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
           sendCrashReport: true
         })
         this.status = 'error-submitting'
+        this.errorMessage = 'Internal state error: missing answers'
         this.emitUpdate()
       }
 
@@ -169,6 +172,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
           error: e
         })
         this.status = 'error-submitting'
+        this.errorMessage = e.message
         this.emitUpdate()
       }
     } else {
@@ -179,6 +183,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         sendCrashReport: true
       })
       this.status = 'error-submitting'
+      this.errorMessage = 'Internal state error: missing survey'
       this.emitUpdate()
     }
   }
@@ -221,6 +226,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     this.status = 'not-started'
     this.answers = {}
     this.#survey = undefined
+    this.errorMessage = undefined
     this.emitUpdate()
   }
 
