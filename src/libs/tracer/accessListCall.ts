@@ -1,27 +1,23 @@
-import { concat, getAddress, getBytes, Interface, solidityPacked, toQuantity } from 'ethers'
+import { getAddress, Interface, toQuantity } from 'ethers'
 
 import { RPCProvider } from '@/interfaces/provider'
 import { getFunctionParams } from '@/libs/tracer/debugTraceCall'
 
 import SafeContract from '../../../contracts/compiled/Safe.json'
 import { ProviderError } from '../../classes/ProviderError'
-import { multiSendAddr, safeSimulateTxAccessor } from '../../consts/safe'
+import { safeSimulateTxAccessor } from '../../consts/safe'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { encodeCalls } from '../safe/safe'
 
 const safeSimulateTxAccessorAbi = [
   'function simulate(address to, uint256 value, bytes data, uint8 operation)'
 ]
-const multiSendAbi = ['function multiSend(bytes transactions)']
 const safeIface = new Interface(SafeContract)
 const simulateAccessorIface = new Interface(safeSimulateTxAccessorAbi)
-const multiSendIface = new Interface(multiSendAbi)
-
-const SAFE_CALL_OPERATION = 0
-const SAFE_DELEGATE_CALL_OPERATION = 1
 
 export function getSimulateTxnAccessor(version?: string): string | null {
   if (!version) return null
@@ -60,28 +56,9 @@ export function getSafeAccessListCallParams(
   const account = baseAcc.getAccount()
   if (!account.safeCreation || !accountState.isDeployed) return null
 
-  const signableCalls = getSignableCalls(op)
-  if (!signableCalls.length) return null
+  if (!getSignableCalls(op).length) return null
 
-  let to = signableCalls[0]![0]
-  let value = BigInt(signableCalls[0]![1])
-  let data = signableCalls[0]![2]
-  let operation = SAFE_CALL_OPERATION
-
-  if (signableCalls.length > 1) {
-    const multiSendCalls = signableCalls.map((call) =>
-      solidityPacked(
-        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-        [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt(getBytes(call[2]).length), call[2]]
-      )
-    )
-
-    // For batched ops, Safe executes MultiSend via DELEGATECALL.
-    to = multiSendAddr
-    value = 0n
-    data = multiSendIface.encodeFunctionData('multiSend', [concat(multiSendCalls)])
-    operation = SAFE_DELEGATE_CALL_OPERATION
-  }
+  const { to, value, data, operation } = encodeCalls(op)
 
   const simulateTxAccessor = getSimulateTxnAccessor(account.safeCreation.version)
 
