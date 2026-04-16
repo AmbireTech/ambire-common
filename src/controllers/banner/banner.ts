@@ -1,9 +1,12 @@
 import { ISurveyController } from '@/interfaces/survey'
 
+import pkg from '../../../package.json'
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const currentCommonVersion = pkg.version
 
 export type AccountData =
   | {
@@ -74,7 +77,7 @@ export class BannerController extends EventEmitter implements IBannerController 
     let action = banner.actions[0]
     // if not survey return it
     if (action.actionName !== 'survey') return true
-    const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal } =
+    const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal, minCommonVersion } =
       action.meta.requirements
     const accData = this.#getAccountData()
     // do not display surveys when there is no selected acc
@@ -83,6 +86,7 @@ export class BannerController extends EventEmitter implements IBannerController 
     if (maxBalanceTotal && accData.totalUsdBalance > maxBalanceTotal) return false
     if (minTxnsTotal && accData.numberOfTransactions < minTxnsTotal) return false
     if (maxTxnsTotal && accData.numberOfTransactions > maxTxnsTotal) return false
+    if (minCommonVersion && currentCommonVersion < minCommonVersion) return false
     if (!this.#survey.isReady) return false
 
     if (this.#survey.isSurveyAnswered(action.meta.surveyId)) return false
