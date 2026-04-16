@@ -4,6 +4,12 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
+export type EditApprovalData = {
+  callId?: string
+  spenderAddr: string
+  expiration?: bigint
+}
+
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
@@ -37,6 +43,7 @@ export type HumanizerVisualization = (
   content?: string
   isBold?: boolean
   verification?: BlacklistedStatus
+  editApprovalData?: EditApprovalData
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
