@@ -1,5 +1,5 @@
 {
-  "version": "2.92.0",
+  "version": "2.93.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@ambire/signature-validator": "^1.5.0",
-    "@ensdomains/ethers-patch-v6": "^0.0.4",
     "@lifi/types": "^17.7.1",
     "@metamask/eth-sig-util": "^8.2.0",
     "@safe-global/api-kit": "^4.0.1",
@@ -31,10 +30,9 @@
     "siwe": "3.0.0",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
-    "viem": "^2.33.3"
+    "viem": "2.45.2"
   },
   "peerDependencies": {
-    "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@noble/hashes": "^1.8.0",
     "bip44-constants": "^128.0.0",
     "react": "^19.1.0",

@@ -286,6 +286,7 @@ export interface PortfolioLibGetResult {
     erc721s: Hints['erc721s']
   }
   tokenErrors: { error: string; address: string }[]
+  collectionErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
@@ -324,6 +325,7 @@ export type PortfolioNetworkResult = CommonResultProps &
     PortfolioLibGetResult,
     | 'collections'
     | 'tokenErrors'
+    | 'collectionErrors'
     | 'blockNumber'
     | 'tokenDataCache'
     | 'toBeLearned'

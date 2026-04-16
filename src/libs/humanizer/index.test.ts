@@ -67,7 +67,8 @@ const transactions = {
     {
       to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: BigInt(0),
-      data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+      data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      id: 'generic-one'
     }
   ],
   // currently with USDT
@@ -76,19 +77,22 @@ const transactions = {
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: 10n ** 18n,
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'erc20-0'
     },
     // approve erc-20 token USDT
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'erc20-1'
     },
     // revoke approval  erc-20 token USDT
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'erc20-2'
     },
     // transferFrom A to me  erc-20 token USDT
     {
@@ -96,7 +100,8 @@ const transactions = {
       value: BigInt(0),
       data: `0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000${accountOp.accountAddr.substring(
         2
-      )}000000000000000000000000000000000000000000000000000000003b9aca00`
+      )}000000000000000000000000000000000000000000000000000000003b9aca00`,
+      id: 'erc20-3'
     },
     // transferFrom A to B (bad example - B is USDT) erc-20 token USDT
     {
@@ -212,12 +217,14 @@ const transactions = {
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b3000000000000000000000000aabbbC841f29Dc6B09eF9F6c8fD59da807Bc6248000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b3000000000000000000000000aabbbC841f29Dc6B09eF9F6c8fD59da807Bc6248000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'key-0'
     },
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0x095ea7b3000000000000000000000000ABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0x095ea7b3000000000000000000000000ABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02000000000000000000000000000000000000000000000000000000003b9aca00',
+      id: 'key-1'
     }
   ]
 }
@@ -242,7 +249,13 @@ describe('Humanizer main function', () => {
         getLabel('for'),
         getToken(
           '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          115792089237316195423570985008687907853269984665640564039457584007913129639935n
+          115792089237316195423570985008687907853269984665640564039457584007913129639935n,
+          undefined,
+          undefined,
+          {
+            callId: 'generic-one',
+            spenderAddr: '0xE5c783EE536cf5E63E792988335c4255169be4E1'
+          }
         ),
         getLabel('to'),
         getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1'),
@@ -264,7 +277,10 @@ describe('Humanizer main function', () => {
         getLabel('and'),
         getAction('Grant approval'),
         getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n, undefined, undefined, {
+          callId: 'erc20-0',
+          spenderAddr: '0x46705dfff24256421A05D056c29E81Bdc09723B8'
+        }),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -272,7 +288,10 @@ describe('Humanizer main function', () => {
       [
         getAction('Grant approval'),
         getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, undefined, {
+          callId: 'erc20-1',
+          spenderAddr: '0x46705dfff24256421A05D056c29E81Bdc09723B8'
+        }),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -280,7 +299,10 @@ describe('Humanizer main function', () => {
       [
         getAction('Grant approval'),
         getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, undefined, {
+          callId: 'erc20-2',
+          spenderAddr: '0x46705dfff24256421A05D056c29E81Bdc09723B8'
+        }),
         getLabel('to'),
         getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -376,7 +398,10 @@ describe('with (Account | Key)[] arg', () => {
       [
         getAction('Grant approval'),
         getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, undefined, {
+          callId: 'key-0',
+          spenderAddr: accounts[0]!.addr
+        }),
         getLabel('to'),
         getAddressVisualization(accounts[0]!.addr.toLowerCase()),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
@@ -384,7 +409,10 @@ describe('with (Account | Key)[] arg', () => {
       [
         getAction('Grant approval'),
         getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, undefined, {
+          callId: 'key-1',
+          spenderAddr: keys[0]!.addr
+        }),
         getLabel('to'),
         getAddressVisualization(keys[0]!.addr.toLowerCase()),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
