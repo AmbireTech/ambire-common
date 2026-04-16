@@ -1171,6 +1171,10 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
 
+      // v1 accounts have never supported QR wallets.
+      // In the rare case of migration (ledger -> qr -> has created a linked account),
+      // The user should instead go to the web wallet and migrate his funds instead.
+      // v1 accounts are generally deprecated and we don't encourage users to use them.
       this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,

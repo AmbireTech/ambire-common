@@ -56,8 +56,7 @@ export interface ExternalSignerController {
   creds?: any // Lattice specific
   network?: any // Lattice specific
   masterFingerprint?: string // Optional for some wallets, but can be used for additional info
-  // TODO: fix the type
-  currentRequest?: any //Qr based specific
+  currentRequest?: QrRequest | null // Qr based specific
   signingStep?: string //Qr based specific
   moveToResponseScan?: () => void //Qr based specific
   submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
@@ -229,4 +228,17 @@ export type ParsedQrAccount = {
   deviceId?: string
   hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
   accounts: ParsedQrImportedAccount[]
+}
+
+export type QrRequestType =
+  | 'sign-message'
+  | 'sign-typed-data'
+  | 'sign-transaction'
+  | 'import-account'
+
+export type QrRequest = {
+  type: QrRequestType
+  requestId?: string
+  urType?: string
+  urCborHex?: any
 }
