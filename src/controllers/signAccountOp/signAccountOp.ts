@@ -73,7 +73,6 @@ import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   isAmbireV1LinkedAccount,
-  isBasicAccount,
   isSmartAccount
 } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -1730,6 +1729,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       const stateOverride = getStateOverride(this.account, this.accountOp, state)
       const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
+      let accessListFailed = false
 
       if (shouldUseAccessList) {
         console.log('Debug: using eth_createAccessList for asset discovery')
@@ -1738,10 +1738,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.accountOp,
           this.#network,
           state
-        )
-        erc20s = addresses
-        erc721s = addresses.map((address) => [address, []])
-      } else {
+        ).catch((e) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Error in signAccountOp.traceCall',
+            error: e
+          })
+          accessListFailed = true
+          return null
+        })
+        if (addresses) {
+          erc20s = addresses
+          erc721s = addresses.map((address) => [address, []])
+        }
+      }
+      if (!shouldUseAccessList || accessListFailed) {
         console.log('Debug: using debug_traceCall for asset discovery')
         const { tokens, nfts } = await debugTraceCall(
           this.baseAccount,

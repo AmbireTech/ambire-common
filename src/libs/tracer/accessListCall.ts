@@ -1,5 +1,6 @@
 import { concat, getAddress, getBytes, Interface, solidityPacked, toQuantity } from 'ethers'
 
+import { DEPLOYLESS_SIMULATION_FROM } from '@/consts/deploy'
 import { RPCProvider } from '@/interfaces/provider'
 import { getFunctionParams } from '@/libs/tracer/debugTraceCall'
 
@@ -103,7 +104,7 @@ export function getSafeAccessListCallParams(
     to: account.addr,
     value: 0,
     data: outerCalldata,
-    from: account.addr
+    from: DEPLOYLESS_SIMULATION_FROM
   }
 }
 
