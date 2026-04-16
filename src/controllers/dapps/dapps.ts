@@ -761,10 +761,17 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
-  async hasUnverifiedDappsAndSendResToUi({ dapps }: { dapps: string[] }) {
+  async hasUnverifiedDappsAndSendResToUi({
+    requestId,
+    dapps
+  }: {
+    requestId: string
+    dapps: string[]
+  }) {
     const hasUnverifiedDapps = this.hasUnverifiedDappUrls(dapps)
     const message: HasUnverifiedDappsRes = {
       type: 'HasUnverifiedDappsRes',
+      requestId,
       ok: true,
       res: hasUnverifiedDapps
     }
