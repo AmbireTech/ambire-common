@@ -1,18 +1,9 @@
-import fetch from 'node-fetch'
-
 import { IContractInfoController, SelectorsFromStorage } from '@/interfaces/contractInfo'
 import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
 import { produceMemoryStore } from '@test/helpers'
 
-import { suppressConsole } from '../../../test/helpers/console'
-import { makeMainController } from '../../../test/helpers/mainController'
-import { Session } from '../../classes/session'
-import { predefinedDapps } from '../../consts/dapps/dapps'
-import mockChains from '../../consts/dapps/mockChains'
-import mockDapps from '../../consts/dapps/mockDapps'
 import { IStorageController } from '../../interfaces/storage'
-import { DappConnectRequest } from '../../interfaces/userRequest'
 import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { StorageController } from '../storage/storage'
 import { ContractInfo, FUNCTION_SELECTORS_STORAGE_KEY } from './contractInfo'
