@@ -511,6 +511,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const opsToUpdate = recentOps.filter(
           (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
         )
+        const confirmedOps = allOps.filter(
+          (op) => op.status === AccountOpStatus.Success || op.status === AccountOpStatus.Failure
+        )
 
         return Promise.all(
           opsToUpdate.map(async (accountOp) => {
@@ -532,6 +535,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   }
                 }
               }
+            }
+
+            const hasConfirmedOpWithSameEoaNonce =
+              accountOp.eoaNonce !== null &&
+              typeof accountOp.eoaNonce !== 'undefined' &&
+              confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
+
+            if (hasConfirmedOpWithSameEoaNonce) {
+              const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.UnknownButPastNonce)
+              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+              return
             }
 
             const txIds = []
