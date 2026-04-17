@@ -750,15 +750,14 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   protected hasUnverifiedDappUrls(dapps: string[]): boolean {
-    const verifiedDapps = Array.from(this.#dapps.values()).filter(
-      (dapp) => dapp.blacklisted === 'VERIFIED'
-    )
-    const verifiedDappUrlsSet = new Set(verifiedDapps.map((dapp) => dapp.url.toLowerCase()))
+    const verifiedDappUrlsSet = new Set<string>()
+    for (const dapp of this.#dapps.values()) {
+      if (dapp.blacklisted === 'VERIFIED') {
+        verifiedDappUrlsSet.add(dapp.url.toLowerCase())
+      }
+    }
 
-    return dapps.some((dappUrl) => {
-      if (!dappUrl) return false
-      return !verifiedDappUrlsSet.has(dappUrl.toLowerCase())
-    })
+    return dapps.some((dappUrl) => !!dappUrl && !verifiedDappUrlsSet.has(dappUrl.toLowerCase()))
   }
 
   async hasUnverifiedDappsAndSendResToUi({
