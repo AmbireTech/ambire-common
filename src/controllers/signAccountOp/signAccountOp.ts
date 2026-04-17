@@ -1838,6 +1838,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #getIncreasedPrices(): GasSpeeds | null {
     if (!this.gasPrices) return null
 
+    // no increase if the user has set them
+    if (this.#hasCustomGasPrices) return this.gasPrices
+
     return {
       slow: {
         maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.slow.maxFeePerGas), 5n),
@@ -3256,13 +3259,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           originalMessage.includes('maxFeePerGas') ||
           originalMessage.includes('maxPriorityFeePerGas')
         ) {
-          message = 'Transaction fees changed. Please try again'
+          if (!this.#hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
+          else message = originalMessage
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#silentGasPriceUpdate()
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        if (!this.#hasCustomGasPrices) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#silentGasPriceUpdate()
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
