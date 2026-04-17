@@ -257,7 +257,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   gasPrices?: GasSpeeds
 
-  #hasCustomGasPrices: boolean = false
+  hasCustomGasPrices: boolean = false
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]
@@ -1216,7 +1216,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
-        if (!this.#hasCustomGasPrices) {
+        if (!this.hasCustomGasPrices) {
           this.#gasPriceInterval.start({
             // Refetch immediately if the gas prices are stale
             runImmediately:
@@ -1243,7 +1243,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
           // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
           // 2. we make sure we give priority to the bundler prices as they are generally better
-          if (!this.#hasCustomGasPrices) {
+          if (!this.hasCustomGasPrices) {
             this.gasPrices = this.estimation.estimation.bundlerGasPrices
           }
           // and we're stopping the gas price interval as
@@ -1253,7 +1253,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         } else {
           // if there's an estimate, but no bundlerGasPrices, resume the gas price
           // controller refetch as there's no other way to fetch gas prices
-          if (!this.#hasCustomGasPrices) {
+          if (!this.hasCustomGasPrices) {
             this.#gasPriceInterval.start({
               runImmediately:
                 !this.gasPrice.updatedAt ||
@@ -1331,9 +1331,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       if (customGasPrices) {
         this.gasPrices = customGasPrices
-        this.#hasCustomGasPrices = true
+        this.hasCustomGasPrices = true
         this.#gasPriceInterval.stop()
-      } else if (gasPrices && !this.#hasCustomGasPrices) {
+      } else if (gasPrices && !this.hasCustomGasPrices) {
         this.gasPrices = gasPrices
       }
 
@@ -1504,7 +1504,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
-    this.#hasCustomGasPrices = false
+    this.hasCustomGasPrices = false
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
     this.feeTokenResult = null
@@ -1839,7 +1839,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (!this.gasPrices) return null
 
     // no increase if the user has set them
-    if (this.#hasCustomGasPrices) return this.gasPrices
+    if (this.hasCustomGasPrices) return this.gasPrices
 
     return {
       slow: {
@@ -3259,11 +3259,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           originalMessage.includes('maxFeePerGas') ||
           originalMessage.includes('maxPriorityFeePerGas')
         ) {
-          if (!this.#hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
+          if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
           else message = originalMessage
         }
 
-        if (!this.#hasCustomGasPrices) {
+        if (!this.hasCustomGasPrices) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
