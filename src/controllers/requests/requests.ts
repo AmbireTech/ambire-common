@@ -1872,29 +1872,31 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           provider: this.#providers.providers[network.chainId.toString()]!,
           phishing: this.#phishing,
           fromRequestId: requestId,
-          accountOp: providedAccountOp ?? {
-            id: generateUuid(),
-            accountAddr: meta.accountAddr,
-            chainId: meta.chainId,
-            signingKeyAddr: null,
-            signingKeyType: null,
-            gasLimit: null,
-            gasFeePayment: null,
-            nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
-            signature: meta.safeTxnProps?.signature ?? null,
-            txnId: meta.safeTxnProps?.txnId ?? undefined,
-            calls: [
-              ...calls.map((call) => ({
-                ...call,
-                id: uuidv4(),
-                to: call.to,
-                data: call.data || '0x',
-                value: call.value ? getBigInt(call.value) : 0n
-              }))
-            ],
-            safeTx: meta.safeTx,
-            meta
-          },
+          accountOp: providedAccountOp
+            ? { ...providedAccountOp, nonce: meta.safeTxnProps?.nonce ?? accountState.nonce }
+            : {
+                id: generateUuid(),
+                accountAddr: meta.accountAddr,
+                chainId: meta.chainId,
+                signingKeyAddr: null,
+                signingKeyType: null,
+                gasLimit: null,
+                gasFeePayment: null,
+                nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
+                signature: meta.safeTxnProps?.signature ?? null,
+                txnId: meta.safeTxnProps?.txnId ?? undefined,
+                calls: [
+                  ...calls.map((call) => ({
+                    ...call,
+                    id: uuidv4(),
+                    to: call.to,
+                    data: call.data || '0x',
+                    value: call.value ? getBigInt(call.value) : 0n
+                  }))
+                ],
+                safeTx: meta.safeTx,
+                meta
+              },
           shouldSimulate: this.shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
             await this.#portfolio.updateSelectedAccount(account.addr, [network])
