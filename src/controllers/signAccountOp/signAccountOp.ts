@@ -73,7 +73,6 @@ import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   isAmbireV1LinkedAccount,
-  isBasicAccount,
   isSmartAccount
 } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -200,6 +199,7 @@ export const noStateUpdateStatuses = [
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
+  customGasPrices?: GasSpeeds
   feeToken?: TokenResult
   paidBy?: string
   paidByKeyType?: Key['type']
@@ -256,6 +256,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #accountOp: AccountOp
 
   gasPrices?: GasSpeeds
+
+  #hasCustomGasPrices: boolean = false
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]
@@ -1180,6 +1182,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   update({
     gasPrices,
+    customGasPrices,
     feeToken,
     paidBy,
     speed,
@@ -1213,12 +1216,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
-        this.#gasPriceInterval.start({
-          // Refetch immediately if the gas prices are stale
-          runImmediately:
-            !this.gasPrice.updatedAt ||
-            Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-        })
+        if (!this.#hasCustomGasPrices) {
+          this.#gasPriceInterval.start({
+            // Refetch immediately if the gas prices are stale
+            runImmediately:
+              !this.gasPrice.updatedAt ||
+              Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+          })
+        } else {
+          this.#gasPriceInterval.stop()
+        }
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation) {
@@ -1236,7 +1243,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
           // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
           // 2. we make sure we give priority to the bundler prices as they are generally better
-          this.gasPrices = this.estimation.estimation.bundlerGasPrices
+          if (!this.#hasCustomGasPrices) {
+            this.gasPrices = this.estimation.estimation.bundlerGasPrices
+          }
           // and we're stopping the gas price interval as
           // we will use the bundler gas prices
           this.#gasPriceInterval.stop()
@@ -1244,11 +1253,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         } else {
           // if there's an estimate, but no bundlerGasPrices, resume the gas price
           // controller refetch as there's no other way to fetch gas prices
-          this.#gasPriceInterval.start({
-            runImmediately:
-              !this.gasPrice.updatedAt ||
-              Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-          })
+          if (!this.#hasCustomGasPrices) {
+            this.#gasPriceInterval.start({
+              runImmediately:
+                !this.gasPrice.updatedAt ||
+                Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+            })
+          } else {
+            this.#gasPriceInterval.stop()
+          }
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
         }
       }
@@ -1316,7 +1329,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
       }
 
-      if (gasPrices) this.gasPrices = gasPrices
+      if (customGasPrices) {
+        this.gasPrices = customGasPrices
+        this.#hasCustomGasPrices = true
+        this.#gasPriceInterval.stop()
+      } else if (gasPrices && !this.#hasCustomGasPrices) {
+        this.gasPrices = gasPrices
+      }
 
       if (feeToken && paidBy) {
         this.#paidBy = paidBy
@@ -1385,6 +1404,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(accountOpData?.calls) ||
         gasPrices ||
+        customGasPrices ||
         this.#paidBy ||
         this.feeTokenResult ||
         hasNewEstimation
@@ -1484,6 +1504,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
+    this.#hasCustomGasPrices = false
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
     this.feeTokenResult = null
@@ -3365,6 +3386,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.baseAccount.canBroadcastByItself()
   }
 
+  get canSetCustomGasPrices(): boolean {
+    if (!this.selectedOption) return false
+
+    return this.baseAccount.canSetCustomGasPrices(this.selectedOption)
+  }
+
   get threshold(): number {
     const accountState =
       this.#accounts.accountStates[this.account.addr]![this.#network.chainId.toString()]
@@ -3401,6 +3428,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
+      canSetCustomGasPrices: this.canSetCustomGasPrices,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed

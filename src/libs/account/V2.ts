@@ -1,6 +1,6 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -194,5 +194,12 @@ export class V2 extends BaseAccount {
 
   canBroadcastByOtherEOA(): boolean {
     return true
+  }
+
+  canSetCustomGasPrices(feeOption: FeePaymentOption): boolean {
+    return (
+      feeOption.token.address === ZeroAddress &&
+      feeOption.paidBy.toLowerCase() !== this.account.addr.toLowerCase()
+    )
   }
 }
