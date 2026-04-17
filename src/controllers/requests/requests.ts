@@ -1729,10 +1729,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     {
       calls,
       meta,
+      accountOp: providedAccountOp,
       dappPromises = []
     }: {
       calls: Call[]
       meta: CallsUserRequest['meta']
+      accountOp?: AccountOp
       dappPromises?: CallsUserRequest['dappPromises']
     },
     executionType: RequestExecutionType = 'open-request-window'
@@ -1870,7 +1872,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           provider: this.#providers.providers[network.chainId.toString()]!,
           phishing: this.#phishing,
           fromRequestId: requestId,
-          accountOp: {
+          accountOp: providedAccountOp ?? {
             id: generateUuid(),
             accountAddr: meta.accountAddr,
             chainId: meta.chainId,
