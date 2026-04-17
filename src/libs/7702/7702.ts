@@ -4,7 +4,7 @@ import { Network } from '../../interfaces/network'
 
 export function getContractImplementation(
   chainId: bigint,
-  accountKeys: { type: 'internal' | 'lattice' | 'trezor' | 'ledger' }[]
+  accountKeys: { type: 'internal' | 'lattice' | 'trezor' | 'ledger' | 'qr' }[]
 ): Hex {
   if (accountKeys.find((key) => key.type === 'lattice')) {
     return EIP_7702_GRID_PLUS
