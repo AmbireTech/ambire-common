@@ -1,3 +1,7 @@
+const getAmountAfterFeeReserve = (amount: bigint, fee: bigint): bigint => {
+  return amount > fee ? amount - fee : 0n
+}
+
 /**
  * Removes any extra decimals from the amount.
  * @example getSanitizedAmount('1.123456', 2) => '1.12'
@@ -10,4 +14,4 @@ const getSanitizedAmount = (amount: string, decimals: number): string => {
   return sanitizedAmount.join('.')
 }
 
-export { getSanitizedAmount }
+export { getAmountAfterFeeReserve, getSanitizedAmount }

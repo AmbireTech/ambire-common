@@ -150,6 +150,7 @@ import {
   getUnknownTokenWarning,
   SignAccountOpType
 } from './helper'
+import { isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -857,7 +858,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.canBroadcast
     ) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
-      if (this.hasSpeeds(identifier))
+      if (
+        this.hasSpeeds(identifier) &&
+        !this.#shouldSuppressTransferFeeSelectionError(this.selectedOption)
+      )
         errors.push({
           title: 'Please select a token and an account for paying the gas fee.'
         })
@@ -868,6 +872,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.selectedOption &&
       this.accountOp.gasFeePayment &&
       this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount &&
+      !this.#shouldSuppressTransferFeeSelectionError(this.selectedOption) &&
       this.canBroadcast
     ) {
       const speedCoverage = []
@@ -1608,13 +1613,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
     const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
     const speeds = this.feeSpeeds[id] ?? []
+    const isTransferredTokenOption = isTransferredTokenFeeOption(feeOption, this.accountOp)
 
     const coversSlow = speeds.some(
       (speed: SpeedCalc) =>
         speed.type === FeeSpeed.Slow && feeOption.availableAmount >= speed.amount
     )
 
-    if (!coversSlow) return true
+    if (!coversSlow && !isTransferredTokenOption) return true
 
     const isExternal = this.accountKeyStoreKeys.some(
       (keyStoreKey) => keyStoreKey.addr === feeOption.paidBy && keyStoreKey.isExternallyStored
@@ -1625,6 +1631,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
 
     return false
+  }
+
+  #shouldSuppressTransferFeeSelectionError(feeOption?: FeePaymentOption): boolean {
+    return (
+      this.#type === 'one-click-transfer' &&
+      !!feeOption &&
+      isTransferredTokenFeeOption(feeOption, this.accountOp)
+    )
   }
 
   /**

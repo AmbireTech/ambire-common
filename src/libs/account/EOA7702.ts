@@ -17,6 +17,7 @@ import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
 import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
+import { isTransferredTokenFeeOption } from './feeOptions'
 
 // this class describes an EOA that CAN transition to 7702
 // even if it is YET to transition to 7702
@@ -78,7 +79,7 @@ export class EOA7702 extends BaseAccount {
         opt.paidBy === this.account.addr &&
         (isNative(opt.token) ||
           (!isDelegating &&
-            opt.availableAmount > 0n &&
+            (opt.availableAmount > 0n || isTransferredTokenFeeOption(opt, op)) &&
             estimation.bundlerEstimation &&
             estimation.bundlerEstimation.paymaster.isUsable()))
     )

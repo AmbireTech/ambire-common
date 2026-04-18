@@ -24,7 +24,7 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
-import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { getAmountAfterFeeReserve, getSanitizedAmount } from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
   validateSendTransferAddress,
@@ -125,6 +125,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   isTopUp: boolean = false
 
   #shouldSkipTransactionQueuedModal: boolean = false
+
+  #isMaxAmountSelected: boolean = false
 
   #accounts: IAccountsController
 
@@ -402,6 +404,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
+      this.#isMaxAmountSelected = false
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.amountFieldMode = 'token'
@@ -416,6 +419,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.chainId !== token?.chainId
     ) {
+      this.#isMaxAmountSelected = false
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
@@ -461,6 +465,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   resetForm(shouldDestroyAccountOp = true) {
+    this.#isMaxAmountSelected = false
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
@@ -587,12 +592,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
+      this.#isMaxAmountSelected = false
       this.#setAmount(amount)
     }
 
     if (shouldSetMaxAmount) {
+      this.#isMaxAmountSelected = true
       this.amountFieldMode = 'token'
-      this.#setAmount(this.maxAmount, true)
+      this.#setTokenAmount(this.maxAmount, true)
     }
 
     if (addressState) {
@@ -760,6 +767,63 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
   }
 
+  #setTokenAmount(amount: string, isProgrammaticUpdate = false) {
+    const amountFieldMode = this.amountFieldMode
+
+    this.amountFieldMode = 'token'
+    this.#setAmount(amount, isProgrammaticUpdate)
+    this.amountFieldMode = amountFieldMode
+  }
+
+  #syncMaxAmountWithFeeReservation(forceEmit?: boolean) {
+    if (
+      !this.#isMaxAmountSelected ||
+      !this.selectedToken ||
+      typeof this.selectedToken.decimals !== 'number'
+    )
+      return false
+
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const selectedFeeOption = this.signAccountOpController?.selectedOption
+    const accountAddr = this.#selectedAccount.account?.addr.toLowerCase()
+
+    const shouldReserveFeeFromTransferredToken =
+      !!accountAddr &&
+      !!gasFeePayment &&
+      !!selectedFeeOption &&
+      !selectedFeeOption.token.flags.onGasTank &&
+      selectedFeeOption.paidBy.toLowerCase() === accountAddr &&
+      selectedFeeOption.token.chainId === this.selectedToken.chainId &&
+      selectedFeeOption.token.address.toLowerCase() === this.selectedToken.address.toLowerCase() &&
+      gasFeePayment.inToken.toLowerCase() === this.selectedToken.address.toLowerCase() &&
+      (!gasFeePayment.feeTokenChainId ||
+        gasFeePayment.feeTokenChainId === this.selectedToken.chainId)
+
+    const desiredAmount = shouldReserveFeeFromTransferredToken
+      ? getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount)
+      : totalTokenAmount
+
+    const currentAmount = this.amount
+      ? parseUnits(
+          getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
+          this.selectedToken.decimals
+        )
+      : 0n
+
+    if (currentAmount === desiredAmount) return false
+
+    this.#setTokenAmount(
+      desiredAmount === 0n ? '0' : formatUnits(desiredAmount, this.selectedToken.decimals),
+      true
+    )
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.syncSignAccountOp()
+    this.propagateUpdate(forceEmit)
+
+    return true
+  }
+
   get hasPersistedState() {
     return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
   }
@@ -860,7 +924,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       calls,
       meta: {
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-        topUpAmount
+        topUpAmount,
+        allowTransferFeeTokenSelfReserve: true
       }
     }
 
@@ -899,7 +964,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
-        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+        void this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
           this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
         })
 
@@ -918,7 +983,11 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.signAccountOpController.onUpdate((forceEmit) => {
-      this.propagateUpdate(forceEmit)
+      const hasAdjustedMaxAmount = this.#syncMaxAmountWithFeeReservation(forceEmit)
+
+      if (!hasAdjustedMaxAmount) {
+        this.propagateUpdate(forceEmit)
+      }
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         // Reset the form on the next tick so the FE receives the final
