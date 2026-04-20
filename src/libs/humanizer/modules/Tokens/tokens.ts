@@ -83,7 +83,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     return matcher[call.data.substring(0, 10)]
       ? {
           ...call,
-          fullVisualization: matcher[call.data.substring(0, 10)](call)
+          fullVisualization: matcher[call.data.substring(0, 10)]!(call)
         }
       : call
   })
@@ -102,7 +102,10 @@ export const genericErc20Humanizer = (
         ? [
             getAction('Grant approval'),
             getLabel('for'),
-            getToken(call.to, args[1]),
+            getToken(call.to, args[1], undefined, undefined, {
+              callId: call.id,
+              spenderAddr: args[0]
+            }),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]

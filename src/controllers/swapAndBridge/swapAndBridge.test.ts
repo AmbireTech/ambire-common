@@ -429,6 +429,14 @@ describe('SwapAndBridge Controller', () => {
     await check()
   })
   it('should continuously update the quote', async () => {
+    // Set #isOnSwapAndBridgeRoute = true so #shouldAutoUpdateQuote can pass.
+    // The controller listens on 'updateView' (not 'addView'), so we add a view
+    // with a different route first, then update it to 'swap-and-bridge'.
+    // Must happen before useFakeTimers so the restart() queued by the listener
+    // resolves immediately and doesn't interfere with the test timers.
+    uiCtrl.addView({ id: 'test-quote', type: 'tab', currentRoute: 'other', isReady: true })
+    uiCtrl.updateView('test-quote', { currentRoute: 'swap-and-bridge', isReady: true })
+
     jest.useFakeTimers()
     const { restore } = suppressConsole()
 
@@ -452,7 +460,6 @@ describe('SwapAndBridge Controller', () => {
     )
 
     expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.ReadyToSubmit)
-    expect(swapAndBridgeController.updateQuoteInterval.running).toBe(false)
 
     swapAndBridgeController.updateQuoteInterval.restart()
     expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)

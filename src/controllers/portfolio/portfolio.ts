@@ -78,6 +78,7 @@ import {
   LearnedAssets,
   NetworkState,
   PortfolioControllerState,
+  PortfolioLibGetResult,
   PreviousHintsStorage,
   TemporaryTokens,
   ToBeLearnedAssets,
@@ -186,9 +187,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     learnedNfts: {}
   }
 
-  /**
-   * TODO: Figure out a way to clean/reset this structure
-   */
   #toBeLearnedAssets: ToBeLearnedAssets = {
     erc20s: {},
     erc721s: {}
@@ -1697,6 +1695,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               shouldUpdateLearnedInStorage = true
             }
 
+            if (networkResult) {
+              this.cleanupToBeLearnedAssets(
+                network.chainId,
+                networkResult.tokenErrors,
+                networkResult.collectionErrors
+              )
+            }
+
             // Only update this if all networks where updated so we know for sure that the user
             // has disabled the ones in otherNetworksDefiCounts
             if (!networks && discoveryResponse?.data) {
@@ -1832,10 +1838,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#toBeLearnedAssets.erc20s[chainIdString] = []
 
     let networkToBeLearnedTokens = this.#toBeLearnedAssets.erc20s[chainIdString]
+    const uniqueTokenAddresses = Array.from(new Set(tokenAddresses))
 
-    const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
-
-    const tokensToLearn = tokenAddresses.filter((address) => {
+    const tokensToLearn = uniqueTokenAddresses.filter((address) => {
       if (address === ZeroAddress) return false
 
       let normalizedAddress: string | undefined
@@ -1859,7 +1864,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       )
         return false
 
-      return !alreadyLearned.includes(normalizedAddress)
+      return !networkToBeLearnedTokens.includes(normalizedAddress)
     })
 
     if (!tokensToLearn.length) return false
@@ -1961,6 +1966,40 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       return false
     }
+  }
+
+  /**
+   * toBeLearnedAssets contains arbitrary addresses that include:
+   * - tokens and collectibles
+   * - random smart contracts and addresses
+   * That's why we need to clean it up by removing the addresses that the portfolio lib returned
+   * an error for, as those are not NFTs/Tokens.
+   */
+  private cleanupToBeLearnedAssets(
+    chainId: bigint,
+    tokenErrors: PortfolioLibGetResult['tokenErrors'],
+    collectionErrors: PortfolioLibGetResult['collectionErrors']
+  ) {
+    const chainIdString = chainId.toString()
+    const toBeLearnedTokens = this.#toBeLearnedAssets.erc20s[chainIdString] || []
+    const toBeLearnedNfts = this.#toBeLearnedAssets.erc721s[chainIdString] || {}
+
+    if (!tokenErrors?.length && !collectionErrors?.length) return
+
+    if (!toBeLearnedTokens.length && !Object.keys(toBeLearnedNfts).length) return
+
+    const erroredTokenAddresses = tokenErrors.map((e) => e.address)
+    const erroredCollectionAddresses = collectionErrors?.map((e) => e.address) || []
+
+    this.#toBeLearnedAssets.erc20s[chainIdString] = toBeLearnedTokens.filter(
+      (address) => !erroredTokenAddresses.includes(address)
+    )
+
+    this.#toBeLearnedAssets.erc721s[chainIdString] = Object.fromEntries(
+      Object.entries(toBeLearnedNfts).filter(
+        ([collectionAddress]) => !erroredCollectionAddresses.includes(collectionAddress)
+      )
+    )
   }
 
   /**

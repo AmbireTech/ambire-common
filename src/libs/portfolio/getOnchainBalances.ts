@@ -139,15 +139,16 @@ export async function getNFTs(
         : opts.blockTag
   })
 
-  const mapNft = (token: any) => {
+  const mapNft = (token: any, address: string) => {
     return {
       name: token.name,
       chainId: network.chainId,
+      address,
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
       collectibles: [...token.nfts]
-    } as CollectionResult
+    } satisfies Omit<CollectionResult, 'flags' | 'priceIn' | 'marketDataIn'>
   }
 
   if (!opts.simulation) {
@@ -162,7 +163,13 @@ export async function getNFTs(
       deploylessOpts
     )
 
-    return [collections.map((token: any) => [token.error, mapNft(token)]), {}]
+    return [
+      collections.map((token: any, index: number) => [
+        token.error,
+        mapNft(token, tokenAddrs[index]![0])
+      ]),
+      {}
+    ]
   }
 
   const { accountOps, baseAccount, state } = opts.simulation
@@ -199,7 +206,7 @@ export async function getNFTs(
 
   const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
     ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
-        ...mapNft(simulationToken),
+        ...mapNft(simulationToken, deltaAddressesMapping[tokenIndex]),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
@@ -212,7 +219,7 @@ export async function getNFTs(
           )
         : null
 
-      const token = mapNft(beforeToken)
+      const token = mapNft(beforeToken, tokenAddrs[i]![0])
       const receiving: bigint[] = []
       const sending: bigint[] = []
 
