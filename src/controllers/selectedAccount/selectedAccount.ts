@@ -333,8 +333,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult = false
     }
 
+    // Update the balanceByAccount only when the portfolio is ready, because
+    // the user may select an account, set a balance of 0 and then switch to another account.
+    // (then the balance of the first account will remain 0 until it's selected again)
+    if (newSelectedAccountPortfolio.isAllReady) {
+      this.balanceByAccounts[this.account.addr] = this.portfolio.totalBalance
+    }
+
     this.portfolio = newSelectedAccountPortfolio
-    this.balanceByAccounts[this.account.addr] = this.portfolio.totalBalance
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
