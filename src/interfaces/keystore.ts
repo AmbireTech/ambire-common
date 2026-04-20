@@ -149,7 +149,7 @@ export type InternalKey = {
   }
 }
 
-export type QrWalletType = 'keystone' | 'imtoken' // We can add more supported QR wallets here in the future, and they will be handled by the QrProtocolAdapter implementations, which are specific to each wallet type
+export type QrWalletType = 'keystone' | 'imtoken' | (string & {}) // Unknown wallet ids are allowed for unsupported/untrusted QR imports, while known values remain strongly typed
 export type QrProtocolType = 'ur' | 'airgap'
 
 export type ExternalKey = {

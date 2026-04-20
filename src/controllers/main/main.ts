@@ -178,6 +178,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
+  qrImportUnsupportedWalletWarning: string | null = null
+
   ui: IUiController
 
   #continuousUpdates: ContinuousUpdatesController | undefined
@@ -1144,9 +1146,11 @@ export class MainController extends EventEmitter implements IMainController {
 
   async #handleAccountPickerInitQr(
     QrKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: string | Uint8Array
+    payload: string | Uint8Array,
+    isUnsupportedWalletConfirmed = false
   ) {
     try {
+      this.qrImportUnsupportedWalletWarning = null
       const qrCtrl = this.#externalSignerControllers.qr
 
       if (!qrCtrl) {
@@ -1160,6 +1164,11 @@ export class MainController extends EventEmitter implements IMainController {
       // This populates QR-specific iterator state (walletConfig, xpub, parsedAccount)
       // that AccountPicker needs to configure derivation and retrieval.
       await keyIterator.initFromQrPayload(payload)
+
+      if (keyIterator.importWarning && !isUnsupportedWalletConfirmed) {
+        this.qrImportUnsupportedWalletWarning = keyIterator.importWarning
+        return
+      }
 
       const hdPathTemplate = keyIterator.walletConfig?.hdPathTemplate
       if (!hdPathTemplate) {
@@ -1191,10 +1200,11 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitQr(
     QrKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: string | Uint8Array
+    payload: string | Uint8Array,
+    isUnsupportedWalletConfirmed = false
   ) {
     await this.withStatus('handleAccountPickerInitQr', async () =>
-      this.#handleAccountPickerInitQr(QrKeyIterator, payload)
+      this.#handleAccountPickerInitQr(QrKeyIterator, payload, isUnsupportedWalletConfirmed)
     )
   }
 

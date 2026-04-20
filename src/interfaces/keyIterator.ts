@@ -60,4 +60,5 @@ export interface KeyIterator {
   // QR-specific optional fields
   walletConfig?: QrWalletConfig
   parsedAccount?: ParsedQrAccount
+  importWarning?: string
 }
