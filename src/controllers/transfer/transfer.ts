@@ -44,9 +44,10 @@ import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/si
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
-const DEFAULT_ADDRESS_STATE = {
+const DEFAULT_ADDRESS_STATE: AddressState = {
   fieldValue: '',
-  ensAddress: '',
+  resolvedAddress: '',
+  resolvedAddressType: null,
   isDomainResolving: false
 }
 
@@ -487,8 +488,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
-      const isEnsAddress = !!this.addressState.ensAddress
-
       // if the recipientAcc is an account in the extension
       // & the account state is not fetched for it, fetch it
       // so that we could validate the account properly
@@ -512,7 +511,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isEnsAddress,
+        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.#networks.networks,
         this.#accounts.accountStates,
@@ -556,7 +555,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get recipientAddress() {
-    return this.addressState.ensAddress || this.addressState.fieldValue
+    return getAddressFromAddressState(this.addressState)
   }
 
   async update({

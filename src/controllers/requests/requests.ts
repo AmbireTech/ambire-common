@@ -1823,7 +1823,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.sendNewRequestMessage(existingUserRequest, 'queued')
         currentUserRequest = this.currentUserRequest || this.visibleUserRequests[0] || null
       }
-      await this.#setCurrentUserRequest(currentUserRequest)
+
+      // Otherwise we will reset the currentUserRequest when a new request is added to the batch
+      if (executionType !== 'queue') {
+        await this.#setCurrentUserRequest(currentUserRequest)
+      }
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountStateBefore =

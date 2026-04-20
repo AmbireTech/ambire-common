@@ -518,8 +518,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.emitUpdate()
   }
 
-  async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
-    if (this.hdPathTemplate === hdPathTemplate) return
+  async setHDPathTemplateAndPage({
+    hdPathTemplate,
+    page = this.page
+  }: {
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    page: number
+  }) {
+    const arePropsUnchanged = this.hdPathTemplate === hdPathTemplate && page === this.page
+    if (arePropsUnchanged) return
 
     this.hdPathTemplate = hdPathTemplate
     // Reset the currently selected accounts, because for the keys of these
@@ -531,10 +538,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.emitUpdate()
 
     await this.setPage({
-      page: DEFAULT_PAGE,
+      page,
       shouldGetAccountsUsedOnNetworks: DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
       shouldSearchForLinkedAccounts: DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
-    }) // takes the user back on the first page
+    })
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
@@ -863,14 +870,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const deviceIds: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceId || '',
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
-        lattice: this.#externalSignerControllers?.lattice?.deviceId || ''
+        lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
+        qr: this.#externalSignerControllers.qr?.deviceId || ''
       }
 
       const deviceModels: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
-        lattice: this.#externalSignerControllers.lattice?.deviceModel || ''
+        lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
+        qr: this.#externalSignerControllers.qr?.deviceModel || ''
       }
+
+      const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
+      const qrWalletConfig = keyType === 'qr' ? this.keyIterator.walletConfig : undefined
+
+      const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
 
       const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
         ({ account, accountKeys }) =>
@@ -889,7 +903,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
               deviceId: deviceIds[keyType],
               deviceModel: deviceModels[keyType],
               // always defined in the case of external keys
-              hdPathTemplate: this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE,
+              hdPathTemplate,
+              ...(keyType === 'qr'
+                ? {
+                    masterFingerprint
+                  }
+                : {}),
               index,
               createdAt: new Date().getTime()
             }
@@ -1059,7 +1078,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
     // accounts out of the private key (with another approach - salt and
     // extra entropy) was creating confusion.
-    const shouldRetrieveSmartAccountIndices = this.keyIterator.subType !== 'private-key'
+    //
+    // + no smart accounts for QR wallets. Reasons:
+    // - some hws sign only if the signer is imported
+    // - we are generally moving in another direction
+    const shouldRetrieveSmartAccountIndices =
+      this.keyIterator.subType !== 'private-key' && this.type !== 'qr'
     if (shouldRetrieveSmartAccountIndices) {
       // Indices for the smart accounts.
       indicesToRetrieve.push({

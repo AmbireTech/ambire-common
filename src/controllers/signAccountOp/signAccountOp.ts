@@ -11,14 +11,13 @@ import {
   Interface,
   isAddress,
   isBytesLike,
-  keccak256,
   toBeHex,
-  toUtf8Bytes,
   ZeroAddress
 } from 'ethers'
 
+import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -74,7 +73,6 @@ import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   isAmbireV1LinkedAccount,
-  isBasicAccount,
   isSmartAccount
 } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -103,7 +101,6 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
-import { privSlot } from '../../libs/proxyDeploy/deploy'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -127,7 +124,7 @@ import {
   wrapUnprotected
 } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
-import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
+import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -912,7 +909,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           if (isV1) {
             errors.push({
               title:
-                'Broadcasting Ambire v1 transactions is possible only by using an ЕОА. Import or create one to broadcast your transactions.'
+                'Broadcasting Ambire v1 transactions is possible only by using an EOA. Import or create one to broadcast your transactions.'
             })
           } else {
             let skippedTokensCount = 0
@@ -1727,46 +1724,51 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
       // TODO: how to handle this case?
       if (!state) return
+      let erc20s: string[] = []
+      let erc721s: [string, bigint[]][] = []
 
-      // if the account is a Safe,
-      // add an additional state override that gives privileges to the assKey;
-      // also, we changed privs storage slot to ambire.smart.contracts.storage
-      // so privs no longer override slot number 0
-      const stateDiff = !!this.account.safeCreation
-        ? {
-            [privSlot(
-              keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
-              'uint256',
-              this.account.associatedKeys[0],
-              'bytes32'
-            )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
-          }
-        : undefined
+      const stateOverride = getStateOverride(this.account, this.accountOp, state)
+      const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
+      let accessListFailed = false
 
-      // add stateOverride when using a Safe as well
-      const stateOverride =
-        !!this.account.safeCreation ||
-        (this.accountOp.calls.length > 1 && isBasicAccount(this.account, state))
-          ? {
-              [this.account.addr]: {
-                code: AmbireAccount7702.binRuntime,
-                stateDiff
-              }
-            }
-          : undefined
+      if (shouldUseAccessList) {
+        console.log('Debug: using eth_createAccessList for asset discovery')
+        const addresses = await createAccessListCall(
+          this.baseAccount,
+          this.accountOp,
+          this.#network,
+          state
+        ).catch((e) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Error in signAccountOp.traceCall',
+            error: e
+          })
+          accessListFailed = true
+          return null
+        })
+        if (addresses) {
+          erc20s = addresses
+          erc721s = addresses.map((address) => [address, []])
+        }
+      }
+      if (!shouldUseAccessList || accessListFailed) {
+        console.log('Debug: using debug_traceCall for asset discovery')
+        const { tokens, nfts } = await debugTraceCall(
+          this.baseAccount,
+          this.accountOp,
+          this.#network,
+          state,
+          !this.#network.rpcNoStateOverride,
+          stateOverride
+        )
+        erc20s = tokens
+        erc721s = nfts
+      }
 
-      const { tokens, nfts } = await debugTraceCall(
-        this.baseAccount,
-        this.accountOp,
-        this.#network,
-        state,
-        !this.#network.rpcNoStateOverride,
-        stateOverride
-      )
-
-      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(tokens, this.#network.chainId)
+      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
       const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
-        nfts,
+        erc721s,
         this.account.addr,
         this.#network.chainId
       )

@@ -25,6 +25,7 @@ export type SelectedAccountPortfolioState = {
           | 'tokens'
           | 'collections'
           | 'tokenErrors'
+          | 'collectionErrors'
           | 'hintsFromExternalAPI'
           | 'priceCache'
           | 'total'
