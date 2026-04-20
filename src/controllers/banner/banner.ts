@@ -17,6 +17,7 @@ export type AccountData =
       numberOfTransactions: number
       totalUsdBalance: number
       hasKeys: boolean
+      address: string
     }
 export class BannerController extends EventEmitter implements IBannerController {
   #banners: Banner[] = []
@@ -72,16 +73,16 @@ export class BannerController extends EventEmitter implements IBannerController 
     this.emitUpdate()
   }
 
-  #notSurveyOrValidSurvey(banner: Banner) {
+  #notSurveyOrValidSurvey(banner: Banner, accData: AccountData) {
     if (!banner.actions || !banner.actions[0]) return true
     let action = banner.actions[0]
     // if not survey return it
     if (action.actionName !== 'survey') return true
     const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal, minCommonVersion } =
       action.meta.requirements
-    const accData = this.#getAccountData()
     // do not display surveys when there is no selected acc
     if (accData.status === 'no-selected-account') return false
+    if (!accData.hasKeys) return false
     if (minBalanceTotal && accData.totalUsdBalance < minBalanceTotal) return false
     if (maxBalanceTotal && accData.totalUsdBalance > maxBalanceTotal) return false
     if (minTxnsTotal && accData.numberOfTransactions < minTxnsTotal) return false
@@ -94,11 +95,26 @@ export class BannerController extends EventEmitter implements IBannerController 
     return true
   }
 
-  get banners(): Banner[] {
+  /**
+   * Used when account is being switched, because we might want to display
+   * different banners for different accounts.
+   * The first and only (Apr 2026) such case is survey banners that have
+   * to be filtered depending on balance, tx count and keys for acc
+   */
+  emitUpdateBanners() {
+    this.emitUpdate()
+  }
+
+  get bannersData(): { banners: Banner[]; account: string | null } {
     // Always return one banner at a time
-    return this.#getValidBanners(this.#banners)
-      .filter((b) => this.#notSurveyOrValidSurvey(b))
-      .slice(0, this.maxBannerCount)
+    const accData = this.#getAccountData()
+
+    return {
+      banners: this.#getValidBanners(this.#banners)
+        .filter((b) => this.#notSurveyOrValidSurvey(b, accData))
+        .slice(0, this.maxBannerCount),
+      account: accData.status === 'has-selected-account' ? accData.address : null
+    }
   }
 
   async #saveDismissedToStorage() {
@@ -129,7 +145,7 @@ export class BannerController extends EventEmitter implements IBannerController 
   toJSON() {
     return {
       ...this,
-      banners: this.banners
+      bannersData: this.bannersData
     }
   }
 }

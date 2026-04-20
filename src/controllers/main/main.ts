@@ -334,7 +334,13 @@ export class MainController extends EventEmitter implements IMainController {
             keys: this.keystore.keys,
             accounts: this.accounts.accounts
           }) > 0
-        return { status: 'has-selected-account', numberOfTransactions, totalUsdBalance, hasKeys }
+        return {
+          status: 'has-selected-account',
+          numberOfTransactions,
+          totalUsdBalance,
+          hasKeys,
+          address: currentSelectedAcc.addr
+        }
       },
       this.survey,
       eventEmitterRegistry
@@ -733,6 +739,7 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
+    this.banner.emitUpdateBanners()
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true })
