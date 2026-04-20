@@ -514,7 +514,7 @@ const addCustomTokensIfNeeded = ({
     if (shouldAddJPYCToken) newTokens.unshift({ ...JPYC_TOKEN, chainId: 43114 })
   }
   if (chainId === 8453) {
-    // Disabled (maybe temporarily) as of v6.5.0, because of the decision to remove
+    // Disabled (maybe temporarily) as of v2.94.0, because of the decision to remove
     // $WALLET liquidity on Base and consolidate it into the Ethereum liquidity.
     //   const shouldAddAmbireWalletToken = newTokens.every(
     //     (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
