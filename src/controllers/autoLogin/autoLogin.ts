@@ -1,8 +1,9 @@
 import { isHexString, toUtf8String } from 'ethers'
-import { SiweMessage } from 'siwe'
 import { getDomain } from 'tldts'
 import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
+
+import { SiweMessage } from '@signinwithethereum/siwe'
 
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
@@ -146,8 +147,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static getParsedSiweMessage(
     message: string | `0x${string}`,
-    requestOrigin: string,
-    signerAddress?: string
+    requestOrigin: string
   ): null | {
     parsedSiwe: SiweMessageType
     status: SiweValidityStatus
@@ -167,15 +167,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     try {
       const requestHostname = new URL(requestOrigin).host
-
-      // Some dApps don't use checksum addresses in the SIWE message
-      // Which makes verification by the 'siwe' package fail (as it's very strict)
-      if (signerAddress) {
-        messageString = messageString.replace(
-          signerAddress.toLowerCase(),
-          getAddress(signerAddress)
-        )
-      }
 
       const parsedSiweMessage = new SiweMessage(messageString)
 

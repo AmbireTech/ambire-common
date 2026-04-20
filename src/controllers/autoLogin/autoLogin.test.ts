@@ -169,6 +169,26 @@ URI: https://docs.fileverse.io
 
       expect(message2).toBeNull()
     })
+    it('lowercase address - should still parse the message', async () => {
+      const malformedMessage = createSiweMessage({
+        domain: 'docs.fileverse.io',
+        address: EOA_ACC.addr.toLowerCase() as `0x${string}`,
+        statement: 'Sign in to docs.fileverse.io',
+        uri: 'https://docs.fileverse.io/login',
+        version: '1',
+        chainId: 1,
+        nonce: hexlify(toUtf8Bytes('100')),
+        resources: ['https://privy.io']
+      })
+
+      const message = AutoLoginController.getParsedSiweMessage(
+        hexlify(toUtf8Bytes(malformedMessage)) as `0x${string}`,
+        'https://docs.fileverse.io'
+      )
+
+      expect(message).toBeDefined()
+      expect(message?.parsedSiwe.address).toBe(EOA_ACC.addr)
+    })
     it('non utf8 hex message - should return null', async () => {
       const message = AutoLoginController.getParsedSiweMessage(
         '0xcc843bfa94ca4cd39e4b72250386ae369142840c6760815d0d758922f1999a04',
