@@ -8,6 +8,7 @@ import { ISurveyController, Survey, SurveyAnswers } from '../../interfaces/surve
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { parseSurvey } from './helpers'
 
+export const ANSWERED_SURVEYS_STORAGE_KEY = 'surveysRespondedTo'
 export class SurveyController extends EventEmitter implements ISurveyController {
   #callRelayer: BindedRelayerCall
 
@@ -15,7 +16,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
 
   #storage: IStorageController
 
-  #initialLoadPromise?: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   #survey?: Survey
 
@@ -50,7 +51,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     super(eventEmitterRegistry)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#storage = storage
-    this.#initialLoadPromise = this.#load().finally(() => (this.#initialLoadPromise = undefined))
+    this.initialLoadPromise = this.#load().finally(() => (this.initialLoadPromise = undefined))
 
     ui.uiEvent.on('removeView', () => {
       if (this.status === 'success-submitted') {
@@ -60,7 +61,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   }
 
   async #load() {
-    const surveysRespondedTo: string[] = await this.#storage.get('surveysRespondedTo', [])
+    const surveysRespondedTo: string[] = await this.#storage.get(ANSWERED_SURVEYS_STORAGE_KEY, [])
     this.#surveysRespondedTo = surveysRespondedTo
   }
 
@@ -124,7 +125,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   }
 
   async #storeSurveyIdAsRespondedTo(surveyId: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!this.#surveysRespondedTo) {
       this.emitError({
@@ -206,17 +207,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   ) {
     this.answers[questionId] = { questionPosition, answer }
 
-    const answersPlusUncommited: SurveyAnswers = {
-      ...this.answers,
-
-      [questionId]: {
-        questionPosition: questionPosition,
-        answer: answer
-      }
-    }
     const hasNextQuestion = !!SurveyController.getNextQuestionForAnswers(
       this.questions || [],
-      answersPlusUncommited
+      this.answers
     )
 
     if (!hasNextQuestion) await this.#sendResponse(instanceId, address)
