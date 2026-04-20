@@ -1,6 +1,5 @@
 import { isHexString, toUtf8String } from 'ethers'
 import { getDomain } from 'tldts'
-import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { SiweMessage } from '@signinwithethereum/siwe'
