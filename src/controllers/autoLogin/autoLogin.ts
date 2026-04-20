@@ -1,5 +1,6 @@
 import { isHexString, toUtf8String } from 'ethers'
 import { getDomain } from 'tldts'
+import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { SiweMessage } from '@signinwithethereum/siwe'
@@ -133,7 +134,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     const parsedSiweMessageViemFormat: SiweMessageType = {
       ...viemFormatParsedMessage,
       version: parsedSiweMessage.version as '1', // hack to stop viem from whining
-      address: parsedSiweMessage.address as `0x${string}`,
+      // Always convert the address to a checksummed address because all checks later on assume that the address is checksummed.
+      address: getAddress(parsedSiweMessage.address) as `0x${string}`,
       ...(parsedSiweMessage.expirationTime
         ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
         : {}),
