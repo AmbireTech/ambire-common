@@ -98,8 +98,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitError({
         error: e,
         level: 'major',
-        message: 'Failed to fetch survey',
-        sendCrashReport: true
+        message: 'Failed to fetch survey'
       })
       this.errorMessage = e.message
       this.emitUpdate()
@@ -111,8 +110,6 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitError({
         message: 'There was error fetching the survey.',
         level: 'major',
-
-        sendCrashReport: true,
         error: Error(`Error with parsing a survey ${parsedSurvey.error}`)
       })
       this.status = 'error-fetching'
@@ -133,7 +130,6 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitError({
         message: 'Failed to record that survey is answered locally',
         level: 'major',
-        sendCrashReport: true,
         error: new Error(
           'Failed to record the surveyId locally as responded to: this.#surveysRespondedTo was missing'
         )
@@ -151,8 +147,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         this.emitError({
           error: new Error('Error: this.answers does not exist when attempting to submit answers'),
           level: 'major',
-          message: 'Failed to submit your answer, please contact support',
-          sendCrashReport: true
+          message: 'Failed to submit your answer, please contact support'
         })
         this.status = 'error-submitting'
         this.errorMessage = 'Internal state error: missing answers'
@@ -192,8 +187,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitError({
         error: new Error('Error: this.#survey does not exist when attempting to submit answers'),
         level: 'major',
-        message: 'Failed to submit your answer, please contact support',
-        sendCrashReport: true
+        message: 'Failed to submit your answer, please contact support'
       })
       this.status = 'error-submitting'
       this.errorMessage = 'Internal state error: missing survey'
