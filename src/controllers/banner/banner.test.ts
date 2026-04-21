@@ -27,9 +27,11 @@ const prepareTest = async () => {
       address: ZeroAddress,
       hasKeys: true,
       numberOfTransactions: 10,
-      totalUsdBalance: 10
+      totalUsdBalance: 10,
+      isBalanceReady: true
     }),
-    surveyCtrl
+    surveyCtrl,
+    '1.0.0'
   )
   await bannersCtrl.initialLoadPromise
 
