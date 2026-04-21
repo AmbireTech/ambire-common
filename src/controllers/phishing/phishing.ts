@@ -115,7 +115,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #continuouslyUpdatePhishing() {
     // This prevents redundant requests to the relayer
     // when the extension reloads multiple times within a short period.
-    if (this.#updatedAt && this.#updatedAt < PHISHING_UPDATE_INTERVAL) return
+    if (this.#updatedAt && Date.now() - this.#updatedAt < PHISHING_UPDATE_INTERVAL) return
 
     // version=0 means no local snapshot yet -> fetch full data.
     // version>0 means we have a checkpoint -> fetch only the delta since that version.
