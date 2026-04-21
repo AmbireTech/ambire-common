@@ -1,5 +1,5 @@
 /* eslint-disable class-methods-use-this */
-import { Interface } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
@@ -216,5 +216,9 @@ export class EOA7702 extends BaseAccount {
 
   canBroadcastByOtherEOA(): boolean {
     return false
+  }
+
+  canSetCustomGasPrices(feeOption: FeePaymentOption): boolean {
+    return feeOption.token.address === ZeroAddress
   }
 }
