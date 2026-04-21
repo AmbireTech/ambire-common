@@ -24,7 +24,7 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
-import { getAmountAfterFeeReserve, getSanitizedAmount } from '../../libs/transfer/amount'
+import { getAmountAfterFeeSync, getSanitizedAmount } from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
   validateSendTransferAddress,
@@ -795,33 +795,26 @@ export class TransferController extends EventEmitter implements ITransferControl
     )
   }
 
-  #syncMaxAmountWithFeeReservation(forceEmit?: boolean) {
-    if (
-      !this.#isMaxAmountSelected ||
-      !this.selectedToken ||
-      typeof this.selectedToken.decimals !== 'number'
-    )
+  #syncAmountWithFeeReservation(forceEmit?: boolean) {
+    if (!this.amount || !this.selectedToken || typeof this.selectedToken.decimals !== 'number')
       return false
 
-    if (!this.#shouldReserveFeeFromTransferredToken()) return
-
     const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const shouldReserveFee = this.#shouldReserveFeeFromTransferredToken()
     const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
-
-    // this.#shouldReserveFeeFromTransferredToken() makes sure gasFeePayment
-    // is set. However, typescript doesn't know that. Also, this is a precaution
-    // if this.#shouldReserveFeeFromTransferredToken()'s implementation changes
-    // and doesn't look at the gasFeePayment anymore
-    const desiredAmount = gasFeePayment
-      ? getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount)
-      : totalTokenAmount
-
     const currentAmount = this.amount
       ? parseUnits(
           getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
           this.selectedToken.decimals
         )
       : 0n
+    const desiredAmount = getAmountAfterFeeSync({
+      currentAmount,
+      totalAmount: totalTokenAmount,
+      fee: shouldReserveFee ? gasFeePayment?.amount || 0n : 0n,
+      shouldReserveFee,
+      isMaxAmountSelected: this.#isMaxAmountSelected
+    })
 
     if (currentAmount === desiredAmount) return false
 
@@ -995,9 +988,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.signAccountOpController.onUpdate((forceEmit) => {
-      const hasAdjustedMaxAmount = this.#syncMaxAmountWithFeeReservation(forceEmit)
+      const hasAdjustedAmount = this.#syncAmountWithFeeReservation(forceEmit)
 
-      if (!hasAdjustedMaxAmount) {
+      if (!hasAdjustedAmount) {
         this.propagateUpdate(forceEmit)
       }
 
