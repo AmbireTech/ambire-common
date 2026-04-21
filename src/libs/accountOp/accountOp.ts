@@ -51,6 +51,8 @@ export interface AccountOp {
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
+  // the EOA nonce used for raw transaction broadcast, if applicable
+  eoaNonce?: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   // the feeCall is an extra call we add manually when there's a
@@ -94,6 +96,9 @@ export interface AccountOp {
       nativePrice: number
       fromTokenPriceInUsd: number
       fromTokenDecimals: number
+    }
+    speedUp?: {
+      enabled: boolean
     }
   }
   flags?: {

@@ -424,6 +424,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#setSpeedUpGasPrices()
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
@@ -502,6 +503,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.#accountOp
   }
 
+  get isSpeedUpTransaction(): boolean {
+    return !!this.#accountOp.meta?.speedUp?.enabled
+  }
+
   #updateAccountOp(accountOp: Partial<AccountOp>) {
     if (!Object.keys(accountOp).length) return
 
@@ -512,6 +517,47 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
+  }
+
+  #syncSpeedUpFeeSelectionFromEstimation() {
+    if (
+      !this.isSpeedUpTransaction ||
+      this.estimation.status !== EstimationStatus.Success ||
+      !this.accountOp.gasFeePayment
+    ) {
+      return
+    }
+
+    const selectedOption = this.estimation.availableFeeOptions.find(
+      (option) =>
+        option.paidBy === this.accountOp.gasFeePayment?.paidBy &&
+        option.token.address === this.accountOp.gasFeePayment?.inToken &&
+        (!this.accountOp.gasFeePayment?.feeTokenChainId ||
+          option.token.chainId === this.accountOp.gasFeePayment?.feeTokenChainId) &&
+        option.token.flags.onGasTank === this.accountOp.gasFeePayment?.isGasTank
+    )
+
+    if (!selectedOption) return
+
+    this.#paidBy = selectedOption.paidBy
+    this.feeTokenResult = selectedOption.token
+    this.selectedOption = selectedOption
+  }
+
+  #setSpeedUpGasPrices() {
+    const gasFeePayment = this.accountOp.gasFeePayment
+    if (!this.isSpeedUpTransaction || !gasFeePayment) return
+
+    const maxFeePerGas = toBeHex(gasFeePayment.gasPrice) as Hex
+    const maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas || 0n) as Hex
+
+    this.gasPrices = {
+      slow: { maxFeePerGas, maxPriorityFeePerGas },
+      medium: { maxFeePerGas, maxPriorityFeePerGas },
+      fast: { maxFeePerGas, maxPriorityFeePerGas },
+      ape: { maxFeePerGas, maxPriorityFeePerGas }
+    }
+    this.hasCustomGasPrices = true
   }
 
   async #getDefaultSigner() {
@@ -1194,6 +1240,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOpData
   }: SignAccountOpUpdateProps) {
     try {
+      const isSpeedUpTransaction = this.isSpeedUpTransaction
+
       // This must be at the top, otherwise it won't be updated because
       // most updates are frozen during the signing process
       if (typeof signedTransactionsCount !== 'undefined') {
@@ -1228,7 +1276,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
 
         const estimation = this.estimation.estimation as FullEstimationSummary
-        if (estimation.ambireEstimation) {
+        if (estimation.ambireEstimation && !isSpeedUpTransaction) {
           this.#updateAccountOp({
             nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
           })
@@ -1266,7 +1314,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
       }
 
-      if (accountOpData) {
+      if (accountOpData && !isSpeedUpTransaction) {
         const { calls, signature, ...rest } = accountOpData
 
         if (signature && this.accountOp.txnId) {
@@ -1337,7 +1385,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.gasPrices = gasPrices
       }
 
-      if (feeToken && paidBy) {
+      this.#syncSpeedUpFeeSelectionFromEstimation()
+
+      if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
 
@@ -1348,11 +1398,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
       }
 
-      if (speed && this.isInitialized) {
+      if (speed && this.isInitialized && !isSpeedUpTransaction) {
         this.selectedFeeSpeed = speed
       }
 
-      if (signingKeyAddr && signingKeyType && this.isInitialized) {
+      if (signingKeyAddr && signingKeyType && this.isInitialized && !isSpeedUpTransaction) {
         this.#updateAccountOp({ signingKeyAddr, signingKeyType })
 
         // If the fee is paid by the signer, then we should set the fee payer
@@ -1365,6 +1415,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       // Set defaults, if some of the optional params are omitted
       this.#setDefaults()
+      if (isSpeedUpTransaction) this.#syncSpeedUpFeeSelectionFromEstimation()
 
       if (
         this.estimation.status === EstimationStatus.Success &&
@@ -2607,23 +2658,24 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
-
-        // fetch the nonce if needed
-        const nonce = await this.baseAccount.getBroadcastNonce(
-          this.#activity,
-          this.accountOp,
-          this.provider
-        )
-        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
-
-        this.#updateAccountOp({
-          signature: await getExecuteSignature(
-            this.#network,
+        if (!this.isSpeedUpTransaction) {
+          // fetch the nonce if needed
+          const nonce = await this.baseAccount.getBroadcastNonce(
+            this.#activity,
             this.accountOp,
-            accountState,
-            await this.#getDefaultSigner()
+            this.provider
           )
-        })
+          if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+
+          this.#updateAccountOp({
+            signature: await getExecuteSignature(
+              this.#network,
+              this.accountOp,
+              accountState,
+              await this.#getDefaultSigner()
+            )
+          })
+        }
       } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
         // a delegation request has been made
         if (!this.accountOp.meta) {
@@ -2912,10 +2964,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
           ? accountOp.gasFeePayment.paidBy
           : accountOp.accountAddr
-      const nonce = await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+      const senderNonce =
+        accountOp.eoaNonce !== null && typeof accountOp.eoaNonce !== 'undefined'
+          ? Number(accountOp.eoaNonce)
+          : await this.provider.getTransactionCount(senderAddr).catch((e) => e)
 
       // @precaution
-      if (nonce instanceof Error) {
+      if (senderNonce instanceof Error) {
         return this.throwBroadcastAccountOp({
           message: 'RPC error. Please try again',
           accountState
@@ -2941,9 +2996,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const txnLength = this.baseAccount.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
+        this.#updateAccountOp({ eoaNonce: BigInt(senderNonce) })
         if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
-          const currentNonce = nonce + i
+          const currentNonce = senderNonce + i
           const rawTxn = await buildRawTransaction(
             account,
             accountOp,
@@ -2988,7 +3044,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           nonce:
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
               ? Number(accountOp.nonce)
-              : nonce,
+              : senderNonce,
           identifiedBy: {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
@@ -3007,7 +3063,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // allow the user to retry in this case
         if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
           transactionRes = {
-            nonce,
+            nonce: senderNonce,
             identifiedBy: {
               type: 'MultipleTxns',
               identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
@@ -3116,6 +3172,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
+      eoaNonce: this.accountOp.eoaNonce,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
       txnId: transactionRes.txnId,
       nonce: BigInt(transactionRes.nonce),
@@ -3236,10 +3293,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (originalMessage) {
       if (originalMessage.includes('replacement fee too low')) {
-        message =
-          'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
-        isReplacementFeeLow = true
-        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        // if custom gas prices have been set, show the original error
+        if (!this.hasCustomGasPrices) {
+          message =
+            'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
+          isReplacementFeeLow = true
+          this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        }
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = accountState?.isV2
           ? 'Broadcast failed because of a pending transaction. Please try again'
