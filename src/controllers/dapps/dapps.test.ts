@@ -59,7 +59,7 @@ const prepareTest = async (
 
   await controller.initialLoadPromise
 
-  return { controller }
+  return { controller, mainCtrl }
 }
 
 describe('DappsController', () => {
@@ -188,7 +188,7 @@ describe('DappsController', () => {
     })
     await controller.initialLoadPromise
 
-    controller.setDappToConnectIfNeeded(DAPP_CONNECT_REQUEST)
+    void controller.setDappToConnectIfNeeded(DAPP_CONNECT_REQUEST)
 
     await new Promise((resolve) => {
       let emitCounter = 0
@@ -207,5 +207,57 @@ describe('DappsController', () => {
         emitCounter++
       })
     })
+  })
+
+  test('should sync dapps blacklisted status only when phishing.shouldSyncDapps is true', async () => {
+    const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', [
+        {
+          id: 'test-dapp.com',
+          name: 'Test dapp',
+          description: '',
+          url: 'https://test-dapp.com',
+          icon: null,
+          category: null,
+          tvl: null,
+          twitter: null,
+          geckoId: null,
+          chainIds: [1],
+          isConnected: false,
+          isFeatured: false,
+          isCustom: true,
+          chainId: 1,
+          favorite: false,
+          blacklisted: 'VERIFIED'
+        }
+      ])
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+
+    await controller.fetchAndUpdatePromise
+
+    const dappBefore = controller.getDapp('test-dapp.com')
+    expect(dappBefore?.blacklisted).toBe('VERIFIED')
+
+    const shouldSyncSpy = jest
+      .spyOn(mainCtrl.phishing, 'shouldSyncDapps', 'get')
+      .mockReturnValue(false)
+    const getDomainStatusSpy = jest.spyOn(mainCtrl.phishing, 'getDomainBlacklistedStatus')
+    const resetShouldSyncSpy = jest.spyOn(mainCtrl.phishing, 'resetShouldSyncDapps')
+
+    ;(mainCtrl.phishing as any).emitUpdate()
+
+    expect(controller.getDapp('test-dapp.com')?.blacklisted).toBe('VERIFIED')
+    expect(getDomainStatusSpy).not.toHaveBeenCalled()
+    expect(resetShouldSyncSpy).not.toHaveBeenCalled()
+
+    shouldSyncSpy.mockReturnValue(true)
+    getDomainStatusSpy.mockImplementation((url: string) =>
+      url === 'https://test-dapp.com' ? 'BLACKLISTED' : undefined
+    )
+    ;(mainCtrl.phishing as any).emitUpdate()
+
+    expect(controller.getDapp('test-dapp.com')?.blacklisted).toBe('BLACKLISTED')
+    expect(resetShouldSyncSpy).toHaveBeenCalledTimes(1)
   })
 })
