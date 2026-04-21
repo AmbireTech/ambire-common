@@ -64,6 +64,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   async #load() {
     const surveysRespondedTo: string[] = await this.#storage.get(ANSWERED_SURVEYS_STORAGE_KEY, [])
     this.#surveysRespondedTo = surveysRespondedTo
+    this.emitUpdate()
   }
 
   get isReady() {
