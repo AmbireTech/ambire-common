@@ -5,7 +5,7 @@ import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -46,6 +46,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #providers: IProvidersController | null = null
 
+  #banner: IBannerController | null = null
+
   account: Account | null = null
 
   /**
@@ -78,18 +80,21 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     eventEmitterRegistry,
     storage,
     accounts,
-    autoLogin
+    autoLogin,
+    banner
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
     autoLogin: IAutoLoginController
+    banner: IBannerController
   }) {
     super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts
     this.#autoLogin = autoLogin
+    this.#banner = banner
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -331,6 +336,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
 
     this.portfolio = newSelectedAccountPortfolio
+    if (newSelectedAccountPortfolio.isAllReady) {
+      // since we will have survey banner that are dependant on account balance
+      // we need to make sure that the banners are updated are displayed after the balance is
+      // fully loaded, if the balance satisfies the banners requirements
+      this.#banner?.emitUpdateBanners()
+    }
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {

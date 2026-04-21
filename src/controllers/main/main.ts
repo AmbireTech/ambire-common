@@ -304,12 +304,6 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       accounts: this.accounts
     })
-    this.selectedAccount = new SelectedAccountController({
-      eventEmitterRegistry,
-      storage: this.storage,
-      accounts: this.accounts,
-      autoLogin: this.autoLogin
-    })
 
     this.survey = new SurveyController({
       fetch: this.fetch,
@@ -339,12 +333,20 @@ export class MainController extends EventEmitter implements IMainController {
           numberOfTransactions,
           totalUsdBalance,
           hasKeys,
-          address: currentSelectedAcc.addr
+          address: currentSelectedAcc.addr,
+          isBalanceReady: this.selectedAccount.portfolio.isAllReady
         }
       },
       this.survey,
       eventEmitterRegistry
     )
+    this.selectedAccount = new SelectedAccountController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      accounts: this.accounts,
+      autoLogin: this.autoLogin,
+      banner: this.banner
+    })
 
     this.portfolio = new PortfolioController(
       this.storage,
@@ -739,7 +741,6 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    this.banner.emitUpdateBanners()
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true })
