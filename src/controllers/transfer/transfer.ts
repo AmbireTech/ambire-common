@@ -786,7 +786,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       !!accountAddr &&
       !!gasFeePayment &&
       !!selectedFeeOption &&
-      !selectedFeeOption.token.flags.onGasTank &&
       selectedFeeOption.paidBy.toLowerCase() === accountAddr &&
       selectedFeeOption.token.chainId === selectedToken.chainId &&
       selectedFeeOption.token.address.toLowerCase() === selectedTokenAddress &&

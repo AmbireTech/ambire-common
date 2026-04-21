@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption } from '../estimate/interfaces'
-import { isTransferredTokenFeeOption } from './feeOptions'
+import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from './feeOptions'
 
 const ERC20Interface = new Interface(IERC20.abi)
 
@@ -170,5 +170,67 @@ describe('account fee options', () => {
     } as FeePaymentOption
 
     expect(isTransferredTokenFeeOption(feeOption, op)).toBe(false)
+  })
+
+  test('should allow the transferred token to cover the fee even when availableAmount is zero', () => {
+    const op = {
+      accountAddr: '0x1111111111111111111111111111111111111111',
+      meta: {
+        allowTransferFeeTokenSelfReserve: true
+      },
+      calls: [
+        {
+          to: '0x3333333333333333333333333333333333333333',
+          value: 15_000_000_000_000_000n,
+          data: '0x'
+        }
+      ]
+    } as AccountOp
+
+    const feeOption = {
+      paidBy: op.accountAddr,
+      availableAmount: 0n,
+      gasUsed: 0n,
+      addedNative: 0n,
+      token: {
+        address: ZeroAddress,
+        flags: {
+          onGasTank: false
+        }
+      }
+    } as FeePaymentOption
+
+    expect(canFeeOptionCoverAmount(feeOption, op, 1n)).toBe(true)
+  })
+
+  test('should not allow unrelated zero-balance fee options to cover the fee', () => {
+    const op = {
+      accountAddr: '0x1111111111111111111111111111111111111111',
+      meta: {
+        allowTransferFeeTokenSelfReserve: true
+      },
+      calls: [
+        {
+          to: '0x3333333333333333333333333333333333333333',
+          value: 15_000_000_000_000_000n,
+          data: '0x'
+        }
+      ]
+    } as AccountOp
+
+    const feeOption = {
+      paidBy: op.accountAddr,
+      availableAmount: 0n,
+      gasUsed: 0n,
+      addedNative: 0n,
+      token: {
+        address: '0x4444444444444444444444444444444444444444',
+        flags: {
+          onGasTank: false
+        }
+      }
+    } as FeePaymentOption
+
+    expect(canFeeOptionCoverAmount(feeOption, op, 1n)).toBe(false)
   })
 })

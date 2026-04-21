@@ -31,4 +31,12 @@ const isTransferredTokenFeeOption = (feeOption: FeePaymentOption, op: AccountOp)
   })
 }
 
-export { isTransferredTokenFeeOption }
+const canFeeOptionCoverAmount = (
+  feeOption: FeePaymentOption,
+  op: AccountOp,
+  amount: bigint
+): boolean => {
+  return feeOption.availableAmount >= amount || isTransferredTokenFeeOption(feeOption, op)
+}
+
+export { canFeeOptionCoverAmount, isTransferredTokenFeeOption }

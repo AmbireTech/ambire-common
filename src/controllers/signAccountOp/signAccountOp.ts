@@ -150,7 +150,7 @@ import {
   getUnknownTokenWarning,
   SignAccountOpType
 } from './helper'
-import { isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
+import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -1582,12 +1582,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const aId = getFeeSpeedIdentifier(a, this.accountOp.accountAddr)
     const aSlow = this.feeSpeeds[aId]?.find((speed) => speed.type === 'slow')
     if (!aSlow) return 1
-    const aCanCoverFee = a.availableAmount >= aSlow.amount
+    const aCanCoverFee = canFeeOptionCoverAmount(a, this.accountOp, aSlow.amount)
 
     const bId = getFeeSpeedIdentifier(b, this.accountOp.accountAddr)
     const bSlow = this.feeSpeeds[bId]?.find((speed) => speed.type === 'slow')
     if (!bSlow) return -1
-    const bCanCoverFee = b.availableAmount >= bSlow.amount
+    const bCanCoverFee = canFeeOptionCoverAmount(b, this.accountOp, bSlow.amount)
 
     if (aCanCoverFee && !bCanCoverFee) return -1
     if (!aCanCoverFee && bCanCoverFee) return 1
