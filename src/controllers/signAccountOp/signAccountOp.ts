@@ -1802,6 +1802,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       const stateOverride = getStateOverride(this.account, this.accountOp, state)
       const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
+      let accessListFailed = false
 
       if (shouldUseAccessList) {
         console.log('Debug: using eth_createAccessList for asset discovery')
@@ -1810,10 +1811,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.accountOp,
           this.#network,
           state
-        )
-        erc20s = addresses
-        erc721s = addresses.map((address) => [address, []])
-      } else {
+        ).catch((e) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Error in signAccountOp.traceCall',
+            error: e
+          })
+          accessListFailed = true
+          return null
+        })
+        if (addresses) {
+          erc20s = addresses
+          erc721s = addresses.map((address) => [address, []])
+        }
+      }
+      if (!shouldUseAccessList || accessListFailed) {
         console.log('Debug: using debug_traceCall for asset discovery')
         const { tokens, nfts } = await debugTraceCall(
           this.baseAccount,
@@ -2617,28 +2629,32 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
           : [this.accountOp.signingKeyAddr]
 
-        if (!prevSignedSigs.length) {
-          // propose the txn to Safe Global upon first entry
-          await propose(
-            safeTxn,
-            this.accountOp.chainId,
-            this.account.addr as Hex,
-            this.#accountOp.signingKeyAddr as Hex,
-            signature,
-            safeTxnHash
-          ).catch((e) => {
-            this.hasSafeApiFailed = true
-            console.log('Safe API: failed to propose txn', e)
-          })
-        } else {
-          // add extra confirmations
-          await confirm(this.accountOp.chainId, signature, safeTxnHash).catch((e) => {
-            this.hasSafeApiFailed = true
-            console.log('Safe API: faield to confirm txn', e)
-          })
+        const isQuickBroadcast = this.threshold === 1 && this.accountKeyStoreKeys.length === 1
+        if (!isQuickBroadcast) {
+          if (!prevSignedSigs.length) {
+            // propose the txn to Safe Global upon first entry
+            await propose(
+              safeTxn,
+              this.accountOp.chainId,
+              this.account.addr as Hex,
+              this.#accountOp.signingKeyAddr as Hex,
+              signature,
+              safeTxnHash
+            ).catch((e) => {
+              this.hasSafeApiFailed = true
+              console.log('Safe API: failed to propose txn', e)
+            })
+          } else {
+            // add extra confirmations
+            await confirm(this.accountOp.chainId, signature, safeTxnHash).catch((e) => {
+              this.hasSafeApiFailed = true
+              console.log('Safe API: faield to confirm txn', e)
+            })
+          }
+
+          this.status = { type: SigningStatus.Queued }
         }
 
-        this.status = { type: SigningStatus.Queued }
         this.#updateAccountOp({
           signature: sortSigs(
             prevSignedSigs.concat(nowSignedSigs),
@@ -3467,6 +3483,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+
+    // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
+    if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true
 
     return (this.accountOp.signed || []).length >= this.threshold
   }

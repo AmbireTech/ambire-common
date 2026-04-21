@@ -339,15 +339,17 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
 
-          if (!!this.#account.safeCreation && signed.hash) {
-            this.hash = signed.hash
-            if (this.signed.length === 1) {
-              await this.addMsgToSafeGlobal(
-                signed.signature,
-                toUtf8String(this.messageToSign.content.message)
-              )
-            } else {
-              await this.addSigToSafeGlobal(signed.signature, signed.hash)
+          if (accountState.threshold > 1) {
+            if (!!this.#account.safeCreation && signed.hash) {
+              this.hash = signed.hash
+              if (this.signed.length === 1) {
+                await this.addMsgToSafeGlobal(
+                  signed.signature,
+                  toUtf8String(this.messageToSign.content.message)
+                )
+              } else {
+                await this.addSigToSafeGlobal(signed.signature, signed.hash)
+              }
             }
           }
 
@@ -378,15 +380,17 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
 
-          if (!!this.#account.safeCreation && signed.hash) {
-            this.hash = signed.hash
-            if (this.signed.length === 1) {
-              await this.addMsgToSafeGlobal(
-                signed.signature,
-                this.messageToSign.content.message as EIP712TypedData
-              )
-            } else {
-              await this.addSigToSafeGlobal(signed.signature, signed.hash)
+          if (accountState.threshold > 1) {
+            if (!!this.#account.safeCreation && signed.hash) {
+              this.hash = signed.hash
+              if (this.signed.length === 1) {
+                await this.addMsgToSafeGlobal(
+                  signed.signature,
+                  this.messageToSign.content.message as EIP712TypedData
+                )
+              } else {
+                await this.addSigToSafeGlobal(signed.signature, signed.hash)
+              }
             }
           }
 
