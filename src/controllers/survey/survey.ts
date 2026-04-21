@@ -78,7 +78,6 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     return this.#surveysRespondedTo.includes(surveyId)
   }
 
-  // TODO: should we refactor the controller?
   async fetchSurvey(surveyId: Survey['surveyId'], dismissBanner?: () => void) {
     this.status = 'loading-fetching'
     this.emitUpdate()
