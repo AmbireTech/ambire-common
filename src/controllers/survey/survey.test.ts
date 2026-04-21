@@ -1,4 +1,5 @@
 import { Survey } from '@/interfaces/survey'
+import { getNextQuestionForAnswers } from '@/utils/survey'
 import { expect } from '@jest/globals'
 import { produceMemoryStore } from '@test/helpers'
 import { mockUiManager } from '@test/helpers/ui'
@@ -150,10 +151,7 @@ describe('SurveyController', () => {
       'address'
     )
     expect(
-      SurveyController.getNextQuestionForAnswers(
-        surveyController.questions!,
-        surveyController.answers
-      )
+      getNextQuestionForAnswers(surveyController.questions!, surveyController.answers)
     ).toMatchObject(surveys['happy-case']?.questions[1]!)
 
     let hadLoadingSend
