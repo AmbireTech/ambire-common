@@ -1,5 +1,6 @@
 import { EIP712TypedData } from '@safe-global/types-kit'
 
+import { AccountOp } from '../libs/accountOp/accountOp'
 import { TokenResult } from '../libs/portfolio'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
@@ -30,6 +31,7 @@ export type BuildRequest =
         userRequestParams: {
           calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
           meta: CallsUserRequest['meta']
+          accountOp?: AccountOp
         }
         position?: RequestPosition
         executionType?: RequestExecutionType

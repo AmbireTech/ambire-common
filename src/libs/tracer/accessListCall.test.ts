@@ -1,18 +1,16 @@
 import { concat, getAddress, getBytes, Interface, solidityPacked } from 'ethers'
 
+import { DEPLOYLESS_SIMULATION_FROM } from '@/consts/deploy'
 import { networks } from '@/consts/networks'
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 
 import SafeContract from '../../../contracts/compiled/Safe.json'
-import { ProviderError } from '../../classes/ProviderError'
 import { multiSendAddr, safeSimulateTxAccessor } from '../../consts/safe'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { getRpcProvider } from '../../services/provider'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
-  createAccessListCall,
   getSafeAccessListCallParams,
   getShouldUseAccessListCall,
   getSimulateTxnAccessor,
@@ -206,7 +204,7 @@ describe('accessListCall helpers', () => {
 
       const params = getSafeAccessListCallParams(baseAcc, op, state)
       expect(params).toBeTruthy()
-      expect(params).toMatchObject({ to: account.addr, from: account.addr, value: 0 })
+      expect(params).toMatchObject({ to: account.addr, from: DEPLOYLESS_SIMULATION_FROM, value: 0 })
 
       const decodedOuter = safeIface.decodeFunctionData('simulateAndRevert', params!.data)
       expect(decodedOuter[0]).toBe(safeSimulateTxAccessor['v1.4.1'])
