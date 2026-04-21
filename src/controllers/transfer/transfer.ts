@@ -435,12 +435,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get maxAmount(): string {
-    if (
-      !this.selectedToken ||
-      getTokenAmount(this.selectedToken) === 0n ||
-      typeof this.selectedToken.decimals !== 'number'
-    )
-      return '0'
+    if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n) return '0'
 
     return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals)
   }
@@ -775,6 +770,31 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = amountFieldMode
   }
 
+  #shouldReserveFeeFromTransferredToken() {
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const selectedFeeOption = this.signAccountOpController?.selectedOption
+    const selectedToken = this.selectedToken
+    const accountAddr = this.#selectedAccount.account?.addr.toLowerCase()
+
+    if (!accountAddr || !gasFeePayment || !selectedFeeOption || !selectedToken) return false
+    if (selectedFeeOption.token.flags.onGasTank) return false
+    if (selectedFeeOption.paidBy.toLowerCase() !== accountAddr) return false
+
+    const selectedTokenAddress = selectedToken.address.toLowerCase()
+
+    return (
+      !!accountAddr &&
+      !!gasFeePayment &&
+      !!selectedFeeOption &&
+      !selectedFeeOption.token.flags.onGasTank &&
+      selectedFeeOption.paidBy.toLowerCase() === accountAddr &&
+      selectedFeeOption.token.chainId === selectedToken.chainId &&
+      selectedFeeOption.token.address.toLowerCase() === selectedTokenAddress &&
+      gasFeePayment.inToken.toLowerCase() === selectedTokenAddress &&
+      (!gasFeePayment.feeTokenChainId || gasFeePayment.feeTokenChainId === selectedToken.chainId)
+    )
+  }
+
   #syncMaxAmountWithFeeReservation(forceEmit?: boolean) {
     if (
       !this.#isMaxAmountSelected ||
@@ -783,24 +803,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     )
       return false
 
+    if (!this.#shouldReserveFeeFromTransferredToken()) return
+
     const totalTokenAmount = getTokenAmount(this.selectedToken)
     const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
-    const selectedFeeOption = this.signAccountOpController?.selectedOption
-    const accountAddr = this.#selectedAccount.account?.addr.toLowerCase()
 
-    const shouldReserveFeeFromTransferredToken =
-      !!accountAddr &&
-      !!gasFeePayment &&
-      !!selectedFeeOption &&
-      !selectedFeeOption.token.flags.onGasTank &&
-      selectedFeeOption.paidBy.toLowerCase() === accountAddr &&
-      selectedFeeOption.token.chainId === this.selectedToken.chainId &&
-      selectedFeeOption.token.address.toLowerCase() === this.selectedToken.address.toLowerCase() &&
-      gasFeePayment.inToken.toLowerCase() === this.selectedToken.address.toLowerCase() &&
-      (!gasFeePayment.feeTokenChainId ||
-        gasFeePayment.feeTokenChainId === this.selectedToken.chainId)
-
-    const desiredAmount = shouldReserveFeeFromTransferredToken
+    // this.#shouldReserveFeeFromTransferredToken() makes sure gasFeePayment
+    // is set. However, typescript doesn't know that. Also, this is a precaution
+    // if this.#shouldReserveFeeFromTransferredToken()'s implementation changes
+    // and doesn't look at the gasFeePayment anymore
+    const desiredAmount = gasFeePayment
       ? getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount)
       : totalTokenAmount
 
