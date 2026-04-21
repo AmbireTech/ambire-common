@@ -338,6 +338,7 @@ export class MainController extends EventEmitter implements IMainController {
         }
       },
       this.survey,
+      this.#appVersion,
       eventEmitterRegistry
     )
     this.selectedAccount = new SelectedAccountController({

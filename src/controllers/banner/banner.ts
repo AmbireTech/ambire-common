@@ -1,12 +1,9 @@
 import { ISurveyController } from '@/interfaces/survey'
 
-import pkg from '../../../package.json'
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-const currentCommonVersion = pkg.version
 
 export type AccountData =
   | {
@@ -29,6 +26,8 @@ export class BannerController extends EventEmitter implements IBannerController 
 
   #survey: ISurveyController
 
+  #appVersion: string
+
   #getAccountData: () => AccountData
 
   // Used for testing
@@ -41,12 +40,14 @@ export class BannerController extends EventEmitter implements IBannerController 
     storage: IStorageController,
     getAccountData: () => AccountData,
     survey: ISurveyController,
+    appVersion: string,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
     this.#survey = survey
     this.#getAccountData = getAccountData
+    this.#appVersion = appVersion
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -93,7 +94,7 @@ export class BannerController extends EventEmitter implements IBannerController 
       return false
     if (minTxnsTotal && accData.numberOfTransactions < minTxnsTotal) return false
     if (maxTxnsTotal && accData.numberOfTransactions > maxTxnsTotal) return false
-    if (minCommonVersion && currentCommonVersion < minCommonVersion) return false
+    if (minCommonVersion && this.#appVersion < minCommonVersion) return false
     if (!this.#survey.isReady) return false
 
     if (this.#survey.isSurveyAnswered(action.meta.surveyId)) return false
