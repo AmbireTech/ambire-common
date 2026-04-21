@@ -829,6 +829,37 @@ export class TransferController extends EventEmitter implements ITransferControl
     return true
   }
 
+  /**
+   * When doing a MAX transfer or a close to MAX transfer out,
+   * if the selected fee token is the same as the transfer token,
+   * we automatically adjust the transfer amount so the user
+   * can successfully broadcast. For that, we put an additional
+   * warning telling him why this is happening
+   */
+  get amountAdjustmentWarning(): Validation | null {
+    if (!this.amount || !this.selectedToken || !this.#shouldReserveFeeFromTransferredToken()) {
+      return null
+    }
+
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    if (!gasFeePayment) return null
+
+    const currentAmount = parseUnits(
+      getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
+      this.selectedToken.decimals
+    )
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+
+    if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
+      return {
+        severity: 'warning',
+        message: 'Amount adjusted to cover blockchain fees'
+      }
+    }
+
+    return null
+  }
+
   get hasPersistedState() {
     return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
   }
@@ -1089,7 +1120,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       maxAmountInFiat: this.maxAmountInFiat,
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
       hasPersistedState: this.hasPersistedState,
-      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly
+      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
+      amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }
 }
