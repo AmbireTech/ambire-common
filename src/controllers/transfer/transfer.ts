@@ -24,7 +24,11 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
-import { getAmountAfterFeeSync, getSanitizedAmount } from '../../libs/transfer/amount'
+import {
+  getAmountAfterFeeReserve,
+  getAmountAfterFeeSync,
+  getSanitizedAmount
+} from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
   validateSendTransferAddress,
@@ -594,7 +598,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (shouldSetMaxAmount) {
       this.#isMaxAmountSelected = true
       this.amountFieldMode = 'token'
-      this.#setTokenAmount(this.maxAmount, true)
+      this.#setTokenAmount(this.#getMaxAmountAfterFeeReservation(), true)
     }
 
     if (addressState) {
@@ -768,6 +772,22 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = 'token'
     this.#setAmount(amount, isProgrammaticUpdate)
     this.amountFieldMode = amountFieldMode
+  }
+
+  #getMaxAmountAfterFeeReservation() {
+    if (!this.selectedToken) return this.maxAmount
+
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+
+    if (!this.#shouldReserveFeeFromTransferredToken() || !gasFeePayment) {
+      return formatUnits(totalTokenAmount, this.selectedToken.decimals)
+    }
+
+    return formatUnits(
+      getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount),
+      this.selectedToken.decimals
+    )
   }
 
   #shouldReserveFeeFromTransferredToken() {
