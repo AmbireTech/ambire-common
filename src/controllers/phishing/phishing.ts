@@ -31,6 +31,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #addresses = new Set<string>()
 
+  // Local versioning, used for requesting incremental phishing list updates.
   #version: number = 0
 
   #updatedAt: number | null = null
@@ -106,6 +107,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // when the extension reloads multiple times within a short period.
     if (this.#updatedAt && this.#updatedAt < PHISHING_UPDATE_INTERVAL) return
 
+    // version=0 means no local snapshot yet -> fetch full data.
+    // version>0 means we have a checkpoint -> fetch only the delta since that version.
     const res = await fetchWithTimeout(
       this.#fetch,
       this.#version
@@ -122,6 +125,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const phishing = await res.json()
 
     if (this.#version) {
+      // Incremental update: apply add/remove operations on top of local sets.
       this.#version = phishing.toVersion || 0
       ;(phishing.domains || []).forEach(
         ({ op, domain }: { op: 'add' | 'remove'; domain: string }) => {
@@ -136,6 +140,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         }
       )
     } else {
+      // Initial/full update: replace local sets with the server snapshot.
       this.#version = phishing.version || 0
       this.#domains = new Set(phishing.domains || [])
       this.#addresses = new Set(phishing.addresses || [])
@@ -244,8 +249,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         !domainsBlacklistedStatus || domainsBlacklistedStatus[dappId] === undefined
           ? 'FAILED_TO_GET'
           : domainsBlacklistedStatus[dappId]
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
+            ? 'BLACKLISTED'
+            : 'VERIFIED'
       )
     })
 
@@ -366,8 +371,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         !addressesBlacklistedStatus || addressesBlacklistedStatus[addr] === undefined
           ? 'FAILED_TO_GET'
           : addressesBlacklistedStatus[addr]
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
+            ? 'BLACKLISTED'
+            : 'VERIFIED'
       )
     })
 
