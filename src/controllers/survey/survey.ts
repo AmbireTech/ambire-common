@@ -21,9 +21,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
 
   #survey?: Survey
 
-  answers: SurveyAnswers = {}
+  #dismissBanner?: () => void
 
-  sourceBannerId?: string | number
+  answers: SurveyAnswers = {}
 
   status:
     | 'not-started'
@@ -78,7 +78,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   }
 
   // TODO: should we refactor the controller?
-  async fetchSurvey(surveyId: Survey['surveyId'], sourceBannerId?: string | number) {
+  async fetchSurvey(surveyId: Survey['surveyId'], dismissBanner?: () => void) {
     this.status = 'loading-fetching'
     this.emitUpdate()
 
@@ -119,7 +119,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitUpdate()
       return
     }
-    if (sourceBannerId) this.sourceBannerId = sourceBannerId
+    if (dismissBanner) this.#dismissBanner = dismissBanner
     this.#survey = parsedSurvey.survey
     this.status = 'success-fetched'
     this.emitUpdate()
@@ -175,7 +175,8 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         this.status = 'success-submitted'
         this.emitUpdate()
         await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
-        this.sourceBannerId = undefined
+        if (this.#dismissBanner) this.#dismissBanner()
+        this.#dismissBanner = undefined
       } catch (e: any) {
         this.emitError({
           message: 'Failed to submit response.',
