@@ -1038,11 +1038,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.signAccountOpController.onUpdate((forceEmit) => {
-      const hasAdjustedAmount = this.#syncAmountWithFeeReservation(forceEmit)
+      this.#syncAmountWithFeeReservation(forceEmit)
 
-      if (!hasAdjustedAmount) {
-        this.propagateUpdate(forceEmit)
-      }
+      this.propagateUpdate(forceEmit)
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         // Reset the form on the next tick so the FE receives the final
