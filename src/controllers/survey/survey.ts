@@ -21,7 +21,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
 
   #survey?: Survey
 
-  #dismissBanner?: () => void
+  #dismissBanner: (bannerId: string | number) => void
+
+  #bannerId?: string | number
 
   answers: SurveyAnswers = {}
 
@@ -41,19 +43,21 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     relayerUrl,
     storage,
     eventEmitterRegistry,
-    ui
+    ui,
+    dismissBanner
   }: {
     fetch: Fetch
     relayerUrl: string
     storage: IStorageController
     ui: IUiController
     eventEmitterRegistry?: IEventEmitterRegistryController
+    dismissBanner: (bannerId: string | number) => void
   }) {
     super(eventEmitterRegistry)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#storage = storage
     this.initialLoadPromise = this.#load().finally(() => (this.initialLoadPromise = undefined))
-
+    this.#dismissBanner = dismissBanner
     ui.uiEvent.on('removeView', () => {
       if (this.status === 'success-submitted') {
         this.clearSurveyState()
@@ -78,7 +82,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     return this.#surveysRespondedTo.includes(surveyId)
   }
 
-  async fetchSurvey(surveyId: Survey['surveyId'], dismissBanner?: () => void) {
+  async fetchSurvey(surveyId: Survey['surveyId'], bannerId: string | number) {
     if (this.status !== 'not-started') return
     this.status = 'loading-fetching'
     this.emitUpdate()
@@ -117,7 +121,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitUpdate()
       return
     }
-    if (dismissBanner) this.#dismissBanner = dismissBanner
+    this.#bannerId = bannerId
     this.#survey = parsedSurvey.survey
     this.status = 'success-fetched'
     this.emitUpdate()
@@ -182,8 +186,8 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.status = 'success-submitted'
       this.emitUpdate()
       await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
-      if (this.#dismissBanner) this.#dismissBanner()
-      this.#dismissBanner = undefined
+      if (this.#bannerId) this.#dismissBanner(this.#bannerId)
+      this.#bannerId = undefined
     } catch (e: any) {
       this.emitError({
         message: 'Failed to submit response.',
@@ -224,6 +228,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     this.answers = {}
     this.#survey = undefined
     this.errorMessage = undefined
+    this.#bannerId = undefined
     this.emitUpdate()
   }
 

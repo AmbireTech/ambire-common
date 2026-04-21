@@ -48,7 +48,7 @@ import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
-import { IBannerController } from '@/interfaces/banner'
+import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDomainsController } from '@/interfaces/domains'
@@ -310,7 +310,11 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       storage: this.storage,
       ui: this.ui,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      dismissBanner: (bannerId: Banner['id']) => {
+        console.log('DEBUG dismissing banner from mainCtrl', bannerId, this.banner)
+        this.banner.dismissBanner(bannerId)
+      }
     })
 
     this.banner = new BannerController(
