@@ -507,6 +507,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
         if (!provider) return
 
         const allOps = this.#accountsOps[accountAddr]![network.chainId.toString()]
+
+        if (!allOps || !allOps.length) return
+
         const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : []
         const opsToUpdate = recentOps.filter(
           (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
