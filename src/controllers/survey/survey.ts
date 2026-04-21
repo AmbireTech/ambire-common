@@ -79,6 +79,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   }
 
   async fetchSurvey(surveyId: Survey['surveyId'], dismissBanner?: () => void) {
+    if (this.status !== 'not-started') return
     this.status = 'loading-fetching'
     this.emitUpdate()
 
