@@ -68,3 +68,10 @@ export interface GetCurrentDappRes {
   ok: boolean
   res: Dapp | null
 }
+
+export interface HasUnverifiedDappsRes {
+  type: string
+  requestId: string
+  ok: boolean
+  res: boolean
+}

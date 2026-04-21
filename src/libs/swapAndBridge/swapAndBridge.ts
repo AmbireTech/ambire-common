@@ -27,7 +27,6 @@ import {
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
-  AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   FEE_PERCENT,
   JPYC_TOKEN,
@@ -515,10 +514,12 @@ const addCustomTokensIfNeeded = ({
     if (shouldAddJPYCToken) newTokens.unshift({ ...JPYC_TOKEN, chainId: 43114 })
   }
   if (chainId === 8453) {
-    const shouldAddAmbireWalletToken = newTokens.every(
-      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
-    )
-    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+    // Disabled (maybe temporarily) as of v2.94.0, because of the decision to remove
+    // $WALLET liquidity on Base and consolidate it into the Ethereum liquidity.
+    //   const shouldAddAmbireWalletToken = newTokens.every(
+    //     (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
+    //   )
+    //   if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
   }
 
   return newTokens
