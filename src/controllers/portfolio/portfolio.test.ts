@@ -2190,6 +2190,34 @@ describe('Portfolio Controller ', () => {
   it('Price cache is updated after portfolio discovery', async () => {
     const { controller } = await prepareTest()
 
+    // Make the test deterministic: we only want to verify that discovery prices
+    // populate the controller cache, not that the external API is reachable.
+    // @ts-ignore
+    controller.batchedPortfolioDiscovery = jest.fn().mockResolvedValue({
+      networkId: '137',
+      chainId: 137,
+      accountAddr: account.addr,
+      erc20s: [],
+      erc721s: {},
+      hasHints: true,
+      prices: {
+        '0x0000000000000000000000000000000000000000': {
+          baseCurrency: 'usd',
+          price: 1,
+          usd_24h_change: 0,
+          usd_market_cap: 1,
+          usd_24h_vol: 1,
+          exchanges: []
+        }
+      },
+      lastUpdate: Date.now(),
+      defi: {
+        positions: [],
+        updatedAt: Date.now()
+      },
+      otherNetworksDefiCounts: {}
+    })
+
     // @ts-ignore
     expect(controller.tokenDataCache['137']).toBe(undefined)
     // @ts-ignore
@@ -2197,7 +2225,8 @@ describe('Portfolio Controller ', () => {
       chainId: 137n,
       account,
       hasKeys: true,
-      baseCurrency: 'usd'
+      baseCurrency: 'usd',
+      externalApiHintsResponse: null
     })
 
     // @ts-ignore
