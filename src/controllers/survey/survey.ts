@@ -142,48 +142,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   }
 
   async #sendResponse(instanceId: string, address: string) {
-    if (this.#survey) {
-      if (!this.answers || !Object.keys(this.answers).length) {
-        this.emitError({
-          error: new Error('Error: this.answers does not exist when attempting to submit answers'),
-          level: 'major',
-          message: 'Failed to submit your answer, please contact support'
-        })
-        this.status = 'error-submitting'
-        this.errorMessage = 'Internal state error: missing answers'
-        this.emitUpdate()
-      }
-
-      try {
-        const payload = {
-          surveyId: this.#survey.surveyId,
-          address: address,
-          instanceId: instanceId,
-          responses: Object.entries(this.answers).map(([questionId, { answer }]) => ({
-            questionId: Number(questionId),
-            answer
-          }))
-        }
-        this.status = 'loading-sending'
-        this.emitUpdate()
-
-        await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
-        this.status = 'success-submitted'
-        this.emitUpdate()
-        await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
-        if (this.#dismissBanner) this.#dismissBanner()
-        this.#dismissBanner = undefined
-      } catch (e: any) {
-        this.emitError({
-          message: 'Failed to submit response.',
-          level: 'major',
-          error: e
-        })
-        this.status = 'error-submitting'
-        this.errorMessage = e.message
-        this.emitUpdate()
-      }
-    } else {
+    if (!this.#survey) {
       this.emitError({
         error: new Error('Error: this.#survey does not exist when attempting to submit answers'),
         level: 'major',
@@ -191,6 +150,48 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       })
       this.status = 'error-submitting'
       this.errorMessage = 'Internal state error: missing survey'
+      this.emitUpdate()
+      return
+    }
+
+    if (!this.answers || !Object.keys(this.answers).length) {
+      this.emitError({
+        error: new Error('Error: this.answers does not exist when attempting to submit answers'),
+        level: 'major',
+        message: 'Failed to submit your answer, please contact support'
+      })
+      this.status = 'error-submitting'
+      this.errorMessage = 'Internal state error: missing answers'
+      this.emitUpdate()
+    }
+
+    try {
+      const payload = {
+        surveyId: this.#survey.surveyId,
+        address: address,
+        instanceId: instanceId,
+        responses: Object.entries(this.answers).map(([questionId, { answer }]) => ({
+          questionId: Number(questionId),
+          answer
+        }))
+      }
+      this.status = 'loading-sending'
+      this.emitUpdate()
+
+      await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
+      this.status = 'success-submitted'
+      this.emitUpdate()
+      await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
+      if (this.#dismissBanner) this.#dismissBanner()
+      this.#dismissBanner = undefined
+    } catch (e: any) {
+      this.emitError({
+        message: 'Failed to submit response.',
+        level: 'major',
+        error: e
+      })
+      this.status = 'error-submitting'
+      this.errorMessage = e.message
       this.emitUpdate()
     }
   }
