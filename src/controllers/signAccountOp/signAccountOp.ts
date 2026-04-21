@@ -3293,10 +3293,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (originalMessage) {
       if (originalMessage.includes('replacement fee too low')) {
-        message =
-          'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
-        isReplacementFeeLow = true
-        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        // if custom gas prices have been set, show the original error
+        if (!this.hasCustomGasPrices) {
+          message =
+            'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
+          isReplacementFeeLow = true
+          this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        }
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = accountState?.isV2
           ? 'Broadcast failed because of a pending transaction. Please try again'
