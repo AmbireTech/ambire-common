@@ -42,8 +42,18 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #updatePhishingInterval: RecurringTimeout
 
+  #shouldSyncDapps: boolean = false
+
   get updatePhishingInterval() {
     return this.#updatePhishingInterval
+  }
+
+  get shouldSyncDapps() {
+    return this.#shouldSyncDapps
+  }
+
+  resetShouldSyncDapps() {
+    this.#shouldSyncDapps = false
   }
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -146,6 +156,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       this.#addresses = new Set(phishing.addresses || [])
     }
 
+    this.#shouldSyncDapps = true
     this.emitUpdate()
 
     await this.#storage.set('phishing', {
@@ -414,6 +425,18 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         level: 'silent'
       })
     }
+  }
+
+  getDomainBlacklistedStatus(url: string): BlacklistedStatus | undefined {
+    const dappId = getDappIdFromUrl(url)
+    if (!dappId) return undefined
+    if (!this.#domains.size) return undefined
+
+    if (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!)) {
+      return 'BLACKLISTED'
+    }
+
+    return 'VERIFIED'
   }
 
   toJSON() {
