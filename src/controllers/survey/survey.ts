@@ -1,6 +1,7 @@
 import { IStorageController } from '@/interfaces/storage'
 import { IUiController } from '@/interfaces/ui'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
+import { getNextQuestionForAnswers } from '@/utils/survey'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -207,10 +208,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
   ) {
     this.answers[questionId] = { questionPosition, answer }
 
-    const hasNextQuestion = !!SurveyController.getNextQuestionForAnswers(
-      this.questions || [],
-      this.answers
-    )
+    const hasNextQuestion = !!getNextQuestionForAnswers(this.questions || [], this.answers)
 
     if (!hasNextQuestion) await this.#sendResponse(instanceId, address)
     this.emitUpdate()
@@ -221,7 +219,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     if (!this.#survey) return
     if (Object.keys(this.answers).length === 0)
       return this.#survey.questions.find((q) => q.questionPosition === 0)
-    return SurveyController.getNextQuestionForAnswers(this.#survey.questions, this.answers)
+    return getNextQuestionForAnswers(this.#survey.questions, this.answers)
   }
 
   clearSurveyState() {
@@ -234,22 +232,6 @@ export class SurveyController extends EventEmitter implements ISurveyController 
 
   get hasPersistentState() {
     return this.status !== 'not-started'
-  }
-
-  static getNextQuestionForAnswers(
-    questions: Survey['questions'],
-    answers: SurveyAnswers
-  ): Survey['questions'][number] | undefined {
-    const positionOfLastAnsweredQuestion = Math.max(
-      ...Object.values(answers).map((a) => Number(a.questionPosition))
-    )
-    const question = questions.find(
-      (q) =>
-        q.questionPosition === positionOfLastAnsweredQuestion + 1 &&
-        (!q.requirement || answers[q.requirement.questionId]?.answer === q.requirement.responseId)
-    )
-
-    return question
   }
 
   get questions(): Survey['questions'] | undefined {
