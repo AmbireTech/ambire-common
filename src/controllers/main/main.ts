@@ -84,7 +84,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
-import { AccountOpStatus, Call } from '@/libs/accountOp/types'
+import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { relayerCall } from '@/libs/relayerCall/relayerCall'
@@ -1043,11 +1043,11 @@ export class MainController extends EventEmitter implements IMainController {
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
       // a new session when retrieving keys, in case there already is one.
-      if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
+      if (ledgerCtrl.walletSDK && ledgerCtrl.cleanUp) await ledgerCtrl.cleanUp()
 
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
       const pathToUnlock = getHdPathFromTemplate(hdPathTemplate, 0)
-      await ledgerCtrl.unlock(pathToUnlock)
+      if (ledgerCtrl.unlock) await ledgerCtrl.unlock(pathToUnlock)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
@@ -1139,6 +1139,62 @@ export class MainController extends EventEmitter implements IMainController {
   ) {
     await this.withStatus('handleAccountPickerInitLattice', async () =>
       this.#handleAccountPickerInitLattice(LatticeKeyIterator)
+    )
+  }
+
+  async #handleAccountPickerInitQr(
+    QrKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: string | Uint8Array
+  ) {
+    try {
+      const qrCtrl = this.#externalSignerControllers.qr
+
+      if (!qrCtrl) {
+        const message =
+          'Could not initialize connection with your QR hardware wallet. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new QrKeyIterator({ controller: qrCtrl })
+      // Initialize the QR iterator from payload before AccountPicker init.
+      // This populates QR-specific iterator state (xpub, parsedAccount, hdPathTemplate)
+      // that AccountPicker needs to configure derivation and retrieval.
+      await keyIterator.initFromQrPayload(payload)
+
+      const hdPathTemplate = keyIterator.hdPathTemplate
+      if (!hdPathTemplate) {
+        const message = 'Invalid QR hardware wallet payload. Please try again.'
+        throw new EmittableError({
+          message,
+          level: 'major',
+          error: new Error('Missing hdPathTemplate')
+        })
+      }
+
+      // v1 accounts have never supported QR wallets.
+      // In the rare case of migration (ledger -> qr -> has created a linked account),
+      // The user should instead go to the web wallet and migrate his funds instead.
+      // v1 accounts are generally deprecated and we don't encourage users to use them.
+      this.accountPicker.setInitParams({
+        keyIterator,
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false,
+        shouldSearchForLinkedAccounts: false
+      })
+    } catch (error: any) {
+      const message =
+        error?.message || 'Could not import the QR hardware wallet account. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitQr(
+    QrKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: string | Uint8Array
+  ) {
+    await this.withStatus('handleAccountPickerInitQr', async () =>
+      this.#handleAccountPickerInitQr(QrKeyIterator, payload)
     )
   }
 

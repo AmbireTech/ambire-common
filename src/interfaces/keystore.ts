@@ -35,16 +35,16 @@ export interface ExternalSignerController {
   type: string
   deviceModel: string
   deviceId: string
-  isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
-  unlock: (
+  isUnlocked?: (path?: string, expectedKeyOnThisPath?: string) => boolean
+  unlock?: (
     path: ReturnType<typeof getHdPathFromTemplate>,
     expectedKeyOnThisPath?: string,
     shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
-  unlockedPath: string
-  unlockedPathKeyAddr: string
+  unlockedPath?: string
+  unlockedPathKeyAddr?: string
   walletSDK?: any // Either the wallet own SDK or its session, each wallet having specifics
-  cleanUp: () => void // Trezor and Ledger specific
+  cleanUp?: () => void // Trezor and Ledger specific
   signingCleanup?: () => Promise<void> // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
@@ -55,6 +55,12 @@ export interface ExternalSignerController {
   appName?: string // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
+  masterFingerprint?: string // Optional for some wallets, but can be used for additional info
+  currentRequest?: QrRequest | null // Qr based specific
+  signingStep?: string //Qr based specific
+  moveToResponseScan?: () => void //Qr based specific
+  submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
+  parseAndSetAccountFromQR?: (payload: string | Uint8Array) => Promise<ParsedQrAccount> //Qr based specific
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
@@ -143,9 +149,12 @@ export type InternalKey = {
   }
 }
 
+export type QrWalletType = 'keystone' | 'imtoken' // We can add more supported QR wallets here in the future, and they will be handled by the QrProtocolAdapter implementations, which are specific to each wallet type
+export type QrProtocolType = 'ur' | 'airgap'
+
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice'
+  type: 'trezor' | 'ledger' | 'lattice' | 'qr'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -154,6 +163,10 @@ export type ExternalKey = {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
     createdAt: number | null
+
+    qrWalletType?: QrWalletType
+    qrProtocol?: QrProtocolType
+    masterFingerprint?: string // BIP32 root fingerprint used to identify/verify the originating hardware wallet account set in QR flows
     [key: string]: any
   }
 }
@@ -200,3 +213,32 @@ export type KeyPreferences = {
 }
 
 export type EIP712Types = Record<string, TypedDataField[]>
+
+export type ParsedQrImportedAccount = {
+  addr?: string
+  xpub?: string
+  index?: number
+  hdPath?: string
+}
+
+export type ParsedQrAccount = {
+  masterFingerprint?: string
+  walletType?: QrWalletType
+  deviceModel?: string
+  deviceId?: string
+  hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
+  accounts: ParsedQrImportedAccount[]
+}
+
+export type QrRequestType =
+  | 'sign-message'
+  | 'sign-typed-data'
+  | 'sign-transaction'
+  | 'import-account'
+
+export type QrRequest = {
+  type: QrRequestType
+  requestId?: string
+  urType?: string
+  urCborHex?: any
+}
