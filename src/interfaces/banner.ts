@@ -121,7 +121,7 @@ export type Action = (
           maxBalanceTotal?: number
           minTxnsTotal?: number
           maxTxnsTotal?: number
-          minCommonVersion?: string
+          minAppVersion?: string
         }
       }
     }

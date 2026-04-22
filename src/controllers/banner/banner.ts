@@ -80,7 +80,7 @@ export class BannerController extends EventEmitter implements IBannerController 
     let action = banner.actions[0]
     // if not survey return it
     if (action.actionName !== 'survey') return true
-    const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal, minCommonVersion } =
+    const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal, minAppVersion } =
       action.meta.requirements
     // do not display surveys when there is no selected acc
     if (accData.status === 'no-selected-account') return false
@@ -94,7 +94,7 @@ export class BannerController extends EventEmitter implements IBannerController 
       return false
     if (minTxnsTotal && accData.numberOfTransactions < minTxnsTotal) return false
     if (maxTxnsTotal && accData.numberOfTransactions > maxTxnsTotal) return false
-    if (minCommonVersion && this.#appVersion < minCommonVersion) return false
+    if (minAppVersion && this.#appVersion < minAppVersion) return false
     if (!this.#survey.isReady) return false
 
     if (this.#survey.isSurveyAnswered(action.meta.surveyId)) return false
