@@ -1,27 +1,11 @@
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { SelectedAccountForImport } from './account'
-import {
-  ExternalSignerController,
-  Key,
-  ParsedQrAccount,
-  QrProtocolType,
-  QrWalletType
-} from './keystore'
+import { ExternalSignerController, Key, ParsedQrAccount, QrProtocolType } from './keystore'
 
 export type QrWalletConfig = {
-  walletType: QrWalletType
   protocol: QrProtocolType
   label: string
-  hdPathTemplate: string
-  relativePathTemplate: string
   tutorialUrl?: string
-}
-
-type QrParsedAccountMeta = {
-  hdPath?: string
-  accounts?: Array<{
-    hdPath?: string
-  }>
 }
 
 export interface KeyIterator {
@@ -58,6 +42,5 @@ export interface KeyIterator {
   /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
   isSeedMatching?: (seedToCompareWith: string) => boolean
   // QR-specific optional fields
-  walletConfig?: QrWalletConfig
   parsedAccount?: ParsedQrAccount
 }
