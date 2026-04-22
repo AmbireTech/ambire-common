@@ -6,6 +6,7 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { ActivityController } from './activity'
@@ -396,20 +397,18 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
-      expect(controller.accountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'success',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], //  we expect success here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      expect(controller.accountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'success',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
 
     test('`failed` status is set correctly', async () => {
@@ -450,20 +449,101 @@ describe('Activity Controller ', () => {
       await controller.updateAccountsOpsStatuses()
       const controllerAccountsOps = controller.accountsOps
 
-      expect(controllerAccountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'failure',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], // we expect failure here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
+      expect(controllerAccountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controllerAccountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'failure',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
+    })
+
+    test('records balance changes asynchronously after a successful txn', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const getTokenBalancesOnBlockSpy = jest
+        .spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock')
+        .mockResolvedValueOnce([
+          [
+            null,
+            {
+              symbol: 'ETH',
+              name: 'Ethereum',
+              decimals: 18,
+              address: ZERO_ADDRESS,
+              chainId: 1n,
+              amount: 8n,
+              priceIn: [],
+              marketDataIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: false,
+                isFeeToken: false
+              }
+            }
+          ]
+        ])
+        .mockResolvedValueOnce([
+          [
+            null,
+            {
+              symbol: 'ETH',
+              name: 'Ethereum',
+              decimals: 18,
+              address: ZERO_ADDRESS,
+              chainId: 1n,
+              amount: 10n,
+              priceIn: [],
+              marketDataIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: false,
+                isFeeToken: false
+              }
+            }
+          ]
+        ])
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        timestamp: Date.now()
+      } as submittedAccountOp.SubmittedAccountOp
+
+      const balanceChangesUpdate = new Promise<void>((resolve) => {
+        const unsubscribe = controller.onUpdate(() => {
+          const updatedOp = controller.accountsOps[sessionId]!.result.items[0]
+
+          if (typeof updatedOp?.balanceChanges === 'undefined') return
+
+          unsubscribe()
+          resolve()
+        })
       })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      if (
+        typeof controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges === 'undefined'
+      ) {
+        await balanceChangesUpdate
+      }
+
+      expect(getTokenBalancesOnBlockSpy).toHaveBeenCalledTimes(2)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([
+        expect.objectContaining({
+          address: ZERO_ADDRESS,
+          amountBefore: 10n,
+          amountAfter: 8n,
+          balanceChange: -2n
+        })
+      ])
     })
     test('should display pending txns banners', async () => {
       const { controller } = await prepareTest()

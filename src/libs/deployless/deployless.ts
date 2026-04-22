@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import assert from 'assert'
-import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
 import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
@@ -146,6 +146,10 @@ export class Deployless {
     return data
   }
 
+  private static normalizeRpcBlockTag(blockTag: string | number): string {
+    return typeof blockTag === 'number' ? toBeHex(blockTag) : blockTag
+  }
+
   async call(methodName: string, args: any[], _opts: Partial<CallOptions> = {}): Promise<any> {
     const opts = { ...defaultOptions, ..._opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
@@ -186,7 +190,7 @@ export class Deployless {
               gasPrice: opts?.gasPrice,
               gas: opts?.gasLimit
             },
-            opts.blockTag,
+            Deployless.normalizeRpcBlockTag(opts.blockTag),
             {
               [toAddr]: { code: this.contractRuntimeCode },
               ...(opts.stateToOverride || {})

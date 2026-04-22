@@ -3,6 +3,7 @@ import { Interface, isAddress, toBeHex, TransactionReceipt, ZeroAddress } from '
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
+import type { TokenResult } from '../portfolio/interfaces'
 import {
   getAvailableBunlders,
   getBundlerByName,
@@ -47,6 +48,24 @@ export type PortfoliosToUpdate = {
   [address: string]: Network['chainId'][]
 }
 
+export type BalanceChange = Pick<
+  TokenResult,
+  | 'symbol'
+  | 'name'
+  | 'decimals'
+  | 'address'
+  | 'chainId'
+  | 'priceIn'
+  | 'marketDataIn'
+  | 'meta'
+  | 'flags'
+> & {
+  amount: bigint
+  amountBefore: bigint
+  amountAfter: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -57,6 +76,7 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  balanceChanges?: BalanceChange[]
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
