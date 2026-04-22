@@ -312,7 +312,6 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       eventEmitterRegistry,
       dismissBanner: (bannerId: Banner['id']) => {
-        console.log('DEBUG dismissing banner from mainCtrl', bannerId, this.banner)
         this.banner.dismissBanner(bannerId)
       }
     })
