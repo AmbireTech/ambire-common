@@ -51,6 +51,8 @@ export interface AccountOp {
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
+  // the EOA nonce used for raw transaction broadcast, if applicable
+  eoaNonce?: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   // the feeCall is an extra call we add manually when there's a
@@ -88,12 +90,17 @@ export interface AccountOp {
     fromQuoteId?: string
     /** Used to enable the gas tank if the user is topping up */
     topUpAmount?: bigint
+    /** Allows transfer.ts-owned MAX flows to reserve the fee from the transferred token. */
+    allowTransferFeeTokenSelfReserve?: boolean
     /** Used to enable swap&bridge sponsorship */
     swapSponsorship?: {
       swapFeeInUsd: number
       nativePrice: number
       fromTokenPriceInUsd: number
       fromTokenDecimals: number
+    }
+    speedUp?: {
+      enabled: boolean
     }
   }
   flags?: {

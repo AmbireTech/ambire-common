@@ -92,6 +92,8 @@ export abstract class BaseAccount {
 
   abstract canBroadcastByOtherEOA(): boolean
 
+  abstract canSetCustomGasPrices(feeOption: FeePaymentOption): boolean
+
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall(paidBy?: string) {
     return false
