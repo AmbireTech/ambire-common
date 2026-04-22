@@ -825,30 +825,40 @@ export class ActivityController extends EventEmitter implements IActivityControl
     tokenAddrs: string[],
     receiptBlockNumber: number
   ) {
-    const previousBlockNumber = receiptBlockNumber > 0 ? receiptBlockNumber - 1 : 0
-    const [currentBlockTokens, previousBlockTokens] = await Promise.all([
-      this.#portfolio.getTokenBalancesOnBlock(
-        accountOp.accountAddr,
-        network.chainId,
-        tokenAddrs,
-        receiptBlockNumber,
-        accountOp.accountAddr
-      ),
-      this.#portfolio.getTokenBalancesOnBlock(
-        accountOp.accountAddr,
-        network.chainId,
-        tokenAddrs,
-        previousBlockNumber,
-        accountOp.accountAddr
-      )
-    ])
+    try {
+      const previousBlockNumber = receiptBlockNumber > 0 ? receiptBlockNumber - 1 : 0
+      const [currentBlockTokens, previousBlockTokens] = await Promise.all([
+        this.#portfolio.getTokenBalancesOnBlock(
+          accountOp.accountAddr,
+          network.chainId,
+          tokenAddrs,
+          receiptBlockNumber,
+          accountOp.accountAddr
+        ),
+        this.#portfolio.getTokenBalancesOnBlock(
+          accountOp.accountAddr,
+          network.chainId,
+          tokenAddrs,
+          previousBlockNumber,
+          accountOp.accountAddr
+        )
+      ])
 
-    await this.setAccountOpBalanceChanges(
-      accountOp.identifiedBy,
-      accountOp.accountAddr,
-      accountOp.chainId,
-      compareTokenBalances(previousBlockTokens, currentBlockTokens)
-    )
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        compareTokenBalances(previousBlockTokens, currentBlockTokens)
+      )
+    } catch (error) {
+      console.log(error)
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        []
+      )
+    }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {
