@@ -167,7 +167,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.status = 'error-submitting'
       this.errorMessage = 'Internal state error: missing answers'
       this.emitUpdate()
+      return
     }
+    if (this.status !== 'success-fetched') return
 
     try {
       const payload = {
