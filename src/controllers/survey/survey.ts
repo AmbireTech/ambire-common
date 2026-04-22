@@ -101,7 +101,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.status = 'error-fetching'
       this.emitError({
         error: e,
-        level: 'major',
+        level: 'silent',
         message: 'Failed to fetch survey'
       })
       this.errorMessage = e.message
@@ -113,7 +113,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     if (!parsedSurvey.ok) {
       this.emitError({
         message: 'There was error fetching the survey.',
-        level: 'major',
+        level: 'silent',
         error: Error(`Error with parsing a survey ${parsedSurvey.error}`)
       })
       this.status = 'error-fetching'
@@ -191,7 +191,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     } catch (e: any) {
       this.emitError({
         message: 'Failed to submit response.',
-        level: 'major',
+        level: 'silent',
         error: e
       })
       this.status = 'error-submitting'
