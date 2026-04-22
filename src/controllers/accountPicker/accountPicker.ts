@@ -882,7 +882,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       }
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
-      const qrWalletConfig = keyType === 'qr' ? this.keyIterator.walletConfig : undefined
 
       const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
 

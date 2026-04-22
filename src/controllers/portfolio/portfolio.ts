@@ -960,13 +960,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     if (res.data.banner) {
       const banner = res.data.banner
 
+      const endTimeNumber =
+        typeof banner.endTime === 'number' ? banner.endTime : new Date(banner.endTime).getTime()
+      const startTimeNumber =
+        typeof banner.startTime === 'number'
+          ? banner.startTime
+          : new Date(banner.startTime).getTime()
+
       const formattedBanner: Banner = {
         // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
         type: banner.type || 'updates',
         meta: {
-          startTime: banner.startTime,
-          endTime: banner.endTime
+          startTime: startTimeNumber,
+          endTime: endTimeNumber
         },
         ...(banner.text && { text: banner.text }),
         ...(banner.title && { title: banner.title }),
