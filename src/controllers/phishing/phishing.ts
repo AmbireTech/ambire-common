@@ -134,11 +134,24 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #continuouslyUpdatePhishing() {
     // This prevents redundant requests to the relayer
     // when the extension reloads multiple times within a short period.
+    const timeSinceLastUpdate = this.#updatedAt ? Date.now() - this.#updatedAt : null
     if (
       this.#updatedAt &&
-      Date.now() - this.#updatedAt < this.updatePhishingInterval.currentTimeout
-    )
+      timeSinceLastUpdate !== null &&
+      timeSinceLastUpdate < this.updatePhishingInterval.currentTimeout
+    ) {
+      // NOTE: used for debugging only
+      // console.log(
+      //   `[PhishingController] Skip update (sinceLastUpdate=${Math.floor(timeSinceLastUpdate / 1000)}s, timeout=${Math.floor(this.updatePhishingInterval.currentTimeout / 1000)}s)`
+      // )
+
       return
+    }
+
+    // NOTE: used for debugging only
+    // console.log(
+    //   `[PhishingController] Fetch update (version=${this.#version}, timeout=${Math.floor(this.updatePhishingInterval.currentTimeout / 1000)}s)`
+    // )
 
     // version=0 means no local snapshot yet -> fetch full data.
     // version>0 means we have a checkpoint -> fetch only the delta since that version.
@@ -182,9 +195,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#shouldSyncDapps = true
     this.emitUpdate()
 
+    const updatedAt = Date.now()
+    this.#updatedAt = updatedAt
+
     await this.#storage.set('phishing', {
       version: this.#version,
-      updatedAt: Date.now(),
+      updatedAt,
       domains: [...this.#domains],
       addresses: [...this.#addresses]
     })
@@ -192,6 +208,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
       this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     }
+
+    // NOTE: used for debugging only
+    // console.log(
+    //   `[PhishingController] Update applied (version=${this.#version}, domains=${this.#domains.size}, addresses=${this.#addresses.size})`
+    // )
   }
 
   /**
