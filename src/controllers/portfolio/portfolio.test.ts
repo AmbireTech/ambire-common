@@ -2606,4 +2606,182 @@ describe('Portfolio Controller ', () => {
       restore()
     })
   })
+
+  describe('batchedPortfolioDiscovery', () => {
+    const createJsonResponse = (body: unknown, status = 200, statusText = 'OK') => ({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText,
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body))
+    })
+
+    const getPortfolioResponseByNetworks = (url: string) => {
+      const networkParam = new URL(url).searchParams.get('networks') || ''
+      const networkCount = networkParam.split(',').filter(Boolean).length
+
+      return Array.from({ length: networkCount }, (_, index) => ({
+        hasHints: true,
+        erc20s: [],
+        erc721s: {},
+        prices: {},
+        otherNetworksDefiCounts: {},
+        defi: {
+          positions: [],
+          updatedAt: Date.now()
+        },
+        index
+      }))
+    }
+
+    const createDiscoveryFetchOverride = (
+      handler: (url: string) => Promise<{
+        ok: boolean
+        status: number
+        statusText: string
+        json: () => Promise<unknown>
+      }>
+    ) =>
+      jest.fn((input: Parameters<typeof fetch>[0]) => {
+        const url = typeof input === 'string' ? input : input.toString()
+
+        if (url.includes('/portfolio?')) return handler(url)
+
+        return Promise.resolve(createJsonResponse({}))
+      }) as unknown as typeof fetch
+
+    test('Should add update=true even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with forceUpdateDefi=true', async () => {
+      const discoveryUrls: string[] = []
+      const fetchOverride = createDiscoveryFetchOverride(async (url) => {
+        discoveryUrls.push(url)
+
+        return createJsonResponse(getPortfolioResponseByNetworks(url))
+      })
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        awaitInitialLoad: false
+      })
+
+      // @ts-ignore
+      const firstCall = controller.batchedPortfolioDiscovery({
+        chainId: 1n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        forceUpdateDefi: false
+      })
+
+      // @ts-ignore
+      const secondCall = controller.batchedPortfolioDiscovery({
+        chainId: 137n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        forceUpdateDefi: true
+      })
+
+      await Promise.allSettled([firstCall, secondCall])
+
+      expect(discoveryUrls).toHaveLength(1)
+      expect(new URL(discoveryUrls[0]!).searchParams.get('update')).toBe('true')
+    })
+
+    test('update=true is account-pair specific', async () => {
+      const discoveryUrls: string[] = []
+      const fetchOverride = createDiscoveryFetchOverride(async (url) => {
+        discoveryUrls.push(url)
+
+        return createJsonResponse(getPortfolioResponseByNetworks(url))
+      })
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        awaitInitialLoad: false
+      })
+
+      const affectedPair = [
+        // @ts-ignore
+        controller.batchedPortfolioDiscovery({
+          chainId: 1n,
+          accountAddr: account.addr,
+          baseCurrency: 'usd',
+          forceUpdateDefi: false
+        }),
+        // @ts-ignore
+        controller.batchedPortfolioDiscovery({
+          chainId: 137n,
+          accountAddr: account.addr,
+          baseCurrency: 'usd',
+          forceUpdateDefi: true
+        })
+      ]
+
+      const unaffectedPair = [
+        // @ts-ignore
+        controller.batchedPortfolioDiscovery({
+          chainId: 1n,
+          accountAddr: account2.addr,
+          baseCurrency: 'usd',
+          forceUpdateDefi: false
+        })
+      ]
+
+      await Promise.allSettled([...affectedPair, ...unaffectedPair])
+
+      const pairWithForceUpdate = discoveryUrls.find((url) =>
+        url.includes(`account=${account.addr}`)
+      )
+      const pairWithoutForceUpdate = discoveryUrls.find((url) =>
+        url.includes(`account=${account2.addr}`)
+      )
+
+      expect(discoveryUrls).toHaveLength(2)
+      expect(pairWithForceUpdate).toBeDefined()
+      expect(pairWithoutForceUpdate).toBeDefined()
+
+      expect(new URL(pairWithForceUpdate!).searchParams.get('update')).toBe('true')
+      expect(new URL(pairWithoutForceUpdate!).searchParams.get('update')).toBeNull()
+    })
+
+    test('Malformed array length mismatch should trigger mismatch rejection', async () => {
+      const fetchOverride = createDiscoveryFetchOverride(async () => createJsonResponse([{}]))
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        awaitInitialLoad: false
+      })
+
+      // @ts-ignore
+      const firstCall = controller.batchedPortfolioDiscovery({
+        chainId: 1n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        forceUpdateDefi: false
+      })
+
+      // @ts-ignore
+      const secondCall = controller.batchedPortfolioDiscovery({
+        chainId: 137n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        forceUpdateDefi: false
+      })
+
+      const [firstResult, secondResult] = await Promise.allSettled([firstCall, secondCall])
+
+      expect(firstResult.status).toBe('rejected')
+      expect(secondResult.status).toBe('rejected')
+
+      if (firstResult.status === 'rejected') {
+        expect(firstResult.reason?.message).toContain(
+          'internal error: queue length and response length mismatch'
+        )
+      }
+
+      if (secondResult.status === 'rejected') {
+        expect(secondResult.reason?.message).toContain(
+          'internal error: queue length and response length mismatch'
+        )
+      }
+    })
+  })
 })

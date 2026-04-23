@@ -278,15 +278,22 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       (queue) => {
         const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
         const accountAddrs = [...new Set(queue.map((x) => x.data.accountAddr))]
+
         const pairs = baseCurrencies
           .map((baseCurrency) =>
-            accountAddrs.map((accountAddr, index) => ({
+            accountAddrs.map((accountAddr) => ({
               baseCurrency,
               accountAddr,
-              forceUpdateDefi: queue[index]?.data.forceUpdateDefi
+              forceUpdateDefi: queue.some(
+                (x) =>
+                  x.data.baseCurrency === baseCurrency &&
+                  x.data.accountAddr === accountAddr &&
+                  x.data.forceUpdateDefi
+              )
             }))
           )
           .flat()
+
         return pairs.map(({ baseCurrency, accountAddr, forceUpdateDefi }) => {
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
@@ -1059,7 +1066,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * to Velcro but passes a flag to signal to the server that it can returned cached defi data.
    */
   private async getPortfolioFromApiDiscovery(opts: {
-    chainId: bigint | 'customAppChain'
+    chainId: bigint
     account: Account
     hasKeys: boolean
     baseCurrency: string
@@ -1086,11 +1093,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const defiState = this.#state[account.addr]?.[chainId.toString()]?.result?.defiPositions
     const canSkipExternalApiHintsUpdate =
-      chainId === 'customAppChain' ||
-      (!!externalApiHintsResponse &&
-        !isManualUpdate &&
-        Date.now() - externalApiHintsResponse.lastUpdate <
-          EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic'])
+      !!externalApiHintsResponse &&
+      !isManualUpdate &&
+      Date.now() - externalApiHintsResponse.lastUpdate <
+        EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
 
     const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
       defiState,
@@ -1170,7 +1176,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
     // Update the price cache so the lib can use the latest prices from velcro
-    if (response.prices && chainId !== 'customAppChain') {
+    if (response.prices) {
       const networkTokenDataCache: TokenDataCache =
         this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
 
@@ -1407,11 +1413,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isManualUpdate?: boolean
     }
   ) {
+    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return
+
+    const defiMaxDataAgeMs = portfolioProps.isManualUpdate ? 0 : portfolioProps.defiMaxDataAgeMs
     const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})
 
     const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
       accountState['defiApps'],
-      portfolioProps.defiMaxDataAgeMs
+      defiMaxDataAgeMs
     )
 
     if (canSkipUpdate) return
@@ -1422,32 +1431,40 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.emitUpdate()
 
     try {
-      const response = await this.getPortfolioFromApiDiscovery({
+      const response: ExternalPortfolioDiscoveryResponse = await this.batchedPortfolioDiscovery({
         chainId: 'customAppChain',
-        account,
-        baseCurrency: 'usd',
-        externalApiHintsResponse: null,
-        defiMaxDataAgeMs: portfolioProps.defiMaxDataAgeMs,
-        hasKeys: portfolioProps.hasKeys
+        accountAddr: account.addr,
+        baseCurrency: 'usd'
       })
 
-      if (response && response.data?.defi) {
-        accountState.defiApps = {
-          isReady: true,
-          isLoading: false,
-          errors: response.errors,
-          result: {
-            defiPositions: {
-              positionsByProvider: response.data.defi.positions
-            },
-            updateStarted,
-            tokens: [],
-            total: getTotal([], {
-              positionsByProvider: response.data.defi.positions
-            })
+      const defi = response.defi
+      // Throw the error after assigning the response so we can still use the returned hints
+      if ((response && 'errorState' in defi) || !('positions' in defi) || !defi.positions)
+        throw new Error(
+          `Defi discovery failed. Error: ${
+            'errorState' in defi
+              ? defi.errorState[0]?.message || 'Unknown error (2)'
+              : 'Unknown error'
+          }`
+        )
+      const positionsByProvider = getFormattedApiPositions(defi.positions)
+
+      accountState.defiApps = {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          defiPositions: {
+            positionsByProvider,
+            lastSuccessfulUpdate: Date.now()
           },
-          lastSuccessfulUpdate: Date.now()
-        }
+          updateStarted,
+          tokens: [],
+          total: getTotal([], {
+            positionsByProvider
+          })
+        },
+        lastSuccessfulUpdate: Date.now()
       }
 
       this.#setNetworkLoading(account.addr, 'defiApps', false)
