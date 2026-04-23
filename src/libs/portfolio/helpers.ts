@@ -622,6 +622,11 @@ export const formatExternalHintsAPIResponse = (
 
   const { erc20s, erc721s, lastUpdate, hasHints } = response
 
+  // For customAppChain
+  if (!erc20s || !erc721s) {
+    return null
+  }
+
   const formattedErc721s: Hints['erc721s'] = {}
 
   Object.entries(erc721s).forEach(([collectionAddress, value]) => {

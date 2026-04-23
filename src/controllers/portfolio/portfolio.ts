@@ -131,6 +131,8 @@ const EXTERNAL_API_HINTS_TTL = {
  * before being added as custom.
  * - To be learned tokens - tokens added from sources like swapAndBridge, activity, the humanizer. Some of them
  * may be owned by the user in the near future (e.g. the user swapped a token and will receive it soon).
+ * - App defi positions - defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets). They are
+ * fetched separately, but batched together with all other calls to the external API. (e.g, Polymarket and Hyperliquid positions)
  *
  * Hints sources:
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
@@ -1057,7 +1059,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * to Velcro but passes a flag to signal to the server that it can returned cached defi data.
    */
   private async getPortfolioFromApiDiscovery(opts: {
-    chainId: bigint
+    chainId: bigint | 'customAppChain'
     account: Account
     hasKeys: boolean
     baseCurrency: string
@@ -1387,6 +1389,69 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.emitUpdate()
 
       return [false, null]
+    }
+  }
+
+  /**
+   * Most defi positions are fetched from the external API per network, but there are some
+   * "app" defi positions that have to be fetched separately, because they are not linked to a specific
+   * network and have a slightly different structure (no addresses for assets).
+   *
+   * @example - Fetches Polymarket and Hyperliquid positions (among other)
+   */
+  protected async updateDefiAppsState(
+    account: Account,
+    portfolioProps: Partial<GetOptions> & {
+      hasKeys: boolean
+      maxDataAgeMs?: number
+      defiMaxDataAgeMs?: number
+      isManualUpdate?: boolean
+    }
+  ) {
+    const updateStarted = Date.now()
+    const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})
+
+    this.#setNetworkLoading(account.addr, 'defiApps', true)
+    this.emitUpdate()
+
+    try {
+      const response = await this.getPortfolioFromApiDiscovery({
+        chainId: 'customAppChain',
+        account,
+        baseCurrency: 'usd',
+        externalApiHintsResponse: null,
+        defiMaxDataAgeMs: portfolioProps?.defiMaxDataAgeMs,
+        hasKeys: portfolioProps.hasKeys
+      })
+
+      if (response && response.data?.defi) {
+        accountState.defiApps = {
+          isReady: true,
+          isLoading: false,
+          errors: response.errors,
+          result: {
+            defiPositions: {
+              positionsByProvider: response.data.defi.positions
+            },
+            updateStarted,
+            tokens: [],
+            total: getTotal([], {
+              positionsByProvider: response.data.defi.positions
+            })
+          },
+          lastSuccessfulUpdate: Date.now()
+        }
+      }
+
+      this.#setNetworkLoading(account.addr, 'defiApps', false)
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Error while fetching DeFi apps data from Velcro for account ${account.addr}.`,
+        error: e
+      })
+
+      this.#setNetworkLoading(account.addr, 'defiApps', false, e)
     }
   }
 
@@ -1727,6 +1792,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.chainId.toString()]
+      }),
+      this.updateDefiAppsState(selectedAccount, {
+        maxDataAgeMs: paramsMaxDataAgeMs,
+        defiMaxDataAgeMs: paramsMaxDataAgeMs,
+        isManualUpdate,
+        hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
       })
     ])
 

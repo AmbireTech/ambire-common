@@ -7,6 +7,7 @@ import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
 import {
   NetworkState,
+  PortfolioDefiAppsResult,
   PortfolioGasTankResult,
   PortfolioNetworkResult,
   PortfolioRewardsResult
@@ -115,6 +116,7 @@ export default class PortfolioViewBuilder {
       | PortfolioGasTankResult
       | PortfolioRewardsResult
       | PortfolioNetworkResult
+      | PortfolioDefiAppsResult
     const loadingFromScratch = PortfolioViewBuilder.isLoadingFromScratch(
       networkData,
       isManualUpdate
