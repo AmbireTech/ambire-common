@@ -486,6 +486,92 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.persistAccountsOps()
   }
 
+  async backfillRecentMissingBalanceChanges(limitPerAccount = 10) {
+    await this.#initialLoadPromise
+
+    const opsToBackfill = Object.keys(this.#accountsOps).flatMap((accountAddr) =>
+      Object.values(this.#accountsOps[accountAddr] || {})
+        .flat()
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, limitPerAccount)
+        .filter((op) => typeof op.balanceChanges === 'undefined')
+    )
+
+    for (const accountOp of opsToBackfill) {
+      if (accountOp.status !== AccountOpStatus.Success || !accountOp.txnId) {
+        // Resolve unsupported legacy cases as "no balance changes" so the migration finishes once.
+        // eslint-disable-next-line no-await-in-loop
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          []
+        )
+        // eslint-disable-next-line no-continue
+        continue
+      }
+
+      const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
+      const provider = this.#providers.providers[accountOp.chainId.toString()]
+
+      if (!network || !provider) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          []
+        )
+        // eslint-disable-next-line no-continue
+        continue
+      }
+
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+
+        if (!receipt) {
+          // eslint-disable-next-line no-await-in-loop
+          await this.setAccountOpBalanceChanges(
+            accountOp.identifiedBy,
+            accountOp.accountAddr,
+            accountOp.chainId,
+            []
+          )
+          // eslint-disable-next-line no-continue
+          continue
+        }
+
+        // eslint-disable-next-line no-await-in-loop
+        const foundTokens = await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+        if (foundTokens.length) {
+          this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+        }
+
+        const tokenAddrs = Array.from(
+          new Set([ZeroAddress, ...foundTokens].map((tokenAddr) => getAddress(tokenAddr)))
+        )
+
+        // eslint-disable-next-line no-await-in-loop
+        await this.#updateAccountOpBalanceChanges(
+          accountOp,
+          network,
+          tokenAddrs,
+          receipt.blockNumber
+        )
+      } catch (error) {
+        console.log(error)
+        // eslint-disable-next-line no-await-in-loop
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          []
+        )
+      }
+    }
+  }
+
   async updateAccountsOpsStatuses(accountAddresses: string[] = []): Promise<
     Record<
       string,
