@@ -14,10 +14,15 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
-import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
+import {
+  AddressPoisoningMatch,
+  ITransferController,
+  TransferUpdate
+} from '../../interfaces/transfer'
 import { IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { getAccountOpRecipients } from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
@@ -69,6 +74,9 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
+const ADDRESS_POISONING_SEGMENT_LENGTH = 4
+// TODO: Should we add a limit? Will it degrade perf too much if this scans though all?
+const ADDRESS_POISONING_SCAN_LIMIT = 500
 
 const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
@@ -149,6 +157,10 @@ export class TransferController extends EventEmitter implements ITransferControl
   isRecipientAddressFirstTimeSend: boolean = false
 
   lastSentToRecipientAt: Date | null = null
+
+  // Set only for first-time sends when the recipient matches a known address
+  // by both prefix and suffix, which may indicate address poisoning.
+  #addressPoisoningMatch: AddressPoisoningMatch | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -522,7 +534,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         recipientAcc,
         this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
-        this.lastSentToRecipientAt
+        this.lastSentToRecipientAt,
+        this.#addressPoisoningMatch
       )
     }
 
@@ -616,20 +629,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
-    // Check if the address has been used previously for transactions
-    let found = false
-    let lastTransactionDate = null
-    if (isAddress(this.recipientAddress)) {
-      const result = await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccount.account?.addr || ''
-      )
-      found = result.found
-      lastTransactionDate = result.lastTransactionDate
-    }
-    this.isRecipientAddressFirstTimeSend =
-      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastSentToRecipientAt = lastTransactionDate
+    await this.#updateRecipientHistoryAndPoisoning()
 
     await this.syncSignAccountOp()
     this.emitUpdate()
@@ -676,6 +676,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
+      this.#addressPoisoningMatch = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -879,6 +880,70 @@ export class TransferController extends EventEmitter implements ITransferControl
     return null
   }
 
+  #hasAddressPoisoningPattern(a: string, b: string) {
+    const normalizedA = a.toLowerCase()
+    const normalizedB = b.toLowerCase()
+
+    if (!isAddress(normalizedA) || !isAddress(normalizedB) || normalizedA === normalizedB) {
+      return false
+    }
+
+    const bodyA = normalizedA.slice(2)
+    const bodyB = normalizedB.slice(2)
+
+    return (
+      bodyA.slice(0, ADDRESS_POISONING_SEGMENT_LENGTH) ===
+        bodyB.slice(0, ADDRESS_POISONING_SEGMENT_LENGTH) &&
+      bodyA.slice(-ADDRESS_POISONING_SEGMENT_LENGTH) ===
+        bodyB.slice(-ADDRESS_POISONING_SEGMENT_LENGTH)
+    )
+  }
+
+  #findAddressPoisoningMatch(recipientAddress: string) {
+    // TODO: Would it be better if we reuse hasAccountOpsSentTo in terms of the iterations it makes?
+    const trustedRecipients = this.#activity
+      .getAccountOpsForAccount({
+        accountAddr: this.#selectedAccount.account?.addr,
+        from: 0,
+        numberOfItems: ADDRESS_POISONING_SCAN_LIMIT
+      })
+      .flatMap((op) => getAccountOpRecipients(op))
+
+    const trustedAddresses = new Set(
+      [...trustedRecipients, ...this.#addressBook.contacts.map(({ address }) => address)]
+        .filter((addr) => isAddress(addr))
+        .map((addr) => addr.toLowerCase())
+    )
+
+    const matchedAddress = Array.from(trustedAddresses).find((trustedAddress) =>
+      this.#hasAddressPoisoningPattern(recipientAddress, trustedAddress)
+    )
+
+    return matchedAddress ? { matchedAddress } : null
+  }
+
+  async #updateRecipientHistoryAndPoisoning() {
+    // Check if the address has been used previously for transactions
+    let found = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccount.account?.addr || ''
+      )
+      found = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
+
+    this.isRecipientAddressFirstTimeSend =
+      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
+
+    this.#addressPoisoningMatch = this.isRecipientAddressFirstTimeSend
+      ? this.#findAddressPoisoningMatch(this.recipientAddress)
+      : null
+  }
+
   get hasPersistedState() {
     return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
   }
@@ -984,23 +1049,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }
 
-    // Check if the address has been used previously for transactions
-    let previousTransactionExists = false
-    let lastTransactionDate = null
-    if (isAddress(this.recipientAddress)) {
-      const result = await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccount.account.addr
-      )
-      previousTransactionExists = result.found
-      lastTransactionDate = result.lastTransactionDate
-    }
-
-    // Update state based on whether there are previous transactions to this address
-    this.isRecipientAddressFirstTimeSend =
-      !previousTransactionExists &&
-      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastSentToRecipientAt = lastTransactionDate
+    await this.#updateRecipientHistoryAndPoisoning()
     this.signAccountOpController = new SignAccountOpController({
       type: 'one-click-transfer',
       callRelayer: this.#callRelayer,

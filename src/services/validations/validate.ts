@@ -3,6 +3,7 @@ import isEmail from 'validator/lib/isEmail'
 
 import { Account, AccountStates } from '@/interfaces/account'
 import { Network } from '@/interfaces/network'
+import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import { getSupportedNetworks } from '@/libs/networks/networks'
 
 import { TokenResult } from '../../libs/portfolio'
@@ -67,6 +68,8 @@ const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
+const ADDRESS_POISONING_WARNING_MESSAGE =
+  'Possible address poisoning detected. The address looks similar to one you have used before. Proceed with caution.'
 
 function getTimeAgo(date: Date): string {
   const now = new Date()
@@ -103,7 +106,8 @@ const validateSendTransferAddress = (
   recepientAccount?: Account,
   chainId?: bigint,
   isRecipientAddressFirstTimeSend?: boolean,
-  lastRecipientTransactionDate?: Date | null
+  lastRecipientTransactionDate?: Date | null,
+  addressPoisoningMatch?: AddressPoisoningMatch | null
 ): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -136,6 +140,13 @@ const validateSendTransferAddress = (
     return {
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
       severity: 'error'
+    }
+  }
+
+  if (addressPoisoningMatch) {
+    return {
+      message: ADDRESS_POISONING_WARNING_MESSAGE,
+      severity: 'warning'
     }
   }
 

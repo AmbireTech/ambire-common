@@ -16,3 +16,7 @@ export interface TransferUpdate {
   isRecipientAddressUnknownAgreed?: boolean
   amountFieldMode?: 'token' | 'fiat'
 }
+
+export type AddressPoisoningMatch = {
+  matchedAddress: string
+}
