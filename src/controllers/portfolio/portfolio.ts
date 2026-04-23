@@ -1408,8 +1408,16 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       isManualUpdate?: boolean
     }
   ) {
-    const updateStarted = Date.now()
     const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})
+
+    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
+      accountState['defiApps'],
+      portfolioProps.defiMaxDataAgeMs
+    )
+
+    if (canSkipUpdate) return
+
+    const updateStarted = Date.now()
 
     this.#setNetworkLoading(account.addr, 'defiApps', true)
     this.emitUpdate()

@@ -1835,7 +1835,7 @@ describe('Portfolio Controller ', () => {
         // @ts-ignore
         .spyOn(controller, 'batchedPortfolioDiscovery')
         // @ts-ignore
-        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+        .mockRejectedValue(new Error('Portfolio discovery failed'))
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
       const state = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']
@@ -1912,7 +1912,7 @@ describe('Portfolio Controller ', () => {
         // @ts-ignore
         .spyOn(controller, 'batchedPortfolioDiscovery')
         // @ts-ignore
-        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+        .mockRejectedValue(new Error('Portfolio discovery failed'))
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
         defiMaxDataAgeMs: 0
@@ -1985,7 +1985,7 @@ describe('Portfolio Controller ', () => {
         // @ts-ignore
         .spyOn(controller, 'batchedPortfolioDiscovery')
         // @ts-ignore
-        .mockRejectedValueOnce(new Error('Portfolio discovery failed'))
+        .mockRejectedValue(new Error('Portfolio discovery failed'))
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
         defiMaxDataAgeMs: 0,
@@ -2246,7 +2246,7 @@ describe('Portfolio Controller ', () => {
       // @ts-ignore
       .spyOn(controller, 'batchedPortfolioDiscovery')
       // @ts-ignore
-      .mockRejectedValueOnce(new Error('Velcro error'))
+      .mockRejectedValue(new Error('Velcro error'))
 
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
@@ -2273,7 +2273,7 @@ describe('Portfolio Controller ', () => {
       // @ts-ignore
       .spyOn(controller, 'batchedPortfolioDiscovery')
       // @ts-ignore
-      .mockRejectedValueOnce(new Error('Velcro error'))
+      .mockRejectedValue(new Error('Velcro error'))
 
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({
@@ -2299,7 +2299,7 @@ describe('Portfolio Controller ', () => {
       // @ts-ignore
       .spyOn(controller, 'batchedPortfolioDiscovery')
       // @ts-ignore
-      .mockRejectedValueOnce(new Error('Velcro error'))
+      .mockRejectedValue(new Error('Velcro error'))
 
     // @ts-ignore
     const formatted = await controller.getPortfolioFromApiDiscovery({

@@ -6,6 +6,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
 import {
+  InternalPortfolioChain,
   NetworkState,
   PortfolioDefiAppsResult,
   PortfolioGasTankResult,
@@ -96,14 +97,14 @@ export default class PortfolioViewBuilder {
    * Add a network's data to the portfolio view
    */
   addNetworkData(
-    chainId: string,
+    chainId: InternalPortfolioChain | string,
     networkData: NetworkState | undefined,
     isManualUpdate: boolean
   ): void {
     if (chainId === 'projectedRewards') {
       return
     }
-    if (chainId !== 'gasTank' && chainId !== 'rewards') {
+    if (chainId !== 'gasTank' && chainId !== 'rewards' && chainId !== 'defiApps') {
       this.isNonInternalNetworkAdded = true
     }
 
