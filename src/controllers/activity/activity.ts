@@ -211,6 +211,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
       | undefined
   } = {}
 
+  #backfillAccountOpBalanceChangesPromises: {
+    [key: string]: Promise<void> | undefined
+  } = {}
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -498,77 +502,98 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
 
     for (const accountOp of opsToBackfill) {
-      if (accountOp.status !== AccountOpStatus.Success || !accountOp.txnId) {
-        // Resolve unsupported legacy cases as "no balance changes" so the migration finishes once.
-        // eslint-disable-next-line no-await-in-loop
+      // eslint-disable-next-line no-await-in-loop
+      await this.backfillAccountOpBalanceChanges(accountOp)
+    }
+  }
+
+  async backfillAccountOpBalanceChanges(accountOp: SubmittedAccountOp) {
+    await this.#initialLoadPromise
+
+    // take the latest #accountOp, not a stale one from the UI
+    const currentAccountOp = this.findByIdentifiedBy(
+      accountOp.identifiedBy,
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+
+    if (!currentAccountOp || typeof currentAccountOp.balanceChanges !== 'undefined') return
+
+    const taskId = `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${
+      accountOp.identifiedBy.identifier
+    }`
+
+    if (this.#backfillAccountOpBalanceChangesPromises[taskId]) {
+      return this.#backfillAccountOpBalanceChangesPromises[taskId]
+    }
+
+    this.#backfillAccountOpBalanceChangesPromises[taskId] = this.#prepareAndRunBalanceChangesTask(
+      currentAccountOp
+    ).finally(() => {
+      this.#backfillAccountOpBalanceChangesPromises[taskId] = undefined
+    })
+
+    return this.#backfillAccountOpBalanceChangesPromises[taskId]
+  }
+
+  async #prepareAndRunBalanceChangesTask(accountOp: SubmittedAccountOp) {
+    if (accountOp.status !== AccountOpStatus.Success || !accountOp.txnId) {
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        []
+      )
+
+      return
+    }
+
+    const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
+    const provider = this.#providers.providers[accountOp.chainId.toString()]
+
+    if (!network || !provider) {
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        []
+      )
+
+      return
+    }
+
+    try {
+      const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+
+      if (!receipt) {
         await this.setAccountOpBalanceChanges(
           accountOp.identifiedBy,
           accountOp.accountAddr,
           accountOp.chainId,
           []
         )
-        // eslint-disable-next-line no-continue
-        continue
+
+        return
       }
 
-      const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
-      const provider = this.#providers.providers[accountOp.chainId.toString()]
-
-      if (!network || !provider) {
-        // eslint-disable-next-line no-await-in-loop
-        await this.setAccountOpBalanceChanges(
-          accountOp.identifiedBy,
-          accountOp.accountAddr,
-          accountOp.chainId,
-          []
-        )
-        // eslint-disable-next-line no-continue
-        continue
+      const foundTokens = await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+      if (foundTokens.length) {
+        this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
       }
 
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+      const tokenAddrs = Array.from(
+        new Set([ZeroAddress, ...foundTokens].map((tokenAddr) => getAddress(tokenAddr)))
+      )
 
-        if (!receipt) {
-          // eslint-disable-next-line no-await-in-loop
-          await this.setAccountOpBalanceChanges(
-            accountOp.identifiedBy,
-            accountOp.accountAddr,
-            accountOp.chainId,
-            []
-          )
-          // eslint-disable-next-line no-continue
-          continue
-        }
-
-        // eslint-disable-next-line no-await-in-loop
-        const foundTokens = await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
-        if (foundTokens.length) {
-          this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-        }
-
-        const tokenAddrs = Array.from(
-          new Set([ZeroAddress, ...foundTokens].map((tokenAddr) => getAddress(tokenAddr)))
-        )
-
-        // eslint-disable-next-line no-await-in-loop
-        await this.#updateAccountOpBalanceChanges(
-          accountOp,
-          network,
-          tokenAddrs,
-          receipt.blockNumber
-        )
-      } catch (error) {
-        console.log(error)
-        // eslint-disable-next-line no-await-in-loop
-        await this.setAccountOpBalanceChanges(
-          accountOp.identifiedBy,
-          accountOp.accountAddr,
-          accountOp.chainId,
-          []
-        )
-      }
+      await this.#updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receipt.blockNumber)
+    } catch (error) {
+      console.log(error)
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        []
+      )
     }
   }
 
