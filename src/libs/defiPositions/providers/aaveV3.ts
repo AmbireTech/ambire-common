@@ -46,9 +46,12 @@ export async function getAAVEPositions(
     accountData.healthFactor = null
   }
 
-  const position = {
-    id: generateUuid(),
+  const uuid = generateUuid()
+
+  const position: Position = {
+    id: uuid,
     additionalData: {
+      positionIndex: uuid,
       healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
       positionInUSD: 0,
       deptInUSD: 0,
@@ -57,7 +60,7 @@ export async function getAAVEPositions(
       name: 'Lending'
     },
     assets: []
-  } as Position
+  }
 
   position.assets = userAssets
     .map((asset: any) => {
@@ -67,10 +70,12 @@ export async function getAAVEPositions(
       const stableBorrow =
         (Number(asset.stableBorrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
 
-      position.additionalData.positionInUSD += (balance + borrow + stableBorrow) * price
-      position.additionalData.deptInUSD += borrow * price
-      position.additionalData.deptInUSD += stableBorrow * price
-      position.additionalData.collateralInUSD += balance * price
+      position.additionalData.positionInUSD =
+        (position.additionalData.positionInUSD || 0) + (balance + borrow + stableBorrow) * price
+      position.additionalData.debtInUSD =
+        (position.additionalData.debtInUSD || 0) + (borrow + stableBorrow) * price
+      position.additionalData.collateralInUSD =
+        (position.additionalData.collateralInUSD || 0) + balance * price
 
       const assetsResult = []
 

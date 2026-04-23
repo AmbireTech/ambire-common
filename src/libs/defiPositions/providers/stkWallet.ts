@@ -18,7 +18,8 @@ export function getStakedWalletPositions(
       id: 'stk-wallet',
       additionalData: {
         name: 'Staked',
-        positionInUSD
+        positionInUSD,
+        positionIndex: '1'
       },
       assets: [
         {
