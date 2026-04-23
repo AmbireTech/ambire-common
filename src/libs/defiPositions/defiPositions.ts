@@ -287,13 +287,15 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
                 if (isCustomAppChain) {
                   // Amount should be formatted with decimals and turned to bigint after that
                   amount = parseUnits(String(amount), asset.decimals)
+                  // In else because app assets don't have addresses and we don't want to set them as zero addresses
+                } else {
+                  // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
+                  asset.address = isHex(asset.address) ? getAddress(asset.address) : ZeroAddress
                 }
 
                 return {
                   ...asset,
                   iconUrl: asset.iconUrl || asset.logo_url || undefined,
-                  // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
-                  address: isHex(asset.address) ? getAddress(asset.address) : ZeroAddress,
                   amount: BigInt(amount),
                   protocolAsset: asset.protocolAsset
                     ? {

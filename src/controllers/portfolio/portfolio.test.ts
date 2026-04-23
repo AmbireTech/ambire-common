@@ -429,9 +429,17 @@ describe('Portfolio Controller ', () => {
           })
       )
 
-    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined)
+    void controller.updateSelectedAccount(
+      account.addr,
+      ethereum ? [ethereum] : undefined,
+      undefined
+    )
 
-    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined)
+    void controller.updateSelectedAccount(
+      account.addr,
+      ethereum ? [ethereum] : undefined,
+      undefined
+    )
 
     // We need to wait for the latest update, or the bellow expect will run too soon,
     // and we won't be able to check the queue properly.
@@ -1735,6 +1743,61 @@ describe('Portfolio Controller ', () => {
 
   describe('Defi positions', () => {
     const ethereum = networks.find((n) => n.chainId === 1n)!
+
+    const getDefiAppsResponse = () => ({
+      networkId: 'customAppChain',
+      chainId: 'customAppChain',
+      accountAddr: account.addr,
+      erc20s: [],
+      erc721s: {},
+      hasHints: true,
+      prices: {},
+      lastUpdate: Date.now(),
+      defi: {
+        positions: [
+          {
+            providerName: 'Polymarket',
+            iconUrl:
+              'https://static.debank.com/image/project/logo_url/app_polymarket/265aca8cef9212e094ef24c71a01c175.png',
+            siteUrl: 'https://polymarket.com/',
+            type: 'Deposit',
+            positions: [
+              {
+                id: '87f34311-e915-48c7-b51f-f5e92dc4ea39',
+                assets: [
+                  {
+                    id: 'be0eecf639f4e6a57e375123e46ed7b4',
+                    name: 'USDC',
+                    symbol: 'USDC',
+                    decimals: 6,
+                    logo_url:
+                      'https://static.debank.com/image/app_token/logo_url/polymarket/fc98c076b66fa798bcd8755cd859032e.png',
+                    app_id: 'polymarket',
+                    price: 0.999500249875063,
+                    amount: 64.230076,
+                    type: 1,
+                    value: 64.1979770114943
+                  }
+                ],
+                additionalData: {
+                  positionInUSD: 64.1979770114943,
+                  collateralInUSD: 64.1979770114943,
+                  positionIndex: 'cash_0xb78006ab9f2acfb90834c16b321eeb5008123393',
+                  name: 'Deposit',
+                  detailTypes: ['common'],
+                  updateAt: 1776933578.75451,
+                  position_index: 'cash_0xb78006ab9f2acfb90834c16b321eeb5008123393'
+                }
+              }
+            ],
+            positionInUSD: 64.1979770114943
+          }
+        ],
+        updatedAt: Date.now()
+      },
+      otherNetworksDefiCounts: {}
+    })
+
     beforeEach(() => {
       jest.restoreAllMocks()
       jest.clearAllMocks()
@@ -2002,6 +2065,169 @@ describe('Portfolio Controller ', () => {
       expect(result2.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
       expect(state2!.errors.length).toBeGreaterThan(0)
       restore()
+    })
+
+    describe('Defi apps', () => {
+      it('should skip update if canSkipUpdate=true', async () => {
+        const { controller } = await prepareTest()
+        // @ts-ignore
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(getDefiAppsResponse())
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 60 * 1000,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 60 * 1000,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        expect(discoverySpy).toHaveBeenCalledTimes(1)
+      })
+
+      it('should bypass skip and re-fetch on manual update', async () => {
+        const { controller } = await prepareTest()
+        // @ts-ignore
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(getDefiAppsResponse())
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 60 * 1000,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        const firstUpdateStarted =
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.updateStarted || 0
+
+        await wait(5)
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 60 * 1000,
+          hasKeys: true,
+          isManualUpdate: true
+        })
+
+        const secondUpdateStarted =
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.updateStarted || 0
+
+        expect(discoverySpy).toHaveBeenCalledTimes(2)
+        expect(secondUpdateStarted).toBeGreaterThan(firstUpdateStarted)
+      })
+
+      it('should persist app positions under defiApps with no chainId and empty tokens', async () => {
+        const { controller } = await prepareTest()
+
+        // @ts-ignore
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(getDefiAppsResponse())
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 0,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        const state = controller.getAccountPortfolioState(account.addr).defiApps
+        const positionsByProvider = state?.result?.defiPositions.positionsByProvider || []
+        const firstProvider = positionsByProvider[0]
+        const firstAsset = firstProvider?.positions[0]?.assets[0]
+
+        expect(state?.isReady).toBe(true)
+        expect(state?.isLoading).toBe(false)
+        expect(state?.result?.tokens).toEqual([])
+        expect(firstProvider?.chainId).toBeUndefined()
+        expect(firstAsset?.address).toBe(undefined)
+      })
+
+      it('should set criticalError on discovery failure', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+
+        // @ts-ignore
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockRejectedValue(new Error('Defi apps failure'))
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 0,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        const state = controller.getAccountPortfolioState(account.addr).defiApps
+
+        expect(state?.isLoading).toBe(false)
+        expect(state?.criticalError?.message).toContain('Defi apps failure')
+        restore()
+      })
+
+      it('should handle external API errorState responses', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+
+        // @ts-ignore
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue({
+          defi: {
+            success: false,
+            errorState: [{ message: 'Velcro app error', level: 'fatal' }]
+          }
+        })
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 0,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        const state = controller.getAccountPortfolioState(account.addr).defiApps
+
+        expect(state?.isLoading).toBe(false)
+        expect(state?.criticalError?.message).toContain('Velcro app error')
+        restore()
+      })
+
+      it('should not skip update when previous defiApps state has a criticalError', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+        // @ts-ignore
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockRejectedValueOnce(new Error('first call fails'))
+        discoverySpy.mockResolvedValueOnce(getDefiAppsResponse())
+
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 60 * 1000,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        // Should not be skipped despite maxDataAgeMs, because state.criticalError is set
+        // @ts-ignore
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 60 * 1000,
+          hasKeys: true,
+          isManualUpdate: false
+        })
+
+        const state = controller.getAccountPortfolioState(account.addr).defiApps
+
+        expect(discoverySpy).toHaveBeenCalledTimes(2)
+        expect(state?.criticalError).toBeUndefined()
+        expect(state?.isReady).toBe(true)
+        restore()
+      })
     })
   })
 
@@ -2782,6 +3008,46 @@ describe('Portfolio Controller ', () => {
           'internal error: queue length and response length mismatch'
         )
       }
+    })
+
+    test('customAppChain discovery is batched with network discovery for the same account/baseCurrency', async () => {
+      const discoveryUrls: string[] = []
+      const fetchOverride = createDiscoveryFetchOverride(async (url) => {
+        discoveryUrls.push(url)
+
+        return createJsonResponse(getPortfolioResponseByNetworks(url))
+      })
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        awaitInitialLoad: false
+      })
+
+      // @ts-ignore
+      const firstCall = controller.batchedPortfolioDiscovery({
+        chainId: 1n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        forceUpdateDefi: false
+      })
+
+      // @ts-ignore
+      const secondCall = controller.batchedPortfolioDiscovery({
+        chainId: 'customAppChain',
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        forceUpdateDefi: false
+      })
+
+      await Promise.allSettled([firstCall, secondCall])
+
+      expect(discoveryUrls).toHaveLength(1)
+      const networkParams = (new URL(discoveryUrls[0]!).searchParams.get('networks') || '')
+        .split(',')
+        .filter(Boolean)
+
+      expect(networkParams).toContain('1')
+      expect(networkParams).toContain('customAppChain')
     })
   })
 })

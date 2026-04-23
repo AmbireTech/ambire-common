@@ -125,7 +125,7 @@ export interface Position {
   id: string
   assets: PositionAsset[]
   additionalData: {
-    positionIndex: string
+    positionIndex?: string
     name?: string
     APY?: number
     positionInUSD?: number
