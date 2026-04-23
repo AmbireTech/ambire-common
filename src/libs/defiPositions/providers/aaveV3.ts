@@ -46,12 +46,9 @@ export async function getAAVEPositions(
     accountData.healthFactor = null
   }
 
-  const uuid = generateUuid()
-
   const position: Position = {
-    id: uuid,
+    id: generateUuid(),
     additionalData: {
-      positionIndex: uuid,
       healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
       positionInUSD: 0,
       deptInUSD: 0,
