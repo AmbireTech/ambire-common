@@ -368,7 +368,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       fetch: this.fetch,
       storage: this.storage,
-      addressBook: this.addressBook
+      addressBook: this.addressBook,
+      ui: this.ui
     })
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })

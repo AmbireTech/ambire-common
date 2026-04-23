@@ -5,14 +5,16 @@ import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import {
+  PHISHING_ACTIVE_UPDATE_INTERVAL,
   PHISHING_FAILED_TO_GET_UPDATE_INTERVAL,
-  PHISHING_UPDATE_INTERVAL
+  PHISHING_INACTIVE_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 /* eslint-disable no-restricted-syntax */
 import { fetchWithTimeout } from '../../utils/fetch'
@@ -26,6 +28,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   #storage: IStorageController
 
   #addressBook: IAddressBookController
+
+  #ui: IUiController
 
   #domains = new Set<string>()
 
@@ -63,24 +67,39 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     eventEmitterRegistry,
     fetch,
     storage,
-    addressBook
+    addressBook,
+    ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController
+    ui: IUiController
   }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
     this.#storage = storage
     this.#addressBook = addressBook
+    this.#ui = ui
 
     this.#updatePhishingInterval = new RecurringTimeout(
       async () => this.continuouslyUpdatePhishing(),
-      PHISHING_UPDATE_INTERVAL,
+      PHISHING_INACTIVE_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
+
+    this.#ui.uiEvent.on('addView', () => {
+      if (this.#ui.views.length === 1)
+        this.#updatePhishingInterval.restart({
+          timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
+          runImmediately: true
+        })
+    })
+    this.#ui.uiEvent.on('removeView', () => {
+      if (!this.#ui.views.length)
+        this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -115,7 +134,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #continuouslyUpdatePhishing() {
     // This prevents redundant requests to the relayer
     // when the extension reloads multiple times within a short period.
-    if (this.#updatedAt && Date.now() - this.#updatedAt < PHISHING_UPDATE_INTERVAL) return
+    if (
+      this.#updatedAt &&
+      Date.now() - this.#updatedAt < this.updatePhishingInterval.currentTimeout
+    )
+      return
 
     // version=0 means no local snapshot yet -> fetch full data.
     // version>0 means we have a checkpoint -> fetch only the delta since that version.
@@ -166,8 +189,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       addresses: [...this.#addresses]
     })
 
-    if (this.updatePhishingInterval.currentTimeout !== PHISHING_UPDATE_INTERVAL) {
-      this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_UPDATE_INTERVAL })
+    if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
+      this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     }
   }
 
