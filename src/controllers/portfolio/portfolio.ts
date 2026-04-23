@@ -1067,7 +1067,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       lastUpdate: number
       hasHints: boolean
     } | null
-    defiMaxDataAgeMs?: number
+    defiMaxDataAgeMs: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
     const discoveryStart = Date.now()
@@ -1078,9 +1078,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       chainId,
       account,
       baseCurrency,
-      // Set to 6 hours by default. That is because we are making a lot of
-      // portfolio updates, most of which shouldn't update the defi positions.
-      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      defiMaxDataAgeMs,
       hasKeys,
       externalApiHintsResponse,
       isManualUpdate
@@ -1088,10 +1086,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const defiState = this.#state[account.addr]?.[chainId.toString()]?.result?.defiPositions
     const canSkipExternalApiHintsUpdate =
-      !!externalApiHintsResponse &&
-      !isManualUpdate &&
-      Date.now() - externalApiHintsResponse.lastUpdate <
-        EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
+      chainId === 'customAppChain' ||
+      (!!externalApiHintsResponse &&
+        !isManualUpdate &&
+        Date.now() - externalApiHintsResponse.lastUpdate <
+          EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic'])
 
     const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
       defiState,
@@ -1171,7 +1170,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
     // Update the price cache so the lib can use the latest prices from velcro
-    if (response.prices) {
+    if (response.prices && chainId !== 'customAppChain') {
       const networkTokenDataCache: TokenDataCache =
         this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
 
@@ -1215,13 +1214,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     network: Network,
     portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & {
+      defiMaxDataAgeMs: number
       hasKeys: boolean
       maxDataAgeMs?: number
-      defiMaxDataAgeMs?: number
       isManualUpdate?: boolean
     }
   ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
-    const { maxDataAgeMs, isManualUpdate } = portfolioProps
+    const { maxDataAgeMs, isManualUpdate, defiMaxDataAgeMs } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
@@ -1266,7 +1265,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         baseCurrency: 'usd',
         externalApiHintsResponse: hintsResponse || null,
         isManualUpdate,
-        defiMaxDataAgeMs: portfolioProps?.defiMaxDataAgeMs,
+        defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
       const allHints = this.getAllHints(
@@ -1402,9 +1401,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   protected async updateDefiAppsState(
     account: Account,
     portfolioProps: Partial<GetOptions> & {
+      defiMaxDataAgeMs: number
       hasKeys: boolean
       maxDataAgeMs?: number
-      defiMaxDataAgeMs?: number
       isManualUpdate?: boolean
     }
   ) {
@@ -1428,7 +1427,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         account,
         baseCurrency: 'usd',
         externalApiHintsResponse: null,
-        defiMaxDataAgeMs: portfolioProps?.defiMaxDataAgeMs,
+        defiMaxDataAgeMs: portfolioProps.defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
 
@@ -1661,6 +1660,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
+      // Set to 6 hours by default. That is because we are making a lot of
+      // portfolio updates, most of which shouldn't update the defi positions.
+      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
       isManualUpdate
     } = opts || {}
     await this.initialLoadPromise
@@ -1723,6 +1725,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               maxDataAgeMs,
               isManualUpdate,
               blockTag: 'both',
+              defiMaxDataAgeMs,
               ...(accountOpsToSimulate &&
                 accountOpsToSimulate.length &&
                 baseAcc &&
@@ -1803,7 +1806,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }),
       this.updateDefiAppsState(selectedAccount, {
         maxDataAgeMs: paramsMaxDataAgeMs,
-        defiMaxDataAgeMs: paramsMaxDataAgeMs,
+        defiMaxDataAgeMs: defiMaxDataAgeMs,
         isManualUpdate,
         hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
       })
