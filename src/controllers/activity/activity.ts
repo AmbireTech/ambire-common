@@ -77,11 +77,11 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
   }
 }
 
-// Address poisoning lookalikes usually preserve a few consecutive chars from both the left
-// and right side of the original address. We treat any address with at least 4 matching chars
-// on each side as suspicious, but we keep the exact prefix/suffix counts so downstream UI can
-// render the true shape of the match (for example 6-left / 5-right).
-const MIN_ADDRESS_POISONING_MATCH_CHARS = 4
+// Address poisoning lookalikes usually preserve a few consecutive chars from the left and/or
+// right side of the original address. We consider any recipient with at least 8 matched chars
+// in total as suspicious, while still keeping the exact prefix/suffix counts so downstream UI
+// can render the true shape of the match (for example 6-left / 5-right or even 0-left / 8-right).
+const MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS = 8
 
 const getAddressPoisoningMatchCounts = (candidate: string, trustedAddress: string) => {
   const normalizedCandidate = candidate.toLowerCase()
@@ -115,10 +115,7 @@ const getAddressPoisoningMatchCounts = (candidate: string, trustedAddress: strin
     matchedSuffixCharsCount += 1
   }
 
-  if (
-    matchedPrefixCharsCount < MIN_ADDRESS_POISONING_MATCH_CHARS ||
-    matchedSuffixCharsCount < MIN_ADDRESS_POISONING_MATCH_CHARS
-  ) {
+  if (matchedPrefixCharsCount + matchedSuffixCharsCount < MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS) {
     return null
   }
 
@@ -284,29 +281,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
       if (!matchCounts) return
 
-      const strongestSymmetricMatch = Math.min(
+      const totalMatchedChars =
+        matchCounts.matchedPrefixCharsCount + matchCounts.matchedSuffixCharsCount
+      const bestTotalMatchedChars = bestPoisoningMatch
+        ? bestPoisoningMatch.matchedPrefixCharsCount + bestPoisoningMatch.matchedSuffixCharsCount
+        : -1
+      const weakestSideMatch = Math.min(
         matchCounts.matchedPrefixCharsCount,
         matchCounts.matchedSuffixCharsCount
       )
-      const totalMatchedChars =
-        matchCounts.matchedPrefixCharsCount + matchCounts.matchedSuffixCharsCount
-      const bestStrongestSymmetricMatch = bestPoisoningMatch
+      const bestWeakestSideMatch = bestPoisoningMatch
         ? Math.min(
             bestPoisoningMatch.matchedPrefixCharsCount,
             bestPoisoningMatch.matchedSuffixCharsCount
           )
         : -1
-      const bestTotalMatchedChars = bestPoisoningMatch
-        ? bestPoisoningMatch.matchedPrefixCharsCount + bestPoisoningMatch.matchedSuffixCharsCount
-        : -1
 
       if (
         !bestPoisoningMatch ||
-        strongestSymmetricMatch > bestStrongestSymmetricMatch ||
-        (strongestSymmetricMatch === bestStrongestSymmetricMatch &&
-          totalMatchedChars > bestTotalMatchedChars) ||
-        (strongestSymmetricMatch === bestStrongestSymmetricMatch &&
-          totalMatchedChars === bestTotalMatchedChars &&
+        totalMatchedChars > bestTotalMatchedChars ||
+        (totalMatchedChars === bestTotalMatchedChars && weakestSideMatch > bestWeakestSideMatch) ||
+        (totalMatchedChars === bestTotalMatchedChars &&
+          weakestSideMatch === bestWeakestSideMatch &&
           (lastInteractedAt ?? -1) > (bestPoisoningMatch.lastInteractedAt ?? -1))
       ) {
         bestPoisoningMatch = {
