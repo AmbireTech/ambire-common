@@ -278,6 +278,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
     }
 
+    // Address poisoning compares the new recipient against two trusted sources:
+    // 1) explicit trusted addresses passed in by the caller (e.g. Address Book)
+    // 2) recipients from this account's historical account ops below
     trustedAddresses.forEach((address) => updatePoisoningMatch(address))
 
     accounts.forEach((account) => {
