@@ -1,6 +1,9 @@
 name: PR Agent - General Review
 
 on:
+  push:
+    branches:
+      - feature/ai-reviews
   issue_comment:
     types: [created]
 
@@ -12,12 +15,11 @@ jobs:
       !contains(github.event.comment.body, '/security-review')
     runs-on: ubuntu-latest
     permissions:
-      issues: write
       pull-requests: write
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run General PR Agent
         uses: The-PR-Agent/pr-agent@main
