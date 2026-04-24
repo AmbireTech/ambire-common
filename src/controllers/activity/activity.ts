@@ -1,4 +1,4 @@
-import { getAddress, toBeHex, ZeroAddress } from 'ethers'
+import { toBeHex } from 'ethers'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -11,6 +11,10 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import {
+  getAccountOpBalanceChanges,
+  getBalanceChangeTokenAddresses
+} from '../../libs/accountOp/balanceChanges'
 import {
   AccountOpIdentifiedBy,
   BalanceChange,
@@ -27,7 +31,6 @@ import {
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
-import { TokenError, TokenResult } from '../../libs/portfolio/interfaces'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -77,53 +80,6 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     currentPage: fromPage, // zero/index based
     maxPages: Math.ceil(items.length / itemsPerPage)
   }
-}
-
-const isUsableTokenResult = (error: TokenError | null | undefined, token?: TokenResult | null) =>
-  !!token && error === '0x' && !!token.symbol
-
-const buildTokenBalanceMap = (tokensWithErrors: [TokenError, TokenResult][]) =>
-  tokensWithErrors.reduce((acc, [error, token]) => {
-    if (!isUsableTokenResult(error, token)) return acc
-
-    acc.set(token.address.toLowerCase(), token)
-
-    return acc
-  }, new Map<string, TokenResult>())
-
-const compareTokenBalances = (
-  beforeTokensWithErrors: [TokenError, TokenResult][],
-  afterTokensWithErrors: [TokenError, TokenResult][]
-): BalanceChange[] => {
-  const beforeTokens = buildTokenBalanceMap(beforeTokensWithErrors)
-  const afterTokens = buildTokenBalanceMap(afterTokensWithErrors)
-  const tokenAddresses = new Set([...beforeTokens.keys(), ...afterTokens.keys()])
-
-  return Array.from(tokenAddresses).reduce((changes, tokenAddress) => {
-    const beforeToken = beforeTokens.get(tokenAddress)
-    const afterToken = afterTokens.get(tokenAddress)
-    const referenceToken = afterToken || beforeToken
-
-    if (!referenceToken) return changes
-
-    const amountBefore = beforeToken?.amount || 0n
-    const amountAfter = afterToken?.amount || 0n
-    const balanceChange = amountAfter - amountBefore
-
-    if (balanceChange === 0n) return changes
-
-    changes.push({
-      ...referenceToken,
-      amount: amountAfter,
-      amountBefore,
-      amountAfter,
-      balanceChange,
-      priceIn: referenceToken.priceIn || [],
-      marketDataIn: referenceToken.marketDataIn || []
-    })
-
-    return changes
-  }, [] as BalanceChange[])
 }
 
 /**
@@ -581,11 +537,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
         this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
       }
 
-      const tokenAddrs = Array.from(
-        new Set([ZeroAddress, ...foundTokens].map((tokenAddr) => getAddress(tokenAddr)))
-      )
+      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
 
-      await this.#updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receipt.blockNumber)
+      await this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receipt.blockNumber)
     } catch (error) {
       console.log(error)
       await this.setAccountOpBalanceChanges(
@@ -842,11 +796,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     balanceChangesTasks.push({
                       accountOp,
                       network,
-                      tokenAddrs: Array.from(
-                        new Set(
-                          [ZeroAddress, ...foundTokens].map((tokenAddr) => getAddress(tokenAddr))
-                        )
-                      ),
+                      tokenAddrs: getBalanceChangeTokenAddresses(foundTokens),
                       receiptBlockNumber: receipt.blockNumber
                     })
                   } else {
@@ -917,7 +867,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     balanceChangesTasks.forEach(({ accountOp, network, tokenAddrs, receiptBlockNumber }) => {
       // Do not block the status update flow on the balance diff computation.
-      void this.#updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber)
+      void this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber)
     })
 
     return {
@@ -930,37 +880,37 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
   }
 
-  async #updateAccountOpBalanceChanges(
+  async updateAccountOpBalanceChanges(
     accountOp: SubmittedAccountOp,
     network: Network,
     tokenAddrs: string[],
     receiptBlockNumber: number
   ) {
+    await this.#initialLoadPromise
+
     try {
-      const previousBlockNumber = receiptBlockNumber > 0 ? receiptBlockNumber - 1 : 0
-      const [currentBlockTokens, previousBlockTokens] = await Promise.all([
-        this.#portfolio.getTokenBalancesOnBlock(
-          accountOp.accountAddr,
-          network.chainId,
-          tokenAddrs,
-          receiptBlockNumber,
-          accountOp.accountAddr
-        ),
-        this.#portfolio.getTokenBalancesOnBlock(
-          accountOp.accountAddr,
-          network.chainId,
-          tokenAddrs,
-          previousBlockNumber,
-          accountOp.accountAddr
+      if (accountOp.chainId !== network.chainId) {
+        throw new Error(
+          `Cannot update balance changes for ${accountOp.identifiedBy.identifier}: network mismatch`
         )
-      ])
+      }
+
+      const balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr: accountOp.accountAddr,
+        chainId: accountOp.chainId,
+        tokenAddrs,
+        receiptBlockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio)
+      })
 
       await this.setAccountOpBalanceChanges(
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
-        compareTokenBalances(previousBlockTokens, currentBlockTokens)
+        balanceChanges
       )
+
+      return balanceChanges
     } catch (error) {
       console.log(error)
       await this.setAccountOpBalanceChanges(
@@ -969,6 +919,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         accountOp.chainId,
         []
       )
+
+      return []
     }
   }
 
