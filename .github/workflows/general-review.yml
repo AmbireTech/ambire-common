@@ -1,0 +1,27 @@
+name: PR Agent - General Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      contains(github.event.comment.body, '/review') &&
+      !contains(github.event.comment.body, '/security-review')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run General PR Agent
+        uses: The-PR-Agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
+          CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"

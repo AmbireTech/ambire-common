@@ -1,0 +1,57 @@
+name: PR Agent - Security Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  security_review:
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      contains(github.event.comment.body, '/security-review')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # PR-Agent does not recognize "/security-review" as a native command.
+      # We rewrite the event JSON so the agent sees "/review" instead.
+      # How this works is:
+      # 1. Only this workflow runs because of the if statement
+      # 2. It replaces /security-review with /review
+      # 3. It replaces the extra instructions
+      - name: Rewrite event payload for PR-Agent
+        run: |
+          jq '(.comment.body // "") |= sub("/security-review"; "/review"; "i")' \
+            "$GITHUB_EVENT_PATH" > "$GITHUB_EVENT_PATH.tmp" && \
+          mv "$GITHUB_EVENT_PATH.tmp" "$GITHUB_EVENT_PATH"
+
+      - name: Run Security PR Agent
+        uses: The-PR-Agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
+          CONFIG__MODEL: "openrouter/deepseek/deepseek-v4-pro"
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: |
+            Focus exclusively on security, privacy, and compliance risks. Ignore style, performance, or general quality issues unless they have direct security impact.
+
+            Key areas to examine:
+            - Sensitive data exposure or hard-coded secrets
+            - Insecure deserialization, cryptographic issues
+            - Improper access control
+            - Input validation, sanitization, and output encoding
+            - Logging of sensitive information
+            - Changes in key areas like: keystore, signing logic, encryption and safety features
+            - Edge cases in features that ensure the security of the user (e.g., phishing detection, transaction safety checks, etc.)
+
+            For every finding:
+            - State the severity (Critical / High / Medium / Low)
+            - Quote the exact vulnerable code
+            - Explain the risk clearly
+            - Provide concrete remediation steps or code fixes
+
+            Be thorough and precise.
