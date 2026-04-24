@@ -71,10 +71,10 @@ const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
 
 // Keep poisoning warnings readable with compact address previews.
-// So for 4+4 matches we keep the default (shorter) preview, while for
-// 5+5 / 6+6 matches we show a slightly longer preview for more clarity.
-const ADDRESS_POISONING_MATCH_MAX_LENGTH_DEFAULT = 18
-const ADDRESS_POISONING_MATCH_MAX_LENGTH_EXTENDED = 20
+// So for 4+4 matches we show 0x + 6...6, while for 5+5 / 6+6 matches
+// we show 0x + 8...8 for slightly more clarity.
+const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
+const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
 const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
   `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
 
@@ -90,12 +90,14 @@ const formatAddressPoisoningMatchForMessage = ({
     // keep original if checksum normalization fails
   }
 
-  const maxLength =
+  const visibleChars =
     matchedCharsCount >= 5
-      ? ADDRESS_POISONING_MATCH_MAX_LENGTH_EXTENDED
-      : ADDRESS_POISONING_MATCH_MAX_LENGTH_DEFAULT
+      ? ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED
+      : ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT
 
-  return shortenAddress(normalizedAddress, maxLength)
+  const fixedPreviewLength = visibleChars * 2 + 5 // 0x + left + ... + right
+
+  return shortenAddress(normalizedAddress, fixedPreviewLength, visibleChars)
 }
 
 function getTimeAgo(date: Date): string {
