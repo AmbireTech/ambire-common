@@ -71,8 +71,9 @@ const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
 
 // Keep poisoning warnings readable with compact address previews.
-// So for 4+4 matches we show 0x + 6...6, while for 5+5 / 6+6 matches
-// we show 0x + 8...8 for slightly more clarity.
+// We size the preview based on the strongest symmetric part of the match:
+// 4-left/4-right uses 0x + 6...6, while stronger matches such as 5-left/5-right,
+// 6-left/5-right or 6-left/6-right use 0x + 8...8 for more clarity.
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
 const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
@@ -80,7 +81,8 @@ const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
 
 const formatAddressPoisoningMatchForMessage = ({
   matchedAddress,
-  matchedCharsCount
+  matchedPrefixCharsCount,
+  matchedSuffixCharsCount
 }: AddressPoisoningMatch) => {
   let normalizedAddress = matchedAddress
 
@@ -90,8 +92,9 @@ const formatAddressPoisoningMatchForMessage = ({
     // keep original if checksum normalization fails
   }
 
+  const strongestSymmetricMatch = Math.min(matchedPrefixCharsCount, matchedSuffixCharsCount)
   const visibleChars =
-    matchedCharsCount >= 5
+    strongestSymmetricMatch >= 5
       ? ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED
       : ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT
 

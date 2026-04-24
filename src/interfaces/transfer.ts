@@ -19,7 +19,8 @@ export interface TransferUpdate {
 
 export type AddressPoisoningMatch = {
   matchedAddress: string
-  // Number of prefix and suffix chars that matched (e.g. 4, 5 or 6).
-  // Used by validation message formatting to decide how much address context to show.
-  matchedCharsCount: number
+  // Number of consecutive chars that matched from the left/right side of the address body.
+  // We keep them separate because poisoning lookalikes are not always symmetric (e.g. 6-left, 5-right).
+  matchedPrefixCharsCount: number
+  matchedSuffixCharsCount: number
 }

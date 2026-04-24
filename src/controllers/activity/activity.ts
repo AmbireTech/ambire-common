@@ -77,14 +77,13 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
   }
 }
 
-// Strongest-to-weakest match order for poisoning detection:
-// we first try exact prefix+suffix matches of 6, then 5, then 4 chars.
-// In practice, 4+4 prefix/suffix poisoning is the most common case because
-// it requires the least brute-force compute from attackers. 5+5 and 6+6
-// matches are stronger but significantly more expensive to generate.
-const ADDRESS_POISONING_SEGMENT_LENGTHS = [6, 5, 4]
+// Address poisoning lookalikes usually preserve a few consecutive chars from both the left
+// and right side of the original address. We treat any address with at least 4 matching chars
+// on each side as suspicious, but we keep the exact prefix/suffix counts so downstream UI can
+// render the true shape of the match (for example 6-left / 5-right).
+const MIN_ADDRESS_POISONING_MATCH_CHARS = 4
 
-const getAddressPoisoningMatchedCharsCount = (candidate: string, trustedAddress: string) => {
+const getAddressPoisoningMatchCounts = (candidate: string, trustedAddress: string) => {
   const normalizedCandidate = candidate.toLowerCase()
   const normalizedTrustedAddress = trustedAddress.toLowerCase()
 
@@ -98,14 +97,35 @@ const getAddressPoisoningMatchedCharsCount = (candidate: string, trustedAddress:
 
   const candidateBody = normalizedCandidate.slice(2)
   const trustedAddressBody = normalizedTrustedAddress.slice(2)
+  let matchedPrefixCharsCount = 0
+  let matchedSuffixCharsCount = 0
 
-  return (
-    ADDRESS_POISONING_SEGMENT_LENGTHS.find(
-      (segmentLength) =>
-        candidateBody.slice(0, segmentLength) === trustedAddressBody.slice(0, segmentLength) &&
-        candidateBody.slice(-segmentLength) === trustedAddressBody.slice(-segmentLength)
-    ) ?? null
-  )
+  while (
+    matchedPrefixCharsCount < candidateBody.length &&
+    candidateBody[matchedPrefixCharsCount] === trustedAddressBody[matchedPrefixCharsCount]
+  ) {
+    matchedPrefixCharsCount += 1
+  }
+
+  while (
+    matchedSuffixCharsCount < candidateBody.length - matchedPrefixCharsCount &&
+    candidateBody[candidateBody.length - 1 - matchedSuffixCharsCount] ===
+      trustedAddressBody[trustedAddressBody.length - 1 - matchedSuffixCharsCount]
+  ) {
+    matchedSuffixCharsCount += 1
+  }
+
+  if (
+    matchedPrefixCharsCount < MIN_ADDRESS_POISONING_MATCH_CHARS ||
+    matchedSuffixCharsCount < MIN_ADDRESS_POISONING_MATCH_CHARS
+  ) {
+    return null
+  }
+
+  return {
+    matchedPrefixCharsCount,
+    matchedSuffixCharsCount
+  }
 }
 
 /**
@@ -260,19 +280,39 @@ export class ActivityController extends EventEmitter implements IActivityControl
       null
 
     const updatePoisoningMatch = (address: string, lastInteractedAt: number | null = null) => {
-      const matchedCharsCount = getAddressPoisoningMatchedCharsCount(toAddress, address)
+      const matchCounts = getAddressPoisoningMatchCounts(toAddress, address)
 
-      if (!matchedCharsCount) return
+      if (!matchCounts) return
+
+      const strongestSymmetricMatch = Math.min(
+        matchCounts.matchedPrefixCharsCount,
+        matchCounts.matchedSuffixCharsCount
+      )
+      const totalMatchedChars =
+        matchCounts.matchedPrefixCharsCount + matchCounts.matchedSuffixCharsCount
+      const bestStrongestSymmetricMatch = bestPoisoningMatch
+        ? Math.min(
+            bestPoisoningMatch.matchedPrefixCharsCount,
+            bestPoisoningMatch.matchedSuffixCharsCount
+          )
+        : -1
+      const bestTotalMatchedChars = bestPoisoningMatch
+        ? bestPoisoningMatch.matchedPrefixCharsCount + bestPoisoningMatch.matchedSuffixCharsCount
+        : -1
 
       if (
         !bestPoisoningMatch ||
-        matchedCharsCount > bestPoisoningMatch.matchedCharsCount ||
-        (matchedCharsCount === bestPoisoningMatch.matchedCharsCount &&
+        strongestSymmetricMatch > bestStrongestSymmetricMatch ||
+        (strongestSymmetricMatch === bestStrongestSymmetricMatch &&
+          totalMatchedChars > bestTotalMatchedChars) ||
+        (strongestSymmetricMatch === bestStrongestSymmetricMatch &&
+          totalMatchedChars === bestTotalMatchedChars &&
           (lastInteractedAt ?? -1) > (bestPoisoningMatch.lastInteractedAt ?? -1))
       ) {
         bestPoisoningMatch = {
           matchedAddress: address,
-          matchedCharsCount,
+          matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
+          matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
           lastInteractedAt
         }
       }
@@ -318,7 +358,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         ? null
         : bestPoisoningMatch && {
             matchedAddress: bestPoisoningMatch.matchedAddress,
-            matchedCharsCount: bestPoisoningMatch.matchedCharsCount
+            matchedPrefixCharsCount: bestPoisoningMatch.matchedPrefixCharsCount,
+            matchedSuffixCharsCount: bestPoisoningMatch.matchedSuffixCharsCount
           }
     }
   }
