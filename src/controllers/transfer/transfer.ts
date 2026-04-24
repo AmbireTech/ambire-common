@@ -22,7 +22,6 @@ import {
 import { IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { getAccountOpRecipients } from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
@@ -74,15 +73,6 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
-// Strongest-to-weakest match order for poisoning detection:
-// we first try exact prefix+suffix matches of 6, then 5, then 4 chars.
-// In practice, 4+4 prefix/suffix poisoning is the most common case because
-// it requires the least brute-force compute from attackers. 5+5 and 6+6
-// matches are stronger but significantly more expensive to generate.
-const ADDRESS_POISONING_SEGMENT_LENGTHS = [6, 5, 4]
-// TODO: Should we add a limit? Will it degrade perf too much if this scans though all?
-const ADDRESS_POISONING_SCAN_LIMIT = 500
-
 const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
 }
@@ -885,70 +875,28 @@ export class TransferController extends EventEmitter implements ITransferControl
     return null
   }
 
-  #hasAddressPoisoningPattern(a: string, b: string, segmentLength: number) {
-    const normalizedA = a.toLowerCase()
-    const normalizedB = b.toLowerCase()
-
-    if (!isAddress(normalizedA) || !isAddress(normalizedB) || normalizedA === normalizedB) {
-      return false
-    }
-
-    const bodyA = normalizedA.slice(2)
-    const bodyB = normalizedB.slice(2)
-
-    return (
-      bodyA.slice(0, segmentLength) === bodyB.slice(0, segmentLength) &&
-      bodyA.slice(-segmentLength) === bodyB.slice(-segmentLength)
-    )
-  }
-
-  #findAddressPoisoningMatch(recipientAddress: string) {
-    // TODO: Would it be better if we reuse hasAccountOpsSentTo in terms of the iterations it makes?
-    const trustedRecipients = this.#activity
-      .getAccountOpsForAccount({
-        accountAddr: this.#selectedAccount.account?.addr,
-        from: 0,
-        numberOfItems: ADDRESS_POISONING_SCAN_LIMIT
-      })
-      .flatMap((op) => getAccountOpRecipients(op))
-
-    const trustedAddresses = new Set(
-      [...trustedRecipients, ...this.#addressBook.contacts.map(({ address }) => address)]
-        .filter((addr) => isAddress(addr))
-        .map((addr) => addr.toLowerCase())
-    )
-
-    for (const trustedAddress of trustedAddresses) {
-      for (const segmentLength of ADDRESS_POISONING_SEGMENT_LENGTHS) {
-        if (this.#hasAddressPoisoningPattern(recipientAddress, trustedAddress, segmentLength)) {
-          return { matchedAddress: trustedAddress, matchedCharsCount: segmentLength }
-        }
-      }
-    }
-
-    return null
-  }
-
   async #updateRecipientHistoryAndPoisoning() {
     // Check if the address has been used previously for transactions
     let found = false
     let lastTransactionDate = null
+    let addressPoisoningMatch = null
+
     if (isAddress(this.recipientAddress)) {
       const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
-        this.#selectedAccount.account?.addr || ''
+        this.#selectedAccount.account?.addr || '',
+        this.#addressBook.contacts.map(({ address }) => address)
       )
       found = result.found
       lastTransactionDate = result.lastTransactionDate
+      addressPoisoningMatch = result.addressPoisoningMatch
     }
 
     this.isRecipientAddressFirstTimeSend =
       !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
-    this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend
-      ? this.#findAddressPoisoningMatch(this.recipientAddress)
-      : null
+    this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
   }
 
   get hasPersistedState() {

@@ -1,4 +1,4 @@
-import { toBeHex } from 'ethers'
+import { isAddress, toBeHex } from 'ethers'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -11,9 +11,9 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import { AddressPoisoningMatch } from '../../interfaces/transfer'
 import {
   AccountOpIdentifiedBy,
-  checkIsRecipientOfAccountOp,
   fetchFrontRanTxnId,
   fetchTxnId,
   getAccountOpRecipients,
@@ -75,6 +75,37 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     currentPage: fromPage, // zero/index based
     maxPages: Math.ceil(items.length / itemsPerPage)
   }
+}
+
+// Strongest-to-weakest match order for poisoning detection:
+// we first try exact prefix+suffix matches of 6, then 5, then 4 chars.
+// In practice, 4+4 prefix/suffix poisoning is the most common case because
+// it requires the least brute-force compute from attackers. 5+5 and 6+6
+// matches are stronger but significantly more expensive to generate.
+const ADDRESS_POISONING_SEGMENT_LENGTHS = [6, 5, 4]
+
+const getAddressPoisoningMatchedCharsCount = (candidate: string, trustedAddress: string) => {
+  const normalizedCandidate = candidate.toLowerCase()
+  const normalizedTrustedAddress = trustedAddress.toLowerCase()
+
+  if (
+    !isAddress(normalizedCandidate) ||
+    !isAddress(normalizedTrustedAddress) ||
+    normalizedCandidate === normalizedTrustedAddress
+  ) {
+    return null
+  }
+
+  const candidateBody = normalizedCandidate.slice(2)
+  const trustedAddressBody = normalizedTrustedAddress.slice(2)
+
+  return (
+    ADDRESS_POISONING_SEGMENT_LENGTHS.find(
+      (segmentLength) =>
+        candidateBody.slice(0, segmentLength) === trustedAddressBody.slice(0, segmentLength) &&
+        candidateBody.slice(-segmentLength) === trustedAddressBody.slice(-segmentLength)
+    ) ?? null
+  )
 }
 
 /**
@@ -206,20 +237,48 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Checks if there are any account operations that were sent to a specific address
-   * @param toAddress The address to check for received transactions
-   * @param accountId The account ID to filter operations from
-   * @returns An object with 'found' (boolean) and 'lastTransactionDate' (Date | null)
+   * Checks if there are any account operations that were sent to a specific address.
+   * Returns history metadata plus an optional poisoning match for first-time recipients.
    */
   async hasAccountOpsSentTo(
-    toAddress: string,
-    accountId: AccountId
-  ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
+    toAddress: string, // the address to check for received transactions
+    accountId: AccountId, // the account ID to filter operations from
+    trustedAddresses: string[] = [] // trusted addresses to check for poisoning matches
+  ): Promise<{
+    found: boolean
+    lastTransactionDate: Date | null
+    addressPoisoningMatch: AddressPoisoningMatch | null
+  }> {
     await this.#initialLoadPromise
-    if (!toAddress) return { found: false, lastTransactionDate: null }
+    if (!toAddress) return { found: false, lastTransactionDate: null, addressPoisoningMatch: null }
+
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
+    const normalizedToAddress = toAddress.toLowerCase()
+    let bestPoisoningMatch: (AddressPoisoningMatch & { lastInteractedAt: number | null }) | null =
+      null
+
+    const updatePoisoningMatch = (address: string, lastInteractedAt: number | null = null) => {
+      const matchedCharsCount = getAddressPoisoningMatchedCharsCount(toAddress, address)
+
+      if (!matchedCharsCount) return
+
+      if (
+        !bestPoisoningMatch ||
+        matchedCharsCount > bestPoisoningMatch.matchedCharsCount ||
+        (matchedCharsCount === bestPoisoningMatch.matchedCharsCount &&
+          (lastInteractedAt ?? -1) > (bestPoisoningMatch.lastInteractedAt ?? -1))
+      ) {
+        bestPoisoningMatch = {
+          matchedAddress: address.toLowerCase(),
+          matchedCharsCount,
+          lastInteractedAt
+        }
+      }
+    }
+
+    trustedAddresses.forEach((address) => updatePoisoningMatch(address))
 
     accounts.forEach((account) => {
       const accountOpsOfAccount = this.#accountsOps[account]
@@ -229,20 +288,36 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const networkAccountOpsOfAccount = accountOpsOfAccount[network]
         if (!networkAccountOpsOfAccount) return
         networkAccountOpsOfAccount.forEach((op) => {
-          const timestampOfSentTo = checkIsRecipientOfAccountOp(op, toAddress)
+          const recipients = getAccountOpRecipients(op)
+          const hasSentToRecipient = recipients.some((recipient) => {
+            if (recipient.toLowerCase() === normalizedToAddress) return true
 
-          if (timestampOfSentTo) {
+            updatePoisoningMatch(recipient, op.timestamp)
+
+            return false
+          })
+
+          if (hasSentToRecipient) {
             found = true
 
-            if (!lastTimestamp || timestampOfSentTo > lastTimestamp) {
-              lastTimestamp = timestampOfSentTo
+            if (!lastTimestamp || op.timestamp > lastTimestamp) {
+              lastTimestamp = op.timestamp
             }
           }
         })
       })
     })
 
-    return { found, lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null }
+    return {
+      found,
+      lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null,
+      addressPoisoningMatch: found
+        ? null
+        : bestPoisoningMatch && {
+            matchedAddress: bestPoisoningMatch.matchedAddress,
+            matchedCharsCount: bestPoisoningMatch.matchedCharsCount
+          }
+    }
   }
 
   async filterAccountsOps(
