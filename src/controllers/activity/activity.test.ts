@@ -164,6 +164,144 @@ describe('Activity Controller ', () => {
   })
 
   describe('AccountsOps', () => {
+    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 0/8 and reject total < 8 or 0/0)', async () => {
+      const { controller } = await prepareTest()
+
+      const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+      const poisoningRecipient4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const poisoningRecipient5 = '0xF0cD7bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb237DB'
+      const poisoningRecipient6 = '0xF0cD72ccccccccccccccccccccccccccccc237DB'
+      const poisoningRecipient4to8 = '0xF0cDdddddddddddddddddddddddddddd793237DB'
+      const poisoningRecipient3to8 = '0xF0ceeeeeeeeeeeeeeeeeeeeeeeeeeeee793237DB'
+      const poisoningRecipient0to8 = '0xAb12ffffffffffffffffffffffffffff793237DB'
+      const poisoningRecipient3to4 = '0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const poisoningRecipient0to0 = '0xAb12eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeCDef'
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 226n,
+        txnId: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        timestamp: 1_700_000_100_000,
+        calls: [{ to: trustedRecipient, value: 0n, data: '0x' }]
+      })
+
+      const trustedRecipientResult = await controller.hasAccountOpsSentTo(
+        trustedRecipient,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(trustedRecipientResult).toEqual({
+        found: true,
+        lastTransactionDate: new Date(1_700_000_100_000),
+        addressPoisoningMatch: null
+      })
+
+      const poisoningResult4 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult5 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient5,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult6 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient6,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult4to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult3to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult0to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient0to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult3to4 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to4,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult0to0 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient0to0,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(poisoningResult4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 4
+        }
+      })
+
+      expect(poisoningResult5).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 5,
+          matchedSuffixCharsCount: 5
+        }
+      })
+
+      expect(poisoningResult6).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 6,
+          matchedSuffixCharsCount: 5
+        }
+      })
+
+      expect(poisoningResult4to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult3to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 3,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult0to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 0,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult3to4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+
+      expect(poisoningResult0to0).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+    })
+
     test('Retrieved from Controller and persisted in Storage', async () => {
       const { controller, sessionId } = await prepareTest()
 
