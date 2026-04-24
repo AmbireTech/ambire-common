@@ -24,4 +24,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
-          CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"
+          CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.5"

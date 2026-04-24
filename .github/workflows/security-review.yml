@@ -35,7 +35,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
-          CONFIG__MODEL: "openrouter/deepseek/deepseek-v4-pro"
+          CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: |
             Focus exclusively on security, privacy, and compliance risks. Ignore style, performance, or general quality issues unless they have direct security impact.
 
