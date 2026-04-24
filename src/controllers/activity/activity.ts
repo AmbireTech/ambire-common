@@ -271,7 +271,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           (lastInteractedAt ?? -1) > (bestPoisoningMatch.lastInteractedAt ?? -1))
       ) {
         bestPoisoningMatch = {
-          matchedAddress: address.toLowerCase(),
+          matchedAddress: address,
           matchedCharsCount,
           lastInteractedAt
         }
