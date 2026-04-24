@@ -14,8 +14,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const FUNCTION_SELECTORS_STORAGE_KEY = 'functionSelectors'
 
-// The ContractInfo is responsible for getting
-export class ContractInfo extends EventEmitter implements IContractInfoController {
+// The ContractInfoController is responsible for getting function selectors for contracts
+export class ContractInfoController extends EventEmitter implements IContractInfoController {
   #fetch: Fetch
 
   #storage: IStorageController
@@ -42,6 +42,8 @@ export class ContractInfo extends EventEmitter implements IContractInfoControlle
 
     this.#fetch = fetch
     this.#storage = storage
+    // TODO remove
+    this.#storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {})
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -50,19 +52,24 @@ export class ContractInfo extends EventEmitter implements IContractInfoControlle
   }
 
   get isReady() {
-    return !!this.initialLoadPromise
+    return !this.initialLoadPromise
   }
 
   async #load() {
-    const selectorsFromStorage: SelectorsFromStorage = await this.#storage.get(
-      FUNCTION_SELECTORS_STORAGE_KEY,
-      {}
-    )
+    const selectorsFromStorage: SelectorsFromStorage = {}
+    // TODO bring back
+    //  await this.#storage.get(
+    // FUNCTION_SELECTORS_STORAGE_KEY,
+    // {}
+    // )
     this.selectors = Object.fromEntries(
       Object.entries(selectorsFromStorage).map(([k, data]): [string, Selectors[string]] => {
         return [k, { status: 'success', data }]
       })
     )
+
+    // Emit update after loading to signal readiness
+    this.emitUpdate()
   }
 
   async #storeSelectorsInStorage() {
@@ -103,8 +110,8 @@ export class ContractInfo extends EventEmitter implements IContractInfoControlle
       )
         throw new Error(`Sourcify request for function selectors failed for: ${jointSelectors}`)
       Object.entries(result.result.function).forEach(([selector, dataArray]) => {
-        const mappedFoundSignatures = dataArray
-          .map((d) => ({ signature: d.name }))
+        const mappedFoundSignatures = (dataArray || [])
+          .map((d) => ({ signature: d.name, filtered: d.filtered }))
           .filter((n) => n.signature)
         if (mappedFoundSignatures.length)
           this.selectors[selector] = { data: mappedFoundSignatures, status: 'success' }
@@ -122,7 +129,7 @@ export class ContractInfo extends EventEmitter implements IContractInfoControlle
       })
     }
     this.emitUpdate()
-    this.#storeSelectorsInStorage()
+    void this.#storeSelectorsInStorage()
   }
 
   async getSelector(selector: string) {

@@ -18,6 +18,7 @@ import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
 import { BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
+import { ContractInfoController } from '@/controllers/contractInfo/contractInfo'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
 import { DomainsController } from '@/controllers/domains/domains'
@@ -48,6 +49,7 @@ import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
 import { IBannerController } from '@/interfaces/banner'
+import { IContractInfoController } from '@/interfaces/contractInfo'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDomainsController } from '@/interfaces/domains'
@@ -159,6 +161,8 @@ export class MainController extends EventEmitter implements IMainController {
   domains: IDomainsController
 
   contractNames: IContractNamesController
+
+  contractInfo: IContractInfoController
 
   autoLogin: IAutoLoginController
 
@@ -540,6 +544,13 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       ui: this.ui
     })
+    console.log(performance.now(), 'before')
+    this.contractInfo = new ContractInfoController({
+      eventEmitterRegistry,
+      fetch: this.fetch,
+      storage: this.storage
+    })
+    console.log(performance.now(), 'after')
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -644,6 +655,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accounts.initialLoadPromise
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
+    await this.contractInfo.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,

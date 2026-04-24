@@ -1,15 +1,15 @@
 import { ControllerInterface } from './controller'
 
 export type IContractInfoController = ControllerInterface<
-  InstanceType<typeof import('../controllers/contractInfo/contractInfo').ContractInfo>
+  InstanceType<typeof import('../controllers/contractInfo/contractInfo').ContractInfoController>
 >
 
 export interface SelectorsFromStorage {
-  [selector: string]: { signature: string }[]
+  [selector: string]: { signature: string; filtered: boolean }[]
 }
 export interface Selectors {
   [selector: string]:
-    | { status: 'success'; data: { signature: string }[] }
+    | { status: 'success'; data: { signature: string; filtered: boolean }[] }
     | { status: 'error'; error: string }
     | { status: 'not-found' }
     | { status: 'loading' }

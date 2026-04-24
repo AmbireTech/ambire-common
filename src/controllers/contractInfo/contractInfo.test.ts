@@ -6,7 +6,7 @@ import { produceMemoryStore } from '@test/helpers'
 import { IStorageController } from '../../interfaces/storage'
 import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
 import { StorageController } from '../storage/storage'
-import { ContractInfo, FUNCTION_SELECTORS_STORAGE_KEY } from './contractInfo'
+import { ContractInfoController, FUNCTION_SELECTORS_STORAGE_KEY } from './contractInfo'
 
 let fetchSpy: any
 let contractInfoController: IContractInfoController
@@ -82,7 +82,7 @@ beforeEach(async () => {
     '0x095ea7b3': [{ signature: 'approve(address,uint256)' }]
   } as SelectorsFromStorage)
 
-  contractInfoController = new ContractInfo({
+  contractInfoController = new ContractInfoController({
     fetch: fetchSpy,
     eventEmitterRegistry,
     storage
