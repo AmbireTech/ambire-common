@@ -74,7 +74,12 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
-const ADDRESS_POISONING_SEGMENT_LENGTH = 4
+// Strongest-to-weakest match order for poisoning detection:
+// we first try exact prefix+suffix matches of 6, then 5, then 4 chars.
+// In practice, 4+4 prefix/suffix poisoning is the most common case because
+// it requires the least brute-force compute from attackers. 5+5 and 6+6
+// matches are stronger but significantly more expensive to generate.
+const ADDRESS_POISONING_SEGMENT_LENGTHS = [6, 5, 4]
 // TODO: Should we add a limit? Will it degrade perf too much if this scans though all?
 const ADDRESS_POISONING_SCAN_LIMIT = 500
 
@@ -160,7 +165,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   // Set only for first-time sends when the recipient matches a known address
   // by both prefix and suffix, which may indicate address poisoning.
-  #addressPoisoningMatch: AddressPoisoningMatch | null = null
+  addressPoisoningMatch: AddressPoisoningMatch | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -535,7 +540,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt,
-        this.#addressPoisoningMatch
+        this.addressPoisoningMatch
       )
     }
 
@@ -676,7 +681,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
-      this.#addressPoisoningMatch = null
+      this.addressPoisoningMatch = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -880,7 +885,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     return null
   }
 
-  #hasAddressPoisoningPattern(a: string, b: string) {
+  #hasAddressPoisoningPattern(a: string, b: string, segmentLength: number) {
     const normalizedA = a.toLowerCase()
     const normalizedB = b.toLowerCase()
 
@@ -892,10 +897,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     const bodyB = normalizedB.slice(2)
 
     return (
-      bodyA.slice(0, ADDRESS_POISONING_SEGMENT_LENGTH) ===
-        bodyB.slice(0, ADDRESS_POISONING_SEGMENT_LENGTH) &&
-      bodyA.slice(-ADDRESS_POISONING_SEGMENT_LENGTH) ===
-        bodyB.slice(-ADDRESS_POISONING_SEGMENT_LENGTH)
+      bodyA.slice(0, segmentLength) === bodyB.slice(0, segmentLength) &&
+      bodyA.slice(-segmentLength) === bodyB.slice(-segmentLength)
     )
   }
 
@@ -915,11 +918,15 @@ export class TransferController extends EventEmitter implements ITransferControl
         .map((addr) => addr.toLowerCase())
     )
 
-    const matchedAddress = Array.from(trustedAddresses).find((trustedAddress) =>
-      this.#hasAddressPoisoningPattern(recipientAddress, trustedAddress)
-    )
+    for (const trustedAddress of trustedAddresses) {
+      for (const segmentLength of ADDRESS_POISONING_SEGMENT_LENGTHS) {
+        if (this.#hasAddressPoisoningPattern(recipientAddress, trustedAddress, segmentLength)) {
+          return { matchedAddress: trustedAddress, matchedCharsCount: segmentLength }
+        }
+      }
+    }
 
-    return matchedAddress ? { matchedAddress } : null
+    return null
   }
 
   async #updateRecipientHistoryAndPoisoning() {
@@ -939,7 +946,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
-    this.#addressPoisoningMatch = this.isRecipientAddressFirstTimeSend
+    this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend
       ? this.#findAddressPoisoningMatch(this.recipientAddress)
       : null
   }

@@ -9,6 +9,7 @@ import { getSupportedNetworks } from '@/libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import shortenAddress from '../../utils/shortenAddress'
 import { isValidAddress } from '../address'
 
 export type Validation = {
@@ -68,8 +69,34 @@ const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
-const ADDRESS_POISONING_WARNING_MESSAGE =
-  'Possible address poisoning detected. The address looks similar to one you have used before. Proceed with caution.'
+
+// Keep poisoning warnings readable with compact address previews.
+// So for 4+4 matches we keep the default (shorter) preview, while for
+// 5+5 / 6+6 matches we show a slightly longer preview for more clarity.
+const ADDRESS_POISONING_MATCH_MAX_LENGTH_DEFAULT = 18
+const ADDRESS_POISONING_MATCH_MAX_LENGTH_EXTENDED = 20
+const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
+  `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
+
+const formatAddressPoisoningMatchForMessage = ({
+  matchedAddress,
+  matchedCharsCount
+}: AddressPoisoningMatch) => {
+  let normalizedAddress = matchedAddress
+
+  try {
+    normalizedAddress = getAddress(matchedAddress)
+  } catch {
+    // keep original if checksum normalization fails
+  }
+
+  const maxLength =
+    matchedCharsCount >= 5
+      ? ADDRESS_POISONING_MATCH_MAX_LENGTH_EXTENDED
+      : ADDRESS_POISONING_MATCH_MAX_LENGTH_DEFAULT
+
+  return shortenAddress(normalizedAddress, maxLength)
+}
 
 function getTimeAgo(date: Date): string {
   const now = new Date()
@@ -145,7 +172,9 @@ const validateSendTransferAddress = (
 
   if (addressPoisoningMatch) {
     return {
-      message: ADDRESS_POISONING_WARNING_MESSAGE,
+      message: getAddressPoisoningWarningMessage(
+        formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
+      ),
       severity: 'warning'
     }
   }

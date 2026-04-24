@@ -19,4 +19,7 @@ export interface TransferUpdate {
 
 export type AddressPoisoningMatch = {
   matchedAddress: string
+  // Number of prefix and suffix chars that matched (e.g. 4, 5 or 6).
+  // Used by validation message formatting to decide how much address context to show.
+  matchedCharsCount: number
 }
