@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { ZeroAddress } from 'ethers'
+import { ZeroAddress, formatUnits } from 'ethers'
 
 import { expect } from '@jest/globals'
 
@@ -116,6 +116,43 @@ describe('Transfer Controller', () => {
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
+  })
+  test('should set max amount minus fee when the selected fee token matches the transfer token', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const feeAmount = 1_000_000_000_000_000n
+
+    await transferController.update({
+      selectedToken: nativeToken
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: feeAmount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(
+      formatUnits(nativeToken.amount - feeAmount, nativeToken.decimals)
+    )
   })
   test('should set validation form messages', async () => {
     const { transferController, tokens } = await prepareTest()

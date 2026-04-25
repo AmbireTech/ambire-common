@@ -40,7 +40,12 @@ export async function getAAVEPositions(
       aaveAddress: rest.aaveAddr,
       ...rest
     }))
-    .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
+    .filter(
+      (t: any) =>
+        t.symbol !== 'error' &&
+        t.name !== 'error' &&
+        (t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
+    )
 
   if (accountData.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER) {
     accountData.healthFactor = null

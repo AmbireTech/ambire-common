@@ -42,7 +42,6 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
-import { isValidURL } from '../../services/validations'
 /* eslint-disable no-continue */
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -123,6 +122,12 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#networks = networks
     this.#phishing = phishing
     this.#ui = ui
+
+    this.#phishing.onUpdate(() => {
+      if (!this.#phishing.shouldSyncDapps) return
+      this.#syncDappsBlacklistedStatusWithPhishing()
+      this.#phishing.resetShouldSyncDapps()
+    })
 
     // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
     this.#retryFetchAndUpdateInterval = new RecurringTimeout(
@@ -211,7 +216,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
 
-    this.fetchAndUpdateDapps()
+    void this.fetchAndUpdateDapps()
   }
 
   async fetchAndUpdateDapps() {
@@ -436,6 +441,24 @@ export class DappsController extends EventEmitter implements IDappsController {
     )
   }
 
+  #syncDappsBlacklistedStatusWithPhishing() {
+    if (!this.#dapps.size) return
+
+    let hasUpdatedDapps = false
+    this.#dapps.forEach((dapp, dappId) => {
+      const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
+      if (!updatedStatus || dapp.blacklisted === updatedStatus) return
+
+      this.#dapps.set(dappId, { ...dapp, blacklisted: updatedStatus })
+      hasUpdatedDapps = true
+    })
+
+    if (!hasUpdatedDapps) return
+
+    this.emitUpdate()
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+  }
+
   async #createDappSession(initProps: SessionInitProps) {
     await this.initialLoadPromise
     const dappSession = new Session(initProps)
@@ -638,7 +661,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
-    this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
 
     this.emitUpdate()
   }
@@ -652,8 +675,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!existing.isCustom) return
 
     this.#dapps.delete(id)
-    this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
-    this.broadcastDappSessionEvent('disconnect', undefined, id)
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    void this.broadcastDappSessionEvent('disconnect', undefined, id)
 
     this.emitUpdate()
   }
