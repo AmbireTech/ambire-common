@@ -1,11 +1,11 @@
 import { Contract } from 'ethers'
 
 /* eslint-disable no-underscore-dangle */
-import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
@@ -364,6 +364,10 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     })
   }
 
+  /**
+   * Use this to communicate balanche changes for a transaction
+   * to the external benzin
+   */
   async getTokenBalancesOnBlockAndSendResToUi(
     {
       accountId,
@@ -396,6 +400,10 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         this.providers[network.chainId.toString()]!,
         network
       )
+
+      // create a wrapper function so that we could pass it correctly
+      // to the required type for getAccountOpBalanceChanges.
+      // the final goal is just calling portfolio.getTokensByAddresses
       const getTokenBalancesOnBlock = (
         portfolioAccountId: string,
         _chainId: bigint,

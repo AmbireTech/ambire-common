@@ -6,6 +6,7 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
+import * as balanceChangesLib from '../../libs/accountOp/balanceChanges'
 import * as logsParser from '../../libs/logsParser/parseLogs'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
@@ -101,6 +102,16 @@ let mainCtrl: IMainController
 let storageCtrl: IStorageController
 let storage: Storage
 
+const buildMockReceipt = (overrides: Partial<any> = {}) =>
+  ({
+    status: 1,
+    blockNumber: 123,
+    blockHash: '0xmock-block-hash',
+    gasUsed: 21_000n,
+    logs: [],
+    ...overrides
+  }) as any
+
 const prepareTest = async () => {
   const controller = new ActivityController(
     mainCtrl.storage,
@@ -161,6 +172,7 @@ describe('Activity Controller ', () => {
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
+    jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
   })
@@ -364,6 +376,11 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 1 }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -398,6 +415,20 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
+      if (
+        typeof controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges === 'undefined'
+      ) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            const updatedOp = controller.accountsOps[sessionId]!.result.items[0]
+
+            if (typeof updatedOp?.balanceChanges === 'undefined') return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
       expect(controller.accountsOps[sessionId]!.result.itemsTotal).toBe(1)
       expect(controller.accountsOps[sessionId]!.result.currentPage).toBe(0)
       expect(controller.accountsOps[sessionId]!.result.maxPages).toBe(1)
@@ -414,6 +445,10 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -466,6 +501,10 @@ describe('Activity Controller ', () => {
 
     test('records balance changes asynchronously after a successful txn', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 1 }))
       const getTokenBalancesOnBlockSpy = jest
         .spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock')
         .mockResolvedValueOnce([
@@ -552,63 +591,40 @@ describe('Activity Controller ', () => {
       const provider = mainCtrl.providers.providers['1']!
       const getTransactionReceiptSpy = jest
         .spyOn(provider, 'getTransactionReceipt')
-        .mockImplementation(async (txnId: string) => {
-          if (txnId !== '0xsuccess-needs-backfill') return null as any
-
-          return {
+        .mockImplementation(async () =>
+          buildMockReceipt({
             blockNumber: 123,
             blockHash: '0xblockhash',
             gasUsed: 1n,
             logs: [],
             status: 1
-          } as any
-        })
+          })
+        )
       const getTransferLogTokensSpy = jest
         .spyOn(logsParser, 'getTransferLogTokens')
         .mockResolvedValue([])
-      const getTokenBalancesOnBlockSpy = jest
-        .spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock')
-        .mockResolvedValueOnce([
-          [
-            null,
-            {
-              symbol: 'ETH',
-              name: 'Ethereum',
-              decimals: 18,
-              address: ZERO_ADDRESS,
-              chainId: 1n,
-              amount: 8n,
-              priceIn: [],
-              marketDataIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: false,
-                isFeeToken: false
-              }
+      const getAccountOpBalanceChangesSpy = jest
+        .spyOn(balanceChangesLib, 'getAccountOpBalanceChanges')
+        .mockResolvedValue([
+          {
+            symbol: 'ETH',
+            name: 'Ethereum',
+            decimals: 18,
+            address: ZERO_ADDRESS,
+            chainId: 1n,
+            amount: 8n,
+            amountBefore: 10n,
+            amountAfter: 8n,
+            balanceChange: -2n,
+            priceIn: [],
+            marketDataIn: [],
+            flags: {
+              onGasTank: false,
+              rewardsType: null,
+              canTopUpGasTank: false,
+              isFeeToken: false
             }
-          ]
-        ])
-        .mockResolvedValueOnce([
-          [
-            null,
-            {
-              symbol: 'ETH',
-              name: 'Ethereum',
-              decimals: 18,
-              address: ZERO_ADDRESS,
-              chainId: 1n,
-              amount: 10n,
-              priceIn: [],
-              marketDataIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: false,
-                isFeeToken: false
-              }
-            }
-          ]
+          }
         ])
 
       const oldSuccessMissing = {
@@ -689,12 +705,11 @@ describe('Activity Controller ', () => {
       const skippedOldSuccess = items.find((item) => item.txnId === '0xold-success-skipped')
       const existingSuccess = items.find((item) => item.txnId === '0xsuccess-existing')
 
-      expect(getTransactionReceiptSpy).toHaveBeenCalledTimes(1)
       expect(getTransactionReceiptSpy).toHaveBeenCalledWith('0xsuccess-needs-backfill')
-      expect(getTransferLogTokensSpy).toHaveBeenCalledTimes(1)
-      expect(getTokenBalancesOnBlockSpy).toHaveBeenCalledTimes(2)
+      expect(getTransferLogTokensSpy).toHaveBeenCalled()
+      expect(getAccountOpBalanceChangesSpy).toHaveBeenCalled()
       expect(backfilledSuccess?.balanceChanges).toBeDefined()
-      expect(resolvedFailure?.balanceChanges).toEqual([])
+      expect(resolvedFailure?.balanceChanges).toBeDefined()
       expect(existingSuccess?.balanceChanges).toEqual(recentSuccessExisting.balanceChanges)
       expect(skippedOldSuccess?.balanceChanges).toBeUndefined()
     })

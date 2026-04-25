@@ -493,7 +493,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   async #prepareAndRunBalanceChangesTask(accountOp: SubmittedAccountOp) {
-    if (accountOp.status !== AccountOpStatus.Success || !accountOp.txnId) {
+    const hasReceipt =
+      accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure
+    if (!hasReceipt || !accountOp.txnId) {
       await this.setAccountOpBalanceChanges(
         accountOp.identifiedBy,
         accountOp.accountAddr,
@@ -533,12 +535,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
 
       const foundTokens = await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
-      if (foundTokens.length) {
-        this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-      }
-
       const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
-
       await this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receipt.blockNumber)
     } catch (error) {
       console.log(error)

@@ -154,6 +154,11 @@ export class Deployless {
     return data
   }
 
+  /**
+   * To be able to successfully pass a number as blockTag,
+   * we need to call toQuantity to it, making it a no-leading zeros hex.
+   * This is the standard to make sure RPCs don't revert
+   */
   private static normalizeRpcBlockTag(blockTag: string | number): string {
     return typeof blockTag === 'number' ? toQuantity(blockTag) : blockTag
   }
