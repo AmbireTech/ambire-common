@@ -940,21 +940,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (res.data.banner) {
       const banner = res.data.banner
-      let actions: Banner['actions'] = banner.url
-        ? [
-            {
-              actionName: 'open-link',
-              meta: { url: banner.url }
-            }
-          ]
-        : banner.surveyId && banner.require
+      let actions: Banner['actions'] =
+        // banner is placed in priority so:
+        // when we add banners with surveys, we can also add a url
+        // the goal is for old extensions to be redirected to a url, for new versions to have a survey
+        // otherwise we will have to chose 1) new - survey, old - nothing or 2) both old and new - url
+        banner.surveyId && banner.require
           ? [
               {
                 actionName: 'survey',
                 meta: { surveyId: banner.surveyId, requirements: banner.require }
               }
             ]
-          : []
+          : banner.url
+            ? [
+                {
+                  actionName: 'open-link',
+                  meta: { url: banner.url }
+                }
+              ]
+            : []
 
       const endTimeNumber =
         typeof banner.endTime === 'number' ? banner.endTime : new Date(banner.endTime).getTime()
