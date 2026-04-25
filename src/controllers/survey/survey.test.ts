@@ -1,13 +1,10 @@
 import { Survey } from '@/interfaces/survey'
 import { getNextQuestionForAnswers } from '@/utils/survey'
 import { expect } from '@jest/globals'
-import { produceMemoryStore } from '@test/helpers'
-import { mockUiManager } from '@test/helpers/ui'
 
-import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { ANSWERED_SURVEYS_STORAGE_KEY, SurveyController } from './survey'
+import { makeMainController } from '../../../test/helpers/mainController'
+import { BannerController } from '../banner/banner'
+import { ANSWERED_SURVEYS_STORAGE_KEY } from './survey'
 
 const mockFetch = jest.fn()
 const surveys: Record<string, Survey> = {
@@ -71,7 +68,7 @@ const surveys: Record<string, Survey> = {
 
 let sentData
 mockFetch.mockImplementation(async (url: string, ...args) => {
-  if (url.startsWith('https://relayer.ambire.com/promotions/survey/') && args[0].method === 'GET') {
+  if (url.includes('relayer.ambire.com/promotions/survey/') && args[0].method === 'GET') {
     const surveyIdToReturn = url.split('/survey/')[1]!
 
     return {
@@ -80,7 +77,7 @@ mockFetch.mockImplementation(async (url: string, ...args) => {
       text: async () => JSON.stringify({ survey: surveys[surveyIdToReturn] })
     }
   }
-  if (url.startsWith('https://relayer.ambire.com/promotions/survey') && args[0].method === 'POST') {
+  if (url.includes('relayer.ambire.com/promotions/survey') && args[0].method === 'POST') {
     sentData = JSON.parse(args[0].body)
     return {
       ok: true,
@@ -88,43 +85,26 @@ mockFetch.mockImplementation(async (url: string, ...args) => {
       text: async () => JSON.stringify({ success: true })
     }
   }
-  return { ok: false, status: 404 }
+  return fetch(url, ...args)
 })
-
-const getFreshControllers = () => {
-  const { uiManager } = mockUiManager()
-
-  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
-
-  const storage = new StorageController(produceMemoryStore())
-
-  return {
-    storage,
-    getFreshSurveyController: () => {
-      return new SurveyController({
-        fetch: mockFetch,
-        relayerUrl: 'https://relayer.ambire.com',
-        storage,
-        eventEmitterRegistry,
-        ui: new UiController({ eventEmitterRegistry, uiManager })
-      })
-    }
-  }
-}
 
 describe('SurveyController', () => {
   test('Should load properly', async () => {
-    const { storage, getFreshSurveyController } = getFreshControllers()
-    await storage.set(ANSWERED_SURVEYS_STORAGE_KEY, ['test-survey'])
-    const surveyController = getFreshSurveyController()
-    expect(surveyController.isReady).toBeFalsy()
-    await surveyController.initialLoadPromise
+    const {
+      mainCtrl: { survey: surveyController }
+    } = await makeMainController(
+      async (storage) => {
+        await storage.set(ANSWERED_SURVEYS_STORAGE_KEY, ['test-survey'])
+      },
+      { overrides: { fetch: mockFetch } }
+    )
     expect(surveyController.isSurveyAnswered('test-survey')).toBeTruthy()
     expect(surveyController.status).toBe('not-started')
   })
   test('Happy case: fetch, answer, submit survey', async () => {
-    const { getFreshSurveyController } = getFreshControllers()
-    const surveyController = getFreshSurveyController()
+    const {
+      mainCtrl: { survey: surveyController }
+    } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
 
     let hadLoadingFetch
     let hadSuccessFetch
@@ -137,7 +117,7 @@ describe('SurveyController', () => {
         }
       })
     )
-    surveyController.fetchSurvey('happy-case')
+    void surveyController.fetchSurvey('happy-case', 'bannerId')
     await waitFetch
     expect(hadLoadingFetch).toBeTruthy()
     expect(hadSuccessFetch).toBeTruthy()
@@ -188,14 +168,16 @@ describe('SurveyController', () => {
   })
 
   test('Survey id should be in storage after survey is answered ', async () => {
-    const { storage, getFreshSurveyController } = getFreshControllers()
-    const surveyController = getFreshSurveyController()
+    const {
+      mainCtrl: { survey: surveyController },
+      storageCtrl: storage
+    } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
 
     let waitFetch = new Promise((res) =>
       surveyController.onUpdate(() => surveyController.status === 'success-fetched' && res(null))
     )
 
-    surveyController.fetchSurvey('happy-case')
+    void surveyController.fetchSurvey('happy-case', 'bannerId')
     await waitFetch
 
     void surveyController.answerQuestion(
@@ -222,17 +204,65 @@ describe('SurveyController', () => {
     expect(surveyController.isSurveyAnswered('happy-case')).toBeTruthy()
   })
 
+  test('Banner is dismissed after submit ', async () => {
+    const {
+      mainCtrl: { survey: surveyController, storage }
+    } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
+
+    const dismissBannerSpy = jest
+      .spyOn(BannerController.prototype, 'dismissBanner')
+      .mockImplementation(async () => {})
+
+    let waitFetch = new Promise((res) =>
+      surveyController.onUpdate(() => surveyController.status === 'success-fetched' && res(null))
+    )
+
+    void surveyController.fetchSurvey('happy-case', 'bannerId')
+    await waitFetch
+    expect(dismissBannerSpy).toHaveBeenCalledTimes(0)
+    void surveyController.answerQuestion(
+      surveyController.currentQuestion?.id!,
+      surveyController.currentQuestion?.questionPosition!,
+      surveyController.currentQuestion?.responseOptions![0]?.id!,
+      'instanceId',
+      'address'
+    )
+    let waitToSend = new Promise((res) =>
+      surveyController.onUpdate(() => surveyController.status === 'success-submitted' && res(null))
+    )
+
+    await surveyController.answerQuestion(
+      surveyController.currentQuestion?.id!,
+      surveyController.currentQuestion?.questionPosition!,
+      'Answer',
+      'instanceId',
+      'address'
+    )
+    await waitToSend
+    expect(dismissBannerSpy).toHaveBeenCalledTimes(1)
+
+    expect(
+      (await storage.get(ANSWERED_SURVEYS_STORAGE_KEY, [])).includes('happy-case')
+    ).toBeTruthy()
+    expect(surveyController.isSurveyAnswered('happy-case')).toBeTruthy()
+  })
+
   test('We should be able to access both both flows of a 2 flow survey', async () => {
     // we will keep them separated in two scopes
     // flow 1
     await (async () => {
-      const { getFreshSurveyController } = getFreshControllers()
-      const surveyController = getFreshSurveyController()
+      const {
+        mainCtrl: { survey: surveyController }
+      } = await makeMainController(
+        undefined,
+
+        { overrides: { fetch: mockFetch } }
+      )
       let waitFetch = new Promise((res) =>
         surveyController.onUpdate(() => surveyController.status === 'success-fetched' && res(null))
       )
 
-      surveyController.fetchSurvey('two-flow-survey')
+      void surveyController.fetchSurvey('two-flow-survey', 'bannerId')
       await waitFetch
       // should lead to the closed answer question
       let waitAnswer = new Promise((r) => surveyController.onUpdate(r))
@@ -244,12 +274,13 @@ describe('SurveyController', () => {
       )
     })()
     await (async () => {
-      const { getFreshSurveyController } = getFreshControllers()
-      const surveyController = getFreshSurveyController()
+      const {
+        mainCtrl: { survey: surveyController }
+      } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
       let waitFetch = new Promise((res) =>
         surveyController.onUpdate(() => surveyController.status === 'success-fetched' && res(null))
       )
-      surveyController.fetchSurvey('two-flow-survey')
+      void surveyController.fetchSurvey('two-flow-survey', 'bannerId')
       await waitFetch
 
       let waitAnswer = new Promise((r) => surveyController.onUpdate(r))

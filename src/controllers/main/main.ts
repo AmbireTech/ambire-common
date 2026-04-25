@@ -703,6 +703,8 @@ export class MainController extends EventEmitter implements IMainController {
     this.updateSelectedAccountPortfolio()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
+    await this.survey.initialLoadPromise
+
     this.isReady = true
     this.emitUpdate()
   }
