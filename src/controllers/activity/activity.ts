@@ -782,24 +782,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     await this.#onContractsDeployed(network)
                   }
 
-                  // learn tokens from the transfer logs
-                  if (isSuccess) {
-                    // eslint-disable-next-line no-await-in-loop
-                    const foundTokens = await getTransferLogTokens(
-                      receipt.logs,
-                      accountOp.accountAddr
-                    )
-                    if (foundTokens.length) {
-                      this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-                    }
-
-                    balanceChangesTasks.push({
-                      accountOp,
-                      network,
-                      tokenAddrs: getBalanceChangeTokenAddresses(foundTokens),
-                      receiptBlockNumber: receipt.blockNumber
-                    })
-                  } else {
+                  if (!isSuccess) {
                     // if the txn resulted in a failure, unresolve all Safe txns
                     // with the same nonce so that the user can retry
                     const acc = this.#accounts.accounts.find(
@@ -810,6 +793,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       shouldFetchSafeTxns = true
                     }
                   }
+
+                  const foundTokens = isSuccess
+                    ? await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+                    : []
+                  if (foundTokens.length)
+                    this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+
+                  // if there's a receipt, calculate the balance changes
+                  balanceChangesTasks.push({
+                    accountOp,
+                    network,
+                    tokenAddrs: getBalanceChangeTokenAddresses(foundTokens),
+                    receiptBlockNumber: receipt.blockNumber
+                  })
 
                   // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
