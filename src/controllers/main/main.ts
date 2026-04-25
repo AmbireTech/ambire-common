@@ -323,7 +323,8 @@ export class MainController extends EventEmitter implements IMainController {
         if (!currentSelectedAcc) return { status: 'no-selected-account' }
         let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
         let numberOfTransactions = this.activity.getAccountOpsForAccount({
-          accountAddr: currentSelectedAcc.addr
+          accountAddr: currentSelectedAcc.addr,
+          sortAccOps: false
         }).length
         const hasKeys =
           getAccountKeysCount({
