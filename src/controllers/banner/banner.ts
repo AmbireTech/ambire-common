@@ -92,15 +92,21 @@ export class BannerController extends EventEmitter implements IBannerController 
     if (accData.status === 'no-selected-account') return false
     if (whitelistedAddresses && !whitelistedAddresses.includes(accData.address)) return false
     if (!accData.hasKeys) return false
-    if (minBalanceTotal && (accData.totalUsdBalance < minBalanceTotal || !accData.isBalanceReady))
+    if (
+      minBalanceTotal !== undefined &&
+      (accData.totalUsdBalance < minBalanceTotal || !accData.isBalanceReady)
+    )
       return false
     // if the portfolio is not fully loaded we should not assume this is the balance of the user
     // and we should not yet display the banner.
     // This isBalanceReady requirement is more important for the maxBalance than the minBalance
-    if (maxBalanceTotal && (accData.totalUsdBalance > maxBalanceTotal || !accData.isBalanceReady))
+    if (
+      maxBalanceTotal !== undefined &&
+      (accData.totalUsdBalance > maxBalanceTotal || !accData.isBalanceReady)
+    )
       return false
-    if (minTxnsTotal && accData.numberOfTransactions < minTxnsTotal) return false
-    if (maxTxnsTotal && accData.numberOfTransactions > maxTxnsTotal) return false
+    if (minTxnsTotal !== undefined && accData.numberOfTransactions < minTxnsTotal) return false
+    if (maxTxnsTotal !== undefined && accData.numberOfTransactions > maxTxnsTotal) return false
     if (minAppVersion && this.#appVersion < minAppVersion) return false
     if (!this.#survey.isReady) return false
 
