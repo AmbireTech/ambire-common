@@ -2,11 +2,16 @@ import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
-import { AccountState, NetworkState } from '../portfolio/interfaces'
+import { AccountState, InternalPortfolioChain, NetworkState } from '../portfolio/interfaces'
 import PortfolioViewBuilder from './portfolioView'
 
-export const isInternalChain = (chainId: string) => {
-  return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards'
+export const isInternalChain = (chainId: InternalPortfolioChain | string) => {
+  return (
+    chainId === 'gasTank' ||
+    chainId === 'rewards' ||
+    chainId === 'projectedRewards' ||
+    chainId === 'defiApps'
+  )
 }
 
 export const stripPortfolioState = (portfolioState: AccountState) => {

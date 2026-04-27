@@ -202,7 +202,7 @@ export type ExternalHintsAPIResponse = {
  */
 export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
-  chainId: number
+  chainId: number | 'customAppChain'
   accountAddr: string
   erc20s: ExternalHintsAPIResponse['erc20s']
   erc721s: ExternalHintsAPIResponse['erc721s']
@@ -406,11 +406,18 @@ export type ProjectedRewardsStats = {
   | 'reasonToNotDisplayProjectedRewards'
 >
 
+export type PortfolioDefiAppsResult = CommonResultProps & {
+  defiPositions: DefiNetworkState
+}
+
+export type InternalPortfolioChain = 'defiApps' | 'gasTank' | 'rewards' | 'projectedRewards'
+
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
   | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
+  | PortfolioDefiAppsResult
 
 export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
@@ -429,6 +436,11 @@ export type AccountState = {
   rewards?: NetworkState<PortfolioRewardsResult>
   gasTank?: NetworkState<PortfolioGasTankResult>
   projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+  /**
+   * Stores "app" defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets).
+   * Examples: Polymarket and Hyperliquid positions.
+   */
+  defiApps?: NetworkState<PortfolioDefiAppsResult>
 } & {
   [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
