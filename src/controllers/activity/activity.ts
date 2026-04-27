@@ -315,10 +315,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     // Address poisoning compares the new recipient against two trusted sources:
-    // 1) explicit trusted addresses passed in by the caller (e.g. Address Book)
-    // 2) recipients from this account's historical account ops below
-    trustedAddresses.forEach((address) => updatePoisoningMatch(address))
-
+    // 1) recipients from this account's historical account ops below
+    // 2) explicit trusted addresses passed in by the caller (e.g. Address Book),
+    //    evaluated only if the send is still first-time after scanning history.
     accounts.forEach((account) => {
       const accountOpsOfAccount = this.#accountsOps[account]
       if (!accountOpsOfAccount) return
@@ -331,7 +330,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
           const hasSentToRecipient = recipients.some((recipient) => {
             if (recipient.toLowerCase() === normalizedToAddress) return true
 
-            updatePoisoningMatch(recipient, op.timestamp)
+            // Poisoning checks are needed only for first-time sends. As soon as
+            // we know the recipient was used before, skip this extra work.
+            if (!found) updatePoisoningMatch(recipient, op.timestamp)
 
             return false
           })
@@ -347,16 +348,25 @@ export class ActivityController extends EventEmitter implements IActivityControl
       })
     })
 
+    // Poisoning checks for trusted addresses (e.g. Address Book) only for first-time sends
+    if (!found) trustedAddresses.forEach((address) => updatePoisoningMatch(address))
+
+    let addressPoisoningMatch: AddressPoisoningMatch | null = null
+    if (!found && bestPoisoningMatch) {
+      const currentBestPoisoningMatch = bestPoisoningMatch as AddressPoisoningMatch & {
+        lastInteractedAt: number | null
+      }
+      addressPoisoningMatch = {
+        matchedAddress: currentBestPoisoningMatch.matchedAddress,
+        matchedPrefixCharsCount: currentBestPoisoningMatch.matchedPrefixCharsCount,
+        matchedSuffixCharsCount: currentBestPoisoningMatch.matchedSuffixCharsCount
+      }
+    }
+
     return {
       found,
       lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null,
-      addressPoisoningMatch: found
-        ? null
-        : bestPoisoningMatch && {
-            matchedAddress: bestPoisoningMatch.matchedAddress,
-            matchedPrefixCharsCount: bestPoisoningMatch.matchedPrefixCharsCount,
-            matchedSuffixCharsCount: bestPoisoningMatch.matchedSuffixCharsCount
-          }
+      addressPoisoningMatch
     }
   }
 
