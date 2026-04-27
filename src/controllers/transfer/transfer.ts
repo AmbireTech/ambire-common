@@ -19,6 +19,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
+import { AssetType } from '../../libs/defiPositions/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
@@ -319,7 +320,13 @@ export class TransferController extends EventEmitter implements ITransferControl
           )
         }
 
-        return hasAmount && isVisible && !token.flags.onGasTank && !token.flags.rewardsType
+        return (
+          hasAmount &&
+          isVisible &&
+          !token.flags.onGasTank &&
+          !token.flags.rewardsType &&
+          token.flags.defiTokenType !== AssetType.Borrow
+        )
       })
       .sort((a, b) => {
         const tokenAinUSD = getTokenBalanceInUSD(a)
