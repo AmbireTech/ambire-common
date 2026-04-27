@@ -440,6 +440,11 @@ export type PortfolioControllerState = {
 
 export interface LimitsOptions {
   erc20: number
+  // describe the limit during simulation only;
+  // simulation is computational heavy and it costs a lot of gas;
+  // putting a stricter limit allows more txns to succeed albeit having
+  // to send more requests
+  erc20Simulation: number
   erc721: number
   erc721TokensInput: number
   erc721Tokens: number
