@@ -1,5 +1,5 @@
 import { Interface } from 'ethers'
-import { decodeFunctionData, Hex, isHex, parseAbi } from 'viem'
+import { isHex, parseAbi } from 'viem'
 
 import { Call } from '../accountOp/types'
 
@@ -13,27 +13,70 @@ export type DecodedCall = {
 }
 type DecodedArgument = bigint | string | boolean | DecodedCall['args'] | DecodedCall
 
-function unknownToDecodedArgsToCustomType(key: string, val: unknown): DecodedCall['args'][number] {
-  if (typeof val === 'boolean') return { key, val }
-  else if (typeof val === 'string') return { key, val }
-  else if (typeof val === 'bigint') return { key, val }
+function splitTupleArgs(type: string): string[] | null {
+  if (!type.startsWith('tuple(') || !type.endsWith(')')) return null
+  type = type.slice(6, -1)
+  const res = []
+  let depth = 0
+  let current = ''
+
+  for (let c of type) {
+    if (c === ',' && depth === 0) {
+      res.push(current)
+      current = ''
+      continue
+    }
+
+    if (c === '(' || c === '[') depth++
+    if (c === ')' || c === ']') depth--
+
+    current += c
+  }
+
+  if (current) res.push(current)
+  return res
+}
+
+function unknownToDecodedArgsToCustomType(
+  key: string,
+  val: unknown,
+  type: string | null
+): DecodedCall['args'][number] {
+  if (typeof val === 'boolean') return { key: type || key, val }
+  else if (typeof val === 'string') return { key: type || key, val }
+  else if (typeof val === 'bigint') return { key: type || key, val }
   else if (typeof val === 'object') {
-    if (!val) return { key, val: false }
-    else if (Array.isArray(val)) return { key: key, val: arrayUnknownDecodedArgsToCustomType(val) }
-    else {
-      const entries = Object.entries(val).map(([k, v]) => unknownToDecodedArgsToCustomType(k, v))
-      return { key, val: entries }
+    if (!val) return { key: type || key, val: false }
+    else if (Array.isArray(val)) {
+      let innerTypes = undefined
+      if (type && type.endsWith(']')) {
+        const indexOfLastBracket = type.lastIndexOf('[')
+        const typesOfInnerElements = type.slice(0, indexOfLastBracket)
+        innerTypes = Array.from({ length: val.length }).map(() => typesOfInnerElements)
+      } else if (type && type.startsWith('tuple')) {
+        innerTypes = splitTupleArgs(type)
+      }
+      return { key, val: arrayUnknownDecodedArgsToCustomType(val, innerTypes || null) }
+    } else {
+      const entries = Object.entries(val).map(([k, v]) =>
+        // TODO does ethers ever return objects and not arrays?
+        unknownToDecodedArgsToCustomType(k, v, null)
+      )
+      return { key: key, val: entries }
     }
   }
   // TODO: how should we handle this
-  return { key, val: false }
+  return { key: type || key, val: false }
 }
 
-function arrayUnknownDecodedArgsToCustomType(args: readonly unknown[]): DecodedCall['args'] {
+function arrayUnknownDecodedArgsToCustomType(
+  args: readonly unknown[],
+  types: string[] | null
+): DecodedCall['args'] {
   const dataToReturn: DecodedCall['args'] = []
   args.forEach((val, i) => {
     let key = `param${i}`
-    dataToReturn.push(unknownToDecodedArgsToCustomType(key, val))
+    dataToReturn.push(unknownToDecodedArgsToCustomType(key, val, types?.[i] || null))
   })
   return dataToReturn
 }
@@ -53,9 +96,11 @@ export function decodeCall(
     // TODO: test if it throws when unable to decode
     try {
       const parsed = iface.parseTransaction({ data })
-
       if (!parsed) continue
-      const argsToReturn = arrayUnknownDecodedArgsToCustomType(parsed.args)
+      const argsToReturn = arrayUnknownDecodedArgsToCustomType(
+        parsed.args,
+        parsed.fragment.inputs.map((i) => i.type)
+      )
       const reEncoded = iface.encodeFunctionData(parsed.fragment, parsed.args)
       const diffInBytes = (data.length - reEncoded.length) / 2
       const result = {
@@ -74,7 +119,7 @@ export function decodeCall(
       }
     } catch (e) {
       console.log('ERROR DECODING')
-      console.log(e)
+      console.error(e)
       // TODO should we ignore it?
     }
   }

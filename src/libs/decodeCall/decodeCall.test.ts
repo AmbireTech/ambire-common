@@ -39,9 +39,9 @@ describe('decodeCall', () => {
     expect(decodedCall?.diffInBytes).toBe(extraBytes.length / 2)
   })
 
-  test('should decode call with complex nested types', () => {
+  test('should decode call with complex nested types and correct keys', () => {
     const iface = new Interface([
-      'function someFunction(address,uint256,bytes[],bytes,(address,uint256)[],string)'
+      'function someFunction(address,uint256,bytes[],bytes,(address,uint256[])[],string)'
     ])
     const complexData = iface.encodeFunctionData('someFunction', [
       '0x742d35cc6634c0532925a3b844bc1e4c23a39e18',
@@ -49,15 +49,15 @@ describe('decodeCall', () => {
       ['0xdeadbeef', '0xcafebabe'],
       '0xabcd',
       [
-        ['0x1234567890123456789012345678901234567890', '999'],
-        ['0x0987654321098765432109876543210987654321', '888']
+        ['0x1234567890123456789012345678901234567890', ['999', '1000']],
+        ['0x0987654321098765432109876543210987654321', ['888', '1010']]
       ],
       'test string'
     ])
 
     const decodedCall = decodeCall(complexData, [
       {
-        signature: 'someFunction(address,uint256,bytes[],bytes,(address,uint256)[],string)',
+        signature: 'someFunction(address,uint256,bytes[],bytes,(address,uint256[])[],string)',
         filtered: false
       }
     ])
@@ -66,7 +66,53 @@ describe('decodeCall', () => {
     expect(decodedCall?.diffInBytes).toBe(0)
     expect(decodedCall?.selector).toBe(iface.getFunction('someFunction')?.selector)
     expect(decodedCall?.signature).toBe(
-      'someFunction(address,uint256,bytes[],bytes,(address,uint256)[],string)'
+      'someFunction(address,uint256,bytes[],bytes,(address,uint256[])[],string)'
     )
+
+    // NOTE: keys === type only for lead nodes (inner most elements)
+    expect(decodedCall?.args).toMatchObject([
+      { key: 'address', val: '0x742d35CC6634C0532925a3b844bc1E4C23a39E18' },
+      { key: 'uint256', val: 12345n },
+      {
+        key: 'param2',
+        val: [
+          { key: 'bytes', val: '0xdeadbeef' },
+          { key: 'bytes', val: '0xcafebabe' }
+        ]
+      },
+      { key: 'bytes', val: '0xabcd' },
+      {
+        key: 'param4',
+        val: [
+          {
+            key: 'param0',
+            val: [
+              { key: 'address', val: '0x1234567890123456789012345678901234567890' },
+              {
+                key: 'param1',
+                val: [
+                  { key: 'uint256', val: 999n },
+                  { key: 'uint256', val: 1000n }
+                ]
+              }
+            ]
+          },
+          {
+            key: 'param1',
+            val: [
+              { key: 'address', val: '0x0987654321098765432109876543210987654321' },
+              {
+                key: 'param1',
+                val: [
+                  { key: 'uint256', val: 888n },
+                  { key: 'uint256', val: 1010n }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      { key: 'string', val: 'test string' }
+    ])
   })
 })
