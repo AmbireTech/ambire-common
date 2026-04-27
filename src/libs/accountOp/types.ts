@@ -8,7 +8,10 @@ export enum AccountOpStatus {
   Failure = 'failure',
   Rejected = 'rejected',
   UnknownButPastNonce = 'unknown-but-past-nonce',
-  BroadcastButStuck = 'broadcast-but-stuck'
+  BroadcastButStuck = 'broadcast-but-stuck',
+  // use this status as representational in activity/history
+  // only for non-atomic batches that have incompleted transactions
+  PartiallyComplete = 'partially-complete'
 }
 
 export interface Call {
