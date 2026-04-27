@@ -1,17 +1,9 @@
 import { Interface } from 'ethers'
 import { isHex } from 'viem'
 
-import { Call } from '../accountOp/types'
+import { DecodedCall } from '@/interfaces/decodeCall'
 
-// TODO should we move this
-export type DecodedCall = {
-  args: { key: string; val: DecodedArgument }[]
-  selector: string
-  signature: string
-  data: string
-  diffInBytes: number
-}
-type DecodedArgument = bigint | string | boolean | DecodedCall['args'] | DecodedCall
+import { Call } from '../accountOp/types'
 
 /**
  *
@@ -51,7 +43,8 @@ function unknownToDecodedArgsToCustomType(
 ): DecodedCall['args'][number] {
   if (typeof val === 'boolean') return { key: type || key, val }
   else if (typeof val === 'string') return { key: type || key, val }
-  else if (typeof val === 'bigint') return { key: type || key, val }
+  else if (typeof val === 'bigint' || typeof val === 'number')
+    return { key: type || key, val: BigInt(val) }
   else if (typeof val === 'object') {
     if (!val) return { key: type || key, val: false }
     else if (Array.isArray(val)) {
@@ -66,13 +59,12 @@ function unknownToDecodedArgsToCustomType(
       return { key, val: arrayUnknownDecodedArgsToCustomType(val, innerTypes || null) }
     } else {
       const entries = Object.entries(val).map(([k, v]) =>
-        // TODO does ethers ever return objects and not arrays?
         unknownToDecodedArgsToCustomType(k, v, null)
       )
       return { key: key, val: entries }
     }
   }
-  // TODO: how should we handle this
+  // will reach here for symbol  or undefined
   return { key: type || key, val: false }
 }
 
@@ -99,8 +91,6 @@ export function decodeCall(
   }
   for (const { signature } of foundSignatures) {
     const iface = new Interface(['function ' + signature])
-    // TODO: this is extremely buggy and does not work yet
-    // TODO: test if it throws when unable to decode
     try {
       const parsed = iface.parseTransaction({ data })
       if (!parsed) continue
