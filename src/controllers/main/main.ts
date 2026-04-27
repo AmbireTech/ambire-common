@@ -544,13 +544,13 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       ui: this.ui
     })
-    console.log(performance.now(), 'before')
+
     this.contractInfo = new ContractInfoController({
       eventEmitterRegistry,
       fetch: this.fetch,
-      storage: this.storage
+      storage: this.storage,
+      featureFlags: this.featureFlags
     })
-    console.log(performance.now(), 'after')
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined

@@ -5,6 +5,7 @@ import {
   SourcifyFunctionsResponse
 } from '@/interfaces/contractInfo'
 import { IEventEmitterRegistryController } from '@/interfaces/eventEmitter'
+import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
 import { IStorageController } from '@/interfaces/storage'
 import { fetchWithTimeout } from '@/utils/fetch'
@@ -24,6 +25,8 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
   #debounceSelectorFetchPromise?: Promise<() => void>
 
+  #featureFlag: IFeatureFlagsController
+
   selectors: Selectors = {}
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -32,16 +35,19 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   constructor({
     eventEmitterRegistry,
     fetch,
-    storage
+    storage,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
     this.#storage = storage
+    this.#featureFlag = featureFlags
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -129,6 +135,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   async getSelector(selector: string) {
+    if (!this.#featureFlag.isFeatureEnabled('sourcifyApiForDecodingTxns')) return
     this.#debounceBufferForSelectors.add(selector)
     if (this.selectors[selector]?.status === 'success') return
     if (!this.#debounceSelectorFetchPromise) {

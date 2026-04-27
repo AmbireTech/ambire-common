@@ -1,16 +1,11 @@
-import { IContractInfoController, SelectorsFromStorage } from '@/interfaces/contractInfo'
+import { SelectorsFromStorage } from '@/interfaces/contractInfo'
 import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
-import { produceMemoryStore } from '@test/helpers'
+import { makeMainController } from '@test/helpers/mainController'
 
-import { IStorageController } from '../../interfaces/storage'
-import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
-import { StorageController } from '../storage/storage'
-import { ContractInfoController, FUNCTION_SELECTORS_STORAGE_KEY } from './contractInfo'
+import { FUNCTION_SELECTORS_STORAGE_KEY } from './contractInfo'
 
 let fetchSpy: any
-let contractInfoController: IContractInfoController
-let storage: IStorageController
 const PREDEFINED_SELECTORS = {
   '0x23b872dd': [
     {
@@ -93,65 +88,87 @@ const PREDEFINED_SELECTORS = {
     }
   ]
 }
+let fetchSourcifyCounter = 0
 beforeEach(async () => {
   const realFetch = global.fetch
-  fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((...args) => realFetch(...args))
-
-  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
-  storage = new StorageController(produceMemoryStore(), eventEmitterRegistry)
-  await storage.set('functionSelectors', {
-    '0x095ea7b3': [{ signature: 'approve(address,uint256)', filtered: false }]
-  } as SelectorsFromStorage)
-
-  contractInfoController = new ContractInfoController({
-    fetch: fetchSpy,
-    eventEmitterRegistry,
-    storage
+  fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((...args): any => {
+    if (
+      (args[0] as string).startsWith(
+        'https://api.4byte.sourcify.dev/signature-database/v1/lookup?function'
+      )
+    )
+      fetchSourcifyCounter += 1
+    return realFetch(...args)
   })
 })
 
 afterEach(() => {
+  fetchSourcifyCounter = 0
   fetchSpy.mockRestore()
 })
 
-describe('ContractInfoController', () => {
+describe('contractInfo', () => {
   test('Should read selectors from storage', async () => {
-    await contractInfoController.initialLoadPromise
-    expect(contractInfoController.selectors?.['0x095ea7b3']).toMatchObject({
+    const {
+      mainCtrl: { contractInfo }
+    } = await makeMainController(
+      async (storage) => {
+        await storage.set('functionSelectors', {
+          '0x095ea7b3': [{ signature: 'approve(address,uint256)', filtered: false }]
+        } as SelectorsFromStorage)
+      },
+      { overrides: { fetch: fetchSpy } }
+    )
+    expect(contractInfo.selectors?.['0x095ea7b3']).toMatchObject({
       status: 'success',
       data: [{ signature: 'approve(address,uint256)', filtered: false }]
     })
   })
   test('Should debounce when in quick succession', async () => {
-    await contractInfoController.initialLoadPromise
-    contractInfoController.getSelector('0x23b872dd')
-    contractInfoController.getSelector('0xa9059cbb')
-    expect(contractInfoController.selectors?.['0x23b872dd']?.status).toBe('loading')
-    expect(contractInfoController.selectors?.['0xa9059cbb']?.status).toBe('loading')
+    const {
+      mainCtrl: { contractInfo }
+    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
+    void contractInfo.getSelector('0x23b872dd')
+    void contractInfo.getSelector('0xa9059cbb')
+    expect(contractInfo.selectors?.['0x23b872dd']?.status).toBe('loading')
+    expect(contractInfo.selectors?.['0xa9059cbb']?.status).toBe('loading')
     await wait(3000)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(contractInfoController.selectors?.['0x23b872dd']).toMatchObject({
+    expect(fetchSourcifyCounter).toBe(1)
+    expect(contractInfo.selectors?.['0x23b872dd']).toMatchObject({
       status: 'success',
       data: PREDEFINED_SELECTORS['0x23b872dd']
     })
-    expect(contractInfoController.selectors?.['0xa9059cbb']).toMatchObject({
+    expect(contractInfo.selectors?.['0xa9059cbb']).toMatchObject({
       status: 'success',
       data: PREDEFINED_SELECTORS['0xa9059cbb']
     })
     // should not double fetch
-    contractInfoController.getSelector('0x23b872dd')
+    void contractInfo.getSelector('0x23b872dd')
     await wait(3000)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSourcifyCounter).toBe(1)
   })
 
   test('Should store selectors in storage correctly', async () => {
-    await contractInfoController.initialLoadPromise
-    contractInfoController.getSelector('0x40c10f19')
+    const {
+      mainCtrl: { contractInfo, storage }
+    } = await makeMainController()
+
+    void contractInfo.getSelector('0x40c10f19')
     await wait(3000)
     let storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
     expect(storedSelectors['0x40c10f19']).toMatchObject([
       { signature: 'mint(address,uint256)', filtered: false },
       { signature: 'cat642998653(address,uint256)', filtered: false }
     ])
+  })
+  test('Should not fetch selectors when sourcifyApiForDecodingTxns feature flag is disabled', async () => {
+    const {
+      mainCtrl: { contractInfo, featureFlags }
+    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
+
+    void featureFlags.setFeatureFlag('sourcifyApiForDecodingTxns', false)
+    void contractInfo.getSelector('0x23b872dd')
+    await wait(3000)
+    expect(fetchSourcifyCounter).toBe(0)
   })
 })
