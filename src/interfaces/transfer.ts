@@ -20,7 +20,7 @@ export interface TransferUpdate {
 export type AddressPoisoningMatch = {
   matchedAddress: string
   // Number of consecutive chars that matched from the left/right side of the address body.
-  // We keep them separate because poisoning lookalikes are not always symmetric (e.g. 6-left, 5-right).
+  // We keep them separate because poisoning lookalikes are not always symmetric (e.g. 3-left, 6-right).
   matchedPrefixCharsCount: number
   matchedSuffixCharsCount: number
 }
