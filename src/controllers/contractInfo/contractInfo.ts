@@ -42,8 +42,6 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
     this.#fetch = fetch
     this.#storage = storage
-    // TODO remove
-    this.#storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {})
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -56,12 +54,10 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   async #load() {
-    const selectorsFromStorage: SelectorsFromStorage = {}
-    // TODO bring back
-    //  await this.#storage.get(
-    // FUNCTION_SELECTORS_STORAGE_KEY,
-    // {}
-    // )
+    const selectorsFromStorage: SelectorsFromStorage = await this.#storage.get(
+      FUNCTION_SELECTORS_STORAGE_KEY,
+      {}
+    )
     this.selectors = Object.fromEntries(
       Object.entries(selectorsFromStorage).map(([k, data]): [string, Selectors[string]] => {
         return [k, { status: 'success', data }]

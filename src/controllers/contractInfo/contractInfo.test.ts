@@ -14,61 +14,82 @@ let storage: IStorageController
 const PREDEFINED_SELECTORS = {
   '0x23b872dd': [
     {
-      signature: 'transferFrom(address,address,uint256)'
+      signature: 'transferFrom(address,address,uint256)',
+      filtered: false
     },
     {
-      signature: '__$_$__$$$$$__$$_$$$_$$__$$___$$(address,address,uint256)'
+      signature: '__$_$__$$$$$__$$_$$$_$$__$$___$$(address,address,uint256)',
+      filtered: true
     },
     {
-      signature: 'seaportCallback4878572495(address,address,uint256)'
+      signature: 'seaportCallback4878572495(address,address,uint256)',
+      filtered: true
     },
     {
       signature:
         'func_801zDya(address,address,uint256,((address,uint256),uint256,uint256),bytes32,bytes)'
     },
     {
-      signature: 'func_60iHVgK(address,address,uint256,uint256,address)'
+      signature: 'func_60iHVgK(address,address,uint256,uint256,address)',
+      filtered: true
     },
     {
-      signature: 'gasprice_bit_ether(int128)'
+      signature: 'gasprice_bit_ether(int128)',
+      filtered: true
     },
     {
-      signature: 'watch_tg_invmru_faebe36(bool,bool,bool)'
+      signature: 'watch_tg_invmru_faebe36(bool,bool,bool)',
+      filtered: true
     },
     {
-      signature: 'func_nZHTch(address,address,uint256,((address,uint256),uint256,uint256),bytes)'
+      signature: 'func_nZHTch(address,address,uint256,((address,uint256),uint256,uint256),bytes)',
+      filtered: true
     },
     {
-      signature: 'func_chVsN(address,address,uint256,address,uint256,uint256,uint256,bytes)'
+      signature: 'func_chVsN(address,address,uint256,address,uint256,uint256,uint256,bytes)',
+      filtered: true
     }
   ],
   '0xa9059cbb': [
     {
-      signature: 'transfer(address,uint256)'
+      signature: 'transfer(address,uint256)',
+      filtered: false
     },
     {
-      signature: '_____$_$__$___$$$___$$___$__$$(address,uint256)'
+      signature: '_____$_$__$___$$$___$$___$__$$(address,uint256)',
+      filtered: true
     },
     {
-      signature: 'many_msg_babbage(bytes1)'
+      signature: 'many_msg_babbage(bytes1)',
+      filtered: true
     },
     {
-      signature: 'transfer(bytes4[9],bytes5[6],int48[11])'
+      signature: 'transfer(bytes4[9],bytes5[6],int48[11])',
+      filtered: true
     },
     {
-      signature: 'func_2093253501(bytes)'
+      signature: 'func_2093253501(bytes)',
+      filtered: true
     },
     {
-      signature: 'workMyDirefulOwner(uint256,uint256)'
+      signature: 'workMyDirefulOwner(uint256,uint256)',
+      filtered: true
     },
     {
-      signature: 'join_tg_invmru_haha_fd06787(address,bool)'
+      signature: 'join_tg_invmru_haha_fd06787(address,bool)',
+      filtered: true
     },
     {
-      signature: 'fakeTransfer_4570999670(bytes)'
+      signature: 'fakeTransfer_4570999670(bytes)',
+      filtered: true
     },
     {
-      signature: 'transfer3112631958((address,uint256,bytes)[])'
+      signature: 'transfer3112631958((address,uint256,bytes)[])',
+      filtered: true
+    },
+    {
+      signature: 'z75000129682300((address,uint256,bytes)[])',
+      filtered: true
     }
   ]
 }
@@ -79,7 +100,7 @@ beforeEach(async () => {
   const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
   storage = new StorageController(produceMemoryStore(), eventEmitterRegistry)
   await storage.set('functionSelectors', {
-    '0x095ea7b3': [{ signature: 'approve(address,uint256)' }]
+    '0x095ea7b3': [{ signature: 'approve(address,uint256)', filtered: false }]
   } as SelectorsFromStorage)
 
   contractInfoController = new ContractInfoController({
@@ -98,7 +119,7 @@ describe('ContractInfoController', () => {
     await contractInfoController.initialLoadPromise
     expect(contractInfoController.selectors?.['0x095ea7b3']).toMatchObject({
       status: 'success',
-      data: [{ signature: 'approve(address,uint256)' }]
+      data: [{ signature: 'approve(address,uint256)', filtered: false }]
     })
   })
   test('Should debounce when in quick succession', async () => {
@@ -129,8 +150,8 @@ describe('ContractInfoController', () => {
     await wait(3000)
     let storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
     expect(storedSelectors['0x40c10f19']).toMatchObject([
-      { signature: 'mint(address,uint256)' },
-      { signature: 'cat642998653(address,uint256)' }
+      { signature: 'mint(address,uint256)', filtered: false },
+      { signature: 'cat642998653(address,uint256)', filtered: false }
     ])
   })
 })
