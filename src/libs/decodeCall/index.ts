@@ -1,5 +1,5 @@
 import { Interface } from 'ethers'
-import { isHex, parseAbi } from 'viem'
+import { isHex } from 'viem'
 
 import { Call } from '../accountOp/types'
 
@@ -13,6 +13,13 @@ export type DecodedCall = {
 }
 type DecodedArgument = bigint | string | boolean | DecodedCall['args'] | DecodedCall
 
+/**
+ *
+ * @param type string of the type of the solidity function argument, should be tuple
+ * example tuple(address,uint256[]), tuple(address,tuple(address,address,uint[]))
+ * @returns the inner arguments in top-most tuple
+ * For tuple(address,uint[],tuple(address)) => ['address', 'uint[]','tuple(address)']
+ */
 function splitTupleArgs(type: string): string[] | null {
   if (!type.startsWith('tuple(') || !type.endsWith(')')) return null
   type = type.slice(6, -1)
