@@ -954,11 +954,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         // when we add banners with surveys, we can also add a url
         // the goal is for old extensions to be redirected to a url, for new versions to have a survey
         // otherwise we will have to chose 1) new - survey, old - nothing or 2) both old and new - url
-        banner.surveyId && banner.require
+        banner.surveyId
           ? [
               {
                 actionName: 'survey',
-                meta: { surveyId: banner.surveyId, requirements: banner.require }
+                meta: { surveyId: banner.surveyId, requirements: banner.require || {} }
               }
             ]
           : banner.url
