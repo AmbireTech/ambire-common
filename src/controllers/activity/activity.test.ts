@@ -302,6 +302,50 @@ describe('Activity Controller ', () => {
       })
     })
 
+    test('should detect poisoning from Address Book on first send, but skip it when recipient is not first-time', async () => {
+      const { controller } = await prepareTest()
+
+      const trustedAddressBookContact = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+      const poisoningRecipient4to4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const normalizedPoisoningRecipient4to4 = poisoningRecipient4to4.toLowerCase()
+
+      const firstTimeSendResult = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4to4,
+        ACCOUNTS[1]!.addr,
+        [trustedAddressBookContact]
+      )
+
+      expect(firstTimeSendResult).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedAddressBookContact,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 4
+        }
+      })
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 227n,
+        txnId: '0x2222222222222222222222222222222222222222222222222222222222222222',
+        timestamp: 1_700_000_200_000,
+        calls: [{ to: normalizedPoisoningRecipient4to4, value: 0n, data: '0x' }]
+      })
+
+      const nonFirstTimeSendResult = await controller.hasAccountOpsSentTo(
+        normalizedPoisoningRecipient4to4,
+        ACCOUNTS[1]!.addr,
+        [trustedAddressBookContact]
+      )
+
+      expect(nonFirstTimeSendResult).toEqual({
+        found: true,
+        lastTransactionDate: new Date(1_700_000_200_000),
+        addressPoisoningMatch: null
+      })
+    })
+
     test('Retrieved from Controller and persisted in Storage', async () => {
       const { controller, sessionId } = await prepareTest()
 
