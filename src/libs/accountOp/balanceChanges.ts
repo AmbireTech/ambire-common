@@ -66,15 +66,24 @@ export const getAccountOpBalanceChanges = async ({
   chainId,
   tokenAddrs,
   receiptBlockNumber,
-  getTokenBalancesOnBlock
+  getTokenBalancesOnBlock,
+  prevBlockNumber
 }: {
   accountAddr: string
   chainId: bigint
   tokenAddrs: string[]
   receiptBlockNumber: number
   getTokenBalancesOnBlock: GetTokenBalancesOnBlock
+  // if the accountOp is not an atomic batch,
+  // we will have to pass the first receipt's block number
+  // we want to start the comparisson from
+  prevBlockNumber?: number
 }) => {
-  const previousBlockNumber = receiptBlockNumber > 0 ? receiptBlockNumber - 1 : 0
+  const previousBlockNumber = prevBlockNumber
+    ? prevBlockNumber
+    : receiptBlockNumber > 0
+      ? receiptBlockNumber - 1
+      : 0
   const [currentBlockTokens, previousBlockTokens] = await Promise.all([
     getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, receiptBlockNumber, accountAddr),
     getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, previousBlockNumber, accountAddr)

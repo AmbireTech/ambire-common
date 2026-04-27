@@ -1,4 +1,4 @@
-import { toBeHex } from 'ethers'
+import { toBeHex, TransactionReceipt } from 'ethers'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -23,6 +23,7 @@ import {
   fetchTxnId,
   getAccountOpRecipients,
   hasTimePassedSinceBroadcast,
+  isIdentifiedByMultipleTxn,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   PortfoliosToUpdate,
@@ -80,6 +81,57 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     currentPage: fromPage, // zero/index based
     maxPages: Math.ceil(items.length / itemsPerPage)
   }
+}
+
+const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
+
+const getBalanceChangeWindowFromReceipts = (
+  accountOp: SubmittedAccountOp,
+  receipts: TransactionReceipt[]
+) => {
+  const firstReceipt = receipts[0]
+  const lastReceipt = receipts[receipts.length - 1]
+
+  if (!firstReceipt || !lastReceipt) return null
+
+  return {
+    receiptBlockNumber: lastReceipt.blockNumber,
+    prevBlockNumber: isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+      ? getPreviousBlockNumber(firstReceipt.blockNumber)
+      : undefined
+  }
+}
+
+const getBalanceChangeTokenAddrsFromReceipts = async (
+  accountOp: SubmittedAccountOp,
+  receipts: TransactionReceipt[]
+) => {
+  const foundTokens = (
+    await Promise.all(
+      receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
+    )
+  ).flat()
+
+  return getBalanceChangeTokenAddresses(foundTokens)
+}
+
+const getAccountOpReceipts = async (
+  accountOp: SubmittedAccountOp,
+  provider: {
+    getTransactionReceipt: (txnId: string) => Promise<TransactionReceipt | null>
+  }
+) => {
+  const txIds = isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+    ? accountOp.calls.map((call) => call.txnId).filter((txnId) => !!txnId)
+    : accountOp.txnId
+      ? [accountOp.txnId]
+      : []
+
+  if (!txIds.length) return []
+
+  const receipts = await Promise.all(txIds.map((txnId) => provider.getTransactionReceipt(txnId)))
+
+  return receipts.filter((receipt): receipt is TransactionReceipt => !!receipt)
 }
 
 /**
@@ -521,9 +573,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     try {
-      const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+      const receipts = await getAccountOpReceipts(accountOp, provider)
 
-      if (!receipt) {
+      if (!receipts.length) {
         await this.setAccountOpBalanceChanges(
           accountOp.identifiedBy,
           accountOp.accountAddr,
@@ -534,9 +586,27 @@ export class ActivityController extends EventEmitter implements IActivityControl
         return
       }
 
-      const foundTokens = await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
-      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
-      await this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receipt.blockNumber)
+      const tokenAddrs = await getBalanceChangeTokenAddrsFromReceipts(accountOp, receipts)
+      const balanceChangeWindow = getBalanceChangeWindowFromReceipts(accountOp, receipts)
+
+      if (!balanceChangeWindow) {
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          []
+        )
+
+        return
+      }
+
+      await this.updateAccountOpBalanceChanges(
+        accountOp,
+        network,
+        tokenAddrs,
+        balanceChangeWindow.receiptBlockNumber,
+        balanceChangeWindow.prevBlockNumber
+      )
     } catch (error) {
       console.log(error)
       await this.setAccountOpBalanceChanges(
@@ -628,6 +698,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       network: Network
       tokenAddrs: string[]
       receiptBlockNumber: number
+      prevBlockNumber?: number
     }> = []
 
     // we should fetch Safe txns again upon failure
@@ -662,6 +733,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
         return Promise.all(
           opsToUpdate.map(async (accountOp) => {
             shouldEmitUpdate = true
+            let firstReceiptBlockNumber: number | undefined
+            let lastReceiptBlockNumber: number | undefined
+            let shouldScheduleBalanceChangesTask = false
+            const foundTokensForBalanceChanges = new Set<string>()
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
               newestOpTimestamp = accountOp.timestamp
@@ -754,6 +829,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     if (!receipt) return
                   }
 
+                  if (typeof firstReceiptBlockNumber === 'undefined') {
+                    firstReceiptBlockNumber = receipt.blockNumber
+                  }
+                  lastReceiptBlockNumber = receipt.blockNumber
+
                   // if this is an user op, we have to check the logs
                   let isSuccess: boolean | undefined
                   if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
@@ -773,6 +853,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     receipt
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  if (
+                    updatedOpIfAny &&
+                    (updatedOpIfAny.status === AccountOpStatus.Success ||
+                      updatedOpIfAny.status === AccountOpStatus.Failure)
+                  ) {
+                    shouldScheduleBalanceChangesTask = true
+                  }
 
                   if (accountOp.isSingletonDeploy && receipt.status) {
                     // eslint-disable-next-line no-await-in-loop
@@ -796,14 +883,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     : []
                   if (foundTokens.length)
                     this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-
-                  // if there's a receipt, calculate the balance changes
-                  balanceChangesTasks.push({
-                    accountOp,
-                    network,
-                    tokenAddrs: getBalanceChangeTokenAddresses(foundTokens),
-                    receiptBlockNumber: receipt.blockNumber
-                  })
+                  foundTokens.forEach((tokenAddr) => foundTokensForBalanceChanges.add(tokenAddr))
 
                   // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
@@ -850,6 +930,22 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 )
               })
             }
+
+            if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
+              balanceChangesTasks.push({
+                accountOp,
+                network,
+                tokenAddrs: getBalanceChangeTokenAddresses(
+                  Array.from(foundTokensForBalanceChanges)
+                ),
+                receiptBlockNumber: lastReceiptBlockNumber,
+                prevBlockNumber:
+                  isIdentifiedByMultipleTxn(accountOp.identifiedBy) &&
+                  typeof firstReceiptBlockNumber !== 'undefined'
+                    ? getPreviousBlockNumber(firstReceiptBlockNumber)
+                    : undefined
+              })
+            }
           })
         )
       })
@@ -859,10 +955,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
       await this.persistAccountsOps()
     }
 
-    balanceChangesTasks.forEach(({ accountOp, network, tokenAddrs, receiptBlockNumber }) => {
-      // Do not block the status update flow on the balance diff computation.
-      void this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber)
-    })
+    balanceChangesTasks.forEach(
+      ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) => {
+        // Do not block the status update flow on the balance diff computation.
+        void this.updateAccountOpBalanceChanges(
+          accountOp,
+          network,
+          tokenAddrs,
+          receiptBlockNumber,
+          prevBlockNumber
+        )
+      }
+    )
 
     return {
       shouldEmitUpdate,
@@ -878,7 +982,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     accountOp: SubmittedAccountOp,
     network: Network,
     tokenAddrs: string[],
-    receiptBlockNumber: number
+    receiptBlockNumber: number,
+    prevBlockNumber?: number
   ) {
     await this.#initialLoadPromise
 
@@ -894,7 +999,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainId: accountOp.chainId,
         tokenAddrs,
         receiptBlockNumber,
-        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio)
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        prevBlockNumber
       })
 
       await this.setAccountOpBalanceChanges(
