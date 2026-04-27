@@ -122,6 +122,7 @@ export type Action = (
           minTxnsTotal?: number
           maxTxnsTotal?: number
           minAppVersion?: string
+          whitelistedAddresses?: string[]
         }
       }
     }
