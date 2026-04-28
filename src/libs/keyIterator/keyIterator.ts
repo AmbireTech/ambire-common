@@ -87,21 +87,6 @@ export class KeyIterator implements KeyIteratorInterface {
     return this.#cachedBaseWallet
   }
 
-  async getEncryptedSeed(
-    encryptor: (
-      seed: string,
-      seedPassphrase?: string | null | undefined
-    ) => Promise<{
-      seed: string
-      passphrase: string | null
-    }>
-  ) {
-    if (!this.#seedPhrase) return null
-    const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase)
-
-    return encryptedSeed
-  }
-
   async retrieve(
     fromToArr: { from: number; to: number }[],
     hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
@@ -229,8 +214,14 @@ export class KeyIterator implements KeyIteratorInterface {
     })
   }
 
-  isSeedMatching(seedPhraseToCompareWith: string) {
+  isSeedMatching(
+    seedPhraseToCompareWith: string,
+    passphraseToCompareWith?: string | null
+  ): boolean {
     if (!this.#seedPhrase) return false
+    if (!!passphraseToCompareWith && passphraseToCompareWith !== this.#seedPassphrase) {
+      return false
+    }
 
     const baseWallet = this.#getBaseWallet()
     if (baseWallet) {

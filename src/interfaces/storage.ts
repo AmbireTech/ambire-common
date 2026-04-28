@@ -10,7 +10,7 @@ import {
 import { Account, AccountId, AccountPreferences } from './account'
 import { ControllerInterface } from './controller'
 import { Dapp } from './dapp'
-import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
+import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
@@ -34,7 +34,7 @@ export type StorageProps = {
   previousHints: PreviousHintsStorage
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
-  keystoreSeeds: KeystoreSeed[]
+  keystoreSeeds: StoredKeystoreSeed[]
   dappsV2: Dapp[]
   lastDappsUpdateVersion: string | null
   invite: object
