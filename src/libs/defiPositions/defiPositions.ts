@@ -1,4 +1,4 @@
-import { getAddress, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, parseUnits, ZeroAddress } from 'ethers'
 import { isHex } from 'viem'
 
 import { AccountId } from '../../interfaces/account'
@@ -26,6 +26,7 @@ import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
   Position,
+  PositionAsset,
   PositionsByProvider,
   ProviderError
 } from './types'
@@ -258,33 +259,55 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
   return result.map((p) => ({
     ...p,
     source: 'debank' as const,
-    chainId: BigInt(p.chainId),
+    chainId: !p.chainId ? undefined : BigInt(p.chainId),
     positions: p.positions
       .map((pos) => {
         try {
+          const isCustomAppChain = !p.chainId
           if (pos.additionalData.name === 'Deposit') {
             // eslint-disable-next-line no-param-reassign
             pos.additionalData.name = 'Deposit pool'
-            // eslint-disable-next-line no-param-reassign
-            pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+
+            if (pos.additionalData.pool?.id) {
+              // eslint-disable-next-line no-param-reassign
+              pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+            }
           }
 
           return {
             ...pos,
-            assets: pos.assets.map((asset) => ({
-              ...asset,
-              // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
-              address: isHex(asset.address) ? getAddress(asset.address) : ZeroAddress,
-              amount: BigInt(asset.amount),
-              protocolAsset: asset.protocolAsset
-                ? {
-                    ...asset.protocolAsset,
-                    address: isHex(asset.protocolAsset.address)
-                      ? getAddress(asset.protocolAsset.address)
-                      : ZeroAddress
-                  }
-                : undefined
-            }))
+            assets: pos.assets.map(
+              (
+                asset: PositionAsset & {
+                  logo_url?: string
+                }
+              ) => {
+                let amount = asset.amount
+
+                if (isCustomAppChain) {
+                  // Amount should be formatted with decimals and turned to bigint after that
+                  amount = parseUnits(String(amount), asset.decimals)
+                  // In else because app assets don't have addresses and we don't want to set them as zero addresses
+                } else {
+                  // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
+                  asset.address = isHex(asset.address) ? getAddress(asset.address) : ZeroAddress
+                }
+
+                return {
+                  ...asset,
+                  iconUrl: asset.iconUrl || asset.logo_url || undefined,
+                  amount: BigInt(amount),
+                  protocolAsset: asset.protocolAsset
+                    ? {
+                        ...asset.protocolAsset,
+                        address: isHex(asset.protocolAsset.address)
+                          ? getAddress(asset.protocolAsset.address)
+                          : ZeroAddress
+                      }
+                    : undefined
+                }
+              }
+            )
           }
         } catch (error) {
           console.error('DeFi error when mapping positions: ', error, 'position', pos)
@@ -324,6 +347,10 @@ const enhancePortfolioTokensWithDefiPositions = (
     const notYetHandledTokensToAdd: TokenResult[] = []
 
     defiPositionsState.positionsByProvider.forEach((posByProvider) => {
+      // Skip app providers
+      const posChainId = posByProvider.chainId
+      if (!posChainId) return
+
       posByProvider.positions.forEach((pos) => {
         try {
           const controllerAddress = pos.additionalData?.pool?.controller as string | undefined
@@ -412,7 +439,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                 address: protocolAsset.address,
                 symbol: protocolAsset.symbol,
                 name: protocolAsset.name,
-                chainId: BigInt(posByProvider.chainId),
+                chainId: BigInt(posChainId),
                 flags: {
                   canTopUpGasTank: false,
                   isFeeToken: false,
