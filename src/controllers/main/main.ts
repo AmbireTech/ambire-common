@@ -16,7 +16,7 @@ import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
-import { BannerController } from '@/controllers/banner/banner'
+import { AccountData, BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
@@ -38,6 +38,7 @@ import { SignAccountOpType } from '@/controllers/signAccountOp/helper'
 import { OnboardingSuccessProps } from '@/controllers/signAccountOp/signAccountOp'
 import { SignMessageController } from '@/controllers/signMessage/signMessage'
 import { StorageController } from '@/controllers/storage/storage'
+import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
@@ -47,7 +48,7 @@ import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
-import { IBannerController } from '@/interfaces/banner'
+import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDomainsController } from '@/interfaces/domains'
@@ -76,6 +77,7 @@ import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 import { ISignAccountOpController } from '@/interfaces/signAccountOp'
 import { ISignMessageController, SignMessageStatus } from '@/interfaces/signMessage'
 import { IStorageController, Storage } from '@/interfaces/storage'
+import { ISurveyController } from '@/interfaces/survey'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
@@ -87,6 +89,7 @@ import { getDappIdentifier, SubmittedAccountOp } from '@/libs/accountOp/submitte
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { getAccountKeysCount } from '@/libs/keys/keys'
 import { relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -169,6 +172,8 @@ export class MainController extends EventEmitter implements IMainController {
   requests: IRequestsController
 
   banner: IBannerController
+
+  survey: ISurveyController
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -299,13 +304,55 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       accounts: this.accounts
     })
+
+    this.survey = new SurveyController({
+      fetch: this.fetch,
+      relayerUrl,
+      storage: this.storage,
+      ui: this.ui,
+      eventEmitterRegistry,
+      dismissBanner: (bannerId: Banner['id']) => {
+        this.banner.dismissBanner(bannerId)
+      }
+    })
+
+    this.banner = new BannerController(
+      this.storage,
+      (): AccountData => {
+        const currentSelectedAcc = this.selectedAccount.account
+        if (!currentSelectedAcc) return { status: 'no-selected-account' }
+        let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
+        let numberOfTransactions = this.activity.getAccountOpsForAccount({
+          accountAddr: currentSelectedAcc.addr,
+          sortAccOps: false
+        }).length
+        const hasKeys =
+          getAccountKeysCount({
+            accountAddr: currentSelectedAcc.addr,
+            keys: this.keystore.keys,
+            accounts: this.accounts.accounts
+          }) > 0
+        return {
+          status: 'has-selected-account',
+          numberOfTransactions,
+          totalUsdBalance,
+          hasKeys,
+          address: currentSelectedAcc.addr,
+          isBalanceReady: this.selectedAccount.portfolio.isAllReady
+        }
+      },
+      this.survey,
+      this.#appVersion,
+      eventEmitterRegistry
+    )
     this.selectedAccount = new SelectedAccountController({
       eventEmitterRegistry,
       storage: this.storage,
       accounts: this.accounts,
-      autoLogin: this.autoLogin
+      autoLogin: this.autoLogin,
+      banner: this.banner
     })
-    this.banner = new BannerController(this.storage, eventEmitterRegistry)
+
     this.portfolio = new PortfolioController(
       this.storage,
       this.fetch,
@@ -656,6 +703,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.updateSelectedAccountPortfolio()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+
+    await this.survey.initialLoadPromise
 
     this.isReady = true
     this.emitUpdate()

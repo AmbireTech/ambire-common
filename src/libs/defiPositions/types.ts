@@ -18,7 +18,10 @@ export enum DeFiPositionsError {
 export type ProviderName = 'AAVE v3' | 'Uniswap V3' | 'Ambire' | string
 
 export interface PositionAsset {
-  address: string
+  /**
+   * Undefined for assets of App positions (polymarket, hyperliquid, etc.) since they don't have an on-chain representation.
+   */
+  address?: string
   symbol: string
   name: string
   decimals: number
@@ -92,7 +95,10 @@ export type NetworksWithPositionsByAccounts = {
 
 export type PositionsByProvider = {
   providerName: ProviderName
-  chainId: bigint
+  /**
+   * Undefined for App positions (polymarket, hyperliquid, etc.) since they don't have an on-chain representation.
+   */
+  chainId?: bigint
   iconUrl: string
   siteUrl: string
   source: 'debank' | 'custom' | 'mixed'
@@ -119,6 +125,14 @@ export interface Position {
   id: string
   assets: PositionAsset[]
   additionalData: {
+    positionIndex?: string
+    name?: string
+    APY?: number
+    positionInUSD?: number
+    collateralInUSD?: number
+    debtInUSD?: number
+    healthRate?: number | null
+    description?: string
     [key: string]: any
   }
 }
