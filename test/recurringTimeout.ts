@@ -16,7 +16,10 @@ export const waitForFnToBeCalledAndExecuted = async (
   while (sessionId !== recurringTimeout.sessionId) {
     sessionId = recurringTimeout.sessionId
     await jest.advanceTimersByTimeAsync(
-      recurringTimeout.currentTimeout - (Date.now() - recurringTimeout.startedRunningAt)
+      Math.max(
+        0,
+        recurringTimeout.currentTimeout - (Date.now() - recurringTimeout.startedRunningAt)
+      )
     )
   }
 

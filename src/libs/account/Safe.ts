@@ -198,4 +198,8 @@ export class Safe extends BaseAccount {
 
     return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)
   }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
 }

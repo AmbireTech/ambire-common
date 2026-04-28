@@ -131,4 +131,8 @@ export class EOA extends BaseAccount {
   canBroadcastByOtherEOA(): boolean {
     return false
   }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
 }
