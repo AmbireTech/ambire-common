@@ -77,6 +77,15 @@ const modifyDappPropsIfNeeded = (
       onModify(zora)
     }
   }
+
+  if (id === 'app.ipor.io') {
+    const fusionByIpor = dappsMap.get(id)
+    if (fusionByIpor) {
+      fusionByIpor.description =
+        'Onchain vault infrastructure for institutional-grade yield. Explore existing strategies in the Fusion App and start earning.'
+      onModify(fusionByIpor)
+    }
+  }
 }
 
 function getDappNameFromId(id: string) {
