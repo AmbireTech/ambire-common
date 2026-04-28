@@ -48,6 +48,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #shouldSyncDapps: boolean = false
 
+  #continuouslyUpdatePhishingPromise?: Promise<void>
+
   get updatePhishingInterval() {
     return this.#updatePhishingInterval
   }
@@ -84,7 +86,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#ui = ui
 
     this.#updatePhishingInterval = new RecurringTimeout(
-      async () => this.continuouslyUpdatePhishing(),
+      async () => this.#runContinuouslyUpdatePhishing(),
       PHISHING_INACTIVE_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -125,10 +127,30 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.emitUpdate()
   }
 
-  async continuouslyUpdatePhishing() {
-    await this.#continuouslyUpdatePhishing().catch(() => {
-      this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_FAILED_TO_GET_UPDATE_INTERVAL })
-    })
+  /**
+   * Wrapper around #continuouslyUpdatePhishing that:
+   * 1) deduplicates concurrent triggers via a shared promise
+   * 2) switches to the failed-retry interval when the fetch/update flow throws
+   */
+  async #runContinuouslyUpdatePhishing() {
+    if (this.#continuouslyUpdatePhishingPromise) {
+      await this.#continuouslyUpdatePhishingPromise
+
+      return
+    }
+
+    this.#continuouslyUpdatePhishingPromise = this.#continuouslyUpdatePhishing()
+      .catch((err) => {
+        this.updatePhishingInterval.updateTimeout({
+          timeout: PHISHING_FAILED_TO_GET_UPDATE_INTERVAL
+        })
+        throw err
+      })
+      .finally(() => {
+        this.#continuouslyUpdatePhishingPromise = undefined
+      })
+
+    await this.#continuouslyUpdatePhishingPromise
   }
 
   async #continuouslyUpdatePhishing() {
