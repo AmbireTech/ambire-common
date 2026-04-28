@@ -83,6 +83,7 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
+import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 import {
   BROADCAST_OPTIONS,
   broadcastTransaction,
@@ -1589,7 +1590,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * Priority order:
    * 1) dApp verification in progress (`LOADING`)
    * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
-   * 2) dApp is blacklisted (`BLACKLISTED`)
+   * 3) dApp is blacklisted (`BLACKLISTED`)
    * 4) (Permit2 only) dApp is not in the default catalog (not `VERIFIED`)
    */
   #getDappVerificationBanner(): SignAccountOpBanner | null {
@@ -1600,7 +1601,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (!dappUrls.length) return null
 
     const dappVerificationData = dappUrls.map((url) => {
-      const dapp = this.#dapps.getDappByDomain(url)
+      const dapp = this.#dapps.getDapp(getDappIdFromUrl(url))
       return {
         status: dapp?.blacklisted,
         name: dapp?.name || new URL(url).hostname
