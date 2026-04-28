@@ -21,6 +21,7 @@ import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
+const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
 
 export class PhishingController extends EventEmitter implements IPhishingController {
   #fetch: Fetch
@@ -86,20 +87,31 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#ui = ui
 
     this.#updatePhishingInterval = new RecurringTimeout(
-      async () => this.#runContinuouslyUpdatePhishing(),
+      async () => this.continuouslyUpdatePhishing(),
       PHISHING_INACTIVE_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
 
-    this.#ui.uiEvent.on('addView', () => {
-      if (this.#ui.views.length === 1)
+    this.#ui.uiEvent.on('addView', (view) => {
+      const isActiveViewType = PHISHING_ACTIVE_VIEW_TYPES.has(view.type)
+      const isAlreadyUsingActiveUpdateInterval =
+        this.#updatePhishingInterval.currentTimeout === PHISHING_ACTIVE_UPDATE_INTERVAL
+
+      const shouldSwitchToActiveUpdateInterval =
+        isActiveViewType && !isAlreadyUsingActiveUpdateInterval
+      if (shouldSwitchToActiveUpdateInterval)
         this.#updatePhishingInterval.restart({
           timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
           runImmediately: true
         })
     })
     this.#ui.uiEvent.on('removeView', () => {
-      if (!this.#ui.views.length)
+      const hasAtLeastOneActiveViewOpen = this.#ui.views.some((view) =>
+        PHISHING_ACTIVE_VIEW_TYPES.has(view.type)
+      )
+
+      const shouldSwitchToInactiveUpdateInterval = !hasAtLeastOneActiveViewOpen
+      if (shouldSwitchToInactiveUpdateInterval)
         this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
 
@@ -132,7 +144,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    * 1) deduplicates concurrent triggers via a shared promise
    * 2) switches to the failed-retry interval when the fetch/update flow throws
    */
-  async #runContinuouslyUpdatePhishing() {
+  async continuouslyUpdatePhishing() {
     if (this.#continuouslyUpdatePhishingPromise) {
       await this.#continuouslyUpdatePhishingPromise
 
