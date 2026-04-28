@@ -427,6 +427,11 @@ export const dappsNotToFilterOutByDomain = [
   'swap.defillama.com'
 ]
 
+export const dappDescriptionOverrides: Record<string, string> = {
+  'app.ipor.io':
+    'Onchain vault infrastructure for institutional-grade yield. Explore existing strategies in the Fusion App and start earning.'
+}
+
 export const CATEGORY_MAP: Record<string, string> = {
   'AI Agents': 'AI Agents',
   'Algo-Stables': 'Stablecoins',

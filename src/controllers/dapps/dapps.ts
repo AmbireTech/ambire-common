@@ -10,6 +10,7 @@ import {
   categoriesToExclude,
   CATEGORY_MAP,
   dappIdsToBeRemoved,
+  dappDescriptionOverrides,
   dappsNotToFilterOutByDomain,
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
@@ -334,7 +335,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       const updatedDapp: Dapp = {
         id,
         name: formatDappName(dapp.name),
-        description: dapp.description,
+        description: dappDescriptionOverrides[id] || dapp.description,
         url: unifyDefiLlamaDappUrl(dapp.url),
         icon: dapp.logo,
         category: CATEGORY_MAP[dapp.category] || dapp.category,
