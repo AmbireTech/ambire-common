@@ -27,6 +27,7 @@ export enum EmailVaultState {
   Loading = 'loading',
   WaitingEmailConfirmation = 'WaitingEmailConfirmation',
   UploadingSecret = 'UploadingSecret',
+  RemovingSecret = 'RemovingSecret',
   Ready = 'Ready'
 }
 
@@ -57,6 +58,7 @@ function base64UrlEncode(str: string) {
 const STATUS_WRAPPED_METHODS = {
   getEmailVaultInfo: 'INITIAL',
   uploadKeyStoreSecret: 'INITIAL',
+  removeKeyStoreSecret: 'INITIAL',
   recoverKeyStore: 'INITIAL',
   requestKeysSync: 'INITIAL',
   finalizeSyncKeys: 'INITIAL'
@@ -79,6 +81,8 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   #isWaitingEmailConfirmation: boolean = false
 
   #isUploadingSecret: boolean = false
+
+  #isRemovingSecret: boolean = false
 
   #emailVault: EmailVault
 
@@ -160,6 +164,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
     if (this.#isUploadingSecret) return EmailVaultState.UploadingSecret
+    if (this.#isRemovingSecret) return EmailVaultState.RemovingSecret
 
     return EmailVaultState.Ready
   }
@@ -397,6 +402,60 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     }
 
     this.#isUploadingSecret = false
+    this.emitUpdate()
+  }
+
+  async removeKeyStoreSecret(email: string) {
+    await this.withStatus('removeKeyStoreSecret', () => this.#removeKeyStoreSecret(email))
+  }
+
+  async #removeKeyStoreSecret(email: string) {
+    if (!this.emailVaultStates.email[email]) {
+      await this.#getEmailVaultInfo(email, 'setup')
+    }
+
+    let result: Boolean | null = false
+    let magicKey = await this.#getMagicLinkKey(email)
+
+    if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
+      await this.handleMagicLinkKey(
+        email,
+        async () => {
+          magicKey = await this.#getMagicLinkKey(email)
+        },
+        'setup'
+      )
+    }
+
+    if (this.#shouldStopConfirmationPolling) {
+      this.#isRemovingSecret = false
+      // Set status to ERROR, but don't emit an error message
+      throw new Error('')
+    }
+
+    if (magicKey?.key) {
+      this.#isRemovingSecret = true
+      const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+      result = await this.#emailVault.removeKeyStoreSecret(email, magicKey.key, keyStoreUid)
+    } else
+      this.emitError({
+        message: 'Email key not confirmed',
+        level: 'minor',
+        sendCrashReport: false,
+        error: new Error('removeKeyStoreSecret: not confirmed magic link key')
+      })
+
+    if (result) {
+      await this.#getEmailVaultInfo(email, 'setup')
+    } else {
+      this.emitError({
+        level: 'minor',
+        message: 'Error upload keyStore to email vault',
+        error: new Error('error removing keyStore secret from email vault')
+      })
+    }
+
+    this.#isRemovingSecret = false
     this.emitUpdate()
   }
 
