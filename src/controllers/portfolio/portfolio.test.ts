@@ -2446,6 +2446,31 @@ describe('Portfolio Controller ', () => {
 
     // @ts-ignore
     expect(controller.tokenDataCache['137']).toBe(undefined)
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-ignore
+      .mockResolvedValueOnce({
+        networkId: 'polygon',
+        chainId: 137,
+        accountAddr: account.addr,
+        erc20s: [ZeroAddress],
+        erc721s: {},
+        prices: {
+          [ZeroAddress]: {
+            baseCurrency: 'usd',
+            price: 1
+          }
+        },
+        hasHints: true,
+        defi: {
+          updatedAt: Date.now(),
+          positions: []
+        },
+        otherNetworksDefiCounts: {}
+      })
+
     // @ts-ignore
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
