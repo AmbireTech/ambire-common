@@ -185,7 +185,8 @@ const activityCtrl = new ActivityController(
 const phishingCtrl = new PhishingController({
   fetch,
   storage: storageCtrl,
-  addressBook: addressBookCtrl
+  addressBook: addressBookCtrl,
+  ui: uiCtrl
 })
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
@@ -489,7 +490,7 @@ describe('SwapAndBridge Controller', () => {
     jest.useFakeTimers()
     const { restore } = suppressConsole()
 
-    // Navigate to dashboard 
+    // Navigate to dashboard
     uiCtrl.updateView('swap-and-bridge', {
       currentRoute: 'dashboard',
       isReady: true,
