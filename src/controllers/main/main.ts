@@ -370,6 +370,15 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       addressBook: this.addressBook
     })
+    this.dapps = new DappsController({
+      eventEmitterRegistry,
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
+    })
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
@@ -402,6 +411,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       storage: this.storage,
       phishing: this.phishing,
+      dapps: this.dapps,
       swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
@@ -450,6 +460,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.providers,
       this.phishing,
+      this.dapps,
       relayerUrl,
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
@@ -494,6 +505,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.activity,
       phishing: this.phishing,
+      dapps: this.dapps,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -529,16 +541,6 @@ export class MainController extends EventEmitter implements IMainController {
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-    })
-
-    this.dapps = new DappsController({
-      eventEmitterRegistry,
-      appVersion: this.#appVersion,
-      fetch: this.fetch,
-      storage: this.storage,
-      networks: this.networks,
-      phishing: this.phishing,
-      ui: this.ui
     })
 
     this.initialLoadPromise = this.#load().finally(() => {

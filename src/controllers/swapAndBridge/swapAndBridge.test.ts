@@ -227,6 +227,11 @@ const PORTFOLIO_TOKENS = [
 ]
 
 let requestsCtrl: IRequestsController | undefined
+const dappsControllerMock = {
+  dapps: [],
+  isReady: true,
+  onUpdate: () => () => {}
+} as any
 
 const swapAndBridgeController = new SwapAndBridgeController({
   callRelayer: () => {},
@@ -240,6 +245,7 @@ const swapAndBridgeController = new SwapAndBridgeController({
   portfolio: portfolioCtrl,
   providers: providersCtrl,
   phishing: phishingCtrl,
+  dapps: dappsControllerMock,
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
@@ -263,6 +269,7 @@ const transferCtrl = new TransferController(
   {},
   providersCtrl,
   phishingCtrl,
+  dappsControllerMock,
   relayerUrl,
   () => Promise.resolve(),
   uiCtrl
@@ -275,6 +282,7 @@ requestsCtrl = new RequestsController({
   externalSignerControllers: {},
   activity: activityCtrl,
   phishing: phishingCtrl,
+  dapps: dappsControllerMock,
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,

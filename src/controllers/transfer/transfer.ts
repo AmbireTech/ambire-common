@@ -4,6 +4,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
@@ -144,6 +145,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -189,6 +192,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
     phishing: IPhishingController,
+    dapps: IDappsController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
@@ -210,6 +214,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
@@ -1014,6 +1019,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       network,
       provider,
       phishing: this.#phishing,
+      dapps: this.#dapps,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

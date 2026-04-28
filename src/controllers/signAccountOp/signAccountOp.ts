@@ -47,6 +47,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IDappsController } from '../../interfaces/dapp'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -101,6 +102,7 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -349,6 +351,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #activity: IActivityController
 
+  #dapps: IDappsController
+
   #onUpdateAfterTraceCallSuccess?: () => Promise<void>
 
   #onBroadcastSuccess: OnBroadcastSuccess
@@ -369,6 +373,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #simulateAndEstimateOrSimulateInterval: IRecurringTimeout
 
+  #onDappsUpdateUnsubscribe?: () => void
+
   constructor({
     eventEmitterRegistry,
     type,
@@ -381,6 +387,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     account,
     network,
     activity,
+    dapps,
     provider,
     phishing,
     fromRequestId,
@@ -401,6 +408,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     account: Account
     network: Network
     activity: IActivityController
+    dapps: IDappsController
     provider: RPCProvider
     phishing: IPhishingController
     fromRequestId: UserRequest['id']
@@ -422,6 +430,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.baseAccount = getBaseAccount(account, accountState, network)
     this.#network = network
     this.#activity = activity
+    this.#dapps = dapps
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
@@ -665,6 +674,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.onError((error: ErrorRef) => {
       this.emitError(error)
     })
+
+    this.#onDappsUpdateUnsubscribe = this.#dapps.onUpdate((forceEmit) => {
+      this.propagateUpdate(forceEmit)
+    }, 'sign-account-op-dapps-verification')
 
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
@@ -1557,6 +1570,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()
+    this.#onDappsUpdateUnsubscribe?.()
+    this.#onDappsUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -1566,6 +1581,111 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+  }
+
+  /**
+   * Returns the highest-priority dApp verification banner for the current account op, or `null` if none apply.
+   *
+   * Priority order:
+   * 1) dApp verification in progress (`LOADING`)
+   * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
+   * 2) dApp is blacklisted (`BLACKLISTED`)
+   * 4) (Permit2 only) dApp is not in the default catalog (not `VERIFIED`)
+   */
+  #getDappVerificationBanner(): SignAccountOpBanner | null {
+    const dappUrls = this.accountOp.calls
+      .map((call) => call.dapp?.url?.toLowerCase())
+      .filter((url): url is string => !!url)
+
+    if (!dappUrls.length) return null
+
+    const dappVerificationData = dappUrls.map((url) => {
+      const dapp = this.#dapps.getDappByDomain(url)
+      return {
+        status: dapp?.blacklisted,
+        name: dapp?.name || new URL(url).hostname
+      }
+    })
+
+    // Helper function to get the names of dApps by their statuses
+    const getDappNamesByStatuses = (statuses: Array<'BLACKLISTED' | 'FAILED_TO_GET' | undefined>) =>
+      Array.from(
+        new Set(
+          dappVerificationData
+            .filter((dapp) => statuses.includes(dapp.status as any))
+            .map((dapp) => dapp.name)
+        )
+      ).join(', ')
+
+    // 1) dApp verification in progress
+    const hasDappsVerificationInProgress = dappVerificationData.some(
+      (dapp) => dapp.status === 'LOADING'
+    )
+    if (hasDappsVerificationInProgress) {
+      const dappNames = Array.from(
+        new Set(
+          dappVerificationData.filter((dapp) => dapp.status === 'LOADING').map((dapp) => dapp.name)
+        )
+      ).join(', ')
+
+      return {
+        id: 'dapp-verification-loading-warning-banner',
+        type: 'warning',
+        text: `We're still verifying the app. Please wait, or make sure you trust it before signing requests: ${dappNames}`
+      }
+    }
+
+    // 2) dApp verification failed / unknown
+    const hasDappsVerificationError = dappVerificationData.some(
+      (dapp) => dapp.status === 'FAILED_TO_GET' || dapp.status === undefined
+    )
+    if (hasDappsVerificationError) {
+      const dappNames = getDappNamesByStatuses(['FAILED_TO_GET', undefined])
+
+      return {
+        id: 'dapp-verification-error-warning-banner',
+        type: 'warning',
+        text: `We couldn't verify the app. Make sure you trust it before signing requests: ${dappNames}`
+      }
+    }
+
+    // 3) dApp is blacklisted
+    const hasBlacklistedDapp = dappVerificationData.some((dapp) => dapp.status === 'BLACKLISTED')
+    if (hasBlacklistedDapp) {
+      const dappNames = getDappNamesByStatuses(['BLACKLISTED'])
+
+      return {
+        id: 'dapp-blacklisted-error-banner',
+        type: 'error',
+        text: `This app didn't pass our safety check. Make sure you trust it before signing requests: ${dappNames}`
+      }
+    }
+
+    const containsPermit2 = this.accountOp.calls.some((call) => {
+      if (!call.to || !call.data) return false
+      return isPermit2Interaction({ to: call.to, data: call.data })
+    })
+    if (!containsPermit2) return null
+
+    // 4) (Permit2 only) dApp is not in the default catalog
+    const containsDappsNotInCatalog = dappVerificationData.some(
+      (dapp) => dapp.status !== 'VERIFIED'
+    )
+    if (containsDappsNotInCatalog) {
+      const dappNames = Array.from(
+        new Set(
+          dappVerificationData.filter((dapp) => dapp.status !== 'VERIFIED').map((dapp) => dapp.name)
+        )
+      ).join(', ')
+
+      return {
+        id: 'dapp-not-in-catalog-warning-banner',
+        type: 'warning',
+        text: `App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: ${dappNames}`
+      }
+    }
+
+    return null
   }
 
   /**
@@ -3474,6 +3594,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
     }
+
+    const dappVerificationBanner = this.#getDappVerificationBanner()
+    if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
     return banners
   }
