@@ -41,6 +41,7 @@ const MOCK_INTERNAL_KEY: StoredKey = {
     createdAt: Date.now()
   }
 }
+const INVALID_KEY_PUBLIC_ADDR = '0xb49152a810590293E80466542DD907BD1F290E68'
 const MOCK_TREZOR_KEY: StoredKey = {
   addr: '0x50E05A2c5598C8Add99752f572806686fC511a61',
   type: 'trezor',
@@ -515,7 +516,7 @@ describe('CTR to GCM migration', () => {
       await storageCtrl.set('keystoreKeys', [
         ...fixture.mockKeys,
         {
-          addr: '0x1111111111111111111111111111111111111111',
+          addr: INVALID_KEY_PUBLIC_ADDR,
           type: 'internal',
           privKey: encryptTextWithCtr(
             'not-a-hex-private-key',
@@ -550,9 +551,7 @@ describe('CTR to GCM migration', () => {
     const migratedKeys = await storageCtrl.get('keystoreKeys', [])
     expect(migratedKeys).toHaveLength(4)
     const migratedInternalKey = migratedKeys.find(({ addr }) => addr === MOCK_INTERNAL_KEY.addr)
-    const invalidMigratedKey = migratedKeys.find(
-      ({ addr }) => addr === '0x1111111111111111111111111111111111111111'
-    )
+    const invalidMigratedKey = migratedKeys.find(({ addr }) => addr === INVALID_KEY_PUBLIC_ADDR)
 
     expect(typeof migratedInternalKey!.privKey).not.toBe('string')
     // String because the migration failed as expected
@@ -573,11 +572,7 @@ describe('CTR to GCM migration', () => {
 
     await expect(keystoreCtrl.getSavedSeed('invalid-seed')).rejects.toThrow()
     await expect(
-      keystoreCtrl.exportKeyWithPasscode(
-        '0x1111111111111111111111111111111111111111',
-        'internal',
-        'tempPass'
-      )
+      keystoreCtrl.exportKeyWithPasscode(INVALID_KEY_PUBLIC_ADDR, 'internal', 'tempPass')
     ).rejects.toThrow()
 
     restore()
