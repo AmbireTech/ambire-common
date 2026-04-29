@@ -19,7 +19,6 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
-  getGcmDecryptionBytes,
   migrateStoredPayloadsToGCM,
   reconstructSeedFromEntropy,
   SCRYPT_PARAMS
@@ -40,7 +39,6 @@ import {
   InternalKey,
   Key,
   KeyPreferences,
-  KeystoreEncryptedPayload,
   KeystoreSeed,
   KeystoreSignerInterface,
   KeystoreSignerType,
@@ -373,7 +371,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           tagLength: 128
         },
         keyFromSecret,
-        getGcmDecryptionBytes(secretEntry.aesEncrypted.ciphertext, secretEntry.aesEncrypted.tag)
+        new Uint8Array(getBytes(secretEntry.aesEncrypted.ciphertext))
       )
 
       this.#mainKey = await crypto.subtle.importKey(

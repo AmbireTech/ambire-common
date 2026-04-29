@@ -15,7 +15,6 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
-  getGcmDecryptionBytes,
   migrateStoredPayloadsToGCM,
   reconstructSeedFromEntropy,
   SCRYPT_PARAMS,
@@ -89,7 +88,7 @@ describe('Keystore lib', () => {
 
   describe('getGcmDecryptionBytes', () => {
     test('concatenates ciphertext before tag', () => {
-      const bytes = new Uint8Array(getGcmDecryptionBytes('0x1234', '0xabcd') as ArrayBuffer)
+      const bytes = new Uint8Array(getBytes('0x1234abcd'))
 
       expect(Array.from(bytes)).toEqual([0x12, 0x34, 0xab, 0xcd])
     })
@@ -131,8 +130,7 @@ describe('Keystore lib', () => {
       const payload: AESGCMEncrypted = {
         cipherType: CIPHER,
         ciphertext: '0x1234',
-        iv: '0xabcdef',
-        tag: '0x5678'
+        iv: '0xabcdef'
       }
 
       expect(tryParseGcmPayload(payload)).toBe(payload)
@@ -152,7 +150,6 @@ describe('Keystore lib', () => {
       expect(payload.cipherType).toBe(CIPHER)
       expect(payload.iv).toMatch(/^0x[0-9a-f]+$/)
       expect(payload.ciphertext).toMatch(/^0x[0-9a-f]+$/)
-      expect(payload.tag).toMatch(/^0x[0-9a-f]+$/)
     })
 
     test('decrypts encrypted data back to the original plaintext', async () => {
@@ -168,8 +165,7 @@ describe('Keystore lib', () => {
         decryptWithKey({} as CryptoKey, {
           cipherType: CIPHER,
           ciphertext: '0x00',
-          iv: '0x00',
-          tag: '0x00'
+          iv: '0x00'
         })
       ).rejects.toThrow()
     })

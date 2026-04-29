@@ -120,7 +120,6 @@ export type AESGCMEncrypted = {
   cipherType: 'AES-GCM'
   ciphertext: string
   iv: string
-  tag: string
 }
 
 export type KeystoreEncryptedPayload = string | AESGCMEncrypted

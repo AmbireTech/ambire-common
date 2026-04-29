@@ -21,7 +21,6 @@ export const CIPHER_OLD = 'aes-128-ctr'
  * The encryption method used to encrypt secrets, seeds and private keys in the keystore.
  */
 export const CIPHER = 'AES-GCM'
-export const GCM_TAG_LENGTH_BYTES = 16
 
 // TODO: We need only 32 bytes (256 bits) for the AES-GCM key, but scrypt is currently deriving 64 bytes.
 // Maybe we can optimize this in the future by deriving only 32 bytes.
@@ -57,20 +56,6 @@ export const reconstructSeedFromEntropy = (
 }
 
 /**
- * Concatenates two hex strings and returns the combined bytes.
- * Used to prepare ciphertext + tag for Web Crypto AES-GCM decryption.
- */
-export const getGcmDecryptionBytes = (ciphertextHex: string, tagHex: string): BufferSource => {
-  const ciphertextBytes = getBytes(ciphertextHex)
-  const tagBytes = getBytes(tagHex)
-  const combined = new Uint8Array(ciphertextBytes.length + tagBytes.length)
-  combined.set(ciphertextBytes, 0)
-  combined.set(tagBytes, ciphertextBytes.length)
-
-  return combined.buffer
-}
-
-/**
  * Encrypts data using Web Crypto AES-GCM.
  * Returns the ciphertext and authentication tag as separate byte arrays.
  */
@@ -87,8 +72,7 @@ export const encryptWithKey = async (
   )
   const encryptedBytes = new Uint8Array(encrypted)
   return {
-    ciphertext: hexlify(encryptedBytes.slice(0, -GCM_TAG_LENGTH_BYTES)),
-    tag: hexlify(encryptedBytes.slice(-GCM_TAG_LENGTH_BYTES)),
+    ciphertext: hexlify(encryptedBytes),
     iv: hexlify(iv),
     cipherType: CIPHER
   }
@@ -125,11 +109,7 @@ export const tryParseGcmPayload = (payload: KeystoreEncryptedPayload): AESGCMEnc
 
   if (payload.cipherType === undefined) return null
   if (payload.cipherType !== CIPHER) throw new Error('keystore: unsupported payload cipherType')
-  if (
-    typeof payload.iv !== 'string' ||
-    typeof payload.ciphertext !== 'string' ||
-    typeof payload.tag !== 'string'
-  ) {
+  if (typeof payload.iv !== 'string' || typeof payload.ciphertext !== 'string') {
     throw new Error('keystore: invalid gcm payload shape')
   }
 
@@ -156,7 +136,7 @@ export const decryptWithKey = async (
       tagLength: 128
     },
     key,
-    getGcmDecryptionBytes(maybeGcmPayload.ciphertext, maybeGcmPayload.tag)
+    new Uint8Array(getBytes(maybeGcmPayload.ciphertext))
   )
 
   return new Uint8Array(decrypted)
