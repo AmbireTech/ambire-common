@@ -415,7 +415,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Used only once to migrate the secrets to AES-GCM encryption.
+   * Used to migrate a specific secret to GCM. Secrets have to be migrated separately, because
+   * they are encrypted with unique secrets, which we need from the user in order to be able to migrate them.
+   *
+   * At this point we have already validated that the provided secret is correct and we have the main key
+   * decrypted in memory, so we just need to re-encrypt it with GCM using the secret
    */
   async #migrateSecretToGCM(secretId: string, secretKey: Uint8Array<ArrayBuffer>) {
     const migratedSecrets = await Promise.all(
