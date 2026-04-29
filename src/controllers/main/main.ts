@@ -85,7 +85,11 @@ import { IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
-import { getDappIdentifier, SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
+import {
+  getDappIdentifier,
+  isIdentifiedByUserOpHash,
+  SubmittedAccountOp
+} from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
@@ -415,7 +419,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       fetch: this.fetch,
       storage: this.storage,
-      addressBook: this.addressBook
+      addressBook: this.addressBook,
+      ui: this.ui
     })
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
@@ -1650,6 +1655,9 @@ export class MainController extends EventEmitter implements IMainController {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy
       meta.submittedAccountOp = submittedAccountOp
+      if (isIdentifiedByUserOpHash(submittedAccountOp.identifiedBy)) {
+        meta.userOpHash = submittedAccountOp.identifiedBy.identifier
+      }
     }
 
     if (openBenzin) {
