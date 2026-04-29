@@ -86,7 +86,14 @@ const encryptPrivateKeyWithCtr = (payload: string, key: Uint8Array, iv: Uint8Arr
   return hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(without0x)))
 }
 
-const mockOldAesStorage = async (storageCtrl: StorageController, secret: string) => {
+const encryptTextWithCtr = (payload: string, key: Uint8Array, iv: Uint8Array) => {
+  const counter = new aes.Counter(iv)
+  const aesCtr = new aes.ModeOfOperation.ctr(key, counter)
+
+  return hexlify(aesCtr.encrypt(new TextEncoder().encode(payload)))
+}
+
+const createMockOldAesStorageFixture = async () => {
   const entropyGenerator = new EntropyGenerator()
 
   const mainKey = {
@@ -95,33 +102,30 @@ const mockOldAesStorage = async (storageCtrl: StorageController, secret: string)
   }
 
   const scryptAdapter = new ScryptAdapter('browser-webkit')
-  const key = await scryptAdapter.scrypt(
-    getBytesForSecret(secret),
-    // Mock salt
-    getBytesForSecret('salt'),
-    SCRYPT_PARAMS
-  )
 
-  const iv = entropyGenerator.generateRandomBytes(16, '')
-  const derivedKey = key.slice(0, 16)
-  const macPrefix = key.slice(16, 32)
-  const counter = new aes.Counter(iv)
-  const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-  const ciphertext = aesCtr.encrypt(getBytes(concat([mainKey.key, mainKey.iv])))
-  const mac = keccak256(concat([macPrefix, ciphertext]))
+  const createSecretEntry = async (id: string, secret: string) => {
+    const salt = entropyGenerator.generateRandomBytes(32, id)
+    const key = await scryptAdapter.scrypt(getBytesForSecret(secret), salt, SCRYPT_PARAMS)
 
-  const mockSecrets: MainKeyEncryptedWithSecret[] = [
-    {
-      id: 'password',
-      scryptParams: { ...SCRYPT_PARAMS, salt: hexlify(getBytesForSecret('salt')) },
+    const iv = entropyGenerator.generateRandomBytes(16, id)
+    const derivedKey = key.slice(0, 16)
+    const macPrefix = key.slice(16, 32)
+    const counter = new aes.Counter(iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const ciphertext = aesCtr.encrypt(getBytes(concat([mainKey.key, mainKey.iv])))
+    const mac = keccak256(concat([macPrefix, ciphertext]))
+
+    return {
+      id,
+      scryptParams: { ...SCRYPT_PARAMS, salt: hexlify(salt) },
       aesEncrypted: {
         ciphertext: hexlify(ciphertext) as Hex,
         iv: hexlify(iv) as Hex,
-        mac: mac,
+        mac,
         cipherType: CIPHER_OLD
       }
     }
-  ]
+  }
 
   const mockSeeds: StoredKeystoreSeed[] = [
     {
@@ -148,7 +152,29 @@ const mockOldAesStorage = async (storageCtrl: StorageController, secret: string)
       }) as StoredKey
   )
 
-  await storageCtrl.set('keystoreSecrets', mockSecrets)
+  return {
+    mainKey,
+    createSecretEntry,
+    mockSeeds,
+    mockKeys
+  }
+}
+
+const mockOldAesStorage = async (storageCtrl: StorageController, secret: string) => {
+  const { createSecretEntry, mockSeeds, mockKeys } = await createMockOldAesStorageFixture()
+
+  await storageCtrl.set('keystoreSecrets', [await createSecretEntry('password', secret)])
+  await storageCtrl.set('keystoreSeeds', mockSeeds)
+  await storageCtrl.set('keystoreKeys', mockKeys)
+}
+
+const mockOldAesStorageWithBiometrics = async (storageCtrl: StorageController) => {
+  const { createSecretEntry, mockSeeds, mockKeys } = await createMockOldAesStorageFixture()
+
+  await storageCtrl.set('keystoreSecrets', [
+    await createSecretEntry('password', MOCK_MIGRATION_PASS),
+    await createSecretEntry('biometrics', MOCK_MIGRATION_PASS)
+  ])
   await storageCtrl.set('keystoreSeeds', mockSeeds)
   await storageCtrl.set('keystoreKeys', mockKeys)
 }
@@ -156,16 +182,19 @@ const mockOldAesStorage = async (storageCtrl: StorageController, secret: string)
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
 
 const prepareTest = async (
-  initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
+  initialSetStorage?: (storageCtrl: StorageController) => Promise<void>,
+  skipDefaultStorageSetup = false
 ) => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   const uiCtrl = new UiController({ uiManager })
 
+  if (!skipDefaultStorageSetup) {
+    await mockOldAesStorage(storageCtrl, MOCK_MIGRATION_PASS)
+  }
+
   if (initialSetStorage) {
     await initialSetStorage(storageCtrl)
-  } else {
-    await mockOldAesStorage(storageCtrl, MOCK_MIGRATION_PASS)
   }
 
   const keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
@@ -359,7 +388,7 @@ describe('CTR to GCM migration', () => {
       await storageCtrl.set('keystoreSeeds', JSON.parse(CTR_STORAGE.keystoreSeeds))
       await storageCtrl.set('keystoreKeys', JSON.parse(CTR_STORAGE.keystoreKeys))
       await storageCtrl.set('keystoreUid', CTR_STORAGE.keyStoreUid)
-    })
+    }, true)
 
     expect(keystoreCtrl.isUnlocked).toBe(false)
     expect(keystoreCtrl.isReadyToStoreKeys).toBe(true)
@@ -392,5 +421,165 @@ describe('CTR to GCM migration', () => {
     )
     const wallet = await Wallet.fromEncryptedJson(JSON.parse(internalKeyJson), 'tempPass')
     expect(wallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+  })
+  it('should migrate only the secret on unlock if the seeds and keys are already migrated', async () => {
+    const { keystoreCtrl, storageCtrl, uiCtrl } = await prepareTest(async (storageCtrl) => {
+      await mockOldAesStorageWithBiometrics(storageCtrl)
+    })
+
+    expect(keystoreCtrl.hasPasswordSecret).toBe(true)
+    expect(keystoreCtrl.hasBiometricsSecret).toBe(true)
+
+    const initialSecrets = await storageCtrl.get('keystoreSecrets', [])
+    expect(initialSecrets).toHaveLength(2)
+    expect(initialSecrets[0]!.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+    expect(initialSecrets[1]!.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.seeds).toHaveLength(2)
+    expect(keystoreCtrl.keys).toHaveLength(3)
+
+    const secretsAfterPasswordUnlock = await storageCtrl.get('keystoreSecrets', [])
+    expect(secretsAfterPasswordUnlock).toHaveLength(2)
+    expect(secretsAfterPasswordUnlock[0]!.aesEncrypted.cipherType).toBe(CIPHER)
+    expect(secretsAfterPasswordUnlock[1]!.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+
+    const passwordSeedOne = await keystoreCtrl.getSavedSeed(keystoreCtrl.seeds[0]!.id)
+    const passwordSeedTwo = await keystoreCtrl.getSavedSeed(keystoreCtrl.seeds[1]!.id)
+    expect(passwordSeedOne.seed).toBe(MOCK_12_WORD_SEED)
+    expect(passwordSeedTwo.seed).toBe(MOCK_24_WORD_SEED)
+
+    const passwordInternalKeyJson = await keystoreCtrl.exportKeyWithPasscode(
+      MOCK_INTERNAL_KEY.addr,
+      MOCK_INTERNAL_KEY.type,
+      'tempPass'
+    )
+    const passwordWallet = await Wallet.fromEncryptedJson(
+      JSON.parse(passwordInternalKeyJson),
+      'tempPass'
+    )
+    expect(passwordWallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+
+    keystoreCtrl.lock()
+
+    await keystoreCtrl.unlockWithSecret('biometrics', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+
+    const secretsAfterBiometricsUnlock = await storageCtrl.get('keystoreSecrets', [])
+    expect(secretsAfterBiometricsUnlock).toHaveLength(2)
+    expect(secretsAfterBiometricsUnlock[0]!.aesEncrypted.cipherType).toBe(CIPHER)
+    expect(secretsAfterBiometricsUnlock[1]!.aesEncrypted.cipherType).toBe(CIPHER)
+
+    const biometricsSeedOne = await keystoreCtrl.getSavedSeed(keystoreCtrl.seeds[0]!.id)
+    const biometricsSeedTwo = await keystoreCtrl.getSavedSeed(keystoreCtrl.seeds[1]!.id)
+    expect(biometricsSeedOne.seed).toBe(MOCK_12_WORD_SEED)
+    expect(biometricsSeedTwo.seed).toBe(MOCK_24_WORD_SEED)
+
+    const biometricsInternalKeyJson = await keystoreCtrl.exportKeyWithPasscode(
+      MOCK_INTERNAL_KEY.addr,
+      MOCK_INTERNAL_KEY.type,
+      'tempPass'
+    )
+    const biometricsWallet = await Wallet.fromEncryptedJson(
+      JSON.parse(biometricsInternalKeyJson),
+      'tempPass'
+    )
+    expect(biometricsWallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+  })
+  it('should not fail the entire migration if there is an invalid seed/private key entry that cannot be migrated', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl, storageCtrl } = await prepareTest(async (storageCtrl) => {
+      const fixture = await createMockOldAesStorageFixture()
+      const invalidKeyCipherKey = fixture.mainKey.key
+      const invalidKeyCipherIv = fixture.mainKey.iv
+
+      await storageCtrl.set('keystoreSecrets', [
+        await fixture.createSecretEntry('password', MOCK_MIGRATION_PASS)
+      ])
+      await storageCtrl.set('keystoreSeeds', [
+        ...fixture.mockSeeds,
+        {
+          id: 'invalid-seed',
+          label: 'Broken Recovery Phrase',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          seed: encryptTextWithCtr(
+            'not a valid mnemonic phrase',
+            invalidKeyCipherKey,
+            invalidKeyCipherIv
+          )
+        }
+      ])
+      await storageCtrl.set('keystoreKeys', [
+        ...fixture.mockKeys,
+        {
+          addr: '0x1111111111111111111111111111111111111111',
+          type: 'internal',
+          privKey: encryptTextWithCtr(
+            'not-a-hex-private-key',
+            invalidKeyCipherKey,
+            invalidKeyCipherIv
+          ),
+          label: 'Broken Internal Key',
+          dedicatedToOneSA: false,
+          meta: {
+            createdAt: Date.now()
+          }
+        } as StoredKey
+      ])
+    })
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.seeds).toHaveLength(3)
+    expect(keystoreCtrl.keys).toHaveLength(4)
+
+    const migratedSeeds = await storageCtrl.get('keystoreSeeds', [])
+    expect(migratedSeeds).toHaveLength(3)
+    const migratedSeedOne = migratedSeeds.find(({ id }) => id === 'seed1')
+    const migratedSeedTwo = migratedSeeds.find(({ id }) => id === 'seed2')
+    const invalidSeed = migratedSeeds.find(({ id }) => id === 'invalid-seed')
+    expect(typeof migratedSeedOne!.seed).not.toBe('string')
+    expect(typeof migratedSeedTwo!.seed).not.toBe('string')
+    // Not migrated
+    expect(typeof invalidSeed!.seed).toBe('string')
+
+    const migratedKeys = await storageCtrl.get('keystoreKeys', [])
+    expect(migratedKeys).toHaveLength(4)
+    const migratedInternalKey = migratedKeys.find(({ addr }) => addr === MOCK_INTERNAL_KEY.addr)
+    const invalidMigratedKey = migratedKeys.find(
+      ({ addr }) => addr === '0x1111111111111111111111111111111111111111'
+    )
+
+    expect(typeof migratedInternalKey!.privKey).not.toBe('string')
+    // String because the migration failed as expected
+    expect(typeof invalidMigratedKey!.privKey).toBe('string')
+
+    const rawSeedOne = (await keystoreCtrl.getSavedSeed('seed1')).seed
+    const rawSeedTwo = (await keystoreCtrl.getSavedSeed('seed2')).seed
+    expect(rawSeedOne).toBe(MOCK_12_WORD_SEED)
+    expect(rawSeedTwo).toBe(MOCK_24_WORD_SEED)
+
+    const internalKeyJson = await keystoreCtrl.exportKeyWithPasscode(
+      MOCK_INTERNAL_KEY.addr,
+      MOCK_INTERNAL_KEY.type,
+      'tempPass'
+    )
+    const wallet = await Wallet.fromEncryptedJson(JSON.parse(internalKeyJson), 'tempPass')
+    expect(wallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+
+    await expect(keystoreCtrl.getSavedSeed('invalid-seed')).rejects.toThrow()
+    await expect(
+      keystoreCtrl.exportKeyWithPasscode(
+        '0x1111111111111111111111111111111111111111',
+        'internal',
+        'tempPass'
+      )
+    ).rejects.toThrow()
+
+    restore()
   })
 })

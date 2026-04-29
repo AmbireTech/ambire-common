@@ -276,17 +276,25 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       // 1. Retrieve the main key using the old encryption method
       const mainKeyOld = this.#unlockWithSecretOld(secretKey, secretEntry)
 
-      // 2. Generate a new main key
-      this.#mainKey = await crypto.subtle.generateKey({ name: CIPHER, length: 256 }, true, [
-        'encrypt',
-        'decrypt'
-      ])
+      // Derive the new main key from the old one
+      // We cannot generate a new key, because the user may have more than one secret
+      // so if we migrate another one later, we need to be able to derive the same main key again.
+      //
+      // Another option would be to generate a new random main key, encrypt it with the old main key and store it
+      // until all secrets are migrated
+      this.#mainKey = await crypto.subtle.importKey(
+        'raw',
+        new Uint8Array(getBytes(concat([mainKeyOld.key, mainKeyOld.iv]))),
+        { name: CIPHER },
+        true,
+        ['encrypt', 'decrypt']
+      )
 
-      // 3. Migrate all secrets and stored seeds/pks to use GCM
+      // 3. Migrate the secret and all stored seeds/pks to use GCM
       try {
         await this.#migrateSecretToGCM(secretEntry.id, secretKey)
 
-        await this.#migrateStoredPayloadsToGCM(mainKeyOld)
+        await this.#migrateStoredPayloadsToGCMIfNeeded(mainKeyOld)
       } catch (e) {
         this.emitError({
           message: 'Keystore migration to GCM failed.',
@@ -430,15 +438,25 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   /**
    * Migrates all AES-CTR encrypted payloads (main key, stored keys and seeds) to AES-GCM encryption.
    */
-  async #migrateStoredPayloadsToGCM(mainKeyOld: MainKeyOld) {
+  async #migrateStoredPayloadsToGCMIfNeeded(mainKeyOld: MainKeyOld) {
     if (!this.#mainKey) throw new Error('keystore: needs to be unlocked')
 
-    const { migratedKeys, migratedSeeds } = await migrateStoredPayloadsToGCM(
+    const { migratedKeys, migratedSeeds, failedMigrations } = await migrateStoredPayloadsToGCM(
       this.#mainKey,
       mainKeyOld,
       this.#keystoreKeys,
       this.#keystoreSeeds
     )
+
+    if (failedMigrations.keyAddrs.length || failedMigrations.seedIds.length) {
+      this.emitError({
+        message: `Failed to migrate ${failedMigrations.keyAddrs.length} keys and ${failedMigrations.seedIds.length} seeds to AES-GCM encryption.`,
+        level: 'silent',
+        error: new Error(
+          `keystore: failed to migrate ${failedMigrations.keyAddrs.length} keys and ${failedMigrations.seedIds.length} seeds to AES-GCM encryption`
+        )
+      })
+    }
 
     await this.#storage.set('keystoreKeys', migratedKeys)
     await this.#storage.set('keystoreSeeds', migratedSeeds)

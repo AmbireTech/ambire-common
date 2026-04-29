@@ -199,57 +199,86 @@ export const deriveSecret = async (
 
 /**
  * Migrates legacy AES-CTR encrypted payloads to AES-GCM encryption.
+ *
+ * If already migrated (i.e., payloads are in GCM format), it returns the original payloads without any changes.
  */
 export const migrateStoredPayloadsToGCM = async (
   mainKey: MainKey,
   mainKeyOld: MainKeyOld,
   storedKeys: StoredKey[],
   storedSeeds: StoredKeystoreSeed[]
-): Promise<{ migratedKeys: StoredKey[]; migratedSeeds: StoredKeystoreSeed[] }> => {
+): Promise<{
+  migratedKeys: StoredKey[]
+  migratedSeeds: StoredKeystoreSeed[]
+  failedMigrations: { keyAddrs: string[]; seedIds: string[] }
+}> => {
+  const failedMigrations: { keyAddrs: string[]; seedIds: string[] } = { keyAddrs: [], seedIds: [] }
+
   const migratedKeys: StoredKey[] = await Promise.all(
     storedKeys.map(async (storedKey) => {
-      const isNotInternalKey = storedKey.type !== 'internal' || !storedKey.privKey
-      const isAlreadyMigrated = typeof storedKey.privKey !== 'string'
+      try {
+        const isNotInternalKey = storedKey.type !== 'internal' || !storedKey.privKey
+        const isAlreadyMigrated = typeof storedKey.privKey !== 'string'
 
-      if (isNotInternalKey || isAlreadyMigrated) return storedKey
+        if (isNotInternalKey || isAlreadyMigrated) return storedKey
 
-      const decryptedKey = await decryptWithKeyOld(mainKeyOld, storedKey.privKey as string)
+        const decryptedKey = await decryptWithKeyOld(mainKeyOld, storedKey.privKey as string)
 
-      return {
-        ...storedKey,
-        privKey: await encryptWithKey(mainKey, getBytes(decryptedKey))
+        if (getBytes(decryptedKey).length !== 32) {
+          throw new Error(
+            `decrypted private key has invalid length: expected 32 bytes, got ${
+              getBytes(decryptedKey).length
+            } bytes`
+          )
+        }
+
+        return {
+          ...storedKey,
+          privKey: await encryptWithKey(mainKey, getBytes(decryptedKey))
+        }
+      } catch (e: any) {
+        console.error(`Failed to migrate key with addr ${storedKey.addr} to AES-GCM encryption:`, e)
+        failedMigrations.keyAddrs.push(storedKey.addr)
+        return storedKey
       }
     })
   )
 
   const migratedSeeds: StoredKeystoreSeed[] = await Promise.all(
     storedSeeds.map(async (storedSeed) => {
-      const isAlreadyMigrated = typeof storedSeed.seed !== 'string'
-      if (isAlreadyMigrated) return storedSeed
-      if (storedSeed.seedPassphrase && typeof storedSeed.seedPassphrase === 'string')
-        return storedSeed
+      try {
+        const isAlreadyMigrated = typeof storedSeed.seed !== 'string'
+        if (isAlreadyMigrated) return storedSeed
+        if (storedSeed.seedPassphrase && typeof storedSeed.seedPassphrase === 'string')
+          return storedSeed
 
-      const decryptedSeedBytes = await decryptWithKeyOld(mainKeyOld, storedSeed.seed as string)
-      const decryptedSeedString = new TextDecoder().decode(decryptedSeedBytes)
-      // Convert to entropy bytes, which is the raw form of the seed phrase without the mnemonic encoding
-      const entropy = extractEntropyFromSeed(decryptedSeedString)
+        const decryptedSeedBytes = await decryptWithKeyOld(mainKeyOld, storedSeed.seed as string)
+        const decryptedSeedString = new TextDecoder().decode(decryptedSeedBytes)
+        // Convert to entropy bytes, which is the raw form of the seed phrase without the mnemonic encoding
+        const entropy = extractEntropyFromSeed(decryptedSeedString)
 
-      const decryptedSeedPassphrase = storedSeed.seedPassphrase
-        ? await decryptWithKeyOld(mainKeyOld, storedSeed.seedPassphrase as string)
-        : null
-
-      return {
-        ...storedSeed,
-        seed: await encryptWithKey(mainKey, entropy),
-        seedPassphrase: decryptedSeedPassphrase
-          ? await encryptWithKey(mainKey, decryptedSeedPassphrase)
+        const decryptedSeedPassphrase = storedSeed.seedPassphrase
+          ? await decryptWithKeyOld(mainKeyOld, storedSeed.seedPassphrase as string)
           : null
+
+        return {
+          ...storedSeed,
+          seed: await encryptWithKey(mainKey, entropy),
+          seedPassphrase: decryptedSeedPassphrase
+            ? await encryptWithKey(mainKey, decryptedSeedPassphrase)
+            : null
+        }
+      } catch (e: any) {
+        console.error(`Failed to migrate seed with id ${storedSeed.id} to AES-GCM encryption:`, e)
+        failedMigrations.seedIds.push(storedSeed.id)
+        return storedSeed
       }
     })
   )
 
   return {
     migratedKeys,
-    migratedSeeds
+    migratedSeeds,
+    failedMigrations
   }
 }
