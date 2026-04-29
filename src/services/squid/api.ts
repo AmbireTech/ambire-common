@@ -20,7 +20,6 @@ import {
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
-  getSlippage,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { ZERO_ADDRESS } from '../socket/constants'
@@ -267,8 +266,14 @@ export class SquidAPI implements SwapProvider {
   async getToTokenList({ toChainId }: { toChainId: number }): Promise<SwapAndBridgeToToken[]> {
     this.#ensureIntegratorId()
 
+    const params = new URLSearchParams({
+      chainId: toChainId.toString()
+    })
+
     const response = await this.#handleResponse<SquidToken[] | { tokens: SquidToken[] }>({
-      fetchPromise: this.#fetch(`${SQUID_API_BASE_URL}/tokens`, { headers: this.#headers }),
+      fetchPromise: this.#fetch(`${SQUID_API_BASE_URL}/tokens?${params.toString()}`, {
+        headers: this.#headers
+      }),
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
@@ -332,7 +337,6 @@ export class SquidAPI implements SwapProvider {
       toChain: toChainId.toString(),
       toToken: normalizeOutgoingSquidTokenAddress(toTokenAddress),
       toAddress: userAddress,
-      slippage: Number(getSlippage(fromAsset, fromAmount, '1', 0.5)),
       quoteOnly: false
     }
 

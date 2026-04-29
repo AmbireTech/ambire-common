@@ -30,6 +30,7 @@ import {
   PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
 } from './constants'
+import { CITREA_CHAIN_ID } from '../squid/constants'
 
 const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
   addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
@@ -186,7 +187,7 @@ export class SocketAPI implements SwapProvider {
     })
 
     const chains = response
-      .filter((c) => c.sendingEnabled && c.receivingEnabled)
+      .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
       .map(({ chainId }) => ({
         chainId
       }))
