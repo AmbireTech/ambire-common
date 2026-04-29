@@ -17,9 +17,11 @@ import {
   deriveSecret,
   encryptMainKeyWithSecret,
   encryptWithKey,
+  extractEntropyFromSeed,
   getBytesForSecret,
   getGcmDecryptionBytes,
   migrateStoredPayloadsToGCM,
+  reconstructSeedFromEntropy,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
 
@@ -635,12 +637,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
     if (existingEntry) return
 
+    const entropy = extractEntropyFromSeed(seed)
+
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
     const newEntry: StoredKeystoreSeed = {
       id: generateUuid(),
       label,
-      seed: await encryptWithKey(this.#mainKey, new TextEncoder().encode(seed)),
+      seed: await encryptWithKey(this.#mainKey, entropy),
       seedPassphrase: seedPassphrase
         ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
         : null,
@@ -1078,27 +1082,25 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
 
-    const decryptedSeedBytes = await decryptWithKey(this.#mainKey, keystoreSeed.seed)
-    const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
+    const entropyBytes = await decryptWithKey(this.#mainKey, keystoreSeed.seed)
+    let seedPassphrase: string | null = null
 
     if (keystoreSeed.seedPassphrase) {
       const decryptedSeedPassphraseBytes = await decryptWithKey(
         this.#mainKey,
         keystoreSeed.seedPassphrase
       )
-      const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
 
-      return {
-        ...keystoreSeed,
-        seed: decryptedSeed,
-        seedPassphrase: decryptedSeedPassphrase === '' ? null : decryptedSeedPassphrase
-      }
+      seedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
+      if (seedPassphrase === '') seedPassphrase = null
     }
+
+    const decryptedSeed = reconstructSeedFromEntropy(entropyBytes, seedPassphrase)
 
     return {
       ...keystoreSeed,
       seed: decryptedSeed,
-      seedPassphrase: null
+      seedPassphrase: seedPassphrase
     }
   }
 

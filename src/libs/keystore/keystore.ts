@@ -1,5 +1,5 @@
 import aes from 'aes-js'
-import { getBytes, hexlify, toUtf8Bytes } from 'ethers'
+import { getBytes, hexlify, Mnemonic, toUtf8Bytes } from 'ethers'
 
 import {
   AESGCMEncrypted,
@@ -30,6 +30,30 @@ export const SCRYPT_PARAMS = { N: 131072, r: 8, p: 1, dkLen: 64 }
 export const getBytesForSecret = (secret: string) => {
   // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
   return toUtf8Bytes(secret, 'NFKC')
+}
+
+/**
+ * Extracts entropy from a BIP39 seed phrase.
+ */
+export const extractEntropyFromSeed = (seed: string): Uint8Array => {
+  if (!Mnemonic.isValidMnemonic(seed)) {
+    throw new Error('keystore: cannot extract entropy from invalid seed phrase')
+  }
+
+  const mnemonic = Mnemonic.fromPhrase(seed)
+  return getBytes(mnemonic.entropy)
+}
+
+/**
+ * Reconstructs a BIP39 seed phrase from entropy and optional passphrase.
+ */
+export const reconstructSeedFromEntropy = (
+  entropy: Uint8Array,
+  passphrase?: string | null
+): string => {
+  const mnemonic = Mnemonic.fromEntropy(entropy, passphrase || undefined)
+
+  return mnemonic.phrase
 }
 
 /**
@@ -205,14 +229,18 @@ export const migrateStoredPayloadsToGCM = async (
       if (storedSeed.seedPassphrase && typeof storedSeed.seedPassphrase === 'string')
         return storedSeed
 
-      const decryptedSeed = await decryptWithKeyOld(mainKeyOld, storedSeed.seed as string)
+      const decryptedSeedBytes = await decryptWithKeyOld(mainKeyOld, storedSeed.seed as string)
+      const decryptedSeedString = new TextDecoder().decode(decryptedSeedBytes)
+      // Convert to entropy bytes, which is the raw form of the seed phrase without the mnemonic encoding
+      const entropy = extractEntropyFromSeed(decryptedSeedString)
+
       const decryptedSeedPassphrase = storedSeed.seedPassphrase
         ? await decryptWithKeyOld(mainKeyOld, storedSeed.seedPassphrase as string)
         : null
 
       return {
         ...storedSeed,
-        seed: await encryptWithKey(mainKey, decryptedSeed),
+        seed: await encryptWithKey(mainKey, entropy),
         seedPassphrase: decryptedSeedPassphrase
           ? await encryptWithKey(mainKey, decryptedSeedPassphrase)
           : null

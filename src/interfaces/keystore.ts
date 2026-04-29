@@ -192,6 +192,9 @@ export type KeystoreSeed = {
 }
 
 export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
+  /**
+   * We store the seed entropy (not the seed phrase string) as an encrypted payload
+   */
   seed: KeystoreEncryptedPayload
   seedPassphrase?: KeystoreEncryptedPayload | null
 }
