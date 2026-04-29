@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Provider } from 'ethers'
+import { Contract, JsonRpcProvider, Provider } from 'ethers'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
@@ -20,21 +20,38 @@ export async function getAAVEPositions(
   if (chainId && !AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]) return null
 
   const { poolAddr } = AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]
+  const poolContract = new Contract(
+    poolAddr,
+    ['function getReservesLength() view returns (uint256)'],
+    provider
+  )
 
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
     DeFiPositionsDeploylessCode,
     network.rpcNoStateOverride // Why?
   )
-  const [result0, result1, result2] = await Promise.all([
-    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 0, 15], {}),
-    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 15, 30], {}),
-    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 30, 45], {})
-  ])
 
-  const accountData = result0.accountData
+  const reservesLength = await poolContract.getFunction('getReservesLength').staticCall()
+  const PAGE_SIZE = 15
+  const numberOfPages = Math.ceil(reservesLength / PAGE_SIZE)
+  const promises = []
+  for (let i = 0; i < numberOfPages; i++) {
+    promises.push(
+      deploylessDeFiPositionsGetter.call(
+        'getAAVEPosition',
+        [userAddr, poolAddr, i * 15, (i + 1) * 15],
+        {}
+      )
+    )
+  }
+  const results = await Promise.all(promises)
 
-  const userAssets = [...result0.userBalance, ...result1.userBalance, ...result2.userBalance]
+  const accountData = results[0].accountData
+
+  const userAssets = results
+    .map((r) => r.userBalance)
+    .flat()
     .map(({ addr, ...rest }) => ({
       address: addr,
       aaveAddress: rest.aaveAddr,
