@@ -22,7 +22,7 @@ export async function getAAVEPositions(
   const { poolAddr } = AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]
   const poolContract = new Contract(
     poolAddr,
-    ['function getReservesLength() view returns (uint256)'],
+    ['function getReservesCount() view returns (uint256)'],
     provider
   )
 
@@ -32,9 +32,9 @@ export async function getAAVEPositions(
     network.rpcNoStateOverride // Why?
   )
 
-  const reservesLength = await poolContract.getFunction('getReservesLength').staticCall()
+  const reservesLength = await poolContract.getFunction('getReservesCount').staticCall()
   const PAGE_SIZE = 15
-  const numberOfPages = Math.ceil(reservesLength / PAGE_SIZE)
+  const numberOfPages = Math.ceil(Number(reservesLength) / PAGE_SIZE)
   const promises = []
   for (let i = 0; i < numberOfPages; i++) {
     promises.push(
