@@ -58,6 +58,14 @@ export class SwapProviderParallelExecutor {
     const supportedProviders = this.#providers.filter((provider) => {
       // If the request is not chainId specific, use all providers
       if (!uniqueChainIds.length) return true
+      if (
+        reqMeta?.chainIds?.length === 2 &&
+        provider.areChainsSupported?.({
+          fromChainId: reqMeta.chainIds[0]!,
+          toChainId: reqMeta.chainIds[1]!
+        })
+      )
+        return true
       // If supportedChains is not set yet, we just try to use the provider
       if (provider.supportedChains === null) return true
       const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
@@ -269,14 +277,25 @@ export class SwapProviderParallelExecutor {
     fromChainId,
     toChainId,
     bridge,
-    providerId
+    providerId,
+    requestId,
+    routeId
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
     bridge?: string
     providerId: string
+    requestId?: string
+    routeId?: string
   }): Promise<SwapAndBridgeRouteStatus> {
-    return this.#routeTo(providerId, 'getRouteStatus', { txHash, fromChainId, toChainId, bridge })
+    return this.#routeTo(providerId, 'getRouteStatus', {
+      txHash,
+      fromChainId,
+      toChainId,
+      bridge,
+      requestId,
+      routeId
+    })
   }
 }

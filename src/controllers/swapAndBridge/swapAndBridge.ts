@@ -1872,7 +1872,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
           txHash: activeRoute.userTxHash!,
-          providerId: activeRoute.route.providerId
+          providerId: activeRoute.route.providerId,
+          requestId: (activeRoute.route.rawRoute as any)?.requestId,
+          routeId: activeRoute.route.routeId
         })
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
@@ -2583,18 +2585,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ) {
       errors.push({
         title: 'Error detected in the pending batch. Please review it before proceeding'
-      })
-    }
-
-    // if we're bridging to ethereum, make the min from amount 10 usd
-    if (
-      isBridge &&
-      this.toChainId === 1 &&
-      this.fromAmountInFiat &&
-      Number(this.fromAmountInFiat) < 10
-    ) {
-      errors.push({
-        title: 'Min amount for bridging to Ethereum is $10'
       })
     }
 

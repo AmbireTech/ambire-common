@@ -100,6 +100,7 @@ import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketAPI } from '@/services/socket/api'
+import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
@@ -207,6 +208,7 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl,
     liFiApiKey,
     bungeeApiKey,
+    squidIntegratorId,
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
@@ -221,6 +223,7 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl: string
     liFiApiKey: string
     bungeeApiKey: string
+    squidIntegratorId: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -441,6 +444,7 @@ export class MainController extends EventEmitter implements IMainController {
     )
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
+    const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -454,7 +458,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       storage: this.storage,
       phishing: this.phishing,
-      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
+      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {

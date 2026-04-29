@@ -48,6 +48,7 @@ export interface MakeMainControllerOpts {
     featureFlags?: Partial<FeatureFlags>
     liFiApiKey?: string
     bungeeApiKey?: string
+    squidIntegratorId?: string
     externalSignerControllers?: ExternalSignerControllers
     keystoreSigners?: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     relayerUrl?: string
@@ -156,6 +157,7 @@ export const makeMainController = async (
     velcroUrl: overrides.velcroUrl ?? velcroUrl,
     liFiApiKey: overrides.liFiApiKey ?? '',
     bungeeApiKey: overrides.bungeeApiKey ?? '',
+    squidIntegratorId: overrides.squidIntegratorId ?? '',
     featureFlags,
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},

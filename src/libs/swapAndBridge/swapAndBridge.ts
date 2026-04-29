@@ -34,6 +34,7 @@ import {
   SOCKET_EXPLORER_URL,
   ZERO_ADDRESS
 } from '../../services/socket/constants'
+import { SQUID_EXPLORER_URL } from '../../services/squid/constants'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
@@ -665,9 +666,10 @@ export const calculateAmountWarnings = (
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
-  return providerId === 'socket'
-    ? `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
-    : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
+  if (providerId === 'socket') return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+  if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
+
+  return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }
 
 const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {

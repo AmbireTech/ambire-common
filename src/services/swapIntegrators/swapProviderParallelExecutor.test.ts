@@ -5,6 +5,7 @@ import { describe } from '@jest/globals'
 import { LiFiAPI } from '../lifi/api'
 import { SocketAPI } from '../socket/api'
 import { SwapProviderParallelExecutor } from './swapProviderParallelExecutor'
+import { SwapProvider } from '../../interfaces/swapAndBridge'
 
 const socketApi = new SocketAPI({ fetch, apiKey: '' })
 const lifiApi = new LiFiAPI({ fetch, apiKey: '' })
@@ -32,5 +33,42 @@ describe('Swap Provider Parallel execution', () => {
       chainId: 10
     })
     expect(toToken).not.toBe(null)
+  })
+
+  it('Uses provider-specific chain support checks when available', async () => {
+    const partialProvider = {
+      id: 'partial',
+      name: 'Partial',
+      isHealthy: null,
+      supportedChains: [{ chainId: 4114 }],
+      updateHealth: jest.fn(),
+      resetHealth: jest.fn(),
+      areChainsSupported: ({
+        fromChainId,
+        toChainId
+      }: {
+        fromChainId: number
+        toChainId: number
+      }) => fromChainId === 4114 || toChainId === 4114,
+      getSupportedChains: jest.fn(),
+      getToTokenList: jest.fn().mockResolvedValue([
+        {
+          address: '0x0000000000000000000000000000000000000000',
+          chainId: 1,
+          decimals: 18,
+          name: 'Ether',
+          symbol: 'ETH'
+        }
+      ]),
+      getToken: jest.fn(),
+      startRoute: jest.fn(),
+      quote: jest.fn(),
+      getRouteStatus: jest.fn()
+    } as unknown as SwapProvider
+
+    const executor = new SwapProviderParallelExecutor([partialProvider])
+    await executor.getToTokenList({ fromChainId: 4114, toChainId: 1 })
+
+    expect(partialProvider.getToTokenList).toHaveBeenCalled()
   })
 })
