@@ -83,7 +83,6 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
-import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 import {
   BROADCAST_OPTIONS,
   broadcastTransaction,
@@ -1584,15 +1583,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.signedTransactionsCount = null
   }
 
-  /**
-   * Returns the highest-priority dApp verification banner for the current account op, or `null` if none apply.
-   *
-   * Priority order:
-   * 1) dApp verification in progress (`LOADING`)
-   * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
-   * 3) dApp is blacklisted (`BLACKLISTED`)
-   * 4) (Permit2 only) dApp is not in the default catalog (not `VERIFIED`)
-   */
   #getDappVerificationBanner(): SignAccountOpBanner | null {
     const dappUrls = this.accountOp.calls
       .map((call) => call.dapp?.url?.toLowerCase())
@@ -1600,93 +1590,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (!dappUrls.length) return null
 
-    const dappVerificationData = dappUrls.map((url) => {
-      const dapp = this.#dapps.getDapp(getDappIdFromUrl(url))
-      return {
-        status: dapp?.blacklisted,
-        name: dapp?.name || new URL(url).hostname
-      }
-    })
-
-    // Helper function to get the names of dApps by their statuses
-    const getDappNamesByStatuses = (statuses: Array<'BLACKLISTED' | 'FAILED_TO_GET' | undefined>) =>
-      Array.from(
-        new Set(
-          dappVerificationData
-            .filter((dapp) => statuses.includes(dapp.status as any))
-            .map((dapp) => dapp.name)
-        )
-      ).join(', ')
-
-    // 1) dApp verification in progress
-    const hasDappsVerificationInProgress = dappVerificationData.some(
-      (dapp) => dapp.status === 'LOADING'
-    )
-    if (hasDappsVerificationInProgress) {
-      const dappNames = Array.from(
-        new Set(
-          dappVerificationData.filter((dapp) => dapp.status === 'LOADING').map((dapp) => dapp.name)
-        )
-      ).join(', ')
-
-      return {
-        id: 'dapp-verification-loading-warning-banner',
-        type: 'warning',
-        text: `We're still verifying the app. Please wait, or make sure you trust it before signing requests: ${dappNames}`
-      }
-    }
-
-    // 2) dApp verification failed / unknown
-    const hasDappsVerificationError = dappVerificationData.some(
-      (dapp) => dapp.status === 'FAILED_TO_GET' || dapp.status === undefined
-    )
-    if (hasDappsVerificationError) {
-      const dappNames = getDappNamesByStatuses(['FAILED_TO_GET', undefined])
-
-      return {
-        id: 'dapp-verification-error-warning-banner',
-        type: 'warning',
-        text: `We couldn't verify the app. Make sure you trust it before signing requests: ${dappNames}`
-      }
-    }
-
-    // 3) dApp is blacklisted
-    const hasBlacklistedDapp = dappVerificationData.some((dapp) => dapp.status === 'BLACKLISTED')
-    if (hasBlacklistedDapp) {
-      const dappNames = getDappNamesByStatuses(['BLACKLISTED'])
-
-      return {
-        id: 'dapp-blacklisted-error-banner',
-        type: 'error',
-        text: `This app didn't pass our safety check. Make sure you trust it before signing requests: ${dappNames}`
-      }
-    }
+    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls)
+    if (!dappVerificationBanner) return null
 
     const containsPermit2 = this.accountOp.calls.some((call) => {
       if (!call.to || !call.data) return false
       return isPermit2Interaction({ to: call.to, data: call.data })
     })
-    if (!containsPermit2) return null
 
-    // 4) (Permit2 only) dApp is not in the default catalog
-    const containsDappsNotInCatalog = dappVerificationData.some(
-      (dapp) => dapp.status !== 'VERIFIED'
-    )
-    if (containsDappsNotInCatalog) {
-      const dappNames = Array.from(
-        new Set(
-          dappVerificationData.filter((dapp) => dapp.status !== 'VERIFIED').map((dapp) => dapp.name)
-        )
-      ).join(', ')
-
-      return {
-        id: 'dapp-not-in-catalog-warning-banner',
-        type: 'warning',
-        text: `App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: ${dappNames}`
-      }
+    // Show the "not in catalog" banner only for Permit2 interactions to reduce noise on lower-risk actions.
+    if (!containsPermit2 && dappVerificationBanner.id === 'dapp-not-in-catalog-warning-banner') {
+      return null
     }
 
-    return null
+    return dappVerificationBanner
   }
 
   /**

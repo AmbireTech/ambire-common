@@ -5,6 +5,7 @@ import { EIP712TypedData } from '@safe-global/types-kit'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
+import { DappVerificationBanner, IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -56,6 +57,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #invite: IInviteController
 
+  #dapps?: IDappsController
+
   signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
@@ -65,6 +68,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   dapp: {
     name: string
     icon: string
+    url?: string
   } | null = null
 
   messageToSign: Message | null = null
@@ -99,7 +103,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    dapps?: IDappsController
   ) {
     super(eventEmitterRegistry)
 
@@ -109,6 +114,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#externalSignerControllers = externalSignerControllers
     this.#accounts = accounts
     this.#invite = invite
+    this.#dapps = dapps
     this.status = SignMessageStatus.Initial
   }
 
@@ -119,7 +125,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     hash,
     signatures
   }: {
-    dapp?: { name: string; icon: string }
+    dapp?: { name: string; icon: string; url?: string }
     messageToSign: Message
     // who are the signers that already signed this message
     // applicable on Safe message
@@ -545,5 +551,35 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     const error = new Error('signMessage: missing selected signer')
 
     return Promise.reject(new EmittableError({ level: 'major', message, error }))
+  }
+
+  #getDappVerificationBanner(): DappVerificationBanner | null {
+    if (!this.#dapps || !this.dapp?.url) return null
+
+    const banner = this.#dapps.getDappVerificationBanner([this.dapp.url.toLowerCase()], {
+      // SignMessage operates on a single dApp, and the request window already shows it,
+      // so repeating the dApp name in the banner text adds noise.
+      includeDappNamesInText: false
+    })
+    if (!banner) return null
+    // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.
+    if (banner.id === 'dapp-not-in-catalog-warning-banner') return null
+
+    return banner
+  }
+
+  get banners(): DappVerificationBanner[] {
+    const banner = this.#getDappVerificationBanner()
+    if (!banner) return []
+
+    return [banner]
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      banners: this.banners
+    }
   }
 }

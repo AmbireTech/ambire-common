@@ -355,15 +355,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.selectedAccount,
       eventEmitterRegistry
     )
-    this.signMessage = new SignMessageController(
-      this.keystore,
-      this.providers,
-      this.networks,
-      this.accounts,
-      this.#externalSignerControllers,
-      this.invite,
-      eventEmitterRegistry
-    )
     this.phishing = new PhishingController({
       eventEmitterRegistry,
       fetch: this.fetch,
@@ -379,6 +370,16 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       ui: this.ui
     })
+    this.signMessage = new SignMessageController(
+      this.keystore,
+      this.providers,
+      this.networks,
+      this.accounts,
+      this.#externalSignerControllers,
+      this.invite,
+      eventEmitterRegistry,
+      this.dapps
+    )
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(

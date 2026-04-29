@@ -19,6 +19,7 @@ import {
   Dapp,
   DefiLlamaChain,
   DefiLlamaProtocol,
+  DappVerificationBanner,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController
@@ -799,6 +800,106 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.#ui.message.sendUiMessage(message)
+  }
+
+  /**
+   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if none apply.
+   *
+   * Priority order:
+   * 1) dApp verification in progress (`LOADING`)
+   * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
+   * 3) dApp is blacklisted (`BLACKLISTED`)
+   * 4) dApp is not in the default catalog (not `VERIFIED`)
+   *
+   * Pass `includeDappNamesInText: false` in single-dApp flows (e.g. SignMessage),
+   * where appending the dApp names in the banner text is redundant.
+   */
+  getDappVerificationBanner(
+    dappUrls: string[],
+    { includeDappNamesInText = true }: { includeDappNamesInText?: boolean } = {}
+  ): DappVerificationBanner | null {
+    const validDappUrls = dappUrls
+      .map((url) => url?.toLowerCase())
+      .filter((url): url is string => !!url)
+    if (!validDappUrls.length) return null
+
+    const dappVerificationData = validDappUrls.map((url) => {
+      const dapp = this.#dapps.get(getDappIdFromUrl(url))
+      return {
+        status: dapp?.blacklisted,
+        name: dapp?.name || new URL(url).hostname
+      }
+    })
+
+    // Returns the names of dApps matching a predicate (e.g. all dapps with BLACKLISTED status).
+    const getDappNamesByPredicate = (
+      predicate: (item: (typeof dappVerificationData)[number]) => boolean
+    ) =>
+      Array.from(new Set(dappVerificationData.filter(predicate).map((dapp) => dapp.name))).join(
+        ', '
+      )
+
+    // Appends dApp names to the message only when enabled, formatting "...requests." as "...requests: <dApp names>".
+    const withOptionalDappNames = (baseText: string, dappNames: string) => {
+      if (!includeDappNamesInText || !dappNames) return baseText
+      return `${baseText.replace(/\.$/, ':')} ${dappNames}`
+    }
+
+    // 1) dApp verification in progress
+    if (dappVerificationData.some((dapp) => dapp.status === 'LOADING')) {
+      const dappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
+      return {
+        id: 'dapp-verification-loading-warning-banner',
+        type: 'warning',
+        text: withOptionalDappNames(
+          "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
+          dappNames
+        )
+      }
+    }
+
+    // 2) dApp verification failed / unknown
+    if (dappVerificationData.some((dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status)) {
+      const dappNames = getDappNamesByPredicate(
+        (dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status
+      )
+      return {
+        id: 'dapp-verification-error-warning-banner',
+        type: 'warning',
+        text: withOptionalDappNames(
+          "We couldn't verify the app. Make sure you trust it before signing requests.",
+          dappNames
+        )
+      }
+    }
+
+    // 3) dApp is blacklisted
+    if (dappVerificationData.some((dapp) => dapp.status === 'BLACKLISTED')) {
+      const dappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
+      return {
+        id: 'dapp-blacklisted-error-banner',
+        type: 'error',
+        text: withOptionalDappNames(
+          "This app didn't pass our safety check. Make sure you trust it before signing requests.",
+          dappNames
+        )
+      }
+    }
+
+    // 4) dApp is not in the default catalog
+    if (dappVerificationData.some((dapp) => dapp.status !== 'VERIFIED')) {
+      const dappNames = getDappNamesByPredicate((dapp) => dapp.status !== 'VERIFIED')
+      return {
+        id: 'dapp-not-in-catalog-warning-banner',
+        type: 'warning',
+        text: withOptionalDappNames(
+          'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
+          dappNames
+        )
+      }
+    }
+
+    return null
   }
 
   toJSON() {

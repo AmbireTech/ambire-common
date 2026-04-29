@@ -75,3 +75,9 @@ export interface HasUnverifiedDappsRes {
   ok: boolean
   res: boolean
 }
+
+export type DappVerificationBanner = {
+  id: string
+  type: 'error' | 'warning'
+  text: string
+}
