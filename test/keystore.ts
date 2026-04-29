@@ -1,3 +1,8 @@
+import { hexlify, randomBytes } from 'ethers'
+
+import { Hex } from '@/interfaces/hex'
+import { Key, KeystoreSignerInterface } from '@/interfaces/keystore'
+
 const CTR_STORAGE = {
   keystoreKeys:
     '[{"addr":"0x839C335cAB515fc782e6c038694A2e59699c7D19","type":"internal","label":"Key 1","dedicatedToOneSA":false,"privKey":"0xd0d931041809ad8eb77b30ff9650fc928390bc169231de2c610c1d4427e81163","meta":{"createdAt":1777451801628,"fromSeedId":"1e970047-eeef-4eaa-babc-b91a797a8b76"}},{"addr":"0xc96671Fdc8bE556A023aabf5F0DeD354ADB68A54","type":"internal","label":"Key 1","dedicatedToOneSA":false,"privKey":"0x51475183e8f79662f46d922544fcbf036ccd9f8516e1555f226cabe9d60530ca","meta":{"createdAt":1777451825091,"fromSeedId":"39527f8b-461d-49b8-bd1f-cd95f73fe017"}},{"addr":"0x085f8A348f6fBc6F8d8FC3f1e427473436506D65","type":"internal","label":"Key 1","dedicatedToOneSA":false,"privKey":"0x5e4dfbe1927eb5ff9cafb0e66d20900629fc6bfca006ffa90b174238013d3518","meta":{"createdAt":1777451843593}}]',
@@ -9,4 +14,76 @@ const CTR_STORAGE = {
     '[{"id":"password","scryptParams":{"salt":"0x799b6874d437835bbc70923bae6c96fd01c1537d3e9843129844a97c765d74e5","N":131072,"r":8,"p":1,"dkLen":64},"aesEncrypted":{"cipherType":"aes-128-ctr","ciphertext":"0xd5412529c15a166b29034b1af62eeb80e5ac7f0692aa97ec699f74fdbfa58fe3","iv":"0xb00c604ea3ba6c676ab115b37d6d5c2b","mac":"0x4a6f0355c8e0ef6a579ac5e766b2fd54585f393c7ff860ea0279a073ab3361bd"}}]'
 }
 
-export { CTR_STORAGE }
+class InternalSigner {
+  key
+
+  privKey
+
+  constructor(_key: Key, _privKey?: string) {
+    this.key = _key
+    this.privKey = _privKey
+  }
+
+  signRawTransaction() {
+    return Promise.resolve('')
+  }
+
+  signTypedData() {
+    return Promise.resolve('')
+  }
+
+  signMessage() {
+    return Promise.resolve('')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
+    throw new Error('not supported')
+  }
+}
+
+class LedgerSigner {
+  key
+
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  constructor(_key: Key) {
+    this.key = _key
+  }
+
+  signRawTransaction() {
+    return Promise.resolve('')
+  }
+
+  signTypedData() {
+    return Promise.resolve('')
+  }
+
+  signMessage() {
+    return Promise.resolve('')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
+    throw new Error('not supported')
+  }
+}
+
+export { CTR_STORAGE, InternalSigner, LedgerSigner }
