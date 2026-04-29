@@ -20,6 +20,7 @@ import {
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  getSlippage,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { ZERO_ADDRESS } from '../socket/constants'
@@ -337,6 +338,7 @@ export class SquidAPI implements SwapProvider {
       toChain: toChainId.toString(),
       toToken: normalizeOutgoingSquidTokenAddress(toTokenAddress),
       toAddress: userAddress,
+      slippage: Number(getSlippage(fromAsset, fromAmount, '1', 0.5)),
       quoteOnly: false
     }
 
