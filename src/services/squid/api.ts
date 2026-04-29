@@ -21,10 +21,16 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getSlippage,
+  isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { ZERO_ADDRESS } from '../socket/constants'
-import { CITREA_CHAIN_ID, SQUID_API_BASE_URL, SQUID_NATIVE_TOKEN_ADDRESS } from './constants'
+import {
+  AMBIRE_FEE_TAKER_ADDRESS,
+  CITREA_CHAIN_ID,
+  SQUID_API_BASE_URL,
+  SQUID_NATIVE_TOKEN_ADDRESS
+} from './constants'
 
 const normalizeOutgoingSquidTokenAddress = (address: string) =>
   address === ZERO_ADDRESS ? SQUID_NATIVE_TOKEN_ADDRESS : address
@@ -312,6 +318,7 @@ export class SquidAPI implements SwapProvider {
     toTokenAddress,
     fromAmount,
     userAddress,
+    isWrapOrUnwrap,
     accountNativeBalance,
     nativeSymbol
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
@@ -330,7 +337,21 @@ export class SquidAPI implements SwapProvider {
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
 
-    const body = {
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESS
+    const shouldIncludeConvenienceFee =
+      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+
+    const body: {
+      fromAddress: string
+      fromChain: string
+      fromToken: string
+      fromAmount: string
+      toChain: string
+      toToken: string
+      toAddress: string
+      slippage: number
+      quoteOnly: boolean
+    } = {
       fromAddress: userAddress,
       fromChain: fromChainId.toString(),
       fromToken: normalizeOutgoingSquidTokenAddress(fromTokenAddress),
@@ -373,7 +394,7 @@ export class SquidAPI implements SwapProvider {
           userAddress,
           accountNativeBalance,
           nativeSymbol,
-          withConvenienceFee: false
+          withConvenienceFee: shouldIncludeConvenienceFee
         })
       ],
       selectedRoute: undefined,
