@@ -453,7 +453,8 @@ const init = async (
   const phishing = new PhishingController({
     fetch,
     storage: storageCtrl,
-    addressBook: addressBookCtrl
+    addressBook: addressBookCtrl,
+    ui: uiCtrl
   })
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
