@@ -53,6 +53,7 @@ import {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
+  getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
@@ -1916,10 +1917,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
-        if (
-          this.#portfolioUpdate &&
-          activeRoute.route.fromChainId !== activeRoute.route.toChainId
-        ) {
+        if (this.#portfolioUpdate && getIsBridgeRoute(activeRoute.route)) {
           this.#portfolioUpdate([BigInt(activeRoute.route.toChainId)])
         }
       } else if (status === 'ready') {
@@ -2239,7 +2237,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let shouldUpdateActiveRouteStatus = false
 
-    const isSwap = activeRoute.route.fromChainId === activeRoute.route.toChainId
+    const isSwap = !getIsBridgeRoute(activeRoute.route)
 
     // force update the active route status if the route is of type 'swap'
     if (isSwap) shouldUpdateActiveRouteStatus = true
@@ -2417,7 +2415,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromTokenPriceInUsd = this.quote.selectedRoute.inputValueInUsd / Number(this.fromAmount)
     }
 
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
@@ -2573,7 +2573,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get swapSignErrors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
     if (

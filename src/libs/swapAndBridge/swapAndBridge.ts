@@ -461,7 +461,7 @@ const getSwapAndBridgeRequestParams = async (
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.fromChainId !== route.toChainId
+  return route.providerId === 'squid' || route.fromChainId !== route.toChainId
 }
 
 /**
