@@ -199,6 +199,25 @@ describe('err cases', () => {
       )
     })
   })
+  describe('removeKeyStoreSecret', () => {
+    beforeEach(async () => {
+      await emailVault.getEmailVaultInfo(email, authKey)
+    })
+
+    test('add and remove keyStoreSecret', async () => {
+      const keyStoreUid = Wallet.createRandom().address
+      await emailVault.addKeyStoreSecret(email, authKey, keyStoreUid, keyStoreSecret)
+      const success = await emailVault.removeKeyStoreSecret(email, authKey, keyStoreUid)
+      expect(success).toBeTruthy()
+    })
+
+    test('remove non-existing keyStoreSecret', async () => {
+      const keyStoreUid = Wallet.createRandom().address
+      await expect(
+        emailVault.removeKeyStoreSecret(email, authKey, keyStoreUid)
+      ).rejects.toHaveProperty(['output', 'res', 'message'], 'Error, missing KeyStore secret')
+    })
+  })
   describe('retrieveKeyStoreSecret', () => {
     beforeEach(async () => {
       await emailVault.getEmailVaultInfo(email, authKey)

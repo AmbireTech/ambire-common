@@ -207,4 +207,20 @@ describe('happy cases', () => {
 
     ev.handleMagicLinkKey(email, () => console.log('ready'))
   })
+  test('remove keyStoreSecret', async () => {
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
+    await ev.getEmailVaultInfo(email)
+    await ev.uploadKeyStoreSecret(email)
+    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(2)
+    await ev.removeKeyStoreSecret(email)
+    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
+    const remainingSecret = Object.values(ev.emailVaultStates.email[email].availableSecrets)[0]
+    expect(remainingSecret?.type).toBe('recoveryKey')
+  })
+  test('remove non-existing keyStoreSecret', async () => {
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
+    await ev.getEmailVaultInfo(email)
+    await ev.removeKeyStoreSecret(email)
+    expect(ev.emittedErrors.length).toBeGreaterThan(0)
+  })
 })
