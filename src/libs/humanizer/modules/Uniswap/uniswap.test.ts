@@ -307,7 +307,8 @@ describe('uniswap', () => {
         getToken('0xb0b195aefa3650a6908f15cdac7d92f8a5791b0b', 0n),
         getLabel('for'),
         getToken('0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', 0n),
-        getDeadline(1743507804n)
+        getDeadline(1743507804n),
+        getToken('0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c', 0n, true) // hidden
       ]
     ]
 

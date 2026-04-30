@@ -184,9 +184,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isSwap(callJ) &&
         callI[3].address === callJ[1].address
       ) {
-        if (!WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[3].address?.toLowerCase())) {
-          callI?.push({ ...callI[3], isHidden: true })
-        }
+        callI?.push({ ...callI[3], isHidden: true })
         callI[3].value = callJ[3].value!
         callI[3].address! = callJ[3]?.address!
 
