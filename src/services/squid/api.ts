@@ -4,6 +4,7 @@ import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderAp
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
+  SquidErrorResponse,
   SquidRoute,
   SquidRouteResponse,
   SquidStatusResponse,
@@ -11,6 +12,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -34,6 +36,9 @@ import {
 
 const normalizeOutgoingSquidTokenAddress = (address: string) =>
   address === ZERO_ADDRESS ? SQUID_NATIVE_TOKEN_ADDRESS : address
+
+const isTransientSquidStatusNotFound = (response: SquidErrorResponse) =>
+  response.statusCode === 404 || response.type === 'NotFoundError'
 
 const normalizeIncomingSquidTokenAddress = (address: string) =>
   address.toLowerCase() === SQUID_NATIVE_TOKEN_ADDRESS.toLowerCase()
@@ -208,10 +213,12 @@ export class SquidAPI implements SwapProvider {
 
   async #handleResponse<T>({
     fetchPromise,
-    errorPrefix
+    errorPrefix,
+    shouldReturnErrorResponse
   }: {
     fetchPromise: Promise<CustomResponse>
     errorPrefix: string
+    shouldReturnErrorResponse?: (responseBody: any, response: CustomResponse) => boolean
   }): Promise<T> {
     let response: CustomResponse
 
@@ -234,9 +241,8 @@ export class SquidAPI implements SwapProvider {
     } catch (e: any) {
       if (e instanceof SwapAndBridgeProviderApiError) throw e
 
-      const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
-      const error = `${errorPrefix} Our service provider Squid could not be reached: <${message}>${status}`
+      const error = `${errorPrefix} Our service provider Squid could not be reached: ${status}`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -250,6 +256,10 @@ export class SquidAPI implements SwapProvider {
     }
 
     if (!response.ok) {
+      if (shouldReturnErrorResponse && shouldReturnErrorResponse(responseBody, response)) {
+        return responseBody
+      }
+
       const upstreamBody = responseBody as any
       const upstreamMessage =
         upstreamBody?.message ||
@@ -446,7 +456,7 @@ export class SquidAPI implements SwapProvider {
     toChainId: number
     requestId?: string
     routeId?: string
-  }): Promise<SwapAndBridgeRouteStatus> {
+  }): Promise<SwapAndBridgeRouteStatusResult> {
     this.#ensureIntegratorId()
 
     const params = new URLSearchParams({
@@ -457,17 +467,37 @@ export class SquidAPI implements SwapProvider {
     if (requestId) params.append('requestId', requestId)
     if (routeId) params.append('quoteId', routeId)
 
-    const response = await this.#handleResponse<SquidStatusResponse>({
+    const response = await this.#handleResponse<SquidStatusResponse | SquidErrorResponse>({
       fetchPromise: this.#fetch(`${SQUID_API_BASE_URL}/status?${params.toString()}`, {
         headers: this.#headers
       }),
-      errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
+      errorPrefix: 'Unable to get the route status. Please check back later to proceed.',
+      shouldReturnErrorResponse: (responseBody) =>
+        isTransientSquidStatusNotFound(responseBody as SquidErrorResponse)
     })
 
-    const status = (response.squidTransactionStatus || response.status || '').toLowerCase()
-    if (status === 'success' || status === 'partial_success') return 'completed'
-    if (status === 'refund') return 'refunded'
+    if (isTransientSquidStatusNotFound(response as SquidErrorResponse)) {
+      return { routeStatus: null }
+    }
 
-    return null
+    const statusResponse = response as SquidStatusResponse
+    const status = (
+      statusResponse.squidTransactionStatus ||
+      statusResponse.status ||
+      ''
+    ).toLowerCase()
+    let routeStatus: SwapAndBridgeRouteStatus = null
+
+    if (status === 'success' || status === 'partial_success') routeStatus = 'completed'
+    if (status === 'refund') routeStatus = 'refunded'
+
+    return {
+      routeStatus,
+      explorerUrl:
+        statusResponse.coralTransactionUrl ||
+        statusResponse.axelarTransactionUrl ||
+        statusResponse.toChain?.transactionUrl ||
+        statusResponse.fromChain?.transactionUrl
+    }
   }
 }

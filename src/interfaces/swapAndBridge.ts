@@ -329,6 +329,7 @@ export type SwapAndBridgeActiveRoute = {
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
   identifiedBy: AccountOpIdentifiedBy | null
+  explorerUrl?: string
   route?: SwapAndBridgeRoute & {
     routeStatus: string
     fromChainId: number
@@ -365,6 +366,10 @@ export interface BungeeRouteStatus {
 }
 
 export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
+export type SwapAndBridgeRouteStatusResult = {
+  explorerUrl?: string
+  routeStatus: SwapAndBridgeRouteStatus
+}
 
 export type SocketAPISupportedChain = {
   chainId: number
@@ -496,6 +501,7 @@ export interface SquidRoute {
     feeCosts?: {
       amount: string
       amountUSD?: string
+      amountUsd?: string
       included?: boolean
       token?: SquidToken
     }[]
@@ -529,8 +535,23 @@ export interface SquidRouteResponse {
 }
 
 export interface SquidStatusResponse {
+  axelarTransactionUrl?: string
+  coralTransactionUrl?: string
+  fromChain?: {
+    transactionUrl?: string
+  }
+  isGMPTransaction?: boolean
   squidTransactionStatus?: string
   status?: string
+  toChain?: {
+    transactionUrl?: string
+  }
+}
+
+export interface SquidErrorResponse {
+  message?: string
+  statusCode?: number
+  type?: string
 }
 
 export interface ProviderQuoteParams {
@@ -605,5 +626,5 @@ export interface SwapProvider {
     providerId: string
     requestId?: string
     routeId?: string
-  }): Promise<SwapAndBridgeRouteStatus>
+  }): Promise<SwapAndBridgeRouteStatus | SwapAndBridgeRouteStatusResult>
 }

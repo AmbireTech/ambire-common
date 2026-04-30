@@ -30,6 +30,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapProvider
@@ -1867,7 +1868,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // should never happen
         if (!activeRoute.route) throw new Error('Route data is missing.')
 
-        status = await this.#serviceProviderAPI.getRouteStatus({
+        const statusResult = await this.#serviceProviderAPI.getRouteStatus({
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
@@ -1876,6 +1877,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           requestId: (activeRoute.route.rawRoute as any)?.requestId,
           routeId: activeRoute.route.routeId
         })
+        if (statusResult && typeof statusResult === 'object') {
+          status = (statusResult as SwapAndBridgeRouteStatusResult).routeStatus
+          if ((statusResult as SwapAndBridgeRouteStatusResult).explorerUrl) {
+            this.updateActiveRoute(activeRoute.activeRouteId, {
+              explorerUrl: (statusResult as SwapAndBridgeRouteStatusResult).explorerUrl
+            })
+          }
+        } else {
+          status = statusResult
+        }
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
         this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
@@ -2418,7 +2429,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
       fromTokenPriceInUsd,
-      fromTokenDecimals: this.quote?.fromAsset.decimals
+      fromTokenDecimals: this.quote?.fromAsset.decimals,
+      providerId: this.quote?.selectedRoute?.providerId
     })
 
     if (this.#signAccountOpController) {

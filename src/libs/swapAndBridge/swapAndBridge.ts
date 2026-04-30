@@ -665,6 +665,8 @@ export const calculateAmountWarnings = (
 }
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
+  if (route.explorerUrl) return route.explorerUrl
+
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
   if (providerId === 'socket') return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
   if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
@@ -692,13 +694,15 @@ const getSwapSponsorship = ({
   nativePrice,
   fromAmountInUsd,
   fromTokenPriceInUsd,
-  fromTokenDecimals
+  fromTokenDecimals,
+  providerId
 }: {
   hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
   fromTokenPriceInUsd: number | undefined
   fromTokenDecimals: number | undefined
+  providerId: string | undefined
 }):
   | {
       nativePrice: number
@@ -712,7 +716,8 @@ const getSwapSponsorship = ({
     !nativePrice ||
     !fromAmountInUsd ||
     !fromTokenPriceInUsd ||
-    !fromTokenDecimals
+    !fromTokenDecimals ||
+    providerId === 'squid'
   )
     return undefined
   return {
