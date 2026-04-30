@@ -90,6 +90,8 @@ export interface AccountOp {
     fromQuoteId?: string
     /** Used to enable the gas tank if the user is topping up */
     topUpAmount?: bigint
+    /** Allows transfer.ts-owned MAX flows to reserve the fee from the transferred token. */
+    allowTransferFeeTokenSelfReserve?: boolean
     /** Used to enable swap&bridge sponsorship */
     swapSponsorship?: {
       swapFeeInUsd: number

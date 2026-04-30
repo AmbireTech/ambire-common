@@ -19,12 +19,17 @@ import { IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
+import { AssetType } from '../../libs/defiPositions/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
-import { getSanitizedAmount } from '../../libs/transfer/amount'
+import {
+  getAmountAfterFeeReserve,
+  getAmountAfterFeeSync,
+  getSanitizedAmount
+} from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
   validateSendTransferAddress,
@@ -125,6 +130,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   isTopUp: boolean = false
 
   #shouldSkipTransactionQueuedModal: boolean = false
+
+  #isMaxAmountSelected: boolean = false
 
   #accounts: IAccountsController
 
@@ -313,7 +320,13 @@ export class TransferController extends EventEmitter implements ITransferControl
           )
         }
 
-        return hasAmount && isVisible && !token.flags.onGasTank && !token.flags.rewardsType
+        return (
+          hasAmount &&
+          isVisible &&
+          !token.flags.onGasTank &&
+          !token.flags.rewardsType &&
+          token.flags.defiTokenType !== AssetType.Borrow
+        )
       })
       .sort((a, b) => {
         const tokenAinUSD = getTokenBalanceInUSD(a)
@@ -402,6 +415,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
+      this.#isMaxAmountSelected = false
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.amountFieldMode = 'token'
@@ -416,6 +430,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.chainId !== token?.chainId
     ) {
+      this.#isMaxAmountSelected = false
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
@@ -431,12 +446,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get maxAmount(): string {
-    if (
-      !this.selectedToken ||
-      getTokenAmount(this.selectedToken) === 0n ||
-      typeof this.selectedToken.decimals !== 'number'
-    )
-      return '0'
+    if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n) return '0'
 
     return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals)
   }
@@ -461,6 +471,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   resetForm(shouldDestroyAccountOp = true) {
+    this.#isMaxAmountSelected = false
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
@@ -482,6 +493,23 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.emitUpdate()
   }
 
+  #fetchRecipientAccountStateIfNeeded() {
+    if (!this.isInitialized) return
+
+    const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
+    if (recipientAcc && this.selectedToken?.chainId) {
+      const state =
+        this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
+      if (!state) {
+        this.#accounts
+          .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
+          .catch((e) => {
+            console.log('Failed to get the account on chain state:', e)
+          })
+      }
+    }
+  }
+
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
@@ -493,17 +521,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       // so that we could validate the account properly
       // example: Safe accounts may not be deployed on certain networks
       const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
-      if (recipientAcc && this.selectedToken?.chainId) {
-        const state =
-          this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
-        if (!state) {
-          this.#accounts
-            .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
-            .catch((e) => {
-              console.log('Failed to get the account on chain state:', e)
-            })
-        }
-      }
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
@@ -584,15 +601,18 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
 
       this.selectedToken = selectedToken
+      this.#fetchRecipientAccountStateIfNeeded()
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
+      this.#isMaxAmountSelected = false
       this.#setAmount(amount)
     }
 
     if (shouldSetMaxAmount) {
+      this.#isMaxAmountSelected = true
       this.amountFieldMode = 'token'
-      this.#setAmount(this.maxAmount, true)
+      this.#setTokenAmount(this.#getMaxAmountAfterFeeReservation(), true)
     }
 
     if (addressState) {
@@ -683,6 +703,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.checkIsRecipientAddressViewOnly()
     this.checkIsRecipientAddressUnknown()
+    this.#fetchRecipientAccountStateIfNeeded()
   }
 
   #setAmountAndNotifyUI(amount: string) {
@@ -758,6 +779,119 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.decimals + tokenPriceDecimals
       )
     }
+  }
+
+  #setTokenAmount(amount: string, isProgrammaticUpdate = false) {
+    const amountFieldMode = this.amountFieldMode
+
+    this.amountFieldMode = 'token'
+    this.#setAmount(amount, isProgrammaticUpdate)
+    this.amountFieldMode = amountFieldMode
+  }
+
+  #getMaxAmountAfterFeeReservation() {
+    if (!this.selectedToken) return this.maxAmount
+
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+
+    if (!this.#shouldReserveFeeFromTransferredToken() || !gasFeePayment) {
+      return formatUnits(totalTokenAmount, this.selectedToken.decimals)
+    }
+
+    return formatUnits(
+      getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount),
+      this.selectedToken.decimals
+    )
+  }
+
+  #shouldReserveFeeFromTransferredToken() {
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const selectedFeeOption = this.signAccountOpController?.selectedOption
+    const selectedToken = this.selectedToken
+    const accountAddr = this.#selectedAccount.account?.addr.toLowerCase()
+
+    if (!accountAddr || !gasFeePayment || !selectedFeeOption || !selectedToken) return false
+    if (selectedFeeOption.token.flags.onGasTank) return false
+    if (selectedFeeOption.paidBy.toLowerCase() !== accountAddr) return false
+
+    const selectedTokenAddress = selectedToken.address.toLowerCase()
+
+    return (
+      !!accountAddr &&
+      !!gasFeePayment &&
+      !!selectedFeeOption &&
+      selectedFeeOption.paidBy.toLowerCase() === accountAddr &&
+      selectedFeeOption.token.chainId === selectedToken.chainId &&
+      selectedFeeOption.token.address.toLowerCase() === selectedTokenAddress &&
+      gasFeePayment.inToken.toLowerCase() === selectedTokenAddress &&
+      (!gasFeePayment.feeTokenChainId || gasFeePayment.feeTokenChainId === selectedToken.chainId)
+    )
+  }
+
+  #syncAmountWithFeeReservation(forceEmit?: boolean) {
+    if (!this.amount || !this.selectedToken || typeof this.selectedToken.decimals !== 'number')
+      return false
+
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const shouldReserveFee = this.#shouldReserveFeeFromTransferredToken()
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const currentAmount = this.amount
+      ? parseUnits(
+          getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
+          this.selectedToken.decimals
+        )
+      : 0n
+    const desiredAmount = getAmountAfterFeeSync({
+      currentAmount,
+      totalAmount: totalTokenAmount,
+      fee: shouldReserveFee ? gasFeePayment?.amount || 0n : 0n,
+      shouldReserveFee,
+      isMaxAmountSelected: this.#isMaxAmountSelected
+    })
+
+    if (currentAmount === desiredAmount) return false
+
+    this.#setTokenAmount(
+      desiredAmount === 0n ? '0' : formatUnits(desiredAmount, this.selectedToken.decimals),
+      true
+    )
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.syncSignAccountOp()
+    this.propagateUpdate(forceEmit)
+
+    return true
+  }
+
+  /**
+   * When doing a MAX transfer or a close to MAX transfer out,
+   * if the selected fee token is the same as the transfer token,
+   * we automatically adjust the transfer amount so the user
+   * can successfully broadcast. For that, we put an additional
+   * warning telling him why this is happening
+   */
+  get amountAdjustmentWarning(): Validation | null {
+    if (!this.amount || !this.selectedToken || !this.#shouldReserveFeeFromTransferredToken()) {
+      return null
+    }
+
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    if (!gasFeePayment) return null
+
+    const currentAmount = parseUnits(
+      getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
+      this.selectedToken.decimals
+    )
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+
+    if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
+      return {
+        severity: 'warning',
+        message: 'Amount adjusted to cover blockchain fees'
+      }
+    }
+
+    return null
   }
 
   get hasPersistedState() {
@@ -860,7 +994,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       calls,
       meta: {
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-        topUpAmount
+        topUpAmount,
+        allowTransferFeeTokenSelfReserve: true
       }
     }
 
@@ -899,7 +1034,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
-        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+        void this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
           this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
         })
 
@@ -918,6 +1053,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.signAccountOpController.onUpdate((forceEmit) => {
+      this.#syncAmountWithFeeReservation(forceEmit)
+
       this.propagateUpdate(forceEmit)
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
@@ -1015,7 +1152,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       maxAmountInFiat: this.maxAmountInFiat,
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
       hasPersistedState: this.hasPersistedState,
-      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly
+      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
+      amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }
 }

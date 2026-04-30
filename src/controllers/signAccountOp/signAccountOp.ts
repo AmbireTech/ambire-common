@@ -150,6 +150,7 @@ import {
   getUnknownTokenWarning,
   SignAccountOpType
 } from './helper'
+import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -906,7 +907,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.canBroadcast
     ) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
-      if (this.hasSpeeds(identifier))
+      if (
+        this.hasSpeeds(identifier) &&
+        !this.#shouldSuppressTransferFeeSelectionError(this.selectedOption)
+      )
         errors.push({
           title: 'Please select a token and an account for paying the gas fee.'
         })
@@ -917,6 +921,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.selectedOption &&
       this.accountOp.gasFeePayment &&
       this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount &&
+      !this.#shouldSuppressTransferFeeSelectionError(this.selectedOption) &&
       this.canBroadcast
     ) {
       const speedCoverage = []
@@ -1650,12 +1655,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const aId = getFeeSpeedIdentifier(a, this.accountOp.accountAddr)
     const aSlow = this.feeSpeeds[aId]?.find((speed) => speed.type === 'slow')
     if (!aSlow) return 1
-    const aCanCoverFee = a.availableAmount >= aSlow.amount
+    const aCanCoverFee = canFeeOptionCoverAmount(a, this.accountOp, aSlow.amount)
 
     const bId = getFeeSpeedIdentifier(b, this.accountOp.accountAddr)
     const bSlow = this.feeSpeeds[bId]?.find((speed) => speed.type === 'slow')
     if (!bSlow) return -1
-    const bCanCoverFee = b.availableAmount >= bSlow.amount
+    const bCanCoverFee = canFeeOptionCoverAmount(b, this.accountOp, bSlow.amount)
 
     if (aCanCoverFee && !bCanCoverFee) return -1
     if (!aCanCoverFee && bCanCoverFee) return 1
@@ -1681,13 +1686,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
     const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
     const speeds = this.feeSpeeds[id] ?? []
+    const isTransferredTokenOption = isTransferredTokenFeeOption(feeOption, this.accountOp)
 
     const coversSlow = speeds.some(
       (speed: SpeedCalc) =>
         speed.type === FeeSpeed.Slow && feeOption.availableAmount >= speed.amount
     )
 
-    if (!coversSlow) return true
+    if (!coversSlow && !isTransferredTokenOption) return true
 
     const isExternal = this.accountKeyStoreKeys.some(
       (keyStoreKey) => keyStoreKey.addr === feeOption.paidBy && keyStoreKey.isExternallyStored
@@ -1698,6 +1704,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
 
     return false
+  }
+
+  #shouldSuppressTransferFeeSelectionError(feeOption?: FeePaymentOption): boolean {
+    return (
+      this.#type === 'one-click-transfer' &&
+      !!feeOption &&
+      isTransferredTokenFeeOption(feeOption, this.accountOp)
+    )
   }
 
   /**

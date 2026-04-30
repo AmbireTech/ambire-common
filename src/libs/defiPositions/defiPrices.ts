@@ -28,6 +28,7 @@ export async function updatePositionsByProviderAssetPrices(
   positionsByProvider.forEach((providerPos) => {
     providerPos.positions.forEach((p) => {
       p.assets.forEach((a) => {
+        if (!a.address) return
         addresses.push(a.address)
       })
     })
@@ -52,6 +53,7 @@ export async function updatePositionsByProviderAssetPrices(
       let positionInUSD = position.additionalData.positionInUSD || 0
 
       const updatedAssets = position.assets.map((asset) => {
+        if (!asset.address) return asset
         const priceData = body[asset.address.toLowerCase()]
         if (!priceData) return asset
 
