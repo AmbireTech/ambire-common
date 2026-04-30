@@ -547,6 +547,10 @@ const init = async (
     stopRefetching: false
   }))
   gasPriceController.gasPrices = gasPricesOrMock
+  const dappsControllerMock = {
+    onUpdate: () => () => {},
+    getDappVerificationBanner: () => null
+  }
   const controller = new SignAccountOpTesterController({
     accounts: accountsCtrl,
     networks: networksCtrl,
@@ -556,6 +560,7 @@ const init = async (
     account,
     network,
     activity,
+    dapps: dappsControllerMock as any,
     provider,
     phishing,
     fromRequestId: 1,
