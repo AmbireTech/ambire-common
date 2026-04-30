@@ -22,6 +22,7 @@ import {
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { CITREA_CHAIN_ID } from '../squid/constants'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
@@ -30,7 +31,6 @@ import {
   PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
 } from './constants'
-import { CITREA_CHAIN_ID } from '../squid/constants'
 
 const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
   addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
@@ -101,6 +101,11 @@ export class SocketAPI implements SwapProvider {
 
   resetHealth() {
     this.isHealthy = null
+  }
+
+  /** disable explicitly citrea for socket */
+  areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
   }
 
   /**

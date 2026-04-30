@@ -71,4 +71,91 @@ describe('Swap Provider Parallel execution', () => {
 
     expect(partialProvider.getToTokenList).toHaveBeenCalled()
   })
+
+  it('Does not call providers that explicitly do not support a route pair', async () => {
+    const socketProvider = {
+      id: 'socket',
+      name: 'Socket',
+      isHealthy: null,
+      supportedChains: null,
+      updateHealth: jest.fn(),
+      resetHealth: jest.fn(),
+      areChainsSupported: jest.fn(({ fromChainId, toChainId }) => {
+        return fromChainId !== 4114 && toChainId !== 4114
+      }),
+      getSupportedChains: jest.fn(),
+      getToTokenList: jest.fn(),
+      getToken: jest.fn(),
+      startRoute: jest.fn(),
+      quote: jest.fn(),
+      getRouteStatus: jest.fn()
+    } as unknown as SwapProvider
+    const squidProvider = {
+      id: 'squid',
+      name: 'Squid',
+      isHealthy: null,
+      supportedChains: [{ chainId: 4114 }],
+      updateHealth: jest.fn(),
+      resetHealth: jest.fn(),
+      areChainsSupported: jest.fn(({ fromChainId, toChainId }) => {
+        return fromChainId === 4114 || toChainId === 4114
+      }),
+      getSupportedChains: jest.fn(),
+      getToTokenList: jest.fn(),
+      getToken: jest.fn(),
+      startRoute: jest.fn(),
+      quote: jest.fn().mockResolvedValue({
+        fromAsset: {
+          address: '0x0000000000000000000000000000000000000000',
+          chainId: 137,
+          decimals: 18,
+          name: 'POL',
+          symbol: 'POL'
+        },
+        fromChainId: 137,
+        toAsset: {
+          address: '0x0000000000000000000000000000000000000000',
+          chainId: 4114,
+          decimals: 18,
+          name: 'cBTC',
+          symbol: 'cBTC'
+        },
+        toChainId: 4114,
+        selectedRouteSteps: [],
+        routes: []
+      }),
+      getRouteStatus: jest.fn()
+    } as unknown as SwapProvider
+
+    const executor = new SwapProviderParallelExecutor([socketProvider, squidProvider])
+    await executor.quote({
+      fromAsset: {
+        address: '0x0000000000000000000000000000000000000000',
+        chainId: 137n,
+        decimals: 18,
+        name: 'POL',
+        symbol: 'POL'
+      } as any,
+      fromChainId: 137,
+      fromTokenAddress: '0x0000000000000000000000000000000000000000',
+      toAsset: {
+        address: '0x0000000000000000000000000000000000000000',
+        chainId: 4114,
+        decimals: 18,
+        name: 'cBTC',
+        symbol: 'cBTC'
+      },
+      toChainId: 4114,
+      toTokenAddress: '0x0000000000000000000000000000000000000000',
+      fromAmount: 1n,
+      userAddress: '0x0000000000000000000000000000000000000001',
+      accountNativeBalance: 1n,
+      isWrapOrUnwrap: false,
+      nativeSymbol: 'POL',
+      sort: 'output'
+    })
+
+    expect(socketProvider.quote).not.toHaveBeenCalled()
+    expect(squidProvider.quote).toHaveBeenCalled()
+  })
 })

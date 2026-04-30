@@ -31,6 +31,7 @@ import { RequestsController } from '../requests/requests'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { SurveyController } from '../survey/survey'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
@@ -138,10 +139,31 @@ const autoLoginCtrl = new AutoLoginController(
   {},
   new InviteController({ relayerUrl, fetch, storage: storageCtrl })
 )
+const surveyCtrl = new SurveyController({
+  fetch,
+  relayerUrl,
+  storage: storageCtrl,
+  ui: uiCtrl,
+  dismissBanner: () => {}
+})
+const bannerCtrl = new BannerController(
+  storageCtrl,
+  () => ({
+    status: 'has-selected-account',
+    address: accounts[0]!.addr,
+    hasKeys: true,
+    numberOfTransactions: 0,
+    totalUsdBalance: 0,
+    isBalanceReady: true
+  }),
+  surveyCtrl,
+  '1.0.0'
+)
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  autoLogin: autoLoginCtrl
+  autoLogin: autoLoginCtrl,
+  banner: bannerCtrl
 })
 
 const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
@@ -158,7 +180,7 @@ const portfolioCtrl = new PortfolioController(
   keystore,
   relayerUrl,
   velcroUrl,
-  new BannerController(storageCtrl),
+  bannerCtrl,
   featureFlagsCtrl
 )
 

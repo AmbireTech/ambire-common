@@ -10,7 +10,10 @@ import {
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
-import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
+import {
+  BRIDGE_STATUS_INTERVAL,
+  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+} from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -278,13 +281,19 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
 const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]): number => {
   const serviceTimes: number[] = []
 
-  activeRoutes.forEach((r) =>
+  activeRoutes.forEach((r) => {
+    // for squid swaps, make the service time 10s
+    if (r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId) {
+      serviceTimes.push(BRIDGE_STATUS_INTERVAL / 1000)
+      return
+    }
+
     r.route?.userTxs.forEach((tx) => {
       if (tx.serviceTime) {
         serviceTimes.push(tx.serviceTime)
       }
     })
-  )
+  })
 
   const time = serviceTimes.sort((a, b) => a - b)[0]
   if (!time) return UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
