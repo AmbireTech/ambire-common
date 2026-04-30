@@ -173,8 +173,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   fromAmountFieldMode: 'fiat' | 'token' = 'token'
 
-  isMax: boolean = false
-
   toChainId: number | null = 1
 
   toSelectedToken: SwapAndBridgeToToken | null = null
@@ -899,27 +897,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     if (shouldSetMaxAmount) {
-      const maxTokenAmount = this.maxFromAmount
-      const maxFiatAmount = this.maxFromAmountInFiat
       const maxAmountForCurrentFieldMode =
-        this.fromAmountFieldMode === 'fiat' ? maxFiatAmount : maxTokenAmount
+        this.fromAmountFieldMode === 'fiat' ? this.maxFromAmountInFiat : this.maxFromAmount
 
       this.#setFromAmountAmount(maxAmountForCurrentFieldMode, true)
-      // Pin both representations to max regardless of active input mode.
-      this.fromAmount = maxTokenAmount
-      this.fromAmountInFiat = maxFiatAmount
-      this.isMax = true
     }
 
-    const shouldKeepMaxState = !!shouldSetMaxAmount
     if (fromAmount !== undefined) {
       this.#setFromAmountAmount(fromAmount)
-      this.isMax = shouldKeepMaxState
     }
 
     if (fromAmountInFiat !== undefined) {
       this.fromAmountInFiat = fromAmountInFiat
-      this.isMax = shouldKeepMaxState
     }
 
     if (shouldIncrementFromAmountUpdateCounter) {
@@ -952,7 +941,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
         this.fromAmountFieldMode = 'token'
-        this.isMax = false
       }
 
       // Always update to reflect portfolio amount (or other props) changes
@@ -1005,7 +993,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
     this.fromAmountFieldMode = 'token'
-    this.isMax = false
     this.toSelectedToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
