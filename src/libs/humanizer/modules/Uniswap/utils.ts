@@ -29,21 +29,8 @@ export const getUniRecipientText = (accAddr: string, recAddr: string): Humanizer
 export const joinWithAndLabel = (
   humanizations: HumanizerVisualization[][]
 ): HumanizerVisualization[] => {
-  const hiddenTokens = humanizations
-    .map((h) => h.filter(({ isHidden }) => isHidden))
-    .flat()
-    .filter((token, index, allTokens) => {
-      if (!index) return true
-      const previousToken = allTokens[index - 1]
+  const hiddenTokens = humanizations.map((h) => h.filter(({ isHidden }) => isHidden)).flat()
 
-      return !(
-        previousToken &&
-        previousToken.type === 'token' &&
-        token.type === 'token' &&
-        previousToken.address === token.address &&
-        previousToken.value === token.value
-      )
-    })
   const humanizationsWithoutHiddenTokens = humanizations
     .map((h) => h.filter(({ isHidden }) => !isHidden))
     .filter((h) => h.length)

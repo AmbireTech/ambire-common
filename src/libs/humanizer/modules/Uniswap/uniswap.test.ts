@@ -352,6 +352,7 @@ describe('uniswap', () => {
         getLabel('for'),
         getToken('0x0000000000000000000000000000000000000000', 0n),
         getToken('0x1111111111166b7fe7bd91427724b487980afc69', 0n, true),
+        getToken('0x1111111111166b7fe7bd91427724b487980afc69', 0n, true), // duplicated, but hidden
         getToken('0x5e5d19d22c85a4aef7c1fdf25fb22a5a38f71040', 0n, true),
         getToken('0x1111111111166b7fe7bd91427724b487980afc69', 0n, true)
       ]
