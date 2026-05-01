@@ -3,8 +3,18 @@ import { getAddress, ZeroAddress } from 'ethers'
 import { TokenError, TokenResult } from '../portfolio/interfaces'
 import { BalanceChange } from './submittedAccountOp'
 
-export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]) =>
-  Array.from(new Set([ZeroAddress, ...tokenAddrs].map((tokenAddr) => getAddress(tokenAddr))))
+export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =>
+  Array.from(
+    new Set(
+      [ZeroAddress, ...tokenAddrs].map((tokenAddr) => {
+        try {
+          return getAddress(tokenAddr)
+        } catch (e) {
+          return null
+        }
+      })
+    )
+  ).filter((addr) => addr !== null)
 
 const isUsableTokenResult = (error: TokenError | null | undefined, token?: TokenResult | null) =>
   !!token && error === '0x' && !!token.symbol
