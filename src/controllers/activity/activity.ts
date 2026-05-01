@@ -488,14 +488,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ) {
     await this.#initialLoadPromise
 
+    // get the latest instance just in case
     const accountOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
-
     if (!accountOp) return
 
-    // eslint-disable-next-line no-param-reassign
+    // @reassign to the object, persist later
     accountOp.balanceChanges = balanceChanges
-
-    await this.persistAccountsOps()
   }
 
   async backfillRecentMissingBalanceChanges(limitPerAccount = 10) {
@@ -509,12 +507,55 @@ export class ActivityController extends EventEmitter implements IActivityControl
         .filter((op) => typeof op.balanceChanges === 'undefined')
     )
 
-    for (const accountOp of opsToBackfill) {
-      // eslint-disable-next-line no-await-in-loop
+    const { invictusOpsToBackfill, otherOpsToBackfill } = opsToBackfill.reduce(
+      (acc, accountOp) => {
+        const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
+
+        if (network?.selectedRpcUrl.includes('invictus.ambire.com')) {
+          acc.invictusOpsToBackfill.push(accountOp)
+        } else {
+          acc.otherOpsToBackfill.push(accountOp)
+        }
+
+        return acc
+      },
+      {
+        invictusOpsToBackfill: [] as SubmittedAccountOp[],
+        otherOpsToBackfill: [] as SubmittedAccountOp[]
+      }
+    )
+
+    // invictus is reliable and requests can be batched
+    await Promise.all(
+      invictusOpsToBackfill.map((accountOp) => this.backfillAccountOpBalanceChanges(accountOp))
+    )
+
+    // we go one by one for non-invictus RPC requests as they may fail
+    // for various reasons: no batching, rpc rate limits, etc
+    for (const accountOp of otherOpsToBackfill) {
       await this.backfillAccountOpBalanceChanges(accountOp)
     }
+
+    // persist at the end to avoid concurrency issues
+    await this.persistAccountsOps()
   }
 
+  /**
+   * Use this method for updates from the UI only
+   * as we're persisting the state right after the operation
+   */
+  async backfillAccountOpBalanceChangesAndPersist(accountOp: SubmittedAccountOp) {
+    await this.backfillAccountOpBalanceChanges(accountOp)
+    await this.persistAccountsOps()
+  }
+
+  /**
+   * This method calculate the balanche changes and puts them in memory
+   * as a reference to #accountOps only.
+   * Use backfillAccountOpBalanceChangesAndPersist if you want to persist them.
+   * We have this separation in order to persist to storage only after the
+   * end of an operation
+   */
   async backfillAccountOpBalanceChanges(accountOp: SubmittedAccountOp) {
     await this.#initialLoadPromise
 
@@ -951,9 +992,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       })
     )
 
-    if (shouldEmitUpdate) {
-      await this.persistAccountsOps()
-    }
+    // todo: change this to a for loop, await each operation
 
     balanceChangesTasks.forEach(
       ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) => {
@@ -967,6 +1006,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
         )
       }
     )
+
+    // if there are balanceChangesTasks, shouldEmitUpdate will be true
+    // so they will get saved
+    if (shouldEmitUpdate) {
+      await this.persistAccountsOps()
+    }
 
     return {
       shouldEmitUpdate,
