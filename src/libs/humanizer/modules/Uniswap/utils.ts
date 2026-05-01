@@ -201,13 +201,10 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         callJ[1].address === callI[3].address &&
         UNISWAP_FEE_RECIPIENT_ADDRESSES.has(getSendRecipient(callJ) || '')
       ) {
-        if (callI[3].value! / 400n >= callJ[1].value!) {
-          callI[3].value = callI[3].value! - callJ[1].value!
-        }
         calls.splice(j, 1)
       }
 
-      if (callI && isSend(callI) && callI[1].address === ZeroAddress && callI[1].value === 0n) {
+      if (callI && isSend(callI) && callI[1].value === 0n) {
         calls.splice(i, 1)
       }
 
@@ -231,9 +228,6 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isTake(callJ) &&
         callI[3].address === callJ[1].address
       ) {
-        if (callI[3].value && callI[3].value > 0n) {
-          callI[3].value = callI[3].value > callJ[1].value! ? callI[3].value : callJ[1].value
-        }
         calls.splice(j, 1)
       }
       if (
