@@ -345,6 +345,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
+
+    // find ops with no balance changes recorded and backfill them;
+    // no need to console.log anything in the catch statement here
+    // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
+    const opsWithNoBalanceChanges = result.items.filter(
+      (op: SubmittedAccountOp) =>
+        op.status !== AccountOpStatus.BroadcastedButNotConfirmed && op.balanceChanges === undefined
+    )
+    if (opsWithNoBalanceChanges.length)
+      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
   }
 
   setDashboardBannersSeen(sessionId: string, accountAddr: string) {
@@ -544,8 +554,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * Use this method for updates from the UI only
    * as we're persisting the state right after the operation
    */
-  async backfillAccountOpBalanceChangesAndPersist(accountOp: SubmittedAccountOp) {
-    await this.backfillAccountOpBalanceChanges(accountOp)
+  async backfillAccountOpBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
+    await Promise.all(accountOps.map((accOp) => this.backfillAccountOpBalanceChanges(accOp)))
     await this.persistAccountsOps()
   }
 
