@@ -4,13 +4,14 @@ import { describe, expect } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import * as balanceChangesLib from '../../libs/accountOp/balanceChanges'
-import * as logsParser from '../../libs/logsParser/parseLogs'
-import { ZERO_ADDRESS } from '../../services/socket/constants'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import * as logsParser from '../../libs/logsParser/parseLogs'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -165,6 +166,12 @@ describe('Activity Controller ', () => {
   beforeAll(async () => {
     ;({ mainCtrl, storageCtrl, storage } = await makeMainController(async (s) => {
       await s.set('accounts', ACCOUNTS)
+      await s.set(
+        'networks',
+        Object.fromEntries(
+          predefinedNetworks.map((network) => [network.chainId.toString(), network])
+        )
+      )
     }))
     await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
   })
@@ -587,7 +594,18 @@ describe('Activity Controller ', () => {
     })
 
     test('backfills only recent missing balance changes once', async () => {
-      const { controller, sessionId } = await prepareTest()
+      const controller = new ActivityController(
+        mainCtrl.storage,
+        fetch,
+        mainCtrl.callRelayer,
+        mainCtrl.accounts,
+        mainCtrl.selectedAccount,
+        mainCtrl.providers,
+        mainCtrl.networks,
+        mainCtrl.portfolio,
+        mainCtrl.safe,
+        () => Promise.resolve()
+      )
       const provider = mainCtrl.providers.providers['1']!
       const getTransactionReceiptSpy = jest
         .spyOn(provider, 'getTransactionReceipt')
@@ -699,7 +717,7 @@ describe('Activity Controller ', () => {
 
       await controller.backfillRecentMissingBalanceChanges(3)
 
-      const items = controller.accountsOps[sessionId]!.result.items
+      const items = controller.getAccountOpsForAccount({ accountAddr: INIT_PARAMS.account })
       const backfilledSuccess = items.find((item) => item.txnId === '0xsuccess-needs-backfill')
       const resolvedFailure = items.find((item) => item.txnId === '0xfailure-needs-empty')
       const skippedOldSuccess = items.find((item) => item.txnId === '0xold-success-skipped')
@@ -734,6 +752,10 @@ describe('Activity Controller ', () => {
     })
     test('should display failed txns banners and hide them on session removal', async () => {
       const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         ...SUBMITTED_ACCOUNT_OP,
