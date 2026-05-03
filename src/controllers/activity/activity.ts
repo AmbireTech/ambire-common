@@ -494,7 +494,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     identifiedBy: AccountOpIdentifiedBy,
     accountAddr: string,
     chainId: bigint,
-    balanceChanges: BalanceChange[]
+    balanceChanges: BalanceChange[] | Error
   ) {
     await this.#initialLoadPromise
 
@@ -502,7 +502,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const accountOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
     if (!accountOp) return
 
-    // @reassign to the object, persist later
+    // if the balanceChanges end up with an error,
+    // we allow 3 retries before giving up on them and setting them to an
+    // empty array
+    if (balanceChanges instanceof Error) {
+      const balanceChangesFetchRetryCount = accountOp.balanceChangesFetchRetryCount || 0
+      accountOp.balanceChangesFetchRetryCount = balanceChangesFetchRetryCount + 1
+      if (balanceChangesFetchRetryCount >= 3) {
+        accountOp.balanceChanges = []
+      }
+      return
+    }
+
     accountOp.balanceChanges = balanceChanges
   }
 
@@ -599,6 +610,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const hasReceipt =
       accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure
     if (!hasReceipt || !accountOp.txnId) {
+      // if the status is a status without a receipt, finish balance changes
       await this.setAccountOpBalanceChanges(
         accountOp.identifiedBy,
         accountOp.accountAddr,
@@ -612,16 +624,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
     const provider = this.#providers.providers[accountOp.chainId.toString()]
 
-    if (!network || !provider) {
-      await this.setAccountOpBalanceChanges(
-        accountOp.identifiedBy,
-        accountOp.accountAddr,
-        accountOp.chainId,
-        []
-      )
-
-      return
-    }
+    // temp error, do not set balance changes to allow the system to retry
+    if (!network || !provider) return
 
     try {
       const receipts = await getAccountOpReceipts(accountOp, provider)
@@ -631,7 +635,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           accountOp.identifiedBy,
           accountOp.accountAddr,
           accountOp.chainId,
-          []
+          new Error('no receipts found')
         )
 
         return
@@ -645,7 +649,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           accountOp.identifiedBy,
           accountOp.accountAddr,
           accountOp.chainId,
-          []
+          new Error('no receipts found')
         )
 
         return
@@ -658,13 +662,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
         balanceChangeWindow.receiptBlockNumber,
         balanceChangeWindow.prevBlockNumber
       )
-    } catch (error) {
+    } catch (error: any) {
       console.log(error)
       await this.setAccountOpBalanceChanges(
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
-        []
+        error
       )
     }
   }
@@ -1002,19 +1006,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
       })
     )
 
-    // todo: change this to a for loop, await each operation
-
-    balanceChangesTasks.forEach(
-      ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) => {
-        // Do not block the status update flow on the balance diff computation.
-        void this.updateAccountOpBalanceChanges(
-          accountOp,
-          network,
-          tokenAddrs,
-          receiptBlockNumber,
-          prevBlockNumber
-        )
-      }
+    // await the balance changes before writing to storage
+    await Promise.all(
+      balanceChangesTasks.map(
+        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) =>
+          this.updateAccountOpBalanceChanges(
+            accountOp,
+            network,
+            tokenAddrs,
+            receiptBlockNumber,
+            prevBlockNumber
+          )
+      )
     )
 
     // if there are balanceChangesTasks, shouldEmitUpdate will be true
@@ -1066,13 +1069,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
 
       return balanceChanges
-    } catch (error) {
+    } catch (error: any) {
       console.log(error)
       await this.setAccountOpBalanceChanges(
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
-        []
+        error
       )
 
       return []
