@@ -203,6 +203,50 @@ describe('Activity Controller ', () => {
       ])
     })
 
+    test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
+      const { controller, sessionId } = await prepareTest()
+
+      await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(2)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(3)
+      const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
+      expect(balanceChanges).not.toBe(undefined)
+      expect(balanceChanges?.length).toBe(0)
+    })
+
     test('Pagination and filtration handled correctly', async () => {
       const { controller, sessionId } = await prepareTest()
 

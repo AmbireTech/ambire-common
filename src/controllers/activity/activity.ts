@@ -508,7 +508,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (balanceChanges instanceof Error) {
       const balanceChangesFetchRetryCount = accountOp.balanceChangesFetchRetryCount || 0
       accountOp.balanceChangesFetchRetryCount = balanceChangesFetchRetryCount + 1
-      if (balanceChangesFetchRetryCount >= 3) {
+      if (accountOp.balanceChangesFetchRetryCount >= 3) {
         accountOp.balanceChanges = []
       }
       return
