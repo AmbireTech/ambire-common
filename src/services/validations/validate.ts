@@ -92,7 +92,7 @@ const formatAddressPoisoningMatchForMessage = ({
     // keep original if checksum normalization fails
   }
 
-  const strongestSymmetricMatch = Math.min(matchedPrefixCharsCount, matchedSuffixCharsCount)
+  const strongestSymmetricMatch = Math.max(matchedPrefixCharsCount, matchedSuffixCharsCount)
   const visibleChars =
     strongestSymmetricMatch >= 5
       ? ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED
