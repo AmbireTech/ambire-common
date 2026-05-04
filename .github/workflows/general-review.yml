@@ -10,14 +10,14 @@ on:
 
 jobs:
   review:
-    # if: >-
-    #   github.event.sender.type != 'Bot' &&
-    #   (
-    #     github.event_name == 'workflow_dispatch' ||
-    #     (github.event_name == 'issue_comment' &&
-    #     contains(github.event.comment.body, '/review') &&
-    #     !contains(github.event.comment.body, '/security-review'))
-    #   )
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '/review') &&
+        !contains(github.event.comment.body, '/security-review'))
+      )
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -32,5 +32,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
           CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"
-          github_action_config.auto_review: "true"
-          github_action_config.pr_url: "https://github.com/AmbireTech/ambire-common/pull/2330"
