@@ -8,6 +8,7 @@ import {
   formatEther,
   formatUnits,
   getAddress,
+  hexlify,
   Interface,
   isAddress,
   isBytesLike,
@@ -63,6 +64,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   ISignAccountOpController,
+  HardwareWalletSigningRequest,
   SignAccountOpBanner,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
@@ -78,7 +80,12 @@ import {
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  accountOpSignableHash,
+  GasFeePayment,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
@@ -212,6 +219,32 @@ export type SignAccountOpUpdateProps = {
   accountOpData?: Partial<AccountOp>
 }
 
+function getSerializableHardwareWalletSigningData(
+  value: unknown,
+  seen = new WeakSet<object>()
+): unknown {
+  if (typeof value === 'bigint') return value.toString()
+  if (!value || typeof value !== 'object') return value
+  if (seen.has(value)) return '[Circular]'
+
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    const result = value.map((item) => getSerializableHardwareWalletSigningData(item, seen))
+    seen.delete(value)
+    return result
+  }
+
+  const result = Object.entries(value).reduce<Record<string, unknown>>((acc, [key, val]) => {
+    if (typeof val === 'function' || typeof val === 'undefined') return acc
+
+    acc[key] = getSerializableHardwareWalletSigningData(val, seen)
+    return acc
+  }, {})
+  seen.delete(value)
+  return result
+}
+
 export type OnboardingSuccessProps = {
   submittedAccountOp: SubmittedAccountOp
   accountOp: AccountOp
@@ -301,6 +334,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   bundlerSwitcher: BundlerSwitcher
 
   signedTransactionsCount: number | null = null
+
+  hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
   // We track the status of token discovery logic (main.traceCall)
   // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
@@ -517,6 +552,70 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ...this.#accountOp,
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
+    }
+  }
+
+  #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
+    this.hardwareWalletSigningRequest = request
+      ? {
+          ...request,
+          data: getSerializableHardwareWalletSigningData(request.data)
+        }
+      : null
+    this.emitUpdate()
+  }
+
+  async #withHardwareWalletSigningRequest<T>(
+    request: HardwareWalletSigningRequest | null,
+    sign: () => Promise<T>
+  ) {
+    if (!request) return sign()
+
+    this.#setHardwareWalletSigningRequest(request)
+
+    try {
+      return await sign()
+    } finally {
+      this.#setHardwareWalletSigningRequest(null)
+    }
+  }
+
+  #getExecuteSigningRequest(accountState: AccountOnchainState): HardwareWalletSigningRequest {
+    if (!accountState.isV2) {
+      return {
+        type: 'message',
+        data: {
+          message: hexlify(accountOpSignableHash(this.accountOp, this.#network.chainId))
+        }
+      }
+    }
+
+    return {
+      type: 'eip-712',
+      data: getTypedData(
+        this.#network.chainId,
+        accountState.accountAddr,
+        hexlify(accountOpSignableHash(this.accountOp, this.#network.chainId))
+      )
+    }
+  }
+
+  #get7702AuthorizationSigningRequest({
+    chainId,
+    contract,
+    nonce
+  }: {
+    chainId: bigint
+    contract: Hex
+    nonce: bigint
+  }): HardwareWalletSigningRequest {
+    return {
+      type: 'eip-7702-authorization',
+      data: {
+        chainId,
+        contract,
+        nonce
+      }
     }
   }
 
@@ -1566,6 +1665,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+    this.hardwareWalletSigningRequest = null
   }
 
   /**
@@ -2635,7 +2735,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const safeTxn = getSafeTxn(this.accountOp, accountState)
         const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
         const safeTxnHash = getSafeTxnHash(typedData)
-        const signature = (await safeSigner.signTypedData(typedData)) as Hex
+        const signature = (await this.#withHardwareWalletSigningRequest(
+          { type: 'eip-712', data: typedData },
+          () => safeSigner.signTypedData(typedData)
+        )) as Hex
         nowSignedSigs.push(signature)
 
         // all the signers that have signed
@@ -2697,12 +2800,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
+          const signer = await this.#getDefaultSigner()
           this.#updateAccountOp({
-            signature: await getExecuteSignature(
-              this.#network,
-              this.accountOp,
-              accountState,
-              await this.#getDefaultSigner()
+            signature: await this.#withHardwareWalletSigningRequest(
+              this.#getExecuteSigningRequest(accountState),
+              () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
             )
           })
         }
@@ -2721,18 +2823,22 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
 
           const signer = await this.#getDefaultSigner()
-          this.accountOp.meta.delegation = get7702Sig(
-            this.#network.chainId,
+          const authorization = {
+            chainId: this.#network.chainId,
+            contract,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
             // as the sender nonce (the curr acc) gets incremented before the
             // authrorization validation
-            accountState.eoaNonce! + 1n,
+            nonce: accountState.eoaNonce! + 1n
+          }
+          this.accountOp.meta.delegation = get7702Sig(
+            this.#network.chainId,
+            authorization.nonce,
             contract,
-            await signer.sign7702({
-              chainId: this.#network.chainId,
-              contract,
-              nonce: accountState.eoaNonce! + 1n
-            })
+            await this.#withHardwareWalletSigningRequest(
+              this.#get7702AuthorizationSigningRequest(authorization),
+              () => signer.sign7702(authorization)
+            )
           )
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
@@ -2766,15 +2872,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#network.chainId,
             this.accountKeyStoreKeys
           )
+          const authorization = {
+            chainId: this.#network.chainId,
+            contract,
+            nonce: accountState.nonce
+          }
           eip7702Auth = get7702Sig(
             this.#network.chainId,
             accountState.nonce,
             contract,
-            await signer.sign7702({
-              chainId: this.#network.chainId,
-              contract,
-              nonce: accountState.nonce
-            })
+            await this.#withHardwareWalletSigningRequest(
+              this.#get7702AuthorizationSigningRequest(authorization),
+              () => signer.sign7702(authorization)
+            )
           )
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
@@ -2791,12 +2901,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#network.chainId,
             accountState.nonce
           )
-          const epSignature = await getEIP712Signature(
-            epActivatorTypedData,
-            this.account,
-            accountState,
-            signer,
-            this.#network
+          const epSignature = await this.#withHardwareWalletSigningRequest(
+            { type: 'eip-712', data: epActivatorTypedData },
+            () =>
+              getEIP712Signature(
+                epActivatorTypedData,
+                this.account,
+                accountState,
+                signer,
+                this.#network
+              )
           )
           if (!this.accountOp.meta) {
             this.#updateAccountOp({ meta: {} })
@@ -2853,7 +2967,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.accountOp.accountAddr,
             getUserOpHash(userOperation, this.#network.chainId)
           )
-          const signature = wrapStandard(await signer.signTypedData(typedData))
+          const signature = wrapStandard(
+            await this.#withHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () =>
+              signer.signTypedData(typedData)
+            )
+          )
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
         } else {
@@ -2863,7 +2981,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             getPackedUserOp(userOperation),
             getUserOpHash(userOperation, this.#network.chainId)
           )
-          const signature = wrapUnprotected(await signer.signTypedData(typedData))
+          const signature = wrapUnprotected(
+            await this.#withHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () =>
+              signer.signTypedData(typedData)
+            )
+          )
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
         }
@@ -2882,7 +3004,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
         this.#updateAccountOp({
-          signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+          signature: await this.#withHardwareWalletSigningRequest(
+            this.#getExecuteSigningRequest(accountState),
+            () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+          )
         })
       }
 
@@ -3030,6 +3155,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = senderNonce + i
+          const isDelegationBroadcast =
+            gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
           const rawTxn = await buildRawTransaction(
             account,
             accountOp,
@@ -3037,18 +3164,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.provider,
             this.#network,
             currentNonce,
-            accountOp.gasFeePayment.broadcastOption,
+            gasFeePayment.broadcastOption,
             accountOp.calls[i]
           )
-          const signedTxn =
-            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
-              ? await signer.signTransactionTypeFour({
-                  txnRequest: rawTxn,
-                  eip7702Auth: accountOp.meta!.delegation!
-                })
-              : await signer.signRawTransaction(rawTxn)
+          const signedTxn = await this.#withHardwareWalletSigningRequest(
+            { type: 'raw-transaction', data: rawTxn },
+            () =>
+              isDelegationBroadcast
+                ? signer.signTransactionTypeFour({
+                    txnRequest: rawTxn,
+                    eip7702Auth: accountOp.meta!.delegation!
+                  })
+                : signer.signRawTransaction(rawTxn)
+          )
 
-          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
+          if (isDelegationBroadcast) {
             multipleTxnsBroadcastRes.push({
               hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
             })
@@ -3274,6 +3404,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #hwCleanup() {
+    this.hardwareWalletSigningRequest = null
+
     const paidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType
     const uniqueSigningKeys = [...new Set([this.accountOp.signingKeyType, paidByKeyType])]
 
@@ -3530,7 +3662,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
-      hasSafeApiFailed: this.hasSafeApiFailed
+      hasSafeApiFailed: this.hasSafeApiFailed,
+      hardwareWalletSigningRequest: this.hardwareWalletSigningRequest
     }
   }
 }
