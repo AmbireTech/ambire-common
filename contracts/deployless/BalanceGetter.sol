@@ -81,12 +81,14 @@ contract BalanceGetter is Simulation {
   ) public view returns (BalanceInfo[] memory) {
     uint len = tokenAddrs.length;
     BalanceInfo[] memory results = new BalanceInfo[](len);
-    
+
     for (uint256 i = 0; i < len; i++) {
       if (tokenAddrs[i] == address(0)) {
         results[i] = BalanceInfo(address(account).balance, bytes(''));
       } else {
-        try this.getERC20TokenBalance(account, IERC20(tokenAddrs[i])) returns (BalanceInfo memory balanceInfo) {
+        try this.getERC20TokenBalance(account, IERC20(tokenAddrs[i])) returns (
+          BalanceInfo memory balanceInfo
+        ) {
           results[i] = balanceInfo;
         } catch (bytes memory e) {
           results[i].error = e.length > 0 ? e : bytes('unkn');
@@ -163,6 +165,48 @@ contract BalanceGetter is Simulation {
     }
 
     afterSimulation.nonce = account.nonce();
+    if (afterSimulation.nonce != before.nonce) {
+      (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
+      afterSimulation.balances = resultsAfterSimulation;
+
+      TokenInfo[] memory deltaAfter = getDelta(
+        before.balances,
+        afterSimulation.balances,
+        tokenAddrs
+      );
+      afterSimulation.balances = deltaAfter;
+    }
+
+    return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
+  }
+
+  function simulateAndGetBalancesBySender(
+    IAmbireAccount account,
+    address[] calldata tokenAddrs,
+    Simulation.ToSimulate[] calldata toSimulate
+  )
+    external
+    returns (
+      BalancesAtNonce memory before,
+      BalancesAtNonce memory afterSimulation,
+      bytes memory /*simulationError*/,
+      uint /*gasLeft*/,
+      uint /*blockNum*/,
+      address[] memory // deltaAddressesMapping
+    )
+  {
+    (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
+    before.balances = results;
+    before.nonce = account.nonce();
+    (bool success, bytes memory err) = Simulation.simulateBySender(account, toSimulate);
+
+    if (!success) {
+      return (before, afterSimulation, err, gasleft(), block.number, deltaAddressesMapping);
+    }
+
+    // the nonce doesn't increment when using executeBySender
+    // so we hack our way out of this by always treating is as a +1 on success
+    afterSimulation.nonce = account.nonce() + 1;
     if (afterSimulation.nonce != before.nonce) {
       (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
       afterSimulation.balances = resultsAfterSimulation;

@@ -301,6 +301,22 @@ export async function getTokens(
     }))
     const [factory, factoryCalldata] = getAccountDeployParams(account)
 
+    // "abstract" chain simulation doesn't work out of the box as doing
+    // eth_call with a from address makes the solidity treat tx.origin as zero;
+    // thus, execute() reverts
+    // we do the execution with executeBySender() instead by giving the
+    // BalanceGetter.sol address account privileges (msg.sender is OK)
+    if (network.chainId === 2741n) {
+      return {
+        simulationOps,
+        result: await deployless.call(
+          'simulateAndGetBalancesBySender',
+          [accountAddr, tokenAddrs, simulationOps?.map((op) => Object.values(op))],
+          deploylessOpts
+        )
+      }
+    }
+
     return {
       simulationOps,
       result: await deployless.call(

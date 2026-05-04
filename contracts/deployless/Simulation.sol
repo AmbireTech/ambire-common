@@ -37,4 +37,22 @@ contract Simulation is Spoof {
 
     return (startingNonce, true, bytes(''));
   }
+
+  /**
+   * In order for this to work, the BalanceGetter.sol's address needs to
+   * have privileges to execute transactions on behalf of the account
+   * => use state override for that
+   */
+  function simulateBySender(
+    IAmbireAccount account,
+    ToSimulate[] calldata toSimulate
+  ) public returns (bool, bytes memory) {
+    for (uint256 i = 0; i < toSimulate.length; i++) {
+      try account.executeBySender(toSimulate[i].txns) {} catch (bytes memory err) {
+        return (false, err);
+      }
+    }
+
+    return (true, bytes(''));
+  }
 }

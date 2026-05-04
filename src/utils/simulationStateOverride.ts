@@ -1,5 +1,7 @@
 import { toBeHex } from 'ethers'
 
+import { deploylessAddr } from '@/libs/deployless/consts'
+
 import AmbireAccount from '../../contracts/compiled/AmbireAccount.json'
 import { EOA_SIMULATION_NONCE } from '../consts/deployless'
 import { privSlot } from '../libs/proxyDeploy/deploy'
@@ -15,6 +17,9 @@ export function getNotAmbireStateOverride(accountAddr: string) {
       stateDiff: {
         // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
         [privSlot(0, 'uint256', accountAddr, 'uint256')]:
+          '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        // we give the deploylessAddr privileges so executeBySender() works
+        [privSlot(0, 'uint256', deploylessAddr, 'uint256')]:
           '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
         // any number with leading zeros is not supported on some RPCs
         [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
