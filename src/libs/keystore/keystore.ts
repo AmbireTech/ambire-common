@@ -229,8 +229,6 @@ export const migrateStoredPayloadsToGCM = async (
       try {
         const isAlreadyMigrated = typeof storedSeed.seed !== 'string'
         if (isAlreadyMigrated) return storedSeed
-        if (storedSeed.seedPassphrase && typeof storedSeed.seedPassphrase === 'string')
-          return storedSeed
 
         const decryptedSeedBytes = await decryptWithKeyOld(mainKeyOld, storedSeed.seed as string)
         const decryptedSeedString = new TextDecoder().decode(decryptedSeedBytes)

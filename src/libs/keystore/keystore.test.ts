@@ -261,6 +261,21 @@ describe('Keystore lib', () => {
             TEST_MAIN_KEY_OLD.key,
             TEST_MAIN_KEY_OLD.iv
           )
+        },
+        {
+          id: 'seed-with-passphrase',
+          label: 'Recovery with Passphrase',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          seed: createLegacySeedPayload(
+            VALID_12_WORD_SEED,
+            TEST_MAIN_KEY_OLD.key,
+            TEST_MAIN_KEY_OLD.iv
+          ),
+          seedPassphrase: createLegacyTextPayload(
+            'my passphrase',
+            TEST_MAIN_KEY_OLD.key,
+            TEST_MAIN_KEY_OLD.iv
+          )
         }
       ]
 
@@ -274,9 +289,16 @@ describe('Keystore lib', () => {
       expect(result.failedMigrations).toEqual({ keyAddrs: [], seedIds: [] })
       expect(result.migratedKeys[0]!.privKey).toMatchObject({ cipherType: CIPHER })
       expect(result.migratedSeeds[0]!.seed).toMatchObject({ cipherType: CIPHER })
+      expect(result.migratedSeeds[1]!.seed).toMatchObject({ cipherType: CIPHER })
 
       const decryptedSeed = await decryptWithKey(mainKey, result.migratedSeeds[0]!.seed)
       expect(reconstructSeedFromEntropy(decryptedSeed)).toBe(VALID_12_WORD_SEED)
+
+      const decryptedSeedWithPassphrase = await decryptWithKey(
+        mainKey,
+        result.migratedSeeds[1]!.seed
+      )
+      expect(reconstructSeedFromEntropy(decryptedSeedWithPassphrase)).toBe(VALID_12_WORD_SEED)
     })
 
     test('leaves already migrated entries untouched', async () => {
