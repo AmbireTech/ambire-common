@@ -8,12 +8,10 @@ import {
   formatEther,
   formatUnits,
   getAddress,
-  hexlify,
   Interface,
   isAddress,
   isBytesLike,
   toBeHex,
-  TypedDataEncoder,
   ZeroAddress
 } from 'ethers'
 
@@ -71,7 +69,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
-import { TypedMessageUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
@@ -82,12 +80,7 @@ import { BaseAccount } from '../../libs/account/BaseAccount'
 import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
-import {
-  AccountOp,
-  accountOpSignableHash,
-  GasFeePayment,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
@@ -132,6 +125,13 @@ import {
   wrapStandard,
   wrapUnprotected
 } from '../../libs/signMessage/signMessage'
+import {
+  get7702AuthorizationSigningRequest,
+  getEIP712SigningRequest,
+  getExecuteSigningRequest,
+  getRawTransactionSigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { UserOperation } from '../../libs/userOperation/types'
@@ -218,67 +218,6 @@ export type SignAccountOpUpdateProps = {
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
   accountOpData?: Partial<AccountOp>
-}
-
-/**
- * The goal of this function is to traverse the passed value
- * and successfully parse it so a readable json
- */
-function getSerializableHardwareWalletSigningData(
-  value: unknown,
-  seen = new WeakSet<object>()
-): unknown {
-  if (typeof value === 'bigint') return value.toString()
-  if (!value || typeof value !== 'object') return value
-  if (seen.has(value)) return '[Circular]'
-
-  seen.add(value)
-
-  if (Array.isArray(value)) {
-    const result = value.map((item) => getSerializableHardwareWalletSigningData(item, seen))
-    seen.delete(value)
-    return result
-  }
-
-  const result = Object.entries(value).reduce<Record<string, unknown>>((acc, [key, val]) => {
-    if (typeof val === 'function' || typeof val === 'undefined') return acc
-
-    acc[key] = getSerializableHardwareWalletSigningData(val, seen)
-    return acc
-  }, {})
-  seen.delete(value)
-  return result
-}
-
-function getEIP712SigningRequestData(data: unknown): unknown {
-  const typedData = data as TypedMessageUserRequest['meta']['params']
-  let domainHash: Hex
-  let messageHash: Hex
-
-  try {
-    const typesWithoutDomain = Object.fromEntries(
-      Object.entries(typedData.types).filter(([typeName]) => typeName !== 'EIP712Domain')
-    )
-
-    domainHash = TypedDataEncoder.hashDomain(typedData.domain) as Hex
-    messageHash = TypedDataEncoder.hashStruct(
-      typedData.primaryType,
-      typesWithoutDomain,
-      typedData.message
-    ) as Hex
-  } catch {
-    return data
-  }
-
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { data, domainHash, messageHash }
-  }
-
-  return {
-    ...data,
-    domainHash,
-    messageHash
-  }
 }
 
 export type OnboardingSuccessProps = {
@@ -592,12 +531,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
-    const requestData =
-      request?.type === 'eip-712' ? getEIP712SigningRequestData(request.data) : request?.data
     let serializedRequestData: unknown = null
 
     try {
-      serializedRequestData = getSerializableHardwareWalletSigningData(requestData)
+      if (request) serializedRequestData = getSigningRequestDisplayData(request)
     } catch {
       serializedRequestData = null
     }
@@ -624,45 +561,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return await sign()
     } finally {
       this.#setHardwareWalletSigningRequest(null)
-    }
-  }
-
-  #getExecuteSigningRequest(accountState: AccountOnchainState): HardwareWalletSigningRequest {
-    if (!accountState.isV2) {
-      return {
-        type: 'message',
-        data: {
-          message: hexlify(accountOpSignableHash(this.accountOp, this.#network.chainId))
-        }
-      }
-    }
-
-    return {
-      type: 'eip-712',
-      data: getTypedData(
-        this.#network.chainId,
-        accountState.accountAddr,
-        hexlify(accountOpSignableHash(this.accountOp, this.#network.chainId))
-      )
-    }
-  }
-
-  #get7702AuthorizationSigningRequest({
-    chainId,
-    contract,
-    nonce
-  }: {
-    chainId: bigint
-    contract: Hex
-    nonce: bigint
-  }): HardwareWalletSigningRequest {
-    return {
-      type: 'eip-7702-authorization',
-      data: {
-        chainId,
-        contract,
-        nonce
-      }
     }
   }
 
@@ -2783,7 +2681,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
         const safeTxnHash = getSafeTxnHash(typedData)
         const signature = (await this.#withHardwareWalletSigningRequest(
-          { type: 'eip-712', data: { ...typedData, safeTxHash: safeTxnHash } },
+          getEIP712SigningRequest({ ...typedData, safeTxHash: safeTxnHash }),
           () => safeSigner.signTypedData(typedData)
         )) as Hex
         nowSignedSigs.push(signature)
@@ -2850,7 +2748,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signer = await this.#getDefaultSigner()
           this.#updateAccountOp({
             signature: await this.#withHardwareWalletSigningRequest(
-              this.#getExecuteSigningRequest(accountState),
+              getExecuteSigningRequest({
+                accountOp: this.accountOp,
+                accountState,
+                network: this.#network
+              }),
               () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
             )
           })
@@ -2883,7 +2785,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             authorization.nonce,
             contract,
             await this.#withHardwareWalletSigningRequest(
-              this.#get7702AuthorizationSigningRequest(authorization),
+              get7702AuthorizationSigningRequest(authorization),
               () => signer.sign7702(authorization)
             )
           )
@@ -2929,7 +2831,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             accountState.nonce,
             contract,
             await this.#withHardwareWalletSigningRequest(
-              this.#get7702AuthorizationSigningRequest(authorization),
+              get7702AuthorizationSigningRequest(authorization),
               () => signer.sign7702(authorization)
             )
           )
@@ -2949,7 +2851,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             accountState.nonce
           )
           const epSignature = await this.#withHardwareWalletSigningRequest(
-            { type: 'eip-712', data: epActivatorTypedData },
+            getEIP712SigningRequest(epActivatorTypedData),
             () =>
               getEIP712Signature(
                 epActivatorTypedData,
@@ -3015,7 +2917,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             getUserOpHash(userOperation, this.#network.chainId)
           )
           const signature = wrapStandard(
-            await this.#withHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () =>
+            await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
               signer.signTypedData(typedData)
             )
           )
@@ -3029,7 +2931,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             getUserOpHash(userOperation, this.#network.chainId)
           )
           const signature = wrapUnprotected(
-            await this.#withHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () =>
+            await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
               signer.signTypedData(typedData)
             )
           )
@@ -3052,7 +2954,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         this.#updateAccountOp({
           signature: await this.#withHardwareWalletSigningRequest(
-            this.#getExecuteSigningRequest(accountState),
+            getExecuteSigningRequest({
+              accountOp: this.accountOp,
+              accountState,
+              network: this.#network
+            }),
             () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
           )
         })
@@ -3215,7 +3121,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             accountOp.calls[i]
           )
           const signedTxn = await this.#withHardwareWalletSigningRequest(
-            { type: 'raw-transaction', data: rawTxn },
+            getRawTransactionSigningRequest(rawTxn),
             () =>
               isDelegationBroadcast
                 ? signer.signTransactionTypeFour({
