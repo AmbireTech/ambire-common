@@ -1,4 +1,10 @@
-import { isAddress, toBeHex } from 'ethers'
+import { toBeHex } from 'ethers'
+
+import {
+  getAddressPoisoningMatchCounts,
+  pickBetterPoisoningMatch,
+  ScoredAddressPoisoningMatch
+} from '@/libs/transfer/address-poisoning'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -74,54 +80,6 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     itemsTotal: items.length,
     currentPage: fromPage, // zero/index based
     maxPages: Math.ceil(items.length / itemsPerPage)
-  }
-}
-
-// Address poisoning lookalikes usually preserve a few consecutive chars from the left and/or
-// right side of the original address. We consider any recipient with at least 8 matched chars
-// in total as suspicious, while still keeping the exact prefix/suffix counts so downstream UI
-// can render the true shape of the match (for example 6-left / 5-right or even 0-left / 8-right).
-const MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS = 8
-
-const getAddressPoisoningMatchCounts = (candidate: string, trustedAddress: string) => {
-  const normalizedCandidate = candidate.toLowerCase()
-  const normalizedTrustedAddress = trustedAddress.toLowerCase()
-
-  if (
-    !isAddress(normalizedCandidate) ||
-    !isAddress(normalizedTrustedAddress) ||
-    normalizedCandidate === normalizedTrustedAddress
-  ) {
-    return null
-  }
-
-  const candidateBody = normalizedCandidate.slice(2)
-  const trustedAddressBody = normalizedTrustedAddress.slice(2)
-  let matchedPrefixCharsCount = 0
-  let matchedSuffixCharsCount = 0
-
-  while (
-    matchedPrefixCharsCount < candidateBody.length &&
-    candidateBody[matchedPrefixCharsCount] === trustedAddressBody[matchedPrefixCharsCount]
-  ) {
-    matchedPrefixCharsCount += 1
-  }
-
-  while (
-    matchedSuffixCharsCount < candidateBody.length - matchedPrefixCharsCount &&
-    candidateBody[candidateBody.length - 1 - matchedSuffixCharsCount] ===
-      trustedAddressBody[trustedAddressBody.length - 1 - matchedSuffixCharsCount]
-  ) {
-    matchedSuffixCharsCount += 1
-  }
-
-  if (matchedPrefixCharsCount + matchedSuffixCharsCount < MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS) {
-    return null
-  }
-
-  return {
-    matchedPrefixCharsCount,
-    matchedSuffixCharsCount
   }
 }
 
@@ -273,45 +231,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let found = false
     let lastTimestamp: number | null = null
     const normalizedToAddress = toAddress.toLowerCase()
-    let bestPoisoningMatch: (AddressPoisoningMatch & { lastInteractedAt: number | null }) | null =
-      null
+    let bestPoisoningMatch: ScoredAddressPoisoningMatch | null = null
 
     const updatePoisoningMatch = (address: string, lastInteractedAt: number | null = null) => {
       const matchCounts = getAddressPoisoningMatchCounts(toAddress, address)
 
       if (!matchCounts) return
 
-      const totalMatchedChars =
-        matchCounts.matchedPrefixCharsCount + matchCounts.matchedSuffixCharsCount
-      const bestTotalMatchedChars = bestPoisoningMatch
-        ? bestPoisoningMatch.matchedPrefixCharsCount + bestPoisoningMatch.matchedSuffixCharsCount
-        : -1
-      const weakestSideMatch = Math.min(
-        matchCounts.matchedPrefixCharsCount,
-        matchCounts.matchedSuffixCharsCount
-      )
-      const bestWeakestSideMatch = bestPoisoningMatch
-        ? Math.min(
-            bestPoisoningMatch.matchedPrefixCharsCount,
-            bestPoisoningMatch.matchedSuffixCharsCount
-          )
-        : -1
-
-      if (
-        !bestPoisoningMatch ||
-        totalMatchedChars > bestTotalMatchedChars ||
-        (totalMatchedChars === bestTotalMatchedChars && weakestSideMatch > bestWeakestSideMatch) ||
-        (totalMatchedChars === bestTotalMatchedChars &&
-          weakestSideMatch === bestWeakestSideMatch &&
-          (lastInteractedAt ?? -1) > (bestPoisoningMatch.lastInteractedAt ?? -1))
-      ) {
-        bestPoisoningMatch = {
-          matchedAddress: address,
-          matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
-          matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
-          lastInteractedAt
-        }
-      }
+      bestPoisoningMatch = pickBetterPoisoningMatch(bestPoisoningMatch, {
+        matchedAddress: address,
+        matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
+        matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
+        lastInteractedAt
+      })
     }
 
     // Address poisoning compares the new recipient against two trusted sources:
@@ -353,9 +285,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     let addressPoisoningMatch: AddressPoisoningMatch | null = null
     if (!found && bestPoisoningMatch) {
-      const currentBestPoisoningMatch = bestPoisoningMatch as AddressPoisoningMatch & {
-        lastInteractedAt: number | null
-      }
+      const currentBestPoisoningMatch = bestPoisoningMatch as ScoredAddressPoisoningMatch
       addressPoisoningMatch = {
         matchedAddress: currentBestPoisoningMatch.matchedAddress,
         matchedPrefixCharsCount: currentBestPoisoningMatch.matchedPrefixCharsCount,
