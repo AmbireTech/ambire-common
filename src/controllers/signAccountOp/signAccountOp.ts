@@ -64,8 +64,8 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  ISignAccountOpController,
   HardwareWalletSigningRequest,
+  ISignAccountOpController,
   SignAccountOpBanner,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
@@ -79,6 +79,7 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
+import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
 import {
@@ -158,7 +159,6 @@ import {
   getUnknownTokenWarning,
   SignAccountOpType
 } from './helper'
-import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -220,6 +220,10 @@ export type SignAccountOpUpdateProps = {
   accountOpData?: Partial<AccountOp>
 }
 
+/**
+ * The goal of this function is to traverse the passed value
+ * and successfully parse it so a readable json
+ */
 function getSerializableHardwareWalletSigningData(
   value: unknown,
   seen = new WeakSet<object>()
@@ -590,13 +594,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
     const requestData =
       request?.type === 'eip-712' ? getEIP712SigningRequestData(request.data) : request?.data
+    let serializedRequestData: unknown = null
 
-    this.hardwareWalletSigningRequest = request
-      ? {
-          ...request,
-          data: getSerializableHardwareWalletSigningData(requestData)
-        }
-      : null
+    try {
+      serializedRequestData = getSerializableHardwareWalletSigningData(requestData)
+    } catch {
+      serializedRequestData = null
+    }
+
+    this.hardwareWalletSigningRequest =
+      request && serializedRequestData !== null
+        ? {
+            ...request,
+            data: serializedRequestData
+          }
+        : null
     this.emitUpdate()
   }
 
