@@ -1018,18 +1018,23 @@ export class ActivityController extends EventEmitter implements IActivityControl
   getAccountOpsForAccount({
     accountAddr = this.#selectedAccount.account?.addr,
     from,
-    numberOfItems
+    numberOfItems,
+    // added so the logic in the survey controller does not get heavy for accs with a lot of txns
+    sortAccOps = true
   }: {
     accountAddr?: string
-    from: number
-    numberOfItems: number
+    from?: number
+    numberOfItems?: number
+    sortAccOps?: boolean
   }) {
     if (!accountAddr) return []
 
-    return Object.values(this.#accountsOps[accountAddr] || {})
-      .flat()
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(from, from + numberOfItems)
+    let allAccountOps = Object.values(this.#accountsOps[accountAddr] || {}).flat()
+    if (sortAccOps) allAccountOps = allAccountOps.sort((a, b) => b.timestamp - a.timestamp)
+
+    if (typeof from === 'number' && typeof numberOfItems === 'number')
+      return allAccountOps.slice(from, from + numberOfItems)
+    return allAccountOps
   }
 
   toJSON() {
