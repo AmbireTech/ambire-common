@@ -52,7 +52,7 @@ describe('SquidAPI', () => {
           requestId: '1fb4fc49521869cc7dfb7e6065a05c94',
           routeId: '1fb4fc49521869cc7dfb7e6065a05c94'
         })
-      ).resolves.toEqual({ routeStatus: null })
+      ).resolves.toBe(null)
     })
   })
 })

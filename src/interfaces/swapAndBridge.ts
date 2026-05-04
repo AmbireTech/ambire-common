@@ -329,7 +329,6 @@ export type SwapAndBridgeActiveRoute = {
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
   identifiedBy: AccountOpIdentifiedBy | null
-  explorerUrl?: string
   route?: SwapAndBridgeRoute & {
     routeStatus: string
     fromChainId: number
