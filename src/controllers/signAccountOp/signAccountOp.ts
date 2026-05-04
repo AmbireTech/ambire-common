@@ -248,6 +248,7 @@ function getSerializableHardwareWalletSigningData(
 
 function getEIP712SigningRequestData(data: unknown): unknown {
   const typedData = data as TypedMessageUserRequest['meta']['params']
+  let domainHash: Hex
   let messageHash: Hex
 
   try {
@@ -255,6 +256,7 @@ function getEIP712SigningRequestData(data: unknown): unknown {
       Object.entries(typedData.types).filter(([typeName]) => typeName !== 'EIP712Domain')
     )
 
+    domainHash = TypedDataEncoder.hashDomain(typedData.domain) as Hex
     messageHash = TypedDataEncoder.hashStruct(
       typedData.primaryType,
       typesWithoutDomain,
@@ -265,11 +267,12 @@ function getEIP712SigningRequestData(data: unknown): unknown {
   }
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { data, messageHash }
+    return { data, domainHash, messageHash }
   }
 
   return {
     ...data,
+    domainHash,
     messageHash
   }
 }
