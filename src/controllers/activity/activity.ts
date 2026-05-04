@@ -517,50 +517,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     accountOp.balanceChanges = balanceChanges
   }
 
-  async backfillRecentMissingBalanceChanges(limitPerAccount = 10) {
-    await this.#initialLoadPromise
-
-    const opsToBackfill = Object.keys(this.#accountsOps).flatMap((accountAddr) =>
-      Object.values(this.#accountsOps[accountAddr] || {})
-        .flat()
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, limitPerAccount)
-        .filter((op) => typeof op.balanceChanges === 'undefined')
-    )
-
-    const { invictusOpsToBackfill, otherOpsToBackfill } = opsToBackfill.reduce(
-      (acc, accountOp) => {
-        const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
-
-        if (network?.selectedRpcUrl.includes('invictus.ambire.com')) {
-          acc.invictusOpsToBackfill.push(accountOp)
-        } else {
-          acc.otherOpsToBackfill.push(accountOp)
-        }
-
-        return acc
-      },
-      {
-        invictusOpsToBackfill: [] as SubmittedAccountOp[],
-        otherOpsToBackfill: [] as SubmittedAccountOp[]
-      }
-    )
-
-    // invictus is reliable and requests can be batched
-    await Promise.all(
-      invictusOpsToBackfill.map((accountOp) => this.backfillAccountOpBalanceChanges(accountOp))
-    )
-
-    // we go one by one for non-invictus RPC requests as they may fail
-    // for various reasons: no batching, rpc rate limits, etc
-    for (const accountOp of otherOpsToBackfill) {
-      await this.backfillAccountOpBalanceChanges(accountOp)
-    }
-
-    // persist at the end to avoid concurrency issues
-    await this.persistAccountsOps()
-  }
-
   /**
    * Use this method for updates from the UI only
    * as we're persisting the state right after the operation

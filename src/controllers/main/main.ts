@@ -643,8 +643,6 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.storage.backfillAccountOpBalanceChangesMigration(this.activity)
         this.fetchSafeTxns().catch((e) => e) // we catch the error inside
       }
     })

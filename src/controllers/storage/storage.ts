@@ -1,7 +1,6 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
-import { IActivityController } from '../../interfaces/activity'
 import { Dapp } from '../../interfaces/dapp'
 import { EmailVaultData } from '../../interfaces/emailVault'
 /* eslint-disable no-restricted-syntax */
@@ -33,8 +32,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
   #storageUpdateQueue: Promise<void> = Promise.resolve()
 
   #associateAccountKeysWithLegacySavedSeedMigrationPassed: boolean = false
-
-  #backfillAccountOpBalanceChangesMigrationPromise?: Promise<void>
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -538,27 +535,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
         ),
       true
     )
-  }
-
-  async backfillAccountOpBalanceChangesMigration(activity: IActivityController) {
-    if (this.#backfillAccountOpBalanceChangesMigrationPromise) {
-      return this.#backfillAccountOpBalanceChangesMigrationPromise
-    }
-
-    this.#backfillAccountOpBalanceChangesMigrationPromise = (async () => {
-      const passedMigrations = await this.#storage.get('passedMigrations', [])
-      const migrationId = 'backfillAccountOpBalanceChanges'
-
-      if (passedMigrations.includes(migrationId)) return
-
-      await activity.backfillRecentMissingBalanceChanges(10)
-
-      await this.#storage.set('passedMigrations', [...new Set([...passedMigrations, migrationId])])
-    })().finally(() => {
-      this.#backfillAccountOpBalanceChangesMigrationPromise = undefined
-    })
-
-    return this.#backfillAccountOpBalanceChangesMigrationPromise
   }
 
   /**

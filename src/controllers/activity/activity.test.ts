@@ -7,10 +7,8 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
-import * as balanceChangesLib from '../../libs/accountOp/balanceChanges'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import * as logsParser from '../../libs/logsParser/parseLogs'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
@@ -637,144 +635,6 @@ describe('Activity Controller ', () => {
       ])
     })
 
-    test('backfills only recent missing balance changes once', async () => {
-      const controller = new ActivityController(
-        mainCtrl.storage,
-        fetch,
-        mainCtrl.callRelayer,
-        mainCtrl.accounts,
-        mainCtrl.selectedAccount,
-        mainCtrl.providers,
-        mainCtrl.networks,
-        mainCtrl.portfolio,
-        mainCtrl.safe,
-        () => Promise.resolve()
-      )
-      const provider = mainCtrl.providers.providers['1']!
-      const getTransactionReceiptSpy = jest
-        .spyOn(provider, 'getTransactionReceipt')
-        .mockImplementation(async () =>
-          buildMockReceipt({
-            blockNumber: 123,
-            blockHash: '0xblockhash',
-            gasUsed: 1n,
-            logs: [],
-            status: 1
-          })
-        )
-      const getTransferLogTokensSpy = jest
-        .spyOn(logsParser, 'getTransferLogTokens')
-        .mockResolvedValue([])
-      const getAccountOpBalanceChangesSpy = jest
-        .spyOn(balanceChangesLib, 'getAccountOpBalanceChanges')
-        .mockResolvedValue([
-          {
-            symbol: 'ETH',
-            name: 'Ethereum',
-            decimals: 18,
-            address: ZERO_ADDRESS,
-            chainId: 1n,
-            amount: 8n,
-            amountBefore: 10n,
-            amountAfter: 8n,
-            balanceChange: -2n,
-            priceIn: [],
-            marketDataIn: [],
-            flags: {
-              onGasTank: false,
-              rewardsType: null,
-              canTopUpGasTank: false,
-              isFeeToken: false
-            }
-          }
-        ])
-
-      const oldSuccessMissing = {
-        ...SUBMITTED_ACCOUNT_OP,
-        txnId: '0xold-success-skipped',
-        identifiedBy: {
-          type: 'Transaction',
-          identifier: '0xold-success-skipped'
-        },
-        status: AccountOpStatus.Success,
-        timestamp: 1
-      } as submittedAccountOp.SubmittedAccountOp
-
-      const recentSuccessExisting = {
-        ...SUBMITTED_ACCOUNT_OP,
-        txnId: '0xsuccess-existing',
-        identifiedBy: {
-          type: 'Transaction',
-          identifier: '0xsuccess-existing'
-        },
-        status: AccountOpStatus.Success,
-        balanceChanges: [
-          {
-            symbol: 'ETH',
-            name: 'Ethereum',
-            decimals: 18,
-            address: ZERO_ADDRESS,
-            chainId: 1n,
-            amount: 8n,
-            amountBefore: 10n,
-            amountAfter: 8n,
-            balanceChange: -2n,
-            priceIn: [],
-            marketDataIn: [],
-            flags: {
-              onGasTank: false,
-              rewardsType: null,
-              canTopUpGasTank: false,
-              isFeeToken: false
-            }
-          }
-        ],
-        timestamp: 2
-      } as submittedAccountOp.SubmittedAccountOp
-
-      const recentFailureMissing = {
-        ...SUBMITTED_ACCOUNT_OP,
-        txnId: '0xfailure-needs-empty',
-        identifiedBy: {
-          type: 'Transaction',
-          identifier: '0xfailure-needs-empty'
-        },
-        status: AccountOpStatus.Failure,
-        timestamp: 3
-      } as submittedAccountOp.SubmittedAccountOp
-
-      const recentSuccessMissing = {
-        ...SUBMITTED_ACCOUNT_OP,
-        txnId: '0xsuccess-needs-backfill',
-        identifiedBy: {
-          type: 'Transaction',
-          identifier: '0xsuccess-needs-backfill'
-        },
-        status: AccountOpStatus.Success,
-        timestamp: 4
-      } as submittedAccountOp.SubmittedAccountOp
-
-      await controller.addAccountOp(oldSuccessMissing)
-      await controller.addAccountOp(recentSuccessExisting)
-      await controller.addAccountOp(recentFailureMissing)
-      await controller.addAccountOp(recentSuccessMissing)
-
-      await controller.backfillRecentMissingBalanceChanges(3)
-
-      const items = controller.getAccountOpsForAccount({ accountAddr: INIT_PARAMS.account })
-      const backfilledSuccess = items.find((item) => item.txnId === '0xsuccess-needs-backfill')
-      const resolvedFailure = items.find((item) => item.txnId === '0xfailure-needs-empty')
-      const skippedOldSuccess = items.find((item) => item.txnId === '0xold-success-skipped')
-      const existingSuccess = items.find((item) => item.txnId === '0xsuccess-existing')
-
-      expect(getTransactionReceiptSpy).toHaveBeenCalledWith('0xsuccess-needs-backfill')
-      expect(getTransferLogTokensSpy).toHaveBeenCalled()
-      expect(getAccountOpBalanceChangesSpy).toHaveBeenCalled()
-      expect(backfilledSuccess?.balanceChanges).toBeDefined()
-      expect(resolvedFailure?.balanceChanges).toBeDefined()
-      expect(existingSuccess?.balanceChanges).toEqual(recentSuccessExisting.balanceChanges)
-      expect(skippedOldSuccess?.balanceChanges).toBeUndefined()
-    })
     test('should display pending txns banners', async () => {
       const { controller } = await prepareTest()
 
