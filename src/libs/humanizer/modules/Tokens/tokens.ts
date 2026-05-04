@@ -80,10 +80,11 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   const newCalls = currentIrCalls.map((call) => {
     if (!call.to) return call
     // could do additional check if it is actually NFT contract
-    return matcher[call.data.substring(0, 10)]
+    const selector = call.data.substring(0, 10)
+    return matcher[selector]
       ? {
           ...call,
-          fullVisualization: matcher[call.data.substring(0, 10)]!(call)
+          fullVisualization: matcher[selector](call)
         }
       : call
   })
@@ -102,10 +103,7 @@ export const genericErc20Humanizer = (
         ? [
             getAction('Grant approval'),
             getLabel('for'),
-            getToken(call.to, args[1], undefined, undefined, {
-              callId: call.id,
-              spenderAddr: args[0]
-            }),
+            getToken(call.to, args[1]),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]
