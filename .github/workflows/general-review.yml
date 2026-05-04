@@ -1,9 +1,8 @@
 name: PR Agent - General Review
 
 on:
-  push:
-    branches:
-      - feature/ai-reviews
+  pull_request:
+    types: [opened, synchronize, labeled]
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -11,13 +10,11 @@ on:
 jobs:
   review:
     if: >-
-      github.event.sender.type != 'Bot' &&
-      (
-        github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'issue_comment' &&
-        contains(github.event.comment.body, '/review') &&
-        !contains(github.event.comment.body, '/security-review'))
-      )
+      (github.event.action == 'labeled' && github.event.label.name == 'review') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.sender.type != 'Bot' && 
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '/review'))
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -32,3 +29,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
           CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"
+          # Without auto_review=true we cannot have triggers such as
+          # workflow_dispatch and PR label
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "false"

@@ -1,14 +1,20 @@
 name: PR Agent - Security Review
 
 on:
+  pull_request:
+    types: [opened, synchronize, labeled]
   issue_comment:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   security_review:
     if: >-
-      github.event.sender.type != 'Bot' &&
-      contains(github.event.comment.body, '/security-review')
+      (github.event.action == 'labeled' && github.event.label.name == 'security-review') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.sender.type != 'Bot' && 
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '/security-review'))
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -35,6 +41,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
           CONFIG__MODEL: "openrouter/anthropic/claude-opus-4.7"
+          # Without auto_review=true we cannot have triggers such as
+          # workflow_dispatch and PR label
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "false"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: |
            You are reviewing changes in a security-sensitive Web3 browser extension wallet. Focus exclusively on security, privacy, and compliance risks. Ignore style, performance, or general quality issues unless they have direct security impact.
 
