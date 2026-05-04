@@ -800,6 +800,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#maxFeeReservation = null
   }
 
+  /**
+   * Get an unique key to know when to change the calculations
+   */
   #getMaxFeeReservationKey() {
     const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
     const selectedFeeOption = this.signAccountOpController?.selectedOption
@@ -819,6 +822,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     ].join(':')
   }
 
+  /**
+   * The MAX amount you can set was reacting to every small fee estimate change.
+   * When ARB was both the transfer token and fee token, that created a feedback cycle:
+   * fee changes amount, amount re-estimates fee, repeat.
+   * We're changing the MAX same-token fee reservation to keep the highest fee seen for
+   * the current fee token/payer/speed, so the amount can decrease to remain safe
+   * but won’t bounce back upward and retrigger the loop.
+   */
   #getMaxReservedFeeAmount(feeAmount: bigint) {
     const key = this.#getMaxFeeReservationKey()
     if (!key) return feeAmount
