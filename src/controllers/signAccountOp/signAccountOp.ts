@@ -13,6 +13,7 @@ import {
   isAddress,
   isBytesLike,
   toBeHex,
+  TypedDataEncoder,
   ZeroAddress
 } from 'ethers'
 
@@ -70,7 +71,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
-import { UserRequest } from '../../interfaces/userRequest'
+import { TypedMessageUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
@@ -243,6 +244,34 @@ function getSerializableHardwareWalletSigningData(
   }, {})
   seen.delete(value)
   return result
+}
+
+function getEIP712SigningRequestData(data: unknown): unknown {
+  const typedData = data as TypedMessageUserRequest['meta']['params']
+  let messageHash: Hex
+
+  try {
+    const typesWithoutDomain = Object.fromEntries(
+      Object.entries(typedData.types).filter(([typeName]) => typeName !== 'EIP712Domain')
+    )
+
+    messageHash = TypedDataEncoder.hashStruct(
+      typedData.primaryType,
+      typesWithoutDomain,
+      typedData.message
+    ) as Hex
+  } catch {
+    return data
+  }
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { data, messageHash }
+  }
+
+  return {
+    ...data,
+    messageHash
+  }
 }
 
 export type OnboardingSuccessProps = {
@@ -556,10 +585,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
+    const requestData =
+      request?.type === 'eip-712' ? getEIP712SigningRequestData(request.data) : request?.data
+
     this.hardwareWalletSigningRequest = request
       ? {
           ...request,
-          data: getSerializableHardwareWalletSigningData(request.data)
+          data: getSerializableHardwareWalletSigningData(requestData)
         }
       : null
     this.emitUpdate()
