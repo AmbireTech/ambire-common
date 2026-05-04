@@ -2771,7 +2771,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
         const safeTxnHash = getSafeTxnHash(typedData)
         const signature = (await this.#withHardwareWalletSigningRequest(
-          { type: 'eip-712', data: typedData },
+          { type: 'eip-712', data: { ...typedData, safeTxHash: safeTxnHash } },
           () => safeSigner.signTypedData(typedData)
         )) as Hex
         nowSignedSigs.push(signature)
