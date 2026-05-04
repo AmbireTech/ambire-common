@@ -216,7 +216,8 @@ describe('Portfolio', () => {
         await providerArbitrum.getTransactionCount('0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA')
       ),
       signature: spoofSig,
-      calls: [{ to: '0xA245fe89Af4573Bc53f4BeA5Ae4c38db431d9123', value: BigInt(0), data }]
+      calls: [{ to: '0xA245fe89Af4573Bc53f4BeA5Ae4c38db431d9123', value: BigInt(0), data }],
+      id: 'test-id'
     }
     const account = {
       addr: '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',

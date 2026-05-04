@@ -37,6 +37,7 @@ import {
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
+import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
@@ -236,7 +237,10 @@ export const getIsTokenEligibleForSwapAndBridge = (
     // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
     !token.flags.onGasTank &&
     // And exclude the rewards ones (swapping rewards is not supported).
-    !token.flags.rewardsType
+    !token.flags.rewardsType &&
+    // Borrow tokens (e.g. variableDebt tokens) are protocol accounting assets
+    // and are not transferable/swappable by design.
+    token.flags.defiTokenType !== AssetType.Borrow
 
   if (!requirePositiveBalance) {
     return flagsRequirement
