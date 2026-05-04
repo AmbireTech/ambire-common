@@ -1,9 +1,6 @@
 name: PR Agent - General Review
 
 on:
-  push:
-    branches:
-      - feature/ai-reviews
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -12,8 +9,12 @@ jobs:
   review:
     if: >-
       github.event.sender.type != 'Bot' &&
-      contains(github.event.comment.body, '/review') &&
-      !contains(github.event.comment.body, '/security-review')
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '/review') &&
+        !contains(github.event.comment.body, '/security-review'))
+      )
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
