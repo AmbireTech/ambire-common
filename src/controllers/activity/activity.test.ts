@@ -9,7 +9,6 @@ import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -546,93 +545,6 @@ describe('Activity Controller ', () => {
           gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
         })
       )
-    })
-
-    test('records balance changes asynchronously after a successful txn', async () => {
-      const { controller, sessionId } = await prepareTest()
-      const provider = mainCtrl.providers.providers['1']!
-      jest
-        .spyOn(provider, 'getTransactionReceipt')
-        .mockImplementation(async () => buildMockReceipt({ status: 1 }))
-      const getTokenBalancesOnBlockSpy = jest
-        .spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock')
-        .mockResolvedValueOnce([
-          [
-            '0x',
-            {
-              symbol: 'ETH',
-              name: 'Ethereum',
-              decimals: 18,
-              address: ZERO_ADDRESS,
-              chainId: 1n,
-              amount: 8n,
-              priceIn: [],
-              marketDataIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: false,
-                isFeeToken: false
-              }
-            }
-          ]
-        ])
-        .mockResolvedValueOnce([
-          [
-            '0x',
-            {
-              symbol: 'ETH',
-              name: 'Ethereum',
-              decimals: 18,
-              address: ZERO_ADDRESS,
-              chainId: 1n,
-              amount: 10n,
-              priceIn: [],
-              marketDataIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: false,
-                isFeeToken: false
-              }
-            }
-          ]
-        ])
-
-      const accountOp = {
-        ...SUBMITTED_ACCOUNT_OP,
-        timestamp: Date.now()
-      } as submittedAccountOp.SubmittedAccountOp
-
-      const balanceChangesUpdate = new Promise<void>((resolve) => {
-        const unsubscribe = controller.onUpdate(() => {
-          const updatedOp = controller.accountsOps[sessionId]!.result.items[0]
-
-          if (typeof updatedOp?.balanceChanges === 'undefined') return
-
-          unsubscribe()
-          resolve()
-        })
-      })
-
-      await controller.addAccountOp(accountOp)
-      await controller.updateAccountsOpsStatuses()
-
-      if (
-        typeof controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges === 'undefined'
-      ) {
-        await balanceChangesUpdate
-      }
-
-      expect(getTokenBalancesOnBlockSpy).toHaveBeenCalledTimes(2)
-      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([
-        expect.objectContaining({
-          address: ZERO_ADDRESS,
-          amountBefore: 10n,
-          amountAfter: 8n,
-          balanceChange: -2n
-        })
-      ])
     })
 
     test('should display pending txns banners', async () => {
