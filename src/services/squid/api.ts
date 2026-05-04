@@ -12,7 +12,6 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
-  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -456,7 +455,7 @@ export class SquidAPI implements SwapProvider {
     toChainId: number
     requestId?: string
     routeId?: string
-  }): Promise<SwapAndBridgeRouteStatusResult> {
+  }): Promise<SwapAndBridgeRouteStatus> {
     this.#ensureIntegratorId()
 
     const params = new URLSearchParams({
@@ -477,7 +476,7 @@ export class SquidAPI implements SwapProvider {
     })
 
     if (isTransientSquidStatusNotFound(response as SquidErrorResponse)) {
-      return { routeStatus: null }
+      return null
     }
 
     const statusResponse = response as SquidStatusResponse
@@ -491,13 +490,6 @@ export class SquidAPI implements SwapProvider {
     if (status === 'success' || status === 'partial_success') routeStatus = 'completed'
     if (status === 'refund') routeStatus = 'refunded'
 
-    return {
-      routeStatus,
-      explorerUrl:
-        statusResponse.coralTransactionUrl ||
-        statusResponse.axelarTransactionUrl ||
-        statusResponse.toChain?.transactionUrl ||
-        statusResponse.fromChain?.transactionUrl
-    }
+    return routeStatus
   }
 }
