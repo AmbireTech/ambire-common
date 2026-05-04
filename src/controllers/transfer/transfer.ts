@@ -493,6 +493,23 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.emitUpdate()
   }
 
+  #fetchRecipientAccountStateIfNeeded() {
+    if (!this.isInitialized) return
+
+    const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
+    if (recipientAcc && this.selectedToken?.chainId) {
+      const state =
+        this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
+      if (!state) {
+        this.#accounts
+          .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
+          .catch((e) => {
+            console.log('Failed to get the account on chain state:', e)
+          })
+      }
+    }
+  }
+
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
@@ -504,17 +521,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       // so that we could validate the account properly
       // example: Safe accounts may not be deployed on certain networks
       const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
-      if (recipientAcc && this.selectedToken?.chainId) {
-        const state =
-          this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
-        if (!state) {
-          this.#accounts
-            .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
-            .catch((e) => {
-              console.log('Failed to get the account on chain state:', e)
-            })
-        }
-      }
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
@@ -595,6 +601,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
 
       this.selectedToken = selectedToken
+      this.#fetchRecipientAccountStateIfNeeded()
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
@@ -696,6 +703,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.checkIsRecipientAddressViewOnly()
     this.checkIsRecipientAddressUnknown()
+    this.#fetchRecipientAccountStateIfNeeded()
   }
 
   #setAmountAndNotifyUI(amount: string) {

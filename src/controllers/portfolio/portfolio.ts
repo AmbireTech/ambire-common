@@ -306,6 +306,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accounts: this.#accounts.accounts
           })
 
+          // Analytics should not be polluted with inactive extensions
+          const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
+
           // The relayer has internal cache for the defi positions. If we want to
           // invalidate it, we need to pass this param.
           // See `getShouldBypassServerSideCache` for more details.
@@ -315,7 +318,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}${activeParam}`
 
           return { url, queueSegment }
         })
