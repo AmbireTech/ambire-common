@@ -130,6 +130,29 @@ contract BalanceGetter is Simulation {
     return delta;
   }
 
+  function getBalancesAtNonce(
+    IAmbireAccount account,
+    address[] calldata tokenAddrs,
+    uint nonce
+  ) internal view returns (BalancesAtNonce memory balancesAtNonce) {
+    (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
+    balancesAtNonce.balances = results;
+    balancesAtNonce.nonce = nonce;
+  }
+
+  function getDeltaBalancesAtNonce(
+    IAmbireAccount account,
+    address[] calldata tokenAddrs,
+    BalancesAtNonce memory before,
+    uint afterNonce
+  ) internal returns (BalancesAtNonce memory afterSimulation) {
+    afterSimulation.nonce = afterNonce;
+    if (afterSimulation.nonce != before.nonce) {
+      (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
+      afterSimulation.balances = getDelta(before.balances, resultsAfterSimulation, tokenAddrs);
+    }
+  }
+
   function simulateAndGetBalances(
     IAmbireAccount account,
     address[] memory associatedKeys,
@@ -149,8 +172,7 @@ contract BalanceGetter is Simulation {
       address[] memory // deltaAddressesMapping
     )
   {
-    (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
-    before.balances = results;
+    before = getBalancesAtNonce(account, tokenAddrs, 0);
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
       account,
       associatedKeys,
@@ -164,18 +186,7 @@ contract BalanceGetter is Simulation {
       return (before, afterSimulation, err, gasleft(), block.number, deltaAddressesMapping);
     }
 
-    afterSimulation.nonce = account.nonce();
-    if (afterSimulation.nonce != before.nonce) {
-      (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
-      afterSimulation.balances = resultsAfterSimulation;
-
-      TokenInfo[] memory deltaAfter = getDelta(
-        before.balances,
-        afterSimulation.balances,
-        tokenAddrs
-      );
-      afterSimulation.balances = deltaAfter;
-    }
+    afterSimulation = getDeltaBalancesAtNonce(account, tokenAddrs, before, account.nonce());
 
     return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
   }
@@ -195,9 +206,7 @@ contract BalanceGetter is Simulation {
       address[] memory // deltaAddressesMapping
     )
   {
-    (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
-    before.balances = results;
-    before.nonce = account.nonce();
+    before = getBalancesAtNonce(account, tokenAddrs, account.nonce());
     (bool success, bytes memory err) = Simulation.simulateBySender(account, toSimulate);
 
     if (!success) {
@@ -206,18 +215,7 @@ contract BalanceGetter is Simulation {
 
     // the nonce doesn't increment when using executeBySender
     // so we hack our way out of this by always treating is as a +1 on success
-    afterSimulation.nonce = account.nonce() + 1;
-    if (afterSimulation.nonce != before.nonce) {
-      (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
-      afterSimulation.balances = resultsAfterSimulation;
-
-      TokenInfo[] memory deltaAfter = getDelta(
-        before.balances,
-        afterSimulation.balances,
-        tokenAddrs
-      );
-      afterSimulation.balances = deltaAfter;
-    }
+    afterSimulation = getDeltaBalancesAtNonce(account, tokenAddrs, before, account.nonce() + 1);
 
     return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
   }
