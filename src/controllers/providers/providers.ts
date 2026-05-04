@@ -394,12 +394,18 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
     }
 
+    const provider = this.providers[network.chainId.toString()]!
+
+    if (!provider) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: `Provider for chainId: ${chainId} not found`
+      })
+    }
+
     try {
-      const portfolio = new Portfolio(
-        fetch as any,
-        this.providers[network.chainId.toString()]!,
-        network
-      )
+      const portfolio = new Portfolio(fetch as any, provider, network)
 
       // create a wrapper function so that we could pass it correctly
       // to the required type for getAccountOpBalanceChanges.

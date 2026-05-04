@@ -666,6 +666,30 @@ export class ActivityController extends EventEmitter implements IActivityControl
     return Object.fromEntries(results)
   }
 
+  async #executeBalanceChanges(
+    balanceChangesTasks: Array<{
+      accountOp: SubmittedAccountOp
+      network: Network
+      tokenAddrs: string[]
+      receiptBlockNumber: number
+      prevBlockNumber?: number
+    }>
+  ) {
+    await Promise.all(
+      balanceChangesTasks.map(
+        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) =>
+          this.updateAccountOpBalanceChanges(
+            accountOp,
+            network,
+            tokenAddrs,
+            receiptBlockNumber,
+            prevBlockNumber
+          )
+      )
+    )
+    await this.persistAccountsOps()
+  }
+
   /**
    * Update AccountsOps statuses (inner and public state, and storage)
    *
@@ -962,25 +986,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
       })
     )
 
-    // await the balance changes before writing to storage
-    await Promise.all(
-      balanceChangesTasks.map(
-        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) =>
-          this.updateAccountOpBalanceChanges(
-            accountOp,
-            network,
-            tokenAddrs,
-            receiptBlockNumber,
-            prevBlockNumber
-          )
-      )
-    )
-
     // if there are balanceChangesTasks, shouldEmitUpdate will be true
     // so they will get saved
     if (shouldEmitUpdate) {
       await this.persistAccountsOps()
     }
+
+    // record the balance changes but do not await them
+    // no need to console.log errors in the catch() as it's handled inside
+    this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null)
 
     return {
       shouldEmitUpdate,
