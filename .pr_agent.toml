@@ -59,13 +59,11 @@ glob = [
 # ─────────────────────────────────────────────
 [pr_reviewer]
 extra_instructions = """
-General code review focused on:
-- Code quality, readability, and maintainability
-- Potential bugs and logical issues
-- Performance considerations
-- Best practices and consistency
+You are reviewing changes in a security-sensitive Web3 browser extension wallet.
 
-Specific issues to look for:
+Focus on the diff in front of you and assess it for correctness, security, reliability, and maintainability.
+
+Prioritize issues such as:
 - Requests without error handling and timeouts
 - Inefficient algorithms or data structures
 - Inconsistent naming conventions or formatting
@@ -74,7 +72,7 @@ Specific issues to look for:
 - Unhandled exceptions and edge cases
 - Swallowed errors and edge case return statements that should at least log an error
 
-Be constructive, concise, and actionable.
+Be constructive, concise, and actionable. Keep feedback grounded in the actual changes rather than using a fixed checklist.
 """
 
 # UX: update the same comment on re-run instead of posting a new one.

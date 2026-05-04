@@ -36,7 +36,7 @@ jobs:
           OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
           CONFIG__MODEL: "openrouter/anthropic/claude-opus-4.7"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: |
-            Focus exclusively on security, privacy, and compliance risks. Ignore style, performance, or general quality issues unless they have direct security impact.
+           You are reviewing changes in a security-sensitive Web3 browser extension wallet. Focus exclusively on security, privacy, and compliance risks. Ignore style, performance, or general quality issues unless they have direct security impact.
 
             Key areas to examine:
             - Sensitive data exposure or hard-coded secrets
