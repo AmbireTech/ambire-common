@@ -1,0 +1,1297 @@
+{
+    "abi": [
+        {
+            "inputs": [],
+            "name": "OOG",
+            "type": "error"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "gasUsed",
+                    "type": "uint256"
+                }
+            ],
+            "name": "RevertWithSuccess",
+            "type": "error"
+        },
+        {
+            "stateMutability": "payable",
+            "type": "fallback"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address",
+                    "name": "factory",
+                    "type": "address"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "factoryCalldata",
+                    "type": "bytes"
+                },
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "probableCallData",
+                    "type": "bytes"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "associatedKeys",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "feeTokens",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "relayer",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "checkNativeAssetOn",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "oracle",
+                    "type": "address"
+                }
+            ],
+            "name": "estimate",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "success",
+                                    "type": "bool"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "err",
+                                    "type": "bytes"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "initialGasLimitFailed",
+                                    "type": "bool"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.SimulationOutcome",
+                            "name": "deployment",
+                            "type": "tuple"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "success",
+                                    "type": "bool"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "err",
+                                    "type": "bytes"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "initialGasLimitFailed",
+                                    "type": "bool"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.SimulationOutcome",
+                            "name": "op",
+                            "type": "tuple"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "amount",
+                                    "type": "uint256"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.FeeTokenOutcome[]",
+                            "name": "feeTokenOutcomes",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes32[]",
+                            "name": "associatedKeyPrivileges",
+                            "type": "bytes32[]"
+                        },
+                        {
+                            "internalType": "uint256[]",
+                            "name": "nativeAssetBalances",
+                            "type": "uint256[]"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "baseFee",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "fee",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "feeWithNativePayment",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "feeWithTransferPayment",
+                                    "type": "uint256"
+                                }
+                            ],
+                            "internalType": "struct Estimation.L1GasEstimation",
+                            "name": "l1GasEstimation",
+                            "type": "tuple"
+                        }
+                    ],
+                    "internalType": "struct Estimation.EstimationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address",
+                    "name": "factory",
+                    "type": "address"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "factoryCalldata",
+                    "type": "bytes"
+                },
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "probableCallData",
+                    "type": "bytes"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "associatedKeys",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "feeTokens",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "relayer",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "checkNativeAssetOn",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "oracle",
+                    "type": "address"
+                }
+            ],
+            "name": "estimateBySender",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "success",
+                                    "type": "bool"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "err",
+                                    "type": "bytes"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "initialGasLimitFailed",
+                                    "type": "bool"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.SimulationOutcome",
+                            "name": "deployment",
+                            "type": "tuple"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "success",
+                                    "type": "bool"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "err",
+                                    "type": "bytes"
+                                },
+                                {
+                                    "internalType": "bool",
+                                    "name": "initialGasLimitFailed",
+                                    "type": "bool"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.SimulationOutcome",
+                            "name": "op",
+                            "type": "tuple"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "amount",
+                                    "type": "uint256"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.FeeTokenOutcome[]",
+                            "name": "feeTokenOutcomes",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes32[]",
+                            "name": "associatedKeyPrivileges",
+                            "type": "bytes32[]"
+                        },
+                        {
+                            "internalType": "uint256[]",
+                            "name": "nativeAssetBalances",
+                            "type": "uint256[]"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "baseFee",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "fee",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "feeWithNativePayment",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "feeWithTransferPayment",
+                                    "type": "uint256"
+                                }
+                            ],
+                            "internalType": "struct Estimation.L1GasEstimation",
+                            "name": "l1GasEstimation",
+                            "type": "tuple"
+                        }
+                    ],
+                    "internalType": "struct Estimation.EstimationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "probableCallData",
+                    "type": "bytes"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "associatedKeys",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "relayer",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address",
+                    "name": "oracle",
+                    "type": "address"
+                }
+            ],
+            "name": "estimateEoa",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "amount",
+                                    "type": "uint256"
+                                }
+                            ],
+                            "internalType": "struct EstimationStructs.FeeTokenOutcome[]",
+                            "name": "feeTokenOutcomes",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "uint256",
+                                    "name": "gasUsed",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "baseFee",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "fee",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "feeWithNativePayment",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "feeWithTransferPayment",
+                                    "type": "uint256"
+                                }
+                            ],
+                            "internalType": "struct Estimation.L1GasEstimation",
+                            "name": "l1GasEstimation",
+                            "type": "tuple"
+                        },
+                        {
+                            "internalType": "uint256[]",
+                            "name": "gasUsedPerCall",
+                            "type": "uint256[]"
+                        }
+                    ],
+                    "internalType": "struct Estimation.EoaEstimationOutcome",
+                    "name": "eoa",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IERC20Subset",
+                    "name": "token",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address",
+                    "name": "addr",
+                    "type": "address"
+                }
+            ],
+            "name": "getERC20Balance",
+            "outputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "feeTokens",
+                    "type": "address[]"
+                }
+            ],
+            "name": "getFeeTokenBalances",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "amount",
+                            "type": "uint256"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.FeeTokenOutcome[]",
+                    "name": "feeTokenOutcomes",
+                    "type": "tuple[]"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "bytes",
+                    "name": "data",
+                    "type": "bytes"
+                },
+                {
+                    "internalType": "address",
+                    "name": "feeCollector",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address",
+                    "name": "oracleAddr",
+                    "type": "address"
+                }
+            ],
+            "name": "getL1GasEstimation",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "baseFee",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "fee",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "feeWithNativePayment",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "feeWithTransferPayment",
+                            "type": "uint256"
+                        }
+                    ],
+                    "internalType": "struct Estimation.L1GasEstimation",
+                    "name": "l1GasEstimation",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "associatedKeys",
+                    "type": "address[]"
+                }
+            ],
+            "name": "getSpoof",
+            "outputs": [
+                {
+                    "internalType": "bytes",
+                    "name": "spoofSig",
+                    "type": "bytes"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                },
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasLimit",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "upperBoundLimit",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "shouldRevertUponSuccessIfFirstSimulation",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.GasLimits",
+                    "name": "gasLimits",
+                    "type": "tuple"
+                }
+            ],
+            "name": "simulateBySender",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "success",
+                            "type": "bool"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "err",
+                            "type": "bytes"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "initialGasLimitFailed",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.SimulationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address",
+                    "name": "factory",
+                    "type": "address"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "factoryCalldata",
+                    "type": "bytes"
+                }
+            ],
+            "name": "simulateDeployment",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "success",
+                            "type": "bool"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "err",
+                            "type": "bytes"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "initialGasLimitFailed",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.SimulationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "feeTokens",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "spoofSig",
+                    "type": "bytes"
+                },
+                {
+                    "internalType": "address",
+                    "name": "relayer",
+                    "type": "address"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "baseGasConsumption",
+                    "type": "uint256"
+                }
+            ],
+            "name": "simulateFeePayments",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "amount",
+                            "type": "uint256"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.FeeTokenOutcome[]",
+                    "name": "feeTokenOutcomes",
+                    "type": "tuple[]"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "contract IAmbireAccount",
+                    "name": "account",
+                    "type": "address"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "feeTokens",
+                    "type": "address[]"
+                },
+                {
+                    "internalType": "address",
+                    "name": "relayer",
+                    "type": "address"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "baseGasConsumption",
+                    "type": "uint256"
+                }
+            ],
+            "name": "simulateFeePaymentsBySender",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "amount",
+                            "type": "uint256"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.FeeTokenOutcome[]",
+                    "name": "feeTokenOutcomes",
+                    "type": "tuple[]"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                },
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasLimit",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "upperBoundLimit",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "shouldRevertUponSuccessIfFirstSimulation",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.GasLimits",
+                    "name": "gasLimits",
+                    "type": "tuple"
+                }
+            ],
+            "name": "simulateSigned",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "success",
+                            "type": "bool"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "err",
+                            "type": "bytes"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "initialGasLimitFailed",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.SimulationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                },
+                {
+                    "internalType": "address[]",
+                    "name": "associatedKeys",
+                    "type": "address[]"
+                }
+            ],
+            "name": "simulateUnsigned",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "success",
+                            "type": "bool"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "err",
+                            "type": "bytes"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "initialGasLimitFailed",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.SimulationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                },
+                {
+                    "internalType": "bytes32[]",
+                    "name": "associatedKeyPrivileges",
+                    "type": "bytes32[]"
+                },
+                {
+                    "internalType": "bytes",
+                    "name": "spoofSig",
+                    "type": "bytes"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "contract IAmbireAccount",
+                            "name": "account",
+                            "type": "address"
+                        },
+                        {
+                            "internalType": "uint256",
+                            "name": "nonce",
+                            "type": "uint256"
+                        },
+                        {
+                            "components": [
+                                {
+                                    "internalType": "address",
+                                    "name": "to",
+                                    "type": "address"
+                                },
+                                {
+                                    "internalType": "uint256",
+                                    "name": "value",
+                                    "type": "uint256"
+                                },
+                                {
+                                    "internalType": "bytes",
+                                    "name": "data",
+                                    "type": "bytes"
+                                }
+                            ],
+                            "internalType": "struct Transaction[]",
+                            "name": "calls",
+                            "type": "tuple[]"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "signature",
+                            "type": "bytes"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.AccountOp",
+                    "name": "op",
+                    "type": "tuple"
+                }
+            ],
+            "name": "simulateUnsignedBySender",
+            "outputs": [
+                {
+                    "components": [
+                        {
+                            "internalType": "uint256",
+                            "name": "gasUsed",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "success",
+                            "type": "bool"
+                        },
+                        {
+                            "internalType": "bytes",
+                            "name": "err",
+                            "type": "bytes"
+                        },
+                        {
+                            "internalType": "bool",
+                            "name": "initialGasLimitFailed",
+                            "type": "bool"
+                        }
+                    ],
+                    "internalType": "struct EstimationStructs.SimulationOutcome",
+                    "name": "outcome",
+                    "type": "tuple"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "stateMutability": "payable",
+            "type": "receive"
+        }
+    ],
+    "bin": "0x60808060405234610016576133af908161001c8239f35b600080fdfe60806040526004361015610018575b361561001657005b005b60003560e01c806306302eef146100f857806306e70c78146100f35780631385d5a9146100ee57806320cdc286146100e9578063255ee754146100e4578063299ab72a146100df5780635c68aafc146100da5780636e034779146100d5578063a012c980146100d0578063bbd1dc50146100cb578063c3a8962c146100c6578063e4596918146100c1578063f5818c95146100bc5763fdbb0b210361000e576111e5565b610f42565b610f28565b610e7c565b610deb565b610dd1565b610db7565b610d0c565b610cde565b610bf0565b610aec565b6107e0565b6103a6565b610308565b6001600160a01b0381160361010e57565b600080fd5b60043590610120826100fd565b565b60243590610120826100fd565b60e43590610120826100fd565b6101243590610120826100fd565b634e487b7160e01b600052604160045260246000fd5b6080810190811067ffffffffffffffff82111761017c57604052565b61014a565b6060810190811067ffffffffffffffff82111761017c57604052565b60a0810190811067ffffffffffffffff82111761017c57604052565b6040810190811067ffffffffffffffff82111761017c57604052565b67ffffffffffffffff811161017c57604052565b90601f8019910116810190811067ffffffffffffffff82111761017c57604052565b6040519061012082610160565b6040519061012082610181565b67ffffffffffffffff811161017c57601f01601f191660200190565b81601f8201121561010e5780359061025882610225565b9261026660405194856101e9565b8284526020838301011161010e57816000926020809301838601378301015290565b60005b83811061029b5750506000910152565b818101518382015260200161028b565b906020916102c481518092818552858086019101610288565b601f01601f1916010190565b90815181526020820151151560208201526060806102fd60408501516080604086015260808501906102ab565b930151151591015290565b3461010e57606036600319011261010e57600435610325816100fd565b60243590610332826100fd565b6044359067ffffffffffffffff821161010e576103749261035a610360933690600401610241565b9161183b565b6040519182916020835260208301906102d0565b0390f35b9181601f8401121561010e5782359167ffffffffffffffff831161010e576020838186019501011161010e57565b3461010e57606036600319011261010e5760043567ffffffffffffffff811161010e576103fb6103dc60a0923690600401610378565b602435906103e9826100fd565b604435926103f6846100fd565b612168565b610430604051809260808091805184526020810151602085015260408101516040850152606081015160608501520151910152565bf35b67ffffffffffffffff811161017c5760051b60200190565b91909160808184031261010e57604080519161046583610160565b82948135610472816100fd565b84526020828101358186015267ffffffffffffffff938084013585811161010e5784019183601f8401121561010e578235926104ad84610432565b936104ba845195866101e9565b808552828086019160051b8301019186831161010e57838101915b838310610502575050505050850152606082013592831161010e576060926104fd9201610241565b910152565b82358a811161010e5782019060609081601f19848c03011261010e5787519161052a83610181565b87840135610537816100fd565b83528884013588840152830135918c831161010e5761055d8b8980969581960101610241565b898201528152019201916104d5565b81601f8201121561010e5780359161058383610432565b9261059160405194856101e9565b808452602092838086019260051b82010192831161010e578301905b8282106105bb575050505090565b83809183356105c9816100fd565b8152019101906105ad565b61014060031982011261010e576105e9610113565b916105f2610122565b916044359167ffffffffffffffff9081841161010e57610616836004958601610241565b9360643583811161010e578461062d91830161044a565b9360843584811161010e5781610644918401610378565b9490949360a43582811161010e578361065e91860161056c565b9360c43583811161010e578461067591830161056c565b9361067e61012f565b936101043590811161010e57610694920161056c565b9061069d61013c565b90565b90815180825260208080930193019160005b8281106106c0575050505090565b83518051865282015185830152604090940193928101926001016106b2565b90815180825260208080930193019160005b8281106106ff575050505090565b8351855293810193928101926001016106f1565b61069d906020815261010060e06107a461073b865161018060208701526101a08601906102d0565b61078f61077b61075d60208a015193601f1994858a83030160408b01526102d0565b60408a0151606089015260608a0151848983030160808a01526106a0565b6080890151838883030160a08901526106df565b9060a0880151908683030160c08701526106df565b9460c081015182850152015191019060808091805184526020810151602085015260408101516040850152606081015160608501520151910152565b3461010e576107ee366105d4565b956107ff9a9495919a93929361128f565b9661080a8c516112f2565b9960a089019a8b5260005b8d51811461085457808c8f8261084161083461084f9661084994611386565b516001600160a01b031690565b319251611386565b5261133a565b610815565b50889a5061086b906108819a9c999798998961183b565b938487526060978c8a60209c8d80990151151590565b6109a5575b98505050505050505050511515908161099a575b506108ae575b604051806103748582610713565b600093845b8251811461098a57610918846108df6108d385516001600160a01b031690565b6001600160a01b031690565b6108ec6108348588611386565b90604051808095819463c066a5b160e01b8352600483019190916001600160a01b036020820193169052565b03915afa90811561098557600091610958575b5061093e576109399061133a565b6108b3565b505050506103749150610951600161144d565b82806108a0565b6109789150853d871161097e575b61097081836101e9565b81019061139a565b8761092b565b503d610966565b6113a9565b505050506109516103749261144d565b90505115158561089a565b8798999a506108d3826109c06109d9936004999a9b95611b10565b9c909e8d9f60808201520152516001600160a01b031690565b6040519586809263057ff68760e51b82525afa9384156109855760a097610a31958e8b938f600093610ac8575b5050604001528351610a88575b50505050604051958694859462dce18f60e31b86526004860161141c565b0381305afa90811561098557600091610a5a575b5060e085015283868481808080808c8a610886565b610a7b915060a03d8111610a81575b610a7381836101e9565b8101906113b5565b86610a45565b503d610a69565b805115610ab257610aa393610a9d8285611f2d565b93612cb0565b60608b01525b8b808781610a13565b505090610abe91612eb9565b60608b0152610aa9565b60409293509081610ae492903d1061097e5761097081836101e9565b91908f610a06565b3461010e5760a036600319011261010e57600435610b09816100fd565b67ffffffffffffffff60243581811161010e57610b2a90369060040161056c565b9160443591821161010e5761037492610b4a610b60933690600401610241565b60643591610b57836100fd565b60843593612cb0565b6040519182916020835260208301906106a0565b9061069d9160208152815160208201526020820151906060610ba4610100938460408501526101208401906106a0565b93610bde60408201518385019060808091805184526020810151602085015260408101516040850152606081015160608501520151910152565b015191601f19828503019101526106df565b3461010e5760c036600319011261010e57600435610c0d816100fd565b67ffffffffffffffff60243581811161010e57610c2e90369060040161044a565b9160443582811161010e57610c47903690600401610378565b939060643593841161010e5761037494610c68610c8895369060040161056c565b9160843593610c76856100fd565b60a43595610c83876100fd565b61169a565b60405191829182610b74565b90604060031983011261010e57600435610cad816100fd565b916024359067ffffffffffffffff821161010e5761069d9160040161056c565b90602061069d9281815201906102ab565b3461010e57610374610cf8610cf236610c94565b9061328d565b6040519182916020835260208301906102ab565b3461010e57602036600319011261010e5760043567ffffffffffffffff811161010e57610360610d4361037492369060040161044a565b61243d565b8015150361010e57565b90608060031983011261010e5760043567ffffffffffffffff811161010e57610d808360609260040161044a565b92602319011261010e57604051610d9681610181565b60243581526044356020820152606435610daf81610d48565b604082015290565b3461010e57610374610360610dcb36610d52565b90612641565b3461010e57610374610b60610de536610c94565b90612eb9565b3461010e57604036600319011261010e5767ffffffffffffffff60043581811161010e57610e1d90369060040161044a565b9060243590811161010e57610374610e49610e6093610e43610e6e94369060040161056c565b90611b10565b9193906040519586956060875260608701906102d0565b9085820360208701526106df565b9083820360408501526102ab565b3461010e57604036600319011261010e57600435610e99816100fd565b602060243591610ea8836100fd565b6024604051809481937f70a082310000000000000000000000000000000000000000000000000000000083526001600160a01b038092166004840152165afa80156109855761037491600091610f0a575b506040519081529081906020820190565b610f22915060203d811161097e5761097081836101e9565b38610ef9565b3461010e57610374610360610f3c36610d52565b90612fae565b3461010e57610f50366105d4565b610f629a91979a96929495939661128f565b96610f6d89516112f2565b9960a089019a8b5260005b8d8b518214610f9e5750808c610849826108418f610f999661083491611386565b610f78565b9c8a9c50610fc89b50610fb89150918d98999a928661183b565b80825260209a8b80920151151590565b611069575b505050505050505050805115158061105a575b610ff257604051806103748582610713565b600093845b8251811461098a57611017846108df6108d385516001600160a01b031690565b03915afa9081156109855760009161103d575b5061093e576110389061133a565b610ff7565b6110549150853d871161097e5761097081836101e9565b8761102a565b50828201518201511515610fe0565b806110859261107960049a61243d565b91829101520151151590565b898c60009260001461118657519091506110a7906001600160a01b03166108d3565b6040519788809263057ff68760e51b82525afa928315610985576110d96111039460a098600091611169575b506115d8565b60408c0152878251611149575b505050604051958694859462dce18f60e31b86526004860161141c565b0381305afa9081156109855760009161112b575b5060e0840152848481808080808989610fcd565b611143915060a03d8111610a8157610a7381836101e9565b85611117565b61115c9261115683612b9f565b9261295d565b60608a01528a80876110e6565b61118091508c8d3d1061097e5761097081836101e9565b8e6110d3565b5191949161119c906001600160a01b03166108d3565b6040519889809263057ff68760e51b82525afa80156109855760a09761110395916111c8575b506110d9565b6111df91508b3d8d1161097e5761097081836101e9565b8d6111c2565b3461010e57608036600319011261010e57600435611202816100fd565b60243567ffffffffffffffff811161010e5761037491611229610b6092369060040161056c565b60443590611236826100fd565b6064359261295d565b6040519061124c82610160565b60006060838281528260208201528160408201520152565b604051906112718261019d565b60006080838281528260208201528260408201528260608201520152565b60405190610100820182811067ffffffffffffffff82111761017c57604052816112b761123f565b81526112c161123f565b60208201526000604082015260608082015260606080820152606060a0820152600060c082015260e06104fd611264565b906112fc82610432565b61130960405191826101e9565b828152809261131a601f1991610432565b0190602036910137565b634e487b7160e01b600052601160045260246000fd5b60001981146113495760010190565b611324565b634e487b7160e01b600052603260045260246000fd5b8051156113715760200190565b61134e565b8051600110156113715760400190565b80518210156113715760209160051b010190565b9081602091031261010e575190565b6040513d6000823e3d90fd5b908160a091031261010e576080604051916113cf8361019d565b805183526020810151602084015260408101516040840152606081015160608401520151608082015290565b908060209392818452848401376000828201840152601f01601f1916010190565b9290611436906040939695966060865260608601916113fb565b946001600160a01b03809216602085015216910152565b1561145457565b60c460405162461bcd60e51b815260206004820152606d60248201527f416e74692d627269636b696e6720636865636b206661696c65642c207468697360448201527f206d65616e732074686174206e6f6e65206f662074686520706173736564206160648201527f73736f6369617465644b657973206861732070726976696c656765732061667460848201527f65722073696d756c6174696f6e0000000000000000000000000000000000000060a4820152fd5b6040519061151782610160565b606080836000815281602082015261152d611264565b60408201520152565b604090815191611545836101b9565b600183528291600091825b6020808210156115825782516020929161156982610181565b8682528681830152606085830152828901015201611550565b50505091925050565b604090815161159981610181565b6002815280926000805b8281106115b05750505050565b60209083516115be81610181565b8381528284818301526060868301528287010152016115a3565b906001820180921161134957565b9190820180921161134957565b604090815191611602836101b9565b600183528291600091825b60208082101561158257825160209291611626826101b9565b868252868183015282890101520161160d565b9061164382610432565b604090611652825191826101e9565b8381528093611663601f1991610432565b0191600090815b848110611678575050505050565b6020908251611686816101b9565b84815282858183015282870101520161166a565b95939290966116a761150a565b956116b061123f565b50604092838a01946116c38651516112f2565b9760005b87515181101561176d578061176161174a8f8b8b8e926116f3611768986116ec611536565b9451611386565b516116fd84611364565b5261170783611364565b5080516001600160a01b031692602092838301516060809401519461173c61172d61020b565b6001600160a01b039098168852565b860152840152820152611b10565b50508051611758848f611386565b52518d516115e6565b8c5261133a565b6116c7565b5092989a50939660a096506117c4939991955060608b01526001600160a01b036117956115f3565b91163160206117a383611364565b51015260208a01528551968794859462dce18f60e31b86526004860161141c565b0381305afa918215610985576000926117de575b50830152565b6117f791925060a03d8111610a8157610a7381836101e9565b90386117d8565b3d15611829573d9061180f82610225565b9161181d60405193846101e9565b82523d6000602084013e565b606090565b9190820391821161134957565b92916001600160a01b0361184d61123f565b94163b61188657600080915a9382602083519301915af161186c6117fe565b6040850152151560208401525a8103908111611349578252565b505060016020830152565b6040519061189e826101b9565b600b82527f53504f4f465f4552524f520000000000000000000000000000000000000000006020830152565b519061012082610d48565b90602090818382031261010e57825167ffffffffffffffff9384821161010e570160808183031261010e576040519361190d85610160565b815185528382015161191e81610d48565b84860152604082015190811161010e5781019180601f8401121561010e5782519361194885610225565b9161195660405193846101e9565b85835281868601011161010e5761198394606094826119789385019101610288565b6040850152016118ca565b606082015290565b90815180825260208092019182818360051b85019501936000915b8483106119b65750505050505090565b90919293949584806119f583856001950387528a516001600160a01b0381511682528381015184830152604080910151916060809282015201906102ab565b98019301930191949392906119a6565b906040611a5d606092959495608085526001600160a01b038151166080860152602081015160a086015283611a4984830151608060c089015261010088019061198b565b910151858203607f190160e08701526102ab565b948051602085015260208101518285015201511515910152565b90602082519201517fffffffff00000000000000000000000000000000000000000000000000000000908181169360048110611ab257505050565b60040360031b82901b16169150565b9060038202918083046003149015171561134957565b60405190611ae4826101b9565b600382527f4f4f4700000000000000000000000000000000000000000000000000000000006020830152565b9190611b1a61123f565b92606091611b326108d383516001600160a01b031690565b916040805180809563057ff68760e51b8252602096879160049485915afa90811561098557600091611db0575b5085840152611b6e84516112f2565b9360005b81518114611c3557611b876108348284611386565b611b9b6108d387516001600160a01b031690565b888651809263c066a5b160e01b82528180611bc8878b83019190916001600160a01b036020820193169052565b03915afa90811561098557600091611c18575b5080611be7848a611386565b52611bfc575b50611bf79061133a565b611b72565b8851611bed57611bf7919850611c11906131fd565b9790611bed565b611c2f9150893d8b1161097e5761097081836101e9565b38611bdb565b505095939190929585606083015285511515600014611da557611c886000611c5b610218565b8181528186820152611c6f87820160019052565b865180938192631c8b2d2360e31b835287878401611a05565b038183305af160009181611d82575b50611d765750611ca56117fe565b9081519081108015611d3b575b611d365750602401519045151580611d2d575b15611ce157508652600090860152611cdb611ad7565b90850152565b9192611d22949750611cf982601460009404906115e6565b93611d0385611ac1565b90458211611d25575b611d14610218565b958652850152830152612fae565b92565b459150611d0c565b50458211611cc5565b838201fd5b50633578916960e11b7fffffffff00000000000000000000000000000000000000000000000000000000611d6e84611a77565b161415611cb2565b97506101209350505050565b611d9e91923d8091833e611d9681836101e9565b8101906118d5565b9038611c97565b505050611cdb611891565b611dc79150863d881161097e5761097081836101e9565b38611b5f565b60405190611dda82610160565b6060808360008152600060208201528160408201520152565b60405190611e0082610160565b604882527f62617365206665650000000000000000000000000000000000000000000000006060837f63616c63756c617465426173654665653a20756e61626c6520746f206578656360208201527f75746520656d7074794f704f7574636f6d652c2063616e6e6f742063616c632060408201520152565b15611e805750565b611ea49060405191829162461bcd60e51b83526020600484015260248301906102ab565b0390fd5b60405190611eb582610160565b604a82527f63206261736520666565000000000000000000000000000000000000000000006060837f63616c63756c617465426173654665653a20756e61626c6520746f206578656360208201527f7574652074776f43616c6c4f704f7574636f6d652c2063616e6e6f742063616c60408201520152565b906001600160a01b03611f3e611dcd565b6001600160a01b0384168152921690604080519263057ff68760e51b938481526020958682600481865afa918215610985576000926120d8575b50868101918252611faf611f8a611536565b858301968188526060840152611fa03091611364565b51906001600160a01b03169052565b86611fd1611fbb610218565b6000815260008382015260008782015283612fae565b96611ff3611fe1838a0151151590565b898801805151156120cf575190611e78565b600486518096819382525afa9283156109855761207c9561206a9461206194612043936000926120b0575b505261203861202b61158b565b808352611fa03091611364565b611fa0309151611376565b61204b610218565b9060008252600088830152600085830152612fae565b94850151151590565b908401805151156120a1575190611e78565b805191519182811161209c576120959061069d9361182e565b905161182e565b505090565b506120aa611ea8565b90611e78565b6120c89192508b3d8d1161097e5761097081836101e9565b903861201e565b506120aa611df3565b6120f0919250873d891161097e5761097081836101e9565b9038611f78565b6060906001600160a01b0361069d94931681526000602082015281604082015201906102ab565b91602061069d9381815201916113fb565b6020908161012093959461215c876040519889958587013784019183830160008152815194859201610288565b010380855201836101e9565b9392939190916001600160a01b0361217e611264565b951680156124375760409384519360209461224e816121e7848983016001600160a01b0360a0921681526001602082015260606040820152600260608201527f307800000000000000000000000000000000000000000000000000000000000060808201520190565b036121fa601f19918281018552846101e9565b885163a9059cbb60e01b898201526001600160a01b0385166024820152600160448201526064828101825290949061223290866101e9565b6122428a519586928b84016120f7565b039081018452836101e9565b86517fde26c4a1000000000000000000000000000000000000000000000000000000008152868180612284878a6004840161211e565b0381885afa9081156109855760009161241a575b5089528651917f49948e0e00000000000000000000000000000000000000000000000000000000928381528781806122d4888b6004840161211e565b0381895afa908115610985576123109389928b8e6122fe946000936123fb575b500152868961212f565b89518094819287835260048301610ccd565b0381885afa9384156109855761234c968895612339946000916123de575b5060608d015261212f565b9086519485928392835260048301610ccd565b0381845afa9384156109855760049484936000916123c1575b50608088015251938480927f519b4bd30000000000000000000000000000000000000000000000000000000082525afa918215610985576000926123a95750830152565b816117f79293503d841161097e5761097081836101e9565b6123d89150843d861161097e5761097081836101e9565b38612365565b6123f59150873d891161097e5761097081836101e9565b3861232e565b612413919350863d881161097e5761097081836101e9565b91386122f4565b6124319150873d891161097e5761097081836101e9565b38612298565b50505050565b9061244661123f565b9161245b6108d382516001600160a01b031690565b90604051809263057ff68760e51b825281600460209586935afa908115610985576000916125cf575b50828201526124c66000612496610218565b81815281858201526124ab6040820160019052565b60405180938192636e03477960e01b83528660048401611a05565b038183305af1600091816125b4575b506125ae57506124e36117fe565b8051600481108015612573575b611d36575060240151904515158061256a575b1561252057508352600090830152612519611ad7565b6040830152565b9061069d9394508060146125359204906115e6565b9161253f83611ac1565b90458211612562575b612550610218565b93845283015260006040830152612641565b459150612548565b50458211612503565b50633578916960e11b7fffffffff000000000000000000000000000000000000000000000000000000006125a684611a77565b1614156124f0565b93505050565b6125c891923d8091833e611d9681836101e9565b90386124d5565b6125e69150833d851161097e5761097081836101e9565b38612484565b604051906125f9826101b9565b600b82527f4e4f4e43455f4552524f520000000000000000000000000000000000000000006020830152565b600091031261010e57565b90602061069d92818152019061198b565b61264961123f565b6020808301519160046126666108d386516001600160a01b031690565b938360409586519384809263057ff68760e51b82525afa918215610985576000926128f3575b50036128df575a8551908115916126ad6108d388516001600160a01b031690565b9083156128da5750815b86880151823b1561010e576000916126fe91838a519586809581947fabc5345e00000000000000000000000000000000000000000000000000000000835260048301612630565b0393f190816128c1575b506128b6576127156117fe565b858401525b81156128ae5761272b905a9061182e565b82528080612899575b8180612880575b8215908161286c575b8215612864575b50811561285c575b5061285357858401511515908161283f575b81612837575b5061281d5784519185019182519182821461281357509161279e6127986127d098979593600097956115e6565b60011c90565b8085526127b08251600a81049061182e565b1061280a575b50519485928392636e03477960e01b845260048401611a05565b038183305af1918215610985576000926127ef575b5060016060830152565b61280391923d8091833e611d9681836101e9565b90386127e5565b518352386127b6565b9550505050505090565b518251633578916960e11b81526004810191909152602490fd5b90503861276b565b905061284d83830151151590565b90612765565b50935050505090565b905038612753565b91503861274b565b905061287a85850151151590565b90612744565b5061289461289085850151151590565b1590565b61273b565b506128a961289085880151151590565b612734565b50855161272b565b60018385015261271a565b806128ce6128d4926101d5565b80612625565b38612708565b6126b7565b93505090506128ec6125ec565b9082015290565b61290b919250843d861161097e5761097081836101e9565b903861268c565b1561291957565b606460405162461bcd60e51b815260206004820152601a60248201527f494d504f535349424c455f4741535f434f4e53554d5054494f4e0000000000006044820152fd5b939290919361296c8351611639565b9260005b81518114612b97576129856108348284611386565b9061298e611dcd565b6001600160a01b03851681526001600160a01b038086169160409283519563057ff68760e51b875260209360049185898481875afa8015610985578f9189908f92958996612a4b9d600091612b7a575b50878a01528a6129ec611536565b8a8201818152978416939084612aa157505050505091612a269185612a19612a2c96956001993193611386565b510152611fa08351611364565b51611364565b5101525b81612a3b858b611386565b510151612a50575b50505061133a565b612970565b6000612a6e9381612a5f610218565b94818652850152830152612641565b858151918215612a4357612a8782612a8d941015612912565b5161182e565b612a978288611386565b5152388581612a43565b612aef9650612a26929550612afd9498939791611fa0612ac092611364565b845163a9059cbb60e01b8a8201526001600160a01b039091166024820152600160448201529485906064820190565b03601f1981018652856101e9565b51015286516330ea258b60e21b81526001600160a01b03928316918101918252939091166020820152829081906040010381305afa60009181612b5b575b50612b47575b50612a30565b82612b52868c611386565b51015238612b41565b612b73919250843d861161097e5761097081836101e9565b9038612b3b565b612b919150883d8a1161097e5761097081836101e9565b386129de565b505050509150565b6001600160a01b03612baf611dcd565b6001600160a01b03831681526040805163057ff68760e51b808252602095909416908581600481855afa90811561098557600091612c93575b50858401908152612bf7611536565b93612c0c84820195808752611fa03091611364565b86612c2e612c18610218565b6000815260008382015260008782015283612641565b96612c3e611fe1838a0151151590565b600486518096819382525afa9283156109855761207c9561206a9461206194612c75936000926120b057505261203861202b61158b565b612c7d610218565b9060008252600088830152600085830152612641565b612caa9150863d881161097e5761097081836101e9565b38612be8565b949391929092612cc08451611639565b9360005b81518114612eb057612cd96108348284611386565b90612ce2611dcd565b6001600160a01b038a1681526001600160a01b0392838b169160409283519263057ff68760e51b845260209360049285828581845afa90811561098557612da6998f9395898f8f98978d968c99600091612e93575b50898c0152612d44611536565b94838c019a868c5260608d01528116948515600014612df6575050505050509183612d7760019693612d88953193611386565b510152612a268c611fa08351611364565b5101525b81612d97858c611386565b510151612dab5750505061133a565b612cc4565b6000612dc99381612dba610218565b94818652850152830152612fae565b868151918215612a4357612a8782612de2941015612912565b612dec8289611386565b5152388681612a43565b612aef969a93959850612e16949750612a269291611fa0612ac092611364565b51015286516330ea258b60e21b81526001600160a01b03928316918101918252939091166020820152829081906040010381305afa60009181612e74575b50612e60575b50612d8c565b82612e6b868d611386565b51015238612e5a565b612e8c919250843d861161097e5761097081836101e9565b9038612e54565b612eaa91508a3d8c1161097e5761097081836101e9565b38612d37565b50505050509150565b919091612ec68351611639565b92600090815b8151811461243757612f0c906001600160a01b0380612eee6108348487611386565b1680612f1157508516316020612f04838a611386565b51015261133a565b612ecc565b6040516330ea258b60e21b81526001600160a01b03918216600482015291871616602482015260208082604481305afa869281612f6a575b50612f56575b505061133a565b612f60838a611386565b5101523880612f4f565b612f82919350823d841161097e5761097081836101e9565b9138612f49565b9091612fa061069d9360408452604084019061198b565b9160208184039101526102ab565b612fb661123f565b602080830151916004612fd36108d386516001600160a01b031690565b938360409586519384809263057ff68760e51b82525afa918215610985576000926131de575b50036128df575a85519081159161301a6108d388516001600160a01b031690565b9083156131d8575081905b8688015191606089015190823b1561010e5761307393600080948b518097819682957f6171d1c900000000000000000000000000000000000000000000000000000000845260048401612f89565b0393f190816131c5575b506131ba5761308a6117fe565b858401525b81156131b2576130a0905a9061182e565b8252808061319d575b8180613188575b82159081613174575b821561316c575b508115613164575b50612853578584015115159081613150575b81613148575b5061281d5784519185019182519182821461281357509161310d6127986127d098979593600097956115e6565b80855261311f8251600a81049061182e565b1061313f575b50519485928392631c8b2d2360e31b845260048401611a05565b51835238613125565b9050386130e0565b905061315e83830151151590565b906130da565b9050386130c8565b9150386130c0565b905061318285850151151590565b906130b9565b5061319861289085850151151590565b6130b0565b506131ad61289085880151151590565b6130a9565b5085516130a0565b60018385015261308f565b806128ce6131d2926101d5565b3861307d565b90613025565b6131f6919250843d861161097e5761097081836101e9565b9038612ff9565b6001600160a01b03604051911660208201527f030000000000000000000000000000000000000000000000000000000000000060408201526021815261069d81610181565b1561324957565b606460405162461bcd60e51b815260206004820152601560248201527f53706f6f66206661696c65643a206e6f206b65797300000000000000000000006044820152fd5b61329982511515613242565b6000805b83518114613334576132b26108348286611386565b60405163c066a5b160e01b81526001600160a01b03821660048201526020908181806024810103816001600160a01b038a165afa918215610985578592613317575b505061330957506133049061133a565b61329d565b9250505061069d91506131fd565b61332d9250803d1061097e5761097081836101e9565b38806132f4565b60405162461bcd60e51b815260206004820152601860248201527f53706f6f66206661696c65643a2077726f6e67206b65797300000000000000006044820152606490fdfea26469706673582212203f0ed592730ce5e0d9db974ab7b56cfd63e78011694f72ec673c71af09d2902164736f6c63430008130033",
+    "binRuntime": "0x60806040526004361015610018575b361561001657005b005b60003560e01c806306302eef146100f857806306e70c78146100f35780631385d5a9146100ee57806320cdc286146100e9578063255ee754146100e4578063299ab72a146100df5780635c68aafc146100da5780636e034779146100d5578063a012c980146100d0578063bbd1dc50146100cb578063c3a8962c146100c6578063e4596918146100c1578063f5818c95146100bc5763fdbb0b210361000e576111e5565b610f42565b610f28565b610e7c565b610deb565b610dd1565b610db7565b610d0c565b610cde565b610bf0565b610aec565b6107e0565b6103a6565b610308565b6001600160a01b0381160361010e57565b600080fd5b60043590610120826100fd565b565b60243590610120826100fd565b60e43590610120826100fd565b6101243590610120826100fd565b634e487b7160e01b600052604160045260246000fd5b6080810190811067ffffffffffffffff82111761017c57604052565b61014a565b6060810190811067ffffffffffffffff82111761017c57604052565b60a0810190811067ffffffffffffffff82111761017c57604052565b6040810190811067ffffffffffffffff82111761017c57604052565b67ffffffffffffffff811161017c57604052565b90601f8019910116810190811067ffffffffffffffff82111761017c57604052565b6040519061012082610160565b6040519061012082610181565b67ffffffffffffffff811161017c57601f01601f191660200190565b81601f8201121561010e5780359061025882610225565b9261026660405194856101e9565b8284526020838301011161010e57816000926020809301838601378301015290565b60005b83811061029b5750506000910152565b818101518382015260200161028b565b906020916102c481518092818552858086019101610288565b601f01601f1916010190565b90815181526020820151151560208201526060806102fd60408501516080604086015260808501906102ab565b930151151591015290565b3461010e57606036600319011261010e57600435610325816100fd565b60243590610332826100fd565b6044359067ffffffffffffffff821161010e576103749261035a610360933690600401610241565b9161183b565b6040519182916020835260208301906102d0565b0390f35b9181601f8401121561010e5782359167ffffffffffffffff831161010e576020838186019501011161010e57565b3461010e57606036600319011261010e5760043567ffffffffffffffff811161010e576103fb6103dc60a0923690600401610378565b602435906103e9826100fd565b604435926103f6846100fd565b612168565b610430604051809260808091805184526020810151602085015260408101516040850152606081015160608501520151910152565bf35b67ffffffffffffffff811161017c5760051b60200190565b91909160808184031261010e57604080519161046583610160565b82948135610472816100fd565b84526020828101358186015267ffffffffffffffff938084013585811161010e5784019183601f8401121561010e578235926104ad84610432565b936104ba845195866101e9565b808552828086019160051b8301019186831161010e57838101915b838310610502575050505050850152606082013592831161010e576060926104fd9201610241565b910152565b82358a811161010e5782019060609081601f19848c03011261010e5787519161052a83610181565b87840135610537816100fd565b83528884013588840152830135918c831161010e5761055d8b8980969581960101610241565b898201528152019201916104d5565b81601f8201121561010e5780359161058383610432565b9261059160405194856101e9565b808452602092838086019260051b82010192831161010e578301905b8282106105bb575050505090565b83809183356105c9816100fd565b8152019101906105ad565b61014060031982011261010e576105e9610113565b916105f2610122565b916044359167ffffffffffffffff9081841161010e57610616836004958601610241565b9360643583811161010e578461062d91830161044a565b9360843584811161010e5781610644918401610378565b9490949360a43582811161010e578361065e91860161056c565b9360c43583811161010e578461067591830161056c565b9361067e61012f565b936101043590811161010e57610694920161056c565b9061069d61013c565b90565b90815180825260208080930193019160005b8281106106c0575050505090565b83518051865282015185830152604090940193928101926001016106b2565b90815180825260208080930193019160005b8281106106ff575050505090565b8351855293810193928101926001016106f1565b61069d906020815261010060e06107a461073b865161018060208701526101a08601906102d0565b61078f61077b61075d60208a015193601f1994858a83030160408b01526102d0565b60408a0151606089015260608a0151848983030160808a01526106a0565b6080890151838883030160a08901526106df565b9060a0880151908683030160c08701526106df565b9460c081015182850152015191019060808091805184526020810151602085015260408101516040850152606081015160608501520151910152565b3461010e576107ee366105d4565b956107ff9a9495919a93929361128f565b9661080a8c516112f2565b9960a089019a8b5260005b8d51811461085457808c8f8261084161083461084f9661084994611386565b516001600160a01b031690565b319251611386565b5261133a565b610815565b50889a5061086b906108819a9c999798998961183b565b938487526060978c8a60209c8d80990151151590565b6109a5575b98505050505050505050511515908161099a575b506108ae575b604051806103748582610713565b600093845b8251811461098a57610918846108df6108d385516001600160a01b031690565b6001600160a01b031690565b6108ec6108348588611386565b90604051808095819463c066a5b160e01b8352600483019190916001600160a01b036020820193169052565b03915afa90811561098557600091610958575b5061093e576109399061133a565b6108b3565b505050506103749150610951600161144d565b82806108a0565b6109789150853d871161097e575b61097081836101e9565b81019061139a565b8761092b565b503d610966565b6113a9565b505050506109516103749261144d565b90505115158561089a565b8798999a506108d3826109c06109d9936004999a9b95611b10565b9c909e8d9f60808201520152516001600160a01b031690565b6040519586809263057ff68760e51b82525afa9384156109855760a097610a31958e8b938f600093610ac8575b5050604001528351610a88575b50505050604051958694859462dce18f60e31b86526004860161141c565b0381305afa90811561098557600091610a5a575b5060e085015283868481808080808c8a610886565b610a7b915060a03d8111610a81575b610a7381836101e9565b8101906113b5565b86610a45565b503d610a69565b805115610ab257610aa393610a9d8285611f2d565b93612cb0565b60608b01525b8b808781610a13565b505090610abe91612eb9565b60608b0152610aa9565b60409293509081610ae492903d1061097e5761097081836101e9565b91908f610a06565b3461010e5760a036600319011261010e57600435610b09816100fd565b67ffffffffffffffff60243581811161010e57610b2a90369060040161056c565b9160443591821161010e5761037492610b4a610b60933690600401610241565b60643591610b57836100fd565b60843593612cb0565b6040519182916020835260208301906106a0565b9061069d9160208152815160208201526020820151906060610ba4610100938460408501526101208401906106a0565b93610bde60408201518385019060808091805184526020810151602085015260408101516040850152606081015160608501520151910152565b015191601f19828503019101526106df565b3461010e5760c036600319011261010e57600435610c0d816100fd565b67ffffffffffffffff60243581811161010e57610c2e90369060040161044a565b9160443582811161010e57610c47903690600401610378565b939060643593841161010e5761037494610c68610c8895369060040161056c565b9160843593610c76856100fd565b60a43595610c83876100fd565b61169a565b60405191829182610b74565b90604060031983011261010e57600435610cad816100fd565b916024359067ffffffffffffffff821161010e5761069d9160040161056c565b90602061069d9281815201906102ab565b3461010e57610374610cf8610cf236610c94565b9061328d565b6040519182916020835260208301906102ab565b3461010e57602036600319011261010e5760043567ffffffffffffffff811161010e57610360610d4361037492369060040161044a565b61243d565b8015150361010e57565b90608060031983011261010e5760043567ffffffffffffffff811161010e57610d808360609260040161044a565b92602319011261010e57604051610d9681610181565b60243581526044356020820152606435610daf81610d48565b604082015290565b3461010e57610374610360610dcb36610d52565b90612641565b3461010e57610374610b60610de536610c94565b90612eb9565b3461010e57604036600319011261010e5767ffffffffffffffff60043581811161010e57610e1d90369060040161044a565b9060243590811161010e57610374610e49610e6093610e43610e6e94369060040161056c565b90611b10565b9193906040519586956060875260608701906102d0565b9085820360208701526106df565b9083820360408501526102ab565b3461010e57604036600319011261010e57600435610e99816100fd565b602060243591610ea8836100fd565b6024604051809481937f70a082310000000000000000000000000000000000000000000000000000000083526001600160a01b038092166004840152165afa80156109855761037491600091610f0a575b506040519081529081906020820190565b610f22915060203d811161097e5761097081836101e9565b38610ef9565b3461010e57610374610360610f3c36610d52565b90612fae565b3461010e57610f50366105d4565b610f629a91979a96929495939661128f565b96610f6d89516112f2565b9960a089019a8b5260005b8d8b518214610f9e5750808c610849826108418f610f999661083491611386565b610f78565b9c8a9c50610fc89b50610fb89150918d98999a928661183b565b80825260209a8b80920151151590565b611069575b505050505050505050805115158061105a575b610ff257604051806103748582610713565b600093845b8251811461098a57611017846108df6108d385516001600160a01b031690565b03915afa9081156109855760009161103d575b5061093e576110389061133a565b610ff7565b6110549150853d871161097e5761097081836101e9565b8761102a565b50828201518201511515610fe0565b806110859261107960049a61243d565b91829101520151151590565b898c60009260001461118657519091506110a7906001600160a01b03166108d3565b6040519788809263057ff68760e51b82525afa928315610985576110d96111039460a098600091611169575b506115d8565b60408c0152878251611149575b505050604051958694859462dce18f60e31b86526004860161141c565b0381305afa9081156109855760009161112b575b5060e0840152848481808080808989610fcd565b611143915060a03d8111610a8157610a7381836101e9565b85611117565b61115c9261115683612b9f565b9261295d565b60608a01528a80876110e6565b61118091508c8d3d1061097e5761097081836101e9565b8e6110d3565b5191949161119c906001600160a01b03166108d3565b6040519889809263057ff68760e51b82525afa80156109855760a09761110395916111c8575b506110d9565b6111df91508b3d8d1161097e5761097081836101e9565b8d6111c2565b3461010e57608036600319011261010e57600435611202816100fd565b60243567ffffffffffffffff811161010e5761037491611229610b6092369060040161056c565b60443590611236826100fd565b6064359261295d565b6040519061124c82610160565b60006060838281528260208201528160408201520152565b604051906112718261019d565b60006080838281528260208201528260408201528260608201520152565b60405190610100820182811067ffffffffffffffff82111761017c57604052816112b761123f565b81526112c161123f565b60208201526000604082015260608082015260606080820152606060a0820152600060c082015260e06104fd611264565b906112fc82610432565b61130960405191826101e9565b828152809261131a601f1991610432565b0190602036910137565b634e487b7160e01b600052601160045260246000fd5b60001981146113495760010190565b611324565b634e487b7160e01b600052603260045260246000fd5b8051156113715760200190565b61134e565b8051600110156113715760400190565b80518210156113715760209160051b010190565b9081602091031261010e575190565b6040513d6000823e3d90fd5b908160a091031261010e576080604051916113cf8361019d565b805183526020810151602084015260408101516040840152606081015160608401520151608082015290565b908060209392818452848401376000828201840152601f01601f1916010190565b9290611436906040939695966060865260608601916113fb565b946001600160a01b03809216602085015216910152565b1561145457565b60c460405162461bcd60e51b815260206004820152606d60248201527f416e74692d627269636b696e6720636865636b206661696c65642c207468697360448201527f206d65616e732074686174206e6f6e65206f662074686520706173736564206160648201527f73736f6369617465644b657973206861732070726976696c656765732061667460848201527f65722073696d756c6174696f6e0000000000000000000000000000000000000060a4820152fd5b6040519061151782610160565b606080836000815281602082015261152d611264565b60408201520152565b604090815191611545836101b9565b600183528291600091825b6020808210156115825782516020929161156982610181565b8682528681830152606085830152828901015201611550565b50505091925050565b604090815161159981610181565b6002815280926000805b8281106115b05750505050565b60209083516115be81610181565b8381528284818301526060868301528287010152016115a3565b906001820180921161134957565b9190820180921161134957565b604090815191611602836101b9565b600183528291600091825b60208082101561158257825160209291611626826101b9565b868252868183015282890101520161160d565b9061164382610432565b604090611652825191826101e9565b8381528093611663601f1991610432565b0191600090815b848110611678575050505050565b6020908251611686816101b9565b84815282858183015282870101520161166a565b95939290966116a761150a565b956116b061123f565b50604092838a01946116c38651516112f2565b9760005b87515181101561176d578061176161174a8f8b8b8e926116f3611768986116ec611536565b9451611386565b516116fd84611364565b5261170783611364565b5080516001600160a01b031692602092838301516060809401519461173c61172d61020b565b6001600160a01b039098168852565b860152840152820152611b10565b50508051611758848f611386565b52518d516115e6565b8c5261133a565b6116c7565b5092989a50939660a096506117c4939991955060608b01526001600160a01b036117956115f3565b91163160206117a383611364565b51015260208a01528551968794859462dce18f60e31b86526004860161141c565b0381305afa918215610985576000926117de575b50830152565b6117f791925060a03d8111610a8157610a7381836101e9565b90386117d8565b3d15611829573d9061180f82610225565b9161181d60405193846101e9565b82523d6000602084013e565b606090565b9190820391821161134957565b92916001600160a01b0361184d61123f565b94163b61188657600080915a9382602083519301915af161186c6117fe565b6040850152151560208401525a8103908111611349578252565b505060016020830152565b6040519061189e826101b9565b600b82527f53504f4f465f4552524f520000000000000000000000000000000000000000006020830152565b519061012082610d48565b90602090818382031261010e57825167ffffffffffffffff9384821161010e570160808183031261010e576040519361190d85610160565b815185528382015161191e81610d48565b84860152604082015190811161010e5781019180601f8401121561010e5782519361194885610225565b9161195660405193846101e9565b85835281868601011161010e5761198394606094826119789385019101610288565b6040850152016118ca565b606082015290565b90815180825260208092019182818360051b85019501936000915b8483106119b65750505050505090565b90919293949584806119f583856001950387528a516001600160a01b0381511682528381015184830152604080910151916060809282015201906102ab565b98019301930191949392906119a6565b906040611a5d606092959495608085526001600160a01b038151166080860152602081015160a086015283611a4984830151608060c089015261010088019061198b565b910151858203607f190160e08701526102ab565b948051602085015260208101518285015201511515910152565b90602082519201517fffffffff00000000000000000000000000000000000000000000000000000000908181169360048110611ab257505050565b60040360031b82901b16169150565b9060038202918083046003149015171561134957565b60405190611ae4826101b9565b600382527f4f4f4700000000000000000000000000000000000000000000000000000000006020830152565b9190611b1a61123f565b92606091611b326108d383516001600160a01b031690565b916040805180809563057ff68760e51b8252602096879160049485915afa90811561098557600091611db0575b5085840152611b6e84516112f2565b9360005b81518114611c3557611b876108348284611386565b611b9b6108d387516001600160a01b031690565b888651809263c066a5b160e01b82528180611bc8878b83019190916001600160a01b036020820193169052565b03915afa90811561098557600091611c18575b5080611be7848a611386565b52611bfc575b50611bf79061133a565b611b72565b8851611bed57611bf7919850611c11906131fd565b9790611bed565b611c2f9150893d8b1161097e5761097081836101e9565b38611bdb565b505095939190929585606083015285511515600014611da557611c886000611c5b610218565b8181528186820152611c6f87820160019052565b865180938192631c8b2d2360e31b835287878401611a05565b038183305af160009181611d82575b50611d765750611ca56117fe565b9081519081108015611d3b575b611d365750602401519045151580611d2d575b15611ce157508652600090860152611cdb611ad7565b90850152565b9192611d22949750611cf982601460009404906115e6565b93611d0385611ac1565b90458211611d25575b611d14610218565b958652850152830152612fae565b92565b459150611d0c565b50458211611cc5565b838201fd5b50633578916960e11b7fffffffff00000000000000000000000000000000000000000000000000000000611d6e84611a77565b161415611cb2565b97506101209350505050565b611d9e91923d8091833e611d9681836101e9565b8101906118d5565b9038611c97565b505050611cdb611891565b611dc79150863d881161097e5761097081836101e9565b38611b5f565b60405190611dda82610160565b6060808360008152600060208201528160408201520152565b60405190611e0082610160565b604882527f62617365206665650000000000000000000000000000000000000000000000006060837f63616c63756c617465426173654665653a20756e61626c6520746f206578656360208201527f75746520656d7074794f704f7574636f6d652c2063616e6e6f742063616c632060408201520152565b15611e805750565b611ea49060405191829162461bcd60e51b83526020600484015260248301906102ab565b0390fd5b60405190611eb582610160565b604a82527f63206261736520666565000000000000000000000000000000000000000000006060837f63616c63756c617465426173654665653a20756e61626c6520746f206578656360208201527f7574652074776f43616c6c4f704f7574636f6d652c2063616e6e6f742063616c60408201520152565b906001600160a01b03611f3e611dcd565b6001600160a01b0384168152921690604080519263057ff68760e51b938481526020958682600481865afa918215610985576000926120d8575b50868101918252611faf611f8a611536565b858301968188526060840152611fa03091611364565b51906001600160a01b03169052565b86611fd1611fbb610218565b6000815260008382015260008782015283612fae565b96611ff3611fe1838a0151151590565b898801805151156120cf575190611e78565b600486518096819382525afa9283156109855761207c9561206a9461206194612043936000926120b0575b505261203861202b61158b565b808352611fa03091611364565b611fa0309151611376565b61204b610218565b9060008252600088830152600085830152612fae565b94850151151590565b908401805151156120a1575190611e78565b805191519182811161209c576120959061069d9361182e565b905161182e565b505090565b506120aa611ea8565b90611e78565b6120c89192508b3d8d1161097e5761097081836101e9565b903861201e565b506120aa611df3565b6120f0919250873d891161097e5761097081836101e9565b9038611f78565b6060906001600160a01b0361069d94931681526000602082015281604082015201906102ab565b91602061069d9381815201916113fb565b6020908161012093959461215c876040519889958587013784019183830160008152815194859201610288565b010380855201836101e9565b9392939190916001600160a01b0361217e611264565b951680156124375760409384519360209461224e816121e7848983016001600160a01b0360a0921681526001602082015260606040820152600260608201527f307800000000000000000000000000000000000000000000000000000000000060808201520190565b036121fa601f19918281018552846101e9565b885163a9059cbb60e01b898201526001600160a01b0385166024820152600160448201526064828101825290949061223290866101e9565b6122428a519586928b84016120f7565b039081018452836101e9565b86517fde26c4a1000000000000000000000000000000000000000000000000000000008152868180612284878a6004840161211e565b0381885afa9081156109855760009161241a575b5089528651917f49948e0e00000000000000000000000000000000000000000000000000000000928381528781806122d4888b6004840161211e565b0381895afa908115610985576123109389928b8e6122fe946000936123fb575b500152868961212f565b89518094819287835260048301610ccd565b0381885afa9384156109855761234c968895612339946000916123de575b5060608d015261212f565b9086519485928392835260048301610ccd565b0381845afa9384156109855760049484936000916123c1575b50608088015251938480927f519b4bd30000000000000000000000000000000000000000000000000000000082525afa918215610985576000926123a95750830152565b816117f79293503d841161097e5761097081836101e9565b6123d89150843d861161097e5761097081836101e9565b38612365565b6123f59150873d891161097e5761097081836101e9565b3861232e565b612413919350863d881161097e5761097081836101e9565b91386122f4565b6124319150873d891161097e5761097081836101e9565b38612298565b50505050565b9061244661123f565b9161245b6108d382516001600160a01b031690565b90604051809263057ff68760e51b825281600460209586935afa908115610985576000916125cf575b50828201526124c66000612496610218565b81815281858201526124ab6040820160019052565b60405180938192636e03477960e01b83528660048401611a05565b038183305af1600091816125b4575b506125ae57506124e36117fe565b8051600481108015612573575b611d36575060240151904515158061256a575b1561252057508352600090830152612519611ad7565b6040830152565b9061069d9394508060146125359204906115e6565b9161253f83611ac1565b90458211612562575b612550610218565b93845283015260006040830152612641565b459150612548565b50458211612503565b50633578916960e11b7fffffffff000000000000000000000000000000000000000000000000000000006125a684611a77565b1614156124f0565b93505050565b6125c891923d8091833e611d9681836101e9565b90386124d5565b6125e69150833d851161097e5761097081836101e9565b38612484565b604051906125f9826101b9565b600b82527f4e4f4e43455f4552524f520000000000000000000000000000000000000000006020830152565b600091031261010e57565b90602061069d92818152019061198b565b61264961123f565b6020808301519160046126666108d386516001600160a01b031690565b938360409586519384809263057ff68760e51b82525afa918215610985576000926128f3575b50036128df575a8551908115916126ad6108d388516001600160a01b031690565b9083156128da5750815b86880151823b1561010e576000916126fe91838a519586809581947fabc5345e00000000000000000000000000000000000000000000000000000000835260048301612630565b0393f190816128c1575b506128b6576127156117fe565b858401525b81156128ae5761272b905a9061182e565b82528080612899575b8180612880575b8215908161286c575b8215612864575b50811561285c575b5061285357858401511515908161283f575b81612837575b5061281d5784519185019182519182821461281357509161279e6127986127d098979593600097956115e6565b60011c90565b8085526127b08251600a81049061182e565b1061280a575b50519485928392636e03477960e01b845260048401611a05565b038183305af1918215610985576000926127ef575b5060016060830152565b61280391923d8091833e611d9681836101e9565b90386127e5565b518352386127b6565b9550505050505090565b518251633578916960e11b81526004810191909152602490fd5b90503861276b565b905061284d83830151151590565b90612765565b50935050505090565b905038612753565b91503861274b565b905061287a85850151151590565b90612744565b5061289461289085850151151590565b1590565b61273b565b506128a961289085880151151590565b612734565b50855161272b565b60018385015261271a565b806128ce6128d4926101d5565b80612625565b38612708565b6126b7565b93505090506128ec6125ec565b9082015290565b61290b919250843d861161097e5761097081836101e9565b903861268c565b1561291957565b606460405162461bcd60e51b815260206004820152601a60248201527f494d504f535349424c455f4741535f434f4e53554d5054494f4e0000000000006044820152fd5b939290919361296c8351611639565b9260005b81518114612b97576129856108348284611386565b9061298e611dcd565b6001600160a01b03851681526001600160a01b038086169160409283519563057ff68760e51b875260209360049185898481875afa8015610985578f9189908f92958996612a4b9d600091612b7a575b50878a01528a6129ec611536565b8a8201818152978416939084612aa157505050505091612a269185612a19612a2c96956001993193611386565b510152611fa08351611364565b51611364565b5101525b81612a3b858b611386565b510151612a50575b50505061133a565b612970565b6000612a6e9381612a5f610218565b94818652850152830152612641565b858151918215612a4357612a8782612a8d941015612912565b5161182e565b612a978288611386565b5152388581612a43565b612aef9650612a26929550612afd9498939791611fa0612ac092611364565b845163a9059cbb60e01b8a8201526001600160a01b039091166024820152600160448201529485906064820190565b03601f1981018652856101e9565b51015286516330ea258b60e21b81526001600160a01b03928316918101918252939091166020820152829081906040010381305afa60009181612b5b575b50612b47575b50612a30565b82612b52868c611386565b51015238612b41565b612b73919250843d861161097e5761097081836101e9565b9038612b3b565b612b919150883d8a1161097e5761097081836101e9565b386129de565b505050509150565b6001600160a01b03612baf611dcd565b6001600160a01b03831681526040805163057ff68760e51b808252602095909416908581600481855afa90811561098557600091612c93575b50858401908152612bf7611536565b93612c0c84820195808752611fa03091611364565b86612c2e612c18610218565b6000815260008382015260008782015283612641565b96612c3e611fe1838a0151151590565b600486518096819382525afa9283156109855761207c9561206a9461206194612c75936000926120b057505261203861202b61158b565b612c7d610218565b9060008252600088830152600085830152612641565b612caa9150863d881161097e5761097081836101e9565b38612be8565b949391929092612cc08451611639565b9360005b81518114612eb057612cd96108348284611386565b90612ce2611dcd565b6001600160a01b038a1681526001600160a01b0392838b169160409283519263057ff68760e51b845260209360049285828581845afa90811561098557612da6998f9395898f8f98978d968c99600091612e93575b50898c0152612d44611536565b94838c019a868c5260608d01528116948515600014612df6575050505050509183612d7760019693612d88953193611386565b510152612a268c611fa08351611364565b5101525b81612d97858c611386565b510151612dab5750505061133a565b612cc4565b6000612dc99381612dba610218565b94818652850152830152612fae565b868151918215612a4357612a8782612de2941015612912565b612dec8289611386565b5152388681612a43565b612aef969a93959850612e16949750612a269291611fa0612ac092611364565b51015286516330ea258b60e21b81526001600160a01b03928316918101918252939091166020820152829081906040010381305afa60009181612e74575b50612e60575b50612d8c565b82612e6b868d611386565b51015238612e5a565b612e8c919250843d861161097e5761097081836101e9565b9038612e54565b612eaa91508a3d8c1161097e5761097081836101e9565b38612d37565b50505050509150565b919091612ec68351611639565b92600090815b8151811461243757612f0c906001600160a01b0380612eee6108348487611386565b1680612f1157508516316020612f04838a611386565b51015261133a565b612ecc565b6040516330ea258b60e21b81526001600160a01b03918216600482015291871616602482015260208082604481305afa869281612f6a575b50612f56575b505061133a565b612f60838a611386565b5101523880612f4f565b612f82919350823d841161097e5761097081836101e9565b9138612f49565b9091612fa061069d9360408452604084019061198b565b9160208184039101526102ab565b612fb661123f565b602080830151916004612fd36108d386516001600160a01b031690565b938360409586519384809263057ff68760e51b82525afa918215610985576000926131de575b50036128df575a85519081159161301a6108d388516001600160a01b031690565b9083156131d8575081905b8688015191606089015190823b1561010e5761307393600080948b518097819682957f6171d1c900000000000000000000000000000000000000000000000000000000845260048401612f89565b0393f190816131c5575b506131ba5761308a6117fe565b858401525b81156131b2576130a0905a9061182e565b8252808061319d575b8180613188575b82159081613174575b821561316c575b508115613164575b50612853578584015115159081613150575b81613148575b5061281d5784519185019182519182821461281357509161310d6127986127d098979593600097956115e6565b80855261311f8251600a81049061182e565b1061313f575b50519485928392631c8b2d2360e31b845260048401611a05565b51835238613125565b9050386130e0565b905061315e83830151151590565b906130da565b9050386130c8565b9150386130c0565b905061318285850151151590565b906130b9565b5061319861289085850151151590565b6130b0565b506131ad61289085880151151590565b6130a9565b5085516130a0565b60018385015261308f565b806128ce6131d2926101d5565b3861307d565b90613025565b6131f6919250843d861161097e5761097081836101e9565b9038612ff9565b6001600160a01b03604051911660208201527f030000000000000000000000000000000000000000000000000000000000000060408201526021815261069d81610181565b1561324957565b606460405162461bcd60e51b815260206004820152601560248201527f53706f6f66206661696c65643a206e6f206b65797300000000000000000000006044820152fd5b61329982511515613242565b6000805b83518114613334576132b26108348286611386565b60405163c066a5b160e01b81526001600160a01b03821660048201526020908181806024810103816001600160a01b038a165afa918215610985578592613317575b505061330957506133049061133a565b61329d565b9250505061069d91506131fd565b61332d9250803d1061097e5761097081836101e9565b38806132f4565b60405162461bcd60e51b815260206004820152601860248201527f53706f6f66206661696c65643a2077726f6e67206b65797300000000000000006044820152606490fdfea26469706673582212203f0ed592730ce5e0d9db974ab7b56cfd63e78011694f72ec673c71af09d2902164736f6c63430008130033"
+}

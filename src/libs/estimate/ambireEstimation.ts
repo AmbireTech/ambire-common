@@ -1,6 +1,7 @@
 import { ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
+import EstimationBySender from '../../../contracts/compiled/EstimationBySender.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE, SCROLL_ORACLE } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -71,7 +72,14 @@ export async function ambireEstimateGas(
   nativeToCheck: string[]
 ): Promise<AmbireEstimation | Error> {
   const account = baseAcc.getAccount()
-  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  // the abstract chain doesn't work with .execute(), so we make it
+  // work with executeBySender()
+  const shouldEstimateBySender = network.chainId === 2741n
+  const deploylessEstimator = fromDescriptor(
+    provider,
+    shouldEstimateBySender ? EstimationBySender : Estimation,
+    !network.rpcNoStateOverride
+  )
 
   // only the activator call is added here as there are cases where it's needed
   const calls = [...op.calls.map(toSingletonCall)]
@@ -80,7 +88,9 @@ export async function ambireEstimateGas(
   }
 
   const shouldStateOverride =
-    !network.rpcNoStateOverride && baseAcc.shouldStateOverrideDuringSimulations()
+    shouldEstimateBySender ||
+    (!network.rpcNoStateOverride && baseAcc.shouldStateOverrideDuringSimulations())
+  const stateToOverride = shouldStateOverride ? getNotAmbireStateOverride(account.addr) : null
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -93,11 +103,11 @@ export async function ambireEstimateGas(
     getOracleAddr(network)
   ]
   const ambireEstimation = await deploylessEstimator
-    .call('estimate', checkInnerCallsArgs, {
+    .call(shouldEstimateBySender ? 'estimateBySender' : 'estimate', checkInnerCallsArgs, {
       from: DEPLOYLESS_SIMULATION_FROM,
       blockTag: getPendingBlockTagIfSupported(network),
       mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-      stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(account.addr) : null
+      stateToOverride
     })
     .catch(getHumanReadableEstimationError)
 
