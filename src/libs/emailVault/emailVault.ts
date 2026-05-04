@@ -90,10 +90,10 @@ export class EmailVault {
     ).success
   }
 
-  async removeKeyStoreSecret(
+  async removeKeyStoreSecretFromRelayer(
     email: String,
     authKey: String,
-    keyStoreUid: String,
+    keyStoreUid: String
   ): Promise<Boolean> {
     return (
       await this.callRelayer(`/email-vault/remove-key-store-secret/${email}/${authKey}`, 'POST', {
