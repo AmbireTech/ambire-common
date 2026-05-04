@@ -195,6 +195,30 @@ describe('1559 Network gas price tests', () => {
     expect(ape.maxPriorityFeePerGas).toBe(189843n)
     provider.destroy()
   })
+  test('falls back to raw block data when ethers cannot format Abstract-style transactions', async () => {
+    const params = {
+      blockNumber: 10,
+      getBlockError: new TypeError('missing r'),
+      gasUsed: 15000000n,
+      transactions: [
+        {
+          gasPrice: 45250000n,
+          maxPriorityFeePerGas: 0n,
+          type: '0x71'
+        }
+      ]
+    }
+    const provider = MockProvider.init(params)
+    const gasPriceData = await getGasPriceRecommendations(provider, network)
+    const gasPrice = gasPriceData.gasPrice
+
+    const slow: any = gasPrice[0]!
+    expect(slow.baseFeePerGas).toBe(ethers.parseUnits('1', 'gwei'))
+    expect(slow.maxPriorityFeePerGas).toBe(100000n)
+    const medium: any = gasPrice[1]
+    expect(medium.maxPriorityFeePerGas).toBe(112500n)
+    provider.destroy()
+  })
   test('should remove an outlier from a group of 17, making the group 16, and calculate average at a step of 4, disregarding none', async () => {
     const params = {
       transactions: [
