@@ -897,10 +897,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     if (shouldSetMaxAmount) {
-      const maxAmountForCurrentFieldMode =
-        this.fromAmountFieldMode === 'fiat' ? this.maxFromAmountInFiat : this.maxFromAmount
-
-      this.#setFromAmountAmount(maxAmountForCurrentFieldMode, true)
+      // Always derive amounts from exact token balance. Using max fiat here
+      // would run fiat→token rounding and often leave spendable dust.
+      const previousFieldMode = this.fromAmountFieldMode
+      this.fromAmountFieldMode = 'token'
+      this.#setFromAmountAmount(this.maxFromAmount, true)
+      this.fromAmountFieldMode = previousFieldMode
     }
 
     if (fromAmount !== undefined) {
