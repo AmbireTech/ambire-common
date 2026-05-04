@@ -30,6 +30,7 @@ jobs:
       # 2. It replaces /security-review with /review
       # 3. It replaces the extra instructions
       - name: Rewrite event payload for PR-Agent
+        if: github.event_name == 'issue_comment'
         run: |
           jq '(.comment.body // "") |= sub("/security-review"; "/review"; "i")' \
             "$GITHUB_EVENT_PATH" > "$GITHUB_EVENT_PATH.tmp" && \
