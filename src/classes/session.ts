@@ -65,9 +65,13 @@ export class Session {
       return
     }
 
+    // SECURITY: include the session origin so platform messengers (e.g. mobile)
+    // can verify the WebView is still on the intended origin before delivering
+    // the broadcast. This prevents accountsChanged/chainChanged leakage to a
+    // page the user has navigated to during an async operation.
     this.messenger.send(
       this.isAmbireNext ? 'broadcast-next' : 'broadcast',
-      { event, data },
+      { event, data, origin: this.origin },
       { tabId: this.tabId }
     )
   }
