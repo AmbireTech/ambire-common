@@ -44,4 +44,17 @@ describe('transfer amount helpers', () => {
       })
     ).toBe(15_000_000n)
   })
+
+  test('should not increase max amount while a larger fee is reserved', () => {
+    expect(
+      getAmountAfterFeeSync({
+        currentAmount: 14_600_000n,
+        totalAmount: 15_000_000n,
+        fee: 350_000n,
+        reservedFee: 400_000n,
+        shouldReserveFee: true,
+        isMaxAmountSelected: true
+      })
+    ).toBe(14_600_000n)
+  })
 })
