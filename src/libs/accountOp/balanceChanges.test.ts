@@ -1,4 +1,4 @@
-import { ZeroAddress } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -24,6 +24,31 @@ const buildToken = (overrides: Partial<TokenResult>): TokenResult => ({
 })
 
 const ok = (token: TokenResult): [TokenError, TokenResult] => ['0x', token]
+
+const transferInterface = new Interface([
+  'event Transfer(address indexed from, address indexed to, uint256 value)'
+])
+
+const buildTransferLog = ({
+  address,
+  from,
+  to,
+  value
+}: {
+  address: string
+  from: string
+  to: string
+  value: bigint
+}) => {
+  const event = transferInterface.getEvent('Transfer')!
+  const { data, topics } = transferInterface.encodeEventLog(event, [from, to, value])
+
+  return {
+    address,
+    data,
+    topics
+  }
+}
 
 describe('balanceChanges', () => {
   test('computes expected balance changes on ethereum', async () => {
@@ -286,5 +311,72 @@ describe('balanceChanges', () => {
       ])
     )
     expect(balanceChanges).toHaveLength(2)
+  })
+
+  test('computes HyperEVM ERC-20 balance changes from transfer logs without historical calls', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const recipient = '0x1111111111111111111111111111111111111111'
+    const sender = '0x2222222222222222222222222222222222222222'
+    const usdcAddr = '0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb'
+    const tokenAddrs = [ZeroAddress, usdcAddr]
+    const logs = [
+      buildTransferLog({
+        address: usdcAddr,
+        from: accountAddr,
+        to: recipient,
+        value: 1000000n
+      }),
+      buildTransferLog({
+        address: usdcAddr,
+        from: sender,
+        to: accountAddr,
+        value: 2500000n
+      })
+    ]
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        if (blockTag !== 'latest') throw new Error('historical block tags are not supported')
+
+        return [
+          ok(
+            buildToken({
+              symbol: 'USDC',
+              name: 'USD Coin',
+              decimals: 6,
+              address: usdcAddr,
+              chainId: 999n,
+              amount: 5000000n
+            })
+          )
+        ]
+      })
+
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 999n,
+      tokenAddrs,
+      receiptBlockNumber: 12345,
+      getTokenBalancesOnBlock,
+      receipts: [{ logs }]
+    })
+
+    expect(getTokenBalancesOnBlock).toHaveBeenCalledTimes(1)
+    expect(getTokenBalancesOnBlock).toHaveBeenCalledWith(
+      accountAddr,
+      999n,
+      [usdcAddr],
+      'latest',
+      accountAddr
+    )
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: usdcAddr,
+        symbol: 'USDC',
+        amountBefore: 3500000n,
+        amountAfter: 5000000n,
+        balanceChange: 1500000n
+      })
+    ])
   })
 })

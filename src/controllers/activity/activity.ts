@@ -11,6 +11,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import type { BalanceChangeTransferLog } from '../../libs/accountOp/balanceChanges'
 import {
   getAccountOpBalanceChanges,
   getBalanceChangeTokenAddresses
@@ -616,7 +617,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         network,
         tokenAddrs,
         balanceChangeWindow.receiptBlockNumber,
-        balanceChangeWindow.prevBlockNumber
+        balanceChangeWindow.prevBlockNumber,
+        receipts
       )
     } catch (error: any) {
       console.log(error)
@@ -673,17 +675,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
       tokenAddrs: string[]
       receiptBlockNumber: number
       prevBlockNumber?: number
+      receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
     }>
   ) {
     await Promise.all(
       balanceChangesTasks.map(
-        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) =>
+        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
           this.updateAccountOpBalanceChanges(
             accountOp,
             network,
             tokenAddrs,
             receiptBlockNumber,
-            prevBlockNumber
+            prevBlockNumber,
+            receipts
           )
       )
     )
@@ -734,6 +738,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       tokenAddrs: string[]
       receiptBlockNumber: number
       prevBlockNumber?: number
+      receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
     }> = []
 
     // we should fetch Safe txns again upon failure
@@ -772,6 +777,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             let lastReceiptBlockNumber: number | undefined
             let shouldScheduleBalanceChangesTask = false
             const foundTokensForBalanceChanges = new Set<string>()
+            const receiptsForBalanceChanges: TransactionReceipt[] = []
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
               newestOpTimestamp = accountOp.timestamp
@@ -868,6 +874,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     firstReceiptBlockNumber = receipt.blockNumber
                   }
                   lastReceiptBlockNumber = receipt.blockNumber
+                  receiptsForBalanceChanges.push(receipt)
 
                   // if this is an user op, we have to check the logs
                   let isSuccess: boolean | undefined
@@ -978,7 +985,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   isIdentifiedByMultipleTxn(accountOp.identifiedBy) &&
                   typeof firstReceiptBlockNumber !== 'undefined'
                     ? getPreviousBlockNumber(firstReceiptBlockNumber)
-                    : undefined
+                    : undefined,
+                receipts: receiptsForBalanceChanges
               })
             }
           })
@@ -1011,7 +1019,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     network: Network,
     tokenAddrs: string[],
     receiptBlockNumber: number,
-    prevBlockNumber?: number
+    prevBlockNumber?: number,
+    receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
   ) {
     await this.#initialLoadPromise
 
@@ -1028,7 +1037,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         tokenAddrs,
         receiptBlockNumber,
         getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
-        prevBlockNumber
+        prevBlockNumber,
+        receipts
       })
 
       await this.setAccountOpBalanceChanges(

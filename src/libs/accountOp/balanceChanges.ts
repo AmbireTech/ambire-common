@@ -1,7 +1,17 @@
-import { getAddress, ZeroAddress } from 'ethers'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { TokenError, TokenResult } from '../portfolio/interfaces'
 import { BalanceChange } from './submittedAccountOp'
+
+const HYPER_EVM_CHAIN_ID = 999n
+const TRANSFER_ABI = ['event Transfer(address indexed from, address indexed to, uint256 value)']
+const transferInterface = new Interface(TRANSFER_ABI)
+
+export type BalanceChangeTransferLog = {
+  address: string
+  topics: readonly string[]
+  data: string
+}
 
 export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =>
   Array.from(
@@ -67,9 +77,97 @@ type GetTokenBalancesOnBlock = (
   accountId: string,
   chainId: bigint,
   tokenAddrs: string[],
-  blockTag: number,
+  blockTag: number | 'latest',
   accountAddr?: string
 ) => Promise<[TokenError, TokenResult][]>
+
+const getTransferLogBalanceChangeByToken = (
+  logs: readonly BalanceChangeTransferLog[],
+  accountAddr: string
+) => {
+  const balanceChangeByToken = new Map<string, bigint>()
+  const accAddr = getAddress(accountAddr)
+
+  logs.forEach((log) => {
+    try {
+      const parsed = transferInterface.parseLog({ topics: [...log.topics], data: log.data })
+      if (!parsed) return
+
+      const from = getAddress(parsed.args.from)
+      const to = getAddress(parsed.args.to)
+
+      if (from !== accAddr && to !== accAddr) return
+
+      const tokenAddr = getAddress(log.address)
+      const prevBalanceChange = balanceChangeByToken.get(tokenAddr) || 0n
+      let balanceChange = prevBalanceChange
+
+      if (from === accAddr) balanceChange -= parsed.args.value
+      if (to === accAddr) balanceChange += parsed.args.value
+
+      balanceChangeByToken.set(tokenAddr, balanceChange)
+    } catch {
+      // Not a standard ERC-20 Transfer log or not a checksummed EVM address.
+    }
+  })
+
+  return balanceChangeByToken
+}
+
+const getHyperEvmBalanceChanges = async ({
+  accountAddr,
+  chainId,
+  getTokenBalancesOnBlock,
+  receipts
+}: {
+  accountAddr: string
+  chainId: bigint
+  getTokenBalancesOnBlock: GetTokenBalancesOnBlock
+  receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
+}): Promise<BalanceChange[]> => {
+  if (!receipts?.length) return []
+
+  const balanceChangeByToken = getTransferLogBalanceChangeByToken(
+    receipts.flatMap((receipt) => receipt.logs),
+    accountAddr
+  )
+  const tokenAddrs = getBalanceChangeTokenAddresses(Array.from(balanceChangeByToken.keys())).filter(
+    (tokenAddr) => tokenAddr !== ZeroAddress
+  )
+
+  if (!tokenAddrs.length) return []
+
+  const latestTokensWithErrors = await getTokenBalancesOnBlock(
+    accountAddr,
+    chainId,
+    tokenAddrs,
+    'latest',
+    accountAddr
+  )
+  const latestTokens = buildTokenBalanceMap(latestTokensWithErrors)
+
+  return tokenAddrs.reduce((changes, tokenAddr) => {
+    const token = latestTokens.get(tokenAddr.toLowerCase())
+    const balanceChange = balanceChangeByToken.get(tokenAddr) || 0n
+
+    if (!token || balanceChange === 0n) return changes
+
+    const amountAfter = token.amount
+    const amountBefore = amountAfter - balanceChange
+
+    changes.push({
+      ...token,
+      amount: amountAfter,
+      amountBefore,
+      amountAfter,
+      balanceChange,
+      priceIn: token.priceIn || [],
+      marketDataIn: token.marketDataIn || []
+    })
+
+    return changes
+  }, [] as BalanceChange[])
+}
 
 export const getAccountOpBalanceChanges = async ({
   accountAddr,
@@ -77,7 +175,8 @@ export const getAccountOpBalanceChanges = async ({
   tokenAddrs,
   receiptBlockNumber,
   getTokenBalancesOnBlock,
-  prevBlockNumber
+  prevBlockNumber,
+  receipts
 }: {
   accountAddr: string
   chainId: bigint
@@ -88,7 +187,18 @@ export const getAccountOpBalanceChanges = async ({
   // we will have to pass the first receipt's block number
   // we want to start the comparisson from
   prevBlockNumber?: number
+  receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
 }) => {
+  if (chainId === HYPER_EVM_CHAIN_ID) {
+    // HyperEVM's public RPC only supports latest-state eth_call/getBalance, so
+    // historical balance reads fail. Receipt logs still give exact ERC-20 deltas.
+    return getHyperEvmBalanceChanges({
+      accountAddr,
+      chainId,
+      getTokenBalancesOnBlock,
+      receipts
+    })
+  }
   const previousBlockNumber = prevBlockNumber
     ? prevBlockNumber
     : receiptBlockNumber > 0
