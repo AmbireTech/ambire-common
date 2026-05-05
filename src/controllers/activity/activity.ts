@@ -1,4 +1,4 @@
-import { toBeHex } from 'ethers'
+import { toBeHex, TransactionReceipt } from 'ethers'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -12,12 +12,18 @@ import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import {
+  getAccountOpBalanceChanges,
+  getBalanceChangeTokenAddresses
+} from '../../libs/accountOp/balanceChanges'
+import {
   AccountOpIdentifiedBy,
+  BalanceChange,
   checkIsRecipientOfAccountOp,
   fetchFrontRanTxnId,
   fetchTxnId,
   getAccountOpRecipients,
   hasTimePassedSinceBroadcast,
+  isIdentifiedByMultipleTxn,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   PortfoliosToUpdate,
@@ -75,6 +81,57 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     currentPage: fromPage, // zero/index based
     maxPages: Math.ceil(items.length / itemsPerPage)
   }
+}
+
+const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
+
+const getBalanceChangeWindowFromReceipts = (
+  accountOp: SubmittedAccountOp,
+  receipts: TransactionReceipt[]
+) => {
+  const firstReceipt = receipts[0]
+  const lastReceipt = receipts[receipts.length - 1]
+
+  if (!firstReceipt || !lastReceipt) return null
+
+  return {
+    receiptBlockNumber: lastReceipt.blockNumber,
+    prevBlockNumber: isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+      ? getPreviousBlockNumber(firstReceipt.blockNumber)
+      : undefined
+  }
+}
+
+const getBalanceChangeTokenAddrsFromReceipts = async (
+  accountOp: SubmittedAccountOp,
+  receipts: TransactionReceipt[]
+) => {
+  const foundTokens = (
+    await Promise.all(
+      receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
+    )
+  ).flat()
+
+  return getBalanceChangeTokenAddresses(foundTokens)
+}
+
+const getAccountOpReceipts = async (
+  accountOp: SubmittedAccountOp,
+  provider: {
+    getTransactionReceipt: (txnId: string) => Promise<TransactionReceipt | null>
+  }
+) => {
+  const txIds = isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+    ? accountOp.calls.map((call) => call.txnId).filter((txnId) => !!txnId)
+    : accountOp.txnId
+      ? [accountOp.txnId]
+      : []
+
+  if (!txIds.length) return []
+
+  const receipts = await Promise.all(txIds.map((txnId) => provider.getTransactionReceipt(txnId)))
+
+  return receipts.filter((receipt): receipt is TransactionReceipt => !!receipt)
 }
 
 /**
@@ -160,6 +217,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
           shouldFetchSafeTxns: boolean
         }>
       | undefined
+  } = {}
+
+  #backfillAccountOpBalanceChangesPromises: {
+    [key: string]: Promise<void> | undefined
   } = {}
 
   constructor(
@@ -284,6 +345,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
+
+    // find ops with no balance changes recorded and backfill them;
+    // no need to console.log anything in the catch statement here
+    // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
+    const opsWithNoBalanceChanges = result.items.filter(
+      (op: SubmittedAccountOp) =>
+        op.status !== AccountOpStatus.BroadcastedButNotConfirmed && op.balanceChanges === undefined
+    )
+    if (opsWithNoBalanceChanges.length)
+      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
   }
 
   setDashboardBannersSeen(sessionId: string, accountAddr: string) {
@@ -336,6 +407,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
     })
 
     await Promise.all(promises)
+  }
+
+  private async persistAccountsOps() {
+    await this.#storage.set('accountsOps', this.#accountsOps)
+    await this.syncFilteredAccountsOps()
+    this.emitUpdate()
   }
 
   async filterSignedMessages(
@@ -413,6 +490,145 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  async setAccountOpBalanceChanges(
+    identifiedBy: AccountOpIdentifiedBy,
+    accountAddr: string,
+    chainId: bigint,
+    balanceChanges: BalanceChange[] | Error
+  ) {
+    await this.#initialLoadPromise
+
+    // get the latest instance just in case
+    const accountOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
+    if (!accountOp) return
+
+    // if the balanceChanges end up with an error,
+    // we allow 3 retries before giving up on them and setting them to an
+    // empty array
+    if (balanceChanges instanceof Error) {
+      const balanceChangesFetchRetryCount = accountOp.balanceChangesFetchRetryCount || 0
+      accountOp.balanceChangesFetchRetryCount = balanceChangesFetchRetryCount + 1
+      if (accountOp.balanceChangesFetchRetryCount >= 3) {
+        accountOp.balanceChanges = []
+      }
+      return
+    }
+
+    accountOp.balanceChanges = balanceChanges
+  }
+
+  /**
+   * Use this method for updates from the UI only
+   * as we're persisting the state right after the operation
+   */
+  async backfillAccountOpBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
+    await Promise.all(accountOps.map((accOp) => this.backfillAccountOpBalanceChanges(accOp)))
+    await this.persistAccountsOps()
+  }
+
+  /**
+   * This method calculate the balanche changes and puts them in memory
+   * as a reference to #accountOps only.
+   * Use backfillAccountOpBalanceChangesAndPersist if you want to persist them.
+   * We have this separation in order to persist to storage only after the
+   * end of an operation
+   */
+  async backfillAccountOpBalanceChanges(accountOp: SubmittedAccountOp) {
+    await this.#initialLoadPromise
+
+    // take the latest #accountOp, not a stale one from the UI
+    const currentAccountOp = this.findByIdentifiedBy(
+      accountOp.identifiedBy,
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+
+    if (!currentAccountOp || typeof currentAccountOp.balanceChanges !== 'undefined') return
+
+    const taskId = `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${
+      accountOp.identifiedBy.identifier
+    }`
+
+    if (this.#backfillAccountOpBalanceChangesPromises[taskId]) {
+      return this.#backfillAccountOpBalanceChangesPromises[taskId]
+    }
+
+    this.#backfillAccountOpBalanceChangesPromises[taskId] = this.#prepareAndRunBalanceChangesTask(
+      currentAccountOp
+    ).finally(() => {
+      this.#backfillAccountOpBalanceChangesPromises[taskId] = undefined
+    })
+
+    return this.#backfillAccountOpBalanceChangesPromises[taskId]
+  }
+
+  async #prepareAndRunBalanceChangesTask(accountOp: SubmittedAccountOp) {
+    const hasReceipt =
+      accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure
+    if (!hasReceipt || !accountOp.txnId) {
+      // if the status is a status without a receipt, finish balance changes
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        []
+      )
+
+      return
+    }
+
+    const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
+    const provider = this.#providers.providers[accountOp.chainId.toString()]
+
+    // temp error, do not set balance changes to allow the system to retry
+    if (!network || !provider) return
+
+    try {
+      const receipts = await getAccountOpReceipts(accountOp, provider)
+
+      if (!receipts.length) {
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          new Error('no receipts found')
+        )
+
+        return
+      }
+
+      const tokenAddrs = await getBalanceChangeTokenAddrsFromReceipts(accountOp, receipts)
+      const balanceChangeWindow = getBalanceChangeWindowFromReceipts(accountOp, receipts)
+
+      if (!balanceChangeWindow) {
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          new Error('no receipts found')
+        )
+
+        return
+      }
+
+      await this.updateAccountOpBalanceChanges(
+        accountOp,
+        network,
+        tokenAddrs,
+        balanceChangeWindow.receiptBlockNumber,
+        balanceChangeWindow.prevBlockNumber
+      )
+    } catch (error: any) {
+      console.log(error)
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        error
+      )
+    }
+  }
+
   async updateAccountsOpsStatuses(accountAddresses: string[] = []): Promise<
     Record<
       string,
@@ -448,6 +664,30 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
 
     return Object.fromEntries(results)
+  }
+
+  async #executeBalanceChanges(
+    balanceChangesTasks: Array<{
+      accountOp: SubmittedAccountOp
+      network: Network
+      tokenAddrs: string[]
+      receiptBlockNumber: number
+      prevBlockNumber?: number
+    }>
+  ) {
+    await Promise.all(
+      balanceChangesTasks.map(
+        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) =>
+          this.updateAccountOpBalanceChanges(
+            accountOp,
+            network,
+            tokenAddrs,
+            receiptBlockNumber,
+            prevBlockNumber
+          )
+      )
+    )
+    await this.persistAccountsOps()
   }
 
   /**
@@ -488,6 +728,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const chainsToUpdate = new Set<Network['chainId']>()
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
+    const balanceChangesTasks: Array<{
+      accountOp: SubmittedAccountOp
+      network: Network
+      tokenAddrs: string[]
+      receiptBlockNumber: number
+      prevBlockNumber?: number
+    }> = []
 
     // we should fetch Safe txns again upon failure
     let shouldFetchSafeTxns = false
@@ -521,6 +768,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
         return Promise.all(
           opsToUpdate.map(async (accountOp) => {
             shouldEmitUpdate = true
+            let firstReceiptBlockNumber: number | undefined
+            let lastReceiptBlockNumber: number | undefined
+            let shouldScheduleBalanceChangesTask = false
+            const foundTokensForBalanceChanges = new Set<string>()
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
               newestOpTimestamp = accountOp.timestamp
@@ -613,6 +864,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     if (!receipt) return
                   }
 
+                  if (typeof firstReceiptBlockNumber === 'undefined') {
+                    firstReceiptBlockNumber = receipt.blockNumber
+                  }
+                  lastReceiptBlockNumber = receipt.blockNumber
+
                   // if this is an user op, we have to check the logs
                   let isSuccess: boolean | undefined
                   if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
@@ -632,23 +888,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     receipt
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  if (
+                    updatedOpIfAny &&
+                    (updatedOpIfAny.status === AccountOpStatus.Success ||
+                      updatedOpIfAny.status === AccountOpStatus.Failure)
+                  ) {
+                    shouldScheduleBalanceChangesTask = true
+                  }
 
                   if (accountOp.isSingletonDeploy && receipt.status) {
                     // eslint-disable-next-line no-await-in-loop
                     await this.#onContractsDeployed(network)
                   }
 
-                  // learn tokens from the transfer logs
-                  if (isSuccess) {
-                    // eslint-disable-next-line no-await-in-loop
-                    const foundTokens = await getTransferLogTokens(
-                      receipt.logs,
-                      accountOp.accountAddr
-                    )
-                    if (foundTokens.length) {
-                      this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-                    }
-                  } else {
+                  if (!isSuccess) {
                     // if the txn resulted in a failure, unresolve all Safe txns
                     // with the same nonce so that the user can retry
                     const acc = this.#accounts.accounts.find(
@@ -659,6 +912,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       shouldFetchSafeTxns = true
                     }
                   }
+
+                  const foundTokens = isSuccess
+                    ? await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+                    : []
+                  if (foundTokens.length)
+                    this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                  foundTokens.forEach((tokenAddr) => foundTokensForBalanceChanges.add(tokenAddr))
 
                   // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
@@ -705,16 +965,36 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 )
               })
             }
+
+            if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
+              balanceChangesTasks.push({
+                accountOp,
+                network,
+                tokenAddrs: getBalanceChangeTokenAddresses(
+                  Array.from(foundTokensForBalanceChanges)
+                ),
+                receiptBlockNumber: lastReceiptBlockNumber,
+                prevBlockNumber:
+                  isIdentifiedByMultipleTxn(accountOp.identifiedBy) &&
+                  typeof firstReceiptBlockNumber !== 'undefined'
+                    ? getPreviousBlockNumber(firstReceiptBlockNumber)
+                    : undefined
+              })
+            }
           })
         )
       })
     )
 
+    // if there are balanceChangesTasks, shouldEmitUpdate will be true
+    // so they will get saved
     if (shouldEmitUpdate) {
-      await this.#storage.set('accountsOps', this.#accountsOps)
-      await this.syncFilteredAccountsOps()
-      this.emitUpdate()
+      await this.persistAccountsOps()
     }
+
+    // record the balance changes but do not await them
+    // no need to console.log errors in the catch() as it's handled inside
+    this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null)
 
     return {
       shouldEmitUpdate,
@@ -723,6 +1003,52 @@ export class ActivityController extends EventEmitter implements IActivityControl
       portfoliosToUpdate,
       newestOpTimestamp,
       shouldFetchSafeTxns
+    }
+  }
+
+  async updateAccountOpBalanceChanges(
+    accountOp: SubmittedAccountOp,
+    network: Network,
+    tokenAddrs: string[],
+    receiptBlockNumber: number,
+    prevBlockNumber?: number
+  ) {
+    await this.#initialLoadPromise
+
+    try {
+      if (accountOp.chainId !== network.chainId) {
+        throw new Error(
+          `Cannot update balance changes for ${accountOp.identifiedBy.identifier}: network mismatch`
+        )
+      }
+
+      const balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr: accountOp.accountAddr,
+        chainId: accountOp.chainId,
+        tokenAddrs,
+        receiptBlockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        prevBlockNumber
+      })
+
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        balanceChanges
+      )
+
+      return balanceChanges
+    } catch (error: any) {
+      console.log(error)
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        error
+      )
+
+      return []
     }
   }
 
