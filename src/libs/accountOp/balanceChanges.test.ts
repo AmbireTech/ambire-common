@@ -149,6 +149,40 @@ describe('balanceChanges', () => {
     expect(balanceChanges).toHaveLength(2)
   })
 
+  test('throws when a requested token balance snapshot is missing', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const tokenAddrs = [ZeroAddress]
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        if (blockTag === 101) {
+          return [
+            ok(
+              buildToken({
+                symbol: 'ETH',
+                name: 'Ethereum',
+                address: ZeroAddress,
+                chainId: 1n,
+                amount: 9n
+              })
+            )
+          ]
+        }
+
+        return []
+      })
+
+    await expect(
+      getAccountOpBalanceChanges({
+        accountAddr,
+        chainId: 1n,
+        tokenAddrs,
+        receiptBlockNumber: 101,
+        getTokenBalancesOnBlock
+      })
+    ).rejects.toThrow(`Missing token balance snapshot for ${ZeroAddress} at block 100`)
+  })
+
   test('computes expected balance changes on avalanche', async () => {
     const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const tokenAddrs = [ZeroAddress, '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E']

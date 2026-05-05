@@ -1,11 +1,11 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { TokenError, TokenResult } from '../portfolio/interfaces'
-import type { BalanceChangesReceipt, DebugTraceTransaction } from './hyperEvmBalanceChanges'
 import { getHyperEvmBalanceChanges, HYPER_EVM_CHAIN_ID } from './hyperEvmBalanceChanges'
 import { BalanceChange } from './submittedAccountOp'
 
-export type { BalanceChangeTransferLog, BalanceChangesReceipt } from './hyperEvmBalanceChanges'
+import type { BalanceChangesReceipt, DebugTraceTransaction } from './hyperEvmBalanceChanges'
+export type { BalanceChangesReceipt, BalanceChangeTransferLog } from './hyperEvmBalanceChanges'
 
 export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =>
   Array.from(
@@ -31,6 +31,21 @@ const buildTokenBalanceMap = (tokensWithErrors: [TokenError, TokenResult][]) =>
 
     return acc
   }, new Map<string, TokenResult>())
+
+const assertTokenBalanceSnapshot = (
+  tokensWithErrors: [TokenError, TokenResult][],
+  tokenAddrs: string[],
+  blockNumber: number
+) => {
+  const tokens = buildTokenBalanceMap(tokensWithErrors)
+  const missingTokenAddrs = tokenAddrs.filter((tokenAddr) => !tokens.has(tokenAddr.toLowerCase()))
+
+  if (missingTokenAddrs.length) {
+    throw new Error(
+      `Missing token balance snapshot for ${missingTokenAddrs.join(', ')} at block ${blockNumber}`
+    )
+  }
+}
 
 export const compareTokenBalances = (
   beforeTokensWithErrors: [TokenError, TokenResult][],
@@ -117,6 +132,10 @@ export const getAccountOpBalanceChanges = async ({
     getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, receiptBlockNumber, accountAddr),
     getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, previousBlockNumber, accountAddr)
   ])
+
+  // make sure both requests have been successfull
+  assertTokenBalanceSnapshot(currentBlockTokens, tokenAddrs, receiptBlockNumber)
+  assertTokenBalanceSnapshot(previousBlockTokens, tokenAddrs, previousBlockNumber)
 
   return compareTokenBalances(previousBlockTokens, currentBlockTokens)
 }
