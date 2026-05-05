@@ -1,10 +1,11 @@
 import { Contract } from 'ethers'
 
+/* eslint-disable no-underscore-dangle */
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-/* eslint-disable no-underscore-dangle */
+import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
@@ -361,6 +362,87 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       res: result ?? undefined,
       error: error?.message ?? undefined
     })
+  }
+
+  /**
+   * Use this to communicate balanche changes for a transaction
+   * to the external benzin
+   */
+  async getTokenBalancesOnBlockAndSendResToUi(
+    {
+      accountId,
+      chainId,
+      tokenAddrs,
+      blockTag,
+      accountAddr
+    }: {
+      accountId: string
+      chainId: bigint
+      tokenAddrs: string[]
+      blockTag: number
+      accountAddr?: string
+    },
+    requestId: string
+  ) {
+    const network = this.#getNetworks().find((n) => n.chainId === chainId)
+
+    if (!network) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: `Network with chainId: ${chainId} not found`
+      })
+    }
+
+    const provider = this.providers[network.chainId.toString()]!
+
+    if (!provider) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: `Provider for chainId: ${chainId} not found`
+      })
+    }
+
+    try {
+      const portfolio = new Portfolio(fetch as any, provider, network)
+
+      // create a wrapper function so that we could pass it correctly
+      // to the required type for getAccountOpBalanceChanges.
+      // the final goal is just calling portfolio.getTokensByAddresses
+      const getTokenBalancesOnBlock = (
+        portfolioAccountId: string,
+        _chainId: bigint,
+        portfolioTokenAddrs: string[],
+        portfolioBlockTag: number,
+        portfolioAccountAddr?: string
+      ) =>
+        portfolio.getTokensByAddresses(
+          portfolioAccountAddr || portfolioAccountId,
+          portfolioTokenAddrs,
+          { blockTag: portfolioBlockTag }
+        )
+
+      const result = await getAccountOpBalanceChanges({
+        accountAddr: accountAddr || accountId,
+        chainId,
+        tokenAddrs,
+        receiptBlockNumber: blockTag,
+        getTokenBalancesOnBlock
+      })
+
+      return this.#sendUiMessage({
+        requestId,
+        ok: true,
+        res: result
+      })
+    } catch (error: any) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: error?.message || 'Failed to get token balances on block'
+      })
+    }
   }
 
   async #executeBatchedFetch(network: Network): Promise<void> {
