@@ -5,7 +5,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import type { BalanceChangeTransferLog } from '../../libs/accountOp/balanceChanges'
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
@@ -376,14 +376,14 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       tokenAddrs,
       blockTag,
       accountAddr,
-      logs
+      receipts
     }: {
       accountId: string
       chainId: bigint
       tokenAddrs: string[]
       blockTag: number
       accountAddr?: string
-      logs?: BalanceChangeTransferLog[]
+      receipts?: BalanceChangesReceipt[]
     },
     requestId: string
   ) {
@@ -432,7 +432,11 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         tokenAddrs,
         receiptBlockNumber: blockTag,
         getTokenBalancesOnBlock,
-        receipts: logs ? [{ logs }] : undefined
+        receipts,
+        debugTraceTransaction: (txnHash) =>
+          chainId === 999n
+            ? provider.send('debug_traceTransaction', [txnHash, { tracer: 'callTracer' }])
+            : Promise.resolve(null)
       })
 
       return this.#sendUiMessage({

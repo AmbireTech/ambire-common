@@ -13,6 +13,23 @@ export type BalanceChangeTransferLog = {
   data: string
 }
 
+export type BalanceChangesReceipt = {
+  logs: readonly BalanceChangeTransferLog[]
+  hash?: string
+  from?: string
+  gasUsed?: bigint
+  gasPrice?: bigint
+  fee?: bigint
+}
+
+export type DebugTraceCall = {
+  type?: string
+  from?: string
+  to?: string
+  value?: string
+  calls?: DebugTraceCall[]
+}
+
 export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =>
   Array.from(
     new Set(
@@ -81,6 +98,16 @@ type GetTokenBalancesOnBlock = (
   accountAddr?: string
 ) => Promise<[TokenError, TokenResult][]>
 
+type DebugTraceTransaction = (txnHash: string) => Promise<DebugTraceCall | null>
+
+const getHexValue = (value?: string) => {
+  try {
+    return value ? BigInt(value) : 0n
+  } catch {
+    return 0n
+  }
+}
+
 const getTransferLogBalanceChangeByToken = (
   logs: readonly BalanceChangeTransferLog[],
   accountAddr: string
@@ -114,16 +141,88 @@ const getTransferLogBalanceChangeByToken = (
   return balanceChangeByToken
 }
 
+const getNativeBalanceChangeFromTrace = (trace: DebugTraceCall, accountAddr: string): bigint => {
+  const traceType = trace.type?.toUpperCase()
+  const valueMovesNativeBalance = ['CALL', 'CREATE', 'CREATE2', 'SELFDESTRUCT'].includes(
+    traceType || ''
+  )
+  let balanceChange = 0n
+
+  if (valueMovesNativeBalance) {
+    const value = getHexValue(trace.value)
+
+    try {
+      if (trace.from && getAddress(trace.from) === accountAddr) balanceChange -= value
+      if (trace.to && getAddress(trace.to) === accountAddr) balanceChange += value
+    } catch {
+      // Ignore malformed trace addresses.
+    }
+  }
+
+  return (trace.calls || []).reduce(
+    (acc, call) => acc + getNativeBalanceChangeFromTrace(call, accountAddr),
+    balanceChange
+  )
+}
+
+const getReceiptFee = (receipt: BalanceChangesReceipt) => {
+  if (receipt.fee !== undefined) return receipt.fee
+  if (receipt.gasUsed !== undefined && receipt.gasPrice !== undefined) {
+    return receipt.gasUsed * receipt.gasPrice
+  }
+
+  return 0n
+}
+
+const getHyperEvmNativeBalanceChange = async ({
+  accountAddr,
+  receipts,
+  debugTraceTransaction
+}: {
+  accountAddr: string
+  receipts?: BalanceChangesReceipt[]
+  debugTraceTransaction?: DebugTraceTransaction
+}) => {
+  if (!receipts?.length || !debugTraceTransaction) return 0n
+
+  const checksummedAccountAddr = getAddress(accountAddr)
+  const balanceChanges = await Promise.all(
+    receipts.map(async (receipt) => {
+      if (!receipt.hash) return 0n
+
+      try {
+        const trace = await debugTraceTransaction(receipt.hash)
+        if (!trace) return 0n
+
+        let balanceChange = getNativeBalanceChangeFromTrace(trace, checksummedAccountAddr)
+        const transactionSender = receipt.from || trace.from
+
+        if (transactionSender && getAddress(transactionSender) === checksummedAccountAddr) {
+          balanceChange -= getReceiptFee(receipt)
+        }
+
+        return balanceChange
+      } catch {
+        return 0n
+      }
+    })
+  )
+
+  return balanceChanges.reduce((acc, balanceChange) => acc + balanceChange, 0n)
+}
+
 const getHyperEvmBalanceChanges = async ({
   accountAddr,
   chainId,
   getTokenBalancesOnBlock,
-  receipts
+  receipts,
+  debugTraceTransaction
 }: {
   accountAddr: string
   chainId: bigint
   getTokenBalancesOnBlock: GetTokenBalancesOnBlock
-  receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
+  receipts?: BalanceChangesReceipt[]
+  debugTraceTransaction?: DebugTraceTransaction
 }): Promise<BalanceChange[]> => {
   if (!receipts?.length) return []
 
@@ -131,9 +230,16 @@ const getHyperEvmBalanceChanges = async ({
     receipts.flatMap((receipt) => receipt.logs),
     accountAddr
   )
-  const tokenAddrs = getBalanceChangeTokenAddresses(Array.from(balanceChangeByToken.keys())).filter(
-    (tokenAddr) => tokenAddr !== ZeroAddress
-  )
+  const nativeBalanceChange = await getHyperEvmNativeBalanceChange({
+    accountAddr,
+    receipts,
+    debugTraceTransaction
+  })
+  const erc20TokenAddrs = getBalanceChangeTokenAddresses(
+    Array.from(balanceChangeByToken.keys())
+  ).filter((tokenAddr) => tokenAddr !== ZeroAddress)
+  const tokenAddrs =
+    nativeBalanceChange !== 0n ? [ZeroAddress, ...erc20TokenAddrs] : erc20TokenAddrs
 
   if (!tokenAddrs.length) return []
 
@@ -148,7 +254,8 @@ const getHyperEvmBalanceChanges = async ({
 
   return tokenAddrs.reduce((changes, tokenAddr) => {
     const token = latestTokens.get(tokenAddr.toLowerCase())
-    const balanceChange = balanceChangeByToken.get(tokenAddr) || 0n
+    const balanceChange =
+      tokenAddr === ZeroAddress ? nativeBalanceChange : balanceChangeByToken.get(tokenAddr) || 0n
 
     if (!token || balanceChange === 0n) return changes
 
@@ -176,7 +283,8 @@ export const getAccountOpBalanceChanges = async ({
   receiptBlockNumber,
   getTokenBalancesOnBlock,
   prevBlockNumber,
-  receipts
+  receipts,
+  debugTraceTransaction
 }: {
   accountAddr: string
   chainId: bigint
@@ -187,7 +295,8 @@ export const getAccountOpBalanceChanges = async ({
   // we will have to pass the first receipt's block number
   // we want to start the comparisson from
   prevBlockNumber?: number
-  receipts?: { logs: readonly BalanceChangeTransferLog[] }[]
+  receipts?: BalanceChangesReceipt[]
+  debugTraceTransaction?: DebugTraceTransaction
 }) => {
   if (chainId === HYPER_EVM_CHAIN_ID) {
     // HyperEVM's public RPC only supports latest-state eth_call/getBalance, so
@@ -196,7 +305,8 @@ export const getAccountOpBalanceChanges = async ({
       accountAddr,
       chainId,
       getTokenBalancesOnBlock,
-      receipts
+      receipts,
+      debugTraceTransaction
     })
   }
   const previousBlockNumber = prevBlockNumber

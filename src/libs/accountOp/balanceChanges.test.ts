@@ -313,7 +313,7 @@ describe('balanceChanges', () => {
     expect(balanceChanges).toHaveLength(2)
   })
 
-  test('computes HyperEVM ERC-20 balance changes from transfer logs without historical calls', async () => {
+  test('computes HyperEVM balance changes from transfer logs and native traces without historical calls', async () => {
     const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const recipient = '0x1111111111111111111111111111111111111111'
     const sender = '0x2222222222222222222222222222222222222222'
@@ -338,19 +338,35 @@ describe('balanceChanges', () => {
       .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
         if (blockTag !== 'latest') throw new Error('historical block tags are not supported')
 
-        return [
-          ok(
-            buildToken({
-              symbol: 'USDC',
-              name: 'USD Coin',
-              decimals: 6,
-              address: usdcAddr,
-              chainId: 999n,
-              amount: 5000000n
-            })
-          )
-        ]
+        return _tokenAddrs.map((tokenAddr: string) =>
+          tokenAddr === ZeroAddress
+            ? ok(
+                buildToken({
+                  symbol: 'HYPE',
+                  name: 'HYPE',
+                  address: ZeroAddress,
+                  chainId: 999n,
+                  amount: 10000n
+                })
+              )
+            : ok(
+                buildToken({
+                  symbol: 'USDC',
+                  name: 'USD Coin',
+                  decimals: 6,
+                  address: usdcAddr,
+                  chainId: 999n,
+                  amount: 5000000n
+                })
+              )
+        )
       })
+    const debugTraceTransaction = jest.fn().mockResolvedValue({
+      type: 'CALL',
+      from: accountAddr,
+      to: recipient,
+      value: '0x3e8'
+    })
 
     const balanceChanges = await getAccountOpBalanceChanges({
       accountAddr,
@@ -358,24 +374,106 @@ describe('balanceChanges', () => {
       tokenAddrs,
       receiptBlockNumber: 12345,
       getTokenBalancesOnBlock,
-      receipts: [{ logs }]
+      receipts: [
+        {
+          hash: '0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a',
+          from: accountAddr,
+          gasUsed: 21n,
+          gasPrice: 100n,
+          logs
+        }
+      ],
+      debugTraceTransaction
     })
 
+    expect(debugTraceTransaction).toHaveBeenCalledWith(
+      '0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a'
+    )
     expect(getTokenBalancesOnBlock).toHaveBeenCalledTimes(1)
     expect(getTokenBalancesOnBlock).toHaveBeenCalledWith(
       accountAddr,
       999n,
-      [usdcAddr],
+      [ZeroAddress, usdcAddr],
       'latest',
       accountAddr
     )
     expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: ZeroAddress,
+        symbol: 'HYPE',
+        amountBefore: 13100n,
+        amountAfter: 10000n,
+        balanceChange: -3100n
+      }),
       expect.objectContaining({
         address: usdcAddr,
         symbol: 'USDC',
         amountBefore: 3500000n,
         amountAfter: 5000000n,
         balanceChange: 1500000n
+      })
+    ])
+  })
+
+  test('computes HyperEVM native balance changes from nested incoming traces', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const sender = '0x2222222222222222222222222222222222222222'
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        if (blockTag !== 'latest') throw new Error('historical block tags are not supported')
+
+        return [
+          ok(
+            buildToken({
+              symbol: 'HYPE',
+              name: 'HYPE',
+              address: ZeroAddress,
+              chainId: 999n,
+              amount: 7000n
+            })
+          )
+        ]
+      })
+    const debugTraceTransaction = jest.fn().mockResolvedValue({
+      type: 'CALL',
+      from: sender,
+      to: '0x3333333333333333333333333333333333333333',
+      value: '0x0',
+      calls: [
+        {
+          type: 'CALL',
+          from: sender,
+          to: accountAddr,
+          value: '0x7d0'
+        }
+      ]
+    })
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 999n,
+      tokenAddrs: [ZeroAddress],
+      receiptBlockNumber: 12345,
+      getTokenBalancesOnBlock,
+      receipts: [
+        {
+          hash: '0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a',
+          from: sender,
+          gasUsed: 21n,
+          gasPrice: 100n,
+          logs: []
+        }
+      ],
+      debugTraceTransaction
+    })
+
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: ZeroAddress,
+        symbol: 'HYPE',
+        amountBefore: 5000n,
+        amountAfter: 7000n,
+        balanceChange: 2000n
       })
     ])
   })
