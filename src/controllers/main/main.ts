@@ -9,6 +9,7 @@ import {
 } from '@/consts/derivation'
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
+import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
@@ -718,6 +719,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.keystore.lock()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
+    this.continuousUpdates?.updatePortfolioInterval.restart({
+      timeout: LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+    })
   }
 
   async selectAccount(toAccountAddr: string) {
