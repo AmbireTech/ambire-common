@@ -843,7 +843,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     const withOptionalDappNames = (baseText: string, dappNames: string) => {
       if (!includeDappNamesInText || !dappNames) return baseText
 
-      const withColon = baseText.endsWith('.') ? `${baseText.slice(0, -1)}:` : `${baseText}:`
+      const shouldReplaceTrailingPunctuation = baseText.endsWith('.') || baseText.endsWith('!')
+      const withColon = shouldReplaceTrailingPunctuation
+        ? `${baseText.slice(0, -1)}:`
+        : `${baseText}:`
+
       return `${withColon} ${dappNames}`
     }
 
