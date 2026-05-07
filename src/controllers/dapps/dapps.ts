@@ -846,55 +846,55 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     // 1) dApp verification in progress
-    if (dappVerificationData.some((dapp) => dapp.status === 'LOADING')) {
-      const dappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
+    const loadingDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
+    if (loadingDappNames.length) {
       return {
         id: 'dapp-verification-loading-warning-banner',
         type: 'warning',
         text: withOptionalDappNames(
           "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
-          dappNames
+          loadingDappNames
         )
       }
     }
 
     // 2) dApp verification failed / unknown
-    if (dappVerificationData.some((dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status)) {
-      const dappNames = getDappNamesByPredicate(
-        (dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status
-      )
+    const failedToVerifyDappNames = getDappNamesByPredicate(
+      (dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status
+    )
+    if (failedToVerifyDappNames.length) {
       return {
         id: 'dapp-verification-error-warning-banner',
         type: 'warning',
         text: withOptionalDappNames(
           "We couldn't verify the app. Make sure you trust it before signing requests.",
-          dappNames
+          failedToVerifyDappNames
         )
       }
     }
 
     // 3) dApp is blacklisted
-    if (dappVerificationData.some((dapp) => dapp.status === 'BLACKLISTED')) {
-      const dappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
+    const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
+    if (blacklistedDappNames.length) {
       return {
         id: 'dapp-blacklisted-error-banner',
         type: 'error',
         text: withOptionalDappNames(
           "This app didn't pass our safety check. Proceed at your own risk.",
-          dappNames
+          blacklistedDappNames
         )
       }
     }
 
     // 4) dApp is not in the default catalog
-    if (dappVerificationData.some((dapp) => dapp.status !== 'VERIFIED')) {
-      const dappNames = getDappNamesByPredicate((dapp) => dapp.status !== 'VERIFIED')
+    const notVerifiedDappNames = getDappNamesByPredicate((dapp) => dapp.status !== 'VERIFIED')
+    if (notVerifiedDappNames.length) {
       return {
         id: 'dapp-not-in-catalog-warning-banner',
         type: 'warning',
         text: withOptionalDappNames(
           'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
-          dappNames
+          notVerifiedDappNames
         )
       }
     }
