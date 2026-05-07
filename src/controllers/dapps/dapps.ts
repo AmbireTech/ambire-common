@@ -839,10 +839,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         ', '
       )
 
-    // Appends dApp names to the message only when enabled, formatting "...requests." as "...requests: <dApp names>".
+    // Conditionally appends the matching dApp names, separated by ":" for readability.
     const withOptionalDappNames = (baseText: string, dappNames: string) => {
       if (!includeDappNamesInText || !dappNames) return baseText
-      return `${baseText.replace(/\.$/, ':')} ${dappNames}`
+
+      const withColon = baseText.endsWith('.') ? `${baseText.slice(0, -1)}:` : `${baseText}:`
+      return `${withColon} ${dappNames}`
     }
 
     // 1) dApp verification in progress
