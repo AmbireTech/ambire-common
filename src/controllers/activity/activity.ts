@@ -33,6 +33,7 @@ import {
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InternalSignedMessages, SignedMessage } from './types'
@@ -51,6 +52,12 @@ interface PaginationResult<T> {
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
+
+type AccountOpBalanceChangesBackfillReference = Pick<
+  SubmittedAccountOp,
+  'identifiedBy' | 'accountAddr' | 'chainId'
+>
+
 interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
@@ -534,7 +541,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * We have this separation in order to persist to storage only after the
    * end of an operation
    */
-  async backfillAccountOpBalanceChanges(accountOp: SubmittedAccountOp) {
+  async backfillAccountOpBalanceChanges(accountOp: AccountOpBalanceChangesBackfillReference) {
     await this.#initialLoadPromise
 
     // take the latest #accountOp, not a stale one from the UI
@@ -1045,13 +1052,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
         getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
         prevBlockNumber,
         receipts,
-        debugTraceTransaction: (txnHash) =>
-          network.chainId === 999n
-            ? this.#providers.providers[network.chainId.toString()]!.send(
-                'debug_traceTransaction',
-                [txnHash, { tracer: 'callTracer' }]
-              )
-            : Promise.resolve(null)
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
       })
 
       await this.setAccountOpBalanceChanges(

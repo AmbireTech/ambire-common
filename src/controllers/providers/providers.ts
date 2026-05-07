@@ -10,6 +10,7 @@ import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -433,10 +434,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         receiptBlockNumber: blockTag,
         getTokenBalancesOnBlock,
         receipts,
-        debugTraceTransaction: (txnHash) =>
-          chainId === 999n
-            ? provider.send('debug_traceTransaction', [txnHash, { tracer: 'callTracer' }])
-            : Promise.resolve(null)
+        debugTraceTransaction: getDebugTraceTransaction(chainId, provider)
       })
 
       return this.#sendUiMessage({

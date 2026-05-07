@@ -12,6 +12,7 @@ import {
   SocketAPIToken,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -463,7 +464,7 @@ export class SocketAPI implements SwapProvider {
     }
   }
 
-  async getRouteStatus({ txHash }: { txHash: string }) {
+  async getRouteStatus({ txHash }: { txHash: string }): Promise<SwapAndBridgeRouteStatusResult> {
     const params = new URLSearchParams({
       txHash
     })
@@ -474,14 +475,14 @@ export class SocketAPI implements SwapProvider {
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
 
-    if (!response) return null
+    if (!response) return { status: null }
     const res = response[0]
-    if (!res) return null
+    if (!res) return { status: null }
     // everything below 3 is pending on our end
-    if (res.bungeeStatusCode < 3) return null
+    if (res.bungeeStatusCode < 3) return { status: null }
     // 3 and 4 is completed on our end
-    if (res.bungeeStatusCode < 5) return 'completed'
+    if (res.bungeeStatusCode < 5) return { status: 'completed', txnId: res.hash }
     // everything after is refunded
-    return 'refunded'
+    return { status: 'refunded', txnId: res.hash }
   }
 }

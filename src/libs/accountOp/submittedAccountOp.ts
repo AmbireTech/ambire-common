@@ -80,6 +80,40 @@ export interface SubmittedAccountOp extends AccountOp {
   balanceChangesFetchRetryCount?: number
 }
 
+type SubmittedAccountOpActionFields = Pick<
+  SubmittedAccountOp,
+  | 'signingKeyAddr'
+  | 'signingKeyType'
+  | 'nonce'
+  | 'eoaNonce'
+  | 'feeCall'
+  | 'activatorCall'
+  | 'gasLimit'
+  | 'signature'
+  | 'asUserOperation'
+  | 'signers'
+  | 'signed'
+  | 'safeTx'
+  | 'flags'
+>
+
+export interface SubmittedAccountOpLike
+  extends Pick<
+      SubmittedAccountOp,
+      | 'id'
+      | 'accountAddr'
+      | 'chainId'
+      | 'calls'
+      | 'gasFeePayment'
+      | 'txnId'
+      | 'status'
+      | 'meta'
+      | 'timestamp'
+      | 'identifiedBy'
+      | 'balanceChanges'
+    >,
+    Partial<SubmittedAccountOpActionFields> {}
+
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
   return identifiedBy && identifiedBy.type === 'Transaction'
 }

@@ -366,6 +366,11 @@ export interface BungeeRouteStatus {
 
 export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
 
+export type SwapAndBridgeRouteStatusResult = {
+  status: SwapAndBridgeRouteStatus
+  txnId?: string | null
+}
+
 export type SocketAPISupportedChain = {
   chainId: number
   name: string
@@ -544,5 +549,5 @@ export interface SwapProvider {
     toChainId: number
     bridge?: string
     providerId: string
-  }): Promise<SwapAndBridgeRouteStatus>
+  }): Promise<SwapAndBridgeRouteStatusResult>
 }
