@@ -19,6 +19,7 @@ import {
   Dapp,
   DefiLlamaChain,
   DefiLlamaProtocol,
+  DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
@@ -855,7 +856,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const loadingDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
     if (loadingDappNames.length) {
       return {
-        id: 'dapp-verification-loading-warning-banner',
+        id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
         text: withOptionalDappNames(
           "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
@@ -870,7 +871,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     )
     if (failedToVerifyDappNames.length) {
       return {
-        id: 'dapp-verification-error-warning-banner',
+        id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
         text: withOptionalDappNames(
           "We couldn't verify the app. Make sure you trust it before signing requests.",
@@ -883,7 +884,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
     if (blacklistedDappNames.length) {
       return {
-        id: 'dapp-blacklisted-error-banner',
+        id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
         text: withOptionalDappNames(
           "This app didn't pass our safety check. Proceed at your own risk.",
@@ -896,7 +897,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const notVerifiedDappNames = getDappNamesByPredicate((dapp) => dapp.status !== 'VERIFIED')
     if (notVerifiedDappNames.length) {
       return {
-        id: 'dapp-not-in-catalog-warning-banner',
+        id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
         text: withOptionalDappNames(
           'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',

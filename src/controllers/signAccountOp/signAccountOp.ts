@@ -47,7 +47,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
-import { IDappsController } from '../../interfaces/dapp'
+import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -1599,7 +1599,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
 
     // Show the "not in catalog" banner only for Permit2 interactions to reduce noise on lower-risk actions.
-    if (!containsPermit2 && dappVerificationBanner.id === 'dapp-not-in-catalog-warning-banner') {
+    if (!containsPermit2 && dappVerificationBanner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) {
       return null
     }
 

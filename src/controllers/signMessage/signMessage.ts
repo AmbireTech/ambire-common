@@ -5,7 +5,11 @@ import { EIP712TypedData } from '@safe-global/types-kit'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
-import { DappVerificationBanner, IDappsController } from '../../interfaces/dapp'
+import {
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappVerificationBanner,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -563,7 +567,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     })
     if (!banner) return null
     // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.
-    if (banner.id === 'dapp-not-in-catalog-warning-banner') return null
+    if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) return null
 
     return banner
   }
