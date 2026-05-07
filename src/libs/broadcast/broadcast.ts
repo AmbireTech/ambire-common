@@ -228,7 +228,8 @@ export async function buildRawTransaction(
     chainId: network.chainId,
     nonce,
     gasLimit: gasFeePayment.simulatedGasLimit,
-    ...txnData
+    ...txnData,
+    ...(gasFeePayment.isCustomGasLimit ? { gasLimit: gasFeePayment.simulatedGasLimit } : {})
   }
 
   if (gasFeePayment.maxPriorityFeePerGas !== undefined) {

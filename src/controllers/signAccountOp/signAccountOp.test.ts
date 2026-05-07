@@ -55,6 +55,7 @@ import { ProvidersController } from '../providers/providers'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
@@ -426,10 +427,24 @@ const init = async (
     {},
     new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
+  const surveyCtrl = new SurveyController({
+    fetch,
+    relayerUrl,
+    storage: storageCtrl,
+    ui: uiCtrl,
+    dismissBanner: () => {}
+  })
+  const bannerCtrl = new BannerController(
+    storageCtrl,
+    () => ({ status: 'no-selected-account' }),
+    surveyCtrl,
+    'test'
+  )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    autoLogin: autoLoginCtrl
+    autoLogin: autoLoginCtrl,
+    banner: bannerCtrl
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
@@ -447,7 +462,7 @@ const init = async (
     keystore,
     'https://staging-relayer.ambire.com',
     velcroUrl,
-    new BannerController(storageCtrl),
+    bannerCtrl,
     featureFlagsCtrl
   )
   const phishing = new PhishingController({
@@ -871,6 +886,7 @@ describe('SignAccountOp Controller ', () => {
       paidBy: eoaAccount.addr,
       broadcastOption: BROADCAST_OPTIONS.bySelf,
       paidByKeyType: 'internal',
+      isCustomGasLimit: false,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenChainId: 1n,
