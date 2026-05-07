@@ -149,7 +149,7 @@ describe('balanceChanges', () => {
     expect(balanceChanges).toHaveLength(2)
   })
 
-  test('throws when a requested token balance snapshot is missing', async () => {
+  test('throws when the previous native token balance snapshot is missing', async () => {
     const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const tokenAddrs = [ZeroAddress]
     const getTokenBalancesOnBlock = jest
@@ -181,6 +181,106 @@ describe('balanceChanges', () => {
         getTokenBalancesOnBlock
       })
     ).rejects.toThrow(`Missing token balance snapshot for ${ZeroAddress} at block 100`)
+  })
+
+  test('allows missing previous ERC-20 snapshot when the current snapshot succeeds', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const tokenAddr = '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const tokenAddrs = [ZeroAddress, tokenAddr]
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        const eth = ok(
+          buildToken({
+            symbol: 'ETH',
+            name: 'Ethereum',
+            address: ZeroAddress,
+            chainId: 1n,
+            amount: 9n
+          })
+        )
+
+        if (blockTag === 101) {
+          return [
+            eth,
+            ok(
+              buildToken({
+                symbol: 'USDC',
+                name: 'USD Coin',
+                decimals: 6,
+                address: tokenAddr,
+                chainId: 1n,
+                amount: 2500000n
+              })
+            )
+          ]
+        }
+
+        return [eth]
+      })
+
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 1n,
+      tokenAddrs,
+      receiptBlockNumber: 101,
+      getTokenBalancesOnBlock
+    })
+
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: tokenAddr,
+        symbol: 'USDC',
+        amountBefore: 0n,
+        amountAfter: 2500000n,
+        balanceChange: 2500000n
+      })
+    ])
+  })
+
+  test('throws when the current ERC-20 token balance snapshot is missing', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const tokenAddr = '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const tokenAddrs = [ZeroAddress, tokenAddr]
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        const eth = ok(
+          buildToken({
+            symbol: 'ETH',
+            name: 'Ethereum',
+            address: ZeroAddress,
+            chainId: 1n,
+            amount: 9n
+          })
+        )
+
+        if (blockTag === 101) return [eth]
+
+        return [
+          eth,
+          ok(
+            buildToken({
+              symbol: 'USDC',
+              name: 'USD Coin',
+              decimals: 6,
+              address: tokenAddr,
+              chainId: 1n,
+              amount: 2500000n
+            })
+          )
+        ]
+      })
+
+    await expect(
+      getAccountOpBalanceChanges({
+        accountAddr,
+        chainId: 1n,
+        tokenAddrs,
+        receiptBlockNumber: 101,
+        getTokenBalancesOnBlock
+      })
+    ).rejects.toThrow(`Missing token balance snapshot for ${tokenAddr} at block 101`)
   })
 
   test('computes expected balance changes on avalanche', async () => {

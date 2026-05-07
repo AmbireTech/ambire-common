@@ -23,6 +23,9 @@ export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =
 const isUsableTokenResult = (error: TokenError | null | undefined, token?: TokenResult | null) =>
   !!token && error === '0x' && !!token.symbol
 
+const isNativeTokenAddress = (tokenAddr: string) =>
+  tokenAddr.toLowerCase() === ZeroAddress.toLowerCase()
+
 const buildTokenBalanceMap = (tokensWithErrors: [TokenError, TokenResult][]) =>
   tokensWithErrors.reduce((acc, [error, token]) => {
     if (!isUsableTokenResult(error, token)) return acc
@@ -133,9 +136,15 @@ export const getAccountOpBalanceChanges = async ({
     getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, previousBlockNumber, accountAddr)
   ])
 
-  // make sure both requests have been successfull
+  // The receipt block snapshot must include every token, otherwise we could
+  // falsely record a full-balance outflow. On the previous block, native is
+  // still required, but missing ERC-20s are allowed as 0 -> current balance.
   assertTokenBalanceSnapshot(currentBlockTokens, tokenAddrs, receiptBlockNumber)
-  assertTokenBalanceSnapshot(previousBlockTokens, tokenAddrs, previousBlockNumber)
+  assertTokenBalanceSnapshot(
+    previousBlockTokens,
+    tokenAddrs.filter(isNativeTokenAddress),
+    previousBlockNumber
+  )
 
   return compareTokenBalances(previousBlockTokens, currentBlockTokens)
 }
