@@ -1,5 +1,5 @@
 {
-  "version": "2.95.0",
+  "version": "2.96.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -27,7 +27,7 @@
     "events": "^3.3.0",
     "js-yaml": "^4.1.0",
     "scrypt-js": "^3.0.1",
-    "siwe": "3.0.0",
+    "@signinwithethereum/siwe": "4.2.0",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
     "viem": "2.45.2"

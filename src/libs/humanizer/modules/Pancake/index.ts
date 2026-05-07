@@ -19,11 +19,7 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
           getAction('Approve'),
           getAddressVisualization(spender),
           getLabel('to use'),
-          getToken(token, amount, undefined, undefined, {
-            callId: call.id,
-            spenderAddr: spender,
-            expiration
-          }),
+          getToken(token, amount),
           expirationHumanization
         ]
       return [
@@ -35,8 +31,9 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     }
   }
   const newCalls = calls.map((call) => {
-    if (call.fullVisualization || !matcher[call.data.slice(0, 10)]) return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)]!(call) }
+    const selector = call.data.slice(0, 10)
+    if (call.fullVisualization || !matcher[selector]) return call
+    return { ...call, fullVisualization: matcher[selector](call) }
   })
 
   return newCalls
