@@ -880,7 +880,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         id: 'dapp-blacklisted-error-banner',
         type: 'error',
         text: withOptionalDappNames(
-          "This app didn't pass our safety check. Make sure you trust it before signing requests.",
+          "This app didn't pass our safety check. Proceed at your own risk.",
           dappNames
         )
       }
