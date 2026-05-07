@@ -493,10 +493,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (!mainKey) {
       if (!this.#keystoreSecrets.length) {
         // Generate a new main key if this is the first secret being added
-        mainKey = await crypto.subtle.generateKey({ name: CIPHER, length: 256 }, true, [
-          'encrypt',
-          'decrypt'
-        ])
+        const generatedMainKey = new EntropyGenerator().generateRandomBytes(32, extraEntropy)
+        mainKey = await crypto.subtle.importKey(
+          'raw',
+          new Uint8Array(generatedMainKey),
+          { name: CIPHER, length: 256 },
+          true,
+          ['encrypt', 'decrypt']
+        )
       } else
         throw new EmittableError({
           message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
