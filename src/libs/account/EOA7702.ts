@@ -221,4 +221,8 @@ export class EOA7702 extends BaseAccount {
   canSetCustomGasPrices(feeOption: FeePaymentOption): boolean {
     return feeOption.token.address === ZeroAddress
   }
+
+  canSetCustomGas(feeOption: FeePaymentOption): boolean {
+    return this.canSetCustomGasPrices(feeOption)
+  }
 }

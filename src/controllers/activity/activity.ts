@@ -37,6 +37,7 @@ import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InternalSignedMessages, SignedMessage } from './types'
 
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 export interface Pagination {
   fromPage: number
   itemsPerPage: number
@@ -616,7 +617,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         network,
         tokenAddrs,
         balanceChangeWindow.receiptBlockNumber,
-        balanceChangeWindow.prevBlockNumber
+        balanceChangeWindow.prevBlockNumber,
+        receipts
       )
     } catch (error: any) {
       console.log(error)
@@ -673,17 +675,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
       tokenAddrs: string[]
       receiptBlockNumber: number
       prevBlockNumber?: number
+      receipts?: BalanceChangesReceipt[]
     }>
   ) {
     await Promise.all(
       balanceChangesTasks.map(
-        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber }) =>
+        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
           this.updateAccountOpBalanceChanges(
             accountOp,
             network,
             tokenAddrs,
             receiptBlockNumber,
-            prevBlockNumber
+            prevBlockNumber,
+            receipts
           )
       )
     )
@@ -734,6 +738,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       tokenAddrs: string[]
       receiptBlockNumber: number
       prevBlockNumber?: number
+      receipts?: BalanceChangesReceipt[]
     }> = []
 
     // we should fetch Safe txns again upon failure
@@ -772,6 +777,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             let lastReceiptBlockNumber: number | undefined
             let shouldScheduleBalanceChangesTask = false
             const foundTokensForBalanceChanges = new Set<string>()
+            const receiptsForBalanceChanges: BalanceChangesReceipt[] = []
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
               newestOpTimestamp = accountOp.timestamp
@@ -868,6 +874,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     firstReceiptBlockNumber = receipt.blockNumber
                   }
                   lastReceiptBlockNumber = receipt.blockNumber
+                  receiptsForBalanceChanges.push({
+                    logs: receipt.logs,
+                    hash: receipt.hash,
+                    from: receipt.from,
+                    gasUsed: receipt.gasUsed,
+                    gasPrice: receipt.gasPrice
+                  })
 
                   // if this is an user op, we have to check the logs
                   let isSuccess: boolean | undefined
@@ -978,7 +991,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   isIdentifiedByMultipleTxn(accountOp.identifiedBy) &&
                   typeof firstReceiptBlockNumber !== 'undefined'
                     ? getPreviousBlockNumber(firstReceiptBlockNumber)
-                    : undefined
+                    : undefined,
+                receipts: receiptsForBalanceChanges
               })
             }
           })
@@ -1011,7 +1025,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     network: Network,
     tokenAddrs: string[],
     receiptBlockNumber: number,
-    prevBlockNumber?: number
+    prevBlockNumber?: number,
+    receipts?: BalanceChangesReceipt[]
   ) {
     await this.#initialLoadPromise
 
@@ -1028,7 +1043,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
         tokenAddrs,
         receiptBlockNumber,
         getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
-        prevBlockNumber
+        prevBlockNumber,
+        receipts,
+        debugTraceTransaction: (txnHash) =>
+          network.chainId === 999n
+            ? this.#providers.providers[network.chainId.toString()]!.send(
+                'debug_traceTransaction',
+                [txnHash, { tracer: 'callTracer' }]
+              )
+            : Promise.resolve(null)
       })
 
       await this.setAccountOpBalanceChanges(

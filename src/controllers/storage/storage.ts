@@ -64,6 +64,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeLegacyPhishingDetection() // As of version 5.32.0
       await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
+      await this.#resetAccountOpBalanceChangesOneTimeForAmbireNextTesting() // One-time reset after balance changes recalculation fixes
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -717,6 +718,34 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'cleanUpEmailVaultStorage'])
+    ])
+  }
+
+  async #resetAccountOpBalanceChangesOneTimeForAmbireNextTesting() {
+    const [passedMigrations, accountsOps] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('accountsOps', {})
+    ])
+
+    if (passedMigrations.includes('resetAccountOpBalanceChangesOneTimeForAmbireNextTesting')) return
+
+    const migratedAccountsOps = Object.fromEntries(
+      Object.entries(accountsOps).map(([accountId, opsByChain]) => [
+        accountId,
+        Object.fromEntries(
+          Object.entries(opsByChain as Record<string, any[]>).map(([chainId, ops]) => [
+            chainId,
+            Array.isArray(ops)
+              ? ops.map(({ balanceChanges, balanceChangesFetchRetryCount, ...op }) => op)
+              : ops
+          ])
+        )
+      ])
+    )
+
+    await this.#storage.set('accountsOps', migratedAccountsOps)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'resetAccountOpBalanceChangesOneTimeForAmbireNextTesting'])
     ])
   }
 

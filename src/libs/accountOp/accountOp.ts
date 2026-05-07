@@ -30,6 +30,7 @@ export interface GasFeePayment {
   feeTokenChainId?: bigint
   amount: bigint
   simulatedGasLimit: bigint
+  isCustomGasLimit?: boolean
   gasPrice: bigint
   broadcastOption: string
   maxPriorityFeePerGas?: bigint
