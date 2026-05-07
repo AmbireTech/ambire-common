@@ -4,6 +4,7 @@ import { describe, expect } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
@@ -99,6 +100,16 @@ let mainCtrl: IMainController
 let storageCtrl: IStorageController
 let storage: Storage
 
+const buildMockReceipt = (overrides: Partial<any> = {}) =>
+  ({
+    status: 1,
+    blockNumber: 123,
+    blockHash: '0xmock-block-hash',
+    gasUsed: 21_000n,
+    logs: [],
+    ...overrides
+  }) as any
+
 const prepareTest = async () => {
   const controller = new ActivityController(
     mainCtrl.storage,
@@ -152,6 +163,12 @@ describe('Activity Controller ', () => {
   beforeAll(async () => {
     ;({ mainCtrl, storageCtrl, storage } = await makeMainController(async (s) => {
       await s.set('accounts', ACCOUNTS)
+      await s.set(
+        'networks',
+        Object.fromEntries(
+          predefinedNetworks.map((network) => [network.chainId.toString(), network])
+        )
+      )
     }))
     await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
   })
@@ -159,6 +176,7 @@ describe('Activity Controller ', () => {
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
+    jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
   })
@@ -180,6 +198,50 @@ describe('Activity Controller ', () => {
       expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']!['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
+    })
+
+    test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
+      const { controller, sessionId } = await prepareTest()
+
+      await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(2)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(3)
+      const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
+      expect(balanceChanges).not.toBe(undefined)
+      expect(balanceChanges?.length).toBe(0)
     })
 
     test('Pagination and filtration handled correctly', async () => {
@@ -362,6 +424,11 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 1 }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -396,24 +463,40 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
-      expect(controller.accountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'success',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], //  we expect success here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      if (
+        typeof controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges === 'undefined'
+      ) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            const updatedOp = controller.accountsOps[sessionId]!.result.items[0]
+
+            if (typeof updatedOp?.balanceChanges === 'undefined') return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
+      expect(controller.accountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'success',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
 
     test('`failed` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -450,21 +533,20 @@ describe('Activity Controller ', () => {
       await controller.updateAccountsOpsStatuses()
       const controllerAccountsOps = controller.accountsOps
 
-      expect(controllerAccountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'failure',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], // we expect failure here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      expect(controllerAccountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controllerAccountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'failure',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
+
     test('should display pending txns banners', async () => {
       const { controller } = await prepareTest()
 
@@ -486,6 +568,10 @@ describe('Activity Controller ', () => {
     })
     test('should display failed txns banners and hide them on session removal', async () => {
       const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         ...SUBMITTED_ACCOUNT_OP,

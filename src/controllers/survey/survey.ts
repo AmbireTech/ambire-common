@@ -2,6 +2,7 @@ import { IStorageController } from '@/interfaces/storage'
 import { IUiController } from '@/interfaces/ui'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { getNextQuestionForAnswers } from '@/utils/survey'
+import wait from '@/utils/wait'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -97,6 +98,26 @@ export class SurveyController extends EventEmitter implements ISurveyController 
         undefined,
         5000
       )
+        .catch(async () => {
+          await wait(1000)
+          return this.#callRelayer(
+            `/promotions/survey/${surveyId}`,
+            'GET',
+            undefined,
+            undefined,
+            5000
+          )
+        })
+        .catch(async () => {
+          await wait(1000)
+          return this.#callRelayer(
+            `/promotions/survey/${surveyId}`,
+            'GET',
+            undefined,
+            undefined,
+            5000
+          )
+        })
     } catch (e: any) {
       this.status = 'error-fetching'
       this.emitError({
@@ -185,6 +206,14 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitUpdate()
 
       await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
+        .catch(async () => {
+          await wait(1000)
+          await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
+        })
+        .catch(async () => {
+          await wait(1000)
+          await this.#callRelayer(`/promotions/survey`, 'POST', payload, undefined, 5000)
+        })
       this.status = 'success-submitted'
       this.emitUpdate()
       await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
