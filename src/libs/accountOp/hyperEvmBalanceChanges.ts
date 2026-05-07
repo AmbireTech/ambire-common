@@ -4,6 +4,7 @@ import { TokenError, TokenResult } from '../portfolio/interfaces'
 import { BalanceChange } from './submittedAccountOp'
 
 export const HYPER_EVM_CHAIN_ID = 999n
+const HYPER_EVM_TRACE_CONCURRENCY = 3
 
 const TRANSFER_ABI = ['event Transfer(address indexed from, address indexed to, uint256 value)']
 const transferInterface = new Interface(TRANSFER_ABI)
@@ -140,6 +141,28 @@ const getReceiptFee = (receipt: BalanceChangesReceipt) => {
   return 0n
 }
 
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>
+) => {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      // eslint-disable-next-line no-await-in-loop
+      results[currentIndex] = await mapper(items[currentIndex]!)
+    }
+  })
+
+  await Promise.all(workers)
+
+  return results
+}
+
 const getHyperEvmNativeBalanceChange = async ({
   accountAddr,
   receipts,
@@ -152,8 +175,10 @@ const getHyperEvmNativeBalanceChange = async ({
   if (!receipts?.length || !debugTraceTransaction) return 0n
 
   const checksummedAccountAddr = getAddress(accountAddr)
-  const balanceChanges = await Promise.all(
-    receipts.map(async (receipt) => {
+  const balanceChanges = await mapWithConcurrency(
+    receipts,
+    HYPER_EVM_TRACE_CONCURRENCY,
+    async (receipt) => {
       if (!receipt.hash) {
         throw new Error('Missing transaction hash for HyperEVM native balance change trace')
       }
@@ -176,7 +201,7 @@ const getHyperEvmNativeBalanceChange = async ({
       }
 
       return balanceChange
-    })
+    }
   )
 
   return balanceChanges.reduce((acc, balanceChange) => acc + balanceChange, 0n)

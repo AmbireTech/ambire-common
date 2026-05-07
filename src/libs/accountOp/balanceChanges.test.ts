@@ -765,4 +765,75 @@ describe('balanceChanges', () => {
       })
     ])
   })
+
+  test('limits concurrent HyperEVM native trace requests', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const recipient = '0x1111111111111111111111111111111111111111'
+    const hashes = Array.from(
+      { length: 7 },
+      (_, index) => `0x${(index + 1).toString(16).padStart(64, '0')}`
+    )
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        if (blockTag !== 'latest') throw new Error('historical block tags are not supported')
+
+        return [
+          ok(
+            buildToken({
+              symbol: 'HYPE',
+              name: 'HYPE',
+              address: ZeroAddress,
+              chainId: 999n,
+              amount: 10000n
+            })
+          )
+        ]
+      })
+    const debugTraceTransaction = jest.fn().mockImplementation(async () => {
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      activeRequests -= 1
+
+      return {
+        type: 'CALL',
+        from: recipient,
+        to: accountAddr,
+        value: '0x1'
+      }
+    })
+
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 999n,
+      tokenAddrs: [ZeroAddress],
+      receiptBlockNumber: 12345,
+      getTokenBalancesOnBlock,
+      receipts: hashes.map((hash) => ({
+        hash,
+        from: recipient,
+        gasUsed: 21n,
+        gasPrice: 100n,
+        logs: []
+      })),
+      debugTraceTransaction
+    })
+
+    expect(debugTraceTransaction).toHaveBeenCalledTimes(hashes.length)
+    expect(maxActiveRequests).toBe(3)
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: ZeroAddress,
+        symbol: 'HYPE',
+        amountBefore: 9993n,
+        amountAfter: 10000n,
+        balanceChange: 7n
+      })
+    ])
+  })
 })
