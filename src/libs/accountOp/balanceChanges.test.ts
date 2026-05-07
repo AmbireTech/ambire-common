@@ -611,4 +611,158 @@ describe('balanceChanges', () => {
       })
     ])
   })
+
+  test('throws on HyperEVM native trace failure', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const getTokenBalancesOnBlock = jest.fn()
+    const debugTraceTransaction = jest.fn().mockRejectedValue(new Error('rate limited'))
+
+    await expect(
+      getAccountOpBalanceChanges({
+        accountAddr,
+        chainId: 999n,
+        tokenAddrs: [ZeroAddress],
+        receiptBlockNumber: 12345,
+        getTokenBalancesOnBlock,
+        receipts: [
+          {
+            hash: '0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a',
+            from: accountAddr,
+            gasUsed: 21n,
+            gasPrice: 100n,
+            logs: []
+          }
+        ],
+        debugTraceTransaction
+      })
+    ).rejects.toThrow(
+      'Failed to trace HyperEVM transaction 0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a: rate limited'
+    )
+  })
+
+  test('throws when HyperEVM native trace result is missing', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const getTokenBalancesOnBlock = jest.fn()
+    const debugTraceTransaction = jest.fn().mockResolvedValue(null)
+
+    await expect(
+      getAccountOpBalanceChanges({
+        accountAddr,
+        chainId: 999n,
+        tokenAddrs: [ZeroAddress],
+        receiptBlockNumber: 12345,
+        getTokenBalancesOnBlock,
+        receipts: [
+          {
+            hash: '0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a',
+            from: accountAddr,
+            gasUsed: 21n,
+            gasPrice: 100n,
+            logs: []
+          }
+        ],
+        debugTraceTransaction
+      })
+    ).rejects.toThrow(
+      'Missing trace result for HyperEVM transaction 0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a'
+    )
+  })
+
+  test('throws when HyperEVM native trace receipt hash is missing', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const getTokenBalancesOnBlock = jest.fn()
+    const debugTraceTransaction = jest.fn()
+
+    await expect(
+      getAccountOpBalanceChanges({
+        accountAddr,
+        chainId: 999n,
+        tokenAddrs: [ZeroAddress],
+        receiptBlockNumber: 12345,
+        getTokenBalancesOnBlock,
+        receipts: [
+          {
+            from: accountAddr,
+            gasUsed: 21n,
+            gasPrice: 100n,
+            logs: []
+          }
+        ],
+        debugTraceTransaction
+      })
+    ).rejects.toThrow('Missing transaction hash for HyperEVM native balance change trace')
+  })
+
+  test('does not include HyperEVM native balance change for a valid zero-value trace', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const usdcAddr = '0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb'
+    const recipient = '0x1111111111111111111111111111111111111111'
+    const logs = [
+      buildTransferLog({
+        address: usdcAddr,
+        from: accountAddr,
+        to: recipient,
+        value: 1000000n
+      })
+    ]
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => {
+        if (blockTag !== 'latest') throw new Error('historical block tags are not supported')
+
+        return [
+          ok(
+            buildToken({
+              symbol: 'USDC',
+              name: 'USD Coin',
+              decimals: 6,
+              address: usdcAddr,
+              chainId: 999n,
+              amount: 5000000n
+            })
+          )
+        ]
+      })
+    const debugTraceTransaction = jest.fn().mockResolvedValue({
+      type: 'CALL',
+      from: recipient,
+      to: '0x3333333333333333333333333333333333333333',
+      value: '0x0'
+    })
+
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 999n,
+      tokenAddrs: [ZeroAddress, usdcAddr],
+      receiptBlockNumber: 12345,
+      getTokenBalancesOnBlock,
+      receipts: [
+        {
+          hash: '0xa14458d6540e8bfaa3ab75c5dc9ca006c4e89eb74b562a24e1db21858a96304a',
+          from: recipient,
+          gasUsed: 21n,
+          gasPrice: 100n,
+          logs
+        }
+      ],
+      debugTraceTransaction
+    })
+
+    expect(getTokenBalancesOnBlock).toHaveBeenCalledWith(
+      accountAddr,
+      999n,
+      [usdcAddr],
+      'latest',
+      accountAddr
+    )
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: usdcAddr,
+        symbol: 'USDC',
+        amountBefore: 6000000n,
+        amountAfter: 5000000n,
+        balanceChange: -1000000n
+      })
+    ])
+  })
 })

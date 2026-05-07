@@ -154,23 +154,28 @@ const getHyperEvmNativeBalanceChange = async ({
   const checksummedAccountAddr = getAddress(accountAddr)
   const balanceChanges = await Promise.all(
     receipts.map(async (receipt) => {
-      if (!receipt.hash) return 0n
-
-      try {
-        const trace = await debugTraceTransaction(receipt.hash)
-        if (!trace) return 0n
-
-        let balanceChange = getNativeBalanceChangeFromTrace(trace, checksummedAccountAddr)
-        const transactionSender = receipt.from || trace.from
-
-        if (transactionSender && getAddress(transactionSender) === checksummedAccountAddr) {
-          balanceChange -= getReceiptFee(receipt)
-        }
-
-        return balanceChange
-      } catch {
-        return 0n
+      if (!receipt.hash) {
+        throw new Error('Missing transaction hash for HyperEVM native balance change trace')
       }
+
+      const trace = await debugTraceTransaction(receipt.hash).catch((error) => {
+        throw new Error(
+          `Failed to trace HyperEVM transaction ${receipt.hash}: ${error?.message || error}`
+        )
+      })
+
+      if (!trace) {
+        throw new Error(`Missing trace result for HyperEVM transaction ${receipt.hash}`)
+      }
+
+      let balanceChange = getNativeBalanceChangeFromTrace(trace, checksummedAccountAddr)
+      const transactionSender = receipt.from || trace.from
+
+      if (transactionSender && getAddress(transactionSender) === checksummedAccountAddr) {
+        balanceChange -= getReceiptFee(receipt)
+      }
+
+      return balanceChange
     })
   )
 
