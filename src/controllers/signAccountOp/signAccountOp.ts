@@ -96,6 +96,7 @@ import {
   FeePaymentOption,
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
+import { calculateFeeAmount } from '../../libs/fees/fees'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
@@ -1763,38 +1764,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return BigInt(toBigInt)
   }
 
-  static getAmountAfterFeeTokenConvert(
-    simulatedGasLimit: bigint,
-    gasPrice: bigint,
-    nativeRatio: bigint,
-    feeTokenDecimals: number,
-    addedNative: bigint
-  ) {
-    const amountInWei = simulatedGasLimit * gasPrice + addedNative
-
-    // Let's break down the process of converting the amount into FeeToken:
-    // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
-    // 2. Next, we address the decimal places:
-    // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
-    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
-    // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-    const extraDecimals = BigInt(10 ** 18)
-    const feeTokenExtraDecimals = BigInt(10 ** (18 - feeTokenDecimals))
-    const pow = extraDecimals * feeTokenExtraDecimals
-    const result = (amountInWei * nativeRatio) / pow
-
-    // Fixes the edge case where the fee in wei is not zero
-    // but the decimals of the token we are converting to
-    // cannot represent the amount in wei. Example: 0.(6zeros)1 USDC
-    // We are returning 1n which is the smallest possible amount
-    // to be represented in USDC
-    if (result === 0n && amountInWei !== 0n) {
-      return 1n
-    }
-
-    return result
-  }
-
   async #traceCall() {
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
@@ -1887,57 +1856,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.calculateWarnings()
     this.#traceCallTimeoutId = null
     clearTimeout(timeoutId)
-  }
-
-  /**
-   * Increase the paymaster fee by 10%, the relayer by 5%.
-   * This is required because even now, we are broadcasting at a loss
-   */
-  #increaseFee(amount: bigint, broadcaster: string = 'relayer'): bigint {
-    if (broadcaster === 'paymaster') return amount + amount / 10n
-    return amount + amount / 20n
-  }
-
-  #calculateFeeAmount({
-    broadcastOption,
-    simulatedGasLimit,
-    gasPrice,
-    nativeRatio,
-    feeTokenDecimals,
-    addedNative,
-    usesPaymaster
-  }: {
-    broadcastOption: string
-    simulatedGasLimit: bigint
-    gasPrice: bigint
-    nativeRatio: bigint
-    feeTokenDecimals: number
-    addedNative: bigint
-    usesPaymaster?: boolean
-  }): bigint {
-    if (
-      broadcastOption === BROADCAST_OPTIONS.bySelf ||
-      broadcastOption === BROADCAST_OPTIONS.bySelf7702 ||
-      broadcastOption === BROADCAST_OPTIONS.byOtherEOA
-    ) {
-      return simulatedGasLimit * gasPrice + addedNative
-    }
-
-    let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
-      simulatedGasLimit,
-      gasPrice,
-      nativeRatio,
-      feeTokenDecimals,
-      addedNative
-    )
-
-    if (broadcastOption === BROADCAST_OPTIONS.byBundler && usesPaymaster) {
-      amount = this.#increaseFee(amount, 'paymaster')
-    } else if (broadcastOption !== BROADCAST_OPTIONS.byBundler) {
-      amount = this.#increaseFee(amount)
-    }
-
-    return amount
   }
 
   #addExtra(gasInWei: bigint, percentageIncrease: bigint): Hex {
@@ -2108,7 +2026,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           simulatedGasLimit = this.customGasLimit
         }
 
-        amount = this.#calculateFeeAmount({
+        amount = calculateFeeAmount({
           broadcastOption,
           simulatedGasLimit,
           gasPrice: amountGasPrice,
