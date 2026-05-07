@@ -28,6 +28,7 @@ import {
   isIdentifiedByUserOpHash,
   PortfoliosToUpdate,
   SubmittedAccountOp,
+  SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -51,7 +52,7 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
+interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
 
 type AccountOpBalanceChangesBackfillReference = Pick<
   SubmittedAccountOp,
@@ -69,6 +70,11 @@ export interface Filters {
 export interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
+}
+
+export interface ExternalAccountOps {
+  // account => network => SubmittedAccountOpLike[]
+  [key: string]: { [key: string]: SubmittedAccountOpLike[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -181,6 +187,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #accountsOps: InternalAccountsOps = {}
 
+  #externalAccountOps: ExternalAccountOps = {}
+
   accountsOps: {
     [sessionId: string]: {
       result: AccountsOps
@@ -263,12 +271,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
-    const [accountsOps, signedMessages] = await Promise.all([
+    const [accountsOps, externalAccountOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
+      this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {})
     ])
 
     this.#accountsOps = accountsOps
+    this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
 
     this.emitUpdate()
@@ -320,29 +330,52 @@ export class ActivityController extends EventEmitter implements IActivityControl
     pagination: Pagination = { fromPage: 0, itemsPerPage: 10 }
   ) {
     await this.#initialLoadPromise
+    this.#externalAccountOps = await this.#storage.get(
+      'externalAccountOps',
+      this.#externalAccountOps
+    )
 
     const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
-    const accountOpsEntriesOnEnabledNetworks = Object.entries(
-      this.#accountsOps[filters.account] || {}
+    const internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
+    const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
+    const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
+      internalAccountOpsByChain
     ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
-    let filteredItems: SubmittedAccountOp[]
+    const internalAccountOps = new Set(
+      internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+    )
+    const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
+      .map(
+        (chainId) =>
+          [
+            chainId,
+            [
+              ...(internalAccountOpsByChain[chainId] || []),
+              ...(externalAccountOpsByChain[chainId] || [])
+            ]
+          ] as const
+      )
+      .filter(([, accountOps]) => accountOps.length)
+    let filteredItems: SubmittedAccountOpLike[]
 
     if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
-      filteredItems =
-        accountOpsEntriesOnEnabledNetworks.find(
+      filteredItems = [
+        ...(accountOpsEntriesOnEnabledNetworks.find(
           ([chainId]) => chainId === String(filters.chainId)
-        )?.[1] || []
+        )?.[1] || [])
+      ]
     } else {
       filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
-      // By default, #accountsOps are grouped by network and sorted in descending order.
-      // However, when the network filter is omitted, #accountsOps from different networks are mixed,
-      // requiring additional sorting to ensure they are also in descending order.
-      filteredItems.sort((a, b) => b.timestamp - a.timestamp)
     }
+
+    // By default, account ops are grouped by network and sorted in descending order.
+    // However, when internal and external ops are mixed, they need a final sort even
+    // when a network filter is present.
+    filteredItems.sort((a, b) => b.timestamp - a.timestamp)
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter(
+      filteredItems = filteredItems.filter(
         (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
       )
     }
@@ -358,8 +391,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // no need to console.log anything in the catch statement here
     // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
     const opsWithNoBalanceChanges = result.items.filter(
-      (op: SubmittedAccountOp) =>
-        op.status !== AccountOpStatus.BroadcastedButNotConfirmed && op.balanceChanges === undefined
+      (op): op is SubmittedAccountOp =>
+        internalAccountOps.has(op as SubmittedAccountOp) &&
+        op.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+        op.balanceChanges === undefined
     )
     if (opsWithNoBalanceChanges.length)
       this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)

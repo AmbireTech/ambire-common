@@ -110,7 +110,11 @@ export interface SubmittedAccountOpLike
       | 'meta'
       | 'timestamp'
       | 'identifiedBy'
+      | 'blockNumber'
+      | 'blockHash'
+      | 'gasUsed'
       | 'balanceChanges'
+      | 'balanceChangesFetchRetryCount'
     >,
     Partial<SubmittedAccountOpActionFields> {}
 
