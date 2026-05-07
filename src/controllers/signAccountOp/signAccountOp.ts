@@ -47,6 +47,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -101,6 +102,7 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -349,6 +351,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #activity: IActivityController
 
+  #dapps: IDappsController
+
   #onUpdateAfterTraceCallSuccess?: () => Promise<void>
 
   #onBroadcastSuccess: OnBroadcastSuccess
@@ -369,6 +373,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #simulateAndEstimateOrSimulateInterval: IRecurringTimeout
 
+  #onDappsUpdateUnsubscribe?: () => void
+
   constructor({
     eventEmitterRegistry,
     type,
@@ -381,6 +387,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     account,
     network,
     activity,
+    dapps,
     provider,
     phishing,
     fromRequestId,
@@ -401,6 +408,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     account: Account
     network: Network
     activity: IActivityController
+    dapps: IDappsController
     provider: RPCProvider
     phishing: IPhishingController
     fromRequestId: UserRequest['id']
@@ -422,6 +430,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.baseAccount = getBaseAccount(account, accountState, network)
     this.#network = network
     this.#activity = activity
+    this.#dapps = dapps
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
@@ -665,6 +674,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.onError((error: ErrorRef) => {
       this.emitError(error)
     })
+
+    this.#onDappsUpdateUnsubscribe = this.#dapps.onUpdate((forceEmit) => {
+      this.propagateUpdate(forceEmit)
+    }, 'sign-account-op-dapps-verification')
 
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
@@ -1557,6 +1570,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()
+    this.#onDappsUpdateUnsubscribe?.()
+    this.#onDappsUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -1566,6 +1581,29 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+  }
+
+  #getDappVerificationBanner(): SignAccountOpBanner | null {
+    const dappUrls = this.accountOp.calls
+      .map((call) => call.dapp?.url?.toLowerCase())
+      .filter((url): url is string => !!url)
+
+    if (!dappUrls.length) return null
+
+    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls)
+    if (!dappVerificationBanner) return null
+
+    const containsPermit2 = this.accountOp.calls.some((call) => {
+      if (!call.to || !call.data) return false
+      return isPermit2Interaction({ to: call.to, data: call.data })
+    })
+
+    // Show the "not in catalog" banner only for Permit2 interactions to reduce noise on lower-risk actions.
+    if (!containsPermit2 && dappVerificationBanner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) {
+      return null
+    }
+
+    return dappVerificationBanner
   }
 
   /**
@@ -3474,6 +3512,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         })
       }
     }
+
+    const dappVerificationBanner = this.#getDappVerificationBanner()
+    if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
     return banners
   }
