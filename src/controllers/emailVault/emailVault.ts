@@ -423,12 +423,6 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       })
     }
 
-    if (this.#shouldStopConfirmationPolling) {
-      this.#isRemovingSecret = false
-      // Set status to ERROR, but don't emit an error message
-      throw new Error('')
-    }
-
     if (magicKey?.key) {
       this.#isRemovingSecret = true
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
