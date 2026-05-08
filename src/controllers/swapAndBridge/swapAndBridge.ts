@@ -1919,6 +1919,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       gasFeePayment: null,
       txnId,
       status: accountOpStatus,
+      activitySource: 'external',
       blockNumber: receipt.blockNumber,
       blockHash: receipt.blockHash,
       gasUsed: receipt.gasUsed.toString(),

@@ -116,7 +116,9 @@ export interface SubmittedAccountOpLike
       | 'balanceChanges'
       | 'balanceChangesFetchRetryCount'
     >,
-    Partial<SubmittedAccountOpActionFields> {}
+    Partial<SubmittedAccountOpActionFields> {
+  activitySource?: 'internal' | 'external'
+}
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
   return identifiedBy && identifiedBy.type === 'Transaction'
