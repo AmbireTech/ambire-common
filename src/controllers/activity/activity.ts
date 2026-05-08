@@ -1,5 +1,6 @@
 import { toBeHex, TransactionReceipt } from 'ethers'
 
+import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import {
   getAddressPoisoningMatchCounts,
   pickBetterPoisoningMatch,
@@ -17,7 +18,6 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { AddressPoisoningMatch } from '../../interfaces/transfer'
 import {
   getAccountOpBalanceChanges,
   getBalanceChangeTokenAddresses
