@@ -411,7 +411,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
   async #removeKeyStoreSecret(email: string) {
     if (!this.emailVaultStates.email[email]) {
-      await this.#getEmailVaultInfo(email, 'setup')
+      await this.#getEmailVaultInfo(email, 'removeSecret')
     }
 
     let result: Boolean | null = false
@@ -423,7 +423,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
         async () => {
           magicKey = await this.#getMagicLinkKey(email)
         },
-        'setup'
+        'removeSecret'
       )
     }
 
