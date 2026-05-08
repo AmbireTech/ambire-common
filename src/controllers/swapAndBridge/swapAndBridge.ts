@@ -53,6 +53,7 @@ import {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
+  getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
@@ -1882,7 +1883,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
           txHash: activeRoute.userTxHash!,
-          providerId: activeRoute.route.providerId
+          providerId: activeRoute.route.providerId,
+          requestId: (activeRoute.route.rawRoute as any)?.requestId,
+          routeId: activeRoute.route.routeId
         })
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
@@ -1913,10 +1916,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
-        if (
-          this.#portfolioUpdate &&
-          activeRoute.route.fromChainId !== activeRoute.route.toChainId
-        ) {
+        if (this.#portfolioUpdate && getIsBridgeRoute(activeRoute.route)) {
           this.#portfolioUpdate([BigInt(activeRoute.route.toChainId)])
         }
       } else if (status === 'ready') {
@@ -2236,7 +2236,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let shouldUpdateActiveRouteStatus = false
 
-    const isSwap = activeRoute.route.fromChainId === activeRoute.route.toChainId
+    const isSwap = !getIsBridgeRoute(activeRoute.route)
 
     // force update the active route status if the route is of type 'swap'
     if (isSwap) shouldUpdateActiveRouteStatus = true
@@ -2414,7 +2414,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromTokenPriceInUsd = this.quote.selectedRoute.inputValueInUsd / Number(this.fromAmount)
     }
 
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
@@ -2426,7 +2428,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
       fromTokenPriceInUsd,
-      fromTokenDecimals: this.quote?.fromAsset.decimals
+      fromTokenDecimals: this.quote?.fromAsset.decimals,
+      providerId: this.quote?.selectedRoute?.providerId
     })
 
     if (this.#signAccountOpController) {
@@ -2570,7 +2573,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get swapSignErrors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
     if (
@@ -2594,18 +2599,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ) {
       errors.push({
         title: 'Error detected in the pending batch. Please review it before proceeding'
-      })
-    }
-
-    // if we're bridging to ethereum, make the min from amount 10 usd
-    if (
-      isBridge &&
-      this.toChainId === 1 &&
-      this.fromAmountInFiat &&
-      Number(this.fromAmountInFiat) < 10
-    ) {
-      errors.push({
-        title: 'Min amount for bridging to Ethereum is $10'
       })
     }
 
