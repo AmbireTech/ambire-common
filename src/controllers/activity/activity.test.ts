@@ -320,27 +320,21 @@ describe('Activity Controller ', () => {
       })
     })
 
-    test('should detect poisoning from Address Book on first send, but skip it when recipient is not first-time', async () => {
+    test('should not detect poisoning without transaction history', async () => {
       const { controller } = await prepareTest()
 
-      const trustedAddressBookContact = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
       const poisoningRecipient4to4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
       const normalizedPoisoningRecipient4to4 = poisoningRecipient4to4.toLowerCase()
 
       const firstTimeSendResult = await controller.hasAccountOpsSentTo(
         poisoningRecipient4to4,
-        ACCOUNTS[1]!.addr,
-        [trustedAddressBookContact]
+        ACCOUNTS[1]!.addr
       )
 
       expect(firstTimeSendResult).toEqual({
         found: false,
         lastTransactionDate: null,
-        addressPoisoningMatch: {
-          matchedAddress: trustedAddressBookContact,
-          matchedPrefixCharsCount: 4,
-          matchedSuffixCharsCount: 4
-        }
+        addressPoisoningMatch: null
       })
 
       await controller.addAccountOp({
@@ -353,8 +347,7 @@ describe('Activity Controller ', () => {
 
       const nonFirstTimeSendResult = await controller.hasAccountOpsSentTo(
         normalizedPoisoningRecipient4to4,
-        ACCOUNTS[1]!.addr,
-        [trustedAddressBookContact]
+        ACCOUNTS[1]!.addr
       )
 
       expect(nonFirstTimeSendResult).toEqual({

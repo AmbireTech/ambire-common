@@ -964,8 +964,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (isAddress(this.recipientAddress)) {
       const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
-        this.#selectedAccount.account?.addr || '',
-        this.#addressBook.contacts.map(({ address }) => address)
+        this.#selectedAccount.account?.addr || ''
       )
       found = result.found
       lastTransactionDate = result.lastTransactionDate

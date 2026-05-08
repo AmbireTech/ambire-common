@@ -278,8 +278,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    */
   async hasAccountOpsSentTo(
     toAddress: string, // the address to check for received transactions
-    accountId: AccountId, // the account ID to filter operations from
-    trustedAddresses: string[] = [] // trusted addresses to check for poisoning matches
+    accountId: AccountId // the account ID to filter operations from
   ): Promise<{
     found: boolean
     lastTransactionDate: Date | null
@@ -307,10 +306,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       })
     }
 
-    // Address poisoning compares the new recipient against two trusted sources:
-    // 1) recipients from this account's historical account ops below
-    // 2) explicit trusted addresses passed in by the caller (e.g. Address Book),
-    //    evaluated only if the send is still first-time after scanning history.
+    // Address poisoning compares the new recipient only against recipients from
+    // this account's historical account ops below.
     accounts.forEach((account) => {
       const accountOpsOfAccount = this.#accountsOps[account]
       if (!accountOpsOfAccount) return
@@ -340,9 +337,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
         })
       })
     })
-
-    // Poisoning checks for trusted addresses (e.g. Address Book) only for first-time sends
-    if (!found) trustedAddresses.forEach((address) => updatePoisoningMatch(address))
 
     let addressPoisoningMatch: AddressPoisoningMatch | null = null
     if (!found && bestPoisoningMatch) {
