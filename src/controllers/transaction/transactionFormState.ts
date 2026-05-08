@@ -664,11 +664,13 @@ export class TransactionFormState extends EventEmitter {
     const currentActiveRoutes = [...this.activeRoutes]
     const activeRouteIndex = currentActiveRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
-    if (activeRouteIndex !== -1) {
+    const currentActiveRoute = currentActiveRoutes[activeRouteIndex]
+
+    if (currentActiveRoute) {
       if (forceUpdateRoute) {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
-          let route = currentActiveRoutes[activeRouteIndex].route
+          let route = currentActiveRoute.route
           if (this.dependencies.serviceProviderAPI.id === 'socket') {
             // @ts-ignore TODO: types mismatch by a bit, align types better
             route = await this.dependencies.serviceProviderAPI.getActiveRoute(activeRouteId)
@@ -679,11 +681,11 @@ export class TransactionFormState extends EventEmitter {
 
       if (activeRoute) {
         currentActiveRoutes[activeRouteIndex] = {
-          ...currentActiveRoutes[activeRouteIndex],
+          ...currentActiveRoute,
           ...activeRoute
         }
       } else {
-        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex] }
+        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoute }
       }
 
       if (activeRoute?.routeStatus === 'completed') {

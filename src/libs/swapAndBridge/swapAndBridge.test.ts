@@ -4,7 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
 import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
-import { calculateAmountWarnings } from './swapAndBridge'
+import { calculateAmountWarnings, getIsBridgeRoute } from './swapAndBridge'
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({
@@ -88,6 +88,37 @@ const createMockRoute = ({
 }
 
 describe('swapAndBridge lib', () => {
+  describe('getIsBridgeRoute', () => {
+    test('should treat same-chain Squid routes as bridge-like routes', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 0.05,
+        minAmountOut: 99
+      })
+
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+      selectedRoute.providerId = 'squid'
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(true)
+    })
+
+    test('should not treat same-chain non-Squid routes as bridge routes', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 0.05,
+        minAmountOut: 99
+      })
+
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+    })
+  })
+
   describe('calculateAmountWarnings', () => {
     test('should return null when selectedRoute is not provided', () => {
       const result = calculateAmountWarnings(undefined, '100', '0.05', 18)
