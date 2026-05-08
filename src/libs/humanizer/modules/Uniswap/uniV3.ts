@@ -83,9 +83,9 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       // @TODO: consider fees
       return [
         getAction('Swap'),
-        getToken(params.tokenIn, params.amountIn),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOutMinimum),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
@@ -97,9 +97,9 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
 
       return [
         getAction('Swap'),
-        getToken(params.tokenIn, params.amountIn),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOutMinimum),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
@@ -111,11 +111,12 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     ): HumanizerVisualization[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
         getAction('Swap'),
-        getToken(path[0], params.amountIn),
+        getToken(path[0]!, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], params.amountOutMinimum),
+        getToken(path[path.length - 1]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
@@ -125,10 +126,10 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     )?.selector!]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       return [
-        getAction('Swap up to'),
-        getToken(params.tokenIn, params.amountInMaximum),
+        getAction('Swap'),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOut),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
@@ -138,10 +139,10 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     )?.selector!]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       return [
-        getAction('Swap up to'),
-        getToken(params.tokenIn, params.amountInMaximum),
+        getAction('Swap'),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOut),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
@@ -161,11 +162,12 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     ): HumanizerVisualization[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
-        getAction('Swap up to'),
-        getToken(path[path.length - 1], params.amountInMaximum),
+        getAction('Swap'),
+        getToken(path[path.length - 1]!, 0n),
         getLabel('for'),
-        getToken(path[0], params.amountOut),
+        getToken(path[0]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
@@ -176,10 +178,10 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     ): HumanizerVisualization[] => {
       const [amountOut, amountInMax, path, to] = ifaceV32.parseTransaction(call)?.args || []
       return [
-        getAction('Swap up to'),
-        getToken(path[0], amountInMax),
+        getAction('Swap'),
+        getToken(path[0], 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], amountOut),
+        getToken(path[path.length - 1], 0n),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
     },
@@ -191,9 +193,9 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       const [amountIn, amountOutMin, path, to] = ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Swap'),
-        getToken(path[0], amountIn),
+        getToken(path[0], 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], amountOutMin),
+        getToken(path[path.length - 1], 0n),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
     },
@@ -203,7 +205,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       call: IrCall
     ): HumanizerVisualization[] => {
       const [amountMin] = ifaceV32.parseTransaction(call)?.args || []
-      return [getAction('Unwrap'), getToken(ZeroAddress, amountMin)]
+      return [getAction('Unwrap'), getToken(ZeroAddress, 0n)]
     },
     // 0x49404b7c
     [ifaceV32.getFunction('unwrapWETH9(uint256,address recipient)')?.selector!]: (
@@ -213,7 +215,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       const [amountMin, recipient] = ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Unwrap'),
-        getToken(ZeroAddress, amountMin),
+        getToken(ZeroAddress, 0n),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
       ]
     },
@@ -223,7 +225,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       call: IrCall
     ): HumanizerVisualization[] => {
       const [token, amountMinimum] = ifaceV32.parseTransaction(call)?.args || []
-      return [getAction('Sweep'), getLabel('at least'), getToken(token, amountMinimum)]
+      return [getAction('Sweep'), getToken(token, 0n)]
     },
     // 0xdf2ab5bb
     [ifaceV32.getFunction('sweepToken(address,uint256,address)')?.selector!]: (
@@ -233,8 +235,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       const [token, amountMinimum, recipient] = ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Sweep'),
-        getLabel('at least'),
-        getToken(token, amountMinimum),
+        getToken(token, 0n),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
       ]
     },
@@ -247,8 +248,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Sweep'),
-        getLabel('at least'),
-        getToken(token, amountMinimum),
+        getToken(token, 0n),
         getLabel('with fee'),
         getToken(token, feeBips),
         getLabel('to'),
@@ -263,8 +263,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Sweep'),
-        getLabel('at least'),
-        getToken(token, amountMinimum),
+        getToken(token, 0n),
         getLabel('with fee'),
         getToken(token, feeBips),
         getLabel('to'),
@@ -316,11 +315,12 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     ): HumanizerVisualization[] => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
         getAction('Swap'),
-        getToken(path[0], params.amountIn),
+        getToken(path[0]!, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], params.amountOutMinimum),
+        getToken(path[path.length - 1]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
@@ -332,11 +332,12 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     ): HumanizerVisualization[] => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
-        getAction('Swap up to'),
-        getToken(path[path.length - 1], params.amountInMaximum),
+        getAction('Swap'),
+        getToken(path[path.length - 1]!, 0n),
         getLabel('for'),
-        getToken(path[0], params.amountOut),
+        getToken(path[0]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
@@ -350,7 +351,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         ifaceV3.parseTransaction(call)?.args || []
       return [
         getAction('Unwrap'),
-        getToken(ZeroAddress, amountMin),
+        getToken(ZeroAddress, 0n),
         getLabel('with fee'),
         getToken(ZeroAddress, feeBips),
         getLabel('to'),

@@ -124,6 +124,7 @@ const prepareTest = async () => {
       eventEmitterRegistry,
       provider: mainCtrl.providers.providers[network.chainId.toString()]!,
       phishing: mainCtrl.phishing,
+      dapps: mainCtrl.dapps,
       fromRequestId: requestId,
       accountOp: {
         id: generateUuid(),

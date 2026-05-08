@@ -67,7 +67,8 @@ const surveys: Record<string, Survey> = {
 }
 
 let sentData
-mockFetch.mockImplementation(async (url: string, ...args) => {
+
+async function successFetch(url: string, ...args: any) {
   if (url.includes('relayer.ambire.com/promotions/survey/') && args[0].method === 'GET') {
     const surveyIdToReturn = url.split('/survey/')[1]!
 
@@ -86,6 +87,9 @@ mockFetch.mockImplementation(async (url: string, ...args) => {
     }
   }
   return fetch(url, ...args)
+}
+mockFetch.mockImplementation(async (url: string, ...args) => {
+  return successFetch(url, ...args)
 })
 
 describe('SurveyController', () => {
@@ -291,5 +295,34 @@ describe('SurveyController', () => {
         surveys['two-flow-survey']?.questions[2]!
       )
     })()
+  })
+  test('Retry mechanism', async () => {
+    let i = 0
+    mockFetch.mockImplementation(async (url: string, ...args) => {
+      if (url.includes('promotions/survey')) {
+        i++
+        if (i % 3 !== 0) throw new Error('Error')
+      }
+      return successFetch(url, ...args)
+    })
+
+    const {
+      mainCtrl: { survey: surveyController }
+    } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
+
+    await surveyController.fetchSurvey('happy-case', 'bannerId')
+    expect(surveyController.status).toBe('error-fetching')
+    await surveyController.fetchSurvey('happy-case', 'bannerId')
+    expect(surveyController.status).toBe('error-fetching')
+    await surveyController.fetchSurvey('happy-case', 'bannerId')
+    expect(surveyController.status).toBe('success-fetched')
+
+    await surveyController.answerQuestion(0, 0, 0, 'instanceId', 'address')
+    await surveyController.answerQuestion(1, 1, 'ans', 'instanceId', 'address')
+    expect(surveyController.status).toBe('error-submitting')
+    await surveyController.sendResponse('instanceId', 'address')
+    expect(surveyController.status).toBe('error-submitting')
+    await surveyController.sendResponse('instanceId', 'address')
+    expect(surveyController.status).toBe('success-submitted')
   })
 })

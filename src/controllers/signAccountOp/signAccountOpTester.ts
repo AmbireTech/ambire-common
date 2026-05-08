@@ -1,5 +1,6 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IDappsController } from '../../interfaces/dapp'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -24,6 +25,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     account: Account
     network: Network
     activity: IActivityController
+    dapps: IDappsController
     provider: RPCProvider
     fromRequestId: UserRequest['id']
     accountOp: AccountOp

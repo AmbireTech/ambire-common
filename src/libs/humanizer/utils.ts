@@ -1,11 +1,6 @@
 import { getAddress, isAddress, ZeroAddress } from 'ethers'
 
-import {
-  EditApprovalData,
-  HumanizerMeta,
-  HumanizerVisualization,
-  HumanizerWarning
-} from './interfaces'
+import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
 
 export function getWarning(
   content: string,
@@ -41,8 +36,7 @@ export function getToken(
   _address: string,
   amount: bigint,
   isHidden?: boolean,
-  chainId?: bigint,
-  editApprovalData?: EditApprovalData
+  chainId?: bigint
 ): HumanizerVisualization {
   const address = _address.toLowerCase()
   return {
@@ -51,8 +45,7 @@ export function getToken(
     value: BigInt(amount),
     id: randomId(),
     isHidden,
-    chainId,
-    editApprovalData
+    chainId
   }
 }
 export function getTokenWithChain(

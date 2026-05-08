@@ -12,6 +12,7 @@ import {
 } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -231,6 +232,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -292,6 +295,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity,
     storage,
     phishing,
+    dapps,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -314,6 +318,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity: IActivityController
     storage: IStorageController
     phishing: IPhishingController
+    dapps: IDappsController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -341,6 +346,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
@@ -898,8 +904,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     if (shouldSetMaxAmount) {
+      // Always derive amounts from exact token balance. Using max fiat here
+      // would run fiat→token rounding and often leave spendable dust.
+      const previousFieldMode = this.fromAmountFieldMode
       this.fromAmountFieldMode = 'token'
       this.#setFromAmountAmount(this.maxFromAmount, true)
+      this.fromAmountFieldMode = previousFieldMode
     }
 
     if (fromAmount !== undefined) {
@@ -2482,6 +2492,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       network,
       provider,
       phishing: this.#phishing,
+      dapps: this.#dapps,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

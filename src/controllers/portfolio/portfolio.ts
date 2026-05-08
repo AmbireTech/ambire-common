@@ -85,6 +85,7 @@ import {
   TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
+  TokenError,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -306,6 +307,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accounts: this.#accounts.accounts
           })
 
+          // Analytics should not be polluted with inactive extensions
+          const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
+
           // The relayer has internal cache for the defi positions. If we want to
           // invalidate it, we need to pass this param.
           // See `getShouldBypassServerSideCache` for more details.
@@ -315,7 +319,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}${activeParam}`
 
           return { url, queueSegment }
         })
@@ -850,6 +854,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
     return this.#portfolioLibs.get(key)!
+  }
+
+  async getTokenBalancesOnBlock(
+    accountId: AccountId,
+    chainId: bigint,
+    tokenAddrs: string[],
+    blockTag: GetOptions['blockTag'],
+    accountAddr: string = accountId
+  ): Promise<[TokenError, TokenResult][]> {
+    const network = this.#networks.networks.find((x) => x.chainId === chainId)
+
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
+
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
+
+    if (!portfolioLib) return []
+
+    return portfolioLib.getTokensByAddresses(accountAddr, tokenAddrs, { blockTag })
   }
 
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
