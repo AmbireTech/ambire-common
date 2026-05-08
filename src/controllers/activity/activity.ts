@@ -1,5 +1,12 @@
 import { toBeHex, TransactionReceipt } from 'ethers'
 
+import { AddressPoisoningMatch } from '@/interfaces/transfer'
+import {
+  getAddressPoisoningMatchCounts,
+  pickBetterPoisoningMatch,
+  ScoredAddressPoisoningMatch
+} from '@/libs/transfer/address-poisoning'
+
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -18,7 +25,6 @@ import {
 import {
   AccountOpIdentifiedBy,
   BalanceChange,
-  checkIsRecipientOfAccountOp,
   fetchFrontRanTxnId,
   fetchTxnId,
   getAccountOpRecipients,
@@ -268,21 +274,41 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Checks if there are any account operations that were sent to a specific address
-   * @param toAddress The address to check for received transactions
-   * @param accountId The account ID to filter operations from
-   * @returns An object with 'found' (boolean) and 'lastTransactionDate' (Date | null)
+   * Checks if there are any account operations that were sent to a specific address.
+   * Returns history metadata plus an optional poisoning match for first-time recipients.
    */
   async hasAccountOpsSentTo(
-    toAddress: string,
-    accountId: AccountId
-  ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
+    toAddress: string, // the address to check for received transactions
+    accountId: AccountId // the account ID to filter operations from
+  ): Promise<{
+    found: boolean
+    lastTransactionDate: Date | null
+    addressPoisoningMatch: AddressPoisoningMatch | null
+  }> {
     await this.#initialLoadPromise
-    if (!toAddress) return { found: false, lastTransactionDate: null }
+    if (!toAddress) return { found: false, lastTransactionDate: null, addressPoisoningMatch: null }
+
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
+    const normalizedToAddress = toAddress.toLowerCase()
+    let bestPoisoningMatch: ScoredAddressPoisoningMatch | null = null
 
+    const updatePoisoningMatch = (address: string, lastInteractedAt: number | null = null) => {
+      const matchCounts = getAddressPoisoningMatchCounts(toAddress, address)
+
+      if (!matchCounts) return
+
+      bestPoisoningMatch = pickBetterPoisoningMatch(bestPoisoningMatch, {
+        matchedAddress: address,
+        matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
+        matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
+        lastInteractedAt
+      })
+    }
+
+    // Address poisoning compares the new recipient only against recipients from
+    // this account's historical account ops below.
     accounts.forEach((account) => {
       const accountOpsOfAccount = this.#accountsOps[account]
       if (!accountOpsOfAccount) return
@@ -291,20 +317,43 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const networkAccountOpsOfAccount = accountOpsOfAccount[network]
         if (!networkAccountOpsOfAccount) return
         networkAccountOpsOfAccount.forEach((op) => {
-          const timestampOfSentTo = checkIsRecipientOfAccountOp(op, toAddress)
+          const recipients = getAccountOpRecipients(op)
+          const hasSentToRecipient = recipients.some((recipient) => {
+            if (recipient.toLowerCase() === normalizedToAddress) return true
 
-          if (timestampOfSentTo) {
+            // Poisoning checks are needed only for first-time sends. As soon as
+            // we know the recipient was used before, skip this extra work.
+            if (!found) updatePoisoningMatch(recipient, op.timestamp)
+
+            return false
+          })
+
+          if (hasSentToRecipient) {
             found = true
 
-            if (!lastTimestamp || timestampOfSentTo > lastTimestamp) {
-              lastTimestamp = timestampOfSentTo
+            if (!lastTimestamp || op.timestamp > lastTimestamp) {
+              lastTimestamp = op.timestamp
             }
           }
         })
       })
     })
 
-    return { found, lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null }
+    let addressPoisoningMatch: AddressPoisoningMatch | null = null
+    if (!found && bestPoisoningMatch) {
+      const currentBestPoisoningMatch = bestPoisoningMatch as ScoredAddressPoisoningMatch
+      addressPoisoningMatch = {
+        matchedAddress: currentBestPoisoningMatch.matchedAddress,
+        matchedPrefixCharsCount: currentBestPoisoningMatch.matchedPrefixCharsCount,
+        matchedSuffixCharsCount: currentBestPoisoningMatch.matchedSuffixCharsCount
+      }
+    }
+
+    return {
+      found,
+      lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null,
+      addressPoisoningMatch
+    }
   }
 
   async filterAccountsOps(
