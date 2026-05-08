@@ -1,4 +1,4 @@
-import { getAddress } from 'ethers'
+import { getAddress, ZeroAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
@@ -25,7 +25,6 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { ZERO_ADDRESS } from '../socket/constants'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
   CITREA_CHAIN_ID,
@@ -34,14 +33,14 @@ import {
 } from './constants'
 
 const normalizeOutgoingSquidTokenAddress = (address: string) =>
-  address === ZERO_ADDRESS ? SQUID_NATIVE_TOKEN_ADDRESS : address
+  address === ZeroAddress ? SQUID_NATIVE_TOKEN_ADDRESS : address
 
 const isTransientSquidStatusNotFound = (response: SquidErrorResponse) =>
   response.statusCode === 404 || response.type === 'NotFoundError'
 
 const normalizeIncomingSquidTokenAddress = (address: string) =>
   address.toLowerCase() === SQUID_NATIVE_TOKEN_ADDRESS.toLowerCase()
-    ? ZERO_ADDRESS
+    ? ZeroAddress
     : getAddress(address)
 
 const normalizeSquidTokenToSwapAndBridgeToToken = (token: SquidToken): SwapAndBridgeToToken => ({
@@ -427,7 +426,7 @@ export class SquidAPI implements SwapProvider {
     return {
       activeRouteId: route.routeId,
       approvalData:
-        route.steps[0]?.fromAsset.address === ZERO_ADDRESS
+        route.steps[0]?.fromAsset.address === ZeroAddress
           ? null
           : {
               allowanceTarget: rawRoute.estimate.approvalAddress || txTarget,

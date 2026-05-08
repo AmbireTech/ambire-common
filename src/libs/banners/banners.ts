@@ -43,19 +43,19 @@ export const getBridgeBanners = (
   const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
   const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
   // if there is one squid swap on the same chain, label it as such
-  const actionWord = allRoutes.find(
+  const actionWordUppercase = allRoutes.find(
     (r) => r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId
   )
     ? 'Swap'
     : 'Bridge'
-  const actionWordLower = actionWord.toLowerCase()
+  const actionWordLower = actionWordUppercase.toLowerCase()
 
   let title = ''
   let text = ''
   let type: BannerType
   if (inProgressRoutes.length > 0) {
     type = 'info'
-    title = `${actionWord}${inProgressRoutes.length > 1 ? 's' : ''} in progress`
+    title = `${actionWordUppercase}${inProgressRoutes.length > 1 ? 's' : ''} in progress`
     text = `You have ${inProgressRoutes.length} pending ${actionWordLower}${
       inProgressRoutes.length > 1 ? 's' : ''
     }`
@@ -83,7 +83,7 @@ export const getBridgeBanners = (
     }`
   } else {
     type = 'success'
-    title = `${actionWord}${completedRoutes.length > 1 ? 's' : ''} completed`
+    title = `${actionWordUppercase}${completedRoutes.length > 1 ? 's' : ''} completed`
     text = `You have ${completedRoutes.length} completed ${actionWordLower}${
       completedRoutes.length > 1 ? 's' : ''
     }.`

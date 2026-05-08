@@ -158,8 +158,12 @@ export class SwapProviderParallelExecutor {
     const providerNames = supportedProviders.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
-      .replace(/\bservice provider\b/g, 'service providers')
       .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
+
+    // make it plural only if there are multiple
+    if (providerNames.length > 1) {
+      combinedMessage = combinedMessage.replace(/\bservice provider\b/g, 'service providers')
+    }
 
     // Replace the technical details with combined ones
     if (technicalDetails.length > 0) {
