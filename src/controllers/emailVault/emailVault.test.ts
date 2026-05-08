@@ -228,6 +228,9 @@ describe('happy cases', () => {
     // attempt to unlock keystore with previous secret
     await keystore.unlockWithSecret('EmailVaultRecoverySecret', recoverySecret.value!)
     expect(keystore.isUnlocked).toBeFalsy()
+
+    expect(ev.keystoreRecoveryEmail).toBeFalsy()
+    expect(ev.hasKeystoreRecovery).toBeFalsy()
   })
   test('remove non-existing keyStoreSecret', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
