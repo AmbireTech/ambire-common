@@ -135,4 +135,12 @@ export class EOA extends BaseAccount {
   canSetCustomGasPrices(): boolean {
     return true
   }
+
+  canSetCustomGas(_feeOption?: FeePaymentOption, accountOp?: AccountOp): boolean {
+    // we do not allow custom gas for a bundle as we can estimate
+    // the gas for the next transaction after the first one has completed
+    if (accountOp && accountOp.calls.length > 1) return false
+
+    return this.canSetCustomGasPrices()
+  }
 }
