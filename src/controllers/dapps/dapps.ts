@@ -19,6 +19,8 @@ import {
   Dapp,
   DefiLlamaChain,
   DefiLlamaProtocol,
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappVerificationBanner,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController
@@ -799,6 +801,112 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.#ui.message.sendUiMessage(message)
+  }
+
+  /**
+   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if none apply.
+   *
+   * Priority order:
+   * 1) dApp verification in progress (`LOADING`)
+   * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
+   * 3) dApp is blacklisted (`BLACKLISTED`)
+   * 4) dApp is not in the default catalog (not `VERIFIED`)
+   *
+   * Pass `includeDappNamesInText: false` in single-dApp flows (e.g. SignMessage),
+   * where appending the dApp names in the banner text is redundant.
+   */
+  getDappVerificationBanner(
+    dappUrls: string[],
+    { includeDappNamesInText = true }: { includeDappNamesInText?: boolean } = {}
+  ): DappVerificationBanner | null {
+    const validDappUrls = dappUrls
+      .map((url) => url?.toLowerCase())
+      .filter((url): url is string => !!url)
+    if (!validDappUrls.length) return null
+
+    const dappVerificationData = validDappUrls.map((url) => {
+      const dapp = this.#dapps.get(getDappIdFromUrl(url))
+      return {
+        status: dapp?.blacklisted,
+        name: dapp?.name || new URL(url).hostname
+      }
+    })
+
+    // Returns the names of dApps matching a predicate (e.g. all dapps with BLACKLISTED status).
+    const getDappNamesByPredicate = (
+      predicate: (item: (typeof dappVerificationData)[number]) => boolean
+    ) =>
+      Array.from(new Set(dappVerificationData.filter(predicate).map((dapp) => dapp.name))).join(
+        ', '
+      )
+
+    // Conditionally appends the matching dApp names, separated by ":" for readability.
+    const withOptionalDappNames = (baseText: string, dappNames: string) => {
+      if (!includeDappNamesInText || !dappNames) return baseText
+
+      const shouldReplaceTrailingPunctuation = baseText.endsWith('.') || baseText.endsWith('!')
+      const withColon = shouldReplaceTrailingPunctuation
+        ? `${baseText.slice(0, -1)}:`
+        : `${baseText}:`
+
+      return `${withColon} ${dappNames}`
+    }
+
+    // 1) dApp verification in progress
+    const loadingDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
+    if (loadingDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+        type: 'warning',
+        text: withOptionalDappNames(
+          "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
+          loadingDappNames
+        )
+      }
+    }
+
+    // 2) dApp verification failed / unknown
+    const failedToVerifyDappNames = getDappNamesByPredicate(
+      (dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status
+    )
+    if (failedToVerifyDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+        type: 'warning',
+        text: withOptionalDappNames(
+          "We couldn't verify the app. Make sure you trust it before signing requests.",
+          failedToVerifyDappNames
+        )
+      }
+    }
+
+    // 3) dApp is blacklisted
+    const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
+    if (blacklistedDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+        type: 'error',
+        text: withOptionalDappNames(
+          "This app didn't pass our safety check. Proceed at your own risk.",
+          blacklistedDappNames
+        )
+      }
+    }
+
+    // 4) dApp is not in the default catalog
+    const notVerifiedDappNames = getDappNamesByPredicate((dapp) => dapp.status !== 'VERIFIED')
+    if (notVerifiedDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+        type: 'warning',
+        text: withOptionalDappNames(
+          'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
+          notVerifiedDappNames
+        )
+      }
+    }
+
+    return null
   }
 
   toJSON() {

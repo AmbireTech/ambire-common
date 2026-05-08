@@ -205,4 +205,8 @@ export class V2 extends BaseAccount {
       feeOption.paidBy.toLowerCase() !== this.account.addr.toLowerCase()
     )
   }
+
+  canSetCustomGas(feeOption: FeePaymentOption): boolean {
+    return this.canSetCustomGasPrices(feeOption)
+  }
 }

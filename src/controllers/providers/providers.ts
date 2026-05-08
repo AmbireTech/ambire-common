@@ -5,6 +5,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
@@ -374,13 +375,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       chainId,
       tokenAddrs,
       blockTag,
-      accountAddr
+      accountAddr,
+      receipts
     }: {
       accountId: string
       chainId: bigint
       tokenAddrs: string[]
       blockTag: number
       accountAddr?: string
+      receipts?: BalanceChangesReceipt[]
     },
     requestId: string
   ) {
@@ -414,7 +417,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         portfolioAccountId: string,
         _chainId: bigint,
         portfolioTokenAddrs: string[],
-        portfolioBlockTag: number,
+        portfolioBlockTag: GetOptions['blockTag'],
         portfolioAccountAddr?: string
       ) =>
         portfolio.getTokensByAddresses(
@@ -428,7 +431,12 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         chainId,
         tokenAddrs,
         receiptBlockNumber: blockTag,
-        getTokenBalancesOnBlock
+        getTokenBalancesOnBlock,
+        receipts,
+        debugTraceTransaction: (txnHash) =>
+          chainId === 999n
+            ? provider.send('debug_traceTransaction', [txnHash, { tracer: 'callTracer' }])
+            : Promise.resolve(null)
       })
 
       return this.#sendUiMessage({
