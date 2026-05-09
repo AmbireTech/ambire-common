@@ -13,13 +13,10 @@ const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a116
 const SCAN_LOGS_ATTEMPTS = 15
 const SCAN_LOGS_DELAY = 12000
 
-type LogsBlockTag = number | 'latest'
-
 type ScanLogsParams = {
   accAddr: string
   chainId: Network['chainId']
   fromBlock: number
-  toBlock?: LogsBlockTag
 }
 
 type ScanLogsResult = {
@@ -64,12 +61,7 @@ export class LogsController extends EventEmitter {
     this.#providers = providers
   }
 
-  async scanLogs({
-    accAddr,
-    chainId,
-    fromBlock,
-    toBlock = 'latest'
-  }: ScanLogsParams): Promise<ScanLogsResult | null> {
+  async scanLogs({ accAddr, chainId, fromBlock }: ScanLogsParams): Promise<ScanLogsResult | null> {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
 
@@ -78,27 +70,54 @@ export class LogsController extends EventEmitter {
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
     if (!provider || !network) return null
 
-    const toBlockNumber = toBlock === 'latest' ? await provider.getBlockNumber() : Number(toBlock)
+    const toBlockNumber = await provider.getBlockNumber()
+
+    // @nextBlock+1
+    // the nextFromBlock should always be at least one block higher
+    // than the latest one as we don't want to scan multiple times
+    // the same blocks. However, this presents an invictus risk as
+    // one rpc can be selected for getLogs one time and the next
+    // time another. And the second time the second RPC might not be
+    // on the latest block the first one was, resulting in an error.
+    // We're handling the error below by allowing the execution to
+    // retry with the same fromBlock <-> latest in this case
     const nextFromBlock = toBlockNumber + 1
+
     const [logsOut, logsIn] = await Promise.all([
-      provider.getLogs({
-        fromBlock,
-        toBlock: toBlockNumber,
-        topics: [
-          ERC20_TRANSFER_TOPIC,
-          topicAddress(accAddr) // indexed from
-        ]
-      }),
-      provider.getLogs({
-        fromBlock,
-        toBlock: toBlockNumber,
-        topics: [
-          ERC20_TRANSFER_TOPIC,
-          null,
-          topicAddress(accAddr) // indexed to
-        ]
-      })
+      provider
+        .getLogs({
+          fromBlock,
+          toBlock: toBlockNumber,
+          topics: [
+            ERC20_TRANSFER_TOPIC,
+            topicAddress(accAddr) // indexed from
+          ]
+        })
+        .catch((e) => e),
+      provider
+        .getLogs({
+          fromBlock,
+          toBlock: toBlockNumber,
+          topics: [
+            ERC20_TRANSFER_TOPIC,
+            null,
+            topicAddress(accAddr) // indexed to
+          ]
+        })
+        .catch((e) => e)
     ])
+
+    // if an error is encountered, retry from the same fromBlock
+    // read @nextBlock+1
+    if (logsOut instanceof Error || logsIn instanceof Error) {
+      const error = logsOut instanceof Error ? logsOut : logsIn
+      this.emitError({
+        level: 'silent',
+        message: `Failed to scan token transfer logs on network with id ${chainIdString}.`,
+        error
+      })
+      return null
+    }
 
     const txnIds = Array.from(
       new Set(
@@ -160,8 +179,7 @@ export class LogsController extends EventEmitter {
         const result = await this.scanLogs({
           accAddr,
           chainId,
-          fromBlock: nextFromBlock,
-          toBlock: 'latest'
+          fromBlock: nextFromBlock
         })
         if (result) nextFromBlock = result.nextFromBlock
       } catch (error) {
