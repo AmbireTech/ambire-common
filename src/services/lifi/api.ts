@@ -1,10 +1,11 @@
+import { CITREA_CHAIN_ID } from '@/services/squid/constants'
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -284,6 +285,11 @@ export class LiFiAPI implements SwapProvider {
 
   resetHealth() {
     this.isHealthy = null
+  }
+
+  /** disable explicitly citrea for lifi */
+  areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
   }
 
   /**
