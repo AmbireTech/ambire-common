@@ -1047,6 +1047,22 @@ export class MainController extends EventEmitter implements IMainController {
       )
     }
 
+    // signing typed messages might trigger a txn
+    if (signedMessage.content.kind === 'typedMessage') {
+      this.logs
+        .startScanLogsLoop({
+          accAddr: signedMessage.accountAddr,
+          chainId: signedMessage.chainId
+        })
+        .catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: `Failed to scan token transfer logs on network with id ${signedMessage.chainId}.`,
+            error
+          })
+        })
+    }
+
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     await this.requests.resolveUserRequest(

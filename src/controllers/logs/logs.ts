@@ -16,7 +16,7 @@ const SCAN_LOGS_DELAY = 12000
 type ScanLogsParams = {
   accAddr: string
   chainId: Network['chainId']
-  fromBlock: number
+  fromBlock?: number | 'latest'
 }
 
 type ScanLogsResult = {
@@ -61,7 +61,11 @@ export class LogsController extends EventEmitter {
     this.#providers = providers
   }
 
-  async scanLogs({ accAddr, chainId, fromBlock }: ScanLogsParams): Promise<ScanLogsResult | null> {
+  async scanLogs({
+    accAddr,
+    chainId,
+    fromBlock = 'latest'
+  }: ScanLogsParams): Promise<ScanLogsResult | null> {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
 
@@ -154,7 +158,7 @@ export class LogsController extends EventEmitter {
     return { nextFromBlock, txnIds }
   }
 
-  startScanLogsLoop({ accAddr, chainId, fromBlock }: Omit<ScanLogsParams, 'toBlock'>) {
+  startScanLogsLoop({ accAddr, chainId, fromBlock = 'latest' }: Omit<ScanLogsParams, 'toBlock'>) {
     const chainIdString = chainId.toString()
     this.#scanLoopId += 1
     const scanLoopId = this.#scanLoopId
