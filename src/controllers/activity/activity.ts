@@ -66,6 +66,7 @@ type AddExternalAccountOpParams = {
   txnId: string
   receipt: TransactionReceipt
   callId?: Call['id']
+  shouldLearnTokens?: boolean
 }
 
 type AccountOpBalanceChangesBackfillReference = Pick<
@@ -595,8 +596,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     chainId,
     txnId,
     receipt,
-    callId
-  }: AddExternalAccountOpParams) {
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams): Promise<void> {
     await this.#initialLoadPromise
 
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
@@ -641,9 +643,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     try {
-      const tokenAddrs = getBalanceChangeTokenAddresses(
-        await getTransferLogTokens(receipt.logs, accountAddr)
-      )
+      const foundTokens = await getTransferLogTokens(receipt.logs, accountAddr)
+      if (shouldLearnTokens) this.#portfolio.addTokensToBeLearned(foundTokens, chainId)
+      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
 
       submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
         accountAddr,

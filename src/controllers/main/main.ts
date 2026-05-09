@@ -27,6 +27,7 @@ import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
+import { LogsController } from '@/controllers/logs/logs'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
@@ -64,6 +65,7 @@ import {
   Key,
   KeystoreSignerType
 } from '@/interfaces/keystore'
+import { ILogsController } from '@/interfaces/logs'
 import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
@@ -161,6 +163,8 @@ export class MainController extends EventEmitter implements IMainController {
   signAccOpInitError: string | null = null
 
   activity: IActivityController
+
+  logs: ILogsController
 
   addressBook: IAddressBookController
 
@@ -452,6 +456,13 @@ export class MainController extends EventEmitter implements IMainController {
       },
       eventEmitterRegistry
     )
+    this.logs = new LogsController({
+      activity: this.activity,
+      networks: this.networks,
+      portfolio: this.portfolio,
+      providers: this.providers,
+      eventEmitterRegistry
+    })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
@@ -1273,6 +1284,28 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          // we scan for logs only if Success & a dapp interaction has been made
+          // because only a dapp interaction might have a receiving txn after;
+          // receiving txns for inner bridges are handled in swapAndBridge.ts
+          const shouldScanLogs =
+            op.status === AccountOpStatus.Success && op.calls.some((call) => !!call.dapp)
+
+          if (shouldScanLogs) {
+            this.logs
+              .startScanLogsLoop({
+                accAddr: op.accountAddr,
+                chainId: op.chainId,
+                fromBlock: op.blockNumber!
+              })
+              .catch((error) => {
+                this.emitError({
+                  level: 'silent',
+                  message: `Failed to scan token transfer logs on network with id ${op.chainId}.`,
+                  error
+                })
+              })
+          }
         })
       }
     )
