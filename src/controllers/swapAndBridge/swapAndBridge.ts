@@ -1,11 +1,4 @@
-import {
-  formatUnits,
-  getAddress,
-  isAddress,
-  parseUnits,
-  TransactionReceipt,
-  ZeroAddress
-} from 'ethers'
+import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 /* eslint-disable no-await-in-loop */
 import { getAccountNetworks } from '@/libs/networks/networks'
@@ -47,16 +40,11 @@ import { IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import {
-  getAccountOpBalanceChanges,
-  getBalanceChangeTokenAddresses
-} from '../../libs/accountOp/balanceChanges'
-import { SubmittedAccountOp, SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
-import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -78,7 +66,6 @@ import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swa
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
-import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
@@ -100,10 +87,6 @@ type SwapAndBridgeErrorType = {
   level: 'error' | 'warning'
 }
 
-export interface ExternalAccountOps {
-  [key: string]: { [key: string]: SubmittedAccountOpLike[] }
-}
-
 const HARD_CODED_CURRENCY = 'usd'
 
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
@@ -116,10 +99,6 @@ const NETWORK_MISMATCH_MESSAGE =
 
 // For performance reasons, limit the max number of tokens in the to token list
 const TO_TOKEN_LIST_LIMIT = 100
-
-const trimExternalAccountOps = <T>(items: T[], maxSize = 1000): void => {
-  if (items.length > maxSize) items.pop()
-}
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
@@ -169,8 +148,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #serviceProviderAPI: SwapProvider
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
-
-  #externalAccountOps: ExternalAccountOps = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -516,7 +493,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
-    this.#externalAccountOps = await this.#storage.get('externalAccountOps', {})
 
     // FIXME: Temporarily omit getting prev activeRoutes from storage, because of
     // old records with different (unexpected) structure causing crashes.
@@ -1885,88 +1861,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const chainId = activeRoute.route?.toChainId
     if (!chainId) return
 
-    const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
     const provider = this.#providers.providers[chainId.toString()]
-    if (!network || !provider) return
+    if (!provider) return
 
     const receipt = await provider.getTransactionReceipt(txnId)
     if (!receipt) return
 
-    const [transaction, block] = await Promise.all([
-      provider.getTransaction(txnId).catch(() => null),
-      provider.getBlock(receipt.blockNumber).catch(() => null)
-    ])
-
-    const accountAddr = activeRoute.sender
-    const accountOpStatus = receipt.status === 0 ? AccountOpStatus.Failure : AccountOpStatus.Success
-    const call: Call = {
-      id: `${activeRoute.activeRouteId}-external`,
-      to: transaction?.to || receipt.to || ZeroAddress,
-      value: transaction?.value || 0n,
-      data: transaction?.data || '0x',
-      txnId: txnId as NonNullable<Call['txnId']>,
-      status: accountOpStatus,
-      blockNumber: receipt.blockNumber,
-      blockHash: receipt.blockHash,
-      gasUsed: receipt.gasUsed.toString()
-    }
-
-    const submittedAccountOpLike: SubmittedAccountOpLike = {
-      id: `external-${txnId}`,
-      accountAddr,
+    await this.#activity.addExternalAccountOp({
+      accountAddr: activeRoute.sender,
       chainId: BigInt(chainId),
-      calls: [call],
-      gasFeePayment: null,
       txnId,
-      status: accountOpStatus,
-      activitySource: 'external',
-      blockNumber: receipt.blockNumber,
-      blockHash: receipt.blockHash,
-      gasUsed: receipt.gasUsed.toString(),
-      timestamp: block?.timestamp ? block.timestamp * 1000 : Date.now(),
-      identifiedBy: {
-        type: 'Transaction',
-        identifier: txnId
-      }
-    }
-
-    try {
-      const tokenAddrs = getBalanceChangeTokenAddresses(
-        await getTransferLogTokens(receipt.logs, accountAddr)
-      )
-
-      submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
-        accountAddr,
-        chainId: BigInt(chainId),
-        tokenAddrs,
-        receiptBlockNumber: receipt.blockNumber,
-        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
-        receipts: [receipt as TransactionReceipt],
-        debugTraceTransaction: getDebugTraceTransaction(
-          network.chainId,
-          this.#providers.providers[network.chainId.toString()]
-        )
-      })
-    } catch (error) {
-      submittedAccountOpLike.balanceChanges = undefined
-    }
-
-    if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
-    if (!this.#externalAccountOps[accountAddr]![chainId.toString()]) {
-      this.#externalAccountOps[accountAddr]![chainId.toString()] = []
-    }
-
-    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainId.toString()]!
-    const existingOpIndex = externalAccountOps.findIndex((op) => op.txnId === txnId)
-
-    if (existingOpIndex >= 0) {
-      externalAccountOps[existingOpIndex] = submittedAccountOpLike
-    } else {
-      externalAccountOps.unshift(submittedAccountOpLike)
-      trimExternalAccountOps(externalAccountOps)
-    }
-
-    await this.#storage.set('externalAccountOps', this.#externalAccountOps)
+      receipt,
+      callId: `${activeRoute.activeRouteId}-external`
+    })
   }
 
   async checkForActiveRoutesStatusUpdate() {

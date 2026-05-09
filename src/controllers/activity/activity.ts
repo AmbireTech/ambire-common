@@ -1,4 +1,4 @@
-import { toBeHex, TransactionReceipt } from 'ethers'
+import { toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import {
@@ -37,7 +37,7 @@ import {
   SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
@@ -59,6 +59,14 @@ interface PaginationResult<T> {
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
+
+type AddExternalAccountOpParams = {
+  accountAddr: string
+  chainId: bigint
+  txnId: string
+  receipt: TransactionReceipt
+  callId?: Call['id']
+}
 
 type AccountOpBalanceChangesBackfillReference = Pick<
   SubmittedAccountOp,
@@ -579,6 +587,102 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.syncFilteredAccountsOps()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
+    this.emitUpdate()
+  }
+
+  async addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId
+  }: AddExternalAccountOpParams) {
+    await this.#initialLoadPromise
+
+    const network = this.#networks.networks.find((n) => n.chainId === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) return
+
+    const [transaction, block] = await Promise.all([
+      provider.getTransaction(txnId).catch(() => null),
+      provider.getBlock(receipt.blockNumber).catch(() => null)
+    ])
+
+    const accountOpStatus = receipt.status === 0 ? AccountOpStatus.Failure : AccountOpStatus.Success
+    const call: Call = {
+      id: callId || `external-${txnId}`,
+      to: transaction?.to || receipt.to || ZeroAddress,
+      value: transaction?.value || 0n,
+      data: transaction?.data || '0x',
+      txnId: txnId as NonNullable<Call['txnId']>,
+      status: accountOpStatus,
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString()
+    }
+
+    const submittedAccountOpLike: SubmittedAccountOpLike = {
+      id: `external-${txnId}`,
+      accountAddr,
+      chainId,
+      calls: [call],
+      gasFeePayment: null,
+      txnId,
+      status: accountOpStatus,
+      activitySource: 'external',
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString(),
+      timestamp: block?.timestamp ? block.timestamp * 1000 : Date.now(),
+      identifiedBy: {
+        type: 'Transaction',
+        identifier: txnId
+      }
+    }
+
+    try {
+      const tokenAddrs = getBalanceChangeTokenAddresses(
+        await getTransferLogTokens(receipt.logs, accountAddr)
+      )
+
+      submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr,
+        chainId,
+        tokenAddrs,
+        receiptBlockNumber: receipt.blockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        receipts: [receipt as TransactionReceipt],
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
+      })
+    } catch (error) {
+      submittedAccountOpLike.balanceChanges = undefined
+    }
+
+    this.#externalAccountOps = await this.#storage.get(
+      'externalAccountOps',
+      this.#externalAccountOps
+    )
+
+    if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
+    if (!this.#externalAccountOps[accountAddr]![chainId.toString()]) {
+      this.#externalAccountOps[accountAddr]![chainId.toString()] = []
+    }
+
+    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainId.toString()]!
+    const existingOpIndex = externalAccountOps.findIndex((op) => op.txnId === txnId)
+
+    if (existingOpIndex >= 0) {
+      externalAccountOps[existingOpIndex] = submittedAccountOpLike
+    } else {
+      externalAccountOps.unshift(submittedAccountOpLike)
+      trim(externalAccountOps)
+    }
+
+    await this.#storage.set('externalAccountOps', this.#externalAccountOps)
+    await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
 
