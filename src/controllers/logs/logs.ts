@@ -75,22 +75,21 @@ export class LogsController extends EventEmitter {
     if (!provider || !network) return null
 
     const toBlockNumber = await provider.getBlockNumber()
+    const normalizedFromBlock = fromBlock === 'latest' ? toBlockNumber : fromBlock
 
-    // @nextBlock+1
-    // the nextFromBlock should always be at least one block higher
-    // than the latest one as we don't want to scan multiple times
-    // the same blocks. However, this presents an invictus risk as
-    // one rpc can be selected for getLogs one time and the next
-    // time another. And the second time the second RPC might not be
-    // on the latest block the first one was, resulting in an error.
-    // We're handling the error below by allowing the execution to
-    // retry with the same fromBlock <-> latest in this case
+    // The next scan starts one block after the last scanned block. If the next
+    // poll sees the same latest block, or a laggier RPC, the cursor can be ahead
+    // of latest. In that case, skip getLogs and retry the same cursor later.
+    if (normalizedFromBlock > toBlockNumber) {
+      return { nextFromBlock: normalizedFromBlock, txnIds: [] }
+    }
+
     const nextFromBlock = toBlockNumber + 1
 
     const [logsOut, logsIn] = await Promise.all([
       provider
         .getLogs({
-          fromBlock,
+          fromBlock: normalizedFromBlock,
           toBlock: toBlockNumber,
           topics: [
             ERC20_TRANSFER_TOPIC,
@@ -100,7 +99,7 @@ export class LogsController extends EventEmitter {
         .catch((e) => e),
       provider
         .getLogs({
-          fromBlock,
+          fromBlock: normalizedFromBlock,
           toBlock: toBlockNumber,
           topics: [
             ERC20_TRANSFER_TOPIC,
