@@ -314,7 +314,7 @@ export function isBasicAccount(account: Account, state: AccountOnchainState): bo
   return !account.creation && !account.safeCreation && !state.isSmarterEoa
 }
 
-const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice']
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice', 'trezor']
 
 // can the account as a whole become smarter (disregarding chain and state)
 export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
