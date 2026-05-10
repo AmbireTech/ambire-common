@@ -75,3 +75,16 @@ export interface HasUnverifiedDappsRes {
   ok: boolean
   res: boolean
 }
+
+export type DappVerificationBanner = {
+  id: string
+  type: 'error' | 'warning'
+  text: string
+}
+
+export const DAPP_VERIFICATION_BANNER_IDS = {
+  LOADING: 'dapp-verification-loading-banner',
+  FAILED_TO_GET_OR_UNKNOWN: 'dapp-verification-failed-banner',
+  BLACKLISTED: 'dapp-verification-blacklisted-banner',
+  NOT_IN_CATALOG: 'dapp-verification-not-in-catalog-banner'
+} as const

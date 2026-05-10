@@ -6,17 +6,20 @@ const getAmountAfterFeeSync = ({
   currentAmount,
   totalAmount,
   fee,
+  reservedFee,
   shouldReserveFee,
   isMaxAmountSelected
 }: {
   currentAmount: bigint
   totalAmount: bigint
   fee: bigint
+  reservedFee?: bigint
   shouldReserveFee: boolean
   isMaxAmountSelected: boolean
 }): bigint => {
+  const feeToReserve = reservedFee && reservedFee > fee ? reservedFee : fee
   const maxTransferableAmount = shouldReserveFee
-    ? getAmountAfterFeeReserve(totalAmount, fee)
+    ? getAmountAfterFeeReserve(totalAmount, feeToReserve)
     : totalAmount
 
   if (isMaxAmountSelected) return maxTransferableAmount

@@ -47,6 +47,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -98,11 +99,13 @@ import {
   FeePaymentOption,
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
+import { calculateFeeAmount } from '../../libs/fees/fees'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -209,6 +212,7 @@ export const noStateUpdateStatuses = [
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
   customGasPrices?: GasSpeeds
+  customGasLimit?: bigint
   feeToken?: TokenResult
   paidBy?: string
   paidByKeyType?: Key['type']
@@ -267,6 +271,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   gasPrices?: GasSpeeds
 
   hasCustomGasPrices: boolean = false
+
+  customGasLimit?: bigint
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]
@@ -359,6 +365,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #activity: IActivityController
 
+  #dapps: IDappsController
+
   #onUpdateAfterTraceCallSuccess?: () => Promise<void>
 
   #onBroadcastSuccess: OnBroadcastSuccess
@@ -379,6 +387,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #simulateAndEstimateOrSimulateInterval: IRecurringTimeout
 
+  #onDappsUpdateUnsubscribe?: () => void
+
   constructor({
     eventEmitterRegistry,
     type,
@@ -391,6 +401,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     account,
     network,
     activity,
+    dapps,
     provider,
     phishing,
     fromRequestId,
@@ -411,6 +422,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     account: Account
     network: Network
     activity: IActivityController
+    dapps: IDappsController
     provider: RPCProvider
     phishing: IPhishingController
     fromRequestId: UserRequest['id']
@@ -432,6 +444,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.baseAccount = getBaseAccount(account, accountState, network)
     this.#network = network
     this.#activity = activity
+    this.#dapps = dapps
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
@@ -709,6 +722,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.onError((error: ErrorRef) => {
       this.emitError(error)
     })
+
+    this.#onDappsUpdateUnsubscribe = this.#dapps.onUpdate((forceEmit) => {
+      this.propagateUpdate(forceEmit)
+    }, 'sign-account-op-dapps-verification')
 
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
@@ -1278,6 +1295,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   update({
     gasPrices,
     customGasPrices,
+    customGasLimit,
     feeToken,
     paidBy,
     speed,
@@ -1434,6 +1452,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.gasPrices = gasPrices
       }
 
+      if (typeof customGasLimit !== 'undefined') {
+        this.customGasLimit = customGasLimit
+      }
+
       this.#syncSpeedUpFeeSelectionFromEstimation()
 
       if (feeToken && paidBy && !isSpeedUpTransaction) {
@@ -1505,6 +1527,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         Array.isArray(accountOpData?.calls) ||
         gasPrices ||
         customGasPrices ||
+        typeof customGasLimit !== 'undefined' ||
         this.#paidBy ||
         this.feeTokenResult ||
         hasNewEstimation
@@ -1601,6 +1624,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()
+    this.#onDappsUpdateUnsubscribe?.()
+    this.#onDappsUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -1611,6 +1636,29 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.status = null
     this.signedTransactionsCount = null
     this.hardwareWalletSigningRequest = null
+  }
+
+  #getDappVerificationBanner(): SignAccountOpBanner | null {
+    const dappUrls = this.accountOp.calls
+      .map((call) => call.dapp?.url?.toLowerCase())
+      .filter((url): url is string => !!url)
+
+    if (!dappUrls.length) return null
+
+    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls)
+    if (!dappVerificationBanner) return null
+
+    const containsPermit2 = this.accountOp.calls.some((call) => {
+      if (!call.to || !call.data) return false
+      return isPermit2Interaction({ to: call.to, data: call.data })
+    })
+
+    // Show the "not in catalog" banner only for Permit2 interactions to reduce noise on lower-risk actions.
+    if (!containsPermit2 && dappVerificationBanner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) {
+      return null
+    }
+
+    return dappVerificationBanner
   }
 
   /**
@@ -1799,38 +1847,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return BigInt(toBigInt)
   }
 
-  static getAmountAfterFeeTokenConvert(
-    simulatedGasLimit: bigint,
-    gasPrice: bigint,
-    nativeRatio: bigint,
-    feeTokenDecimals: number,
-    addedNative: bigint
-  ) {
-    const amountInWei = simulatedGasLimit * gasPrice + addedNative
-
-    // Let's break down the process of converting the amount into FeeToken:
-    // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
-    // 2. Next, we address the decimal places:
-    // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
-    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
-    // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-    const extraDecimals = BigInt(10 ** 18)
-    const feeTokenExtraDecimals = BigInt(10 ** (18 - feeTokenDecimals))
-    const pow = extraDecimals * feeTokenExtraDecimals
-    const result = (amountInWei * nativeRatio) / pow
-
-    // Fixes the edge case where the fee in wei is not zero
-    // but the decimals of the token we are converting to
-    // cannot represent the amount in wei. Example: 0.(6zeros)1 USDC
-    // We are returning 1n which is the smallest possible amount
-    // to be represented in USDC
-    if (result === 0n && amountInWei !== 0n) {
-      return 1n
-    }
-
-    return result
-  }
-
   async #traceCall() {
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
@@ -1923,15 +1939,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.calculateWarnings()
     this.#traceCallTimeoutId = null
     clearTimeout(timeoutId)
-  }
-
-  /**
-   * Increase the paymaster fee by 10%, the relayer by 5%.
-   * This is required because even now, we are broadcasting at a loss
-   */
-  #increaseFee(amount: bigint, broadcaster: string = 'relayer'): bigint {
-    if (broadcaster === 'paymaster') return amount + amount / 10n
-    return amount + amount / 20n
   }
 
   #addExtra(gasInWei: bigint, percentageIncrease: bigint): Hex {
@@ -2054,23 +2061,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         let simulatedGasLimit: bigint
         let gasPrice
         let maxPriorityFeePerGas
+        let amountGasPrice: bigint
+        let usesPaymaster = false
 
         if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
           if (!estimation.bundlerEstimation) return
 
-          const usesPaymaster = estimation.bundlerEstimation?.paymaster.isUsable()
+          usesPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
           simulatedGasLimit =
             BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
             BigInt(option.gasUsed)
-          amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
-            simulatedGasLimit,
-            BigInt(increasedPrices.maxFeePerGas),
-            nativeRatio,
-            option.token.decimals,
-            0n
-          )
-          if (usesPaymaster) amount = this.#increaseFee(amount, 'paymaster')
+          amountGasPrice = BigInt(increasedPrices.maxFeePerGas)
           gasPrice = BigInt(receivedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(receivedPrices.maxPriorityFeePerGas)
         } else if (
@@ -2081,35 +2083,41 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           simulatedGasLimit = gasUsed
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
+          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
               simulatedGasLimit = getGasUsed(simulatedGasLimit)
             }
           })
-
-          amount = simulatedGasLimit * BigInt(receivedPrices.maxFeePerGas) + option.addedNative
         } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
           simulatedGasLimit = gasUsed
-          amount = simulatedGasLimit * BigInt(receivedPrices.maxFeePerGas) + option.addedNative
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
+          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
         } else {
           // Relayer
           simulatedGasLimit = gasUsed + option.gasUsed
-          amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
-            simulatedGasLimit,
-            BigInt(increasedPrices.maxFeePerGas),
-            nativeRatio,
-            option.token.decimals,
-            option.addedNative
-          )
-          amount = this.#increaseFee(amount)
+          amountGasPrice = BigInt(increasedPrices.maxFeePerGas)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
         }
+
+        if (typeof this.customGasLimit !== 'undefined') {
+          simulatedGasLimit = this.customGasLimit
+        }
+
+        amount = calculateFeeAmount({
+          broadcastOption,
+          simulatedGasLimit,
+          gasPrice: amountGasPrice,
+          nativeRatio,
+          feeTokenDecimals: option.token.decimals,
+          addedNative: broadcastOption === BROADCAST_OPTIONS.byBundler ? 0n : option.addedNative,
+          usesPaymaster
+        })
 
         const feeSpeed: SpeedCalc = {
           type: speed,
@@ -2229,10 +2237,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       inToken: this.feeTokenResult.address,
       feeTokenChainId: this.feeTokenResult.chainId,
       amount: chosenSpeed.amount,
-      simulatedGasLimit: chosenSpeed.simulatedGasLimit,
+      simulatedGasLimit: this.customGasLimit ?? chosenSpeed.simulatedGasLimit,
       gasPrice: chosenSpeed.gasPrice,
       maxPriorityFeePerGas:
         'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined,
+      isCustomGasLimit: typeof this.customGasLimit !== 'undefined',
       broadcastOption: this.baseAccount.getBroadcastOption(this.selectedOption, {
         op: this.accountOp,
         isSponsored: this.isSponsored
@@ -3560,6 +3569,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
+    const dappVerificationBanner = this.#getDappVerificationBanner()
+    if (dappVerificationBanner) banners.push(dappVerificationBanner)
+
     return banners
   }
 
@@ -3571,6 +3583,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (!this.selectedOption) return false
 
     return this.baseAccount.canSetCustomGasPrices(this.selectedOption)
+  }
+
+  get canSetCustomGas(): boolean {
+    if (!this.selectedOption) return false
+
+    return this.baseAccount.canSetCustomGas(this.selectedOption, this.accountOp)
   }
 
   get threshold(): number {
@@ -3613,6 +3631,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
+      canSetCustomGas: this.canSetCustomGas,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed,

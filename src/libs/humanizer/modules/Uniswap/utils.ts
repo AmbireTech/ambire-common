@@ -1,8 +1,14 @@
 /* eslint-disable no-continue */
 import { ZeroAddress } from 'ethers'
 
+import { networks } from '../../../../consts/networks'
 import { HumanizerVisualization } from '../../interfaces'
 import { getLabel, getRecipientText } from '../../utils'
+
+const WRAPPED_NATIVE_TOKEN_ADDRESSES = new Set(
+  networks.map((network) => network.wrappedAddr?.toLowerCase()).filter(Boolean)
+)
+const UNISWAP_FEE_RECIPIENT_ADDRESSES = new Set(['0x000000fee13a103a10d593b9ae06b3e05f2e7e1c'])
 
 export function parsePath(pathBytes: any) {
   // some decodePacked fun
@@ -24,6 +30,7 @@ export const joinWithAndLabel = (
   humanizations: HumanizerVisualization[][]
 ): HumanizerVisualization[] => {
   const hiddenTokens = humanizations.map((h) => h.filter(({ isHidden }) => isHidden)).flat()
+
   const humanizationsWithoutHiddenTokens = humanizations
     .map((h) => h.filter(({ isHidden }) => !isHidden))
     .filter((h) => h.length)
@@ -91,6 +98,16 @@ const isSend = (
   call[0].content?.includes('Send') &&
   call[1].type === 'token'
 
+const getDeadlineValue = (call: HumanizerVisualization[]) => {
+  const deadline = call.find((item) => item.type === 'deadline')
+  return deadline?.value
+}
+
+const getSendRecipient = (call: HumanizerVisualization[]) => {
+  const recipient = call.find((item) => item.type === 'address')
+  return recipient?.address?.toLowerCase()
+}
+
 export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
   const calls = _calls
   const originalCallsLength = calls.length
@@ -105,7 +122,8 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         callJ &&
         isSwap(callI) &&
         isWrap(callJ) &&
-        callJ[1].value === callI[1].value
+        WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase()) &&
+        (callJ[1].value === callI[1].value || callI[1].value === 0n)
       ) {
         callI[1].address = ZeroAddress
         calls.splice(j, 1)
@@ -145,6 +163,25 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         callJ &&
         isSwap(callI) &&
         isSwap(callJ) &&
+        callI[3].address === callJ[3].address &&
+        getDeadlineValue(callI) === getDeadlineValue(callJ) &&
+        ((callI[1].address === ZeroAddress &&
+          WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callJ[1].address?.toLowerCase())) ||
+          (callJ[1].address === ZeroAddress &&
+            WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase())))
+      ) {
+        if (callI[1].address !== ZeroAddress) {
+          callI[1].address = ZeroAddress
+        }
+        calls.splice(j, 1)
+      }
+      // looks for swaps to merge
+      if (
+        i !== j &&
+        callI &&
+        callJ &&
+        isSwap(callI) &&
+        isSwap(callJ) &&
         callI[3].address === callJ[1].address
       ) {
         callI?.push({ ...callI[3], isHidden: true })
@@ -161,10 +198,14 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         callJ &&
         isSend(callJ) &&
         isSwap(callI) &&
-        callI[3].value! / 400n >= callJ[1].value!
+        callJ[1].address === callI[3].address &&
+        UNISWAP_FEE_RECIPIENT_ADDRESSES.has(getSendRecipient(callJ) || '')
       ) {
-        callI[3].value = callI[3].value! - callJ[1].value!
         calls.splice(j, 1)
+      }
+
+      if (callI && isSend(callI) && callI[1].value === 0n) {
+        calls.splice(i, 1)
       }
 
       if (
@@ -187,7 +228,6 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isTake(callJ) &&
         callI[3].address === callJ[1].address
       ) {
-        callI[3].value = callI[3].value! > callJ[1].value! ? callI[3].value : callJ[1].value
         calls.splice(j, 1)
       }
       if (
@@ -198,7 +238,9 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isTake(callJ) &&
         callI[1].address === callJ[1].address
       ) {
-        callI[1].value = callI[1].value! > callJ[1].value! ? callI[1].value : callJ[1].value
+        if (callI[1].value && callI[1].value > 0n) {
+          callI[1].value = callI[1].value > callJ[1].value! ? callI[1].value : callJ[1].value
+        }
         calls.splice(j, 1)
       }
       // because of this https://www.codeslaw.app/contracts/ethereum/0x66a9893cc07d91d95644aedd05d03f95e1dba8af?file=src%2Fpkgs%2Funiversal-router%2Flib%2Fv4-periphery%2Fsrc%2Flibraries%2FActionConstants.sol&start=11&end=13

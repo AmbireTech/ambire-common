@@ -4,6 +4,7 @@ import { describe, expect } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
@@ -99,6 +100,16 @@ let mainCtrl: IMainController
 let storageCtrl: IStorageController
 let storage: Storage
 
+const buildMockReceipt = (overrides: Partial<any> = {}) =>
+  ({
+    status: 1,
+    blockNumber: 123,
+    blockHash: '0xmock-block-hash',
+    gasUsed: 21_000n,
+    logs: [],
+    ...overrides
+  }) as any
+
 const prepareTest = async () => {
   const controller = new ActivityController(
     mainCtrl.storage,
@@ -152,6 +163,12 @@ describe('Activity Controller ', () => {
   beforeAll(async () => {
     ;({ mainCtrl, storageCtrl, storage } = await makeMainController(async (s) => {
       await s.set('accounts', ACCOUNTS)
+      await s.set(
+        'networks',
+        Object.fromEntries(
+          predefinedNetworks.map((network) => [network.chainId.toString(), network])
+        )
+      )
     }))
     await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
   })
@@ -159,11 +176,187 @@ describe('Activity Controller ', () => {
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
+    jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
   })
 
   describe('AccountsOps', () => {
+    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 0/8 and reject total < 8 or 0/0)', async () => {
+      const { controller } = await prepareTest()
+
+      const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+      const poisoningRecipient4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const poisoningRecipient5 = '0xF0cD7bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb237DB'
+      const poisoningRecipient6 = '0xF0cD72ccccccccccccccccccccccccccccc237DB'
+      const poisoningRecipient4to8 = '0xF0cDdddddddddddddddddddddddddddd793237DB'
+      const poisoningRecipient3to8 = '0xF0ceeeeeeeeeeeeeeeeeeeeeeeeeeeee793237DB'
+      const poisoningRecipient0to8 = '0xAb12ffffffffffffffffffffffffffff793237DB'
+      const poisoningRecipient3to4 = '0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const poisoningRecipient0to0 = '0xAb12eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeCDef'
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 226n,
+        txnId: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        timestamp: 1_700_000_100_000,
+        calls: [{ to: trustedRecipient, value: 0n, data: '0x' }]
+      })
+
+      const trustedRecipientResult = await controller.hasAccountOpsSentTo(
+        trustedRecipient,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(trustedRecipientResult).toEqual({
+        found: true,
+        lastTransactionDate: new Date(1_700_000_100_000),
+        addressPoisoningMatch: null
+      })
+
+      const poisoningResult4 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult5 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient5,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult6 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient6,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult4to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult3to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult0to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient0to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult3to4 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to4,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult0to0 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient0to0,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(poisoningResult4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 4
+        }
+      })
+
+      expect(poisoningResult5).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 5,
+          matchedSuffixCharsCount: 5
+        }
+      })
+
+      expect(poisoningResult6).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 6,
+          matchedSuffixCharsCount: 5
+        }
+      })
+
+      expect(poisoningResult4to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult3to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 3,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult0to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 0,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult3to4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+
+      expect(poisoningResult0to0).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+    })
+
+    test('should not detect poisoning without transaction history', async () => {
+      const { controller } = await prepareTest()
+
+      const poisoningRecipient4to4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const normalizedPoisoningRecipient4to4 = poisoningRecipient4to4.toLowerCase()
+
+      const firstTimeSendResult = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4to4,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(firstTimeSendResult).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 227n,
+        txnId: '0x2222222222222222222222222222222222222222222222222222222222222222',
+        timestamp: 1_700_000_200_000,
+        calls: [{ to: normalizedPoisoningRecipient4to4, value: 0n, data: '0x' }]
+      })
+
+      const nonFirstTimeSendResult = await controller.hasAccountOpsSentTo(
+        normalizedPoisoningRecipient4to4,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(nonFirstTimeSendResult).toEqual({
+        found: true,
+        lastTransactionDate: new Date(1_700_000_200_000),
+        addressPoisoningMatch: null
+      })
+    })
+
     test('Retrieved from Controller and persisted in Storage', async () => {
       const { controller, sessionId } = await prepareTest()
 
@@ -180,6 +373,50 @@ describe('Activity Controller ', () => {
       expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']!['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
+    })
+
+    test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
+      const { controller, sessionId } = await prepareTest()
+
+      await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(2)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(3)
+      const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
+      expect(balanceChanges).not.toBe(undefined)
+      expect(balanceChanges?.length).toBe(0)
     })
 
     test('Pagination and filtration handled correctly', async () => {
@@ -362,6 +599,11 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 1 }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -396,24 +638,40 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
-      expect(controller.accountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'success',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], //  we expect success here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      if (
+        typeof controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges === 'undefined'
+      ) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            const updatedOp = controller.accountsOps[sessionId]!.result.items[0]
+
+            if (typeof updatedOp?.balanceChanges === 'undefined') return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
+      expect(controller.accountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'success',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
 
     test('`failed` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -450,21 +708,20 @@ describe('Activity Controller ', () => {
       await controller.updateAccountsOpsStatuses()
       const controllerAccountsOps = controller.accountsOps
 
-      expect(controllerAccountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'failure',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], // we expect failure here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      expect(controllerAccountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controllerAccountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'failure',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
+
     test('should display pending txns banners', async () => {
       const { controller } = await prepareTest()
 
@@ -486,6 +743,10 @@ describe('Activity Controller ', () => {
     })
     test('should display failed txns banners and hide them on session removal', async () => {
       const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         ...SUBMITTED_ACCOUNT_OP,

@@ -13,6 +13,7 @@ import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
 
+import type { TokenResult } from '../portfolio/interfaces'
 /*
  * AccountOpIdentifiedBy
  * The txnId may not neceseraly be final on the moment of broadcast.
@@ -47,6 +48,24 @@ export type PortfoliosToUpdate = {
   [address: string]: Network['chainId'][]
 }
 
+export type BalanceChange = Pick<
+  TokenResult,
+  | 'symbol'
+  | 'name'
+  | 'decimals'
+  | 'address'
+  | 'chainId'
+  | 'priceIn'
+  | 'marketDataIn'
+  | 'meta'
+  | 'flags'
+> & {
+  amount: bigint
+  amountBefore: bigint
+  amountAfter: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -57,6 +76,8 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  balanceChanges?: BalanceChange[]
+  balanceChangesFetchRetryCount?: number
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
