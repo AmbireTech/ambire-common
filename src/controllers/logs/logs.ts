@@ -11,7 +11,12 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const SCAN_LOGS_ATTEMPTS = 15
-const SCAN_LOGS_DELAY = 12000
+
+const getScanLogsDelay = (attemptIndex: number) => {
+  if (attemptIndex < 10) return 6000
+  if (attemptIndex < 13) return 12000
+  return 18000
+}
 
 type ScanLogsParams = {
   accAddr: string
@@ -193,7 +198,7 @@ export class LogsController extends EventEmitter {
         })
       }
 
-      if (i < SCAN_LOGS_ATTEMPTS - 1) await wait(SCAN_LOGS_DELAY)
+      if (i < SCAN_LOGS_ATTEMPTS - 1) await wait(getScanLogsDelay(i))
     }
 
     if (this.#activeScanLoopIdsByChain[chainIdString] === scanLoopId) {
