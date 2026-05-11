@@ -10,13 +10,22 @@ const ambirePlugin = require('./eslint-rules')
 
 module.exports = [
   {
+    ignores: [
+      '.eslintrc.js',
+      'node_modules/**',
+      'coverage/**',
+      'babel_cache/**',
+      'artifacts/**',
+      'dist/**'
+    ]
+  },
+  {
     files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
         projectService: {
-          defaultProject: './tsconfig.json',
-          allowDefaultProject: ['eslint.config.js']
+          defaultProject: './tsconfig.json'
         },
         ecmaFeatures: {
           jsx: true
