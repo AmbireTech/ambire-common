@@ -26,6 +26,11 @@ type SignAccountOpBanner = {
   text: string
 }
 
+type HardwareWalletSigningRequest = {
+  type: 'raw-transaction' | 'eip-712' | 'eip-7702-authorization' | 'message'
+  data: unknown
+}
+
 enum TraceCallDiscoveryStatus {
   NotStarted = 'not-started',
   InProgress = 'in-progress',
@@ -35,4 +40,4 @@ enum TraceCallDiscoveryStatus {
 }
 
 export { TraceCallDiscoveryStatus }
-export type { Warning, SignAccountOpError, SignAccountOpBanner }
+export type { Warning, SignAccountOpError, SignAccountOpBanner, HardwareWalletSigningRequest }
