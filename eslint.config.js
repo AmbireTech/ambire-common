@@ -25,8 +25,7 @@ module.exports = [
       parser: typescriptParser,
       parserOptions: {
         projectService: {
-          defaultProject: './tsconfig.json',
-          allowDefaultProject: ['eslint.config.js']
+          defaultProject: './tsconfig.json'
         },
         ecmaFeatures: {
           jsx: true
