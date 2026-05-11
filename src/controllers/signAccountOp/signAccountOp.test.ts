@@ -644,66 +644,6 @@ const init = async (
   return { controller }
 }
 
-const bannerTestFeePaymentOptions = [
-  {
-    paidBy: eoaAccount.addr,
-    availableAmount: 1000000000000000000n,
-    gasUsed: 0n,
-    addedNative: 5000n,
-    token: {
-      address: '0x0000000000000000000000000000000000000000',
-      amount: parseEther('1'),
-      symbol: 'ETH',
-      name: 'Ether',
-      chainId: 1n,
-      decimals: 18,
-      priceIn: [],
-      marketDataIn: [],
-      flags: {
-        onGasTank: false,
-        rewardsType: null,
-        canTopUpGasTank: true,
-        isFeeToken: true
-      }
-    }
-  }
-]
-
-const bannerTestEstimation: FullEstimationSummary = {
-  providerEstimation: {
-    gasUsed: 10000n,
-    feePaymentOptions: bannerTestFeePaymentOptions
-  },
-  ambireEstimation: {
-    deploymentGas: 0n,
-    gasUsed: 10000n,
-    feePaymentOptions: bannerTestFeePaymentOptions,
-    ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
-    flags: {}
-  },
-  flags: {},
-  updatedAt: Date.now()
-}
-
-const bannerTestGasPrices: GasSpeeds = {
-  slow: {
-    maxFeePerGas: toBeHex(200n) as Hex,
-    maxPriorityFeePerGas: toBeHex(100n) as Hex
-  },
-  medium: {
-    maxFeePerGas: toBeHex(400n) as Hex,
-    maxPriorityFeePerGas: toBeHex(200n) as Hex
-  },
-  fast: {
-    maxFeePerGas: toBeHex(600n) as Hex,
-    maxPriorityFeePerGas: toBeHex(300n) as Hex
-  },
-  ape: {
-    maxFeePerGas: toBeHex(800n) as Hex,
-    maxPriorityFeePerGas: toBeHex(400n) as Hex
-  }
-}
-
 const initDappVerificationBannerTest = async (
   dapp: Dapp,
   { isPermit2 = false }: { isPermit2?: boolean } = {}
@@ -718,9 +658,73 @@ const initDappVerificationBannerTest = async (
     }
   ]
 
-  return init(eoaAccount, accountOp, eoaSigner, bannerTestEstimation, bannerTestGasPrices, false, {
-    dapps: getDappVerificationTestDapps()
-  })
+  const feePaymentOptions = [
+    {
+      paidBy: eoaAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 0n,
+      addedNative: 5000n,
+      token: {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: parseEther('1'),
+        symbol: 'ETH',
+        name: 'Ether',
+        chainId: 1n,
+        decimals: 18,
+        priceIn: [],
+        marketDataIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true
+        }
+      }
+    }
+  ]
+
+  return init(
+    eoaAccount,
+    accountOp,
+    eoaSigner,
+    {
+      providerEstimation: {
+        gasUsed: 10000n,
+        feePaymentOptions
+      },
+      ambireEstimation: {
+        deploymentGas: 0n,
+        gasUsed: 10000n,
+        feePaymentOptions,
+        ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+        flags: {}
+      },
+      flags: {},
+      updatedAt: Date.now()
+    },
+    {
+      slow: {
+        maxFeePerGas: toBeHex(200n) as Hex,
+        maxPriorityFeePerGas: toBeHex(100n) as Hex
+      },
+      medium: {
+        maxFeePerGas: toBeHex(400n) as Hex,
+        maxPriorityFeePerGas: toBeHex(200n) as Hex
+      },
+      fast: {
+        maxFeePerGas: toBeHex(600n) as Hex,
+        maxPriorityFeePerGas: toBeHex(300n) as Hex
+      },
+      ape: {
+        maxFeePerGas: toBeHex(800n) as Hex,
+        maxPriorityFeePerGas: toBeHex(400n) as Hex
+      }
+    },
+    false,
+    {
+      dapps: getDappVerificationTestDapps()
+    }
+  )
 }
 
 describe('SignAccountOp Controller ', () => {
