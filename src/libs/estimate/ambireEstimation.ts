@@ -9,7 +9,10 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
+import {
+  getNotAmbireStateOverride,
+  getShouldStateOverride
+} from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
@@ -79,8 +82,7 @@ export async function ambireEstimateGas(
     calls.push(getActivatorCall(op.accountAddr))
   }
 
-  const shouldStateOverride =
-    !network.rpcNoStateOverride && baseAcc.shouldStateOverrideDuringSimulations()
+  const shouldStateOverride = getShouldStateOverride(network, baseAcc)
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -97,7 +99,7 @@ export async function ambireEstimateGas(
       from: DEPLOYLESS_SIMULATION_FROM,
       blockTag: getPendingBlockTagIfSupported(network),
       mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-      stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(account.addr) : null
+      stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(account.addr, network) : null
     })
     .catch(getHumanReadableEstimationError)
 
