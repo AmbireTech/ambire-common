@@ -33,6 +33,10 @@ function topicAddress(address: string) {
   return `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`
 }
 
+function getScanLoopKey(chainIdString: string, accAddr: string) {
+  return `${chainIdString}:${accAddr.toLowerCase()}`
+}
+
 export class TransfersScannerController extends EventEmitter {
   #activity: IActivityController
 
@@ -44,7 +48,7 @@ export class TransfersScannerController extends EventEmitter {
 
   #scanLoopId = 0
 
-  #activeScanLoopIdsByChain: { [chainId: string]: number | undefined } = {}
+  #activeScanLoopIdsByChainAndAccount: { [chainIdAndAccount: string]: number | undefined } = {}
 
   constructor({
     activity,
@@ -164,9 +168,10 @@ export class TransfersScannerController extends EventEmitter {
 
   startScanLogsLoop({ accAddr, chainId, fromBlock = 'latest' }: Omit<ScanLogsParams, 'toBlock'>) {
     const chainIdString = chainId.toString()
+    const scanLoopKey = getScanLoopKey(chainIdString, accAddr)
     this.#scanLoopId += 1
     const scanLoopId = this.#scanLoopId
-    this.#activeScanLoopIdsByChain[chainIdString] = scanLoopId
+    this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] = scanLoopId
 
     return this.#runScanLogsLoop({ accAddr, chainId, fromBlock, scanLoopId })
   }
@@ -178,10 +183,11 @@ export class TransfersScannerController extends EventEmitter {
     scanLoopId
   }: Omit<ScanLogsParams, 'toBlock'> & { scanLoopId: number }) {
     const chainIdString = chainId.toString()
+    const scanLoopKey = getScanLoopKey(chainIdString, accAddr)
     let nextFromBlock = fromBlock
 
     for (let i = 0; i < SCAN_LOGS_ATTEMPTS; i++) {
-      if (this.#activeScanLoopIdsByChain[chainIdString] !== scanLoopId) return
+      if (this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] !== scanLoopId) return
 
       try {
         const result = await this.scanLogs({
@@ -201,8 +207,8 @@ export class TransfersScannerController extends EventEmitter {
       if (i < SCAN_LOGS_ATTEMPTS - 1) await wait(getScanLogsDelay(i))
     }
 
-    if (this.#activeScanLoopIdsByChain[chainIdString] === scanLoopId) {
-      this.#activeScanLoopIdsByChain[chainIdString] = undefined
+    if (this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] === scanLoopId) {
+      this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] = undefined
     }
   }
 }
