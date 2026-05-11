@@ -70,7 +70,7 @@ describe('UniswapAPI', () => {
         flags: { canTopUpGasTank: false, isFeeToken: false, onGasTank: false, rewardsType: null },
         marketDataIn: [],
         name: 'USDC',
-        priceIn: [],
+        priceIn: [{ baseCurrency: 'usd', price: 1 }],
         symbol: 'USDC'
       } as any,
       fromChainId: 1,
@@ -101,7 +101,10 @@ describe('UniswapAPI', () => {
     expect(body.integratorFees).toEqual([{ bips: 50, recipient: expect.any(String) }])
     expect(quote.routes[0]!.providerId).toBe('uniswap')
     expect(quote.routes[0]!.routeId).toBe('quote-id')
+    expect(quote.routes[0]!.inputValueInUsd).toBe(1)
+    expect(quote.routes[0]!.outputValueInUsd).toBe(0.999)
     expect(quote.routes[0]!.toAmount).toBe('999000')
+    expect((quote.routes[0]!.toToken as any).priceUSD).toBe('1')
     expect(quote.routes[0]!.steps[0]!.minAmountOut).toBe('994000')
   })
 

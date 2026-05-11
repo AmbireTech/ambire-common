@@ -1,7 +1,8 @@
-import { getAddress, Interface, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
@@ -34,6 +35,22 @@ import { UNISWAP_API_BASE_URL, UNISWAP_SUPPORTED_CHAIN_IDS } from './constants'
 
 const SWAP_COMPATIBLE_ROUTINGS = ['CLASSIC', 'BRIDGE', 'WRAP', 'UNWRAP']
 
+const STABLE_TOKEN_SYMBOLS = new Set([
+  'BUSD',
+  'DAI',
+  'FRAX',
+  'GHO',
+  'LUSD',
+  'PYUSD',
+  'USDC',
+  'USDC.E',
+  'USDD',
+  'USDE',
+  'USDS',
+  'USDT',
+  'USD0'
+])
+
 const erc20Interface = new Interface(ERC20.abi)
 
 const normalizeAddress = (address: string) =>
@@ -65,9 +82,66 @@ const getUserOutputAmount = (quote: UniswapQuote, userAddress: string) => {
   return userOutput?.amount || quote.output.amount
 }
 
+const getUsdPriceFromAsset = (asset: SwapAndBridgeToToken) => {
+  const priceUSD = Number((asset as any).priceUSD || 0)
+  if (priceUSD > 0) return priceUSD
+
+  const priceInUsd = (asset as any).priceIn?.find?.(
+    (price: { baseCurrency?: string }) => price.baseCurrency === 'usd'
+  )?.price
+  if (Number(priceInUsd) > 0) return Number(priceInUsd)
+
+  if (STABLE_TOKEN_SYMBOLS.has(asset.symbol.toUpperCase())) return 1
+
+  return 0
+}
+
+const getOutputValueInUsd = ({
+  inputValueInUsd,
+  quote,
+  toAsset,
+  toAmount,
+  userAddress
+}: {
+  inputValueInUsd: number
+  quote: UniswapQuote
+  toAsset: SwapAndBridgeToToken
+  toAmount: string
+  userAddress: string
+}) => {
+  const toTokenPriceUSD = getUsdPriceFromAsset(toAsset)
+  if (toTokenPriceUSD) {
+    return {
+      outputValueInUsd: Number(formatUnits(toAmount, toAsset.decimals)) * toTokenPriceUSD,
+      toTokenPriceUSD
+    }
+  }
+
+  if (!inputValueInUsd) {
+    return {
+      outputValueInUsd: 0,
+      toTokenPriceUSD: 0
+    }
+  }
+
+  const userOutputBps =
+    quote.aggregatedOutputs?.find(
+      (output) =>
+        output.recipient.toLowerCase() === userAddress.toLowerCase() &&
+        normalizeAddress(output.token) === normalizeAddress(quote.output.token)
+    )?.bps || 10000
+  const priceImpactMultiplier = Math.max(0, 1 - (quote.priceImpact || 0) / 100)
+
+  return {
+    outputValueInUsd: inputValueInUsd * (userOutputBps / 10000) * priceImpactMultiplier,
+    toTokenPriceUSD: 0
+  }
+}
+
 const normalizeUniswapRouteToSwapAndBridgeRoute = ({
   response,
   fromAsset,
+  originalFromAsset,
   toAsset,
   fromChainId,
   toChainId,
@@ -76,6 +150,7 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
 }: {
   response: UniswapQuoteResponse
   fromAsset: SwapAndBridgeToToken
+  originalFromAsset: ProviderQuoteParams['fromAsset']
   toAsset: SwapAndBridgeToToken
   fromChainId: number
   toChainId: number
@@ -88,6 +163,16 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
   const serviceTime = quote.estimatedFillTimeMs ? Math.ceil(quote.estimatedFillTimeMs / 1000) : 0
   const protocol = getUniswapProtocol(response.routing)
   const minAmountOut = getMinAmountOut(quote, userAddress)
+  const inputValueInUsd = originalFromAsset
+    ? Number(getTokenUsdAmount(originalFromAsset, BigInt(fromAmount)) || 0)
+    : 0
+  const { outputValueInUsd, toTokenPriceUSD } = getOutputValueInUsd({
+    inputValueInUsd,
+    quote,
+    toAsset,
+    toAmount,
+    userAddress
+  })
 
   const userTx: SwapAndBridgeUserTx = {
     userTxIndex: 0,
@@ -120,8 +205,8 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
     ...(fromChainId === toChainId ? { usedDexName: 'Uniswap' } : { usedBridgeNames: ['uniswap'] }),
     userTxs: [userTx],
     steps: [step],
-    inputValueInUsd: 0,
-    outputValueInUsd: 0,
+    inputValueInUsd,
+    outputValueInUsd,
     serviceTime,
     rawRoute: response,
     sender: userAddress,
@@ -131,6 +216,7 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
       decimals: toAsset.decimals,
       logoURI: toAsset.icon || '',
       name: toAsset.name,
+      priceUSD: toTokenPriceUSD ? toTokenPriceUSD.toString() : undefined,
       symbol: toAsset.symbol
     } as any,
     disabled: false,
@@ -406,6 +492,7 @@ export class UniswapAPI implements SwapProvider {
         normalizeUniswapRouteToSwapAndBridgeRoute({
           response,
           fromAsset: normalizedFromAsset,
+          originalFromAsset: fromAsset,
           fromChainId,
           toAsset,
           toChainId,
