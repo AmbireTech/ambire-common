@@ -14,7 +14,7 @@ module.exports = [
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
-        project: './tsconfig.json',
+        projectService: { defaultProject: './tsconfig.json' },
         ecmaFeatures: {
           jsx: true
         },
