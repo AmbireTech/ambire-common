@@ -1,8 +1,8 @@
-import { toUtf8String } from 'ethers'
+import { isAddress, toUtf8String } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
-import { getBreak, getLabel } from '../utils'
+import { HumanizerTypedMessageModule } from '../interfaces'
+import { getAction, getAddressVisualization, getLabel } from '../utils'
 
 export const fallbackShortPlaintext: HumanizerTypedMessageModule = (message: Message) => {
   if (
@@ -14,20 +14,17 @@ export const fallbackShortPlaintext: HumanizerTypedMessageModule = (message: Mes
 
   // the message should be hex always. If it is not, the issue is not in this module and
   // should be resolved upstream
-  const readableWords = toUtf8String(message.content.message)
+  const readableText = toUtf8String(message.content.message)
 
-  // const lines: (string | HumanizerVisualization)[] = []
-  const lines = readableWords.split('\n')
-  const fullVisualization = lines
-    .map((w, i) => {
-      const labels: HumanizerVisualization[] = w.split(' ').map((w) => getLabel(w))
-      if (lines.length !== i + 1) labels.push(getBreak())
-      return labels
-    })
-    .flat()
+  if (readableText.includes('\n')) return { fullVisualization: [] }
 
   return {
-    fullVisualization,
+    fullVisualization: [
+      getAction('Message: '),
+      ...readableText
+        .split(' ')
+        .map((w) => (isAddress(w) ? getAddressVisualization(w) : getLabel(w)))
+    ],
     canHideDropdownArrow: true
   }
 }

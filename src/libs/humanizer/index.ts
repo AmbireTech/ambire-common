@@ -130,10 +130,10 @@ const humanizeMessage = (_message: Message): IrMessage => {
 
   try {
     // runs all modules and takes the first non empty array
-    const { fullVisualization, warnings } =
+    const { fullVisualization, warnings, canHideDropdownArrow } =
       humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
 
-    return { ...message, fullVisualization, warnings }
+    return { ...message, fullVisualization, warnings, canHideDropdownArrow }
   } catch (error) {
     console.error(error)
     return message
