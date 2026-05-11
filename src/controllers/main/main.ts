@@ -27,7 +27,6 @@ import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
-import { LogsController } from '@/controllers/logs/logs'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
@@ -43,6 +42,8 @@ import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
+/* eslint-disable no-underscore-dangle */
+import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
@@ -65,7 +66,6 @@ import {
   Key,
   KeystoreSignerType
 } from '@/interfaces/keystore'
-import { ILogsController } from '@/interfaces/logs'
 import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
@@ -73,7 +73,6 @@ import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
-/* eslint-disable no-underscore-dangle */
 import { ISafeController } from '@/interfaces/safe'
 import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 import { ISignAccountOpController } from '@/interfaces/signAccountOp'
@@ -83,6 +82,7 @@ import { ISurveyController } from '@/interfaces/survey'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
+import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
@@ -164,7 +164,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   activity: IActivityController
 
-  logs: ILogsController
+  transferScanner: ITransfersScannerController
 
   addressBook: IAddressBookController
 
@@ -456,7 +456,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       eventEmitterRegistry
     )
-    this.logs = new LogsController({
+    this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,
       portfolio: this.portfolio,
@@ -1049,7 +1049,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // signing typed messages might trigger a txn
     if (signedMessage.content.kind === 'typedMessage') {
-      this.logs
+      this.transferScanner
         .startScanLogsLoop({
           accAddr: signedMessage.accountAddr,
           chainId: signedMessage.chainId
@@ -1308,7 +1308,7 @@ export class MainController extends EventEmitter implements IMainController {
             op.status === AccountOpStatus.Success && op.calls.some((call) => !!call.dapp)
 
           if (shouldScanLogs) {
-            this.logs
+            this.transferScanner
               .startScanLogsLoop({
                 accAddr: op.accountAddr,
                 chainId: op.chainId,

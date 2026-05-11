@@ -33,7 +33,7 @@ function topicAddress(address: string) {
   return `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`
 }
 
-export class LogsController extends EventEmitter {
+export class TransfersScannerController extends EventEmitter {
   #activity: IActivityController
 
   #networks: INetworksController
