@@ -1,6 +1,9 @@
 import { describe, expect, it, jest } from '@jest/globals'
 
+import wait from '../../utils/wait'
 import { TransfersScannerController } from './transfersScanner'
+
+jest.mock('../../utils/wait', () => jest.fn(async () => undefined))
 
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
@@ -13,6 +16,15 @@ const BASE_USDC_TOKEN_ADDR = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
 
 const topicAddress = (address: string) =>
   `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`
+
+const createDeferred = () => {
+  let resolve!: () => void
+  const promise = new Promise<void>((res) => {
+    resolve = res
+  })
+
+  return { promise, resolve }
+}
 
 const createController = ({
   chainId = BASE_CHAIN_ID,
@@ -238,5 +250,48 @@ describe('TransfersScannerController scanLogs', () => {
     expect(portfolio.updateSelectedAccount).not.toHaveBeenCalled()
 
     consoleLogSpy.mockRestore()
+  })
+
+  it('keeps the earlier pending cursor when restarting a scan loop for the same chain and account', async () => {
+    const waitMock = wait as jest.MockedFunction<typeof wait>
+    const firstLoopWait = createDeferred()
+    waitMock.mockImplementationOnce(() => firstLoopWait.promise)
+
+    const { controller } = createController()
+    const scanLogsSpy = jest
+      .spyOn(controller, 'scanLogs')
+      .mockImplementation(async ({ fromBlock }) => ({
+        nextFromBlock: fromBlock === 'latest' ? 101 : Number(fromBlock) + 1,
+        txnIds: []
+      }))
+
+    const firstLoopPromise = controller.startScanLogsLoop({
+      accAddr: BASE_ACCOUNT_ADDR,
+      chainId: BASE_CHAIN_ID,
+      fromBlock: 100
+    })
+    await Promise.resolve()
+
+    expect(scanLogsSpy).toHaveBeenNthCalledWith(1, {
+      accAddr: BASE_ACCOUNT_ADDR,
+      chainId: BASE_CHAIN_ID,
+      fromBlock: 100
+    })
+
+    const secondLoopPromise = controller.startScanLogsLoop({
+      accAddr: BASE_ACCOUNT_ADDR,
+      chainId: BASE_CHAIN_ID,
+      fromBlock: 200
+    })
+    await Promise.resolve()
+
+    expect(scanLogsSpy).toHaveBeenNthCalledWith(2, {
+      accAddr: BASE_ACCOUNT_ADDR,
+      chainId: BASE_CHAIN_ID,
+      fromBlock: 101
+    })
+
+    firstLoopWait.resolve()
+    await Promise.all([firstLoopPromise, secondLoopPromise])
   })
 })

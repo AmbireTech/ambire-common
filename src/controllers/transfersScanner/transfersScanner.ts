@@ -24,6 +24,8 @@ type ScanLogsParams = {
   fromBlock?: number | 'latest'
 }
 
+type ScanLogsFromBlock = NonNullable<ScanLogsParams['fromBlock']>
+
 type ScanLogsResult = {
   nextFromBlock: number
   txnIds: string[]
@@ -35,6 +37,20 @@ function topicAddress(address: string) {
 
 function getScanLoopKey(chainIdString: string, accAddr: string) {
   return `${chainIdString}:${accAddr.toLowerCase()}`
+}
+
+function getEarlierFromBlock(
+  currentFromBlock: ScanLogsFromBlock | undefined,
+  nextFromBlock: ScanLogsFromBlock
+) {
+  if (typeof currentFromBlock === 'number' && typeof nextFromBlock === 'number') {
+    return Math.min(currentFromBlock, nextFromBlock)
+  }
+
+  if (typeof currentFromBlock === 'number') return currentFromBlock
+  if (typeof nextFromBlock === 'number') return nextFromBlock
+
+  return 'latest'
 }
 
 export class TransfersScannerController extends EventEmitter {
@@ -49,6 +65,10 @@ export class TransfersScannerController extends EventEmitter {
   #scanLoopId = 0
 
   #activeScanLoopIdsByChainAndAccount: { [chainIdAndAccount: string]: number | undefined } = {}
+
+  #activeScanLoopFromBlocksByChainAndAccount: {
+    [chainIdAndAccount: string]: ScanLogsFromBlock | undefined
+  } = {}
 
   constructor({
     activity,
@@ -169,11 +189,16 @@ export class TransfersScannerController extends EventEmitter {
   startScanLogsLoop({ accAddr, chainId, fromBlock = 'latest' }: Omit<ScanLogsParams, 'toBlock'>) {
     const chainIdString = chainId.toString()
     const scanLoopKey = getScanLoopKey(chainIdString, accAddr)
+    const scanLoopFromBlock = getEarlierFromBlock(
+      this.#activeScanLoopFromBlocksByChainAndAccount[scanLoopKey],
+      fromBlock
+    )
     this.#scanLoopId += 1
     const scanLoopId = this.#scanLoopId
     this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] = scanLoopId
+    this.#activeScanLoopFromBlocksByChainAndAccount[scanLoopKey] = scanLoopFromBlock
 
-    return this.#runScanLogsLoop({ accAddr, chainId, fromBlock, scanLoopId })
+    return this.#runScanLogsLoop({ accAddr, chainId, fromBlock: scanLoopFromBlock, scanLoopId })
   }
 
   async #runScanLogsLoop({
@@ -195,7 +220,12 @@ export class TransfersScannerController extends EventEmitter {
           chainId,
           fromBlock: nextFromBlock
         })
-        if (result) nextFromBlock = result.nextFromBlock
+        if (result) {
+          nextFromBlock = result.nextFromBlock
+          if (this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] === scanLoopId) {
+            this.#activeScanLoopFromBlocksByChainAndAccount[scanLoopKey] = nextFromBlock
+          }
+        }
       } catch (error) {
         this.emitError({
           level: 'silent',
@@ -209,6 +239,7 @@ export class TransfersScannerController extends EventEmitter {
 
     if (this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] === scanLoopId) {
       this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] = undefined
+      this.#activeScanLoopFromBlocksByChainAndAccount[scanLoopKey] = undefined
     }
   }
 }
