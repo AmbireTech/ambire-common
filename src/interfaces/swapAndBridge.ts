@@ -85,6 +85,87 @@ interface BungeeApprovalData {
   userAddress: string
 }
 
+export interface UniswapToken {
+  address: string
+  chainId: number
+  decimals: number
+  name: string
+  symbol: string
+  project?: {
+    logo?: {
+      url?: string
+    }
+  }
+}
+
+export interface UniswapQuote {
+  chainId: number
+  destinationChainId?: number
+  input: {
+    amount: string
+    token: string
+  }
+  output: {
+    amount: string
+    token: string
+    recipient?: string
+  }
+  swapper: string
+  tradeType: 'EXACT_INPUT' | 'EXACT_OUTPUT'
+  quoteId?: string
+  gasFeeUSD?: string
+  gasFee?: string
+  gasUseEstimate?: string
+  priceImpact?: number
+  slippage?: number
+  routeString?: string
+  estimatedFillTimeMs?: number
+  aggregatedOutputs?: {
+    amount: string
+    token: string
+    recipient: string
+    bps: number
+    minAmount?: string
+  }[]
+}
+
+export interface UniswapQuoteResponse {
+  requestId: string
+  routing: 'CLASSIC' | 'BRIDGE' | 'WRAP' | 'UNWRAP' | string
+  quote: UniswapQuote
+  permitData?: any
+}
+
+export interface UniswapTransactionRequest {
+  to: string
+  from: string
+  data: string
+  value: string
+  chainId: number
+}
+
+export interface UniswapSwapResponse {
+  requestId: string
+  swap: UniswapTransactionRequest
+  gasFee?: string
+}
+
+export interface UniswapApprovalResponse {
+  requestId: string
+  approval: UniswapTransactionRequest | null
+  cancel?: UniswapTransactionRequest | null
+}
+
+export interface UniswapStatusResponse {
+  requestId: string
+  swaps: {
+    swapType: string
+    status: 'PENDING' | 'SUCCESS' | 'NOT_FOUND' | 'FAILED' | 'EXPIRED'
+    txHash?: string
+    swapId?: string
+  }[]
+}
+
 export interface SwapAndBridgeRoute {
   providerId: string
   routeId: string
@@ -104,7 +185,7 @@ export interface SwapAndBridgeRoute {
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
-  rawRoute: SocketAPIRoute | LiFiRoute | SquidRoute
+  rawRoute: SocketAPIRoute | LiFiRoute | SquidRoute | UniswapQuoteResponse
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
