@@ -277,3 +277,4 @@ export { networks }
 
 export const ARBITRUM_CHAIN_ID = 42161n
 export const SCROLL_CHAIN_ID = 534352n
+export const CITREA_CHAIN_ID = 4114n

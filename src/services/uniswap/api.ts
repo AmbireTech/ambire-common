@@ -1,5 +1,7 @@
 import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 
+import { CITREA_CHAIN_ID } from '@/consts/networks'
+
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
@@ -29,27 +31,14 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { AMBIRE_FEE_TAKER_ADDRESSES, FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
-import { CITREA_CHAIN_ID } from '../squid/constants'
-import { UNISWAP_API_BASE_URL, UNISWAP_SUPPORTED_CHAIN_IDS } from './constants'
-
-const SWAP_COMPATIBLE_ROUTINGS = ['CLASSIC', 'BRIDGE', 'WRAP', 'UNWRAP']
-
-const STABLE_TOKEN_SYMBOLS = new Set([
-  'BUSD',
-  'DAI',
-  'FRAX',
-  'GHO',
-  'LUSD',
-  'PYUSD',
-  'USDC',
-  'USDC.E',
-  'USDD',
-  'USDE',
-  'USDS',
-  'USDT',
-  'USD0'
-])
+import {
+  AMBIRE_FEE_TAKER_ADDRESS,
+  FEE_PERCENT,
+  STABLE_TOKEN_SYMBOLS,
+  SWAP_COMPATIBLE_ROUTINGS,
+  UNISWAP_API_BASE_URL,
+  UNISWAP_SUPPORTED_CHAIN_IDS
+} from './constants'
 
 const erc20Interface = new Interface(ERC20.abi)
 
@@ -282,7 +271,8 @@ export class UniswapAPI implements SwapProvider {
   }
 
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    if (fromChainId === CITREA_CHAIN_ID || toChainId === CITREA_CHAIN_ID) return false
+    if (fromChainId === Number(CITREA_CHAIN_ID) || toChainId === Number(CITREA_CHAIN_ID))
+      return false
 
     return (
       UNISWAP_SUPPORTED_CHAIN_IDS.includes(fromChainId) &&
@@ -357,9 +347,9 @@ export class UniswapAPI implements SwapProvider {
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const chains = UNISWAP_SUPPORTED_CHAIN_IDS.filter((chainId) => chainId !== CITREA_CHAIN_ID).map(
-      (chainId) => ({ chainId })
-    )
+    const chains = UNISWAP_SUPPORTED_CHAIN_IDS.filter(
+      (chainId) => chainId !== Number(CITREA_CHAIN_ID)
+    ).map((chainId) => ({ chainId }))
 
     this.supportedChains = chains
 
@@ -424,9 +414,7 @@ export class UniswapAPI implements SwapProvider {
       )
 
     const shouldIncludeConvenienceFee =
-      !!AMBIRE_FEE_TAKER_ADDRESSES[fromChainId] &&
-      !isWrapOrUnwrap &&
-      !isNoFeeToken(fromChainId, fromTokenAddress)
+      !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
 
     const body: {
       type: 'EXACT_INPUT'
@@ -461,7 +449,7 @@ export class UniswapAPI implements SwapProvider {
       body.integratorFees = [
         {
           bips: FEE_PERCENT * 100,
-          recipient: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]!
+          recipient: AMBIRE_FEE_TAKER_ADDRESS
         }
       ]
     }
@@ -507,7 +495,7 @@ export class UniswapAPI implements SwapProvider {
 
   async #checkApproval(route: SwapAndBridgeRoute) {
     const fromToken = route.steps[0]?.fromAsset.address
-    if (!fromToken || fromToken === ZERO_ADDRESS) return null
+    if (!fromToken || fromToken === ZeroAddress) return null
     this.#ensureApiKey()
 
     const response = await this.#handleResponse<UniswapApprovalResponse>({
@@ -564,7 +552,7 @@ export class UniswapAPI implements SwapProvider {
     return {
       activeRouteId: route.routeId,
       approvalData:
-        !approval || !fromToken || fromToken === ZERO_ADDRESS
+        !approval || !fromToken || fromToken === ZeroAddress
           ? null
           : {
               allowanceTarget: parseApprovalSpender(approval, response.swap.to),
