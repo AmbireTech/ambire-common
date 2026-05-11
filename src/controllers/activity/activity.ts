@@ -252,6 +252,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     [key: string]: Promise<void> | undefined
   } = {}
 
+  #addExternalAccountOpQueue: Promise<void> = Promise.resolve()
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -590,6 +592,31 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   async addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId
+  }: AddExternalAccountOpParams) {
+    const task = this.#addExternalAccountOpQueue
+      .catch(() => undefined) // errors handled inside
+      .then(() =>
+        this.#addExternalAccountOp({
+          accountAddr,
+          chainId,
+          txnId,
+          receipt,
+          callId
+        })
+      )
+
+    // errors handled inside
+    this.#addExternalAccountOpQueue = task.catch(() => undefined)
+
+    return task
+  }
+
+  async #addExternalAccountOp({
     accountAddr,
     chainId,
     txnId,
