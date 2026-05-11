@@ -299,11 +299,18 @@ function isValidURL(url: string) {
   return urlRegex.test(url)
 }
 
+const isValidHostname = (str: string) => {
+  // Matches hostnames like "google.com", "app.uniswap.org", etc.
+  const hostnameRegex = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/
+  return hostnameRegex.test(str)
+}
+
 export {
   isEmail,
   isValidCode,
   isValidPassword,
   isValidURL,
+  isValidHostname,
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount

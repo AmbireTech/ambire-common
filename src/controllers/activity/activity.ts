@@ -88,8 +88,7 @@ export interface InternalAccountsOps {
 }
 
 export interface ExternalAccountOps {
-  // account => network => SubmittedAccountOpLike[]
-  [key: string]: { [key: string]: SubmittedAccountOpLike[] }
+  [account: string]: { [network: string]: SubmittedAccountOpLike[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -253,6 +252,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
   #backfillAccountOpBalanceChangesPromises: {
     [key: string]: Promise<void> | undefined
   } = {}
+
+  #addExternalAccountOpQueue: Promise<void> = Promise.resolve()
 
   constructor(
     storage: IStorageController,
@@ -603,7 +604,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
     const provider = this.#providers.providers[chainId.toString()]
-    if (!network || !provider) return
+    if (!network || !provider) {
+      this.emitError({
+        level: 'silent',
+        message: `Network/provider not found for chainId: ${chainId}`,
+        error: new Error(`Network/provider not found for chainId: ${chainId}`)
+      })
+      return
+    }
 
     const [transaction, block] = await Promise.all([
       provider.getTransaction(txnId).catch(() => null),
@@ -662,11 +670,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     } catch (error) {
       submittedAccountOpLike.balanceChanges = undefined
     }
-
-    this.#externalAccountOps = await this.#storage.get(
-      'externalAccountOps',
-      this.#externalAccountOps
-    )
 
     if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
     if (!this.#externalAccountOps[accountAddr]![chainId.toString()]) {

@@ -1856,17 +1856,49 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
-  async recordBridgeActivity(txnId: string, activeRoute: SwapAndBridgeActiveRoute) {
+  async recordBridgeActivity(
+    txnId: string,
+    activeRoute: SwapAndBridgeActiveRoute,
+    status: 'completed' | 'refunded'
+  ) {
     await this.#initialLoadPromise
 
-    const chainId = activeRoute.route?.toChainId
-    if (!chainId) return
+    // when the status is completed, we expect the funds to land on the
+    // destination chain => we use toChainId;
+    // when it's refunded, we expect the source chain => fromChainId
+    const chainId =
+      status === 'completed' ? activeRoute.route?.toChainId : activeRoute.route?.fromChainId
+    if (!chainId) {
+      const message = 'recordBridgeActivity: no chainId found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
 
     const provider = this.#providers.providers[chainId.toString()]
-    if (!provider) return
+    if (!provider) {
+      const message = 'recordBridgeActivity: no provider found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
 
     const receipt = await provider.getTransactionReceipt(txnId)
-    if (!receipt) return
+    if (!receipt) {
+      const message = `recordBridgeActivity: no receipt found for txnId: ${txnId}`
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
 
     await this.#activity.addExternalAccountOp({
       accountAddr: activeRoute.sender,
@@ -1937,7 +1969,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         activeRoute.route?.fromChainId !== activeRoute.route?.toChainId
       ) {
         // we shouldn't be awaiting this as it's OK to have it at a later stage
-        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute).catch(console.error)
+        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute, status).catch(console.error)
       }
 
       if (status === 'completed') {
