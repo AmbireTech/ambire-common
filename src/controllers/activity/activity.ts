@@ -599,6 +599,33 @@ export class ActivityController extends EventEmitter implements IActivityControl
     receipt,
     callId,
     shouldLearnTokens = false
+  }: AddExternalAccountOpParams) {
+    const task = this.#addExternalAccountOpQueue
+      .catch(() => undefined) // errors handled inside
+      .then(() =>
+        this.#addExternalAccountOp({
+          accountAddr,
+          chainId,
+          txnId,
+          receipt,
+          callId,
+          shouldLearnTokens
+        })
+      )
+
+    // errors handled inside
+    this.#addExternalAccountOpQueue = task.catch(() => undefined)
+
+    return task
+  }
+
+  async #addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
   }: AddExternalAccountOpParams): Promise<void> {
     await this.#initialLoadPromise
 
