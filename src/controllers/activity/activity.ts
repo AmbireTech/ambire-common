@@ -39,6 +39,7 @@ import {
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import wait from '../../utils/wait'
@@ -66,6 +67,7 @@ type AddExternalAccountOpParams = {
   txnId: string
   receipt: TransactionReceipt
   callId?: Call['id']
+  shouldLearnTokens?: boolean
 }
 
 type AccountOpBalanceChangesBackfillReference = Pick<
@@ -596,7 +598,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     chainId,
     txnId,
     receipt,
-    callId
+    callId,
+    shouldLearnTokens = false
   }: AddExternalAccountOpParams) {
     const task = this.#addExternalAccountOpQueue
       .catch(() => undefined) // errors handled inside
@@ -606,7 +609,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
           chainId,
           txnId,
           receipt,
-          callId
+          callId,
+          shouldLearnTokens
         })
       )
 
@@ -621,8 +625,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     chainId,
     txnId,
     receipt,
-    callId
-  }: AddExternalAccountOpParams) {
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams): Promise<void> {
     await this.#initialLoadPromise
 
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
@@ -674,9 +679,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     try {
-      const tokenAddrs = getBalanceChangeTokenAddresses(
-        await getTransferLogTokens(receipt.logs, accountAddr)
-      )
+      const foundTokens = await getTransferLogTokens(receipt.logs, accountAddr)
+      if (shouldLearnTokens) {
+        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
+        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
+      }
+      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
 
       submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
         accountAddr,
