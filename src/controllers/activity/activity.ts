@@ -141,7 +141,7 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
     )
   ).flat()
 
-  return getBalanceChangeTokenAddresses(foundTokens)
+  return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
 }
 
 const getAccountOpReceipts = async (
@@ -1216,7 +1216,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 accountOp,
                 network,
                 tokenAddrs: getBalanceChangeTokenAddresses(
-                  Array.from(foundTokensForBalanceChanges)
+                  Array.from(foundTokensForBalanceChanges),
+                  accountOp.chainId
                 ),
                 receiptBlockNumber: lastReceiptBlockNumber,
                 prevBlockNumber:
