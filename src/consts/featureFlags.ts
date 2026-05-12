@@ -4,7 +4,7 @@ export interface FeatureFlags {
   withContinuousUpdatesController: boolean
   testnetMode: boolean
   tokenAndDefiAutoDiscovery: boolean
-  sourcifyApiForDecodingTxns: boolean
+  apiForFunctionSelectors: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -13,5 +13,5 @@ export const defaultFeatureFlags: FeatureFlags = {
   withContinuousUpdatesController: true,
   testnetMode: false,
   tokenAndDefiAutoDiscovery: true,
-  sourcifyApiForDecodingTxns: true
+  apiForFunctionSelectors: true
 }

@@ -161,12 +161,12 @@ describe('contractInfo', () => {
       { signature: 'cat642998653(address,uint256)', filtered: false }
     ])
   })
-  test('Should not fetch selectors when sourcifyApiForDecodingTxns feature flag is disabled', async () => {
+  test('Should not fetch selectors when apiForFunctionSelectors feature flag is disabled', async () => {
     const {
       mainCtrl: { contractInfo, featureFlags }
     } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
 
-    void featureFlags.setFeatureFlag('sourcifyApiForDecodingTxns', false)
+    void featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
     void contractInfo.getSelector('0x23b872dd')
     await wait(3000)
     expect(fetchSourcifyCounter).toBe(0)

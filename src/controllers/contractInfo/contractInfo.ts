@@ -135,7 +135,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   async getSelector(selector: string) {
-    if (!this.#featureFlag.isFeatureEnabled('sourcifyApiForDecodingTxns')) return
+    if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) return
     this.#debounceBufferForSelectors.add(selector)
     if (this.selectors[selector]?.status === 'success') return
     if (!this.#debounceSelectorFetchPromise) {
