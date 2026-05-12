@@ -94,6 +94,8 @@ export abstract class BaseAccount {
 
   abstract canSetCustomGasPrices(feeOption: FeePaymentOption): boolean
 
+  abstract canSetCustomGas(feeOption: FeePaymentOption, accountOp?: AccountOp): boolean
+
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall(paidBy?: string) {
     return false

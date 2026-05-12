@@ -3,7 +3,7 @@ import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
-  SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -58,6 +58,13 @@ export class SwapProviderParallelExecutor {
     const supportedProviders = this.#providers.filter((provider) => {
       // If the request is not chainId specific, use all providers
       if (!uniqueChainIds.length) return true
+      if (reqMeta?.chainIds?.length === 2 && provider.areChainsSupported) {
+        return provider.areChainsSupported({
+          fromChainId: reqMeta.chainIds[0]!,
+          toChainId: reqMeta.chainIds[1]!
+        })
+      }
+
       // If supportedChains is not set yet, we just try to use the provider
       if (provider.supportedChains === null) return true
       const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
@@ -151,8 +158,12 @@ export class SwapProviderParallelExecutor {
     const providerNames = supportedProviders.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
-      .replace(/\bservice provider\b/g, 'service providers')
       .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
+
+    // make it plural only if there are multiple
+    if (providerNames.length > 1) {
+      combinedMessage = combinedMessage.replace(/\bservice provider\b/g, 'service providers')
+    }
 
     // Replace the technical details with combined ones
     if (technicalDetails.length > 0) {
@@ -269,14 +280,25 @@ export class SwapProviderParallelExecutor {
     fromChainId,
     toChainId,
     bridge,
-    providerId
+    providerId,
+    requestId,
+    routeId
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
     bridge?: string
     providerId: string
-  }): Promise<SwapAndBridgeRouteStatus> {
-    return this.#routeTo(providerId, 'getRouteStatus', { txHash, fromChainId, toChainId, bridge })
+    requestId?: string
+    routeId?: string
+  }): Promise<SwapAndBridgeRouteStatusResult> {
+    return this.#routeTo(providerId, 'getRouteStatus', {
+      txHash,
+      fromChainId,
+      toChainId,
+      bridge,
+      requestId,
+      routeId
+    })
   }
 }

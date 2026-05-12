@@ -85,6 +85,7 @@ import {
   TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
+  TokenError,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -131,6 +132,8 @@ const EXTERNAL_API_HINTS_TTL = {
  * before being added as custom.
  * - To be learned tokens - tokens added from sources like swapAndBridge, activity, the humanizer. Some of them
  * may be owned by the user in the near future (e.g. the user swapped a token and will receive it soon).
+ * - App defi positions - defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets). They are
+ * fetched separately, but batched together with all other calls to the external API. (e.g, Polymarket and Hyperliquid positions)
  *
  * Hints sources:
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
@@ -276,15 +279,22 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       (queue) => {
         const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
         const accountAddrs = [...new Set(queue.map((x) => x.data.accountAddr))]
+
         const pairs = baseCurrencies
           .map((baseCurrency) =>
-            accountAddrs.map((accountAddr, index) => ({
+            accountAddrs.map((accountAddr) => ({
               baseCurrency,
               accountAddr,
-              forceUpdateDefi: queue[index]?.data.forceUpdateDefi
+              forceUpdateDefi: queue.some(
+                (x) =>
+                  x.data.baseCurrency === baseCurrency &&
+                  x.data.accountAddr === accountAddr &&
+                  x.data.forceUpdateDefi
+              )
             }))
           )
           .flat()
+
         return pairs.map(({ baseCurrency, accountAddr, forceUpdateDefi }) => {
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
@@ -297,6 +307,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accounts: this.#accounts.accounts
           })
 
+          // Analytics should not be polluted with inactive extensions
+          const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
+
           // The relayer has internal cache for the defi positions. If we want to
           // invalidate it, we need to pass this param.
           // See `getShouldBypassServerSideCache` for more details.
@@ -306,7 +319,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}${activeParam}`
 
           return { url, queueSegment }
         })
@@ -843,6 +856,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return this.#portfolioLibs.get(key)!
   }
 
+  async getTokenBalancesOnBlock(
+    accountId: AccountId,
+    chainId: bigint,
+    tokenAddrs: string[],
+    blockTag: GetOptions['blockTag'],
+    accountAddr: string = accountId
+  ): Promise<[TokenError, TokenResult][]> {
+    const network = this.#networks.networks.find((x) => x.chainId === chainId)
+
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
+
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
+
+    if (!portfolioLib) return []
+
+    return portfolioLib.getTokensByAddresses(accountAddr, tokenAddrs, { blockTag })
+  }
+
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
     const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
@@ -940,6 +971,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (res.data.banner) {
       const banner = res.data.banner
+      let actions: Banner['actions'] =
+        // banner is placed in priority so:
+        // when we add banners with surveys, we can also add a url
+        // the goal is for old extensions to be redirected to a url, for new versions to have a survey
+        // otherwise we will have to chose 1) new - survey, old - nothing or 2) both old and new - url
+        banner.surveyId
+          ? [
+              {
+                actionName: 'survey',
+                meta: { surveyId: banner.surveyId, requirements: banner.require || {} }
+              }
+            ]
+          : banner.url
+            ? [
+                {
+                  actionName: 'open-link',
+                  meta: { url: banner.url }
+                }
+              ]
+            : []
 
       const endTimeNumber =
         typeof banner.endTime === 'number' ? banner.endTime : new Date(banner.endTime).getTime()
@@ -958,14 +1009,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         },
         ...(banner.text && { text: banner.text }),
         ...(banner.title && { title: banner.title }),
-        ...(banner.url && {
-          actions: [
-            {
-              actionName: 'open-link',
-              meta: { url: banner.url }
-            }
-          ]
-        })
+        actions
       }
 
       this.#banner.addBanner(formattedBanner)
@@ -1065,7 +1109,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       lastUpdate: number
       hasHints: boolean
     } | null
-    defiMaxDataAgeMs?: number
+    defiMaxDataAgeMs: number
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
     const discoveryStart = Date.now()
@@ -1076,9 +1120,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       chainId,
       account,
       baseCurrency,
-      // Set to 6 hours by default. That is because we are making a lot of
-      // portfolio updates, most of which shouldn't update the defi positions.
-      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      defiMaxDataAgeMs,
       hasKeys,
       externalApiHintsResponse,
       isManualUpdate
@@ -1213,13 +1255,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     network: Network,
     portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & {
+      defiMaxDataAgeMs: number
       hasKeys: boolean
       maxDataAgeMs?: number
-      defiMaxDataAgeMs?: number
       isManualUpdate?: boolean
     }
   ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
-    const { maxDataAgeMs, isManualUpdate } = portfolioProps
+    const { maxDataAgeMs, isManualUpdate, defiMaxDataAgeMs } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
@@ -1264,7 +1306,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         baseCurrency: 'usd',
         externalApiHintsResponse: hintsResponse || null,
         isManualUpdate,
-        defiMaxDataAgeMs: portfolioProps?.defiMaxDataAgeMs,
+        defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
       const allHints = this.getAllHints(
@@ -1387,6 +1429,88 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.emitUpdate()
 
       return [false, null]
+    }
+  }
+
+  /**
+   * Most defi positions are fetched from the external API per network, but there are some
+   * "app" defi positions that have to be fetched separately, because they are not linked to a specific
+   * network and have a slightly different structure (no addresses for assets).
+   *
+   * @example - Fetches Polymarket and Hyperliquid positions (among other)
+   */
+  protected async updateDefiAppsState(
+    account: Account,
+    portfolioProps: Partial<GetOptions> & {
+      defiMaxDataAgeMs: number
+      hasKeys: boolean
+      maxDataAgeMs?: number
+      isManualUpdate?: boolean
+    }
+  ) {
+    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return
+
+    const defiMaxDataAgeMs = portfolioProps.isManualUpdate ? 0 : portfolioProps.defiMaxDataAgeMs
+    const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})
+
+    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
+      accountState['defiApps'],
+      defiMaxDataAgeMs
+    )
+
+    if (canSkipUpdate) return
+
+    const updateStarted = Date.now()
+
+    this.#setNetworkLoading(account.addr, 'defiApps', true)
+    this.emitUpdate()
+
+    try {
+      const response: ExternalPortfolioDiscoveryResponse = await this.batchedPortfolioDiscovery({
+        chainId: 'customAppChain',
+        accountAddr: account.addr,
+        baseCurrency: 'usd'
+      })
+
+      const defi = response.defi
+      // Throw the error after assigning the response so we can still use the returned hints
+      if ((response && 'errorState' in defi) || !('positions' in defi) || !defi.positions)
+        throw new Error(
+          `Defi discovery failed. Error: ${
+            'errorState' in defi
+              ? defi.errorState[0]?.message || 'Unknown error (2)'
+              : 'Unknown error'
+          }`
+        )
+      const positionsByProvider = getFormattedApiPositions(defi.positions)
+
+      accountState.defiApps = {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          defiPositions: {
+            positionsByProvider,
+            lastSuccessfulUpdate: Date.now()
+          },
+          updateStarted,
+          tokens: [],
+          total: getTotal([], {
+            positionsByProvider
+          })
+        },
+        lastSuccessfulUpdate: Date.now()
+      }
+
+      this.#setNetworkLoading(account.addr, 'defiApps', false)
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Error while fetching DeFi apps data from Velcro for account ${account.addr}.`,
+        error: e
+      })
+
+      this.#setNetworkLoading(account.addr, 'defiApps', false, e)
     }
   }
 
@@ -1588,6 +1712,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
+      // Set to 6 hours by default. That is because we are making a lot of
+      // portfolio updates, most of which shouldn't update the defi positions.
+      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
       isManualUpdate
     } = opts || {}
     await this.initialLoadPromise
@@ -1650,6 +1777,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               maxDataAgeMs,
               isManualUpdate,
               blockTag: 'both',
+              defiMaxDataAgeMs,
               ...(accountOpsToSimulate &&
                 accountOpsToSimulate.length &&
                 baseAcc &&
@@ -1727,6 +1855,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.chainId.toString()]
+      }),
+      this.updateDefiAppsState(selectedAccount, {
+        maxDataAgeMs: paramsMaxDataAgeMs,
+        defiMaxDataAgeMs: defiMaxDataAgeMs,
+        isManualUpdate,
+        hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
       })
     ])
 

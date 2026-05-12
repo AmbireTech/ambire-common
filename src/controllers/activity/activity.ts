@@ -1,4 +1,11 @@
-import { toBeHex } from 'ethers'
+import { toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
+
+import { AddressPoisoningMatch } from '@/interfaces/transfer'
+import {
+  getAddressPoisoningMatchCounts,
+  pickBetterPoisoningMatch,
+  ScoredAddressPoisoningMatch
+} from '@/libs/transfer/address-poisoning'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -12,25 +19,34 @@ import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import {
+  getAccountOpBalanceChanges,
+  getBalanceChangeTokenAddresses
+} from '../../libs/accountOp/balanceChanges'
+import {
   AccountOpIdentifiedBy,
-  checkIsRecipientOfAccountOp,
+  BalanceChange,
   fetchFrontRanTxnId,
   fetchTxnId,
   getAccountOpRecipients,
   hasTimePassedSinceBroadcast,
+  isIdentifiedByMultipleTxn,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   PortfoliosToUpdate,
   SubmittedAccountOp,
+  SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InternalSignedMessages, SignedMessage } from './types'
 
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 export interface Pagination {
   fromPage: number
   itemsPerPage: number
@@ -43,7 +59,22 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
+interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
+
+type AddExternalAccountOpParams = {
+  accountAddr: string
+  chainId: bigint
+  txnId: string
+  receipt: TransactionReceipt
+  callId?: Call['id']
+  shouldLearnTokens?: boolean
+}
+
+type AccountOpBalanceChangesBackfillReference = Pick<
+  SubmittedAccountOp,
+  'identifiedBy' | 'accountAddr' | 'chainId'
+>
+
 interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
@@ -55,6 +86,10 @@ export interface Filters {
 export interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
+}
+
+export interface ExternalAccountOps {
+  [account: string]: { [network: string]: SubmittedAccountOpLike[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -75,6 +110,57 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     currentPage: fromPage, // zero/index based
     maxPages: Math.ceil(items.length / itemsPerPage)
   }
+}
+
+const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
+
+const getBalanceChangeWindowFromReceipts = (
+  accountOp: SubmittedAccountOp,
+  receipts: TransactionReceipt[]
+) => {
+  const firstReceipt = receipts[0]
+  const lastReceipt = receipts[receipts.length - 1]
+
+  if (!firstReceipt || !lastReceipt) return null
+
+  return {
+    receiptBlockNumber: lastReceipt.blockNumber,
+    prevBlockNumber: isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+      ? getPreviousBlockNumber(firstReceipt.blockNumber)
+      : undefined
+  }
+}
+
+const getBalanceChangeTokenAddrsFromReceipts = async (
+  accountOp: SubmittedAccountOp,
+  receipts: TransactionReceipt[]
+) => {
+  const foundTokens = (
+    await Promise.all(
+      receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
+    )
+  ).flat()
+
+  return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
+}
+
+const getAccountOpReceipts = async (
+  accountOp: SubmittedAccountOp,
+  provider: {
+    getTransactionReceipt: (txnId: string) => Promise<TransactionReceipt | null>
+  }
+) => {
+  const txIds = isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+    ? accountOp.calls.map((call) => call.txnId).filter((txnId) => !!txnId)
+    : accountOp.txnId
+      ? [accountOp.txnId]
+      : []
+
+  if (!txIds.length) return []
+
+  const receipts = await Promise.all(txIds.map((txnId) => provider.getTransactionReceipt(txnId)))
+
+  return receipts.filter((receipt): receipt is TransactionReceipt => !!receipt)
 }
 
 /**
@@ -115,6 +201,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
   #selectedAccount: ISelectedAccountController
 
   #accountsOps: InternalAccountsOps = {}
+
+  #externalAccountOps: ExternalAccountOps = {}
 
   accountsOps: {
     [sessionId: string]: {
@@ -162,6 +250,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
       | undefined
   } = {}
 
+  #backfillAccountOpBalanceChangesPromises: {
+    [key: string]: Promise<void> | undefined
+  } = {}
+
+  #addExternalAccountOpQueue: Promise<void> = Promise.resolve()
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -194,33 +288,55 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
-    const [accountsOps, signedMessages] = await Promise.all([
+    const [accountsOps, externalAccountOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
+      this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {})
     ])
 
     this.#accountsOps = accountsOps
+    this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
 
     this.emitUpdate()
   }
 
   /**
-   * Checks if there are any account operations that were sent to a specific address
-   * @param toAddress The address to check for received transactions
-   * @param accountId The account ID to filter operations from
-   * @returns An object with 'found' (boolean) and 'lastTransactionDate' (Date | null)
+   * Checks if there are any account operations that were sent to a specific address.
+   * Returns history metadata plus an optional poisoning match for first-time recipients.
    */
   async hasAccountOpsSentTo(
-    toAddress: string,
-    accountId: AccountId
-  ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
+    toAddress: string, // the address to check for received transactions
+    accountId: AccountId // the account ID to filter operations from
+  ): Promise<{
+    found: boolean
+    lastTransactionDate: Date | null
+    addressPoisoningMatch: AddressPoisoningMatch | null
+  }> {
     await this.#initialLoadPromise
-    if (!toAddress) return { found: false, lastTransactionDate: null }
+    if (!toAddress) return { found: false, lastTransactionDate: null, addressPoisoningMatch: null }
+
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
+    const normalizedToAddress = toAddress.toLowerCase()
+    let bestPoisoningMatch: ScoredAddressPoisoningMatch | null = null
 
+    const updatePoisoningMatch = (address: string, lastInteractedAt: number | null = null) => {
+      const matchCounts = getAddressPoisoningMatchCounts(toAddress, address)
+
+      if (!matchCounts) return
+
+      bestPoisoningMatch = pickBetterPoisoningMatch(bestPoisoningMatch, {
+        matchedAddress: address,
+        matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
+        matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
+        lastInteractedAt
+      })
+    }
+
+    // Address poisoning compares the new recipient only against recipients from
+    // this account's historical account ops below.
     accounts.forEach((account) => {
       const accountOpsOfAccount = this.#accountsOps[account]
       if (!accountOpsOfAccount) return
@@ -229,20 +345,43 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const networkAccountOpsOfAccount = accountOpsOfAccount[network]
         if (!networkAccountOpsOfAccount) return
         networkAccountOpsOfAccount.forEach((op) => {
-          const timestampOfSentTo = checkIsRecipientOfAccountOp(op, toAddress)
+          const recipients = getAccountOpRecipients(op)
+          const hasSentToRecipient = recipients.some((recipient) => {
+            if (recipient.toLowerCase() === normalizedToAddress) return true
 
-          if (timestampOfSentTo) {
+            // Poisoning checks are needed only for first-time sends. As soon as
+            // we know the recipient was used before, skip this extra work.
+            if (!found) updatePoisoningMatch(recipient, op.timestamp)
+
+            return false
+          })
+
+          if (hasSentToRecipient) {
             found = true
 
-            if (!lastTimestamp || timestampOfSentTo > lastTimestamp) {
-              lastTimestamp = timestampOfSentTo
+            if (!lastTimestamp || op.timestamp > lastTimestamp) {
+              lastTimestamp = op.timestamp
             }
           }
         })
       })
     })
 
-    return { found, lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null }
+    let addressPoisoningMatch: AddressPoisoningMatch | null = null
+    if (!found && bestPoisoningMatch) {
+      const currentBestPoisoningMatch = bestPoisoningMatch as ScoredAddressPoisoningMatch
+      addressPoisoningMatch = {
+        matchedAddress: currentBestPoisoningMatch.matchedAddress,
+        matchedPrefixCharsCount: currentBestPoisoningMatch.matchedPrefixCharsCount,
+        matchedSuffixCharsCount: currentBestPoisoningMatch.matchedSuffixCharsCount
+      }
+    }
+
+    return {
+      found,
+      lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null,
+      addressPoisoningMatch
+    }
   }
 
   async filterAccountsOps(
@@ -251,29 +390,52 @@ export class ActivityController extends EventEmitter implements IActivityControl
     pagination: Pagination = { fromPage: 0, itemsPerPage: 10 }
   ) {
     await this.#initialLoadPromise
+    this.#externalAccountOps = await this.#storage.get(
+      'externalAccountOps',
+      this.#externalAccountOps
+    )
 
     const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
-    const accountOpsEntriesOnEnabledNetworks = Object.entries(
-      this.#accountsOps[filters.account] || {}
+    const internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
+    const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
+    const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
+      internalAccountOpsByChain
     ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
-    let filteredItems: SubmittedAccountOp[]
+    const internalAccountOps = new Set(
+      internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+    )
+    const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
+      .map(
+        (chainId) =>
+          [
+            chainId,
+            [
+              ...(internalAccountOpsByChain[chainId] || []),
+              ...(externalAccountOpsByChain[chainId] || [])
+            ]
+          ] as const
+      )
+      .filter(([, accountOps]) => accountOps.length)
+    let filteredItems: SubmittedAccountOpLike[]
 
     if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
-      filteredItems =
-        accountOpsEntriesOnEnabledNetworks.find(
+      filteredItems = [
+        ...(accountOpsEntriesOnEnabledNetworks.find(
           ([chainId]) => chainId === String(filters.chainId)
-        )?.[1] || []
+        )?.[1] || [])
+      ]
     } else {
       filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
-      // By default, #accountsOps are grouped by network and sorted in descending order.
-      // However, when the network filter is omitted, #accountsOps from different networks are mixed,
-      // requiring additional sorting to ensure they are also in descending order.
-      filteredItems.sort((a, b) => b.timestamp - a.timestamp)
     }
+
+    // By default, account ops are grouped by network and sorted in descending order.
+    // However, when internal and external ops are mixed, they need a final sort even
+    // when a network filter is present.
+    filteredItems.sort((a, b) => b.timestamp - a.timestamp)
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter(
+      filteredItems = filteredItems.filter(
         (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
       )
     }
@@ -284,6 +446,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
+
+    // find ops with no balance changes recorded and backfill them;
+    // no need to console.log anything in the catch statement here
+    // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
+    const opsWithNoBalanceChanges = result.items.filter(
+      (op): op is SubmittedAccountOp =>
+        internalAccountOps.has(op as SubmittedAccountOp) &&
+        op.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+        op.balanceChanges === undefined
+    )
+    if (opsWithNoBalanceChanges.length)
+      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
   }
 
   setDashboardBannersSeen(sessionId: string, accountAddr: string) {
@@ -336,6 +510,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
     })
 
     await Promise.all(promises)
+  }
+
+  private async persistAccountsOps() {
+    await this.#storage.set('accountsOps', this.#accountsOps)
+    await this.syncFilteredAccountsOps()
+    this.emitUpdate()
   }
 
   async filterSignedMessages(
@@ -413,6 +593,276 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  async addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams) {
+    const task = this.#addExternalAccountOpQueue
+      .catch(() => undefined) // errors handled inside
+      .then(() =>
+        this.#addExternalAccountOp({
+          accountAddr,
+          chainId,
+          txnId,
+          receipt,
+          callId,
+          shouldLearnTokens
+        })
+      )
+
+    // errors handled inside
+    this.#addExternalAccountOpQueue = task.catch(() => undefined)
+
+    return task
+  }
+
+  async #addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams): Promise<void> {
+    await this.#initialLoadPromise
+
+    const network = this.#networks.networks.find((n) => n.chainId === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) {
+      this.emitError({
+        level: 'silent',
+        message: `Network/provider not found for chainId: ${chainId}`,
+        error: new Error(`Network/provider not found for chainId: ${chainId}`)
+      })
+      return
+    }
+
+    const [transaction, block] = await Promise.all([
+      provider.getTransaction(txnId).catch(() => null),
+      provider.getBlock(receipt.blockNumber).catch(() => null)
+    ])
+
+    const accountOpStatus = receipt.status === 0 ? AccountOpStatus.Failure : AccountOpStatus.Success
+    const call: Call = {
+      id: callId || `external-${txnId}`,
+      to: transaction?.to || receipt.to || ZeroAddress,
+      value: transaction?.value || 0n,
+      data: transaction?.data || '0x',
+      txnId: txnId as NonNullable<Call['txnId']>,
+      status: accountOpStatus,
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString()
+    }
+
+    const submittedAccountOpLike: SubmittedAccountOpLike = {
+      id: `external-${txnId}`,
+      accountAddr,
+      chainId,
+      calls: [call],
+      gasFeePayment: null,
+      txnId,
+      status: accountOpStatus,
+      activitySource: 'external',
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString(),
+      timestamp: block?.timestamp ? block.timestamp * 1000 : Date.now(),
+      identifiedBy: {
+        type: 'Transaction',
+        identifier: txnId
+      }
+    }
+
+    try {
+      const foundTokens = await getTransferLogTokens(receipt.logs, accountAddr)
+      if (shouldLearnTokens) {
+        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
+        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
+      }
+      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
+
+      submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr,
+        chainId,
+        tokenAddrs,
+        receiptBlockNumber: receipt.blockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        receipts: [receipt as TransactionReceipt],
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
+      })
+    } catch (error) {
+      submittedAccountOpLike.balanceChanges = undefined
+    }
+
+    if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
+    if (!this.#externalAccountOps[accountAddr]![chainId.toString()]) {
+      this.#externalAccountOps[accountAddr]![chainId.toString()] = []
+    }
+
+    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainId.toString()]!
+    const existingOpIndex = externalAccountOps.findIndex((op) => op.txnId === txnId)
+
+    if (existingOpIndex >= 0) {
+      externalAccountOps[existingOpIndex] = submittedAccountOpLike
+    } else {
+      externalAccountOps.unshift(submittedAccountOpLike)
+      trim(externalAccountOps)
+    }
+
+    await this.#storage.set('externalAccountOps', this.#externalAccountOps)
+    await this.syncFilteredAccountsOps()
+    this.emitUpdate()
+  }
+
+  async setAccountOpBalanceChanges(
+    identifiedBy: AccountOpIdentifiedBy,
+    accountAddr: string,
+    chainId: bigint,
+    balanceChanges: BalanceChange[] | Error
+  ) {
+    await this.#initialLoadPromise
+
+    // get the latest instance just in case
+    const accountOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
+    if (!accountOp) return
+
+    // if the balanceChanges end up with an error,
+    // we allow 3 retries before giving up on them and setting them to an
+    // empty array
+    if (balanceChanges instanceof Error) {
+      const balanceChangesFetchRetryCount = accountOp.balanceChangesFetchRetryCount || 0
+      accountOp.balanceChangesFetchRetryCount = balanceChangesFetchRetryCount + 1
+      if (accountOp.balanceChangesFetchRetryCount >= 3) {
+        accountOp.balanceChanges = []
+      }
+      return
+    }
+
+    accountOp.balanceChanges = balanceChanges
+  }
+
+  /**
+   * Use this method for updates from the UI only
+   * as we're persisting the state right after the operation
+   */
+  async backfillAccountOpBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
+    await Promise.all(accountOps.map((accOp) => this.backfillAccountOpBalanceChanges(accOp)))
+    await this.persistAccountsOps()
+  }
+
+  /**
+   * This method calculate the balanche changes and puts them in memory
+   * as a reference to #accountOps only.
+   * Use backfillAccountOpBalanceChangesAndPersist if you want to persist them.
+   * We have this separation in order to persist to storage only after the
+   * end of an operation
+   */
+  async backfillAccountOpBalanceChanges(accountOp: AccountOpBalanceChangesBackfillReference) {
+    await this.#initialLoadPromise
+
+    // take the latest #accountOp, not a stale one from the UI
+    const currentAccountOp = this.findByIdentifiedBy(
+      accountOp.identifiedBy,
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+
+    if (!currentAccountOp || typeof currentAccountOp.balanceChanges !== 'undefined') return
+
+    const taskId = `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${
+      accountOp.identifiedBy.identifier
+    }`
+
+    if (this.#backfillAccountOpBalanceChangesPromises[taskId]) {
+      return this.#backfillAccountOpBalanceChangesPromises[taskId]
+    }
+
+    this.#backfillAccountOpBalanceChangesPromises[taskId] = this.#prepareAndRunBalanceChangesTask(
+      currentAccountOp
+    ).finally(() => {
+      this.#backfillAccountOpBalanceChangesPromises[taskId] = undefined
+    })
+
+    return this.#backfillAccountOpBalanceChangesPromises[taskId]
+  }
+
+  async #prepareAndRunBalanceChangesTask(accountOp: SubmittedAccountOp) {
+    const hasReceipt =
+      accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure
+    if (!hasReceipt || !accountOp.txnId) {
+      // if the status is a status without a receipt, finish balance changes
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        []
+      )
+
+      return
+    }
+
+    const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)
+    const provider = this.#providers.providers[accountOp.chainId.toString()]
+
+    // temp error, do not set balance changes to allow the system to retry
+    if (!network || !provider) return
+
+    try {
+      const receipts = await getAccountOpReceipts(accountOp, provider)
+
+      if (!receipts.length) {
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          new Error('no receipts found')
+        )
+
+        return
+      }
+
+      const tokenAddrs = await getBalanceChangeTokenAddrsFromReceipts(accountOp, receipts)
+      const balanceChangeWindow = getBalanceChangeWindowFromReceipts(accountOp, receipts)
+
+      if (!balanceChangeWindow) {
+        await this.setAccountOpBalanceChanges(
+          accountOp.identifiedBy,
+          accountOp.accountAddr,
+          accountOp.chainId,
+          new Error('no receipts found')
+        )
+
+        return
+      }
+
+      await this.updateAccountOpBalanceChanges(
+        accountOp,
+        network,
+        tokenAddrs,
+        balanceChangeWindow.receiptBlockNumber,
+        balanceChangeWindow.prevBlockNumber,
+        receipts
+      )
+    } catch (error: any) {
+      console.log(error)
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        error
+      )
+    }
+  }
+
   async updateAccountsOpsStatuses(accountAddresses: string[] = []): Promise<
     Record<
       string,
@@ -448,6 +898,32 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
 
     return Object.fromEntries(results)
+  }
+
+  async #executeBalanceChanges(
+    balanceChangesTasks: Array<{
+      accountOp: SubmittedAccountOp
+      network: Network
+      tokenAddrs: string[]
+      receiptBlockNumber: number
+      prevBlockNumber?: number
+      receipts?: BalanceChangesReceipt[]
+    }>
+  ) {
+    await Promise.all(
+      balanceChangesTasks.map(
+        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
+          this.updateAccountOpBalanceChanges(
+            accountOp,
+            network,
+            tokenAddrs,
+            receiptBlockNumber,
+            prevBlockNumber,
+            receipts
+          )
+      )
+    )
+    await this.persistAccountsOps()
   }
 
   /**
@@ -488,6 +964,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const chainsToUpdate = new Set<Network['chainId']>()
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
+    const balanceChangesTasks: Array<{
+      accountOp: SubmittedAccountOp
+      network: Network
+      tokenAddrs: string[]
+      receiptBlockNumber: number
+      prevBlockNumber?: number
+      receipts?: BalanceChangesReceipt[]
+    }> = []
 
     // we should fetch Safe txns again upon failure
     let shouldFetchSafeTxns = false
@@ -521,6 +1005,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
         return Promise.all(
           opsToUpdate.map(async (accountOp) => {
             shouldEmitUpdate = true
+            let firstReceiptBlockNumber: number | undefined
+            let lastReceiptBlockNumber: number | undefined
+            let shouldScheduleBalanceChangesTask = false
+            const foundTokensForBalanceChanges = new Set<string>()
+            const receiptsForBalanceChanges: BalanceChangesReceipt[] = []
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
               newestOpTimestamp = accountOp.timestamp
@@ -613,6 +1102,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     if (!receipt) return
                   }
 
+                  if (typeof firstReceiptBlockNumber === 'undefined') {
+                    firstReceiptBlockNumber = receipt.blockNumber
+                  }
+                  lastReceiptBlockNumber = receipt.blockNumber
+                  receiptsForBalanceChanges.push({
+                    logs: receipt.logs,
+                    hash: receipt.hash,
+                    from: receipt.from,
+                    gasUsed: receipt.gasUsed,
+                    gasPrice: receipt.gasPrice
+                  })
+
                   // if this is an user op, we have to check the logs
                   let isSuccess: boolean | undefined
                   if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
@@ -632,23 +1133,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     receipt
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  if (
+                    updatedOpIfAny &&
+                    (updatedOpIfAny.status === AccountOpStatus.Success ||
+                      updatedOpIfAny.status === AccountOpStatus.Failure)
+                  ) {
+                    shouldScheduleBalanceChangesTask = true
+                  }
 
                   if (accountOp.isSingletonDeploy && receipt.status) {
                     // eslint-disable-next-line no-await-in-loop
                     await this.#onContractsDeployed(network)
                   }
 
-                  // learn tokens from the transfer logs
-                  if (isSuccess) {
-                    // eslint-disable-next-line no-await-in-loop
-                    const foundTokens = await getTransferLogTokens(
-                      receipt.logs,
-                      accountOp.accountAddr
-                    )
-                    if (foundTokens.length) {
-                      this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-                    }
-                  } else {
+                  if (!isSuccess) {
                     // if the txn resulted in a failure, unresolve all Safe txns
                     // with the same nonce so that the user can retry
                     const acc = this.#accounts.accounts.find(
@@ -659,6 +1157,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       shouldFetchSafeTxns = true
                     }
                   }
+
+                  const foundTokens = isSuccess
+                    ? await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+                    : []
+                  if (foundTokens.length)
+                    this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                  foundTokens.forEach((tokenAddr) => foundTokensForBalanceChanges.add(tokenAddr))
 
                   // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
@@ -705,16 +1210,38 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 )
               })
             }
+
+            if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
+              balanceChangesTasks.push({
+                accountOp,
+                network,
+                tokenAddrs: getBalanceChangeTokenAddresses(
+                  Array.from(foundTokensForBalanceChanges),
+                  accountOp.chainId
+                ),
+                receiptBlockNumber: lastReceiptBlockNumber,
+                prevBlockNumber:
+                  isIdentifiedByMultipleTxn(accountOp.identifiedBy) &&
+                  typeof firstReceiptBlockNumber !== 'undefined'
+                    ? getPreviousBlockNumber(firstReceiptBlockNumber)
+                    : undefined,
+                receipts: receiptsForBalanceChanges
+              })
+            }
           })
         )
       })
     )
 
+    // if there are balanceChangesTasks, shouldEmitUpdate will be true
+    // so they will get saved
     if (shouldEmitUpdate) {
-      await this.#storage.set('accountsOps', this.#accountsOps)
-      await this.syncFilteredAccountsOps()
-      this.emitUpdate()
+      await this.persistAccountsOps()
     }
+
+    // record the balance changes but do not await them
+    // no need to console.log errors in the catch() as it's handled inside
+    this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null)
 
     return {
       shouldEmitUpdate,
@@ -723,6 +1250,58 @@ export class ActivityController extends EventEmitter implements IActivityControl
       portfoliosToUpdate,
       newestOpTimestamp,
       shouldFetchSafeTxns
+    }
+  }
+
+  async updateAccountOpBalanceChanges(
+    accountOp: SubmittedAccountOp,
+    network: Network,
+    tokenAddrs: string[],
+    receiptBlockNumber: number,
+    prevBlockNumber?: number,
+    receipts?: BalanceChangesReceipt[]
+  ) {
+    await this.#initialLoadPromise
+
+    try {
+      if (accountOp.chainId !== network.chainId) {
+        throw new Error(
+          `Cannot update balance changes for ${accountOp.identifiedBy.identifier}: network mismatch`
+        )
+      }
+
+      const balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr: accountOp.accountAddr,
+        chainId: accountOp.chainId,
+        tokenAddrs,
+        receiptBlockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        prevBlockNumber,
+        receipts,
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
+      })
+
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        balanceChanges
+      )
+
+      return balanceChanges
+    } catch (error: any) {
+      console.log(error)
+      await this.setAccountOpBalanceChanges(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId,
+        error
+      )
+
+      return []
     }
   }
 
@@ -963,18 +1542,23 @@ export class ActivityController extends EventEmitter implements IActivityControl
   getAccountOpsForAccount({
     accountAddr = this.#selectedAccount.account?.addr,
     from,
-    numberOfItems
+    numberOfItems,
+    // added so the logic in the survey controller does not get heavy for accs with a lot of txns
+    sortAccOps = true
   }: {
     accountAddr?: string
-    from: number
-    numberOfItems: number
+    from?: number
+    numberOfItems?: number
+    sortAccOps?: boolean
   }) {
     if (!accountAddr) return []
 
-    return Object.values(this.#accountsOps[accountAddr] || {})
-      .flat()
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(from, from + numberOfItems)
+    let allAccountOps = Object.values(this.#accountsOps[accountAddr] || {}).flat()
+    if (sortAccOps) allAccountOps = allAccountOps.sort((a, b) => b.timestamp - a.timestamp)
+
+    if (typeof from === 'number' && typeof numberOfItems === 'number')
+      return allAccountOps.slice(from, from + numberOfItems)
+    return allAccountOps
   }
 
   toJSON() {

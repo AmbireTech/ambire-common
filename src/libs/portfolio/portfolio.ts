@@ -76,10 +76,17 @@ export const STATIC_BLACKLIST: Omit<TokenBlacklist, 'updatedAt'> = {
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
-  deploylessProxyMode: { erc20: 66, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
+  deploylessProxyMode: {
+    erc20: 66,
+    erc20Simulation: 50,
+    erc721: 30,
+    erc721TokensInput: 20,
+    erc721Tokens: 50
+  },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
     erc20: 230,
+    erc20Simulation: 50,
     erc721: 70,
     erc721TokensInput: 70,
     erc721Tokens: 70
@@ -327,15 +334,16 @@ export class Portfolio {
     const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
-        paginate(hints.erc20s, limits.erc20).map((page, index) =>
-          getTokens(
-            this.network,
-            this.deploylessTokens,
-            { simulation, blockTag, specialErc20Hints },
-            accountAddr,
-            page,
-            index
-          )
+        paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map(
+          (page, index) =>
+            getTokens(
+              this.network,
+              this.deploylessTokens,
+              { simulation, blockTag, specialErc20Hints },
+              accountAddr,
+              page,
+              index
+            )
         )
       ),
       flattenResults(
@@ -593,5 +601,34 @@ export class Portfolio {
         .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
+  }
+
+  async getTokensByAddresses(
+    accountAddr: string,
+    tokenAddrs: string[],
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints'>
+  ): Promise<[TokenError, TokenResult][]> {
+    const uniqueTokenAddrs = [...new Set(tokenAddrs)]
+
+    if (!uniqueTokenAddrs.length) return []
+
+    const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
+      ? LIMITS.deploylessProxyMode
+      : LIMITS.deploylessStateOverrideMode
+
+    const [tokensWithErrResult] = await flattenResults(
+      paginate(uniqueTokenAddrs, limits.erc20).map((page, index) =>
+        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)
+      )
+    )
+
+    return tokensWithErrResult.map(([error, token]) => [
+      error,
+      {
+        ...token,
+        priceIn: token.priceIn || [],
+        marketDataIn: token.marketDataIn || []
+      }
+    ])
   }
 }

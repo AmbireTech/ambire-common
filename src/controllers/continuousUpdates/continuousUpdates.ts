@@ -97,7 +97,9 @@ export class ContinuousUpdatesController extends EventEmitter {
       }
     })
     this.#main.ui.uiEvent.on('removeView', () => {
-      if (!this.#main.ui.views.length) {
+      // Don't restart the timeout of the extension is locked to not overwrite the longer timeout set on lock
+      // How it could happen: the user locks the extension manually and closes the popup
+      if (!this.#main.ui.views.length && this.#main.keystore.isUnlocked) {
         this.#updatePortfolioInterval.restart({
           timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         })

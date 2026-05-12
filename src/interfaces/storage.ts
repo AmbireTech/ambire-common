@@ -1,5 +1,5 @@
 import { SignedMessage } from '../controllers/activity/types'
-import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
+import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
 import {
@@ -26,6 +26,7 @@ export type StorageProps = {
   networkPreferences?: { [key: string]: Partial<Network> }
   accountPreferences?: { [key: AccountId]: AccountPreferences }
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
+  externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
   networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
   networksWithPositionsByAccounts: NetworksWithPositionsByAccounts
