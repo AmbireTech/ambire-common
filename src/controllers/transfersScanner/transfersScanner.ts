@@ -1,16 +1,18 @@
 /* eslint-disable no-await-in-loop */
-import { TransactionReceipt } from 'ethers'
+import { Log, TransactionReceipt } from 'ethers'
 
 import { IActivityController } from '../../interfaces/activity'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
+import { withTimeout } from '../../utils/with-timeout'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const SCAN_LOGS_ATTEMPTS = 15
+const SCAN_LOGS_RPC_TIMEOUT_MS = 10000
 
 const getScanLogsDelay = (attemptIndex: number) => {
   if (attemptIndex < 10) return 6000
@@ -37,6 +39,17 @@ function topicAddress(address: string) {
 
 function getScanLoopKey(chainIdString: string, accAddr: string) {
   return `${chainIdString}:${accAddr.toLowerCase()}`
+}
+
+function toError(error: unknown) {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+function withScannerRpcTimeout<T>(task: () => Promise<T>, method: string) {
+  return withTimeout(task, {
+    timeoutMs: SCAN_LOGS_RPC_TIMEOUT_MS,
+    message: `Transfer scanner ${method} RPC timed out after ${SCAN_LOGS_RPC_TIMEOUT_MS}ms`
+  })
 }
 
 function getEarlierFromBlock(
@@ -103,7 +116,20 @@ export class TransfersScannerController extends EventEmitter {
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
     if (!provider || !network) return null
 
-    const toBlockNumber = await provider.getBlockNumber()
+    const toBlockNumber = await withScannerRpcTimeout(
+      () => provider.getBlockNumber(),
+      'getBlockNumber'
+    ).catch((e) => toError(e))
+
+    if (toBlockNumber instanceof Error) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to scan token transfer logs on network with id ${chainIdString}.`,
+        error: toBlockNumber
+      })
+      return null
+    }
+
     const normalizedFromBlock = fromBlock === 'latest' ? toBlockNumber : fromBlock
 
     // The next scan starts one block after the last scanned block. If the next
@@ -116,61 +142,75 @@ export class TransfersScannerController extends EventEmitter {
     const nextFromBlock = toBlockNumber + 1
 
     const [logsOut, logsIn] = await Promise.all([
-      provider
-        .getLogs({
-          fromBlock: normalizedFromBlock,
-          toBlock: toBlockNumber,
-          topics: [
-            ERC20_TRANSFER_TOPIC,
-            topicAddress(accAddr) // indexed from
-          ]
-        })
-        .catch((e) => e),
-      provider
-        .getLogs({
-          fromBlock: normalizedFromBlock,
-          toBlock: toBlockNumber,
-          topics: [
-            ERC20_TRANSFER_TOPIC,
-            null,
-            topicAddress(accAddr) // indexed to
-          ]
-        })
-        .catch((e) => e)
+      withScannerRpcTimeout(
+        () =>
+          provider.getLogs({
+            fromBlock: normalizedFromBlock,
+            toBlock: toBlockNumber,
+            topics: [
+              ERC20_TRANSFER_TOPIC,
+              topicAddress(accAddr) // indexed from
+            ]
+          }),
+        'getLogs'
+      ).catch((e) => toError(e)),
+      withScannerRpcTimeout(
+        () =>
+          provider.getLogs({
+            fromBlock: normalizedFromBlock,
+            toBlock: toBlockNumber,
+            topics: [
+              ERC20_TRANSFER_TOPIC,
+              null,
+              topicAddress(accAddr) // indexed to
+            ]
+          }),
+        'getLogs'
+      ).catch((e) => toError(e))
     ])
 
     // if an error is encountered, retry from the same fromBlock
-    // read @nextBlock+1
-    if (logsOut instanceof Error || logsIn instanceof Error) {
-      const error = logsOut instanceof Error ? logsOut : logsIn
+    const logsError = [logsOut, logsIn].find((logs): logs is Error => logs instanceof Error)
+    if (logsError) {
       this.emitError({
         level: 'silent',
         message: `Failed to scan token transfer logs on network with id ${chainIdString}.`,
-        error
+        error: logsError
       })
       return null
     }
 
+    const logs = [...(logsOut as Log[]), ...(logsIn as Log[])]
     const txnIds = Array.from(
-      new Set(
-        [...logsOut, ...logsIn]
-          .map((log) => log.transactionHash)
-          .filter((txnId): txnId is string => !!txnId)
-      )
+      new Set(logs.map((log) => log.transactionHash).filter((txnId): txnId is string => !!txnId))
     )
 
     if (!txnIds.length) return { nextFromBlock, txnIds }
 
-    const receipts = (
-      await Promise.all(
-        txnIds.map((txnId) => provider.getTransactionReceipt(txnId).catch(() => null))
+    const receipts = await Promise.all(
+      txnIds.map((txnId) =>
+        withScannerRpcTimeout(() => provider.getTransactionReceipt(txnId), 'getTransactionReceipt')
+          .then((receipt) => receipt || new Error(`Transaction receipt ${txnId} was not found`))
+          .catch((e) => toError(e))
       )
-    ).filter((receipt): receipt is TransactionReceipt => !!receipt)
+    )
 
-    if (!receipts.length) return { nextFromBlock, txnIds }
+    const receiptError = receipts.find((receipt): receipt is Error => receipt instanceof Error)
+    if (receiptError) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to scan token transfer receipts on network with id ${chainIdString}.`,
+        error: receiptError
+      })
+      return null
+    }
+
+    const successfulReceipts = receipts.filter(
+      (receipt): receipt is TransactionReceipt => !(receipt instanceof Error)
+    )
 
     await Promise.all(
-      receipts.map((receipt) =>
+      successfulReceipts.map((receipt) =>
         this.#activity.addExternalAccountOp({
           accountAddr: accAddr,
           chainId,

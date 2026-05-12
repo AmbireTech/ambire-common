@@ -252,6 +252,105 @@ describe('TransfersScannerController scanLogs', () => {
     consoleLogSpy.mockRestore()
   })
 
+  it('returns null and emits a silent error when getBlockNumber times out', async () => {
+    jest.useFakeTimers()
+    const provider = {
+      getBlockNumber: jest.fn(() => new Promise(() => undefined)),
+      getLogs: jest.fn(async () => []),
+      getTransactionReceipt: jest.fn()
+    }
+    const { activity, controller, portfolio } = createController({ provider })
+    const errorHandler = jest.fn()
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+    controller.onError(errorHandler)
+
+    try {
+      const resultPromise = controller.scanLogs({
+        accAddr: BASE_ACCOUNT_ADDR,
+        chainId: BASE_CHAIN_ID,
+        fromBlock: 399
+      })
+
+      await jest.advanceTimersByTimeAsync(10000)
+
+      await expect(resultPromise).resolves.toBeNull()
+      expect(errorHandler).toHaveBeenCalledWith({
+        level: 'silent',
+        message: `Failed to scan token transfer logs on network with id ${BASE_CHAIN_ID}.`,
+        error: new Error('Transfer scanner getBlockNumber RPC timed out after 10000ms')
+      })
+      expect(provider.getLogs).not.toHaveBeenCalled()
+      expect(provider.getTransactionReceipt).not.toHaveBeenCalled()
+      expect(activity.addExternalAccountOp).not.toHaveBeenCalled()
+      expect(portfolio.updateSelectedAccount).not.toHaveBeenCalled()
+    } finally {
+      consoleLogSpy.mockRestore()
+      jest.useRealTimers()
+    }
+  })
+
+  it('returns null and emits a silent error when receipt fetching fails', async () => {
+    const receiptError = new Error('RPC receipt failed')
+    const provider = {
+      getBlockNumber: jest.fn(async () => 400),
+      getLogs: jest.fn(async () => [{ transactionHash: BASE_TXN_HASH }]),
+      getTransactionReceipt: jest.fn(async () => {
+        throw receiptError
+      })
+    }
+    const { activity, controller, portfolio } = createController({ provider })
+    const errorHandler = jest.fn()
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+    controller.onError(errorHandler)
+
+    const result = await controller.scanLogs({
+      accAddr: BASE_ACCOUNT_ADDR,
+      chainId: BASE_CHAIN_ID,
+      fromBlock: 399
+    })
+
+    expect(result).toBeNull()
+    expect(errorHandler).toHaveBeenCalledWith({
+      level: 'silent',
+      message: `Failed to scan token transfer receipts on network with id ${BASE_CHAIN_ID}.`,
+      error: receiptError
+    })
+    expect(provider.getTransactionReceipt).toHaveBeenCalledWith(BASE_TXN_HASH)
+    expect(activity.addExternalAccountOp).not.toHaveBeenCalled()
+    expect(portfolio.updateSelectedAccount).not.toHaveBeenCalled()
+
+    consoleLogSpy.mockRestore()
+  })
+
+  it('returns null and emits a silent error when a matching log has no receipt yet', async () => {
+    const provider = {
+      getBlockNumber: jest.fn(async () => 400),
+      getLogs: jest.fn(async () => [{ transactionHash: BASE_TXN_HASH }]),
+      getTransactionReceipt: jest.fn(async () => null)
+    }
+    const { activity, controller, portfolio } = createController({ provider })
+    const errorHandler = jest.fn()
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+    controller.onError(errorHandler)
+
+    const result = await controller.scanLogs({
+      accAddr: BASE_ACCOUNT_ADDR,
+      chainId: BASE_CHAIN_ID,
+      fromBlock: 399
+    })
+
+    expect(result).toBeNull()
+    expect(errorHandler).toHaveBeenCalledWith({
+      level: 'silent',
+      message: `Failed to scan token transfer receipts on network with id ${BASE_CHAIN_ID}.`,
+      error: new Error(`Transaction receipt ${BASE_TXN_HASH} was not found`)
+    })
+    expect(activity.addExternalAccountOp).not.toHaveBeenCalled()
+    expect(portfolio.updateSelectedAccount).not.toHaveBeenCalled()
+
+    consoleLogSpy.mockRestore()
+  })
+
   it('keeps the earlier pending cursor when restarting a scan loop for the same chain and account', async () => {
     const waitMock = wait as jest.MockedFunction<typeof wait>
     const firstLoopWait = createDeferred()
