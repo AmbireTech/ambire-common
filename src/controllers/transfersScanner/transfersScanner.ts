@@ -6,8 +6,8 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
-import { withTimeout } from '../../utils/with-timeout'
 import wait from '../../utils/wait'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
@@ -66,6 +66,24 @@ function getEarlierFromBlock(
   return 'latest'
 }
 
+/**
+ * Transfers Scanner Controller
+ * Scans ERC-20 Transfer logs for an account and records matching external transactions.
+ *
+ * For each account and network, the controller queries outgoing and incoming Transfer topics,
+ * deduplicates the matching transaction hashes, fetches their receipts, and forwards them to
+ * `ActivityController.addExternalAccountOp()` so they appear in account activity.
+ *
+ * After external transactions are recorded, it asks `PortfolioController.updateSelectedAccount()`
+ * to refresh the affected network and learn newly discovered tokens from the receipts.
+ *
+ * Scan loops are tracked per account and network. Restarting a scan for the same pair keeps the
+ * earliest pending cursor, so older unprocessed blocks are not skipped.
+ *
+ * The scan cursor advances only after logs and receipts for the scanned block range are processed.
+ * RPC errors, timeouts, and missing receipts keep the current cursor so the next attempt can retry
+ * the same block range.
+ */
 export class TransfersScannerController extends EventEmitter {
   #activity: IActivityController
 
