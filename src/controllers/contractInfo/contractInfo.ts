@@ -1,9 +1,4 @@
-import {
-  IContractInfoController,
-  Selectors,
-  SelectorsFromStorage,
-  SourcifyFunctionsResponse
-} from '@/interfaces/contractInfo'
+import { IContractInfoController, Selectors, SelectorsFromStorage } from '@/interfaces/contractInfo'
 import { IEventEmitterRegistryController } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
@@ -27,6 +22,8 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
   #featureFlag: IFeatureFlagsController
 
+  #cenaUrl: string
+
   selectors: Selectors = {}
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -36,18 +33,21 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     eventEmitterRegistry,
     fetch,
     storage,
-    featureFlags
+    featureFlags,
+    cenaUrl = 'https://cena.ambire.com'
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     featureFlags: IFeatureFlagsController
+    cenaUrl?: string
   }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
     this.#storage = storage
     this.#featureFlag = featureFlags
+    this.#cenaUrl = cenaUrl
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -89,32 +89,38 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     )
     this.#debounceBufferForSelectors.clear()
     if (!selectorsToFetch.length) return
-    // we have filter=false, because on selector collisions like (0xa9059cbb)
     // transfer(address,uint256)
     // transfer(bytes4[9],bytes5[6],int48[11])
     // the calldata of the second one will not be decodable by the first signature
     // even though the second one is considered 'junk' by sourcify (Apr 2026)
     // we  want to be able to decode even mined function selectors
     const jointSelectors = selectorsToFetch.join(',')
-    const sourcifyUrl = `https://api.4byte.sourcify.dev/signature-database/v1/lookup?function=${jointSelectors}&filter=false`
+    const cenaUrl = `${this.#cenaUrl}/api/v3/contracts/selectors?selectors=${jointSelectors}`
     try {
-      const result: SourcifyFunctionsResponse = await fetchWithTimeout(
+      const result:
+        | { success: false; error: string }
+        | { success: true; data: { [selector: string]: string[] } } = await fetchWithTimeout(
         this.#fetch,
-        `${sourcifyUrl}`,
+        cenaUrl,
         {},
         3000
       ).then((r) => r.json())
-      if (
-        !result.ok ||
-        !result.result ||
-        !result.result.function ||
-        typeof result.result.function !== 'object'
-      )
-        throw new Error(`Sourcify request for function selectors failed for: ${jointSelectors}`)
-      Object.entries(result.result.function).forEach(([selector, dataArray]) => {
-        const mappedFoundSignatures = (dataArray || [])
-          .map((d) => ({ signature: d.name, filtered: d.filtered }))
-          .filter((n) => n.signature)
+
+      if (!result.success) {
+        this.emitError({
+          error: new Error('Failed to fetch contract selectors'),
+          level: 'major',
+          message: 'Failed to fetch contract selectors',
+          sendCrashReport: true
+        })
+        return
+      }
+
+      Object.entries(result.data).forEach(([selector, signatures]) => {
+        const mappedFoundSignatures = (signatures || [])
+          .filter((s) => s)
+          .map((s) => ({ signature: s }))
+
         if (mappedFoundSignatures.length)
           this.selectors[selector] = { data: mappedFoundSignatures, status: 'success' }
         else this.selectors[selector] = { status: 'not-found' }
