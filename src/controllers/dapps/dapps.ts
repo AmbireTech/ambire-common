@@ -810,7 +810,7 @@ export class DappsController extends EventEmitter implements IDappsController {
    * 1) dApp verification in progress (`LOADING`)
    * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
    * 3) dApp is blacklisted (`BLACKLISTED`)
-   * 4) dApp is not in the default catalog (not `VERIFIED`)
+   * 4) dApp is verified but not in the default catalog
    *
    * Pass `includeDappNamesInText: false` in single-dApp flows (e.g. SignMessage),
    * where appending the dApp names in the banner text is redundant.
@@ -825,8 +825,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!validDappUrls.length) return null
 
     const dappVerificationData = validDappUrls.map((url) => {
-      const dapp = this.#dapps.get(getDappIdFromUrl(url))
+      const id = getDappIdFromUrl(url)
+      const dapp = this.#dapps.get(id)
+
       return {
+        id,
         status: dapp?.blacklisted,
         name: dapp?.name || new URL(url).hostname
       }
@@ -850,6 +853,13 @@ export class DappsController extends EventEmitter implements IDappsController {
         : `${baseText}:`
 
       return `${withColon} ${dappNames}`
+    }
+
+    const isDappInDefaultCatalog = (dappId: string) => {
+      const storedDapp = this.#dapps.get(dappId)
+
+      // Custom dApps are user-added/connected entries, not default catalog entries.
+      return !!storedDapp && !storedDapp.isCustom
     }
 
     // 1) dApp verification in progress
@@ -894,14 +904,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     // 4) dApp is not in the default catalog
-    const notVerifiedDappNames = getDappNamesByPredicate((dapp) => dapp.status !== 'VERIFIED')
-    if (notVerifiedDappNames.length) {
+    const notInCatalogDappNames = getDappNamesByPredicate(
+      (dapp) => dapp.status === 'VERIFIED' && !isDappInDefaultCatalog(dapp.id)
+    )
+    if (notInCatalogDappNames.length) {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
         text: withOptionalDappNames(
           'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
-          notVerifiedDappNames
+          notInCatalogDappNames
         )
       }
     }

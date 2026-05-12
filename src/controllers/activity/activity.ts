@@ -1,4 +1,4 @@
-import { toBeHex, TransactionReceipt } from 'ethers'
+import { toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import {
@@ -34,11 +34,14 @@ import {
   isIdentifiedByUserOpHash,
   PortfoliosToUpdate,
   SubmittedAccountOp,
+  SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InternalSignedMessages, SignedMessage } from './types'
@@ -56,7 +59,22 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
+interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
+
+type AddExternalAccountOpParams = {
+  accountAddr: string
+  chainId: bigint
+  txnId: string
+  receipt: TransactionReceipt
+  callId?: Call['id']
+  shouldLearnTokens?: boolean
+}
+
+type AccountOpBalanceChangesBackfillReference = Pick<
+  SubmittedAccountOp,
+  'identifiedBy' | 'accountAddr' | 'chainId'
+>
+
 interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
@@ -68,6 +86,10 @@ export interface Filters {
 export interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
+}
+
+export interface ExternalAccountOps {
+  [account: string]: { [network: string]: SubmittedAccountOpLike[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -119,7 +141,7 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
     )
   ).flat()
 
-  return getBalanceChangeTokenAddresses(foundTokens)
+  return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
 }
 
 const getAccountOpReceipts = async (
@@ -180,6 +202,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #accountsOps: InternalAccountsOps = {}
 
+  #externalAccountOps: ExternalAccountOps = {}
+
   accountsOps: {
     [sessionId: string]: {
       result: AccountsOps
@@ -230,6 +254,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     [key: string]: Promise<void> | undefined
   } = {}
 
+  #addExternalAccountOpQueue: Promise<void> = Promise.resolve()
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -262,12 +288,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
-    const [accountsOps, signedMessages] = await Promise.all([
+    const [accountsOps, externalAccountOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
+      this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {})
     ])
 
     this.#accountsOps = accountsOps
+    this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
 
     this.emitUpdate()
@@ -362,29 +390,52 @@ export class ActivityController extends EventEmitter implements IActivityControl
     pagination: Pagination = { fromPage: 0, itemsPerPage: 10 }
   ) {
     await this.#initialLoadPromise
+    this.#externalAccountOps = await this.#storage.get(
+      'externalAccountOps',
+      this.#externalAccountOps
+    )
 
     const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
-    const accountOpsEntriesOnEnabledNetworks = Object.entries(
-      this.#accountsOps[filters.account] || {}
+    const internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
+    const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
+    const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
+      internalAccountOpsByChain
     ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
-    let filteredItems: SubmittedAccountOp[]
+    const internalAccountOps = new Set(
+      internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+    )
+    const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
+      .map(
+        (chainId) =>
+          [
+            chainId,
+            [
+              ...(internalAccountOpsByChain[chainId] || []),
+              ...(externalAccountOpsByChain[chainId] || [])
+            ]
+          ] as const
+      )
+      .filter(([, accountOps]) => accountOps.length)
+    let filteredItems: SubmittedAccountOpLike[]
 
     if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
-      filteredItems =
-        accountOpsEntriesOnEnabledNetworks.find(
+      filteredItems = [
+        ...(accountOpsEntriesOnEnabledNetworks.find(
           ([chainId]) => chainId === String(filters.chainId)
-        )?.[1] || []
+        )?.[1] || [])
+      ]
     } else {
       filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
-      // By default, #accountsOps are grouped by network and sorted in descending order.
-      // However, when the network filter is omitted, #accountsOps from different networks are mixed,
-      // requiring additional sorting to ensure they are also in descending order.
-      filteredItems.sort((a, b) => b.timestamp - a.timestamp)
     }
+
+    // By default, account ops are grouped by network and sorted in descending order.
+    // However, when internal and external ops are mixed, they need a final sort even
+    // when a network filter is present.
+    filteredItems.sort((a, b) => b.timestamp - a.timestamp)
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter(
+      filteredItems = filteredItems.filter(
         (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
       )
     }
@@ -400,8 +451,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // no need to console.log anything in the catch statement here
     // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
     const opsWithNoBalanceChanges = result.items.filter(
-      (op: SubmittedAccountOp) =>
-        op.status !== AccountOpStatus.BroadcastedButNotConfirmed && op.balanceChanges === undefined
+      (op): op is SubmittedAccountOp =>
+        internalAccountOps.has(op as SubmittedAccountOp) &&
+        op.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+        op.balanceChanges === undefined
     )
     if (opsWithNoBalanceChanges.length)
       this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
@@ -540,6 +593,136 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  async addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams) {
+    const task = this.#addExternalAccountOpQueue
+      .catch(() => undefined) // errors handled inside
+      .then(() =>
+        this.#addExternalAccountOp({
+          accountAddr,
+          chainId,
+          txnId,
+          receipt,
+          callId,
+          shouldLearnTokens
+        })
+      )
+
+    // errors handled inside
+    this.#addExternalAccountOpQueue = task.catch(() => undefined)
+
+    return task
+  }
+
+  async #addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams): Promise<void> {
+    await this.#initialLoadPromise
+
+    const network = this.#networks.networks.find((n) => n.chainId === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) {
+      this.emitError({
+        level: 'silent',
+        message: `Network/provider not found for chainId: ${chainId}`,
+        error: new Error(`Network/provider not found for chainId: ${chainId}`)
+      })
+      return
+    }
+
+    const [transaction, block] = await Promise.all([
+      provider.getTransaction(txnId).catch(() => null),
+      provider.getBlock(receipt.blockNumber).catch(() => null)
+    ])
+
+    const accountOpStatus = receipt.status === 0 ? AccountOpStatus.Failure : AccountOpStatus.Success
+    const call: Call = {
+      id: callId || `external-${txnId}`,
+      to: transaction?.to || receipt.to || ZeroAddress,
+      value: transaction?.value || 0n,
+      data: transaction?.data || '0x',
+      txnId: txnId as NonNullable<Call['txnId']>,
+      status: accountOpStatus,
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString()
+    }
+
+    const submittedAccountOpLike: SubmittedAccountOpLike = {
+      id: `external-${txnId}`,
+      accountAddr,
+      chainId,
+      calls: [call],
+      gasFeePayment: null,
+      txnId,
+      status: accountOpStatus,
+      activitySource: 'external',
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString(),
+      timestamp: block?.timestamp ? block.timestamp * 1000 : Date.now(),
+      identifiedBy: {
+        type: 'Transaction',
+        identifier: txnId
+      }
+    }
+
+    try {
+      const foundTokens = await getTransferLogTokens(receipt.logs, accountAddr)
+      if (shouldLearnTokens) {
+        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
+        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
+      }
+      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
+
+      submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr,
+        chainId,
+        tokenAddrs,
+        receiptBlockNumber: receipt.blockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        receipts: [receipt as TransactionReceipt],
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
+      })
+    } catch (error) {
+      submittedAccountOpLike.balanceChanges = undefined
+    }
+
+    if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
+    if (!this.#externalAccountOps[accountAddr]![chainId.toString()]) {
+      this.#externalAccountOps[accountAddr]![chainId.toString()] = []
+    }
+
+    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainId.toString()]!
+    const existingOpIndex = externalAccountOps.findIndex((op) => op.txnId === txnId)
+
+    if (existingOpIndex >= 0) {
+      externalAccountOps[existingOpIndex] = submittedAccountOpLike
+    } else {
+      externalAccountOps.unshift(submittedAccountOpLike)
+      trim(externalAccountOps)
+    }
+
+    await this.#storage.set('externalAccountOps', this.#externalAccountOps)
+    await this.syncFilteredAccountsOps()
+    this.emitUpdate()
+  }
+
   async setAccountOpBalanceChanges(
     identifiedBy: AccountOpIdentifiedBy,
     accountAddr: string,
@@ -583,7 +766,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * We have this separation in order to persist to storage only after the
    * end of an operation
    */
-  async backfillAccountOpBalanceChanges(accountOp: SubmittedAccountOp) {
+  async backfillAccountOpBalanceChanges(accountOp: AccountOpBalanceChangesBackfillReference) {
     await this.#initialLoadPromise
 
     // take the latest #accountOp, not a stale one from the UI
@@ -1033,7 +1216,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 accountOp,
                 network,
                 tokenAddrs: getBalanceChangeTokenAddresses(
-                  Array.from(foundTokensForBalanceChanges)
+                  Array.from(foundTokensForBalanceChanges),
+                  accountOp.chainId
                 ),
                 receiptBlockNumber: lastReceiptBlockNumber,
                 prevBlockNumber:
@@ -1094,13 +1278,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
         getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
         prevBlockNumber,
         receipts,
-        debugTraceTransaction: (txnHash) =>
-          network.chainId === 999n
-            ? this.#providers.providers[network.chainId.toString()]!.send(
-                'debug_traceTransaction',
-                [txnHash, { tracer: 'callTracer' }]
-              )
-            : Promise.resolve(null)
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
       })
 
       await this.setAccountOpBalanceChanges(
