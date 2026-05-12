@@ -1024,11 +1024,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           errors.push({
             title: `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
           })
-        } else {
-          errors.push({
-            title:
-              'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
-          })
         }
       }
     }
