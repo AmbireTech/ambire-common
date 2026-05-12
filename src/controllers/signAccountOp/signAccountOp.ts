@@ -3543,7 +3543,39 @@ export class SignAccountOpController
       BROADCAST_OPTIONS.delegation
     ]
 
-    if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+    // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
+    // transaction. The signer packages the calls into a 4337 UserOperation,
+    // signs on-device and submits via its own bundler. We short-circuit the
+    // entire EOA + bundler tree below.
+    if (accountOp.signingKeyType === 'pq1') {
+      try {
+        const signer = await this.#keystore.getSigner(
+          accountOp.signingKeyAddr,
+          accountOp.signingKeyType
+        )
+        if (signer.init) {
+          signer.init(this.#externalSignerControllers[accountOp.signingKeyType])
+        }
+        if (!signer.broadcastAccountOp) {
+          return this.throwBroadcastAccountOp({
+            message: `Signer for key type ${accountOp.signingKeyType} does not implement broadcastAccountOp`,
+            accountState
+          })
+        }
+        const { txnId } = await signer.broadcastAccountOp({
+          chainId: accountOp.chainId,
+          provider: this.provider,
+          calls: accountOp.calls.map((c) => ({ to: c.to, value: c.value, data: c.data }))
+        })
+        transactionRes = {
+          nonce: Number(accountOp.nonce ?? 0n),
+          identifiedBy: { type: 'Transaction', identifier: txnId },
+          txnId
+        }
+      } catch (error: any) {
+        return this.throwBroadcastAccountOp({ error, accountState })
+      }
+    } else if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
       const senderAddr =
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA

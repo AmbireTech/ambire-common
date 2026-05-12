@@ -1,4 +1,4 @@
-import { Transaction, TypedDataField } from 'ethers'
+import { JsonRpcProvider, Transaction, TypedDataField } from 'ethers'
 
 import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
@@ -105,6 +105,19 @@ export interface KeystoreSignerInterface {
   getEncryptionPublicKey?: () => Promise<string> // base64 string
   decrypt?: (encryptedData: string) => string // plain text
   signingCleanup?: () => Promise<void>
+  /**
+   * Smart-contract-account-only signers (currently PQ1) cannot produce a
+   * raw EOA transaction. Instead they take the AccountOp's calls list,
+   * package them into the signer's native transaction shape (e.g. an
+   * ERC-4337 UserOperation), sign on-device, and broadcast — returning the
+   * resulting on-chain transaction hash. Implementations bypass Ambire's
+   * relayer/bundler stack entirely.
+   */
+  broadcastAccountOp?: (params: {
+    chainId: bigint
+    provider: JsonRpcProvider
+    calls: { to: Call['to']; value: Call['value']; data: Call['data'] }[]
+  }) => Promise<{ txnId: Hex }>
 }
 
 export type ScryptParams = {
