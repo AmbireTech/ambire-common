@@ -2,12 +2,15 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { PhishingController } from '../phishing/phishing'
 import { suppressConsole } from '../../../test/helpers/console'
+import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
+import { DAPP_VERIFICATION_BANNER_IDS, type Dapp } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 
@@ -259,5 +262,133 @@ describe('DappsController', () => {
 
     expect(controller.getDapp('test-dapp.com')?.blacklisted).toBe('BLACKLISTED')
     expect(resetShouldSyncSpy).toHaveBeenCalledTimes(1)
+  })
+
+  describe('getDappVerificationBanner', () => {
+    const mockDappVerificationStatuses = (statuses: Record<string, Dapp['blacklisted']>) =>
+      jest
+        .spyOn(PhishingController.prototype, 'updateDomainsBlacklistedStatus')
+        .mockImplementation(async (_urls, callback) => {
+          callback(statuses)
+        })
+
+    test('should return loading banner for dapps with pending verification', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'LOADING' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+        expect(updateDomainsSpy).toHaveBeenCalled()
+        expect(controller.getDappVerificationBanner([aave.url])).toEqual({
+          id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+          type: 'warning',
+          text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
+        })
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('should return failed banner for dapps with failed verification', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'FAILED_TO_GET' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+        expect(updateDomainsSpy).toHaveBeenCalled()
+        expect(controller.getDappVerificationBanner([aave.url])).toEqual({
+          id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+          type: 'warning',
+          text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
+        })
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('should return blacklisted banner for blacklisted dapps', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'BLACKLISTED' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+        expect(updateDomainsSpy).toHaveBeenCalled()
+        expect(controller.getDappVerificationBanner([aave.url])).toEqual({
+          id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+          type: 'error',
+          text: "This app didn't pass our safety check. Proceed at your own risk: AAVE"
+        })
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('should return not-in-catalog banner for verified custom dapps', async () => {
+      const customDapp = makeDapp({
+        id: 'custom-dapp.com',
+        name: 'Custom Dapp',
+        url: 'https://custom-dapp.com',
+        blacklisted: 'LOADING',
+        isCustom: true
+      })
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'custom-dapp.com': 'VERIFIED' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', [...predefinedDapps, customDapp])
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const verifiedCustomDapp = controller.getDapp(customDapp.id)!
+        expect(updateDomainsSpy).toHaveBeenCalled()
+        expect(controller.getDappVerificationBanner([verifiedCustomDapp.url])).toEqual({
+          id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+          type: 'warning',
+          text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
+        })
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('should not return banner for verified dapps in the default catalog', async () => {
+      const updateDomainsSpy = jest.spyOn(
+        PhishingController.prototype,
+        'updateDomainsBlacklistedStatus'
+      )
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.dapps.find((dapp) => dapp.name === 'AAVE')!
+        expect(updateDomainsSpy).toHaveBeenCalled()
+        expect(updateDomainsSpy.mock.calls.some(([urls]) => urls.includes(aave.url))).toBe(true)
+        expect(aave.blacklisted).toBe('VERIFIED')
+        expect(controller.getDappVerificationBanner([aave.url])).toBe(null)
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
   })
 })
