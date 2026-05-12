@@ -169,7 +169,7 @@ export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-s
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | 'qr' | 'nfc'
+  type: 'trezor' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
   label: string
   dedicatedToOneSA: boolean
   meta: {
