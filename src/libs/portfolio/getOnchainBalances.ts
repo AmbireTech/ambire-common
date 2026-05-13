@@ -4,7 +4,10 @@ import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 /* eslint-disable no-console */
 import { yieldToMain } from '../../utils/scheduler'
-import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
+import {
+  getNotAmbireStateOverride,
+  getShouldStateOverride
+} from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
 import { AccountOp, callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
@@ -104,22 +107,20 @@ function handleSimulationError(
 
 export function getDeploylessOpts(
   accountAddr: string,
-  supportsStateOverride: boolean,
+  network: Network,
   opts: {
     simulation?: GetOptionsSimulation<AccountOp[]>
     blockTag?: GetOptions['blockTag']
   }
 ) {
   const shouldStateOverride =
-    supportsStateOverride &&
-    opts.simulation &&
-    opts.simulation.baseAccount.shouldStateOverrideDuringSimulations()
+    !!opts.simulation && getShouldStateOverride(network, opts.simulation.baseAccount)
 
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-    stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr) : null
+    stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr, network) : null
   }
 }
 
@@ -131,7 +132,7 @@ export async function getNFTs(
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+  const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
     blockTag:
       opts.blockTag === 'pending' || opts.blockTag === 'both'
@@ -175,8 +176,7 @@ export async function getNFTs(
   const { accountOps, baseAccount, state } = opts.simulation
   const account = baseAccount.getAccount()
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const shouldStateOverride =
-    !network.rpcNoStateOverride && baseAccount.shouldStateOverrideDuringSimulations()
+  const shouldStateOverride = getShouldStateOverride(network, baseAccount)
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // state overriden accounts start from a fake, specified nonce
     nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
@@ -266,7 +266,7 @@ export async function getTokens(
 
   const isFetchingBothBlocks = opts.blockTag === 'both'
 
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+  const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
     blockTag:
       opts.blockTag === 'pending' || isFetchingBothBlocks
@@ -282,8 +282,7 @@ export async function getTokens(
     }
 
     const account = baseAccount.getAccount()
-    const shouldStateOverride =
-      !network.rpcNoStateOverride && baseAccount.shouldStateOverrideDuringSimulations()
+    const shouldStateOverride = getShouldStateOverride(network, baseAccount)
     const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
       // state overriden accounts start from a fake, specified nonce
       nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),

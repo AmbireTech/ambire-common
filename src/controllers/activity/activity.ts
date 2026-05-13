@@ -114,6 +114,20 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
 
 const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
 
+const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
+
+const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string) => {
+  const normalizedTxnId = normalizeTxnId(txnId)
+
+  return (
+    normalizeTxnId(accountOp.txnId) === normalizedTxnId ||
+    accountOp.calls.some((call) => normalizeTxnId(call.txnId) === normalizedTxnId)
+  )
+}
+
+const externalAccountOpHasTxnId = (accountOp: SubmittedAccountOpLike, txnId: string) =>
+  normalizeTxnId(accountOp.txnId) === normalizeTxnId(txnId)
+
 const getBalanceChangeWindowFromReceipts = (
   accountOp: SubmittedAccountOp,
   receipts: TransactionReceipt[]
@@ -141,7 +155,7 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
     )
   ).flat()
 
-  return getBalanceChangeTokenAddresses(foundTokens)
+  return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
 }
 
 const getAccountOpReceipts = async (
@@ -630,8 +644,23 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }: AddExternalAccountOpParams): Promise<void> {
     await this.#initialLoadPromise
 
+    // a duplication guard
+    const chainIdString = chainId.toString()
+    const hasExistingAccountOpWithTxnId = () => {
+      const internalAccountOps = this.#accountsOps[accountAddr]?.[chainIdString] || []
+      const existingExternalAccountOps =
+        this.#externalAccountOps[accountAddr]?.[chainIdString] || []
+
+      return (
+        internalAccountOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
+        existingExternalAccountOps.some((accountOp) => externalAccountOpHasTxnId(accountOp, txnId))
+      )
+    }
+
+    if (hasExistingAccountOpWithTxnId()) return
+
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
-    const provider = this.#providers.providers[chainId.toString()]
+    const provider = this.#providers.providers[chainIdString]
     if (!network || !provider) {
       this.emitError({
         level: 'silent',
@@ -704,19 +733,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
-    if (!this.#externalAccountOps[accountAddr]![chainId.toString()]) {
-      this.#externalAccountOps[accountAddr]![chainId.toString()] = []
+    if (!this.#externalAccountOps[accountAddr]![chainIdString]) {
+      this.#externalAccountOps[accountAddr]![chainIdString] = []
     }
 
-    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainId.toString()]!
-    const existingOpIndex = externalAccountOps.findIndex((op) => op.txnId === txnId)
-
-    if (existingOpIndex >= 0) {
-      externalAccountOps[existingOpIndex] = submittedAccountOpLike
-    } else {
-      externalAccountOps.unshift(submittedAccountOpLike)
-      trim(externalAccountOps)
-    }
+    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainIdString]!
+    externalAccountOps.unshift(submittedAccountOpLike)
+    trim(externalAccountOps)
 
     await this.#storage.set('externalAccountOps', this.#externalAccountOps)
     await this.syncFilteredAccountsOps()
@@ -1216,7 +1239,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 accountOp,
                 network,
                 tokenAddrs: getBalanceChangeTokenAddresses(
-                  Array.from(foundTokensForBalanceChanges)
+                  Array.from(foundTokensForBalanceChanges),
+                  accountOp.chainId
                 ),
                 receiptBlockNumber: lastReceiptBlockNumber,
                 prevBlockNumber:

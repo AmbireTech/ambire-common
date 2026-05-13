@@ -26,8 +26,8 @@ const createDeferred = () => {
   return { promise, resolve }
 }
 
-const createStorage = () => {
-  const data: Record<string, any> = {}
+const createStorage = (initialData: Record<string, any> = {}) => {
+  const data: Record<string, any> = initialData
   const firstExternalAccountOpsSet = createDeferred()
   let externalAccountOpsSetCalls = 0
 
@@ -71,6 +71,118 @@ const createController = (storage: Storage, provider: any) =>
   )
 
 describe('ActivityController external account ops', () => {
+  it('does not add an external account op when the txnId already exists on an internal account op', async () => {
+    const txnId = `0x${'a'.repeat(64)}`
+    const provider = {
+      getTransaction: jest.fn(),
+      getBlock: jest.fn()
+    }
+    const { data, storage } = createStorage({
+      accountsOps: {
+        [accountAddr]: {
+          [chainId.toString()]: [
+            {
+              accountAddr,
+              chainId,
+              txnId,
+              calls: []
+            }
+          ]
+        }
+      }
+    })
+    const controller = createController(storage, provider)
+
+    await controller.addExternalAccountOp({
+      accountAddr,
+      chainId,
+      txnId,
+      receipt: buildReceipt(txnId)
+    })
+
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+    expect(provider.getBlock).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalled()
+    expect(data.externalAccountOps).toBeUndefined()
+  })
+
+  it('does not add an external account op when the txnId already exists on an internal account op call', async () => {
+    const txnId = `0x${'b'.repeat(64)}`
+    const provider = {
+      getTransaction: jest.fn(),
+      getBlock: jest.fn()
+    }
+    const { data, storage } = createStorage({
+      accountsOps: {
+        [accountAddr]: {
+          [chainId.toString()]: [
+            {
+              accountAddr,
+              chainId,
+              calls: [
+                {
+                  to: '0x0000000000000000000000000000000000000001',
+                  value: 0n,
+                  data: '0x',
+                  txnId
+                }
+              ]
+            }
+          ]
+        }
+      }
+    })
+    const controller = createController(storage, provider)
+
+    await controller.addExternalAccountOp({
+      accountAddr,
+      chainId,
+      txnId,
+      receipt: buildReceipt(txnId)
+    })
+
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+    expect(provider.getBlock).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalled()
+    expect(data.externalAccountOps).toBeUndefined()
+  })
+
+  it('does not add an external account op when the txnId already exists on an external account op', async () => {
+    const txnId = `0x${'c'.repeat(64)}`
+    const provider = {
+      getTransaction: jest.fn(),
+      getBlock: jest.fn()
+    }
+    const existingExternalAccountOp = {
+      accountAddr,
+      chainId,
+      txnId,
+      calls: []
+    }
+    const { data, storage } = createStorage({
+      externalAccountOps: {
+        [accountAddr]: {
+          [chainId.toString()]: [existingExternalAccountOp]
+        }
+      }
+    })
+    const controller = createController(storage, provider)
+
+    await controller.addExternalAccountOp({
+      accountAddr,
+      chainId,
+      txnId,
+      receipt: buildReceipt(txnId)
+    })
+
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+    expect(provider.getBlock).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalled()
+    expect(data.externalAccountOps[accountAddr][chainId.toString()]).toEqual([
+      existingExternalAccountOp
+    ])
+  })
+
   it('queues same-tick addExternalAccountOp calls to avoid overlapping writes', async () => {
     const txnId1 = `0x${'a'.repeat(64)}`
     const txnId2 = `0x${'b'.repeat(64)}`
