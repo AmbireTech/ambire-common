@@ -5,25 +5,12 @@ export type IContractInfoController = ControllerInterface<
 >
 
 export interface SelectorsFromStorage {
-  [selector: string]: { signature: string; filtered: boolean }[]
+  [selector: string]: { signature: string }[]
 }
 export interface Selectors {
   [selector: string]:
-    | { status: 'success'; data: { signature: string; filtered: boolean }[] }
+    | { status: 'success'; data: { signature: string }[] }
     | { status: 'error'; error: string }
     | { status: 'not-found' }
     | { status: 'loading' }
 }
-
-export type SourcifyFunctionsResponse =
-  | {
-      ok: false
-    }
-  | {
-      ok: true
-      result: {
-        function: {
-          [selector: string]: { name: string; filtered: boolean; hasVerifiedContract: boolean }[]
-        }
-      }
-    }

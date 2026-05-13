@@ -82,7 +82,7 @@ function arrayUnknownDecodedArgsToCustomType(
 
 export function decodeCall(
   data: Call['data'],
-  foundSignatures: { signature: string; filtered: boolean }[]
+  foundSignatures: { signature: string }[]
 ): DecodedCall | null {
   if (!isHex(data)) return null
   let resultWithDiff: { diff: number; decoded: DecodedCall | null } = {
@@ -114,9 +114,10 @@ export function decodeCall(
           decoded: result
         }
       }
-    } catch (e) {
-      console.log('ERROR DECODING')
+    } catch (e: any) {
+      // we will not be able to decode the function if it is malformed
       console.error(e)
+      console.error(`decodeCall: ${e.message}`)
       // TODO should we ignore it?
     }
   }
