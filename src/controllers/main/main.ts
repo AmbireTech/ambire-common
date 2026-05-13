@@ -1026,8 +1026,6 @@ export class MainController extends EventEmitter implements IMainController {
         const finalTxnId =
           submittedAccountOp.identifiedBy.type === 'MultipleTxns' ? handler.txnId || txnId : txnId
 
-        // If the call has a txnId, resolve the promise with it.
-        // This could happen when an EOA account is broadcasting multiple transactions.
         handler.promise.resolve({ hash: finalTxnId })
       } else {
         handler.promise.reject(
