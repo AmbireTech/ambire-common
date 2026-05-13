@@ -12,6 +12,7 @@ export interface HumanizerErc7730Row {
 export interface HumanizerErc7730Visualization {
   type: 'erc7730'
   title?: string
+  dapp?: Call['dapp']
   rows: HumanizerErc7730Row[]
 }
 

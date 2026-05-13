@@ -102,11 +102,58 @@ const getVisibility = (rule: Erc7730VisibleRule | undefined, value: unknown): Vi
 const getPathSegments = (path: string): string[] =>
   path.replace(/^\./, '').split('.').filter(Boolean)
 
+const normalizeSegmentIndex = (index: number, length: number): number =>
+  index < 0 ? length + index : index
+
+const readBracketSegment = (source: unknown, segment: string): unknown => {
+  const indexMatch = segment.match(/^\[(-?\d+)\]$/)
+  if (indexMatch) {
+    const index = Number(indexMatch[1])
+    if (!Array.isArray(source) || !Number.isInteger(index)) return undefined
+
+    return source[normalizeSegmentIndex(index, source.length)]
+  }
+
+  const sliceMatch = segment.match(/^\[(-?\d*)?:(-?\d*)?\]$/)
+  if (sliceMatch) {
+    if (typeof source !== 'string') return undefined
+
+    const hex = source.startsWith('0x') ? source.slice(2) : source
+    if (hex.length % 2 !== 0) return undefined
+
+    const byteLength = hex.length / 2
+    const start =
+      sliceMatch[1] === undefined || sliceMatch[1] === ''
+        ? 0
+        : normalizeSegmentIndex(Number(sliceMatch[1]), byteLength)
+    const end =
+      sliceMatch[2] === undefined || sliceMatch[2] === ''
+        ? byteLength
+        : normalizeSegmentIndex(Number(sliceMatch[2]), byteLength)
+
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      end < start ||
+      end > byteLength
+    )
+      return undefined
+
+    return `0x${hex.slice(start * 2, end * 2)}`
+  }
+
+  return undefined
+}
+
 const readPath = (source: unknown, path: string): unknown => {
   if (!path) return source
 
   return getPathSegments(path).reduce<unknown>((currentValue, segment) => {
     if (currentValue === undefined || currentValue === null) return undefined
+
+    const bracketValue = readBracketSegment(currentValue, segment)
+    if (bracketValue !== undefined) return bracketValue
 
     if (segment === '[]') return Array.isArray(currentValue) ? currentValue : undefined
 
@@ -127,6 +174,8 @@ const readPath = (source: unknown, path: string): unknown => {
 
 const resolvePath = (path: string | undefined, context: FormatContext, base: unknown): unknown => {
   if (!path) return undefined
+  if (path === '#') return context.root
+  if (path.startsWith('#.')) return readPath(context.root, path.slice(2))
   if (path === '@') return context.root['@']
   if (path.startsWith('@.')) return readPath(context.root['@'], path.slice(2))
   if (path === '$') return context.descriptor
@@ -160,7 +209,13 @@ const resolveParamValue = (
   if (isMapReference(value)) return resolveMapReference(value, context, base)
   if (
     typeof value === 'string' &&
-    (treatStringAsPath || value.startsWith('$.') || value.startsWith('@.'))
+    (treatStringAsPath ||
+      value === '#' ||
+      value === '$' ||
+      value === '@' ||
+      value.startsWith('#.') ||
+      value.startsWith('$.') ||
+      value.startsWith('@.'))
   )
     return resolvePath(value, context, base)
 
@@ -561,7 +616,8 @@ const interpolateIntent = (
 
 const formatToVisualizations = (
   format: Erc7730DisplayFormat,
-  context: FormatContext
+  context: FormatContext,
+  dapp?: Call['dapp']
 ): HumanizerVisualization[] | null => {
   const intent =
     (format.interpolatedIntent &&
@@ -570,7 +626,7 @@ const formatToVisualizations = (
   const rows = fieldsToRows(format.fields || [], context, context.root)
   if (!rows) return null
 
-  return [getErc7730Visualization(intent, rows)]
+  return [getErc7730Visualization(intent, rows, dapp)]
 }
 
 export const humanizeCallWithErc7730 = (
@@ -594,7 +650,7 @@ export const humanizeCallWithErc7730 = (
     },
     chainId
   }
-  const fullVisualization = formatToVisualizations(match.format, context)
+  const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
 
   return fullVisualization?.length ? { ...call, fullVisualization, warnings: [] } : null
 }

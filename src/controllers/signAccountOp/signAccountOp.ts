@@ -102,7 +102,7 @@ import {
 import { calculateFeeAmount } from '../../libs/fees/fees'
 import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
-import { flattenHumanizerVisualizations } from '../../libs/humanizer/utils'
+import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -820,10 +820,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     const erc7730Humanization = humanizeAccountOp(this.accountOp, { erc7730Descriptors })
-    const hasErc7730Visualization = erc7730Humanization.some(
-      (call, index) => !!erc7730Descriptors[index] && !!call.fullVisualization?.length
-    )
-    if (!hasErc7730Visualization || this.humanizationId !== humanizationId) return false
+    if (!hasErc7730Humanization(erc7730Humanization) || this.humanizationId !== humanizationId) {
+      return false
+    }
 
     this.#setHumanization(erc7730Humanization, humanizationId)
     this.learnTokens()
@@ -3376,6 +3375,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message: 'No transaction response received after being broadcasted.'
       })
 
+    const clearSigningHumanization = hasErc7730Humanization(this.humanization)
+      ? this.humanization
+      : null
+    const submittedAccountOpMeta = { ...accountOp.meta }
+    delete submittedAccountOpMeta.clearSigningHumanization
+    if (clearSigningHumanization) {
+      submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
+    }
+
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
       eoaNonce: this.accountOp.eoaNonce,
@@ -3388,6 +3396,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         (call) => call.to && getAddress(call.to) === SINGLETON
       )
     }
+    if (Object.keys(submittedAccountOpMeta).length) submittedAccountOp.meta = submittedAccountOpMeta
+    else delete submittedAccountOp.meta
 
     await this.#onBroadcastSuccess({
       submittedAccountOp,

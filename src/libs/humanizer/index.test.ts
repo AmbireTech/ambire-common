@@ -452,13 +452,13 @@ describe('ERC-7730 descriptors', () => {
                   intent: 'Authorize',
                   fields: [
                     {
-                      path: '_spender',
+                      path: '#._spender',
                       label: 'Spender',
                       format: 'addressName',
                       visible: 'always'
                     },
                     {
-                      path: '_value',
+                      path: '#._value',
                       label: 'Amount allowance',
                       format: 'tokenAmount',
                       params: { tokenPath: '@.to' },
@@ -485,6 +485,119 @@ describe('ERC-7730 descriptors', () => {
             value: [
               getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, 1n)
             ]
+          }
+        ])
+      ]
+    ])
+  })
+
+  test('resolves descriptor root and bracket paths used by registry descriptors', async () => {
+    const tokenOut = transactions.erc20[1]!.to
+    const recipient = accountOp.accountAddr
+    const uniswapRouter = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
+    const swapIface = new ethers.Interface([
+      'function swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,address[] path,address to)',
+      'function exactInput((bytes path,address recipient,uint256 amountIn,uint256 amountOutMinimum) params)'
+    ])
+    const exactInputPath = ethers.concat([WETH_ADDRESS, '0x000bb8', tokenOut])
+
+    accountOp.calls = [
+      {
+        to: uniswapRouter,
+        value: 0n,
+        data: swapIface.encodeFunctionData('swapExactTokensForTokens', [
+          1000000000000000000n,
+          1000000n,
+          [WETH_ADDRESS, tokenOut],
+          recipient
+        ])
+      },
+      {
+        to: uniswapRouter,
+        value: 0n,
+        data: swapIface.encodeFunctionData('exactInput', [
+          {
+            path: exactInputPath,
+            recipient,
+            amountIn: 2000000000000000000n,
+            amountOutMinimum: 2000000n
+          }
+        ])
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'amountIn',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'path.[0]' }
+                },
+                {
+                  path: 'amountOutMin',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'path.[-1]' }
+                }
+              ]
+            },
+          'exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'params.amountIn',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.path.[0:20]' }
+                },
+                {
+                  path: 'params.amountOutMinimum',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.path.[-20:]' }
+                }
+              ]
+            }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: { descriptor },
+        1: { descriptor }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(WETH_ADDRESS, 1000000000000000000n, undefined, 1n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(tokenOut, 1000000n, undefined, 1n)]
+          }
+        ])
+      ],
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(WETH_ADDRESS, 2000000000000000000n, undefined, 1n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(tokenOut, 2000000n, undefined, 1n)]
           }
         ])
       ]
