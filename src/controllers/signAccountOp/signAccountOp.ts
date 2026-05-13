@@ -24,6 +24,7 @@ import {
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { PIMLICO } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
@@ -3116,7 +3117,10 @@ export class SignAccountOpController
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
         const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
-          safeSigner.signTypedData(typedData)
+          safeSigner.signTypedData(typedData, {
+            chainId: this.#network.chainId,
+            provider: this.provider
+          })
         )) as Hex
         nowSignedSigs.push(signature)
 
@@ -3206,7 +3210,14 @@ export class SignAccountOpController
                 accountState,
                 network: this.#network
               }),
-              () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+              () =>
+                getExecuteSignature(
+                  this.#network,
+                  this.accountOp,
+                  accountState,
+                  signer,
+                  this.provider
+                )
             )
           })
         }
@@ -3315,7 +3326,8 @@ export class SignAccountOpController
                 this.#network,
                 false,
                 undefined,
-                true
+                true,
+                this.provider
               )
           )
           if (!this.accountOp.meta) {
@@ -3388,7 +3400,10 @@ export class SignAccountOpController
             )
             const signature = wrapStandard(
               await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData)
+                signer.signTypedData(typedData, {
+                  chainId: this.#network.chainId,
+                  provider: this.provider
+                })
               )
             )
             userOperation.signature = signature
@@ -3402,7 +3417,10 @@ export class SignAccountOpController
             )
             const signature = wrapUnprotected(
               await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData)
+                signer.signTypedData(typedData, {
+                  chainId: this.#network.chainId,
+                  provider: this.provider
+                })
               )
             )
             userOperation.signature = signature
@@ -3432,7 +3450,14 @@ export class SignAccountOpController
               accountState,
               network: this.#network
             }),
-            () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+            () =>
+              getExecuteSignature(
+                this.#network,
+                this.accountOp,
+                accountState,
+                signer,
+                this.provider
+              )
           )
         })
       }
@@ -3545,10 +3570,31 @@ export class SignAccountOpController
 
     // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
     // transaction. The signer packages the calls into a 4337 UserOperation,
-    // signs on-device and submits via its own bundler. We short-circuit the
-    // entire EOA + bundler tree below.
+    // signs on-device and submits via its own bundler (Pimlico). We
+    // short-circuit the entire EOA + bundler tree below, but keep two of
+    // its invariants:
+    //   1. The user-approved `gasFeePayment` binds the broadcast — the fee
+    //      fields of the UserOp are taken from it, and fee options the
+    //      4337 pipeline cannot honor (gas tank, another payer, a non-
+    //      native fee token) are refused up front instead of silently
+    //      charging the wallet's native balance a different amount.
+    //   2. Device interaction runs inside #withHardwareWalletSigningRequest
+    //      so the "confirm on your device" UI shows while the PQ1 waits
+    //      for its physical confirmation.
     if (accountOp.signingKeyType === 'pq1') {
       try {
+        const { gasFeePayment } = accountOp
+        if (
+          gasFeePayment.isGasTank ||
+          gasFeePayment.paidBy !== accountOp.accountAddr ||
+          gasFeePayment.inToken !== ZeroAddress
+        ) {
+          return this.throwBroadcastAccountOp({
+            message:
+              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
+            accountState
+          })
+        }
         const signer = await this.#keystore.getSigner(
           accountOp.signingKeyAddr,
           accountOp.signingKeyType
@@ -3562,15 +3608,32 @@ export class SignAccountOpController
             accountState
           })
         }
-        const { txnId } = await signer.broadcastAccountOp({
-          chainId: accountOp.chainId,
-          provider: this.provider,
-          calls: accountOp.calls.map((c) => ({ to: c.to, value: c.value, data: c.data }))
-        })
+        const calls = accountOp.calls.map((c) => ({ to: c.to, value: c.value, data: c.data }))
+        const { userOpHash, nonce } = await this.#withHardwareWalletSigningRequest(
+          getRawTransactionSigningRequest({
+            chainId: accountOp.chainId,
+            from: accountOp.accountAddr,
+            calls
+          }),
+          () =>
+            signer.broadcastAccountOp!({
+              chainId: accountOp.chainId,
+              provider: this.provider!,
+              calls,
+              gasFeePayment: {
+                gasPrice: gasFeePayment.gasPrice,
+                maxPriorityFeePerGas: gasFeePayment.maxPriorityFeePerGas
+              }
+            })
+        )
+        // Identified the same way as any other bundler broadcast: the
+        // ActivityController resolves the tx hash and reads per-op success
+        // from the UserOperationEvent log (so a UserOp whose inner
+        // execution reverted is correctly reported as failed, and a
+        // slow-but-included op is not misreported as a failed broadcast).
         transactionRes = {
-          nonce: Number(accountOp.nonce ?? 0n),
-          identifiedBy: { type: 'Transaction', identifier: txnId },
-          txnId
+          nonce: Number(nonce),
+          identifiedBy: { type: 'UserOperation', identifier: userOpHash, bundler: PIMLICO }
         }
       } catch (error: any) {
         return this.throwBroadcastAccountOp({ error, accountState })

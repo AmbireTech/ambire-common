@@ -80,12 +80,33 @@ export interface TxnRequest {
   type?: number
 }
 
+/**
+ * Per-request context passed to {@link KeystoreSignerInterface.signMessage}
+ * and {@link KeystoreSignerInterface.signTypedData}.
+ *
+ * EOA-style signers (Ledger, Trezor, Lattice, QR, internal keystore) can
+ * ignore this entirely — their output is chain-agnostic (ECDSA over the
+ * EIP-191 / EIP-712 hash). Smart-account signers whose signatures are
+ * verified on-chain via ERC-1271 / ERC-6492 (currently PQ1) need to know
+ * which chain the verifier will run on so they can:
+ *   1) decide whether to emit a bare ERC-1271 wrapper or an ERC-6492
+ *      deploy-and-verify blob (based on `eth_getCode(sender)`), and
+ *   2) tell the device which chainId the signed message is bound to.
+ */
+export interface SignMessageContext {
+  chainId: bigint
+  provider: JsonRpcProvider
+}
+
 export interface KeystoreSignerInterface {
   key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
-  signTypedData: (typedMessage: TypedMessageUserRequest['meta']['params']) => Promise<string>
-  signMessage: (hex: string) => Promise<string>
+  signTypedData: (
+    typedMessage: TypedMessageUserRequest['meta']['params'],
+    ctx?: SignMessageContext
+  ) => Promise<string>
+  signMessage: (hex: string, ctx?: SignMessageContext) => Promise<string>
   sign7702: ({
     chainId,
     contract,
@@ -110,14 +131,20 @@ export interface KeystoreSignerInterface {
    * raw EOA transaction. Instead they take the AccountOp's calls list,
    * package them into the signer's native transaction shape (e.g. an
    * ERC-4337 UserOperation), sign on-device, and broadcast — returning the
-   * resulting on-chain transaction hash. Implementations bypass Ambire's
-   * relayer/bundler stack entirely.
+   * resulting userOpHash + the nonce the op was submitted with, so the
+   * caller can track inclusion and per-op success the same way as any
+   * other bundler broadcast (`identifiedBy: { type: 'UserOperation' }`).
+   * Implementations bypass Ambire's relayer/bundler stack entirely, but
+   * MUST bind the broadcast fees to the user-approved `gasFeePayment` —
+   * the user pays what the fee UI showed, not what the signer's own
+   * pipeline would pick.
    */
   broadcastAccountOp?: (params: {
     chainId: bigint
     provider: JsonRpcProvider
     calls: { to: Call['to']; value: Call['value']; data: Call['data'] }[]
-  }) => Promise<{ txnId: Hex }>
+    gasFeePayment: { gasPrice: bigint; maxPriorityFeePerGas?: bigint }
+  }) => Promise<{ userOpHash: Hex; nonce: bigint }>
 }
 
 export type ScryptParams = {
