@@ -1021,9 +1021,12 @@ export class MainController extends EventEmitter implements IMainController {
     const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
     dappHandlers.forEach((handler) => {
       if (txnId) {
+        const finalTxnId =
+          submittedAccountOp.identifiedBy.type === 'MultipleTxns' ? handler.txnId || txnId : txnId
+
         // If the call has a txnId, resolve the promise with it.
         // This could happen when an EOA account is broadcasting multiple transactions.
-        handler.promise.resolve({ hash: handler.txnId || txnId })
+        handler.promise.resolve({ hash: finalTxnId })
       } else {
         handler.promise.reject(
           ethErrors.rpc.transactionRejected({
