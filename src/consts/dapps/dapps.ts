@@ -88,7 +88,8 @@ export const predefinedDapps = [
     url: 'https://rewards.ambire.com',
     name: 'Ambire Rewards',
     icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
-    description: 'Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.',
+    description:
+      'Stake your $WALLET tokens, participate in the WalletDAO, and earn staking rewards.',
     chainIds: [1, 8453, 10, 42161, 534352, 56],
     twitter: 'ambire'
   },

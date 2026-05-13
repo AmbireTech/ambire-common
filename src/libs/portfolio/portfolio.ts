@@ -602,4 +602,33 @@ export class Portfolio {
       collections
     }
   }
+
+  async getTokensByAddresses(
+    accountAddr: string,
+    tokenAddrs: string[],
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints'>
+  ): Promise<[TokenError, TokenResult][]> {
+    const uniqueTokenAddrs = [...new Set(tokenAddrs)]
+
+    if (!uniqueTokenAddrs.length) return []
+
+    const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
+      ? LIMITS.deploylessProxyMode
+      : LIMITS.deploylessStateOverrideMode
+
+    const [tokensWithErrResult] = await flattenResults(
+      paginate(uniqueTokenAddrs, limits.erc20).map((page, index) =>
+        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)
+      )
+    )
+
+    return tokensWithErrResult.map(([error, token]) => [
+      error,
+      {
+        ...token,
+        priceIn: token.priceIn || [],
+        marketDataIn: token.marketDataIn || []
+      }
+    ])
+  }
 }
