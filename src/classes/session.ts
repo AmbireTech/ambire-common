@@ -5,6 +5,7 @@ export interface SessionInitProps {
   url?: string
   tabId?: number
   windowId?: number
+  wcTopic?: string
 }
 export interface SessionProp {
   icon?: string
@@ -51,6 +52,8 @@ export class Session {
 
   messenger?: Messenger
 
+  wcTopic?: string
+
   lastHandledRequestIds: { [providerId: string]: number }
 
   isWeb3App: boolean = false
@@ -58,9 +61,17 @@ export class Session {
   isAmbireNext: boolean = false
 
   sendMessage(event: any, data: any) {
+    console.log(
+      '[Session] sendMessage called, sessionId:',
+      this.sessionId,
+      'event:',
+      event,
+      'hasMessenger:',
+      !!this.messenger
+    )
     if (!this.messenger) {
       console.error(
-        `Cannot send message for session with id: ${this.sessionId} - messenger not initialized`
+        `[Session] Cannot send message for session with id: ${this.sessionId} - messenger not initialized`
       )
       return
     }
@@ -76,7 +87,7 @@ export class Session {
     )
   }
 
-  constructor({ tabId, windowId, url }: SessionInitProps = {}) {
+  constructor({ tabId, windowId, url, wcTopic }: SessionInitProps = {}) {
     if (url) {
       this.origin = new URL(url).origin
     } else {
@@ -85,6 +96,7 @@ export class Session {
     this.id = getDappIdFromUrl(this.origin)
     this.tabId = tabId || Date.now()
     this.windowId = windowId
+    this.wcTopic = wcTopic
 
     // Track requestIds per providerId, since we inject an EthereumProvider into all frames for the same session
     this.lastHandledRequestIds = new Proxy(

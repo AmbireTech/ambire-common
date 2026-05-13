@@ -17,10 +17,10 @@ import {
 } from '../../consts/dapps/dapps'
 import {
   Dapp,
-  DefiLlamaChain,
-  DefiLlamaProtocol,
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
+  DefiLlamaChain,
+  DefiLlamaProtocol,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController
@@ -471,14 +471,23 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
+  async getOrCreateDappSession({ windowId, tabId, url, wcTopic }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
-    if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
+    if (this.dappSessions[sessionId]) {
+      if (wcTopic && !this.dappSessions[sessionId].wcTopic) {
+        this.dappSessions[sessionId].wcTopic = wcTopic
+      }
+      return this.dappSessions[sessionId]
+    }
 
-    return this.#createDappSession({ windowId, tabId, url })
+    return this.#createDappSession({ windowId, tabId, url, wcTopic })
+  }
+
+  getDappSessionByWcTopic(wcTopic: string): Session | undefined {
+    return Object.values(this.dappSessions).find((session) => session.wcTopic === wcTopic)
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
@@ -520,6 +529,15 @@ export class DappsController extends EventEmitter implements IDappsController {
     delete this.dappSessions[sessionId]
 
     this.emitUpdate()
+  }
+
+  deleteDappSessionByWcTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (session) {
+      delete this.dappSessions[session.sessionId]
+      this.emitUpdate()
+    }
+    return session
   }
 
   broadcastDappSessionEvent = async (
