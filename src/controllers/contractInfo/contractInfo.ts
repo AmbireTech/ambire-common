@@ -1,4 +1,4 @@
-import { IContractInfoController, Selectors, SelectorsFromStorage } from '@/interfaces/contractInfo'
+import { IContractInfoController, Selectors } from '@/interfaces/contractInfo'
 import { IEventEmitterRegistryController } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
@@ -9,6 +9,9 @@ import wait from '@/utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const FUNCTION_SELECTORS_STORAGE_KEY = 'functionSelectors'
+export const SELECTOR_SUCCESS_DEADLINE_MS = 30 * 24 * 60 * 60 * 1000
+export const SELECTOR_NOT_FOUND_DEADLINE_MS = SELECTOR_SUCCESS_DEADLINE_MS
+export const SELECTOR_ERROR_DEADLINE_MS = 5 * 60 * 1000
 
 // The ContractInfoController is responsible for getting function selectors for contracts
 export class ContractInfoController extends EventEmitter implements IContractInfoController {
@@ -18,7 +21,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
   #debounceBufferForSelectors: Set<string> = new Set()
 
-  #debounceSelectorFetchPromise?: Promise<() => void>
+  #debounceSelectorFetchPromise?: Promise<void>
 
   #featureFlag: IFeatureFlagsController
 
@@ -60,33 +63,37 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   async #load() {
-    const selectorsFromStorage: SelectorsFromStorage = await this.#storage.get(
-      FUNCTION_SELECTORS_STORAGE_KEY,
-      {}
-    )
-    this.selectors = Object.fromEntries(
-      Object.entries(selectorsFromStorage).map(([k, data]): [string, Selectors[string]] => {
-        return [k, { status: 'success', data }]
-      })
-    )
-
-    // Emit update after loading to signal readiness
+    this.selectors = await this.#storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
     this.emitUpdate()
   }
 
   async #storeSelectorsInStorage() {
-    const selectorsToStore: SelectorsFromStorage = {}
+    const selectorsToStore: Selectors = {}
     Object.entries(this.selectors).forEach(([k, v]) => {
-      if (v.status !== 'success') return
-      selectorsToStore[k] = v.data
+      if (v.status === 'loading') return
+      selectorsToStore[k] = v
     })
     await this.#storage.set(FUNCTION_SELECTORS_STORAGE_KEY, selectorsToStore)
   }
+
+  #isOld(status: Selectors[string]['status'], updatedAt: number): boolean {
+    const timeSinceUpdate = Date.now() - updatedAt
+    if (status === 'success' && timeSinceUpdate > SELECTOR_SUCCESS_DEADLINE_MS) return true
+    if (status === 'error' && timeSinceUpdate > SELECTOR_ERROR_DEADLINE_MS) return true
+    if (status === 'not-found' && timeSinceUpdate > SELECTOR_NOT_FOUND_DEADLINE_MS) return true
+    return false
+  }
+
   async #fetchBufferedSelectors() {
     await this.initialLoadPromise
-    const selectorsToFetch = [...this.#debounceBufferForSelectors].filter(
-      (s) => this.selectors[s]?.status !== 'success'
-    )
+    const selectorsToFetch = [...this.#debounceBufferForSelectors].filter((s) => {
+      return (
+        !this.selectors[s] ||
+        this.selectors[s].status === 'loading' ||
+        this.#isOld(this.selectors[s].status, this.selectors[s].updatedAt)
+      )
+    })
+
     this.#debounceBufferForSelectors.clear()
     if (!selectorsToFetch.length) return
     // transfer(address,uint256)
@@ -113,17 +120,24 @@ export class ContractInfoController extends EventEmitter implements IContractInf
           message: 'Failed to fetch contract selectors',
           sendCrashReport: true
         })
+        selectorsToFetch.forEach((s) => {
+          this.selectors[s] = { status: 'error', error: result.error, updatedAt: Date.now() }
+        })
+        this.emitUpdate()
+        void this.#storeSelectorsInStorage()
         return
       }
 
       Object.entries(result.data).forEach(([selector, signatures]) => {
-        const mappedFoundSignatures = (signatures || [])
-          .filter((s) => s)
-          .map((s) => ({ signature: s }))
+        const mappedFoundSignatures = signatures.map((s) => ({ signature: s }))
 
         if (mappedFoundSignatures.length)
-          this.selectors[selector] = { data: mappedFoundSignatures, status: 'success' }
-        else this.selectors[selector] = { status: 'not-found' }
+          this.selectors[selector] = {
+            data: mappedFoundSignatures,
+            status: 'success',
+            updatedAt: Date.now()
+          }
+        else this.selectors[selector] = { status: 'not-found', updatedAt: Date.now() }
       })
     } catch (e: any) {
       this.emitError({
@@ -133,7 +147,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
         sendCrashReport: true
       })
       selectorsToFetch.forEach((s: string) => {
-        this.selectors[s] = { status: 'error', error: e.message }
+        this.selectors[s] = { status: 'error', error: e.message, updatedAt: Date.now() }
       })
     }
     this.emitUpdate()
@@ -142,19 +156,23 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
   async getSelector(selector: string) {
     if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) return
+    const existing = this.selectors[selector]
+    if (existing) {
+      if (existing.status === 'loading') return
+      if (!this.#isOld(existing?.status, existing.updatedAt)) return
+    }
     this.#debounceBufferForSelectors.add(selector)
-    if (this.selectors[selector]?.status === 'success') return
     if (!this.#debounceSelectorFetchPromise) {
-      wait(50)
+      this.#debounceSelectorFetchPromise = wait(50)
         .then(() => this.#fetchBufferedSelectors())
         .catch((e) => {
-          console.error('The debounced this.#debounceSelectorFetchPromise failed')
+          console.error('The debounced this.#debounceSelectorFetchPromise failed', e)
         })
         .finally(() => {
           this.#debounceSelectorFetchPromise = undefined
         })
     }
-    this.selectors[selector] = { status: 'loading' }
+    this.selectors[selector] = { status: 'loading', updatedAt: Date.now() }
     this.emitUpdate()
   }
 
