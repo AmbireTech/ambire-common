@@ -9,7 +9,15 @@ import { TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getErc7730Visualization,
+  getLabel,
+  getText,
+  getToken
+} from './utils'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -422,5 +430,152 @@ describe('with (Account | Key)[] arg', () => {
 
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
+  })
+})
+
+describe('ERC-7730 descriptors', () => {
+  beforeEach(async () => {
+    accountOp.calls = []
+  })
+
+  test('prioritizes descriptor calldata humanization over local modules', async () => {
+    const call = transactions.erc20[1]!
+    accountOp.calls = [call]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'approve(address _spender, uint256 _value)': {
+                  intent: 'Authorize',
+                  fields: [
+                    {
+                      path: '_spender',
+                      label: 'Spender',
+                      format: 'addressName',
+                      visible: 'always'
+                    },
+                    {
+                      path: '_value',
+                      label: 'Amount allowance',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Authorize', [
+          {
+            label: 'Spender',
+            value: [getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')]
+          },
+          {
+            label: 'Amount allowance',
+            value: [
+              getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, 1n)
+            ]
+          }
+        ])
+      ]
+    ])
+  })
+
+  test('prioritizes descriptor EIP-712 humanization over local modules', async () => {
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          name: 'USD Coin',
+          version: '2',
+          chainId: 1,
+          verifyingContract: WETH_ADDRESS
+        },
+        types: {
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        primaryType: 'Permit',
+        message: {
+          owner: accountOp.accountAddr,
+          spender: address2,
+          value: 133700n,
+          nonce: 1n,
+          deadline: ethers.MaxUint256
+        }
+      },
+      signature: null,
+      chainId: 1n
+    }
+
+    const irMessage = humanizeMessage(permitMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    {
+                      path: 'spender',
+                      label: 'Spender',
+                      format: 'raw',
+                      visible: 'always'
+                    },
+                    {
+                      path: 'value',
+                      label: 'Max spending amount',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    },
+                    {
+                      path: 'deadline',
+                      label: 'Valid until',
+                      format: 'date',
+                      params: { encoding: 'timestamp' }
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Authorize spending of tokens', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization(address2)]
+        },
+        {
+          label: 'Max spending amount',
+          value: [getToken(WETH_ADDRESS, 133700n, undefined, 1n)]
+        },
+        {
+          label: 'Valid until',
+          value: [getText('No expiration')]
+        }
+      ])
+    ])
   })
 })

@@ -4,6 +4,17 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
+export interface HumanizerErc7730Row {
+  label: string
+  value: HumanizerVisualization[]
+}
+
+export interface HumanizerErc7730Visualization {
+  type: 'erc7730'
+  title?: string
+  rows: HumanizerErc7730Row[]
+}
+
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
@@ -25,6 +36,7 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
     }
+  | HumanizerErc7730Visualization
   | {
       type: 'token'
       address: string
@@ -34,8 +46,13 @@ export type HumanizerVisualization = (
 ) & {
   isHidden?: boolean
   id: number
+  url?: string
+  address?: string
   content?: string
+  value?: bigint
   isBold?: boolean
+  warning?: boolean
+  chainId?: bigint
   verification?: BlacklistedStatus
 }
 export interface IrCall extends Omit<Call, 'to'> {
