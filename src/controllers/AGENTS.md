@@ -80,14 +80,18 @@ There are two patterns:
 - Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
-- Always use `this.emitError` for error handling in controllers; All emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Do not throw errors in UI-facing public methods.
+- Always use `this.emitError` for error handling in controllers; all emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Public methods must never let errors propagate — use `EmittableError` (thrown inside a `withStatus` wrapper, which auto-emits it) or `try/catch` + `emitError({ level, message, error })` otherwise.
 - Public state is serialized and sent to the UI on every update, so it should be minimal and only include what's necessary for the UI. Do not store large data or sensitive data in public state. Use private fields for that and expose only derived non-sensitive data in public state if needed.
 - NEVER write expensive calculations inside getters.
 - Getter values are not automatically propagated to the UI. To update a getter value, you need to call `this.emitUpdate()`. Be VERY careful with this - you should NEVER write a getter that depends on data from another controller without subscribing to that controller's updates and calling `this.propagateUpdate(...)` in the subscription callback, otherwise the UI will not update when the underlying data changes.
 - Most controllers have `initialLoadPromise` that resolves when the controller finishes its initial loading (e.g., fetching data, initializing state). If you need to ensure that the controller is fully loaded before performing an action, await this promise first. Example: `await this.someController.initialLoadPromise`
 - If a controller depends on the state of the UI (e.g., which screen it is on), it should subscribe to `this.ui.uiEvent.on`
+- When retrying failed background fetches, use a retry counter with a maximum number of attempts (reset on success) and an increasing delay. For periodic polling with retry, use `RecurringTimeout` with adaptive intervals (shorter on failure, longer on success). See `PortfolioController.updateExchangeList()`, `DappsController.#retryFetchAndUpdateInterval`, and `ContractNamesController`'s `retryAfter` timestamps for examples.
+- ALWAYS guard async operations that update state with appropriate stale-data checks, such as debounce, unique ID/version checks, or cancellation with `AbortController`, to prevent
+state corruption from out-of-order or concurrent operations. Examples of these patterns can be found in `SwapAndBridgeController` and `AccountPickerController`.
 
 ## Controller list
+ALWAYS update this list when creating a new controller, and provide a one-sentence description of its responsibilities. 
 
 - **MainController** – Orchestrates all controllers, wires their dependencies, and handles top-level actions.
 - **EventEmitterRegistryController** – Maintains a registry of active controllers for external state synchronization.
@@ -121,8 +125,8 @@ There are two patterns:
 - **SurveyController** – Fetches and submits in-app survey questions and responses.
 - **SwapAndBridgeController** – Manages swap and bridge quotes, routes, and active cross-chain transactions.
 - **TransferController** – Builds and validates simple token-transfer transactions.
+- **UiController** – Manages UI windows, popups, and view stacks.
+- **TransfersScannerController** – Scans blockchain logs for incoming token transfers to user accounts.
 - **TransactionManagerController** – Coordinates the transaction flow, delegating to form state and intent controllers
 - **TransactionFormState** – Manages the shared transaction form state (amount, tokens, validation)
 - **IntentController** – Handles intent-based transaction quotes and cross-chain swap parameters.
-- **TransfersScannerController** – Scans blockchain logs for incoming token transfers to user accounts.
-- **UiController** – Manages UI windows, popups, and view stacks.

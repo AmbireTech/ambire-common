@@ -31,4 +31,4 @@ typescript, ethers, viem, jest, hardhat
 - NEVER cover up bugs and security issues by writing tests that expect buggy behaviour. If you find a bug, write a test that fails because of it, prefix it with `BUG:`, and report it to the human in your answer.
 
 ## Controllers
-See `src/ambire-common/src/controllers/AGENTS.md` for a list of controllers and their responsibilities. Controllers are the core of the wallet's business logic and state management.
+See `src/controllers/AGENTS.md` for a list of controllers and their responsibilities. Controllers are the core of the wallet's business logic and state management.
