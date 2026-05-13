@@ -1416,7 +1416,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       if (counter >= 30) return activityAccountOp.txnId
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      await wait(1000)
+      await wait(2000)
       return this.getConfirmedTxId(submittedAccountOp, counter + 1)
     }
 
