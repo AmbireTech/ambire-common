@@ -1021,6 +1021,8 @@ export class MainController extends EventEmitter implements IMainController {
     const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
     dappHandlers.forEach((handler) => {
       if (txnId) {
+        // for MultipleTxns, the correct txnId is passed to the handler;
+        // otherwise, use the confirmed txnId
         const finalTxnId =
           submittedAccountOp.identifiedBy.type === 'MultipleTxns' ? handler.txnId || txnId : txnId
 
@@ -1753,7 +1755,13 @@ export class MainController extends EventEmitter implements IMainController {
       if (dappPromise.meta.isWalletSendCalls) {
         dappPromise.resolve({ hash: getDappIdentifier(submittedAccountOp) })
       } else {
-        dappHandlers.push({ promise: dappPromise, txnId: submittedAccountOp.txnId })
+        // if the submittedAccountOp identifier is MultipleTxns,
+        // the txnId for the dappPromise will be in the call itself
+        const submittedCall = submittedAccountOp.calls.find(
+          (call) => call.dappPromiseId === dappPromise.id
+        )
+
+        dappHandlers.push({ promise: dappPromise, txnId: submittedCall?.txnId })
       }
     })
 
