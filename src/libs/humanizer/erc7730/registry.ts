@@ -1,8 +1,8 @@
 import { isAddress } from 'ethers'
 
+import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { Message } from '../../../interfaces/userRequest'
 import { getEip712EncodeTypeHash } from './eip712'
 import {
   Erc7730CalldataIndex,
@@ -20,10 +20,77 @@ export const ERC7730_REGISTRY_BASE_URL =
 const ERC7730_CALLDATA_INDEX_URL = `${ERC7730_REGISTRY_BASE_URL}index.calldata.json`
 const ERC7730_EIP712_INDEX_URL = `${ERC7730_REGISTRY_BASE_URL}index.eip712.json`
 
+const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
+const PERMIT2_APPROVE_SELECTOR = '0x87517c45'
+const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+
 let calldataIndexPromise: Promise<Erc7730CalldataIndex> | null = null
 let eip712IndexPromise: Promise<Erc7730Eip712Index> | null = null
 
 const descriptorCache = new Map<string, Promise<Erc7730ResolvedDescriptor>>()
+
+const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
+  path: 'built-in/erc20-approve',
+  descriptor: {
+    display: {
+      formats: {
+        'approve(address _spender, uint256 _value)': {
+          intent: 'Approve',
+          fields: [
+            {
+              path: '#._spender',
+              label: 'Spender',
+              format: 'addressName',
+              visible: 'always'
+            },
+            {
+              path: '#._value',
+              label: 'Amount',
+              format: 'tokenAmount',
+              params: { tokenPath: '@.to' },
+              visible: 'always'
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+
+const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
+  path: 'built-in/permit2-approve',
+  descriptor: {
+    display: {
+      formats: {
+        'approve(address token, address spender, uint160 amount, uint48 expiration)': {
+          intent: 'Approve',
+          fields: [
+            {
+              path: '#.spender',
+              label: 'Spender',
+              format: 'addressName',
+              visible: 'always'
+            },
+            {
+              path: '#.amount',
+              label: 'Amount',
+              format: 'tokenAmount',
+              params: { tokenPath: '#.token' },
+              visible: 'always'
+            },
+            {
+              path: '#.expiration',
+              label: 'Approval expires',
+              format: 'date',
+              params: { encoding: 'timestamp' },
+              visible: 'always'
+            }
+          ]
+        }
+      }
+    }
+  }
+}
 
 const resolveFetch = (fetcher?: Erc7730Fetch): Erc7730Fetch | null => {
   if (fetcher) return fetcher
@@ -150,6 +217,17 @@ const getEip712Index = async (fetcher: Erc7730Fetch): Promise<Erc7730Eip712Index
 const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
   `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
 
+const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | null => {
+  const selector = call.data.slice(0, 10).toLowerCase()
+
+  if (selector === ERC20_APPROVE_SELECTOR) return ERC20_APPROVE_DESCRIPTOR
+  if (call.to.toLowerCase() === PERMIT2_ADDRESS && selector === PERMIT2_APPROVE_SELECTOR) {
+    return PERMIT2_APPROVE_DESCRIPTOR
+  }
+
+  return null
+}
+
 const getTypedMessageChainId = (message: Message): bigint | null => {
   if (message.content.kind !== 'typedMessage') return null
 
@@ -187,18 +265,21 @@ export const fetchErc7730DescriptorForCall = async (
   chainId: AccountOp['chainId'],
   fetcher?: Erc7730Fetch
 ): Promise<Erc7730ResolvedDescriptor | null> => {
+  if (!call.to || !isAddress(call.to)) return null
+
+  const builtInDescriptor = getBuiltInDescriptorForCall(call)
   const resolvedFetch = resolveFetch(fetcher)
-  if (!resolvedFetch || !call.to || !isAddress(call.to)) return null
+  if (!resolvedFetch) return builtInDescriptor
 
   try {
     const index = await getCalldataIndex(resolvedFetch)
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
-    if (!descriptorPath) return null
+    if (!descriptorPath) return builtInDescriptor
 
     return fetchDescriptor(descriptorPath, resolvedFetch)
   } catch (error) {
     console.error(error)
-    return null
+    return builtInDescriptor
   }
 }
 
