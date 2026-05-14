@@ -128,8 +128,9 @@ export class ContractInfoController extends EventEmitter implements IContractInf
         return
       }
 
-      Object.entries(result.data).forEach(([selector, signatures]) => {
-        const mappedFoundSignatures = signatures.map((s) => ({ signature: s }))
+      selectorsToFetch.forEach((selector) => {
+        const signatures = result.data[selector]
+        const mappedFoundSignatures = (signatures || []).map((s) => ({ signature: s }))
 
         if (mappedFoundSignatures.length)
           this.selectors[selector] = {

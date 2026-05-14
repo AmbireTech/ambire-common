@@ -9,7 +9,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[]
 ) => {
-  const newCalls = currentIrCalls.map((call) => {
+  const newCalls = currentIrCalls.map((call): IrCall => {
     const dataKey = !call.data || call.data === '0x' ? 'no-data' : 'has-data'
     const valueKey = call.value ? 'has-value' : 'no-value'
     const toKey = call.to ? 'has-to' : 'no-to'
@@ -73,6 +73,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
         }
         return {
           ...call,
+          isFallback: !call.fullVisualization,
           fullVisualization
         }
       default:
