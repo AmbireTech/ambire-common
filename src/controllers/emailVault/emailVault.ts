@@ -432,7 +432,6 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
           magicKey.key,
           keyStoreUid
         )
-        await this.#keyStore.removeSecret(RECOVERY_SECRET_ID)
       } else
         this.emitError({
           message: 'Email key not confirmed',
@@ -442,6 +441,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
         })
 
       if (result) {
+        await this.#keyStore.removeSecret(RECOVERY_SECRET_ID)
         await this.#getEmailVaultInfo(email, 'setup')
       } else {
         this.emitError({
