@@ -106,6 +106,41 @@ describe('ActivityController external account ops', () => {
     expect(data.externalAccountOps).toBeUndefined()
   })
 
+  it('does not add an external account op when the same account is keyed with different casing', async () => {
+    const txnId = `0x${'d'.repeat(64)}`
+    const provider = {
+      getTransaction: jest.fn(),
+      getBlock: jest.fn()
+    }
+    const { data, storage } = createStorage({
+      accountsOps: {
+        [accountAddr]: {
+          [chainId.toString()]: [
+            {
+              accountAddr,
+              chainId,
+              txnId,
+              calls: []
+            }
+          ]
+        }
+      }
+    })
+    const controller = createController(storage, provider)
+
+    await controller.addExternalAccountOp({
+      accountAddr: accountAddr.toLowerCase(),
+      chainId,
+      txnId,
+      receipt: buildReceipt(txnId)
+    })
+
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+    expect(provider.getBlock).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalled()
+    expect(data.externalAccountOps).toBeUndefined()
+  })
+
   it('does not add an external account op when the txnId already exists on an internal account op call', async () => {
     const txnId = `0x${'b'.repeat(64)}`
     const provider = {

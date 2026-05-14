@@ -128,6 +128,22 @@ const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string)
 const externalAccountOpHasTxnId = (accountOp: SubmittedAccountOpLike, txnId: string) =>
   normalizeTxnId(accountOp.txnId) === normalizeTxnId(txnId)
 
+/**
+ * Fix address checksum problems as sometimes addresses are left out
+ * only because they are not saved properly checksummed
+ */
+const getAccountOpsForAccountAndChain = <T>(
+  accountOps: { [account: string]: { [network: string]: T[] } },
+  accountAddr: string,
+  chainIdString: string
+) => {
+  const accountKey = Object.keys(accountOps).find(
+    (key) => key.toLowerCase() === accountAddr.toLowerCase()
+  )
+
+  return accountKey ? accountOps[accountKey]?.[chainIdString] || [] : []
+}
+
 const getBalanceChangeWindowFromReceipts = (
   accountOp: SubmittedAccountOp,
   receipts: TransactionReceipt[]
@@ -647,9 +663,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // a duplication guard
     const chainIdString = chainId.toString()
     const hasExistingAccountOpWithTxnId = () => {
-      const internalAccountOps = this.#accountsOps[accountAddr]?.[chainIdString] || []
-      const existingExternalAccountOps =
-        this.#externalAccountOps[accountAddr]?.[chainIdString] || []
+      const internalAccountOps = getAccountOpsForAccountAndChain(
+        this.#accountsOps,
+        accountAddr,
+        chainIdString
+      )
+      const existingExternalAccountOps = getAccountOpsForAccountAndChain(
+        this.#externalAccountOps,
+        accountAddr,
+        chainIdString
+      )
 
       return (
         internalAccountOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
@@ -731,6 +754,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     } catch (error) {
       submittedAccountOpLike.balanceChanges = undefined
     }
+
+    if (hasExistingAccountOpWithTxnId()) return
 
     if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
     if (!this.#externalAccountOps[accountAddr]![chainIdString]) {
