@@ -423,35 +423,37 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       })
     }
 
-    if (magicKey?.key) {
-      this.#isRemovingSecret = true
-      const keyStoreUid = await this.#keyStore.getKeyStoreUid()
-      result = await this.#emailVault.removeKeyStoreSecretFromRelayer(
-        email,
-        magicKey.key,
-        keyStoreUid
-      )
-      await this.#keyStore.removeSecret(RECOVERY_SECRET_ID)
-    } else
-      this.emitError({
-        message: 'Email key not confirmed',
-        level: 'minor',
-        sendCrashReport: false,
-        error: new Error('removeKeyStoreSecret: not confirmed magic link key')
-      })
+    try {
+      if (magicKey?.key) {
+        this.#isRemovingSecret = true
+        const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+        result = await this.#emailVault.removeKeyStoreSecretFromRelayer(
+          email,
+          magicKey.key,
+          keyStoreUid
+        )
+        await this.#keyStore.removeSecret(RECOVERY_SECRET_ID)
+      } else
+        this.emitError({
+          message: 'Email key not confirmed',
+          level: 'minor',
+          sendCrashReport: false,
+          error: new Error('removeKeyStoreSecret: not confirmed magic link key')
+        })
 
-    if (result) {
-      await this.#getEmailVaultInfo(email, 'setup')
-    } else {
-      this.emitError({
-        level: 'minor',
-        message: 'Error upload keyStore to email vault',
-        error: new Error('error removing keyStore secret from email vault')
-      })
+      if (result) {
+        await this.#getEmailVaultInfo(email, 'setup')
+      } else {
+        this.emitError({
+          level: 'minor',
+          message: 'Error upload keyStore to email vault',
+          error: new Error('error removing keyStore secret from email vault')
+        })
+      }
+    } finally {
+      this.#isRemovingSecret = false
+      this.emitUpdate()
     }
-
-    this.#isRemovingSecret = false
-    this.emitUpdate()
   }
 
   async recoverKeyStore(email: string, newPassword: string) {
