@@ -1,8 +1,8 @@
 import aes from 'aes-js'
-import { getBytes, hexlify, Mnemonic } from 'ethers'
+import { concat, getBytes, hexlify, Mnemonic } from 'ethers'
 
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
-import { AESGCMEncrypted } from '@/interfaces/keystore'
+import { AESGCMEncrypted, MainKeyOld } from '@/interfaces/keystore'
 import { ScryptAdapter } from '@/libs/scrypt/scryptAdapter'
 
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -34,7 +34,13 @@ const SECONDARY_INTERNAL_ADDR = '0x3Cf7535B5F800570c63E40e37BA7a9489cafDf96'
 const EXTERNAL_ADDR = '0x1A2C3802A9eC12725678dAF23DbFD13134e5893A'
 
 const createMainKey = async () =>
-  crypto.subtle.generateKey({ name: CIPHER, length: 256 }, true, ['encrypt', 'decrypt'])
+  crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(getBytes(concat([TEST_MAIN_KEY_OLD.key, TEST_MAIN_KEY_OLD.iv]))),
+    { name: CIPHER },
+    true,
+    ['encrypt', 'decrypt']
+  )
 
 const createAesCtrCiphertextFromBytes = (
   plaintext: Uint8Array,
@@ -160,6 +166,18 @@ describe('Keystore lib', () => {
       expect(hexlify(decrypted)).toBe(hexlify(plaintext))
     })
 
+    test('decryptWithKey works with CTR (calls decryptWithKeyOld internally)', async () => {
+      const exported = await crypto.subtle.exportKey('raw', key)
+      const mainKeyOld: MainKeyOld = {
+        key: new Uint8Array(exported.slice(0, 16)),
+        iv: new Uint8Array(exported.slice(16, 32))
+      }
+      const legacyPayload = createLegacyPrivateKeyPayload(mainKeyOld.key, mainKeyOld.iv)
+      const decrypted = await decryptWithKey(key, legacyPayload)
+
+      expect(hexlify(decrypted)).toBe(TEST_PRIVATE_KEY.toLowerCase())
+    })
+
     test('rejects non-CryptoKey inputs', async () => {
       await expect(
         decryptWithKey({} as CryptoKey, {
@@ -168,12 +186,6 @@ describe('Keystore lib', () => {
           iv: '0x00'
         })
       ).rejects.toThrow()
-    })
-
-    test('rejects legacy string payloads', async () => {
-      await expect(decryptWithKey(key, '0x1234')).rejects.toThrow(
-        'keystore: invalid payload for decryption'
-      )
     })
   })
 
@@ -281,7 +293,6 @@ describe('Keystore lib', () => {
 
       const result = await migrateStoredPayloadsToGCM(
         mainKey,
-        TEST_MAIN_KEY_OLD,
         storedKeys as any,
         storedSeeds as any
       )
@@ -330,7 +341,6 @@ describe('Keystore lib', () => {
 
       const result = await migrateStoredPayloadsToGCM(
         mainKey,
-        TEST_MAIN_KEY_OLD,
         [alreadyMigratedKey as any],
         [alreadyMigratedSeed as any]
       )
@@ -395,7 +405,6 @@ describe('Keystore lib', () => {
 
       const result = await migrateStoredPayloadsToGCM(
         mainKey,
-        TEST_MAIN_KEY_OLD,
         storedKeys as any,
         storedSeeds as any
       )

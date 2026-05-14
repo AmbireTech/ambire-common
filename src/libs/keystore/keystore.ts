@@ -127,7 +127,24 @@ export const decryptWithKey = async (
 
   const maybeGcmPayload = tryParseGcmPayload(payload)
 
-  if (!maybeGcmPayload) throw new Error('keystore: invalid payload for decryption')
+  if (!maybeGcmPayload) {
+    // Not a valid GCM, but also not a valid legacy payload
+    if (typeof payload !== 'string') {
+      throw new Error('keystore: invalid payload type for decryption')
+    }
+
+    const exported = await crypto.subtle.exportKey('raw', key)
+
+    // key is first 16, iv is second 16 bytes of the exported key material
+    const mainKeyOld: MainKeyOld = {
+      key: new Uint8Array(exported.slice(0, 16)),
+      iv: new Uint8Array(exported.slice(16, 32))
+    }
+
+    const decrypted = await decryptWithKeyOld(mainKeyOld, payload)
+
+    return decrypted
+  }
 
   const decrypted = await crypto.subtle.decrypt(
     {
@@ -184,7 +201,6 @@ export const deriveSecret = async (
  */
 export const migrateStoredPayloadsToGCM = async (
   mainKey: MainKey,
-  mainKeyOld: MainKeyOld,
   storedKeys: StoredKey[],
   storedSeeds: StoredKeystoreSeed[]
 ): Promise<{
@@ -202,7 +218,7 @@ export const migrateStoredPayloadsToGCM = async (
 
         if (isNotInternalKey || isAlreadyMigrated) return storedKey
 
-        const decryptedKey = await decryptWithKeyOld(mainKeyOld, storedKey.privKey as string)
+        const decryptedKey = await decryptWithKey(mainKey, storedKey.privKey as string)
 
         if (getBytes(decryptedKey).length !== 32) {
           throw new Error(
@@ -230,13 +246,13 @@ export const migrateStoredPayloadsToGCM = async (
         const isAlreadyMigrated = typeof storedSeed.seed !== 'string'
         if (isAlreadyMigrated) return storedSeed
 
-        const decryptedSeedBytes = await decryptWithKeyOld(mainKeyOld, storedSeed.seed as string)
+        const decryptedSeedBytes = await decryptWithKey(mainKey, storedSeed.seed as string)
         const decryptedSeedString = new TextDecoder().decode(decryptedSeedBytes)
         // Convert to entropy bytes, which is the raw form of the seed phrase without the mnemonic encoding
         const entropy = extractEntropyFromSeed(decryptedSeedString)
 
         const decryptedSeedPassphrase = storedSeed.seedPassphrase
-          ? await decryptWithKeyOld(mainKeyOld, storedSeed.seedPassphrase as string)
+          ? await decryptWithKey(mainKey, storedSeed.seedPassphrase as string)
           : null
 
         return {

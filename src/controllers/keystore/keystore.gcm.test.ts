@@ -1,8 +1,8 @@
 import aes from 'aes-js'
-import { concat, getBytes, hexlify, keccak256, Wallet } from 'ethers'
+import { concat, getBytes, hexlify, keccak256, toUtf8Bytes, verifyMessage, Wallet } from 'ethers'
 
 import { EntropyGenerator } from '@/libs/entropyGenerator/entropyGenerator'
-import { CIPHER, CIPHER_OLD, getBytesForSecret, SCRYPT_PARAMS } from '@/libs/keystore/keystore'
+import * as keystoreLib from '@/libs/keystore/keystore'
 import { ScryptAdapter } from '@/libs/scrypt/scryptAdapter'
 import wait from '@/utils/wait'
 import { describe, expect } from '@jest/globals'
@@ -17,6 +17,8 @@ import { StoredKey, StoredKeystoreSeed } from '../../interfaces/keystore'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { KeystoreController } from './keystore'
+
+const { CIPHER, CIPHER_OLD, getBytesForSecret, SCRYPT_PARAMS } = keystoreLib
 
 const uiManager = mockUiManager().uiManager
 
@@ -679,6 +681,69 @@ describe('CTR to GCM migration', () => {
     expect(joinedEmittedErrorMessage).not.toContain(String(MOCK_INVALID_KEY.privKey))
 
     consoleErrorSpy.mockRestore()
+    restore()
+  })
+  it('should allow the user to view saved seeds and sign if the password is correct, even if the secret failed to migrate', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl, storageCtrl } = await prepareTest()
+
+    const encryptMainKeyWithSecretSpy = jest
+      .spyOn(keystoreLib, 'encryptMainKeyWithSecret')
+      .mockRejectedValueOnce(new Error('Encryption failed'))
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.seeds).toHaveLength(5)
+
+    // Verify that seeds can be accessed despite the secret migration failing
+    const rawSeedOne = (await keystoreCtrl.getSavedSeed('seed-12-word')).seed
+    const rawSeedTwo = (await keystoreCtrl.getSavedSeed('seed-24-word')).seed
+
+    expect(rawSeedOne).toBe(MOCK_12_WORD_SEED)
+    expect(rawSeedTwo).toBe(MOCK_24_WORD_SEED)
+
+    // The secret should still be in the old format because the migration failed
+    const secretsAfter = await storageCtrl.get('keystoreSecrets', [])
+    expect(secretsAfter).toHaveLength(1)
+    expect(secretsAfter[0]!.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+
+    // Ensure that private keys are also accessible
+    const internalKeyJson = await keystoreCtrl.exportKeyWithPasscode(
+      MOCK_INTERNAL_KEY.addr,
+      MOCK_INTERNAL_KEY.type,
+      'tempPass'
+    )
+    const wallet = await Wallet.fromEncryptedJson(JSON.parse(internalKeyJson), 'tempPass')
+    expect(wallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+
+    encryptMainKeyWithSecretSpy.mockRestore()
+    restore()
+  })
+  it('should allow the user to sign messages if the password is correct, even if the secret failed to migrate', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl } = await prepareTest()
+
+    const encryptMainKeyWithSecretSpy = jest
+      .spyOn(keystoreLib, 'encryptMainKeyWithSecret')
+      .mockRejectedValueOnce(new Error('Encryption failed'))
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.keys).toHaveLength(3)
+
+    const internalKey = keystoreCtrl.keys.find((k) => k.type === 'internal')!
+
+    // Encode the message
+    const message = toUtf8Bytes('Hello, world!')
+    const signer = await keystoreCtrl.getSigner(internalKey.addr, internalKey.type)
+    const signature = await signer.signMessage(hexlify(message))
+
+    // Mock signer always returns ''
+    expect(signature).toBe('')
+
+    encryptMainKeyWithSecretSpy.mockRestore()
     restore()
   })
 })

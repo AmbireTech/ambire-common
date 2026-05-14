@@ -292,7 +292,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       try {
         await this.#migrateSecretToGCM(secretEntry.id, secretKey)
 
-        await this.#migrateStoredPayloadsToGCMIfNeeded(mainKeyOld)
+        await this.#migrateStoredPayloadsToGCMIfNeeded()
       } catch (e) {
         this.emitError({
           message: 'Keystore migration to GCM failed.',
@@ -440,12 +440,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   /**
    * Migrates all AES-CTR encrypted payloads (main key, stored keys and seeds) to AES-GCM encryption.
    */
-  async #migrateStoredPayloadsToGCMIfNeeded(mainKeyOld: MainKeyOld) {
+  async #migrateStoredPayloadsToGCMIfNeeded() {
     if (!this.#mainKey) throw new Error('keystore: needs to be unlocked')
 
     const { migratedKeys, migratedSeeds, failedMigrations } = await migrateStoredPayloadsToGCM(
       this.#mainKey,
-      mainKeyOld,
       this.#keystoreKeys,
       this.#keystoreSeeds
     )
@@ -1106,7 +1105,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
 
-    const entropyBytes = await decryptWithKey(this.#mainKey, keystoreSeed.seed)
+    const seedBytes = await decryptWithKey(this.#mainKey, keystoreSeed.seed)
     let seedPassphrase: string | null = null
 
     if (keystoreSeed.seedPassphrase) {
@@ -1119,7 +1118,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       if (seedPassphrase === '') seedPassphrase = null
     }
 
-    const decryptedSeed = reconstructSeedFromEntropy(entropyBytes, seedPassphrase)
+    // Decrypt as encoded text first, even if it's entropy
+    let decryptedSeed = new TextDecoder().decode(seedBytes)
+
+    // Seeds after the GCM migration are stored as entropy bytes, so we have to
+    // reconstruct the seed from that
+    if (typeof keystoreSeed.seed !== 'string') {
+      decryptedSeed = reconstructSeedFromEntropy(seedBytes, seedPassphrase)
+    } else if (!Mnemonic.isValidMnemonic(decryptedSeed)) {
+      throw new Error('keystore: invalid seed stored')
+    }
 
     return {
       ...keystoreSeed,
