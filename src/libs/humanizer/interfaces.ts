@@ -32,7 +32,6 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
 ) & {
-  isHidden?: boolean
   id: number
   content?: string
   isBold?: boolean
