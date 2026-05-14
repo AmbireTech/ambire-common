@@ -74,11 +74,19 @@ export class StorageController extends EventEmitter implements IStorageControlle
    * The default value was mistakenly set to an empty array in a previous version, while it should have been an empty object.
    */
   async #fixSelectedAccountDismissedBannerIdsType() {
-    const dismissedBannerIds = await this.#storage.get('selectedAccountDismissedBannerIds')
+    const MIGRATION_KEY = 'fixSelectedAccountDismissedBannerIdsType'
+    const [dismissedBannerIds, passedMigrations] = await Promise.all([
+      this.#storage.get('selectedAccountDismissedBannerIds'),
+      this.#storage.get('passedMigrations', [])
+    ])
+
+    if (passedMigrations.includes(MIGRATION_KEY)) return
 
     if (dismissedBannerIds && Array.isArray(dismissedBannerIds)) {
       await this.#storage.set('selectedAccountDismissedBannerIds', {})
     }
+
+    await this.#storage.set('passedMigrations', [...new Set([...passedMigrations, MIGRATION_KEY])])
   }
 
   // As of version 4.24.0, a new Network interface has been introduced,
