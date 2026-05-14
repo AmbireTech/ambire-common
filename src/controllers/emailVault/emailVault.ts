@@ -423,22 +423,24 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       })
     }
 
+    if (!magicKey?.key) {
+      this.emitError({
+        message: 'Email key not confirmed',
+        level: 'minor',
+        sendCrashReport: false,
+        error: new Error('removeKeyStoreSecret: not confirmed magic link key')
+      })
+      this.emitUpdate()
+      return
+    }
     try {
-      if (magicKey?.key) {
-        this.#isRemovingSecret = true
-        const keyStoreUid = await this.#keyStore.getKeyStoreUid()
-        result = await this.#emailVault.removeKeyStoreSecretFromRelayer(
-          email,
-          magicKey.key,
-          keyStoreUid
-        )
-      } else
-        this.emitError({
-          message: 'Email key not confirmed',
-          level: 'minor',
-          sendCrashReport: false,
-          error: new Error('removeKeyStoreSecret: not confirmed magic link key')
-        })
+      this.#isRemovingSecret = true
+      const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+      result = await this.#emailVault.removeKeyStoreSecretFromRelayer(
+        email,
+        magicKey.key,
+        keyStoreUid
+      )
 
       if (result) {
         await this.#keyStore.removeSecret(RECOVERY_SECRET_ID)
