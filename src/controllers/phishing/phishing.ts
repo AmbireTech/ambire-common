@@ -124,7 +124,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #load() {
     const phishing = await this.#storage.get('phishing', {
       version: 0,
-      updatedAt: null,
+      updatedAt: 0,
       domains: [],
       addresses: []
     })

@@ -17,10 +17,10 @@ import {
 } from '../../consts/dapps/dapps'
 import {
   Dapp,
-  DefiLlamaChain,
-  DefiLlamaProtocol,
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
+  DefiLlamaChain,
+  DefiLlamaProtocol,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController
@@ -215,7 +215,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   async #load() {
     await this.#networks.initialLoadPromise
 
-    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
+    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps as Dapp[])
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
 
     void this.fetchAndUpdateDapps()

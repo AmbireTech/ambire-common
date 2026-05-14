@@ -64,8 +64,20 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeLegacyPhishingDetection() // As of version 5.32.0
       await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
+      await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
     } catch (error) {
       console.error('Storage migration error: ', error)
+    }
+  }
+
+  /**
+   * The default value was mistakenly set to an empty array in a previous version, while it should have been an empty object.
+   */
+  async #fixSelectedAccountDismissedBannerIdsType() {
+    const dismissedBannerIds = await this.#storage.get('selectedAccountDismissedBannerIds')
+
+    if (dismissedBannerIds && Array.isArray(dismissedBannerIds)) {
+      await this.#storage.set('selectedAccountDismissedBannerIds', {})
     }
   }
 
@@ -273,7 +285,11 @@ export class StorageController extends EventEmitter implements IStorageControlle
     ] = await Promise.all([
       this.#storage.get('passedMigrations', []),
       this.#storage.get('networks', {}),
-      this.#storage.get('previousHints', []),
+      this.#storage.get('previousHints', {
+        learnedTokens: {},
+        learnedNfts: {},
+        fromExternalAPI: {}
+      }),
       this.#storage.get('customTokens', []),
       this.#storage.get('tokenPreferences', []),
       this.#storage.get('networksWithAssetsByAccount', {}),
@@ -340,7 +356,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
             const chainId = networkIdToChainId[networkId]
             return [
               chainId,
-              // eslint-disable-next-line @typescript-eslint/no-shadow
               ops.map(({ networkId, ...rest }: any) => ({
                 ...rest,
                 chainId // Migrate networkId inside SubmittedAccountOp
@@ -362,7 +377,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
     )
 
     const migratedNetworks = Object.fromEntries(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
     )
 
@@ -400,17 +414,26 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
   }
 
-  async get<K extends keyof StorageProps | string>(
+  async get<K extends keyof StorageProps>(key: K): Promise<StorageProps[K] | undefined>
+  async get<K extends keyof StorageProps>(
     key: K,
-    defaultValue?: any
-  ): Promise<K extends keyof StorageProps ? StorageProps[K] : any> {
+    defaultValue: StorageProps[K]
+  ): Promise<StorageProps[K]>
+  async get<K extends keyof StorageProps>(
+    key: K,
+    defaultValue: null
+  ): Promise<StorageProps[K] | null>
+  async get<K extends keyof StorageProps>(
+    key: K,
+    defaultValue?: StorageProps[K] | null
+  ): Promise<StorageProps[K] | null | undefined> {
     await this.#storageMigrationsPromise
     await this.#storageUpdateQueue
 
-    return this.#storage.get(key, defaultValue)
+    return this.#storage.get(key, defaultValue) as Promise<StorageProps[K] | undefined>
   }
 
-  async set(key: string, value: any) {
+  async set<K extends keyof StorageProps>(key: K, value: StorageProps[K]) {
     await this.#storageMigrationsPromise
     this.#storageUpdateQueue = this.#storageUpdateQueue.then(async () => {
       try {
@@ -422,7 +445,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storageUpdateQueue
   }
 
-  async remove(key: string) {
+  async remove<K extends keyof StorageProps>(key: K) {
     await this.#storageMigrationsPromise
     this.#storageUpdateQueue = this.#storageUpdateQueue.then(async () => {
       try {
@@ -678,7 +701,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     if (passedMigrations.includes('cleanUpEmailVaultStorage')) return
 
     const EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP = 'emailVault' // storage key name as of v5.33.5
-    const emailVaultStorage: { email: { [email: string]: EmailVaultData } } =
+    const emailVaultStorage: { email: { [email: string]: EmailVaultData } } | null =
       await this.#storage.get(EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP, null)
 
     if (emailVaultStorage?.email) {
