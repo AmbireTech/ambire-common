@@ -448,7 +448,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       } else {
         this.emitError({
           level: 'minor',
-          message: 'Error upload keyStore to email vault',
+          message: 'Error removing keystore secret from email vault',
           error: new Error('error removing keyStore secret from email vault')
         })
       }
