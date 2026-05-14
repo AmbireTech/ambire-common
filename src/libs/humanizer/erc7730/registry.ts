@@ -21,6 +21,7 @@ const ERC7730_CALLDATA_INDEX_URL = `${ERC7730_REGISTRY_BASE_URL}index.calldata.j
 const ERC7730_EIP712_INDEX_URL = `${ERC7730_REGISTRY_BASE_URL}index.eip712.json`
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
+const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
 const PERMIT2_APPROVE_SELECTOR = '0x87517c45'
 const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
 
@@ -48,6 +49,35 @@ const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
               label: 'Amount',
               format: 'tokenAmount',
               params: { tokenPath: '@.to' },
+              visible: 'always'
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+
+const ERC20_TRANSFER_DESCRIPTOR: Erc7730ResolvedDescriptor = {
+  path: 'built-in/erc20-transfer',
+  descriptor: {
+    display: {
+      formats: {
+        'transfer(address _to, uint256 _value)': {
+          intent: 'Send',
+          fields: [
+            {
+              path: '_value',
+              label: 'Amount',
+              format: 'tokenAmount',
+              params: { tokenPath: '@.to' },
+              visible: 'always'
+            },
+            {
+              path: '_to',
+              label: 'To',
+              format: 'addressName',
+              params: { types: ['eoa'], sources: ['local', 'ens'] },
               visible: 'always'
             }
           ]
@@ -221,6 +251,7 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
   const selector = call.data.slice(0, 10).toLowerCase()
 
   if (selector === ERC20_APPROVE_SELECTOR) return ERC20_APPROVE_DESCRIPTOR
+  if (selector === ERC20_TRANSFER_SELECTOR) return ERC20_TRANSFER_DESCRIPTOR
   if (call.to.toLowerCase() === PERMIT2_ADDRESS && selector === PERMIT2_APPROVE_SELECTOR) {
     return PERMIT2_APPROVE_DESCRIPTOR
   }
@@ -276,7 +307,13 @@ export const fetchErc7730DescriptorForCall = async (
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
     if (!descriptorPath) return builtInDescriptor
 
-    return fetchDescriptor(descriptorPath, resolvedFetch)
+    const registryDescriptor = await fetchDescriptor(descriptorPath, resolvedFetch)
+    if (!builtInDescriptor) return registryDescriptor
+
+    return {
+      descriptor: mergeDescriptors(builtInDescriptor.descriptor, registryDescriptor.descriptor),
+      path: registryDescriptor.path
+    }
   } catch (error) {
     console.error(error)
     return builtInDescriptor

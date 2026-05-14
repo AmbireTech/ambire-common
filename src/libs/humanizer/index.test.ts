@@ -659,6 +659,119 @@ describe('ERC-7730 descriptors', () => {
     })
   })
 
+  test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {
+    const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+    const transferAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: usdt,
+          value: 0n,
+          data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+        }
+      ]
+    }
+    const emptyRegistryFetch = async () =>
+      ({
+        ok: true,
+        json: async () => ({})
+      }) as Response
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(
+      transferAccountOp,
+      emptyRegistryFetch
+    )
+    const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(Object.keys(descriptors)).toEqual(['0'])
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Send', [
+        {
+          label: 'Amount',
+          value: [getToken(usdt, 1000000000n, undefined, 1n)]
+        },
+        {
+          label: 'To',
+          value: [getAddressVisualization(recipient)]
+        }
+      ])
+    ])
+  })
+
+  test('keeps the standard ERC-20 transfer descriptor for WETH when a registry descriptor exists', async () => {
+    const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+    const wethRegistryPath = 'registry/weth/calldata-weth.json'
+    const transferAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: WETH_ADDRESS,
+          value: 0n,
+          data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+        }
+      ]
+    }
+    const wethRegistryFetch = async (input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url.endsWith('index.calldata.json')) {
+        return {
+          ok: true,
+          json: async () => ({
+            [`eip155:1:${WETH_ADDRESS}`]: wethRegistryPath
+          })
+        } as Response
+      }
+
+      if (url.endsWith(wethRegistryPath)) {
+        return {
+          ok: true,
+          json: async () => ({
+            display: {
+              formats: {
+                'deposit()': {
+                  intent: 'Wrap',
+                  fields: [
+                    {
+                      path: '@.value',
+                      label: 'Amount',
+                      format: 'amount'
+                    }
+                  ]
+                }
+              }
+            }
+          })
+        } as Response
+      }
+
+      throw new Error(`Unexpected ERC-7730 fetch: ${url}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(
+      transferAccountOp,
+      wethRegistryFetch
+    )
+    const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(Object.keys(descriptors)).toEqual(['0'])
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Send', [
+        {
+          label: 'Amount',
+          value: [getToken(WETH_ADDRESS, 1000000000n, undefined, 1n)]
+        },
+        {
+          label: 'To',
+          value: [getAddressVisualization(recipient)]
+        }
+      ])
+    ])
+  })
+
   test('prioritizes descriptor EIP-712 humanization over local modules', async () => {
     const permitMessage = {
       fromRequestId: 1,
