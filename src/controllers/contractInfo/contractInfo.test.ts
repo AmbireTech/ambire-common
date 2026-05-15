@@ -104,7 +104,7 @@ describe('contractInfo', () => {
         await storage.set('functionSelectors', {
           '0x095ea7b3': {
             status: 'success',
-            data: [{ signature: 'approve(address,uint256)', filtered: false }],
+            data: [{ signature: 'approve(address,uint256)' }],
             updatedAt: Date.now()
           }
         })
@@ -113,7 +113,7 @@ describe('contractInfo', () => {
     )
     expect(contractInfo.selectors?.['0x095ea7b3']).toMatchObject({
       status: 'success',
-      data: [{ signature: 'approve(address,uint256)', filtered: false }]
+      data: [{ signature: 'approve(address,uint256)' }]
     })
   })
   test('Should debounce when in quick succession', async () => {
@@ -152,11 +152,11 @@ describe('contractInfo', () => {
     void contractInfo.getSelector('0x40c10f19')
     await wait(3000)
     let storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
-    expect(storedSelectors['0x40c10f19'].data).toMatchObject([
+    expect((storedSelectors['0x40c10f19'] as any).data).toMatchObject([
       { signature: 'mint(address,uint256)' },
       { signature: 'cat642998653(address,uint256)' }
     ])
-    expect(storedSelectors['0x40c10f19'].status).toBe('success')
+    expect(storedSelectors['0x40c10f19']!.status).toBe('success')
   })
   test('Should not fetch selectors when apiForFunctionSelectors feature flag is disabled', async () => {
     const {
@@ -195,6 +195,52 @@ describe('contractInfo', () => {
     await wait(200)
     expect(cenaCalls).toBe(0)
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+  })
+
+  test('Should fetch successfully, respect fetching-disabled when flag is off, then re-fetch when flag is re-enabled', async () => {
+    let cenaCalls = 0
+    const trackingFetch = (url: any, ...args: any[]) => {
+      if ((url as string).includes('/api/v3/contracts/selectors')) cenaCalls++
+      return fetchSpy(url, ...args)
+    }
+
+    const {
+      mainCtrl: { contractInfo, featureFlags }
+    } = await makeMainController(undefined, { overrides: { fetch: trackingFetch } })
+
+    // Step 1: fetch successfully with flag enabled (default)
+    void contractInfo.getSelector('0x23b872dd')
+    await wait(3000)
+    expect(cenaCalls).toBe(1)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject(
+      (PREDEFINED_SELECTORS['0x23b872dd'] as any).data
+    )
+
+    // Step 2: disable the feature flag
+    await featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
+
+    // Step 3: attempt to fetch a new selector while flag is disabled — no network call, status marked as fetching-disabled
+    void contractInfo.getSelector('0xa9059cbb')
+    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('fetching-disabled')
+
+    await wait(3000)
+    expect(cenaCalls).toBe(1)
+    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('fetching-disabled')
+
+    // Step 4: re-enable the feature flag
+    await featureFlags.setFeatureFlag('apiForFunctionSelectors', true)
+
+    // Step 5: call getSelector for the previously-disabled selector — it should now be fetched
+    void contractInfo.getSelector('0xa9059cbb')
+    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('loading')
+
+    await wait(3000)
+    expect(cenaCalls).toBe(2)
+    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('success')
+    expect((contractInfo.selectors['0xa9059cbb'] as any).data).toMatchObject(
+      (PREDEFINED_SELECTORS['0xa9059cbb'] as any).data
+    )
   })
 
   test('Should re-fetch a selector whose updatedAt is older than SELECTOR_SUCCESS_DEADLINE_MS', async () => {

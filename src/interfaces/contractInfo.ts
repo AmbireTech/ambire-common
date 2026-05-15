@@ -10,4 +10,5 @@ export interface Selectors {
     | { status: 'error'; error: string; updatedAt: number }
     | { status: 'not-found'; updatedAt: number }
     | { status: 'loading'; updatedAt: number }
+    | { status: 'fetching-disabled'; updatedAt: number }
 }

@@ -156,11 +156,19 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   async getSelector(selector: string) {
-    if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) return
+    if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) {
+      this.selectors[selector] = { status: 'fetching-disabled', updatedAt: Date.now() }
+      this.emitUpdate()
+      return
+    }
     const existing = this.selectors[selector]
     if (existing) {
       if (existing.status === 'loading') return
-      if (!this.#isOld(existing?.status, existing.updatedAt)) return
+      if (
+        existing.status !== 'fetching-disabled' &&
+        !this.#isOld(existing?.status, existing.updatedAt)
+      )
+        return
     }
     this.#debounceBufferForSelectors.add(selector)
     if (!this.#debounceSelectorFetchPromise) {
