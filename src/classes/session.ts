@@ -61,17 +61,11 @@ export class Session {
   isAmbireNext: boolean = false
 
   sendMessage(event: any, data: any) {
-    console.log(
-      '[Session] sendMessage called, sessionId:',
-      this.sessionId,
-      'event:',
-      event,
-      'hasMessenger:',
-      !!this.messenger
-    )
     if (!this.messenger) {
+      if (this.wcTopic && this.wcTopic.startsWith('temp_wallet_connect_session')) return
+
       console.error(
-        `[Session] Cannot send message for session with id: ${this.sessionId} - messenger not initialized`
+        `[Session] Cannot send message for session with id: ${this.sessionId} - messenger not initialized.`
       )
       return
     }

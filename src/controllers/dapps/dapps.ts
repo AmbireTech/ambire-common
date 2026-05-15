@@ -476,12 +476,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
-    if (this.dappSessions[sessionId]) {
-      if (wcTopic && !this.dappSessions[sessionId].wcTopic) {
-        this.dappSessions[sessionId].wcTopic = wcTopic
-      }
-      return this.dappSessions[sessionId]
-    }
+    if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
     return this.#createDappSession({ windowId, tabId, url, wcTopic })
   }
@@ -537,7 +532,6 @@ export class DappsController extends EventEmitter implements IDappsController {
       delete this.dappSessions[session.sessionId]
       this.emitUpdate()
     }
-    return session
   }
 
   broadcastDappSessionEvent = async (
@@ -547,7 +541,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     skipPermissionCheck?: boolean
   ) => {
     await this.initialLoadPromise
-
     let dappSessions: { sessionId: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
@@ -569,6 +562,18 @@ export class DappsController extends EventEmitter implements IDappsController {
         }
       }
     })
+
+    // on disconnect clean up the WC sessions
+    if (ev === 'disconnect') {
+      dappSessions.forEach((dappSession) => {
+        if (
+          this.dappSessions[dappSession.sessionId] &&
+          this.dappSessions[dappSession.sessionId]?.wcTopic
+        ) {
+          this.deleteDappSession(dappSession.sessionId)
+        }
+      })
+    }
   }
 
   async #buildDapp(dapp: {
