@@ -1,12 +1,14 @@
 import aes from 'aes-js'
-import { concat, getBytes, hexlify, keccak256, toUtf8Bytes, verifyMessage, Wallet } from 'ethers'
+import { concat, getBytes, hexlify, keccak256, toUtf8Bytes, Wallet } from 'ethers'
+import { verifyMessage } from 'viem'
 
 import { EntropyGenerator } from '@/libs/entropyGenerator/entropyGenerator'
 import * as keystoreLib from '@/libs/keystore/keystore'
+import { KeystoreSigner } from '@/libs/keystoreSigner/keystoreSigner'
 import { ScryptAdapter } from '@/libs/scrypt/scryptAdapter'
 import wait from '@/utils/wait'
 import { describe, expect } from '@jest/globals'
-import { CTR_STORAGE, InternalSigner, LedgerSigner } from '@test/keystore'
+import { CTR_STORAGE, LedgerSigner } from '@test/keystore'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
@@ -219,7 +221,7 @@ const mockOldAesStorageWithBiometrics = async (storageCtrl: StorageController) =
   await storageCtrl.set('keystoreKeys', mockKeys)
 }
 
-const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
+const keystoreSigners = { internal: KeystoreSigner, ledger: LedgerSigner }
 
 const prepareTest = async (
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>,
@@ -740,8 +742,13 @@ describe('CTR to GCM migration', () => {
     const signer = await keystoreCtrl.getSigner(internalKey.addr, internalKey.type)
     const signature = await signer.signMessage(hexlify(message))
 
-    // Mock signer always returns ''
-    expect(signature).toBe('')
+    const valid = await verifyMessage({
+      address: internalKey.addr,
+      message: 'Hello, world!',
+      signature: signature as Hex
+    })
+
+    expect(valid).toBe(true)
 
     encryptMainKeyWithSecretSpy.mockRestore()
     restore()
