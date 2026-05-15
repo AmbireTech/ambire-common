@@ -17,10 +17,10 @@ import {
 } from '../../consts/dapps/dapps'
 import {
   Dapp,
-  DefiLlamaChain,
-  DefiLlamaProtocol,
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
+  DefiLlamaChain,
+  DefiLlamaProtocol,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController
@@ -178,7 +178,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         domainId && dappsNotToFilterOutByDomain.includes(domainId)
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
-      const hasNoNetworks = d.chainIds.length === 0
+      const hasNoNetworks = !d.chainIds || d.chainIds.length === 0
       const hasLowTVL = !d.tvl || d.tvl <= 15_000_000
 
       // Remove dapps that are not in excluded categories and either have no networks or low TVL
@@ -256,8 +256,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
-      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter((d) =>
-        ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
+      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
+        (d) => !!d.blacklisted && ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
       )
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -623,7 +623,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         await this.broadcastDappSessionEvent(
           'chainChanged',
           {
-            chain: networkChainIdToHex(dapp.chainId),
+            chain: dapp.chainId
+              ? networkChainIdToHex(dapp.chainId)
+              : networkChainIdToHex(DEFAULT_CHAIN_ID),
             networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
           },
           dapp.id
