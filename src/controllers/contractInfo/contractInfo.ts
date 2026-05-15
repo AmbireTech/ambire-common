@@ -96,13 +96,10 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
     this.#debounceBufferForSelectors.clear()
     if (!selectorsToFetch.length) return
-    // transfer(address,uint256)
-    // transfer(bytes4[9],bytes5[6],int48[11])
-    // the calldata of the second one will not be decodable by the first signature
-    // even though the second one is considered 'junk' by sourcify (Apr 2026)
-    // we  want to be able to decode even mined function selectors
-    const jointSelectors = selectorsToFetch.join(',')
-    const cenaUrl = `${this.#cenaUrl}/api/v3/contracts/selectors?selectors=${jointSelectors}`
+    // send only part of the selectors just so we do not reveal the whole thing to the backend
+    // for privacy reasons
+    const joinPrivateSelectors = [...new Set(selectorsToFetch.map((s) => s.slice(0, 6)))].join(',')
+    const cenaUrl = `${this.#cenaUrl}/api/v3/contracts/selectors?selectors=${joinPrivateSelectors}`
     try {
       const result:
         | { success: false; error: string }
