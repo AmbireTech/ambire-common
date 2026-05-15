@@ -151,7 +151,7 @@ describe('contractInfo', () => {
 
     void contractInfo.getSelector('0x40c10f19')
     await wait(3000)
-    let storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
+    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
     expect((storedSelectors['0x40c10f19'] as any).data).toMatchObject([
       { signature: 'mint(address,uint256)' },
       { signature: 'cat642998653(address,uint256)' }
@@ -165,8 +165,10 @@ describe('contractInfo', () => {
 
     void featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
     void contractInfo.getSelector('0x23b872dd')
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('fetching-disabled')
     await wait(3000)
     expect(fetchSourcifyCounter).toBe(0)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('fetching-disabled')
   })
 
   test('Should not re-fetch a selector with a fresh updatedAt', async () => {
