@@ -1,8 +1,9 @@
 import fetch from 'node-fetch'
 
+import { BlacklistedStatus } from '@/interfaces/phishing'
+import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
 
-import { PhishingController } from '../phishing/phishing'
 import { suppressConsole } from '../../../test/helpers/console'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -10,9 +11,10 @@ import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
-import { DAPP_VERIFICATION_BANNER_IDS, type Dapp } from '../../interfaces/dapp'
+import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
+import { PhishingController } from '../phishing/phishing'
 
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
@@ -94,6 +96,9 @@ describe('DappsController', () => {
       await storageCtrl.set('dappsV2', predefinedDapps)
       await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
     })
+
+    await wait(1)
+
     expect(controller.dapps.length).toBe(predefinedDapps.length)
     expect(controller.isReadyToDisplayDapps).toBe(true) // fetch and update is already running
     expect(controller.dapps.some((d) => d.name === 'AAVE')).toBe(false)
@@ -191,6 +196,8 @@ describe('DappsController', () => {
     })
     await controller.initialLoadPromise
 
+    await wait(1)
+
     void controller.setDappToConnectIfNeeded(DAPP_CONNECT_REQUEST)
 
     await new Promise((resolve) => {
@@ -269,7 +276,7 @@ describe('DappsController', () => {
       jest
         .spyOn(PhishingController.prototype, 'updateDomainsBlacklistedStatus')
         .mockImplementation(async (_urls, callback) => {
-          callback(statuses)
+          callback(statuses as { [key: string]: BlacklistedStatus })
         })
 
     test('should return loading banner for dapps with pending verification', async () => {
