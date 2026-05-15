@@ -32,7 +32,6 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
 ) & {
-  isHidden?: boolean
   id: number
   content?: string
   isBold?: boolean
@@ -41,6 +40,7 @@ export type HumanizerVisualization = (
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  isFallback?: boolean
   to?: string
 }
 export interface IrMessage extends Message {
