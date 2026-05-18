@@ -116,17 +116,49 @@ const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? block
 
 const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 
+/**
+ * Take all txnIds from the account op
+ * - normal case: accountOp.txnId
+ * - MultipleTxns case: each call.txnId
+ */
+const getInternalAccountOpTxnIds = (accountOp: SubmittedAccountOp) => {
+  return [accountOp.txnId, ...accountOp.calls.map((call) => call.txnId)].filter(
+    (txnId): txnId is string => !!txnId
+  )
+}
+
 const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string) => {
   const normalizedTxnId = normalizeTxnId(txnId)
 
-  return (
-    normalizeTxnId(accountOp.txnId) === normalizedTxnId ||
-    accountOp.calls.some((call) => normalizeTxnId(call.txnId) === normalizedTxnId)
+  return getInternalAccountOpTxnIds(accountOp).some(
+    (internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId
   )
 }
 
 const externalAccountOpHasTxnId = (accountOp: SubmittedAccountOpLike, txnId: string) =>
   normalizeTxnId(accountOp.txnId) === normalizeTxnId(txnId)
+
+const isAccountOpFinalized = (accountOp: SubmittedAccountOp) =>
+  accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+  accountOp.status !== AccountOpStatus.Pending
+
+/**
+ * Fix address checksum problems as sometimes addresses are left out
+ * only because they are not saved properly checksummed
+ */
+const getAccountOpsAccountKey = <T>(
+  accountOps: { [account: string]: { [network: string]: T[] } },
+  accountAddr: string
+) => Object.keys(accountOps).find((key) => key.toLowerCase() === accountAddr.toLowerCase())
+
+const getAccountOpsForAccountAndChain = <T>(
+  accountOps: { [account: string]: { [network: string]: T[] } },
+  accountAddr: string,
+  chainIdString: string
+) => {
+  const accountKey = getAccountOpsAccountKey(accountOps, accountAddr)
+  return accountKey ? accountOps[accountKey]?.[chainIdString] || [] : []
+}
 
 const getBalanceChangeWindowFromReceipts = (
   accountOp: SubmittedAccountOp,
@@ -532,6 +564,49 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  /**
+   * We could have this case:
+   * 1. We have a BroadcastedButNotConfirmed account op with an accountOp.txnId that's not the final, confirmed txnId
+   * 2. While we have this pending account op, getLogs() finds the confirmed transactions. Its txnId differs from the BroadcastedButNotConfirmed accountOp, so it gets added successfully, skipping the duplication guard
+   * 3. The BroadcastedButNotConfirmed loop completes, changes the accountOp.txnId to the real one, but it's too late as the externalAccountOp has already been added.
+   * That's why we're running back and cleaning up already added externalAccountOps with the same txnId
+   */
+  async #removeExternalAccountOpsMatchingInternalOps(accountOps: SubmittedAccountOp[]) {
+    let hasRemovedExternalAccountOps = false
+
+    accountOps.filter(isAccountOpFinalized).forEach((accountOp) => {
+      const externalAccountOpsAccountKey = getAccountOpsAccountKey(
+        this.#externalAccountOps,
+        accountOp.accountAddr
+      )
+      if (!externalAccountOpsAccountKey) return
+
+      const chainIdString = accountOp.chainId.toString()
+      const externalAccountOps =
+        this.#externalAccountOps[externalAccountOpsAccountKey]?.[chainIdString]
+      if (!externalAccountOps?.length) return
+
+      const internalTxnIds = new Set(
+        getInternalAccountOpTxnIds(accountOp).map((txnId) => normalizeTxnId(txnId))
+      )
+      if (!internalTxnIds.size) return
+
+      const filteredExternalAccountOps = externalAccountOps.filter((externalAccountOp) => {
+        const externalTxnId = normalizeTxnId(externalAccountOp.txnId)
+        return !externalTxnId || !internalTxnIds.has(externalTxnId)
+      })
+
+      if (filteredExternalAccountOps.length === externalAccountOps.length) return
+
+      this.#externalAccountOps[externalAccountOpsAccountKey]![chainIdString] =
+        filteredExternalAccountOps
+      hasRemovedExternalAccountOps = true
+    })
+
+    if (hasRemovedExternalAccountOps)
+      await this.#storage.set('externalAccountOps', this.#externalAccountOps)
+  }
+
   async filterSignedMessages(
     sessionId: string,
     filters: Filters,
@@ -647,9 +722,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // a duplication guard
     const chainIdString = chainId.toString()
     const hasExistingAccountOpWithTxnId = () => {
-      const internalAccountOps = this.#accountsOps[accountAddr]?.[chainIdString] || []
-      const existingExternalAccountOps =
-        this.#externalAccountOps[accountAddr]?.[chainIdString] || []
+      const internalAccountOps = getAccountOpsForAccountAndChain(
+        this.#accountsOps,
+        accountAddr,
+        chainIdString
+      )
+      const existingExternalAccountOps = getAccountOpsForAccountAndChain(
+        this.#externalAccountOps,
+        accountAddr,
+        chainIdString
+      )
 
       return (
         internalAccountOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
@@ -731,6 +813,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     } catch (error) {
       submittedAccountOpLike.balanceChanges = undefined
     }
+
+    if (hasExistingAccountOpWithTxnId()) return
 
     if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
     if (!this.#externalAccountOps[accountAddr]![chainIdString]) {
@@ -1259,6 +1343,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // if there are balanceChangesTasks, shouldEmitUpdate will be true
     // so they will get saved
     if (shouldEmitUpdate) {
+      // remove duplicates if encountered during a race condition
+      await this.#removeExternalAccountOpsMatchingInternalOps(updatedAccountsOps)
       await this.persistAccountsOps()
     }
 
