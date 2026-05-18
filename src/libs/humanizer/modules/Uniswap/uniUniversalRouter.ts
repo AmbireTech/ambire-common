@@ -75,12 +75,7 @@ function parseV4Actions(
         return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
       })
       parsed.push(
-        [
-          getAction('Swap'),
-          getToken(tokenIn, amountIn),
-          getLabel('for'),
-          getToken(lastToken, amountOut)
-        ],
+        [getAction('Swap'), getToken(tokenIn, 0n), getLabel('for'), getToken(lastToken, 0n)],
         ...hiddenTokens
       )
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
@@ -95,12 +90,7 @@ function parseV4Actions(
         return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
       })
       parsed.push(
-        [
-          getAction('Swap'),
-          getToken(firstToken, amountIn),
-          getLabel('for'),
-          getToken(tokenOut, amountOut)
-        ],
+        [getAction('Swap'), getToken(firstToken, 0n), getLabel('for'), getToken(tokenOut, 0n)],
         ...hiddenTokens
       )
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
@@ -112,9 +102,9 @@ function parseV4Actions(
 
       parsed.push([
         getAction('Swap'),
-        getToken(currency0, amountIn),
+        getToken(currency0, 0n),
         getLabel('for'),
-        getToken(currency1, amountOutMinimum),
+        getToken(currency1, 0n),
         // used for hint in token discovery
         getToken(hooks, 0n, true)
       ])
@@ -127,9 +117,9 @@ function parseV4Actions(
 
       parsed.push([
         getAction('Swap'),
-        getToken(currency0, amountInMaximum),
+        getToken(currency0, 0n),
         getLabel('for'),
-        getToken(currency1, amountOut),
+        getToken(currency1, 0n),
         // used for hint in token discovery
         getToken(hooks, 0n, true)
       ])
@@ -141,7 +131,19 @@ function parseV4Actions(
       )
         parsed.push([getAction('Take'), getToken(args.currency, args.amount)])
       // for hints
-      else parsed.push([getToken(args.currency, 0n, true)])
+      else {
+        const matchingSwap = [...parsed]
+          .reverse()
+          .find(
+            (humanization) =>
+              humanization[0]?.content?.includes('Swap') &&
+              humanization[3]?.type === 'token' &&
+              humanization[3].address === args.currency.toLowerCase()
+          )
+
+        if (matchingSwap) matchingSwap.push(getToken(args.currency, 0n, true))
+        else parsed.push([getToken(args.currency, 0n, true)])
+      }
     } else if (action === V4_ACTION_CODES.TAKE_ALL) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
@@ -170,25 +172,29 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
             const params = extractParams(inputsDetails, inputs[index])
             const path = parsePath(params.path)
-            parsed.push([
-              getAction('Swap'),
-              getToken(path[0], params.amountIn),
-              getLabel('for'),
-              getToken(path[path.length - 1], params.amountOutMin),
-              getDeadline(deadline)
-            ])
+            if (path.length) {
+              parsed.push([
+                getAction('Swap'),
+                getToken(path[0]!, 0n),
+                getLabel('for'),
+                getToken(path[path.length - 1]!, 0n),
+                getDeadline(deadline)
+              ])
+            }
           } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
             const params = extractParams(inputsDetails, inputs[index])
             const path = parsePath(params.path)
 
-            parsed.push([
-              getAction('Swap up to'),
-              getToken(path[path.length - 1], params.amountInMax),
-              getLabel('for'),
-              getToken(path[0], params.amountOut),
-              getDeadline(deadline)
-            ])
+            if (path.length) {
+              parsed.push([
+                getAction('Swap'),
+                getToken(path[path.length - 1]!, 0n),
+                getLabel('for'),
+                getToken(path[0]!, 0n),
+                getDeadline(deadline)
+              ])
+            }
           } else if (command === COMMANDS.SWEEP) {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
             const params = extractParams(inputsDetails, inputs[index])
@@ -242,9 +248,9 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
 
               parsed.push([
                 getAction('Swap'),
-                getToken(path[0], params.amountIn),
+                getToken(path[0], 0n),
                 getLabel('for'),
-                getToken(path[path.length - 1], params.amountOutMin),
+                getToken(path[path.length - 1], 0n),
                 getDeadline(deadline)
               ])
             } catch (e) {
@@ -266,9 +272,9 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
               if ((params.path.length / (2 + 40)) % 1 === 0) {
                 parsed.push([
                   getAction('Swap'),
-                  getToken(params.path.slice(0, 42), params.amountIn),
+                  getToken(params.path.slice(0, 42), 0n),
                   getLabel('for'),
-                  getToken('0x' + params.path.slice(-40), params.amountOut)
+                  getToken('0x' + params.path.slice(-40), 0n)
                 ])
               }
             }
@@ -278,10 +284,10 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
             const path = params.path
 
             parsed.push([
-              getAction('Swap up to'),
-              getToken(path[0], params.amountInMax),
+              getAction('Swap'),
+              getToken(path[0], 0n),
               getLabel('for'),
-              getToken(path[path.length - 1], params.amountOut),
+              getToken(path[path.length - 1], 0n),
               getDeadline(deadline)
             ])
           } else if (command === COMMANDS.PERMIT2_PERMIT) {
@@ -311,7 +317,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
             params.amountMin &&
               parsed.push([
                 getAction('Unwrap'),
-                getToken(ZeroAddress, params.amountMin),
+                getToken(ZeroAddress, 0n),
                 ...getUniRecipientText(accountOp.accountAddr, params.recipient)
               ])
           } else if (command === COMMANDS.V4_SWAP) {

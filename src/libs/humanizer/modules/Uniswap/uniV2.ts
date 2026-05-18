@@ -18,9 +18,9 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     const outputAsset = path[path.length - 1]
     return [
       getAction('Swap'),
-      getToken(path[0], amountIn),
+      getToken(path[0], 0n),
       getLabel('for'),
-      getToken(outputAsset, amountOutMin),
+      getToken(outputAsset, 0n),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
     ]
@@ -32,10 +32,10 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     const [amountOut, amountInMax, path, to, deadline] = iface.parseTransaction(call)?.args || []
     const outputAsset = path[path.length - 1]
     return [
-      getAction('Swap up to'),
-      getToken(path[0], amountInMax),
+      getAction('Swap'),
+      getToken(path[0], 0n),
       getLabel('for'),
-      getToken(outputAsset, amountOut),
+      getToken(outputAsset, 0n),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
     ]
@@ -46,9 +46,9 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     const outputAsset = path[path.length - 1]
     return [
       getAction('Swap'),
-      getToken(ZeroAddress, value),
+      getToken(ZeroAddress, 0n),
       getLabel('for'),
-      getToken(outputAsset, amountOutMin),
+      getToken(outputAsset, 0n),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
     ]
@@ -56,10 +56,10 @@ export const uniV2Mapping: HumanizerUniMatcher = {
   [iface.getFunction('swapTokensForExactETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
     const [amountOut, amountInMax, path, to, deadline] = iface.parseTransaction(call)?.args || []
     return [
-      getAction('Swap up to'),
-      getToken(path[0], amountInMax),
+      getAction('Swap'),
+      getToken(path[0], 0n),
       getLabel('for'),
-      getToken(ZeroAddress, amountOut),
+      getToken(ZeroAddress, 0n),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
     ]
@@ -68,9 +68,9 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     const [amountIn, amountOutMin, path, to, deadline] = iface.parseTransaction(call)?.args || []
     return [
       getAction('Swap'),
-      getToken(path[0], amountIn),
+      getToken(path[0], 0n),
       getLabel('for'),
-      getToken(ZeroAddress, amountOutMin),
+      getToken(ZeroAddress, 0n),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
     ]
@@ -80,10 +80,10 @@ export const uniV2Mapping: HumanizerUniMatcher = {
     const [amountOut, path, to, deadline] = args || []
     const outputAsset = path[path.length - 1]
     return [
-      getAction('Swap up to'),
-      getToken(ZeroAddress, value),
+      getAction('Swap'),
+      getToken(ZeroAddress, 0n),
       getLabel('for'),
-      getToken(outputAsset, amountOut),
+      getToken(outputAsset, 0n),
       ...getUniRecipientText(accountOp.accountAddr, to),
       getDeadline(deadline)
     ]

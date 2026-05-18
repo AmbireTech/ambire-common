@@ -4,6 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption } from '../estimate/interfaces'
 import { EOA } from './EOA'
 import { EOA7702 } from './EOA7702'
@@ -66,6 +67,14 @@ const tokenFeeOption = {
   }
 } as FeePaymentOption
 
+const accountOp = {
+  calls: [{}]
+} as AccountOp
+
+const batchAccountOp = {
+  calls: [{}, {}]
+} as AccountOp
+
 describe('custom gas price support', () => {
   test('EOA, V1 and Safe always allow custom gas prices', () => {
     expect(new EOA(account, network, accountState).canSetCustomGasPrices()).toBe(true)
@@ -86,5 +95,19 @@ describe('custom gas price support', () => {
     expect(v2.canSetCustomGasPrices(nativeFeeOption)).toBe(false)
     expect(v2.canSetCustomGasPrices(eoaNativeFeeOption)).toBe(true)
     expect(v2.canSetCustomGasPrices(tokenFeeOption)).toBe(false)
+  })
+
+  test('EOA allows custom gas only for single-call account ops', () => {
+    const eoa = new EOA(account, network, accountState)
+
+    expect(eoa.canSetCustomGas(nativeFeeOption, accountOp)).toBe(true)
+    expect(eoa.canSetCustomGas(nativeFeeOption, batchAccountOp)).toBe(false)
+  })
+
+  test('non-EOA custom gas support follows custom gas price support', () => {
+    expect(new V1(account, network, accountState).canSetCustomGas(nativeFeeOption)).toBe(true)
+    expect(new Safe(account, network, accountState).canSetCustomGas(nativeFeeOption)).toBe(true)
+    expect(new EOA7702(account, network, accountState).canSetCustomGas(tokenFeeOption)).toBe(false)
+    expect(new V2(account, network, accountState).canSetCustomGas(eoaNativeFeeOption)).toBe(true)
   })
 })

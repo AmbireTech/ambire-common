@@ -2,6 +2,7 @@ import { IStorageController } from '@/interfaces/storage'
 import { IUiController } from '@/interfaces/ui'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { getNextQuestionForAnswers } from '@/utils/survey'
+import wait from '@/utils/wait'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -23,7 +24,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
 
   #dismissBanner: (bannerId: string | number) => void
 
-  #bannerId?: string | number
+  bannerId?: string | number
+
+  surveyId?: string
 
   answers: SurveyAnswers = {}
 
@@ -82,9 +85,10 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     return this.#surveysRespondedTo.includes(surveyId)
   }
 
-  async fetchSurvey(surveyId: Survey['surveyId'], bannerId: string | number) {
-    if (this.status !== 'not-started') return
+  async fetchSurvey(surveyId: Survey['surveyId'], bannerId: string | number | undefined) {
+    if (this.status !== 'not-started' && this.status !== 'error-fetching') return
     this.status = 'loading-fetching'
+    this.surveyId = surveyId
     this.emitUpdate()
 
     let res: any
@@ -121,7 +125,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitUpdate()
       return
     }
-    this.#bannerId = bannerId
+    this.bannerId = bannerId
     this.#survey = parsedSurvey.survey
     this.status = 'success-fetched'
     this.emitUpdate()
@@ -145,7 +149,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     await this.#storage.set('surveysRespondedTo', this.#surveysRespondedTo)
   }
 
-  async #sendResponse(instanceId: string, address: string) {
+  async sendResponse(instanceId: string, address: string) {
     if (!this.#survey) {
       this.emitError({
         error: new Error('Error: this.#survey does not exist when attempting to submit answers'),
@@ -169,7 +173,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.emitUpdate()
       return
     }
-    if (this.status !== 'success-fetched') return
+    if (this.status !== 'success-fetched' && this.status !== 'error-submitting') return
 
     try {
       const payload = {
@@ -188,8 +192,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
       this.status = 'success-submitted'
       this.emitUpdate()
       await this.#storeSurveyIdAsRespondedTo(this.#survey.surveyId)
-      if (this.#bannerId) this.#dismissBanner(this.#bannerId)
-      this.#bannerId = undefined
+      if (this.bannerId) this.#dismissBanner(this.bannerId)
+      this.bannerId = undefined
+      this.surveyId = undefined
     } catch (e: any) {
       this.emitError({
         message: 'Failed to submit response.',
@@ -213,7 +218,7 @@ export class SurveyController extends EventEmitter implements ISurveyController 
 
     const hasNextQuestion = !!getNextQuestionForAnswers(this.questions || [], this.answers)
 
-    if (!hasNextQuestion) await this.#sendResponse(instanceId, address)
+    if (!hasNextQuestion) await this.sendResponse(instanceId, address)
     this.emitUpdate()
   }
 
@@ -229,8 +234,9 @@ export class SurveyController extends EventEmitter implements ISurveyController 
     this.status = 'not-started'
     this.answers = {}
     this.#survey = undefined
+    this.surveyId = undefined
     this.errorMessage = undefined
-    this.#bannerId = undefined
+    this.bannerId = undefined
     this.emitUpdate()
   }
 

@@ -85,6 +85,7 @@ import {
   TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
+  TokenError,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -460,7 +461,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.customTokens = await this.#storage.get('customTokens', [])
 
       this.#learnedAssets = await this.#storage.get('learnedAssets', this.#learnedAssets)
-      this.#previousHints = await this.#storage.get('previousHints', {})
+      this.#previousHints = await this.#storage.get('previousHints', {
+        learnedNfts: {},
+        learnedTokens: {},
+        fromExternalAPI: {}
+      })
       // Don't load fromExternalAPI hints in memory as they are no longer used
       this.#previousHints.fromExternalAPI = {}
       this.#networksWithPositionsByAccounts = await this.#storage.get(
@@ -853,6 +858,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
     return this.#portfolioLibs.get(key)!
+  }
+
+  async getTokenBalancesOnBlock(
+    accountId: AccountId,
+    chainId: bigint,
+    tokenAddrs: string[],
+    blockTag: GetOptions['blockTag'],
+    accountAddr: string = accountId
+  ): Promise<[TokenError, TokenResult][]> {
+    const network = this.#networks.networks.find((x) => x.chainId === chainId)
+
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
+
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
+
+    if (!portfolioLib) return []
+
+    return portfolioLib.getTokensByAddresses(accountAddr, tokenAddrs, { blockTag })
   }
 
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
