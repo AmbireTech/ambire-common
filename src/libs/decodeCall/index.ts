@@ -125,7 +125,7 @@ export function decodeCall(
   // in cases where the data part is 1 slot (32 bytes) and there is
   // a found function that does not have arguments
   // encountered as issue on a zero slot 0x00000.000000
-  if (data.length === '0x'.length + 64 && resultWithDiff.diff === 16) return null
+  if (data.length === '0x'.length + 32 * 2 && resultWithDiff.diff === 32 - 4) return null
   // mitigation for false positive when there is no exact match
   if (resultWithDiff.diff && data.startsWith('0x00000000')) return null
   return resultWithDiff.decoded
