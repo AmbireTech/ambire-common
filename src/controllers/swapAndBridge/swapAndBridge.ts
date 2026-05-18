@@ -31,6 +31,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapProvider
@@ -1855,10 +1856,64 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
+  async recordBridgeActivity(
+    txnId: string,
+    activeRoute: SwapAndBridgeActiveRoute,
+    status: 'completed' | 'refunded'
+  ) {
+    await this.#initialLoadPromise
+
+    // when the status is completed, we expect the funds to land on the
+    // destination chain => we use toChainId;
+    // when it's refunded, we expect the source chain => fromChainId
+    const chainId =
+      status === 'completed' ? activeRoute.route?.toChainId : activeRoute.route?.fromChainId
+    if (!chainId) {
+      const message = 'recordBridgeActivity: no chainId found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!provider) {
+      const message = 'recordBridgeActivity: no provider found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const receipt = await provider.getTransactionReceipt(txnId)
+    if (!receipt) {
+      const message = `recordBridgeActivity: no receipt found for txnId: ${txnId}`
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    await this.#activity.addExternalAccountOp({
+      accountAddr: activeRoute.sender,
+      chainId: BigInt(chainId),
+      txnId,
+      receipt,
+      callId: `${activeRoute.activeRouteId}-external`
+    })
+  }
+
   async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
+      let routeStatusResult: SwapAndBridgeRouteStatusResult = { status: null }
 
       if (!activeRoute.userTxHash || activeRoute.routeStatus === 'completed') return
 
@@ -1878,7 +1933,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // should never happen
         if (!activeRoute.route) throw new Error('Route data is missing.')
 
-        status = await this.#serviceProviderAPI.getRouteStatus({
+        routeStatusResult = await this.#serviceProviderAPI.getRouteStatus({
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
@@ -1887,6 +1942,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           requestId: (activeRoute.route.rawRoute as any)?.requestId,
           routeId: activeRoute.route.routeId
         })
+        status = routeStatusResult.status
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
         this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
@@ -1905,6 +1961,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.updateActiveRoute(activeRoute.activeRouteId, {
           error: undefined
         })
+      }
+
+      if (
+        routeStatusResult.txnId &&
+        (status === 'completed' || status === 'refunded') &&
+        activeRoute.route?.fromChainId !== activeRoute.route?.toChainId
+      ) {
+        // we shouldn't be awaiting this as it's OK to have it at a later stage
+        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute, status).catch(console.error)
       }
 
       if (status === 'completed') {

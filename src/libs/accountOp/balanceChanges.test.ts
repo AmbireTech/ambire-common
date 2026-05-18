@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { TokenError, TokenResult } from '../portfolio/interfaces'
-import { getAccountOpBalanceChanges } from './balanceChanges'
+import { getAccountOpBalanceChanges, getBalanceChangeTokenAddresses } from './balanceChanges'
 
 const buildToken = (overrides: Partial<TokenResult>): TokenResult => ({
   symbol: 'TOKEN',
@@ -51,6 +51,73 @@ const buildTransferLog = ({
 }
 
 describe('balanceChanges', () => {
+  test('filters Abstract native token alias from balance-change token addresses', () => {
+    const abstractNativeToken = '0x000000000000000000000000000000000000800A'
+    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+    expect(getBalanceChangeTokenAddresses([abstractNativeToken, usdc], 2741n)).toEqual([
+      ZeroAddress,
+      usdc
+    ])
+    expect(getBalanceChangeTokenAddresses([abstractNativeToken, usdc], 1n)).toEqual([
+      ZeroAddress,
+      abstractNativeToken,
+      usdc
+    ])
+  })
+
+  test('keeps native ETH snapshots while skipping Abstract native token alias', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const abstractNativeToken = '0x000000000000000000000000000000000000800A'
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => [
+        ok(
+          buildToken({
+            symbol: 'ETH',
+            name: 'Ethereum',
+            address: ZeroAddress,
+            chainId: 2741n,
+            amount: blockTag === 101 ? 9n : 10n
+          })
+        )
+      ])
+
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 2741n,
+      tokenAddrs: [ZeroAddress, abstractNativeToken],
+      receiptBlockNumber: 101,
+      getTokenBalancesOnBlock
+    })
+
+    expect(getTokenBalancesOnBlock).toHaveBeenNthCalledWith(
+      1,
+      accountAddr,
+      2741n,
+      [ZeroAddress],
+      101,
+      accountAddr
+    )
+    expect(getTokenBalancesOnBlock).toHaveBeenNthCalledWith(
+      2,
+      accountAddr,
+      2741n,
+      [ZeroAddress],
+      100,
+      accountAddr
+    )
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: ZeroAddress,
+        symbol: 'ETH',
+        amountBefore: 10n,
+        amountAfter: 9n,
+        balanceChange: -1n
+      })
+    ])
+  })
+
   test('computes expected balance changes on ethereum', async () => {
     const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const tokenAddrs = [ZeroAddress, '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']

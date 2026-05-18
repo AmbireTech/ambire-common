@@ -1,3 +1,5 @@
+import { Dapp } from '@/interfaces/dapp'
+
 export const dappIdsToBeRemoved = new Set([
   'legends.ambire.com', // Remove legends from the list as it was replaced with rewards.ambire.com
   'yearn.finance', // Remove the legacy Yarn Finance URL from the list
@@ -82,13 +84,14 @@ export const featuredDapps = new Set([
 ])
 
 // NOTE: The final dApp list sorting preserves the order of this list
-export const predefinedDapps = [
+export const predefinedDapps: Dapp[] = [
   {
     id: 'rewards.ambire.com',
     url: 'https://rewards.ambire.com',
     name: 'Ambire Rewards',
     icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
-    description: 'Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.',
+    description:
+      'Stake your $WALLET tokens, participate in the WalletDAO, and earn staking rewards.',
     chainIds: [1, 8453, 10, 42161, 534352, 56],
     twitter: 'ambire'
   },
@@ -117,7 +120,7 @@ export const predefinedDapps = [
     name: 'Bitrefill',
     icon: 'https://www.bitrefill.com/android-chrome-192x192.png',
     description: 'The crypto store for digital gift cards, eSIMs, and phone refills.',
-    chains: [1, 137],
+    chainIds: [1, 137],
     category: 'Payments',
     twitter: 'bitrefill'
   },
@@ -166,7 +169,7 @@ export const predefinedDapps = [
     icon: 'https://static.debank.com/image/project/logo_url/ftm_spookyswap/d14381e7154b7cfecaa8ba7887e73b95.png',
     description: 'Farm BOO with Spooky LP Tokens',
     category: 'Dexs',
-    chains: [250, 199, 146, 7332],
+    chainIds: [250, 199, 146, 7332],
     twitter: 'SpookySwap'
   },
   {
@@ -176,7 +179,7 @@ export const predefinedDapps = [
     icon: 'https://static.debank.com/image/project/logo_url/looksrare/45d6664429880a23ba34359c45bab95e.png',
     description: 'Buy & Sell NFTs, Get Rewards',
     category: 'NFT Marketplace',
-    chains: [1],
+    chainIds: [1],
     twitter: 'LooksRareNFT'
   },
   {
