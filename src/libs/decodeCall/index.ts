@@ -90,8 +90,8 @@ export function decodeCall(
     decoded: null
   }
   for (const { signature } of foundSignatures) {
-    const iface = new Interface(['function ' + signature])
     try {
+      const iface = new Interface(['function ' + signature])
       const parsed = iface.parseTransaction({ data })
       if (!parsed) continue
       const argsToReturn = arrayUnknownDecodedArgsToCustomType(
