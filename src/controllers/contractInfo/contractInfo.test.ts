@@ -307,7 +307,7 @@ describe('contractInfo', () => {
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('loading')
     expect((contractInfo.selectors['0x23b872dd'] as any).data).toBeTruthy()
     await wait(3000)
-    expect(cenaCalls).toBe(1)
+    expect(cenaCalls).toBe(2)
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('error')
 
     // Old data is preserved despite the fetch failure
@@ -318,11 +318,34 @@ describe('contractInfo', () => {
     // Error is recent — should not reattempt
     void contractInfo.getSelector('0x23b872dd')
     await wait(3000)
-    expect(cenaCalls).toBe(1)
+    expect(cenaCalls).toBe(2)
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('error')
     expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
       { signature: 'transferFrom(address,address,uint256)' }
     ])
+  })
+
+  test('Should retry with longer timeout after first attempt fails and succeed on second attempt', async () => {
+    let callCount = 0
+    const retryFetch = (url: any, ...args: any[]) => {
+      if ((url as string).includes('/api/v3/contracts/selectors')) {
+        callCount++
+        if (callCount === 1) return Promise.reject(new Error('Network error'))
+      }
+      return fetchSpy(url, ...args)
+    }
+
+    const {
+      mainCtrl: { contractInfo }
+    } = await makeMainController(undefined, { overrides: { fetch: retryFetch } })
+
+    void contractInfo.getSelector('0x23b872dd')
+    await wait(3000)
+    expect(callCount).toBe(2)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject(
+      (PREDEFINED_SELECTORS['0x23b872dd'] as any).data
+    )
   })
 
   test('Should re-fetch a selector whose updatedAt is older than SELECTOR_SUCCESS_DEADLINE_MS', async () => {

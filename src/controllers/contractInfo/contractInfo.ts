@@ -84,49 +84,36 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     return false
   }
 
-  async #fetchBufferedSelectors() {
-    await this.initialLoadPromise
-    const selectorsToFetch = [...this.#debounceBufferForSelectors].filter((s) => {
-      return (
-        !this.selectors[s] ||
-        this.selectors[s].status === 'loading' ||
-        this.#isOld(this.selectors[s].status, this.selectors[s].updatedAt)
-      )
-    })
-
-    this.#debounceBufferForSelectors.clear()
-    if (!selectorsToFetch.length) return
-    // send only part of the selectors just so we do not reveal the whole thing to the backend
-    // for privacy reasons
-    const joinPrivateSelectors = [...new Set(selectorsToFetch.map((s) => s.slice(0, 6)))].join(',')
-    const cenaUrl = `${this.#cenaUrl}/api/v3/contracts/selectors?selectors=${joinPrivateSelectors}`
+  async #attemptToFetchAndSet(selectorsToFetch: string[], timeout: number): Promise<boolean> {
+    let success = false
     try {
+      // send only part of the selectors just so we do not reveal the whole thing to the backend
+      // for privacy reasons
+      const joinPrivateSelectors = [...new Set(selectorsToFetch.map((s) => s.slice(0, 6)))].join(
+        ','
+      )
+      const cenaUrl = `${this.#cenaUrl}/api/v3/contracts/selectors?selectors=${joinPrivateSelectors}`
+
       const result:
         | { success: false; error: string }
         | { success: true; data: { [selector: string]: string[] } } = await fetchWithTimeout(
         this.#fetch,
         cenaUrl,
         {},
-        3000
+        timeout
       ).then((r) => r.json())
+      if (!result.success) throw new Error('Failed to fetch contract selectors')
+      if (
+        !result.data ||
+        typeof result.data !== 'object' ||
+        !Object.values(result.data).every(
+          (signatures) =>
+            Array.isArray(signatures) && signatures.every((s) => typeof s === 'string')
+        )
+      )
+        throw new Error('Wrong format for contract selectors')
 
-      if (!result.success) {
-        this.emitError({
-          error: new Error('Failed to fetch contract selectors'),
-          level: 'silent',
-          message: 'Failed to fetch contract selectors',
-          sendCrashReport: true
-        })
-        selectorsToFetch.forEach((s) => {
-          this.selectors[s] = { status: 'error', error: result.error, updatedAt: Date.now() }
-        })
-        this.emitUpdate()
-        void this.#storeSelectorsInStorage()
-        return
-      }
-
-      selectorsToFetch.forEach((selector) => {
-        const signatures = result.data[selector]
+      Object.entries(result.data).forEach(([selector, signatures]) => {
         const mappedFoundSignatures = (signatures || []).map((s) => ({ signature: s }))
 
         if (mappedFoundSignatures.length)
@@ -137,6 +124,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
           }
         else this.selectors[selector] = { status: 'not-found', updatedAt: Date.now() }
       })
+      success = true
     } catch (e: any) {
       this.emitError({
         error: e,
@@ -158,6 +146,25 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     }
     this.emitUpdate()
     void this.#storeSelectorsInStorage()
+    return success
+  }
+  async #fetchBufferedSelectors() {
+    await this.initialLoadPromise
+    const selectorsToFetch = [...this.#debounceBufferForSelectors].filter((s) => {
+      return (
+        !this.selectors[s] ||
+        this.selectors[s].status === 'loading' ||
+        this.#isOld(this.selectors[s].status, this.selectors[s].updatedAt)
+      )
+    })
+
+    this.#debounceBufferForSelectors.clear()
+    if (!selectorsToFetch.length) return
+    const isFirstTryOk = await this.#attemptToFetchAndSet(selectorsToFetch, 3000)
+    if (!isFirstTryOk) {
+      console.error('Failed to fetch contract selectors on first try')
+      await this.#attemptToFetchAndSet(selectorsToFetch, 10000)
+    }
   }
 
   async getSelector(selector: string) {
