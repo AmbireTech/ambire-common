@@ -797,7 +797,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
+      this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
   }
@@ -1437,6 +1437,7 @@ export class MainController extends EventEmitter implements IMainController {
       await this.activity.removeAccountData(address)
       this.requests.removeAccountData(address)
       this.signMessage.removeAccountData(address)
+      this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
         await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)

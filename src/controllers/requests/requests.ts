@@ -1316,16 +1316,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const accountError = this.#getUserRequestAccountError(
-      dappPromise.session.origin,
-      (userRequest as SignUserRequest).meta.accountAddr
-    )
-
-    if (accountError) {
-      dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
-      return
-    }
-
     await this.#addSwitchAccountUserRequest(userRequest as SignUserRequest)
   }
 
@@ -1673,21 +1663,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
     const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
     if (userRequest) await this.addUserRequests([userRequest])
-  }
-
-  #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
-    if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
-      const isAddressInAccounts = this.#accounts.accounts.some((a) => a.addr === fromAccountAddr)
-
-      if (isAddressInAccounts) return null
-
-      return 'The dApp is trying to sign using an address that is not imported in the extension.'
-    }
-    const isAddressSelected = this.#selectedAccount.account?.addr === fromAccountAddr
-
-    if (isAddressSelected) return null
-
-    return 'The dApp is trying to sign using an address that is not selected in the extension.'
   }
 
   async #addSwitchAccountUserRequest(req: SignUserRequest) {

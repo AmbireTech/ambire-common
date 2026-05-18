@@ -6,6 +6,12 @@ export type IDappsController = ControllerInterface<
   InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
 >
 
+export interface DappAccountPreferences {
+  enabled: boolean
+  selectedAccount: string
+  accounts: string[]
+}
+
 export interface PredefinedDapp {
   id: string
   name: string
@@ -30,6 +36,7 @@ export interface ExtraDappInfo {
   favorite: boolean
   blacklisted: BlacklistedStatus
   grantedPermissionId?: string
+  accountPreferences?: DappAccountPreferences
   grantedPermissionAt?: number
 }
 

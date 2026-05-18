@@ -651,6 +651,24 @@ export class DappsController extends EventEmitter implements IDappsController {
     const dappPropsToUpdate = { ...dapp }
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
+    // Notify the dapp of the preference change
+    if ('accountPreferences' in dappPropsToUpdate && dappPropsToUpdate.accountPreferences) {
+      const hasAccountChanged =
+        !existing.accountPreferences ||
+        (existing.accountPreferences &&
+          existing.accountPreferences.selectedAccount !==
+            dappPropsToUpdate.accountPreferences.selectedAccount)
+
+      if (hasAccountChanged) {
+        void this.broadcastDappSessionEvent(
+          'accountsChanged',
+          [dappPropsToUpdate.accountPreferences.selectedAccount],
+          id,
+          true
+        )
+      }
+    }
+
     if (!existing.isCustom) {
       dappPropsToUpdate.name = existing.name
     } else if (existingByDomain && existing.isCustom) {
@@ -666,6 +684,69 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
     void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+
+    this.emitUpdate()
+  }
+
+  updateDappToConnect(id: string, data: Partial<Dapp>) {
+    if (!this.dappToConnect || this.dappToConnect.id !== id) {
+      this.emitError({
+        level: 'silent',
+        message: `Trying to update dappToConnect with id ${id}, but current dappToConnect is ${this.dappToConnect?.id}`,
+        error: new Error('updateDappToConnect: id not found')
+      })
+      return
+    }
+
+    this.dappToConnect = { ...this.dappToConnect, ...data }
+    this.emitUpdate()
+  }
+
+  async onSelectedAccountChange(newAccount: string) {
+    Object.values(this.dappSessions).forEach(async (session) => {
+      if (!this.hasPermission(session.id)) return
+
+      const accountPreferences = this.getDapp(session.id)?.accountPreferences
+
+      if (!accountPreferences || !accountPreferences.enabled) {
+        await this.broadcastDappSessionEvent('accountsChanged', [newAccount], session.id, true)
+        return
+      }
+
+      const hasAccessToNextAccount = accountPreferences.accounts.includes(newAccount)
+
+      // Do nothing. The app will continue to work with the last connected account with access
+      if (!hasAccessToNextAccount) return
+
+      await this.broadcastDappSessionEvent('accountsChanged', [newAccount], session.id, true)
+    })
+  }
+
+  removeAccountData(address: string) {
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences) return
+
+      if (!dapp.accountPreferences.accounts.includes(address)) return
+
+      const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        // Disconnect the dapp if the removed account was the only one with access
+        isConnected: newAccounts.length > 0,
+        // Also delete preferences in this case
+        accountPreferences: newAccounts.length
+          ? {
+              ...dapp.accountPreferences,
+              accounts: newAccounts,
+              selectedAccount:
+                dapp.accountPreferences.selectedAccount === address
+                  ? newAccounts[0]!
+                  : dapp.accountPreferences.selectedAccount
+            }
+          : undefined
+      })
+    })
 
     this.emitUpdate()
   }
