@@ -112,8 +112,8 @@ export class ContractInfoController extends EventEmitter implements IContractInf
         )
       )
         throw new Error('Wrong format for contract selectors')
-
-      Object.entries(result.data).forEach(([selector, signatures]) => {
+      ;[...selectorsToFetch, ...Object.keys(result.data)].forEach((selector) => {
+        const signatures = result.data[selector]
         const mappedFoundSignatures = (signatures || []).map((s) => ({ signature: s }))
 
         if (mappedFoundSignatures.length)

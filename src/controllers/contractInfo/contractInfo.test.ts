@@ -348,6 +348,26 @@ describe('contractInfo', () => {
     )
   })
 
+  test('Should set status to not-found when API returns no signatures, and not reattempt while cache is fresh', async () => {
+    // 0xbeeeeeee is a selector that does not exist in the cena database
+    const selector = '0xbeeeeeee'
+
+    const {
+      mainCtrl: { contractInfo }
+    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
+
+    void contractInfo.getSelector(selector)
+    await wait(3000)
+    expect(fetchSourcifyCounter).toBe(1)
+    expect(contractInfo.selectors[selector]?.status).toBe('not-found')
+
+    // not-found result is cached — should not reattempt
+    void contractInfo.getSelector(selector)
+    await wait(3000)
+    expect(fetchSourcifyCounter).toBe(1)
+    expect(contractInfo.selectors[selector]?.status).toBe('not-found')
+  })
+
   test('Should re-fetch a selector whose updatedAt is older than SELECTOR_SUCCESS_DEADLINE_MS', async () => {
     let cenaCalls = 0
     const trackingFetch = (url: any, ...args: any[]) => {
