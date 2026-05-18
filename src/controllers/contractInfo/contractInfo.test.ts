@@ -3,11 +3,9 @@ import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
-import {
-  FUNCTION_SELECTORS_STORAGE_KEY,
-  SELECTOR_ERROR_DEADLINE_MS,
-  SELECTOR_SUCCESS_DEADLINE_MS
-} from './contractInfo'
+import { FUNCTION_SELECTORS_STORAGE_KEY, SELECTOR_SUCCESS_DEADLINE_MS } from './contractInfo'
+
+const CENA_SELECTORS_URL = 'https://cena.ambire.com/api/v3/contracts/selectors'
 
 let fetchSpy: any
 const PREDEFINED_SELECTORS: Selectors = {
@@ -89,7 +87,7 @@ let fetchSourcifyCounter = 0
 beforeEach(async () => {
   const realFetch = global.fetch
   fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((...args): any => {
-    if ((args[0] as string).includes('/api/v3/contracts')) fetchSourcifyCounter += 1
+    if ((args[0] as string).includes(CENA_SELECTORS_URL)) fetchSourcifyCounter += 1
     return realFetch(...args)
   })
 })
@@ -205,7 +203,7 @@ describe('contractInfo', () => {
   test('Should not re-fetch a selector with a fresh updatedAt', async () => {
     let cenaCalls = 0
     const trackingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes('/api/v3/contracts/selectors')) cenaCalls++
+      if ((url as string).includes(CENA_SELECTORS_URL)) cenaCalls++
       return fetchSpy(url, ...args)
     }
 
@@ -233,7 +231,7 @@ describe('contractInfo', () => {
   test('Should fetch successfully, respect fetching-disabled when flag is off, then re-fetch when flag is re-enabled', async () => {
     let cenaCalls = 0
     const trackingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes('/api/v3/contracts/selectors')) cenaCalls++
+      if ((url as string).includes(CENA_SELECTORS_URL)) cenaCalls++
       return fetchSpy(url, ...args)
     }
 
@@ -279,7 +277,7 @@ describe('contractInfo', () => {
   test('Should preserve data after expired cache + failed refetch, and skip reattempt while error is recent', async () => {
     let cenaCalls = 0
     const failingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes('/api/v3/contracts/selectors')) {
+      if ((url as string).includes(CENA_SELECTORS_URL)) {
         cenaCalls++
         return Promise.reject(new Error('Network error'))
       }
@@ -328,7 +326,7 @@ describe('contractInfo', () => {
   test('Should retry with longer timeout after first attempt fails and succeed on second attempt', async () => {
     let callCount = 0
     const retryFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes('/api/v3/contracts/selectors')) {
+      if ((url as string).includes(CENA_SELECTORS_URL)) {
         callCount++
         if (callCount === 1) return Promise.reject(new Error('Network error'))
       }
@@ -371,7 +369,7 @@ describe('contractInfo', () => {
   test('Should re-fetch a selector whose updatedAt is older than SELECTOR_SUCCESS_DEADLINE_MS', async () => {
     let cenaCalls = 0
     const trackingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes('/api/v3/contracts/selectors')) cenaCalls++
+      if ((url as string).includes(CENA_SELECTORS_URL)) cenaCalls++
       return fetchSpy(url, ...args)
     }
 
