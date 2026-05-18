@@ -154,7 +154,8 @@ export class ContractInfoController extends EventEmitter implements IContractInf
 
   async getSelector(selector: string) {
     if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) {
-      this.selectors[selector] = { status: 'fetching-disabled', updatedAt: Date.now() }
+      if (!this.selectors[selector])
+        this.selectors[selector] = { status: 'fetching-disabled', updatedAt: Date.now() }
       this.emitUpdate()
       return
     }

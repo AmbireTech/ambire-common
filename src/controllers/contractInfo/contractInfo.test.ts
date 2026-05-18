@@ -3,7 +3,11 @@ import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
-import { FUNCTION_SELECTORS_STORAGE_KEY, SELECTOR_SUCCESS_DEADLINE_MS } from './contractInfo'
+import {
+  FUNCTION_SELECTORS_STORAGE_KEY,
+  SELECTOR_ERROR_DEADLINE_MS,
+  SELECTOR_SUCCESS_DEADLINE_MS
+} from './contractInfo'
 
 let fetchSpy: any
 const PREDEFINED_SELECTORS: Selectors = {
@@ -158,6 +162,33 @@ describe('contractInfo', () => {
     ])
     expect(storedSelectors['0x40c10f19']!.status).toBe('success')
   })
+  test('Should not override an existing selector when fetching is disabled', async () => {
+    const {
+      mainCtrl: { contractInfo, featureFlags }
+    } = await makeMainController(
+      async (storage) => {
+        await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {
+          '0x23b872dd': {
+            status: 'success',
+            data: [{ signature: 'transferFrom(address,address,uint256)' }],
+            updatedAt: Date.now()
+          }
+        })
+      },
+      { overrides: { fetch: fetchSpy } }
+    )
+
+    void featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
+    void contractInfo.getSelector('0x23b872dd')
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
+      { signature: 'transferFrom(address,address,uint256)' }
+    ])
+    await wait(3000)
+    expect(fetchSourcifyCounter).toBe(0)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+  })
+
   test('Should not fetch selectors when apiForFunctionSelectors feature flag is disabled', async () => {
     const {
       mainCtrl: { contractInfo, featureFlags }
