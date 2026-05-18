@@ -276,6 +276,55 @@ describe('contractInfo', () => {
     )
   })
 
+  test('Should preserve data after expired cache + failed refetch, and skip reattempt while error is recent', async () => {
+    let cenaCalls = 0
+    const failingFetch = (url: any, ...args: any[]) => {
+      if ((url as string).includes('/api/v3/contracts/selectors')) {
+        cenaCalls++
+        return Promise.reject(new Error('Network error'))
+      }
+      return fetchSpy(url, ...args)
+    }
+
+    const {
+      mainCtrl: { contractInfo }
+    } = await makeMainController(
+      async (storage) => {
+        await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {
+          '0x23b872dd': {
+            status: 'success',
+            data: [{ signature: 'transferFrom(address,address,uint256)' }],
+            updatedAt: Date.now() - SELECTOR_SUCCESS_DEADLINE_MS - 1
+          }
+        })
+      },
+      { overrides: { fetch: failingFetch } }
+    )
+
+    // Cache is expired — triggers a fetch that fails
+    void contractInfo.getSelector('0x23b872dd')
+    await wait(0)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('loading')
+    expect((contractInfo.selectors['0x23b872dd'] as any).data).toBeTruthy()
+    await wait(3000)
+    expect(cenaCalls).toBe(1)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('error')
+
+    // Old data is preserved despite the fetch failure
+    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
+      { signature: 'transferFrom(address,address,uint256)' }
+    ])
+
+    // Error is recent — should not reattempt
+    void contractInfo.getSelector('0x23b872dd')
+    await wait(3000)
+    expect(cenaCalls).toBe(1)
+    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('error')
+    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
+      { signature: 'transferFrom(address,address,uint256)' }
+    ])
+  })
+
   test('Should re-fetch a selector whose updatedAt is older than SELECTOR_SUCCESS_DEADLINE_MS', async () => {
     let cenaCalls = 0
     const trackingFetch = (url: any, ...args: any[]) => {

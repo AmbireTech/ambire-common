@@ -145,7 +145,15 @@ export class ContractInfoController extends EventEmitter implements IContractInf
         sendCrashReport: true
       })
       selectorsToFetch.forEach((s: string) => {
-        this.selectors[s] = { status: 'error', error: e.message, updatedAt: Date.now() }
+        const oldData: { signature: string }[] | undefined =
+          this.selectors[s] && 'data' in this.selectors?.[s] ? this.selectors[s].data : undefined
+
+        this.selectors[s] = {
+          status: 'error',
+          data: oldData,
+          error: e.message,
+          updatedAt: Date.now()
+        }
       })
     }
     this.emitUpdate()
@@ -179,7 +187,12 @@ export class ContractInfoController extends EventEmitter implements IContractInf
           this.#debounceSelectorFetchPromise = undefined
         })
     }
-    this.selectors[selector] = { status: 'loading', updatedAt: Date.now() }
+    const currentData: { signature: string }[] | undefined =
+      this.selectors[selector] && 'data' in this.selectors?.[selector]
+        ? this.selectors[selector].data
+        : undefined
+
+    this.selectors[selector] = { status: 'loading', data: currentData, updatedAt: Date.now() }
     this.emitUpdate()
   }
 
