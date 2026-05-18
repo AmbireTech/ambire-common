@@ -113,7 +113,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
       if (!result.success) {
         this.emitError({
           error: new Error('Failed to fetch contract selectors'),
-          level: 'major',
+          level: 'silent',
           message: 'Failed to fetch contract selectors',
           sendCrashReport: true
         })
@@ -140,7 +140,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     } catch (e: any) {
       this.emitError({
         error: e,
-        level: 'major',
+        level: 'silent',
         message: 'Failed to fetch contract selectors',
         sendCrashReport: true
       })
