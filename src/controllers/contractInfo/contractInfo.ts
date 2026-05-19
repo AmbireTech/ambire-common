@@ -11,6 +11,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export const FUNCTION_SELECTORS_STORAGE_KEY = 'functionSelectors'
 export const SELECTOR_SUCCESS_DEADLINE_MS = 30 * 24 * 60 * 60 * 1000
 export const SELECTOR_NOT_FOUND_DEADLINE_MS = SELECTOR_SUCCESS_DEADLINE_MS
+export const SELECTOR_LOADING_DEADLINE = 1000 * 5
 export const SELECTOR_ERROR_DEADLINE_MS = 5 * 60 * 1000
 
 // The ContractInfoController is responsible for getting function selectors for contracts
@@ -81,6 +82,8 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     if (status === 'success' && timeSinceUpdate > SELECTOR_SUCCESS_DEADLINE_MS) return true
     if (status === 'error' && timeSinceUpdate > SELECTOR_ERROR_DEADLINE_MS) return true
     if (status === 'not-found' && timeSinceUpdate > SELECTOR_NOT_FOUND_DEADLINE_MS) return true
+    if (status === 'fetching-disabled' && timeSinceUpdate >= 0) return true
+    if (status === 'loading' && timeSinceUpdate > SELECTOR_LOADING_DEADLINE) return true
     return false
   }
 
@@ -176,17 +179,21 @@ export class ContractInfoController extends EventEmitter implements IContractInf
       return
     }
     const existing = this.selectors[selector]
-    if (existing) {
-      if (existing.status === 'loading') return
-      if (
-        existing.status !== 'fetching-disabled' &&
-        !this.#isOld(existing?.status, existing.updatedAt)
-      )
-        return
-    }
+    if (this.#debounceBufferForSelectors.has(selector)) return
+
+    if (existing && !this.#isOld(existing.status, existing.updatedAt)) return
+
     this.#debounceBufferForSelectors.add(selector)
+
+    const currentData: { signature: string }[] | undefined =
+      this.selectors[selector] && 'data' in this.selectors?.[selector]
+        ? this.selectors[selector].data
+        : undefined
+    this.selectors[selector] = { status: 'loading', data: currentData, updatedAt: Date.now() }
+    this.emitUpdate()
+
     if (!this.#debounceSelectorFetchPromise) {
-      this.#debounceSelectorFetchPromise = wait(50)
+      this.#debounceSelectorFetchPromise = wait(100)
         .then(() => this.#fetchBufferedSelectors())
         .catch((e) => {
           console.error('The debounced this.#debounceSelectorFetchPromise failed', e)
@@ -195,13 +202,6 @@ export class ContractInfoController extends EventEmitter implements IContractInf
           this.#debounceSelectorFetchPromise = undefined
         })
     }
-    const currentData: { signature: string }[] | undefined =
-      this.selectors[selector] && 'data' in this.selectors?.[selector]
-        ? this.selectors[selector].data
-        : undefined
-
-    this.selectors[selector] = { status: 'loading', data: currentData, updatedAt: Date.now() }
-    this.emitUpdate()
   }
 
   toJSON() {
