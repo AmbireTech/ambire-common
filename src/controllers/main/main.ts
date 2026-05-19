@@ -428,7 +428,8 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
-      ui: this.ui
+      ui: this.ui,
+      selectedAccount: this.selectedAccount
     })
     this.signMessage = new SignMessageController(
       this.keystore,

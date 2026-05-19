@@ -437,21 +437,12 @@ describe('DappsController', () => {
         .spyOn(controller, 'broadcastDappSessionEvent')
         .mockResolvedValue(undefined)
 
-      // Same selectedAccount - no broadcast
-      controller.updateDapp(dappId, {
-        accountPreferences: { enabled: true, selectedAccount: ADDR_1, accounts: [ADDR_1, ADDR_2] }
-      })
-      expect(broadcastSpy).not.toHaveBeenCalled()
-
-      // Unrelated update - no broadcast
-      controller.updateDapp(dappId, { chainId: 137 })
-      expect(broadcastSpy).not.toHaveBeenCalled()
-
       // Changed selectedAccount - broadcast
       controller.updateDapp(dappId, {
         accountPreferences: { enabled: true, selectedAccount: ADDR_2, accounts: [ADDR_1, ADDR_2] }
       })
-      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2], dappId, true)
+      // ADDR_2 must be first because it's the selected account
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2, ADDR_1], dappId, true)
 
       broadcastSpy.mockRestore()
     })
@@ -476,6 +467,53 @@ describe('DappsController', () => {
       })
 
       expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_1], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('rejects invalid accountPreferences with a major error and makes no update', async () => {
+      const dappId = 'validated-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Validated Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: { enabled: true, selectedAccount: ADDR_1, accounts: [ADDR_1, ADDR_2] }
+        })
+      ])
+
+      const emitErrorSpy = jest.spyOn(controller as any, 'emitError').mockImplementation(() => {})
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      // Empty selectedAccount
+      controller.updateDapp(dappId, {
+        accountPreferences: { enabled: true, selectedAccount: '', accounts: [ADDR_1] }
+      })
+      expect(emitErrorSpy).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+      expect(broadcastSpy).not.toHaveBeenCalled()
+      emitErrorSpy.mockClear()
+
+      // Empty accounts array
+      controller.updateDapp(dappId, {
+        accountPreferences: { enabled: true, selectedAccount: ADDR_1, accounts: [] }
+      })
+      expect(emitErrorSpy).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+      expect(broadcastSpy).not.toHaveBeenCalled()
+      emitErrorSpy.mockClear()
+
+      // selectedAccount not in accounts
+      controller.updateDapp(dappId, {
+        accountPreferences: { enabled: true, selectedAccount: ADDR_3, accounts: [ADDR_1, ADDR_2] }
+      })
+      expect(emitErrorSpy).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+      expect(broadcastSpy).not.toHaveBeenCalled()
+
+      // Dapp state must be unchanged after all failed updates
+      expect(controller.getDapp(dappId)!.accountPreferences!.selectedAccount).toBe(ADDR_1)
+
+      emitErrorSpy.mockRestore()
       broadcastSpy.mockRestore()
     })
 

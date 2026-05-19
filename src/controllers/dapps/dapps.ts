@@ -1,5 +1,7 @@
 import { getDomain } from 'tldts'
 
+import { ISelectedAccountController } from '@/interfaces/selectedAccount'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -36,6 +38,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
+  getAccountsForDapp,
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
@@ -84,6 +87,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #retryFetchAndUpdateMaxAttempts: number = 3
 
+  #selectedAccount: ISelectedAccountController
+
   get shouldRetryFetchAndUpdate() {
     return this.#shouldRetryFetchAndUpdate
   }
@@ -106,7 +111,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
-    ui
+    ui,
+    selectedAccount
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -115,6 +121,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks: INetworksController
     phishing: IPhishingController
     ui: IUiController
+    selectedAccount: ISelectedAccountController
   }) {
     super(eventEmitterRegistry)
 
@@ -124,6 +131,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#networks = networks
     this.#phishing = phishing
     this.#ui = ui
+    this.#selectedAccount = selectedAccount
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
@@ -651,22 +659,33 @@ export class DappsController extends EventEmitter implements IDappsController {
     const dappPropsToUpdate = { ...dapp }
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
-    // Notify the dapp of the preference change
-    if ('accountPreferences' in dappPropsToUpdate && dappPropsToUpdate.accountPreferences) {
-      const hasAccountChanged =
-        !existing.accountPreferences ||
-        (existing.accountPreferences &&
-          existing.accountPreferences.selectedAccount !==
-            dappPropsToUpdate.accountPreferences.selectedAccount)
+    const accountPreferencesToUpdate = dappPropsToUpdate.accountPreferences
 
-      if (hasAccountChanged) {
-        void this.broadcastDappSessionEvent(
-          'accountsChanged',
-          [dappPropsToUpdate.accountPreferences.selectedAccount],
-          id,
-          true
-        )
+    // Notify the dapp of the preference change
+    if ('accountPreferences' in dappPropsToUpdate && !!accountPreferencesToUpdate) {
+      if (
+        !accountPreferencesToUpdate.selectedAccount ||
+        !accountPreferencesToUpdate.accounts.length ||
+        !accountPreferencesToUpdate.accounts.includes(accountPreferencesToUpdate.selectedAccount)
+      ) {
+        this.emitError({
+          message: `Invalid preferences for ${dapp.name}. Contact support if the issue persists.`,
+          error: new Error(
+            'Invalid account preferences' + JSON.stringify(accountPreferencesToUpdate)
+          ),
+          level: 'major'
+        })
+        return
       }
+
+      const newAccounts = getAccountsForDapp(
+        accountPreferencesToUpdate,
+        this.#selectedAccount.account?.addr
+      )
+
+      // We could add (and had) some logic here to prevent unnecessary updates, but it's not that simple
+      // and an extra update or two won't hurt anyway
+      void this.broadcastDappSessionEvent('accountsChanged', newAccounts, id, true)
     }
 
     if (!existing.isCustom) {

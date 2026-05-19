@@ -13,8 +13,8 @@ import {
   blacklistedDapp,
   customDapp,
   failedDapp,
-  getDappVerificationTestDapps,
   getDappRequestData,
+  getDappVerificationTestDapps,
   loadingDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
@@ -23,7 +23,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { DAPP_VERIFICATION_BANNER_IDS, Dapp, IDappsController } from '../../interfaces/dapp'
+import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
@@ -36,11 +36,11 @@ import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
-import { PERMIT2_ADDRESS_LOWERCASED } from '../../libs/simulation/detectPermit2Interaction'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
 } from '../../libs/signMessage/signMessage'
+import { PERMIT2_ADDRESS_LOWERCASED } from '../../libs/simulation/detectPermit2Interaction'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
@@ -610,7 +610,8 @@ const init = async (
       storage: storageCtrl,
       networks: networksCtrl,
       phishing,
-      ui: uiCtrl
+      ui: uiCtrl,
+      selectedAccount: selectedAccountCtrl
     })
     await realDappsController.initialLoadPromise
     fetchAndUpdateSpy.mockRestore()
