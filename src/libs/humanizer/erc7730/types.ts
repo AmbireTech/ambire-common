@@ -2,7 +2,17 @@ import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { Message } from '../../../interfaces/userRequest'
 
-export type Erc7730Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+export type Erc7730RelayerCall = (
+  path: string,
+  method?: string,
+  body?: any,
+  headers?: any,
+  timeoutMs?: number
+) => Promise<any>
+
+export type Erc7730RegistryOptions = {
+  callRelayer?: Erc7730RelayerCall
+}
 
 export type Erc7730Primitive = string | number | boolean | null
 
@@ -71,10 +81,10 @@ export type Erc7730TypedDataTypes = Record<string, Array<{ name: string; type: s
 export type FetchErc7730DescriptorForCall = (
   call: Call,
   chainId: AccountOp['chainId'],
-  fetcher?: Erc7730Fetch
+  options?: Erc7730RegistryOptions
 ) => Promise<Erc7730ResolvedDescriptor | null>
 
 export type FetchErc7730DescriptorForMessage = (
   message: Message,
-  fetcher?: Erc7730Fetch
+  options?: Erc7730RegistryOptions
 ) => Promise<Erc7730ResolvedDescriptor | null>

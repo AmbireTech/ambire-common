@@ -9,24 +9,25 @@ import {
   Erc7730Descriptor,
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
-  Erc7730Fetch,
+  Erc7730RegistryOptions,
+  Erc7730RelayerCall,
   Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes
 } from './types'
 
-export const ERC7730_REGISTRY_BASE_URL =
-  'https://raw.githubusercontent.com/ethereum/clear-signing-erc7730-registry/master/'
-
-const ERC7730_CALLDATA_INDEX_URL = `${ERC7730_REGISTRY_BASE_URL}index.calldata.json`
-const ERC7730_EIP712_INDEX_URL = `${ERC7730_REGISTRY_BASE_URL}index.eip712.json`
+const ERC7730_CALLDATA_INDEX_RELAYER_PATH = '/v2/erc7730/account-op/clear-signing'
+const ERC7730_EIP712_INDEX_RELAYER_PATH = '/v2/erc7730/eip-712/clear-signing'
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
 const PERMIT2_APPROVE_SELECTOR = '0x87517c45'
 const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
 
-let calldataIndexPromise: Promise<Erc7730CalldataIndex> | null = null
-let eip712IndexPromise: Promise<Erc7730Eip712Index> | null = null
+const relayerCalldataIndexPromises = new WeakMap<
+  Erc7730RelayerCall,
+  Promise<Erc7730CalldataIndex>
+>()
+const relayerEip712IndexPromises = new WeakMap<Erc7730RelayerCall, Promise<Erc7730Eip712Index>>()
 
 const descriptorCache = new Map<string, Promise<Erc7730ResolvedDescriptor>>()
 
@@ -122,30 +123,49 @@ const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   }
 }
 
-const resolveFetch = (fetcher?: Erc7730Fetch): Erc7730Fetch | null => {
-  if (fetcher) return fetcher
-  if (typeof globalThis.fetch !== 'function') return null
+const getRelayerPayload = <T>(response: any, path: string): T => {
+  if (!response?.success) throw new Error(`Failed to fetch ERC-7730 relayer resource: ${path}`)
 
-  return globalThis.fetch.bind(globalThis)
+  if (response.data !== undefined) return response.data as T
+
+  const { success, status, errorState, message, ...payload } = response
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+  }
+
+  return payload as T
 }
 
-const fetchJson = async <T>(url: string, fetcher: Erc7730Fetch): Promise<T> => {
-  const response = await fetcher(url)
-  if (!response.ok) throw new Error(`Failed to fetch ERC-7730 resource: ${url}`)
+const fetchRelayerResource = async <T>(
+  path: string,
+  callRelayer: Erc7730RelayerCall
+): Promise<T> => {
+  const response = await callRelayer(path, 'GET')
+  const payload = getRelayerPayload<T>(response, path)
 
-  return response.json() as Promise<T>
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+  }
+
+  return payload
 }
 
-const getResourceUrl = (pathOrUrl: string): string => {
+const normalizeRelayerPath = (pathOrUrl: string): string => {
   try {
-    return new URL(pathOrUrl).href
+    const url = new URL(pathOrUrl)
+    return `${url.pathname}${url.search}`
   } catch {
-    return new URL(pathOrUrl, ERC7730_REGISTRY_BASE_URL).href
+    return pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`
   }
 }
 
-const getIncludeUrl = (includePath: string, parentUrl: string): string =>
-  new URL(includePath, parentUrl).href
+const getIncludePath = (includePath: string, parentPath: string): string => {
+  if (includePath.startsWith('/') || /^https?:\/\//.test(includePath)) {
+    return normalizeRelayerPath(includePath)
+  }
+
+  return new URL(includePath, `https://relayer.local${normalizeRelayerPath(parentPath)}`).pathname
+}
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -173,15 +193,15 @@ const mergeDescriptors = (
 
 const fetchDescriptor = async (
   pathOrUrl: string,
-  fetcher: Erc7730Fetch,
+  callRelayer: Erc7730RelayerCall,
   depth = 0
 ): Promise<Erc7730ResolvedDescriptor> => {
-  const url = getResourceUrl(pathOrUrl)
-  const cached = descriptorCache.get(url)
+  const relayerPath = normalizeRelayerPath(pathOrUrl)
+  const cached = descriptorCache.get(relayerPath)
   if (cached) return cached
 
   const descriptorPromise = (async () => {
-    const descriptor = await fetchJson<Erc7730Descriptor>(url, fetcher)
+    const descriptor = await fetchRelayerResource<Erc7730Descriptor>(relayerPath, callRelayer)
     const includes = descriptor.includes
       ? Array.isArray(descriptor.includes)
         ? descriptor.includes
@@ -192,7 +212,7 @@ const fetchDescriptor = async (
 
     const includedDescriptors = await Promise.all(
       includes.map((includePath) =>
-        fetchDescriptor(getIncludeUrl(includePath, url), fetcher, depth + 1)
+        fetchDescriptor(getIncludePath(includePath, relayerPath), callRelayer, depth + 1)
       )
     )
 
@@ -207,41 +227,48 @@ const fetchDescriptor = async (
     }
   })()
 
-  descriptorCache.set(url, descriptorPromise)
+  descriptorCache.set(relayerPath, descriptorPromise)
 
   try {
     return await descriptorPromise
   } catch (error) {
-    descriptorCache.delete(url)
+    descriptorCache.delete(relayerPath)
     throw error
   }
 }
 
-const getCalldataIndex = async (fetcher: Erc7730Fetch): Promise<Erc7730CalldataIndex> => {
-  if (!calldataIndexPromise) {
-    calldataIndexPromise = fetchJson<Erc7730CalldataIndex>(
-      ERC7730_CALLDATA_INDEX_URL,
-      fetcher
-    ).catch((error) => {
-      calldataIndexPromise = null
-      throw error
-    })
-  }
+const getCalldataIndex = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730CalldataIndex> => {
+  const cachedRelayerIndex = relayerCalldataIndexPromises.get(callRelayer)
+  if (cachedRelayerIndex) return cachedRelayerIndex
 
-  return calldataIndexPromise
+  const relayerCalldataIndexPromise = fetchRelayerResource<Erc7730CalldataIndex>(
+    ERC7730_CALLDATA_INDEX_RELAYER_PATH,
+    callRelayer
+  ).catch((error) => {
+    relayerCalldataIndexPromises.delete(callRelayer)
+    throw error
+  })
+
+  relayerCalldataIndexPromises.set(callRelayer, relayerCalldataIndexPromise)
+
+  return relayerCalldataIndexPromise
 }
 
-const getEip712Index = async (fetcher: Erc7730Fetch): Promise<Erc7730Eip712Index> => {
-  if (!eip712IndexPromise) {
-    eip712IndexPromise = fetchJson<Erc7730Eip712Index>(ERC7730_EIP712_INDEX_URL, fetcher).catch(
-      (error) => {
-        eip712IndexPromise = null
-        throw error
-      }
-    )
-  }
+const getEip712Index = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730Eip712Index> => {
+  const cachedRelayerIndex = relayerEip712IndexPromises.get(callRelayer)
+  if (cachedRelayerIndex) return cachedRelayerIndex
 
-  return eip712IndexPromise
+  const relayerEip712IndexPromise = fetchRelayerResource<Erc7730Eip712Index>(
+    ERC7730_EIP712_INDEX_RELAYER_PATH,
+    callRelayer
+  ).catch((error) => {
+    relayerEip712IndexPromises.delete(callRelayer)
+    throw error
+  })
+
+  relayerEip712IndexPromises.set(callRelayer, relayerEip712IndexPromise)
+
+  return relayerEip712IndexPromise
 }
 
 const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
@@ -294,20 +321,19 @@ const selectEip712IndexEntry = (
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
-  fetcher?: Erc7730Fetch
+  options?: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
 
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
-  const resolvedFetch = resolveFetch(fetcher)
-  if (!resolvedFetch) return builtInDescriptor
+  if (!options?.callRelayer) return builtInDescriptor
 
   try {
-    const index = await getCalldataIndex(resolvedFetch)
+    const index = await getCalldataIndex(options.callRelayer)
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
     if (!descriptorPath) return builtInDescriptor
 
-    const registryDescriptor = await fetchDescriptor(descriptorPath, resolvedFetch)
+    const registryDescriptor = await fetchDescriptor(descriptorPath, options.callRelayer)
     if (!builtInDescriptor) return registryDescriptor
 
     return {
@@ -322,11 +348,11 @@ export const fetchErc7730DescriptorForCall = async (
 
 export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
-  fetcher?: Erc7730Fetch
+  options?: Erc7730RegistryOptions
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
-      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, fetcher)
+      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
       return descriptor ? ([index, descriptor] as const) : null
     })
   )
@@ -341,17 +367,16 @@ export const fetchErc7730DescriptorsForAccountOp = async (
 
 export const fetchErc7730DescriptorForMessage = async (
   message: Message,
-  fetcher?: Erc7730Fetch
+  options?: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
-  const resolvedFetch = resolveFetch(fetcher)
-  if (!resolvedFetch || message.content.kind !== 'typedMessage') return null
+  if (!options?.callRelayer || message.content.kind !== 'typedMessage') return null
 
   const verifyingContract = message.content.domain.verifyingContract
   const chainId = getTypedMessageChainId(message)
   if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
 
   try {
-    const index = await getEip712Index(resolvedFetch)
+    const index = await getEip712Index(options.callRelayer)
     const primaryType = String(message.content.primaryType)
     const entries = index[getRegistryKey(chainId, verifyingContract)]?.[primaryType]
     if (!entries?.length) return null
@@ -363,7 +388,7 @@ export const fetchErc7730DescriptorForMessage = async (
     )
     if (!entry) return null
 
-    return fetchDescriptor(entry.path, resolvedFetch)
+    return fetchDescriptor(entry.path, options.callRelayer)
   } catch (error) {
     console.error(error)
     return null
