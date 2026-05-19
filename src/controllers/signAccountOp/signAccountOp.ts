@@ -100,7 +100,6 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import type { Erc7730RelayerCall } from '../../libs/humanizer'
 import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
@@ -165,6 +164,7 @@ import {
   SignAccountOpType
 } from './helper'
 
+import type { Erc7730RelayerCall } from '../../libs/humanizer'
 export enum SigningStatus {
   EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
@@ -842,9 +842,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }, ERC7730_DESCRIPTOR_WAIT_MS)
 
     try {
-      const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-        callRelayer: this.#callRelayer as Erc7730RelayerCall
-      })
+      const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(
+        this.accountOp,
+        this.#callRelayer as Erc7730RelayerCall
+      )
       hasResolvedBeforeFallback = true
       clearTimeout(fallbackTimeout)
 

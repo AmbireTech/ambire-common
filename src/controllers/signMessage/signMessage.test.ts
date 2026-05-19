@@ -178,6 +178,111 @@ describe('SignMessageController', () => {
     expect(signMessageController.signers![0]!.type).toBe('internal')
   })
 
+  test('fetches ERC-7730 EIP-712 descriptors through the relayer', async () => {
+    const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
+    const typedMessageToSign: Message = {
+      fromRequestId: 2,
+      accountAddr: account.addr,
+      chainId: 1n,
+      signature: null,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          name: 'USD Coin',
+          chainId: 1,
+          verifyingContract: usdc,
+          version: '2'
+        },
+        types: {
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        primaryType: 'Permit',
+        message: {
+          owner: account.addr,
+          spender: '0x0000000000000000000000000000000000000000',
+          value: '133700',
+          nonce: '0',
+          deadline: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+        }
+      }
+    }
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/eip-712/clear-signing') {
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${usdc}`]: {
+              Permit: [{ path: registryPath }]
+            }
+          },
+          errorState: []
+        }
+      }
+
+      if (path === `/${registryPath}`) {
+        return {
+          success: true,
+          display: {
+            formats: {
+              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    {
+                      path: 'spender',
+                      label: 'Spender',
+                      format: 'addressName',
+                      visible: 'always'
+                    },
+                    {
+                      path: 'value',
+                      label: 'Max spending amount',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+
+    signMessageController = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      {},
+      inviteCtrl,
+      undefined,
+      dappsCtrl,
+      callRelayer
+    )
+
+    await signMessageController.init({ messageToSign: typedMessageToSign })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712/clear-signing', 'GET')
+    expect(callRelayer).toHaveBeenCalledWith(`/${registryPath}`, 'GET')
+    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Authorize spending of tokens'
+    })
+  })
+
   // TODO: Would be better to test the signing via the Main controller -> handleSignMessage instead
   test('should sign a message', async () => {
     const signingKeyAddr = account.addr

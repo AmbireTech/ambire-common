@@ -94,6 +94,7 @@ import {
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
+import { Erc7730RelayerCall } from '@/libs/humanizer'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
@@ -430,6 +431,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       ui: this.ui
     })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -438,10 +440,10 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.invite,
       eventEmitterRegistry,
-      this.dapps
+      this.dapps,
+      this.callRelayer as Erc7730RelayerCall
     )
 
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.storage,
       this.fetch,

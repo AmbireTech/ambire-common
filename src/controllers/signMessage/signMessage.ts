@@ -27,6 +27,7 @@ import {
   SignMessageUpdateParams
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
+import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
 import {
   addMessage,
   addMessageSignature,
@@ -44,9 +45,13 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+import type { Erc7730RelayerCall } from '../../libs/humanizer'
+import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
+
+const ERC7730_DESCRIPTOR_WAIT_MS = 4000
 
 export class SignMessageController extends EventEmitter implements ISignMessageController {
   #keystore: IKeystoreController
@@ -63,6 +68,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #dapps?: IDappsController
 
+  #callRelayer?: Erc7730RelayerCall
+
+  #humanizationSeq = 0
+
   signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
@@ -76,6 +85,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   } | null = null
 
   messageToSign: Message | null = null
+
+  humanizedMessage?: IrMessage
+
+  isHumanizing = false
 
   signedMessage: SignedMessage | null = null
 
@@ -108,7 +121,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    dapps?: IDappsController
+    dapps?: IDappsController,
+    callRelayer?: Erc7730RelayerCall
   ) {
     super(eventEmitterRegistry)
 
@@ -119,6 +133,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#accounts = accounts
     this.#invite = invite
     this.#dapps = dapps
+    this.#callRelayer = callRelayer
     this.status = SignMessageStatus.Initial
   }
 
@@ -200,6 +215,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       this.emitUpdate()
+      this.humanize()
     } else {
       this.emitError({
         level: 'major',
@@ -219,6 +235,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
+    this.humanizedMessage = undefined
+    this.isHumanizing = false
     this.signedMessage = null
     this.#account = undefined
     this.network = undefined
@@ -227,6 +245,84 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signer = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
+  }
+
+  #startHumanization() {
+    this.isHumanizing = true
+    this.humanizedMessage = undefined
+    const currentHumanizationId = this.#humanizationSeq + 1
+    this.#humanizationSeq = currentHumanizationId
+    this.emitUpdate()
+
+    return currentHumanizationId
+  }
+
+  #setHumanizedMessage(humanizedMessage: IrMessage, humanizationId: number) {
+    if (this.#humanizationSeq !== humanizationId) return false
+
+    this.humanizedMessage = humanizedMessage
+    this.isHumanizing = false
+    this.emitUpdate()
+
+    return true
+  }
+
+  #setFallbackHumanization(humanizationId: number) {
+    if (!this.messageToSign) return false
+
+    return this.#setHumanizedMessage(humanizeMessage(this.messageToSign), humanizationId)
+  }
+
+  async #applyDescriptorFirstHumanization(humanizationId: number) {
+    if (!this.messageToSign) return
+    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
+      this.#setFallbackHumanization(humanizationId)
+      return
+    }
+
+    let hasResolvedBeforeFallback = false
+    let hasDisplayedFallback = false
+
+    const fallbackTimeout = setTimeout(() => {
+      if (hasResolvedBeforeFallback || this.#humanizationSeq !== humanizationId) return
+
+      hasDisplayedFallback = this.#setFallbackHumanization(humanizationId)
+    }, ERC7730_DESCRIPTOR_WAIT_MS)
+
+    try {
+      const erc7730Descriptor = await fetchErc7730DescriptorForMessage(
+        this.messageToSign,
+        this.#callRelayer
+      )
+      hasResolvedBeforeFallback = true
+      clearTimeout(fallbackTimeout)
+
+      if (erc7730Descriptor && this.messageToSign) {
+        const erc7730Humanization = humanizeMessage(this.messageToSign, { erc7730Descriptor })
+        if (this.#setHumanizedMessage(erc7730Humanization, humanizationId)) return
+      }
+
+      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
+    } catch (error) {
+      console.error(error)
+      hasResolvedBeforeFallback = true
+      clearTimeout(fallbackTimeout)
+      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
+    }
+  }
+
+  humanize() {
+    if (!this.messageToSign) return
+
+    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
+      const currentHumanizationId = this.#humanizationSeq + 1
+      this.#humanizationSeq = currentHumanizationId
+      this.#setFallbackHumanization(currentHumanizationId)
+      return
+    }
+
+    const currentHumanizationId = this.#startHumanization()
+    void this.#applyDescriptorFirstHumanization(currentHumanizationId)
   }
 
   update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
@@ -530,7 +626,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #onAbortOperation() {
     if (this.signer?.signingCleanup) {
-      this.signer.signingCleanup()
+      void this.signer.signingCleanup()
     }
   }
 

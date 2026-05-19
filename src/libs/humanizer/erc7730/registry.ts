@@ -9,7 +9,6 @@ import {
   Erc7730Descriptor,
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
-  Erc7730RegistryOptions,
   Erc7730RelayerCall,
   Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes
@@ -321,19 +320,18 @@ const selectEip712IndexEntry = (
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
-  options?: Erc7730RegistryOptions
+  callRelayer: Erc7730RelayerCall
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
 
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
-  if (!options?.callRelayer) return builtInDescriptor
 
   try {
-    const index = await getCalldataIndex(options.callRelayer)
+    const index = await getCalldataIndex(callRelayer)
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
     if (!descriptorPath) return builtInDescriptor
 
-    const registryDescriptor = await fetchDescriptor(descriptorPath, options.callRelayer)
+    const registryDescriptor = await fetchDescriptor(descriptorPath, callRelayer)
     if (!builtInDescriptor) return registryDescriptor
 
     return {
@@ -348,11 +346,11 @@ export const fetchErc7730DescriptorForCall = async (
 
 export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
-  options?: Erc7730RegistryOptions
+  callRelayer: Erc7730RelayerCall
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
-      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
+      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, callRelayer)
       return descriptor ? ([index, descriptor] as const) : null
     })
   )
@@ -367,16 +365,16 @@ export const fetchErc7730DescriptorsForAccountOp = async (
 
 export const fetchErc7730DescriptorForMessage = async (
   message: Message,
-  options?: Erc7730RegistryOptions
+  callRelayer: Erc7730RelayerCall
 ): Promise<Erc7730ResolvedDescriptor | null> => {
-  if (!options?.callRelayer || message.content.kind !== 'typedMessage') return null
+  if (message.content.kind !== 'typedMessage') return null
 
   const verifyingContract = message.content.domain.verifyingContract
   const chainId = getTypedMessageChainId(message)
   if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
 
   try {
-    const index = await getEip712Index(options.callRelayer)
+    const index = await getEip712Index(callRelayer)
     const primaryType = String(message.content.primaryType)
     const entries = index[getRegistryKey(chainId, verifyingContract)]?.[primaryType]
     if (!entries?.length) return null
@@ -388,7 +386,7 @@ export const fetchErc7730DescriptorForMessage = async (
     )
     if (!entry) return null
 
-    return fetchDescriptor(entry.path, options.callRelayer)
+    return fetchDescriptor(entry.path, callRelayer)
   } catch (error) {
     console.error(error)
     return null
