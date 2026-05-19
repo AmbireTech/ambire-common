@@ -229,14 +229,24 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
       : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
 
-    if (!hasExpired || this.loadingAddresses.includes(checksummedAddress)) return
+    if (!hasExpired || this.loadingAddresses.includes(checksummedAddress)) {
+      console.log(`[Domains] reverseLookup SKIPPED (cached): ${checksummedAddress}`)
+      return
+    }
 
+    const lookupStart = Date.now()
+    console.log(`[Domains] reverseLookup START: ${checksummedAddress}`)
     this.loadingAddresses.push(checksummedAddress)
     this.emitUpdate()
 
     try {
       let ensAvatar: string | undefined | null
 
+      // Potential hang: for addresses with offchain-resolved names (e.g. .base.eth), viem triggers
+      // CCIP-Read and makes a bare fetch() to an external gateway with no timeout or AbortSignal.
+      // If the gateway is unresponsive (accepts TCP but never replies), the fetch hangs indefinitely,
+      // Promise.all never settles, and loadingAddresses is never cleaned up — leaving
+      // isDomainResolving: true and skeleton loaders stuck until the OS-level TCP timeout fires.
       const [ens, namoshi] = await Promise.all([
         withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider), {
           timeoutMs: 15000
@@ -292,6 +302,9 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
       }
+      console.log(
+        `[Domains] reverseLookup DONE: ${checksummedAddress} | ens: ${ens} | ${Date.now() - lookupStart}ms`
+      )
     } catch (e: any) {
       const shortMessage = e?.cause?.shortMessage ?? e?.cause?.message ?? ''
       // Fail silently with a console error, no biggie, since that would get retried
