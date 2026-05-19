@@ -113,6 +113,23 @@ function unifyDefiLlamaDappUrl(url: string) {
   }
 }
 
+/**
+ * Returns the list of all accounts that should be returned to a dapp based on the dapp's
+ * account preferences.
+ */
+export function getAccountsForDapp(
+  preferences: Dapp['accountPreferences'],
+  extensionSelectedAccountAddr: string | undefined
+): string[] {
+  if (preferences?.enabled) {
+    const otherAccounts = preferences.accounts.filter((acc) => acc !== preferences.selectedAccount)
+
+    return [preferences.selectedAccount, ...otherAccounts]
+  }
+
+  return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
+}
+
 export {
   getDappIdFromUrl,
   getDomainFromUrl,

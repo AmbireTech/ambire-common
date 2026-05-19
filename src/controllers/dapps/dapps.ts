@@ -1,5 +1,7 @@
 import { getDomain } from 'tldts'
 
+import { ISelectedAccountController } from '@/interfaces/selectedAccount'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -36,6 +38,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
+  getAccountsForDapp,
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
@@ -84,6 +87,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #retryFetchAndUpdateMaxAttempts: number = 3
 
+  #selectedAccount: ISelectedAccountController
+
   get shouldRetryFetchAndUpdate() {
     return this.#shouldRetryFetchAndUpdate
   }
@@ -106,7 +111,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
-    ui
+    ui,
+    selectedAccount
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -115,6 +121,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks: INetworksController
     phishing: IPhishingController
     ui: IUiController
+    selectedAccount: ISelectedAccountController
   }) {
     super(eventEmitterRegistry)
 
@@ -124,6 +131,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#networks = networks
     this.#phishing = phishing
     this.#ui = ui
+    this.#selectedAccount = selectedAccount
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
@@ -214,6 +222,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #load() {
     await this.#networks.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
 
     const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
@@ -651,6 +660,35 @@ export class DappsController extends EventEmitter implements IDappsController {
     const dappPropsToUpdate = { ...dapp }
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
+    const accountPreferencesToUpdate = dappPropsToUpdate.accountPreferences
+
+    // Notify the dapp of the preference change
+    if ('accountPreferences' in dappPropsToUpdate && !!accountPreferencesToUpdate) {
+      if (
+        !accountPreferencesToUpdate.selectedAccount ||
+        !accountPreferencesToUpdate.accounts.length ||
+        !accountPreferencesToUpdate.accounts.includes(accountPreferencesToUpdate.selectedAccount)
+      ) {
+        this.emitError({
+          message: `Invalid preferences for ${dapp.name}. Contact support if the issue persists.`,
+          error: new Error(
+            'Invalid account preferences' + JSON.stringify(accountPreferencesToUpdate)
+          ),
+          level: 'major'
+        })
+        return
+      }
+
+      const newAccounts = getAccountsForDapp(
+        accountPreferencesToUpdate,
+        this.#selectedAccount.account?.addr
+      )
+
+      // We could add (and had) some logic here to prevent unnecessary updates, but it's not that simple
+      // and an extra update or two won't hurt anyway
+      void this.broadcastDappSessionEvent('accountsChanged', newAccounts, id, true)
+    }
+
     if (!existing.isCustom) {
       dappPropsToUpdate.name = existing.name
     } else if (existingByDomain && existing.isCustom) {
@@ -666,6 +704,61 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
     void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+
+    this.emitUpdate()
+  }
+
+  updateDappToConnect(id: string, data: Partial<Dapp>) {
+    if (!this.dappToConnect || this.dappToConnect.id !== id) {
+      this.emitError({
+        level: 'silent',
+        message: `Trying to update dappToConnect with id ${id}, but current dappToConnect is ${this.dappToConnect?.id}`,
+        error: new Error('updateDappToConnect: id not found')
+      })
+      return
+    }
+
+    this.dappToConnect = { ...this.dappToConnect, ...data }
+    this.emitUpdate()
+  }
+
+  async onSelectedAccountChange(newAccount: string) {
+    Object.values(this.dappSessions).forEach(async (session) => {
+      if (!this.hasPermission(session.id)) return
+
+      const accountPreferences = this.getDapp(session.id)?.accountPreferences
+
+      const accounts = getAccountsForDapp(accountPreferences, newAccount)
+
+      await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
+    })
+  }
+
+  removeAccountData(address: string) {
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences) return
+
+      if (!dapp.accountPreferences.accounts.includes(address)) return
+
+      const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        // Disconnect the dapp if the removed account was the only one with access
+        isConnected: newAccounts.length > 0,
+        // Also delete preferences in this case
+        accountPreferences: newAccounts.length
+          ? {
+              ...dapp.accountPreferences,
+              accounts: newAccounts,
+              selectedAccount:
+                dapp.accountPreferences.selectedAccount === address
+                  ? newAccounts[0]!
+                  : dapp.accountPreferences.selectedAccount
+            }
+          : undefined
+      })
+    })
 
     this.emitUpdate()
   }
