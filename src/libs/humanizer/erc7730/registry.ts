@@ -16,6 +16,7 @@ import {
 
 const ERC7730_CALLDATA_INDEX_RELAYER_PATH = '/v2/erc7730/account-op/clear-signing'
 const ERC7730_EIP712_INDEX_RELAYER_PATH = '/v2/erc7730/eip-712/clear-signing'
+const ERC7730_DESCRIPTOR_PATH = '/v2/erc7730/fetch-descriptor/clear-signing'
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
@@ -27,8 +28,6 @@ const relayerCalldataIndexPromises = new WeakMap<
   Promise<Erc7730CalldataIndex>
 >()
 const relayerEip712IndexPromises = new WeakMap<Erc7730RelayerCall, Promise<Erc7730Eip712Index>>()
-
-const descriptorCache = new Map<string, Promise<Erc7730ResolvedDescriptor>>()
 
 const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   path: 'built-in/erc20-approve',
@@ -123,9 +122,13 @@ const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
 }
 
 const getRelayerPayload = <T>(response: any, path: string): T => {
-  if (!response?.success) throw new Error(`Failed to fetch ERC-7730 relayer resource: ${path}`)
+  if (response?.success === false) {
+    throw new Error(`Failed to fetch ERC-7730 relayer resource: ${path}`)
+  }
 
-  if (response.data !== undefined) return response.data as T
+  if (response?.data !== undefined) return response.data as T
+
+  if (response?.success === undefined) return response as T
 
   const { success, status, errorState, message, ...payload } = response
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
@@ -140,6 +143,21 @@ const fetchRelayerResource = async <T>(
   callRelayer: Erc7730RelayerCall
 ): Promise<T> => {
   const response = await callRelayer(path, 'GET')
+  const payload = getRelayerPayload<T>(response, path)
+
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+  }
+
+  return payload
+}
+
+const postRelayerResource = async <T>(
+  path: string,
+  callRelayer: Erc7730RelayerCall,
+  body: any
+): Promise<T> => {
+  const response = await callRelayer(path, 'POST', body)
   const payload = getRelayerPayload<T>(response, path)
 
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
@@ -196,11 +214,15 @@ const fetchDescriptor = async (
   depth = 0
 ): Promise<Erc7730ResolvedDescriptor> => {
   const relayerPath = normalizeRelayerPath(pathOrUrl)
-  const cached = descriptorCache.get(relayerPath)
-  if (cached) return cached
 
   const descriptorPromise = (async () => {
-    const descriptor = await fetchRelayerResource<Erc7730Descriptor>(relayerPath, callRelayer)
+    const descriptor = await postRelayerResource<Erc7730Descriptor>(
+      ERC7730_DESCRIPTOR_PATH,
+      callRelayer,
+      {
+        descriptorPath: relayerPath
+      }
+    )
     const includes = descriptor.includes
       ? Array.isArray(descriptor.includes)
         ? descriptor.includes
@@ -226,14 +248,8 @@ const fetchDescriptor = async (
     }
   })()
 
-  descriptorCache.set(relayerPath, descriptorPromise)
-
-  try {
-    return await descriptorPromise
-  } catch (error) {
-    descriptorCache.delete(relayerPath)
-    throw error
-  }
+  // todo: implement caching
+  return descriptorPromise
 }
 
 const getCalldataIndex = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730CalldataIndex> => {
@@ -320,11 +336,12 @@ const selectEip712IndexEntry = (
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
-  callRelayer: Erc7730RelayerCall
+  callRelayer?: Erc7730RelayerCall
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
 
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
+  if (!callRelayer) return builtInDescriptor
 
   try {
     const index = await getCalldataIndex(callRelayer)
@@ -346,7 +363,7 @@ export const fetchErc7730DescriptorForCall = async (
 
 export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
-  callRelayer: Erc7730RelayerCall
+  callRelayer?: Erc7730RelayerCall
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {

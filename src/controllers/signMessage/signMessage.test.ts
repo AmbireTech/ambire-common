@@ -283,6 +283,141 @@ describe('SignMessageController', () => {
     })
   })
 
+  test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
+    const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
+    const registryPath = 'registry/1inch/eip712-AggregationRouterV6.json'
+    const typedMessageToSign: Message = {
+      fromRequestId: 3,
+      accountAddr: account.addr,
+      chainId: 10n,
+      signature: null,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          Order: [
+            { name: 'salt', type: 'uint256' },
+            { name: 'maker', type: 'address' },
+            { name: 'receiver', type: 'address' },
+            { name: 'makerAsset', type: 'address' },
+            { name: 'takerAsset', type: 'address' },
+            { name: 'makingAmount', type: 'uint256' },
+            { name: 'takingAmount', type: 'uint256' },
+            { name: 'makerTraits', type: 'uint256' }
+          ],
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ]
+        },
+        domain: {
+          name: '1inch Aggregation Router',
+          version: '6',
+          chainId: '0xa',
+          verifyingContract: aggregationRouter
+        },
+        message: {
+          salt: '77345521695523391200797982310672068146116530516693096626705429813034433883583',
+          maker: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          receiver: '0x0000000000000000000000000000000000000000',
+          makerAsset: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
+          takerAsset: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
+          makingAmount: '366891214241290415',
+          takingAmount: '39159477605004232',
+          makerTraits:
+            '62419173104490761595518734106350460423628846627487883331393039102304667566080'
+        },
+        primaryType: 'Order'
+      }
+    }
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/eip-712/clear-signing') {
+        return {
+          success: true,
+          data: {
+            [`eip155:10:${aggregationRouter}`]: {
+              Order: [
+                {
+                  path: registryPath,
+                  encodeTypeHashes: [
+                    '0x3af21ec5a20011b88d3b7b4ed7c806cef05a5980cf34974bcd53566a131f7e4c'
+                  ]
+                }
+              ]
+            }
+          },
+          errorState: []
+        }
+      }
+
+      if (path === `/${registryPath}`) {
+        return {
+          $schema: '../../specs/erc7730-v2.schema.json',
+          context: {
+            eip712: {
+              deployments: [{ chainId: 10, address: aggregationRouter }],
+              domain: { name: '1inch Aggregation Router', version: '6' }
+            }
+          },
+          metadata: { owner: '1inch AggregationRouterV6' },
+          display: {
+            formats: {
+              'Order(uint256 salt,address maker,address receiver,address makerAsset,address takerAsset,uint256 makingAmount,uint256 takingAmount,uint256 makerTraits)':
+                {
+                  intent: '1inch Order',
+                  fields: [
+                    { path: 'maker', label: 'From', format: 'raw' },
+                    {
+                      path: 'makingAmount',
+                      label: 'Send',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'makerAsset' }
+                    },
+                    {
+                      path: 'takingAmount',
+                      label: 'Receive minimum',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'takerAsset' }
+                    },
+                    { path: 'receiver', label: 'To', format: 'raw' },
+                    { label: 'Salt', path: 'salt', visible: 'never' },
+                    { label: 'Maker Traits', path: 'makerTraits', visible: 'never' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+
+    signMessageController = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      {},
+      inviteCtrl,
+      undefined,
+      dappsCtrl,
+      callRelayer
+    )
+
+    await signMessageController.init({ messageToSign: typedMessageToSign })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712/clear-signing', 'GET')
+    expect(callRelayer).toHaveBeenCalledWith(`/${registryPath}`, 'GET')
+    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: '1inch Order'
+    })
+  })
+
   // TODO: Would be better to test the signing via the Main controller -> handleSignMessage instead
   test('should sign a message', async () => {
     const signingKeyAddr = account.addr
