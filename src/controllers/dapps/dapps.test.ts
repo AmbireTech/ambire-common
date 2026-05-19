@@ -638,13 +638,13 @@ describe('DappsController', () => {
         dappInListId,
         true
       )
-      expect(broadcastSpy).not.toHaveBeenCalledWith(
+      expect(broadcastSpy).toHaveBeenCalledWith(
         'accountsChanged',
-        [ADDR_2],
+        [ADDR_1, ADDR_3],
         dappNotInListId,
         true
       )
-      expect(broadcastSpy).toHaveBeenCalledTimes(1)
+      expect(broadcastSpy).toHaveBeenCalledTimes(2)
       broadcastSpy.mockRestore()
     })
 
