@@ -403,6 +403,13 @@ describe('DappsController', () => {
     const ADDR_1 = '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB'
     const ADDR_2 = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
     const ADDR_3 = '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+    const makeAccount = (addr: string) => ({
+      addr,
+      associatedKeys: [ADDR_1],
+      initialPrivileges: [],
+      creation: null,
+      preferences: { label: '', pfp: '' }
+    })
 
     const prepareWithDapps = async (
       dapps: Dapp[],
@@ -411,13 +418,19 @@ describe('DappsController', () => {
       prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', dapps)
         await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+        await storageCtrl.set('selectedAccount', ADDR_1)
+        await storageCtrl.set('accounts', [
+          makeAccount(ADDR_1),
+          makeAccount(ADDR_2),
+          makeAccount(ADDR_3)
+        ])
 
         if (storageInit) {
           await storageInit(storageCtrl)
         }
       })
 
-    test('broadcasts accountsChanged when selectedAccount changes; skips when unchanged or unrelated', async () => {
+    test('broadcasts accountsChanged on updateDapp call with accountPreferences', async () => {
       const dappId = 'test-dapp.com'
       const { controller } = await prepareWithDapps([
         makeDapp({
@@ -437,7 +450,6 @@ describe('DappsController', () => {
         .spyOn(controller, 'broadcastDappSessionEvent')
         .mockResolvedValue(undefined)
 
-      // Changed selectedAccount - broadcast
       controller.updateDapp(dappId, {
         accountPreferences: { enabled: true, selectedAccount: ADDR_2, accounts: [ADDR_1, ADDR_2] }
       })
@@ -620,13 +632,19 @@ describe('DappsController', () => {
       // ADDR_2 is in dappInList's accounts but not in dappNotInList's
       await controller.onSelectedAccountChange(ADDR_2)
 
-      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2], dappInListId, true)
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'accountsChanged',
+        [ADDR_1, ADDR_2],
+        dappInListId,
+        true
+      )
       expect(broadcastSpy).not.toHaveBeenCalledWith(
         'accountsChanged',
         [ADDR_2],
         dappNotInListId,
         true
       )
+      expect(broadcastSpy).toHaveBeenCalledTimes(1)
       broadcastSpy.mockRestore()
     })
 
@@ -741,25 +759,7 @@ describe('DappsController', () => {
     })
 
     test('mainCtrl.selectAccount delegates to onSelectedAccountChange; removeAccount calls dapps.removeAccountData', async () => {
-      const { mainCtrl } = await prepareWithDapps([], async (storageCtrl) => {
-        await storageCtrl.set('accounts', [
-          {
-            addr: ADDR_1,
-            associatedKeys: [ADDR_1],
-            initialPrivileges: [],
-            creation: null,
-            preferences: { label: '', pfp: '' }
-          },
-          {
-            addr: ADDR_2,
-            associatedKeys: [ADDR_2],
-            initialPrivileges: [],
-            creation: null,
-            preferences: { label: '', pfp: '' }
-          }
-        ])
-        await storageCtrl.set('selectedAccount', ADDR_1)
-      })
+      const { mainCtrl } = await prepareWithDapps([])
 
       const onSelectedAccountChangeSpy = jest
         .spyOn(mainCtrl.dapps, 'onSelectedAccountChange')

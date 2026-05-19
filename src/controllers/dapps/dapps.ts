@@ -222,6 +222,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #load() {
     await this.#networks.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
 
     const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
@@ -727,17 +728,9 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
-      if (!accountPreferences || !accountPreferences.enabled) {
-        await this.broadcastDappSessionEvent('accountsChanged', [newAccount], session.id, true)
-        return
-      }
+      const accounts = getAccountsForDapp(accountPreferences, newAccount)
 
-      const hasAccessToNextAccount = accountPreferences.accounts.includes(newAccount)
-
-      // Do nothing. The app will continue to work with the last connected account with access
-      if (!hasAccessToNextAccount) return
-
-      await this.broadcastDappSessionEvent('accountsChanged', [newAccount], session.id, true)
+      await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
     })
   }
 
