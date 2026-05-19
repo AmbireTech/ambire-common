@@ -6,12 +6,19 @@ export type IDappsController = ControllerInterface<
   InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
 >
 
-export interface Dapp {
+export interface PredefinedDapp {
   id: string
   name: string
   description: string
   url: string
   icon: string | null
+}
+
+export interface ExtraDappInfo {
+  /**
+   * The chainId of the app when connected
+   */
+  chainId: number
   category: string | null
   tvl: number | null
   twitter: string | null
@@ -20,12 +27,13 @@ export interface Dapp {
   isConnected: boolean
   isFeatured: boolean
   isCustom: boolean
-  chainId: number
   favorite: boolean
   blacklisted: BlacklistedStatus
   grantedPermissionId?: string
   grantedPermissionAt?: number
 }
+
+export type Dapp = PredefinedDapp & Partial<ExtraDappInfo>
 
 export interface DefiLlamaProtocol {
   id: string
@@ -75,3 +83,16 @@ export interface HasUnverifiedDappsRes {
   ok: boolean
   res: boolean
 }
+
+export type DappVerificationBanner = {
+  id: string
+  type: 'error' | 'warning'
+  text: string
+}
+
+export const DAPP_VERIFICATION_BANNER_IDS = {
+  LOADING: 'dapp-verification-loading-banner',
+  FAILED_TO_GET_OR_UNKNOWN: 'dapp-verification-failed-banner',
+  BLACKLISTED: 'dapp-verification-blacklisted-banner',
+  NOT_IN_CATALOG: 'dapp-verification-not-in-catalog-banner'
+} as const
