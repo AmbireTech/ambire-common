@@ -727,10 +727,10 @@ describe('ERC-7730 descriptors', () => {
     }
     let relayerPath = ''
     const descriptorPaths: string[] = []
-    const callRelayer = async (path: string, method?: string) => {
-      expect(method).toBe('GET')
-
+    const callRelayer = async (path: string, method?: string, body?: any) => {
       if (path === '/v2/erc7730/account-op/clear-signing') {
+        expect(method).toBe('GET')
+
         relayerPath = path
         return {
           success: true,
@@ -741,8 +741,11 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === `/${registryPath}`) {
-        descriptorPaths.push(path)
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+        descriptorPaths.push(body.descriptorPath)
+
         return {
           success: true,
           display: {
@@ -852,10 +855,10 @@ describe('ERC-7730 descriptors', () => {
     }
     let relayerPath = ''
     const descriptorPaths: string[] = []
-    const callRelayer = async (path: string, method?: string) => {
-      expect(method).toBe('GET')
-
+    const callRelayer = async (path: string, method?: string, body?: any) => {
       if (path === '/v2/erc7730/eip-712/clear-signing') {
+        expect(method).toBe('GET')
+
         relayerPath = path
         return {
           success: true,
@@ -868,8 +871,11 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === `/${registryPath}`) {
-        descriptorPaths.push(path)
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+        descriptorPaths.push(body.descriptorPath)
+
         return {
           success: true,
           display: {
@@ -991,6 +997,108 @@ describe('ERC-7730 descriptors', () => {
         {
           label: 'Valid until',
           value: [getText('No expiration')]
+        }
+      ])
+    ])
+  })
+
+  test('humanizes 1inch Order EIP-712 and hides zero address To row', async () => {
+    const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
+    const makerAsset = '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6'
+    const takerAsset = '0x76fb31fb4af56892a25e32cfc43de717950c9278'
+    const oneInchOrderMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          Order: [
+            { name: 'salt', type: 'uint256' },
+            { name: 'maker', type: 'address' },
+            { name: 'receiver', type: 'address' },
+            { name: 'makerAsset', type: 'address' },
+            { name: 'takerAsset', type: 'address' },
+            { name: 'makingAmount', type: 'uint256' },
+            { name: 'takingAmount', type: 'uint256' },
+            { name: 'makerTraits', type: 'uint256' }
+          ],
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ]
+        },
+        domain: {
+          name: '1inch Aggregation Router',
+          version: '6',
+          chainId: '0xa',
+          verifyingContract: aggregationRouter
+        },
+        message: {
+          salt: '77345521712855512255420844903274714029333070352494440782855394858654424276150',
+          maker: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          receiver: ZeroAddress,
+          makerAsset,
+          takerAsset,
+          makingAmount: '366891214241290415',
+          takingAmount: '39061263450812873',
+          makerTraits:
+            '62419173104490761595518734106350460423656760415424099978067514748855868456960'
+        },
+        primaryType: 'Order'
+      },
+      signature: null,
+      chainId: 10n
+    }
+
+    const irMessage = humanizeMessage(oneInchOrderMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'Order(uint256 salt,address maker,address receiver,address makerAsset,address takerAsset,uint256 makingAmount,uint256 takingAmount,uint256 makerTraits)':
+                {
+                  intent: '1inch Order',
+                  fields: [
+                    { path: 'maker', label: 'From', format: 'raw' },
+                    {
+                      path: 'makingAmount',
+                      label: 'Send',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'makerAsset' }
+                    },
+                    {
+                      path: 'takingAmount',
+                      label: 'Receive minimum',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'takerAsset' }
+                    },
+                    { path: 'receiver', label: 'To', format: 'raw' },
+                    { label: 'Salt', path: 'salt', visible: 'never' },
+                    { label: 'Maker Traits', path: 'makerTraits', visible: 'never' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irMessage.canHideDropdownArrow).toBe(true)
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('1inch Order', [
+        {
+          label: 'From',
+          value: [getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')]
+        },
+        {
+          label: 'Send',
+          value: [getToken(makerAsset, 366891214241290415n, 10n)]
+        },
+        {
+          label: 'Receive minimum',
+          value: [getToken(takerAsset, 39061263450812873n, 10n)]
         }
       ])
     ])

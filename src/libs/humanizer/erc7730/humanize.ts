@@ -527,6 +527,15 @@ const formatFieldValue = (
 const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown =>
   field.value !== undefined ? field.value : resolvePath(field.path, context, base)
 
+const isZeroAddressValue = (value: unknown): boolean =>
+  typeof value === 'string' && isAddress(value) && value.toLowerCase() === ZeroAddress
+
+const shouldHideZeroAddressToRow = (field: Erc7730Field, value: unknown): boolean => {
+  const label = (field.label || field.path || '').trim().toLowerCase()
+
+  return label === 'to' && isZeroAddressValue(value)
+}
+
 const resolveFieldReference = (field: Erc7730Field, context: FormatContext): Erc7730Field => {
   if (!field.$ref) return field
 
@@ -568,6 +577,7 @@ const fieldToRows = (
   }
 
   if (value === undefined) return resolvedField.visible === 'optional' ? [] : null
+  if (shouldHideZeroAddressToRow(resolvedField, value)) return []
 
   return [
     {

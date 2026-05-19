@@ -213,8 +213,10 @@ describe('SignMessageController', () => {
         }
       }
     }
-    const callRelayer = jest.fn(async (path: string) => {
+    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
       if (path === '/v2/erc7730/eip-712/clear-signing') {
+        expect(method).toBe('GET')
+
         return {
           success: true,
           data: {
@@ -226,7 +228,10 @@ describe('SignMessageController', () => {
         }
       }
 
-      if (path === `/${registryPath}`) {
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+
         return {
           success: true,
           display: {
@@ -276,7 +281,9 @@ describe('SignMessageController', () => {
     })
 
     expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712/clear-signing', 'GET')
-    expect(callRelayer).toHaveBeenCalledWith(`/${registryPath}`, 'GET')
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor/clear-signing', 'POST', {
+      descriptorPath: `/${registryPath}`
+    })
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: 'Authorize spending of tokens'
@@ -318,21 +325,23 @@ describe('SignMessageController', () => {
           verifyingContract: aggregationRouter
         },
         message: {
-          salt: '77345521695523391200797982310672068146116530516693096626705429813034433883583',
+          salt: '77345521712855512255420844903274714029333070352494440782855394858654424276150',
           maker: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
           receiver: '0x0000000000000000000000000000000000000000',
           makerAsset: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
           takerAsset: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
           makingAmount: '366891214241290415',
-          takingAmount: '39159477605004232',
+          takingAmount: '39061263450812873',
           makerTraits:
-            '62419173104490761595518734106350460423628846627487883331393039102304667566080'
+            '62419173104490761595518734106350460423656760415424099978067514748855868456960'
         },
         primaryType: 'Order'
       }
     }
-    const callRelayer = jest.fn(async (path: string) => {
+    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
       if (path === '/v2/erc7730/eip-712/clear-signing') {
+        expect(method).toBe('GET')
+
         return {
           success: true,
           data: {
@@ -351,7 +360,10 @@ describe('SignMessageController', () => {
         }
       }
 
-      if (path === `/${registryPath}`) {
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+
         return {
           $schema: '../../specs/erc7730-v2.schema.json',
           context: {
@@ -411,10 +423,38 @@ describe('SignMessageController', () => {
     })
 
     expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712/clear-signing', 'GET')
-    expect(callRelayer).toHaveBeenCalledWith(`/${registryPath}`, 'GET')
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor/clear-signing', 'POST', {
+      descriptorPath: `/${registryPath}`
+    })
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: '1inch Order'
+    })
+    const visualization = signMessageController.humanizedMessage?.fullVisualization?.[0] as any
+
+    expect(visualization.rows.map((row: any) => row.label)).toEqual([
+      'From',
+      'Send',
+      'Receive minimum'
+    ])
+    expect(visualization.rows).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'To'
+        })
+      ])
+    )
+    expect(visualization.rows[1].value[0]).toMatchObject({
+      type: 'token',
+      address: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
+      value: 366891214241290415n,
+      chainId: 10n
+    })
+    expect(visualization.rows[2].value[0]).toMatchObject({
+      type: 'token',
+      address: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
+      value: 39061263450812873n,
+      chainId: 10n
     })
   })
 
