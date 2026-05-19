@@ -100,8 +100,9 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import { humanizeAccountOp } from '../../libs/humanizer'
+import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
+import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -163,6 +164,7 @@ import {
   SignAccountOpType
 } from './helper'
 
+import type { Erc7730RelayerCall } from '../../libs/humanizer'
 export enum SigningStatus {
   EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
@@ -208,6 +210,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.UpdatesPaused,
   SigningStatus.WaitingForPaymaster
 ]
+
+const ERC7730_DESCRIPTOR_WAIT_MS = 4000
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -339,6 +343,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   humanization: IrCall[] = []
 
   humanizationId: number | null = null
+
+  #humanizationSeq: number = 0
+
+  isHumanizing: boolean = false
 
   gasPrice: GasPriceController
 
@@ -734,16 +742,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
   }
 
-  humanize() {
-    this.humanization = humanizeAccountOp(this.accountOp)
-    const currentHumanizationId = Date.now()
+  #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
+    this.humanization = humanization
+    this.isHumanizing = false
+    const currentHumanizationId = existingHumanizationId ?? this.#humanizationSeq + 1
+    if (existingHumanizationId === undefined) this.#humanizationSeq = currentHumanizationId
     this.humanizationId = currentHumanizationId
+
     if (this.humanization.length) {
-      this.#updateBlacklistedStatusPromise = this.#phishing
+      const updateBlacklistedStatusPromise = this.#phishing
         .updateAddressesBlacklistedStatus(
           this.humanization
             .flatMap((call) =>
-              (call.fullVisualization ?? [])
+              flattenHumanizerVisualizations(call.fullVisualization)
                 .filter((v) => v.type === 'token' || v.type === 'address')
                 .map((v) => v.address)
             )
@@ -754,7 +765,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             for (const call of this.humanization) {
               if (!call.fullVisualization) continue
 
-              for (const vis of call.fullVisualization) {
+              for (const vis of flattenHumanizerVisualizations(call.fullVisualization)) {
                 if (
                   (vis.type === 'token' || vis.type === 'address') &&
                   vis.address &&
@@ -768,11 +779,90 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         )
         .finally(() => {
+          if (this.#updateBlacklistedStatusPromise !== updateBlacklistedStatusPromise) return
+
           this.#updateBlacklistedStatusPromise = undefined
           this.updateStatus()
         })
+
+      this.#updateBlacklistedStatusPromise = updateBlacklistedStatusPromise
     }
     this.emitUpdate()
+
+    return currentHumanizationId
+  }
+
+  #startHumanization() {
+    this.isHumanizing = true
+    this.humanization = []
+    const currentHumanizationId = this.#humanizationSeq + 1
+    this.#humanizationSeq = currentHumanizationId
+    this.humanizationId = currentHumanizationId
+    this.emitUpdate()
+
+    return currentHumanizationId
+  }
+
+  #setFallbackHumanization(humanizationId: number) {
+    if (this.humanizationId !== humanizationId) return false
+
+    this.#setHumanization(humanizeAccountOp(this.accountOp), humanizationId)
+    this.learnTokens()
+
+    return true
+  }
+
+  #setErc7730Humanization(
+    humanizationId: number,
+    erc7730Descriptors: Awaited<ReturnType<typeof fetchErc7730DescriptorsForAccountOp>>
+  ) {
+    if (this.humanizationId !== humanizationId || !Object.keys(erc7730Descriptors).length) {
+      return false
+    }
+
+    const erc7730Humanization = humanizeAccountOp(this.accountOp, { erc7730Descriptors })
+    if (!hasErc7730Humanization(erc7730Humanization) || this.humanizationId !== humanizationId) {
+      return false
+    }
+
+    this.#setHumanization(erc7730Humanization, humanizationId)
+    this.learnTokens()
+
+    return true
+  }
+
+  async #applyDescriptorFirstHumanization(humanizationId: number) {
+    let hasResolvedBeforeFallback = false
+    let hasDisplayedFallback = false
+
+    const fallbackTimeout = setTimeout(() => {
+      if (hasResolvedBeforeFallback || this.humanizationId !== humanizationId) return
+
+      hasDisplayedFallback = this.#setFallbackHumanization(humanizationId)
+    }, ERC7730_DESCRIPTOR_WAIT_MS)
+
+    try {
+      const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(
+        this.accountOp,
+        this.#callRelayer as Erc7730RelayerCall
+      )
+      hasResolvedBeforeFallback = true
+      clearTimeout(fallbackTimeout)
+
+      if (this.#setErc7730Humanization(humanizationId, erc7730Descriptors)) return
+
+      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
+    } catch (error) {
+      console.error(error)
+      hasResolvedBeforeFallback = true
+      clearTimeout(fallbackTimeout)
+      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
+    }
+  }
+
+  humanize() {
+    const currentHumanizationId = this.#startHumanization()
+    void this.#applyDescriptorFirstHumanization(currentHumanizationId)
   }
 
   learnTokens() {
@@ -780,7 +870,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       .map((call: any) =>
         !call.fullVisualization
           ? []
-          : call.fullVisualization.map((vis: any) =>
+          : flattenHumanizerVisualizations(call.fullVisualization).map((vis: any) =>
               vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
             )
       )
@@ -3289,6 +3379,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message: 'No transaction response received after being broadcasted.'
       })
 
+    const clearSigningHumanization = hasErc7730Humanization(this.humanization)
+      ? this.humanization
+      : null
+    const submittedAccountOpMeta = { ...accountOp.meta }
+    delete submittedAccountOpMeta.clearSigningHumanization
+    if (clearSigningHumanization) {
+      submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
+    }
+
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
       eoaNonce: this.accountOp.eoaNonce,
@@ -3301,6 +3400,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         (call) => call.to && getAddress(call.to) === SINGLETON
       )
     }
+    if (Object.keys(submittedAccountOpMeta).length) submittedAccountOp.meta = submittedAccountOpMeta
+    else delete submittedAccountOp.meta
 
     await this.#onBroadcastSuccess({
       submittedAccountOp,
@@ -3533,7 +3634,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   get banners(): SignAccountOpBanner[] {
     const banners: SignAccountOpBanner[] = []
 
-    const visualizations = this.humanization.flatMap((call) => call.fullVisualization ?? [])
+    const visualizations = this.humanization.flatMap((call) =>
+      flattenHumanizerVisualizations(call.fullVisualization)
+    )
 
     // Keep only token/address types AND ensure uniqueness by address
     const addressVisualizations = Array.from(

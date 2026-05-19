@@ -1,6 +1,12 @@
 import { getAddress, isAddress, ZeroAddress } from 'ethers'
 
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
+import {
+  HumanizerErc7730Row,
+  IrCall,
+  HumanizerMeta,
+  HumanizerVisualization,
+  HumanizerWarning
+} from './interfaces'
 
 export function getWarning(
   content: string,
@@ -60,6 +66,45 @@ export function getChain(chainId: bigint): HumanizerVisualization {
 
 export function getText(text: string): HumanizerVisualization {
   return { type: 'text', content: text, id: randomId() }
+}
+
+export function getErc7730Visualization(
+  title: string | undefined,
+  rows: HumanizerErc7730Row[],
+  dapp?: IrCall['dapp']
+): HumanizerVisualization {
+  return { type: 'erc7730', title, dapp, rows, id: randomId() }
+}
+
+export function flattenHumanizerVisualizations(
+  visualizations: HumanizerVisualization[] = []
+): HumanizerVisualization[] {
+  return visualizations.flatMap((visualization) => {
+    if (visualization.type !== 'erc7730') return [visualization]
+
+    return [
+      visualization,
+      ...flattenHumanizerVisualizations(visualization.rows.flatMap((row) => row.value))
+    ]
+  })
+}
+
+export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
+  return !!humanization?.some((call) =>
+    flattenHumanizerVisualizations(call.fullVisualization).some(
+      (visualization) => visualization.type === 'erc7730'
+    )
+  )
+}
+
+export function getPersistedHumanization(meta?: {
+  clearSigningHumanization?: unknown
+}): IrCall[] | null {
+  const humanization = meta?.clearSigningHumanization
+  if (!Array.isArray(humanization)) return null
+
+  const persistedHumanization = humanization as IrCall[]
+  return hasErc7730Humanization(persistedHumanization) ? persistedHumanization : null
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {

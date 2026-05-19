@@ -103,6 +103,8 @@ export interface AccountOp {
     speedUp?: {
       enabled: boolean
     }
+    /** Descriptor-backed humanization persisted so activity, history and Benzin show the same clear signing details. */
+    clearSigningHumanization?: unknown
   }
   flags?: {
     hideActivityBanner?: boolean

@@ -1,14 +1,23 @@
 import { ethers, ZeroAddress } from 'ethers'
 
-import { describe, test } from '@jest/globals'
+import { describe, jest, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
+import { fetchErc7730DescriptorForMessage, fetchErc7730DescriptorsForAccountOp } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getErc7730Visualization,
+  getLabel,
+  getText,
+  getToken
+} from './utils'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -391,5 +400,707 @@ describe('with (Account | Key)[] arg', () => {
 
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
+  })
+})
+
+describe('ERC-7730 descriptors', () => {
+  beforeEach(async () => {
+    accountOp.calls = []
+  })
+
+  test('prioritizes descriptor calldata humanization over local modules', async () => {
+    const call = transactions.erc20[1]!
+    accountOp.calls = [call]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'approve(address _spender, uint256 _value)': {
+                  intent: 'Authorize',
+                  fields: [
+                    {
+                      path: '#._spender',
+                      label: 'Spender',
+                      format: 'addressName',
+                      visible: 'always'
+                    },
+                    {
+                      path: '#._value',
+                      label: 'Amount allowance',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Authorize', [
+          {
+            label: 'Spender',
+            value: [getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')]
+          },
+          {
+            label: 'Amount allowance',
+            value: [
+              getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, 1n)
+            ]
+          }
+        ])
+      ]
+    ])
+  })
+
+  test('resolves descriptor root and bracket paths used by registry descriptors', async () => {
+    const tokenOut = transactions.erc20[1]!.to
+    const recipient = accountOp.accountAddr
+    const uniswapRouter = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
+    const swapIface = new ethers.Interface([
+      'function swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,address[] path,address to)',
+      'function exactInput((bytes path,address recipient,uint256 amountIn,uint256 amountOutMinimum) params)'
+    ])
+    const exactInputPath = ethers.concat([WETH_ADDRESS, '0x000bb8', tokenOut])
+
+    accountOp.calls = [
+      {
+        to: uniswapRouter,
+        value: 0n,
+        data: swapIface.encodeFunctionData('swapExactTokensForTokens', [
+          1000000000000000000n,
+          1000000n,
+          [WETH_ADDRESS, tokenOut],
+          recipient
+        ])
+      },
+      {
+        to: uniswapRouter,
+        value: 0n,
+        data: swapIface.encodeFunctionData('exactInput', [
+          {
+            path: exactInputPath,
+            recipient,
+            amountIn: 2000000000000000000n,
+            amountOutMinimum: 2000000n
+          }
+        ])
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'amountIn',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'path.[0]' }
+                },
+                {
+                  path: 'amountOutMin',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'path.[-1]' }
+                }
+              ]
+            },
+          'exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'params.amountIn',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.path.[0:20]' }
+                },
+                {
+                  path: 'params.amountOutMinimum',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.path.[-20:]' }
+                }
+              ]
+            }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: { descriptor },
+        1: { descriptor }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(WETH_ADDRESS, 1000000000000000000n, undefined, 1n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(tokenOut, 1000000n, undefined, 1n)]
+          }
+        ])
+      ],
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(WETH_ADDRESS, 2000000000000000000n, undefined, 1n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(tokenOut, 2000000n, undefined, 1n)]
+          }
+        ])
+      ]
+    ])
+  })
+
+  test('uses standard ERC-7730 approval descriptors in a Permit2 + Universal Router batch', async () => {
+    const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+    const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+    const universalRouter = '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7'
+    const batchAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: baseCbBtc,
+          value: 0n,
+          data: '0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+        },
+        {
+          to: permit2,
+          value: 0n,
+          data: '0x87517c45000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf000000000000000000000000fdf682f51fe81aa4898f0ae2163d8a55c127fbc7000000000000000000000000ffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000006a2c1c44'
+        },
+        {
+          to: universalRouter,
+          value: 0n,
+          data: '0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000006a04964d00000000000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003070b0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002e000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000001a000000000000000000000000000000000000000000000000000000000000009bb00000000000000000000000000000000000000000000000000000000001d84ef00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000060000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000d8293ad21678c6f09da139b4b62d38e514a03b780000000000000000000000000000000000000000000000000000000000000000756e697800000000000c'
+        }
+      ]
+    }
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(batchAccountOp)
+    const irCalls = humanizeAccountOp(batchAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(Object.keys(descriptors)).toEqual(['0', '1'])
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Approve',
+      rows: [{ label: 'Spender' }, { label: 'Amount' }]
+    })
+    expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Approve',
+      rows: [{ label: 'Spender' }, { label: 'Amount' }, { label: 'Approval expires' }]
+    })
+    expect(irCalls[2]!.fullVisualization?.[0]).toMatchObject({
+      type: 'action',
+      content: 'Swap'
+    })
+  })
+
+  test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {
+    const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+    const transferAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: usdt,
+          value: 0n,
+          data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+        }
+      ]
+    }
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp)
+    const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(Object.keys(descriptors)).toEqual(['0'])
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Send', [
+        {
+          label: 'Amount',
+          value: [getToken(usdt, 1000000000n, undefined, 1n)]
+        },
+        {
+          label: 'To',
+          value: [getAddressVisualization(recipient)]
+        }
+      ])
+    ])
+  })
+
+  test('keeps the standard ERC-20 transfer descriptor for WETH when a registry descriptor exists', async () => {
+    const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+    const wethRegistryPath = 'registry/weth/calldata-weth.json'
+    const transferAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: WETH_ADDRESS,
+          value: 0n,
+          data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+        }
+      ]
+    }
+    const callRelayer = async (path: string) => {
+      if (path === '/v2/erc7730/account-op/clear-signing') {
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${WETH_ADDRESS}`]: wethRegistryPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === `/${wethRegistryPath}`) {
+        return {
+          success: true,
+          display: {
+            formats: {
+              'deposit()': {
+                intent: 'Wrap',
+                fields: [
+                  {
+                    path: '@.value',
+                    label: 'Amount',
+                    format: 'amount'
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp, callRelayer)
+    const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(Object.keys(descriptors)).toEqual(['0'])
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Send', [
+        {
+          label: 'Amount',
+          value: [getToken(WETH_ADDRESS, 1000000000n, undefined, 1n)]
+        },
+        {
+          label: 'To',
+          value: [getAddressVisualization(recipient)]
+        }
+      ])
+    ])
+  })
+
+  test('fetches the calldata descriptor index through the relayer', async () => {
+    const call = transactions.erc20[1]!
+    const registryPath = 'registry/test/calldata-relayer-approval.json'
+    const relayerAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [call]
+    }
+    let relayerPath = ''
+    const descriptorPaths: string[] = []
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op/clear-signing') {
+        expect(method).toBe('GET')
+
+        relayerPath = path
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${call.to.toLowerCase()}`]: registryPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+        descriptorPaths.push(body.descriptorPath)
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'approve(address _spender, uint256 _value)': {
+                intent: 'Authorize via relayer',
+                fields: [
+                  {
+                    path: '#._spender',
+                    label: 'Spender',
+                    format: 'addressName',
+                    visible: 'always'
+                  },
+                  {
+                    path: '#._value',
+                    label: 'Amount allowance',
+                    format: 'tokenAmount',
+                    params: { tokenPath: '@.to' },
+                    visible: 'always'
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(relayerAccountOp, callRelayer)
+    const irCalls = humanizeAccountOp(relayerAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(relayerPath).toBe('/v2/erc7730/account-op/clear-signing')
+    expect(descriptorPaths).toEqual([`/${registryPath}`])
+    expect(descriptors[0]?.path).toBe(registryPath)
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Authorize via relayer', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')]
+        },
+        {
+          label: 'Amount allowance',
+          value: [
+            getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, 1n)
+          ]
+        }
+      ])
+    ])
+  })
+
+  test('falls back to the built-in calldata descriptor when the relayer index fails', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const call = transactions.erc20[1]!
+    const fallbackAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [call]
+    }
+    const callRelayer = async () => {
+      throw new Error('relayer down')
+    }
+
+    try {
+      const descriptors = await fetchErc7730DescriptorsForAccountOp(fallbackAccountOp, callRelayer)
+      expect(Object.keys(descriptors)).toEqual(['0'])
+      expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  test('fetches the EIP-712 descriptor index through the relayer', async () => {
+    const registryPath = 'registry/test/eip712-relayer-permit.json'
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          name: 'Wrapped Ether',
+          version: '1',
+          chainId: 1,
+          verifyingContract: WETH_ADDRESS
+        },
+        types: {
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        primaryType: 'Permit',
+        message: {
+          owner: accountOp.accountAddr,
+          spender: address2,
+          value: 133700n,
+          nonce: 1n,
+          deadline: ethers.MaxUint256
+        }
+      },
+      signature: null,
+      chainId: 1n
+    }
+    let relayerPath = ''
+    const descriptorPaths: string[] = []
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/eip-712/clear-signing') {
+        expect(method).toBe('GET')
+
+        relayerPath = path
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${WETH_ADDRESS}`]: {
+              Permit: [{ path: registryPath }]
+            }
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+        descriptorPaths.push(body.descriptorPath)
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    {
+                      path: 'spender',
+                      label: 'Spender',
+                      format: 'raw',
+                      visible: 'always'
+                    },
+                    {
+                      path: 'value',
+                      label: 'Max spending amount',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
+
+    expect(relayerPath).toBe('/v2/erc7730/eip-712/clear-signing')
+    expect(descriptorPaths).toEqual([`/${registryPath}`])
+    expect(descriptor?.path).toBe(registryPath)
+  })
+
+  test('prioritizes descriptor EIP-712 humanization over local modules', async () => {
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          name: 'USD Coin',
+          version: '2',
+          chainId: 1,
+          verifyingContract: WETH_ADDRESS
+        },
+        types: {
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        primaryType: 'Permit',
+        message: {
+          owner: accountOp.accountAddr,
+          spender: address2,
+          value: 133700n,
+          nonce: 1n,
+          deadline: ethers.MaxUint256
+        }
+      },
+      signature: null,
+      chainId: 1n
+    }
+
+    const irMessage = humanizeMessage(permitMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    {
+                      path: 'spender',
+                      label: 'Spender',
+                      format: 'raw',
+                      visible: 'always'
+                    },
+                    {
+                      path: 'value',
+                      label: 'Max spending amount',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    },
+                    {
+                      path: 'deadline',
+                      label: 'Valid until',
+                      format: 'date',
+                      params: { encoding: 'timestamp' }
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Authorize spending of tokens', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization(address2)]
+        },
+        {
+          label: 'Max spending amount',
+          value: [getToken(WETH_ADDRESS, 133700n, undefined, 1n)]
+        },
+        {
+          label: 'Valid until',
+          value: [getText('No expiration')]
+        }
+      ])
+    ])
+  })
+
+  test('humanizes 1inch Order EIP-712 and hides zero address To row', async () => {
+    const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
+    const makerAsset = '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6'
+    const takerAsset = '0x76fb31fb4af56892a25e32cfc43de717950c9278'
+    const oneInchOrderMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          Order: [
+            { name: 'salt', type: 'uint256' },
+            { name: 'maker', type: 'address' },
+            { name: 'receiver', type: 'address' },
+            { name: 'makerAsset', type: 'address' },
+            { name: 'takerAsset', type: 'address' },
+            { name: 'makingAmount', type: 'uint256' },
+            { name: 'takingAmount', type: 'uint256' },
+            { name: 'makerTraits', type: 'uint256' }
+          ],
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ]
+        },
+        domain: {
+          name: '1inch Aggregation Router',
+          version: '6',
+          chainId: '0xa',
+          verifyingContract: aggregationRouter
+        },
+        message: {
+          salt: '77345521712855512255420844903274714029333070352494440782855394858654424276150',
+          maker: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          receiver: ZeroAddress,
+          makerAsset,
+          takerAsset,
+          makingAmount: '366891214241290415',
+          takingAmount: '39061263450812873',
+          makerTraits:
+            '62419173104490761595518734106350460423656760415424099978067514748855868456960'
+        },
+        primaryType: 'Order'
+      },
+      signature: null,
+      chainId: 10n
+    }
+
+    const irMessage = humanizeMessage(oneInchOrderMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'Order(uint256 salt,address maker,address receiver,address makerAsset,address takerAsset,uint256 makingAmount,uint256 takingAmount,uint256 makerTraits)':
+                {
+                  intent: '1inch Order',
+                  fields: [
+                    { path: 'maker', label: 'From', format: 'raw' },
+                    {
+                      path: 'makingAmount',
+                      label: 'Send',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'makerAsset' }
+                    },
+                    {
+                      path: 'takingAmount',
+                      label: 'Receive minimum',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'takerAsset' }
+                    },
+                    { path: 'receiver', label: 'To', format: 'raw' },
+                    { label: 'Salt', path: 'salt', visible: 'never' },
+                    { label: 'Maker Traits', path: 'makerTraits', visible: 'never' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irMessage.canHideDropdownArrow).toBe(true)
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('1inch Order', [
+        {
+          label: 'From',
+          value: [getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')]
+        },
+        {
+          label: 'Send',
+          value: [getToken(makerAsset, 366891214241290415n, 10n)]
+        },
+        {
+          label: 'Receive minimum',
+          value: [getToken(takerAsset, 39061263450812873n, 10n)]
+        }
+      ])
+    ])
   })
 })
