@@ -8,6 +8,11 @@ export type IDappsController = ControllerInterface<
 
 export interface DappAccountPreferences {
   enabled: boolean
+  /**
+   * The last selected account in the extension when the dapp session was active. It is used
+   * when the currently selected account in the extension is not a part of the `accounts` list.
+   * If the currently selected account in the extension is a prat of the list, this field is ignored and the current account is used instead.
+   */
   selectedAccount: string
   accounts: string[]
 }

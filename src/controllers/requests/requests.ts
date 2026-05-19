@@ -939,12 +939,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const { kind, meta, dappPromises } = userRequest
 
     dappPromises.forEach((p) => {
+      // WE SHOULD NEVER RESOLVE THE PROMISE. It should only be rejected if the user rejects the request
+      // as that destroys the next request
+      if (userRequest.kind === 'switchAccount') return
+
       p.resolve(data)
     })
 
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
-    if (kind === 'unlock' || kind === 'dappConnect' || kind === 'switchAccount') {
+    if (kind === 'unlock' || kind === 'dappConnect') {
       meta.pendingToRemove = true
 
       setTimeout(async () => {
