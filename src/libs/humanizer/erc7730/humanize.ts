@@ -8,8 +8,8 @@ import {
   ZeroAddress
 } from 'ethers'
 
-import { Call } from '../../accountOp/types'
 import { Message } from '../../../interfaces/userRequest'
+import { Call } from '../../accountOp/types'
 import { HumanizerErc7730Row, HumanizerVisualization, IrCall, IrMessage } from '../interfaces'
 import {
   getAddressVisualization,
@@ -489,7 +489,7 @@ const formatFieldValue = (
 
     const tokenAddress = getTokenAddressFromField(field, context, base)
     if (amount !== null && tokenAddress) {
-      return [getToken(tokenAddress, amount, undefined, getChainIdFromField(field, context, base))]
+      return [getToken(tokenAddress, amount, getChainIdFromField(field, context, base))]
     }
   }
 
@@ -497,7 +497,7 @@ const formatFieldValue = (
     const amount = toBigIntOrNull(value)
     const tokenAddress = getTokenAddressFromField(field, context, base) || ZeroAddress
     if (amount !== null) {
-      return [getToken(tokenAddress, amount, undefined, getChainIdFromField(field, context, base))]
+      return [getToken(tokenAddress, amount, getChainIdFromField(field, context, base))]
     }
   }
 
@@ -505,9 +505,7 @@ const formatFieldValue = (
     const tokenId = toBigIntOrNull(value)
     const collectionAddress = getCollectionAddressFromField(field, context, base)
     if (tokenId !== null && collectionAddress) {
-      return [
-        getToken(collectionAddress, tokenId, undefined, getChainIdFromField(field, context, base))
-      ]
+      return [getToken(collectionAddress, tokenId, getChainIdFromField(field, context, base))]
     }
   }
 
