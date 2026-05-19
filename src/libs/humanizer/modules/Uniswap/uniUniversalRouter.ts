@@ -68,31 +68,23 @@ function parseV4Actions(
       const [tokenIn, path, amountIn, amountOut] = swap
       const lastToken = path[path.length - 1][0]
 
-      // we add them so we can use them as token hints later on in the simulation
-      const hiddenTokens = path.map((p: any): HumanizerVisualization[] => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const [intermediateCurrency, fee, tickSpacing, hooks, hookData] = p
-        return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
-      })
-      parsed.push(
-        [getAction('Swap'), getToken(tokenIn, 0n), getLabel('for'), getToken(lastToken, 0n)],
-        ...hiddenTokens
-      )
+      parsed.push([
+        getAction('Swap'),
+        getToken(tokenIn, 0n),
+        getLabel('for'),
+        getToken(lastToken, 0n)
+      ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
       const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT, param)
       const [tokenOut, path, amountOut, amountIn] = swap
       const firstToken = path[0][0]
 
-      // we add them so we can use them as token hints later on in the simulation
-      const hiddenTokens = path.map((p: any): HumanizerVisualization[] => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const [intermediateCurrency, fee, tickSpacing, hooks, hookData] = p
-        return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
-      })
-      parsed.push(
-        [getAction('Swap'), getToken(firstToken, 0n), getLabel('for'), getToken(tokenOut, 0n)],
-        ...hiddenTokens
-      )
+      parsed.push([
+        getAction('Swap'),
+        getToken(firstToken, 0n),
+        getLabel('for'),
+        getToken(tokenOut, 0n)
+      ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
       const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE, param)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -104,9 +96,7 @@ function parseV4Actions(
         getAction('Swap'),
         getToken(currency0, 0n),
         getLabel('for'),
-        getToken(currency1, 0n),
-        // used for hint in token discovery
-        getToken(hooks, 0n, true)
+        getToken(currency1, 0n)
       ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE) {
       const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT_SINGLE, param)
@@ -119,9 +109,7 @@ function parseV4Actions(
         getAction('Swap'),
         getToken(currency0, 0n),
         getLabel('for'),
-        getToken(currency1, 0n),
-        // used for hint in token discovery
-        getToken(hooks, 0n, true)
+        getToken(currency1, 0n)
       ])
     } else if (action === V4_ACTION_CODES.TAKE) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
@@ -130,20 +118,6 @@ function parseV4Actions(
         ['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)
       )
         parsed.push([getAction('Take'), getToken(args.currency, args.amount)])
-      // for hints
-      else {
-        const matchingSwap = [...parsed]
-          .reverse()
-          .find(
-            (humanization) =>
-              humanization[0]?.content?.includes('Swap') &&
-              humanization[3]?.type === 'token' &&
-              humanization[3].address === args.currency.toLowerCase()
-          )
-
-        if (matchingSwap) matchingSwap.push(getToken(args.currency, 0n, true))
-        else parsed.push([getToken(args.currency, 0n, true)])
-      }
     } else if (action === V4_ACTION_CODES.TAKE_ALL) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])

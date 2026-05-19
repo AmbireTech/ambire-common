@@ -28,17 +28,11 @@ export const getUniRecipientText = (accAddr: string, recAddr: string): Humanizer
 
 export const joinWithAndLabel = (
   humanizations: HumanizerVisualization[][]
-): HumanizerVisualization[] => {
-  const hiddenTokens = humanizations.map((h) => h.filter(({ isHidden }) => isHidden)).flat()
-
-  const humanizationsWithoutHiddenTokens = humanizations
-    .map((h) => h.filter(({ isHidden }) => !isHidden))
+): HumanizerVisualization[] =>
+  humanizations
     .filter((h) => h.length)
-  const concatenatedVisibleHumanizations = humanizationsWithoutHiddenTokens
     .reduce((acc, arr) => [...acc, ...arr, getLabel('and')], [])
     .slice(0, -1)
-  return [...concatenatedVisibleHumanizations, ...hiddenTokens]
-}
 
 const isSwap = (
   call: HumanizerVisualization[] | undefined
@@ -184,7 +178,6 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isSwap(callJ) &&
         callI[3].address === callJ[1].address
       ) {
-        callI?.push({ ...callI[3], isHidden: true })
         callI[3].value = callJ[3].value!
         callI[3].address! = callJ[3]?.address!
 

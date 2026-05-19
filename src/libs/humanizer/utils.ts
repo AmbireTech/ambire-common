@@ -41,7 +41,6 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
 export function getToken(
   _address: string,
   amount: bigint,
-  isHidden?: boolean,
   chainId?: bigint
 ): HumanizerVisualization {
   const address = _address.toLowerCase()
@@ -50,7 +49,6 @@ export function getToken(
     address,
     value: BigInt(amount),
     id: randomId(),
-    isHidden,
     chainId
   }
 }
@@ -59,7 +57,7 @@ export function getTokenWithChain(
   amount: bigint,
   chainId?: bigint
 ): HumanizerVisualization {
-  return getToken(address, amount, undefined, chainId)
+  return getToken(address, amount, chainId)
 }
 
 export function getChain(chainId: bigint): HumanizerVisualization {
