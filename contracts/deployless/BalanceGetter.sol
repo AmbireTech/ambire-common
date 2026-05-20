@@ -8,6 +8,11 @@ import './Simulation.sol';
 contract BalanceGetter is Simulation {
   // Knowing the exact source of the error would be great, but we can always change this as this contract is meant to be called off-chain
 
+  // add gas limits to token calls to prevent gas-griefs
+  uint256 private constant BALANCE_OF_GAS_LIMIT = 200_000;
+  uint256 private constant DECIMALS_GAS_LIMIT = 75_000;
+  uint256 private constant METADATA_GAS_LIMIT = 150_000;
+
   // During simulation, we return the delta between the balances before and after the simulation.
   // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
   // While returning the token address directly in the before/after balances would be more straightforward,
@@ -34,17 +39,38 @@ contract BalanceGetter is Simulation {
     IAmbireAccount account,
     IERC20 token
   ) external view returns (TokenInfo memory info) {
-    info.amount = token.balanceOf(address(account));
-    info.symbol = token.symbol();
-    info.name = token.name();
-    info.decimals = token.decimals();
+    try token.balanceOf{ gas: BALANCE_OF_GAS_LIMIT }(address(account)) returns (uint256 amount) {
+      info.amount = amount;
+    } catch (bytes memory e) {
+      info.error = e.length > 0 ? e : bytes('unkn');
+      return info;
+    }
+
+    try token.decimals{ gas: DECIMALS_GAS_LIMIT }() returns (uint8 decimals) {
+      info.decimals = decimals;
+    } catch (bytes memory e) {
+      info.error = e.length > 0 ? e : bytes('unkn');
+      return info;
+    }
+
+    try token.symbol{ gas: METADATA_GAS_LIMIT }() returns (string memory symbol) {
+      info.symbol = symbol;
+    } catch {}
+
+    try token.name{ gas: METADATA_GAS_LIMIT }() returns (string memory name) {
+      info.name = name;
+    } catch {}
   }
 
   function getERC20TokenBalance(
     IAmbireAccount account,
     IERC20 token
   ) external view returns (BalanceInfo memory info) {
-    info.amount = token.balanceOf(address(account));
+    try token.balanceOf{ gas: BALANCE_OF_GAS_LIMIT }(address(account)) returns (uint256 amount) {
+      info.amount = amount;
+    } catch (bytes memory e) {
+      info.error = e.length > 0 ? e : bytes('unkn');
+    }
   }
 
   function getBalances(
@@ -81,12 +107,14 @@ contract BalanceGetter is Simulation {
   ) public view returns (BalanceInfo[] memory) {
     uint len = tokenAddrs.length;
     BalanceInfo[] memory results = new BalanceInfo[](len);
-    
+
     for (uint256 i = 0; i < len; i++) {
       if (tokenAddrs[i] == address(0)) {
         results[i] = BalanceInfo(address(account).balance, bytes(''));
       } else {
-        try this.getERC20TokenBalance(account, IERC20(tokenAddrs[i])) returns (BalanceInfo memory balanceInfo) {
+        try this.getERC20TokenBalance(account, IERC20(tokenAddrs[i])) returns (
+          BalanceInfo memory balanceInfo
+        ) {
           results[i] = balanceInfo;
         } catch (bytes memory e) {
           results[i].error = e.length > 0 ? e : bytes('unkn');
