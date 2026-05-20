@@ -35,6 +35,11 @@ export interface ExtraDappInfo {
 
 export type Dapp = PredefinedDapp & Partial<ExtraDappInfo>
 
+export interface RecentDappEntry {
+  id: string
+  openedAt: number
+}
+
 export interface DefiLlamaProtocol {
   id: string
   name: string

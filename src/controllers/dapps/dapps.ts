@@ -23,7 +23,8 @@ import {
   DefiLlamaProtocol,
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
-  IDappsController
+  IDappsController,
+  RecentDappEntry
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -54,6 +55,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 3. Broadcasting events from the wallet to connected dApps via the Session
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
 export class DappsController extends EventEmitter implements IDappsController {
+  static MAX_RECENT_DAPPS = 20
+
   #appVersion: string
 
   #fetch: Fetch
@@ -69,6 +72,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   dappSessions: { [sessionId: string]: Session } = {}
 
   #dapps = new Map<string, Dapp>()
+
+  #recentDapps: RecentDappEntry[] = []
 
   dappToConnect: Dapp | null = null
 
@@ -204,6 +209,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     return Array.from(filteredMap.values()).sort(sortDapps)
   }
 
+  get recentDapps(): Dapp[] {
+    // Resolve each recent entry against #dapps; filter stale ids whose dapp was removed.
+    // Defensive sort by openedAt desc — entries are unshifted on add, but stale-filtering can disturb ordering across versions.
+    return this.#recentDapps
+      .slice()
+      .sort((a, b) => b.openedAt - a.openedAt)
+      .map((entry) => this.#dapps.get(entry.id))
+      .filter((d): d is Dapp => !!d)
+  }
+
   get categories(): string[] {
     return [
       ...new Set(
@@ -215,8 +230,12 @@ export class DappsController extends EventEmitter implements IDappsController {
   async #load() {
     await this.#networks.initialLoadPromise
 
-    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
+    const [storedDapps, storedRecentDapps] = await Promise.all([
+      this.#storage.get('dappsV2', predefinedDapps),
+      this.#storage.get('recentDapps', [] as RecentDappEntry[])
+    ])
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
+    this.#recentDapps = storedRecentDapps
 
     void this.fetchAndUpdateDapps()
   }
@@ -708,6 +727,31 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
   }
 
+  async addToRecentDapps(id: string) {
+    await this.initialLoadPromise
+
+    // Skip non-catalog ids (direct-URL/Google visits that don't match a known dapp).
+    if (!this.#dapps.has(id)) return
+
+    this.#recentDapps = [
+      { id, openedAt: Date.now() },
+      ...this.#recentDapps.filter((entry) => entry.id !== id)
+    ].slice(0, DappsController.MAX_RECENT_DAPPS)
+
+    await this.#storage.set('recentDapps', this.#recentDapps)
+    this.emitUpdate()
+  }
+
+  async clearRecentDapps() {
+    await this.initialLoadPromise
+
+    if (!this.#recentDapps.length) return
+
+    this.#recentDapps = []
+    await this.#storage.set('recentDapps', this.#recentDapps)
+    this.emitUpdate()
+  }
+
   hasPermission(id: string) {
     if (!id) return false
 
@@ -951,6 +995,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...this,
       ...super.toJSON(),
       dapps: this.dapps,
+      recentDapps: this.recentDapps,
       categories: this.categories,
       isReady: this.isReady,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
