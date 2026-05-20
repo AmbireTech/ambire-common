@@ -82,6 +82,7 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { isHex } from 'viem'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -1086,8 +1087,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].calls
         : [request.params[0]]
 
-      if (calls.some(({ data }) => data.length % 2 === 1))
+      if (calls.some(({ data }) => data && data.length % 2 === 1))
         throw ethErrors.rpc.invalidParams('A call has uneven number of character in the hex data.')
+      if (calls.some(({ data }) => data && !isHex(data)))
+        throw ethErrors.rpc.invalidParams('A call has invalid data.')
 
       // we are checking if to exists, because if it does not the call is a
       // valid contract  deployment
