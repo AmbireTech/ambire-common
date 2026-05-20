@@ -1805,7 +1805,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 ...calls.map((call) => ({
                   ...call,
                   id: uuidv4(),
-                  to: call.to,
+                  to: getAddress(call.to),
                   data: call.data || '0x',
                   value: call.value ? getBigInt(call.value) : 0n
                 }))
@@ -1894,7 +1894,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                   ...calls.map((call) => ({
                     ...call,
                     id: uuidv4(),
-                    to: call.to,
+                    to: getAddress(call.to),
                     data: call.data || '0x',
                     value: call.value ? getBigInt(call.value) : 0n
                   }))
