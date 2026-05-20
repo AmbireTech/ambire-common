@@ -10,7 +10,7 @@ import { relayerCall } from '../relayerCall/relayerCall'
 import { Polling } from './polling'
 
 const getRandomEmail = () => {
-  return `yosif+${Math.random().toString().slice(2)}@ambire.com`
+  return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 const email = getRandomEmail()
 
