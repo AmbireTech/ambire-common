@@ -280,7 +280,7 @@ export default [
     symbol: 'wallet',
     chainId: 1n,
     decimals: 18,
-    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/Ambire_logo_250x250.png'
+    icon: 'https://cena.ambire.com/iconProxy/ethereum/0x88800092fF476844f74dC2FC427974BBee2794Ae'
   },
   {
     address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
@@ -290,7 +290,7 @@ export default [
     symbol: 'xwallet',
     chainId: 1n,
     decimals: 18,
-    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/xwallet_250x250.png'
+    icon: 'https://cena.ambire.com/iconProxy/ethereum/0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
   },
   {
     address: '0x028171bCA77440897B824Ca71D1c56caC55b68A3',
@@ -950,7 +950,7 @@ export default [
     symbol: 'wallet',
     chainId: 8453n,
     decimals: 18,
-    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/Ambire_logo_250x250.png'
+    icon: 'https://cena.ambire.com/iconProxy/ethereum/0x88800092fF476844f74dC2FC427974BBee2794Ae'
   },
   {
     address: '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452',
