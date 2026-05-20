@@ -19,6 +19,7 @@ import { Portfolio } from './portfolio'
 const ACCOUNT_ADDR = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const RECIPIENT_ADDR = '0xe5a4dad2ea987215460379ab285df87136e83bea'
 const DEPLOYLESS_ADDR = '0x0000000000000000000000000000000000696969'
+const BASE_LIFI_INVALID_TOKEN = '0x6d691Fb41CA5f030422251BCb19944bd8D8CB094'.toLowerCase()
 
 const TOKENS = [
   {
@@ -41,7 +42,7 @@ const TOKENS = [
 // a token list which previously, the simulation reverted with
 // out of gas with. Now, it should pass
 const BASE_LIFI_CURL_TOKEN_HINTS = [
-  '0x6d691Fb41CA5f030422251BCb19944bd8D8CB094',
+  BASE_LIFI_INVALID_TOKEN,
   '0xD8293ad21678c6F09Da139b4B62D38e514a03B78',
   '0xa860498F8a299526174b539FcC49F13cc082Fb18',
   '0x31a9b1835864706AF10103b31Ea2b79bDb995f5F',
@@ -220,6 +221,9 @@ describe('Portfolio simulation', () => {
 
     expect(result).toMatch(/^0x/)
     expect(before.balances).toHaveLength(BASE_LIFI_CURL_TOKEN_HINTS.length)
+    expect(
+      before.balances[BASE_LIFI_CURL_TOKEN_HINTS.indexOf(BASE_LIFI_INVALID_TOKEN)].error
+    ).not.toBe('0x')
     expect(afterSimulation.nonce).toBeGreaterThan(before.nonce)
     expect(simulationError).toBe('0x')
     expect(gasLeft).toBeGreaterThan(0n)
