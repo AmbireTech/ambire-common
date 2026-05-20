@@ -13,12 +13,6 @@ contract BalanceGetter is Simulation {
   uint256 private constant DECIMALS_GAS_LIMIT = 75_000;
   uint256 private constant METADATA_GAS_LIMIT = 150_000;
 
-  // During simulation, we return the delta between the balances before and after the simulation.
-  // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
-  // While returning the token address directly in the before/after balances would be more straightforward,
-  // it would result in heavier data for larger token portfolios, making it more CPU-intensive to parse with ethers.
-  address[] private deltaAddressesMapping;
-
   struct TokenInfo {
     string symbol;
     string name;
@@ -130,7 +124,7 @@ contract BalanceGetter is Simulation {
     TokenInfo[] memory balancesA,
     TokenInfo[] memory balancesB,
     address[] calldata tokenAddrs
-  ) public returns (TokenInfo[] memory) {
+  ) internal pure returns (TokenInfo[] memory, address[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < balancesA.length; i++) {
@@ -140,7 +134,12 @@ contract BalanceGetter is Simulation {
     }
 
     TokenInfo[] memory delta = new TokenInfo[](deltaSize);
-    deltaAddressesMapping = new address[](deltaSize);
+
+    // During simulation, we return the delta between the balances before and after the simulation.
+    // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
+    // While returning the token address directly in the before/after balances would be more straightforward,
+    // it would result in heavier data for larger token portfolios, making it more CPU-intensive to parse with ethers.
+    address[] memory deltaAddressesMapping = new address[](deltaSize);
 
     // Second loop to populate the delta array
     // Separate index for the delta array
@@ -153,7 +152,36 @@ contract BalanceGetter is Simulation {
       }
     }
 
-    return delta;
+    return (delta, deltaAddressesMapping);
+  }
+
+  function getBalanceDelta(
+    TokenInfo[] memory balancesA,
+    BalanceInfo[] memory balancesB,
+    address[] calldata tokenAddrs
+  ) internal pure returns (TokenInfo[] memory, address[] memory) {
+    uint deltaSize = 0;
+
+    for (uint256 i = 0; i < balancesA.length; i++) {
+      if (balancesA[i].amount != balancesB[i].amount) {
+        deltaSize++;
+      }
+    }
+
+    TokenInfo[] memory delta = new TokenInfo[](deltaSize);
+    address[] memory deltaAddressesMapping = new address[](deltaSize);
+
+    uint256 deltaIndex = 0;
+    for (uint256 i = 0; i < balancesA.length; i++) {
+      if (balancesA[i].amount != balancesB[i].amount) {
+        delta[deltaIndex].amount = balancesB[i].amount;
+        delta[deltaIndex].error = balancesB[i].error;
+        deltaAddressesMapping[deltaIndex] = tokenAddrs[i];
+        deltaIndex++;
+      }
+    }
+
+    return (delta, deltaAddressesMapping);
   }
 
   function simulateAndGetBalances(
@@ -175,6 +203,7 @@ contract BalanceGetter is Simulation {
       address[] memory // deltaAddressesMapping
     )
   {
+    address[] memory deltaAddressesMapping = new address[](0);
     (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
     before.balances = results;
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
@@ -192,15 +221,13 @@ contract BalanceGetter is Simulation {
 
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
-      (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
-      afterSimulation.balances = resultsAfterSimulation;
-
-      TokenInfo[] memory deltaAfter = getDelta(
+      // take only the changed balances, no need to fetch the metadata again
+      BalanceInfo[] memory resultsAfterSimulation = getBalancesOf(account, tokenAddrs);
+      (afterSimulation.balances, deltaAddressesMapping) = getBalanceDelta(
         before.balances,
-        afterSimulation.balances,
+        resultsAfterSimulation,
         tokenAddrs
       );
-      afterSimulation.balances = deltaAfter;
     }
 
     return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
