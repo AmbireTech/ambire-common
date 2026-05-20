@@ -12,6 +12,7 @@ import {
   SocketAPIToken,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -22,6 +23,7 @@ import {
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { CITREA_CHAIN_ID } from '../squid/constants'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
@@ -100,6 +102,11 @@ export class SocketAPI implements SwapProvider {
 
   resetHealth() {
     this.isHealthy = null
+  }
+
+  /** disable explicitly citrea for socket */
+  areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
   }
 
   /**
@@ -186,7 +193,7 @@ export class SocketAPI implements SwapProvider {
     })
 
     const chains = response
-      .filter((c) => c.sendingEnabled && c.receivingEnabled)
+      .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
       .map(({ chainId }) => ({
         chainId
       }))
@@ -463,7 +470,7 @@ export class SocketAPI implements SwapProvider {
     }
   }
 
-  async getRouteStatus({ txHash }: { txHash: string }) {
+  async getRouteStatus({ txHash }: { txHash: string }): Promise<SwapAndBridgeRouteStatusResult> {
     const params = new URLSearchParams({
       txHash
     })
@@ -474,14 +481,14 @@ export class SocketAPI implements SwapProvider {
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
 
-    if (!response) return null
+    if (!response) return { status: null }
     const res = response[0]
-    if (!res) return null
+    if (!res) return { status: null }
     // everything below 3 is pending on our end
-    if (res.bungeeStatusCode < 3) return null
+    if (res.bungeeStatusCode < 3) return { status: null }
     // 3 and 4 is completed on our end
-    if (res.bungeeStatusCode < 5) return 'completed'
+    if (res.bungeeStatusCode < 5) return { status: 'completed', txnId: res.hash }
     // everything after is refunded
-    return 'refunded'
+    return { status: 'refunded', txnId: res.hash }
   }
 }

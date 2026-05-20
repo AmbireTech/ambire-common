@@ -4,6 +4,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
@@ -14,7 +15,11 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
-import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
+import {
+  AddressPoisoningMatch,
+  ITransferController,
+  TransferUpdate
+} from '../../interfaces/transfer'
 import { IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -70,7 +75,6 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
-
 const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
 }
@@ -147,11 +151,17 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
 
   lastSentToRecipientAt: Date | null = null
+
+  // Set only for first-time sends when the recipient matches a known address
+  // by both prefix and suffix, which may indicate address poisoning.
+  addressPoisoningMatch: AddressPoisoningMatch | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -192,6 +202,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
     phishing: IPhishingController,
+    dapps: IDappsController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
@@ -213,6 +224,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
@@ -539,7 +551,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         recipientAcc,
         this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
-        this.lastSentToRecipientAt
+        this.lastSentToRecipientAt,
+        this.addressPoisoningMatch
       )
     }
 
@@ -636,20 +649,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
-    // Check if the address has been used previously for transactions
-    let found = false
-    let lastTransactionDate = null
-    if (isAddress(this.recipientAddress)) {
-      const result = await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccount.account?.addr || ''
-      )
-      found = result.found
-      lastTransactionDate = result.lastTransactionDate
-    }
-    this.isRecipientAddressFirstTimeSend =
-      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastSentToRecipientAt = lastTransactionDate
+    await this.#updateRecipientHistoryAndPoisoning()
 
     await this.syncSignAccountOp()
     this.emitUpdate()
@@ -696,6 +696,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
+      this.addressPoisoningMatch = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -959,6 +960,29 @@ export class TransferController extends EventEmitter implements ITransferControl
     return null
   }
 
+  async #updateRecipientHistoryAndPoisoning() {
+    // Check if the address has been used previously for transactions
+    let found = false
+    let lastTransactionDate = null
+    let addressPoisoningMatch = null
+
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccount.account?.addr || ''
+      )
+      found = result.found
+      lastTransactionDate = result.lastTransactionDate
+      addressPoisoningMatch = result.addressPoisoningMatch
+    }
+
+    this.isRecipientAddressFirstTimeSend =
+      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
+
+    this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
+  }
+
   get hasPersistedState() {
     return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
   }
@@ -1064,23 +1088,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }
 
-    // Check if the address has been used previously for transactions
-    let previousTransactionExists = false
-    let lastTransactionDate = null
-    if (isAddress(this.recipientAddress)) {
-      const result = await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccount.account.addr
-      )
-      previousTransactionExists = result.found
-      lastTransactionDate = result.lastTransactionDate
-    }
-
-    // Update state based on whether there are previous transactions to this address
-    this.isRecipientAddressFirstTimeSend =
-      !previousTransactionExists &&
-      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastSentToRecipientAt = lastTransactionDate
+    await this.#updateRecipientHistoryAndPoisoning()
     this.signAccountOpController = new SignAccountOpController({
       type: 'one-click-transfer',
       callRelayer: this.#callRelayer,
@@ -1094,6 +1102,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       network,
       provider,
       phishing: this.#phishing,
+      dapps: this.#dapps,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

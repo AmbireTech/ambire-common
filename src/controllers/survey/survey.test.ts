@@ -296,58 +296,33 @@ describe('SurveyController', () => {
       )
     })()
   })
-  describe('Retry mechanism', () => {
-    test('success on 2 errs', async () => {
-      let i = 0
-      mockFetch.mockImplementation(async (url: string, ...args) => {
-        if (url.includes('promotions/survey')) {
-          i++
-          if (i % 3) throw new Error('Error')
-        }
-        return successFetch(url, ...args)
-      })
-
-      const {
-        mainCtrl: { survey: surveyController }
-      } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
-
-      await surveyController.fetchSurvey('happy-case', 'bannerId')
-      await surveyController.answerQuestion(0, 0, 0, 'instanceId', 'address')
-      await surveyController.answerQuestion(1, 1, 'ans', 'instanceId', 'address')
-      expect(surveyController.status).toBe('success-submitted')
+  test('Retry mechanism', async () => {
+    let i = 0
+    mockFetch.mockImplementation(async (url: string, ...args) => {
+      if (url.includes('promotions/survey')) {
+        i++
+        if (i % 3 !== 0) throw new Error('Error')
+      }
+      return successFetch(url, ...args)
     })
-    test('fails on get survey', async () => {
-      mockFetch.mockImplementation(async (url: string, ...args) => {
-        if (url.includes('promotions/survey')) throw new Error('Error')
-        return successFetch(url, ...args)
-      })
 
-      const {
-        mainCtrl: { survey: surveyController }
-      } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
+    const {
+      mainCtrl: { survey: surveyController }
+    } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
 
-      await surveyController.fetchSurvey('happy-case', 'bannerId')
-      expect(surveyController.status).toBe('error-fetching')
-    })
-    test('fails on submit answer', async () => {
-      let fetched = false
-      mockFetch.mockImplementation(async (url: string, ...args) => {
-        if (url.includes('promotions/survey')) {
-          if (fetched) {
-            throw new Error('Error')
-          } else fetched = true
-        }
-        return successFetch(url, ...args)
-      })
+    await surveyController.fetchSurvey('happy-case', 'bannerId')
+    expect(surveyController.status).toBe('error-fetching')
+    await surveyController.fetchSurvey('happy-case', 'bannerId')
+    expect(surveyController.status).toBe('error-fetching')
+    await surveyController.fetchSurvey('happy-case', 'bannerId')
+    expect(surveyController.status).toBe('success-fetched')
 
-      const {
-        mainCtrl: { survey: surveyController }
-      } = await makeMainController(undefined, { overrides: { fetch: mockFetch } })
-
-      await surveyController.fetchSurvey('happy-case', 'bannerId')
-      await surveyController.answerQuestion(0, 0, 0, 'instanceId', 'address')
-      await surveyController.answerQuestion(1, 1, 'ans', 'instanceId', 'address')
-      expect(surveyController.status).toBe('error-submitting')
-    })
+    await surveyController.answerQuestion(0, 0, 0, 'instanceId', 'address')
+    await surveyController.answerQuestion(1, 1, 'ans', 'instanceId', 'address')
+    expect(surveyController.status).toBe('error-submitting')
+    await surveyController.sendResponse('instanceId', 'address')
+    expect(surveyController.status).toBe('error-submitting')
+    await surveyController.sendResponse('instanceId', 'address')
+    expect(surveyController.status).toBe('success-submitted')
   })
 })

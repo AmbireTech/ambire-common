@@ -1,6 +1,7 @@
 import { getAddress, Interface, keccak256, toQuantity, toUtf8Bytes } from 'ethers'
 
 import { privSlot } from '@/libs/proxyDeploy/deploy'
+import { getShouldStateOverride } from '@/utils/simulationStateOverride'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
@@ -110,7 +111,6 @@ export async function debugTraceCall(
   op: AccountOp,
   network: Network,
   accountState: AccountOnchainState,
-  supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const account = baseAcc.getAccount()
@@ -125,7 +125,7 @@ export async function debugTraceCall(
       state: accountState
     }
   }
-  const deploylessOpts = getDeploylessOpts(account.addr, supportsStateOverride, opts)
+  const deploylessOpts = getDeploylessOpts(account.addr, network, opts)
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const simulationOps = [
     [
@@ -180,7 +180,7 @@ export async function debugTraceCall(
           enableMemory: false,
           enableReturnData: true,
           disableStorage: true,
-          stateOverrides: supportsStateOverride
+          stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
             ? {
                 // TODO: if it's an EOA, add the EOA state override data
                 [params.from]: {

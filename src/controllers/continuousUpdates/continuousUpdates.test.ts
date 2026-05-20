@@ -158,7 +158,8 @@ describe('ContinuousUpdatesController intervals', () => {
     ) // tests the branching in the updatePortfolio func
     mainCtrl.ui.removeView('1')
     await jest.advanceTimersByTimeAsync(0)
-    expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.restart).toHaveBeenCalledTimes(2)
+    // Only once because the extension is locked
+    expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.restart).toHaveBeenCalledTimes(1)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 2

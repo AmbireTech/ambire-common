@@ -46,6 +46,7 @@ export interface IrCall extends Omit<Call, 'to'> {
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  canHideDropdownArrow?: boolean
 }
 export interface HumanizerWarning {
   content: string

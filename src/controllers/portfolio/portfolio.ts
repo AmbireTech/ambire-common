@@ -461,7 +461,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.customTokens = await this.#storage.get('customTokens', [])
 
       this.#learnedAssets = await this.#storage.get('learnedAssets', this.#learnedAssets)
-      this.#previousHints = await this.#storage.get('previousHints', {})
+      this.#previousHints = await this.#storage.get('previousHints', {
+        learnedNfts: {},
+        learnedTokens: {},
+        fromExternalAPI: {}
+      })
       // Don't load fromExternalAPI hints in memory as they are no longer used
       this.#previousHints.fromExternalAPI = {}
       this.#networksWithPositionsByAccounts = await this.#storage.get(
