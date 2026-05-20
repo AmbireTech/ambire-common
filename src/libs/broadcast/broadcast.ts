@@ -147,7 +147,7 @@ export async function getTxnData(
     if (op.calls.length > 1) {
       const ambireAccount = new Interface(AmbireAccount.abi)
       return {
-        to: account.addr as Hex | undefined,
+        to: account.addr as Hex,
         value: 0n,
         data: ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)]) as Hex
       }
