@@ -12,6 +12,7 @@ import {
 } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -30,6 +31,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapProvider
@@ -52,6 +54,7 @@ import {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
+  getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
@@ -230,6 +233,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -291,6 +296,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity,
     storage,
     phishing,
+    dapps,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -313,6 +319,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity: IActivityController
     storage: IStorageController
     phishing: IPhishingController
+    dapps: IDappsController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -340,6 +347,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
@@ -1848,10 +1856,64 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
+  async recordBridgeActivity(
+    txnId: string,
+    activeRoute: SwapAndBridgeActiveRoute,
+    status: 'completed' | 'refunded'
+  ) {
+    await this.#initialLoadPromise
+
+    // when the status is completed, we expect the funds to land on the
+    // destination chain => we use toChainId;
+    // when it's refunded, we expect the source chain => fromChainId
+    const chainId =
+      status === 'completed' ? activeRoute.route?.toChainId : activeRoute.route?.fromChainId
+    if (!chainId) {
+      const message = 'recordBridgeActivity: no chainId found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!provider) {
+      const message = 'recordBridgeActivity: no provider found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const receipt = await provider.getTransactionReceipt(txnId)
+    if (!receipt) {
+      const message = `recordBridgeActivity: no receipt found for txnId: ${txnId}`
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    await this.#activity.addExternalAccountOp({
+      accountAddr: activeRoute.sender,
+      chainId: BigInt(chainId),
+      txnId,
+      receipt,
+      callId: `${activeRoute.activeRouteId}-external`
+    })
+  }
+
   async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
+      let routeStatusResult: SwapAndBridgeRouteStatusResult = { status: null }
 
       if (!activeRoute.userTxHash || activeRoute.routeStatus === 'completed') return
 
@@ -1871,13 +1933,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // should never happen
         if (!activeRoute.route) throw new Error('Route data is missing.')
 
-        status = await this.#serviceProviderAPI.getRouteStatus({
+        routeStatusResult = await this.#serviceProviderAPI.getRouteStatus({
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
           txHash: activeRoute.userTxHash!,
-          providerId: activeRoute.route.providerId
+          providerId: activeRoute.route.providerId,
+          requestId: (activeRoute.route.rawRoute as any)?.requestId,
+          routeId: activeRoute.route.routeId
         })
+        status = routeStatusResult.status
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
         this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
@@ -1898,6 +1963,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         })
       }
 
+      if (
+        routeStatusResult.txnId &&
+        (status === 'completed' || status === 'refunded') &&
+        activeRoute.route?.fromChainId !== activeRoute.route?.toChainId
+      ) {
+        // we shouldn't be awaiting this as it's OK to have it at a later stage
+        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute, status).catch(console.error)
+      }
+
       if (status === 'completed') {
         this.updateActiveRoute(
           activeRoute.activeRouteId,
@@ -1907,10 +1981,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
-        if (
-          this.#portfolioUpdate &&
-          activeRoute.route.fromChainId !== activeRoute.route.toChainId
-        ) {
+        if (this.#portfolioUpdate && getIsBridgeRoute(activeRoute.route)) {
           this.#portfolioUpdate([BigInt(activeRoute.route.toChainId)])
         }
       } else if (status === 'ready') {
@@ -2230,7 +2301,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let shouldUpdateActiveRouteStatus = false
 
-    const isSwap = activeRoute.route.fromChainId === activeRoute.route.toChainId
+    const isSwap = !getIsBridgeRoute(activeRoute.route)
 
     // force update the active route status if the route is of type 'swap'
     if (isSwap) shouldUpdateActiveRouteStatus = true
@@ -2408,7 +2479,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromTokenPriceInUsd = this.quote.selectedRoute.inputValueInUsd / Number(this.fromAmount)
     }
 
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
@@ -2420,7 +2493,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
       fromTokenPriceInUsd,
-      fromTokenDecimals: this.quote?.fromAsset.decimals
+      fromTokenDecimals: this.quote?.fromAsset.decimals,
+      providerId: this.quote?.selectedRoute?.providerId
     })
 
     if (this.#signAccountOpController) {
@@ -2483,6 +2557,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       network,
       provider,
       phishing: this.#phishing,
+      dapps: this.#dapps,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
@@ -2563,7 +2638,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get swapSignErrors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
     if (
@@ -2587,18 +2664,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ) {
       errors.push({
         title: 'Error detected in the pending batch. Please review it before proceeding'
-      })
-    }
-
-    // if we're bridging to ethereum, make the min from amount 10 usd
-    if (
-      isBridge &&
-      this.toChainId === 1 &&
-      this.fromAmountInFiat &&
-      Number(this.fromAmountInFiat) < 10
-    ) {
-      errors.push({
-        title: 'Min amount for bridging to Ethereum is $10'
       })
     }
 

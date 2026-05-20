@@ -4,9 +4,19 @@ import { hexlify, randomBytes } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import {
+  blacklistedDapp,
+  customDapp,
+  failedDapp,
+  getDappVerificationTestDapps,
+  getDappRequestData,
+  loadingDapp,
+  verifiedDapp
+} from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
+import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
@@ -77,6 +87,12 @@ const messageToSign: Message = {
   signature: null
 }
 
+const dapp = {
+  name: 'Test Dapp',
+  icon: 'https://test-dapp.com/icon.png',
+  url: 'https://Test-Dapp.com'
+}
+
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController
   let keystoreCtrl: IKeystoreController
@@ -84,12 +100,15 @@ describe('SignMessageController', () => {
   let networksCtrl: INetworksController
   let providersCtrl: IProvidersController
   let inviteCtrl: IInviteController
+  let dappsCtrl: IDappsController
 
   beforeAll(async () => {
     const { mainCtrl } = await makeMainController(
       async (storageCtrl) => {
         await storageCtrl.set('accounts', [account])
         await storageCtrl.set('selectedAccount', account.addr)
+        await storageCtrl.set('dappsV2', getDappVerificationTestDapps())
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
       },
       { skipAccountStateLoad: false, overrides: { keystoreSigners: { internal: InternalSigner } } }
     )
@@ -98,6 +117,7 @@ describe('SignMessageController', () => {
     providersCtrl = mainCtrl.providers
     accountsCtrl = mainCtrl.accounts
     inviteCtrl = mainCtrl.invite
+    dappsCtrl = mainCtrl.dapps
   })
 
   beforeEach(async () => {
@@ -107,7 +127,9 @@ describe('SignMessageController', () => {
       networksCtrl,
       accountsCtrl,
       {},
-      inviteCtrl
+      inviteCtrl,
+      undefined,
+      dappsCtrl
     )
   })
 
@@ -188,5 +210,55 @@ describe('SignMessageController', () => {
 
     signMessageController.removeAccountData(account.addr)
     expect(signMessageController.isInitialized).toBeFalsy()
+  })
+
+  describe('dapp verification banners', () => {
+    test('should return loading banners', () => {
+      signMessageController.dapp = getDappRequestData(loadingDapp)
+
+      expect(signMessageController.banners).toEqual([
+        {
+          id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+          type: 'warning',
+          text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
+        }
+      ])
+    })
+
+    test('should return failed verification banners', () => {
+      signMessageController.dapp = getDappRequestData(failedDapp)
+
+      expect(signMessageController.banners).toEqual([
+        {
+          id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+          type: 'warning',
+          text: "We couldn't verify the app. Make sure you trust it before signing requests."
+        }
+      ])
+    })
+
+    test('should return blacklisted banners', () => {
+      signMessageController.dapp = getDappRequestData(blacklistedDapp)
+
+      expect(signMessageController.banners).toEqual([
+        {
+          id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+          type: 'error',
+          text: "This app didn't pass our safety check. Proceed at your own risk."
+        }
+      ])
+    })
+
+    test('should not return not-in-catalog banners', () => {
+      signMessageController.dapp = getDappRequestData(customDapp)
+
+      expect(signMessageController.banners).toEqual([])
+    })
+
+    test('should not return banners when the dapp is verified and in the default catalog', () => {
+      signMessageController.dapp = getDappRequestData(verifiedDapp)
+
+      expect(signMessageController.banners).toEqual([])
+    })
   })
 })

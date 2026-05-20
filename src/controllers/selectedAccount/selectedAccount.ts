@@ -110,7 +110,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
       this.#storage.get('selectedAccount', null),
-      this.#storage.get('selectedAccountDismissedBannerIds', [])
+      this.#storage.get('selectedAccountDismissedBannerIds', {})
     ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
