@@ -14,9 +14,9 @@ import {
   Erc7730TypedDataTypes
 } from './types'
 
-const ERC7730_CALLDATA_INDEX_RELAYER_PATH = '/v2/erc7730/account-op/clear-signing'
-const ERC7730_EIP712_INDEX_RELAYER_PATH = '/v2/erc7730/eip-712/clear-signing'
-const ERC7730_DESCRIPTOR_PATH = '/v2/erc7730/fetch-descriptor/clear-signing'
+const ERC7730_CALLDATA_INDEX_RELAYER_PATH = '/v2/erc7730/account-op'
+const ERC7730_EIP712_INDEX_RELAYER_PATH = '/v2/erc7730/eip-712'
+const ERC7730_DESCRIPTOR_PATH = '/v2/erc7730/fetch-descriptor'
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
@@ -294,7 +294,11 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
 
   if (selector === ERC20_APPROVE_SELECTOR) return ERC20_APPROVE_DESCRIPTOR
   if (selector === ERC20_TRANSFER_SELECTOR) return ERC20_TRANSFER_DESCRIPTOR
-  if (call.to.toLowerCase() === PERMIT2_ADDRESS && selector === PERMIT2_APPROVE_SELECTOR) {
+  if (
+    call.to &&
+    call.to.toLowerCase() === PERMIT2_ADDRESS &&
+    selector === PERMIT2_APPROVE_SELECTOR
+  ) {
     return PERMIT2_APPROVE_DESCRIPTOR
   }
 

@@ -452,9 +452,7 @@ describe('ERC-7730 descriptors', () => {
           },
           {
             label: 'Amount allowance',
-            value: [
-              getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, 1n)
-            ]
+            value: [getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)]
           }
         ])
       ]
@@ -551,11 +549,11 @@ describe('ERC-7730 descriptors', () => {
         getErc7730Visualization('Swap', [
           {
             label: 'Amount to Send',
-            value: [getToken(WETH_ADDRESS, 1000000000000000000n, undefined, 1n)]
+            value: [getToken(WETH_ADDRESS, 1000000000000000000n, 1n)]
           },
           {
             label: 'Minimum to Receive',
-            value: [getToken(tokenOut, 1000000n, undefined, 1n)]
+            value: [getToken(tokenOut, 1000000n, 1n)]
           }
         ])
       ],
@@ -563,11 +561,11 @@ describe('ERC-7730 descriptors', () => {
         getErc7730Visualization('Swap', [
           {
             label: 'Amount to Send',
-            value: [getToken(WETH_ADDRESS, 2000000000000000000n, undefined, 1n)]
+            value: [getToken(WETH_ADDRESS, 2000000000000000000n, 1n)]
           },
           {
             label: 'Minimum to Receive',
-            value: [getToken(tokenOut, 2000000n, undefined, 1n)]
+            value: [getToken(tokenOut, 2000000n, 1n)]
           }
         ])
       ]
@@ -641,7 +639,7 @@ describe('ERC-7730 descriptors', () => {
       getErc7730Visualization('Send', [
         {
           label: 'Amount',
-          value: [getToken(usdt, 1000000000n, undefined, 1n)]
+          value: [getToken(usdt, 1000000000n, 1n)]
         },
         {
           label: 'To',
@@ -707,7 +705,7 @@ describe('ERC-7730 descriptors', () => {
       getErc7730Visualization('Send', [
         {
           label: 'Amount',
-          value: [getToken(WETH_ADDRESS, 1000000000n, undefined, 1n)]
+          value: [getToken(WETH_ADDRESS, 1000000000n, 1n)]
         },
         {
           label: 'To',
@@ -790,9 +788,7 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           label: 'Amount allowance',
-          value: [
-            getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, undefined, 1n)
-          ]
+          value: [getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)]
         }
       ])
     ])
@@ -992,7 +988,7 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           label: 'Max spending amount',
-          value: [getToken(WETH_ADDRESS, 133700n, undefined, 1n)]
+          value: [getToken(WETH_ADDRESS, 133700n, 1n)]
         },
         {
           label: 'Valid until',
