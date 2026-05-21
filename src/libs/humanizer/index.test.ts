@@ -594,6 +594,7 @@ describe('ERC-7730 descriptors', () => {
     ]
     const morphoAccountOp: AccountOp = {
       ...accountOp,
+      accountAddr: owner,
       chainId: 8453n,
       calls: [
         {
@@ -665,7 +666,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op/clear-signing') {
+      if (path === '/v2/erc7730/account-op') {
         expect(method).toBe('GET')
 
         return {
@@ -677,7 +678,7 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+      if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
 
@@ -724,11 +725,27 @@ describe('ERC-7730 descriptors', () => {
     expect(visualization.rows).toHaveLength(5)
     expect(visualization.rows.every((row) => row.label === 'Action')).toBe(true)
     expect(
-      visualization.rows.map((row) => row.value.find((value) => value.type === 'address')?.address)
-    ).toEqual([generalAdapter, generalAdapter, generalAdapter, generalAdapter, generalAdapter])
+      visualization.rows.map((row) => row.value.find((value) => value.type === 'action')?.content)
+    ).toEqual(['Transfer', 'Repay', 'Withdraw', 'Transfer', 'Transfer'])
     expect(
-      visualization.rows.map((row) => row.value.find((value) => value.type === 'text')?.content)
-    ).toEqual(['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d', '0x3790767d'])
+      visualization.rows.map((row) => row.value.find((value) => value.type === 'token'))
+    ).toEqual([
+      expect.objectContaining({ address: baseUsdc, value: 2n }),
+      expect.objectContaining({ address: baseUsdc, value: 220292767985000000n }),
+      expect.objectContaining({ address: baseCbBtc, value: 2n }),
+      expect.objectContaining({ address: baseUsdc, value: ethers.MaxUint256 }),
+      expect.objectContaining({ address: baseCbBtc, value: ethers.MaxUint256 })
+    ])
+    expect(
+      visualization.rows.flatMap((row) => row.value).some((value) => value.type === 'text')
+    ).toBe(false)
+    expect(
+      visualization.rows
+        .flatMap((row) => row.value)
+        .some((value) =>
+          ['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d'].includes(value.content || '')
+        )
+    ).toBe(false)
   })
 
   test('uses standard ERC-7730 approval descriptors in a Permit2 + Universal Router batch', async () => {
@@ -823,7 +840,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op/clear-signing') {
+      if (path === '/v2/erc7730/account-op') {
         return {
           success: true,
           data: {
@@ -833,7 +850,7 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+      if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${wethRegistryPath}` })
 
@@ -888,7 +905,7 @@ describe('ERC-7730 descriptors', () => {
     let relayerPath = ''
     const descriptorPaths: string[] = []
     const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op/clear-signing') {
+      if (path === '/v2/erc7730/account-op') {
         expect(method).toBe('GET')
 
         relayerPath = path
@@ -901,7 +918,7 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+      if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
         descriptorPaths.push(body.descriptorPath)
@@ -939,7 +956,7 @@ describe('ERC-7730 descriptors', () => {
     const descriptors = await fetchErc7730DescriptorsForAccountOp(relayerAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(relayerAccountOp, { erc7730Descriptors: descriptors })
 
-    expect(relayerPath).toBe('/v2/erc7730/account-op/clear-signing')
+    expect(relayerPath).toBe('/v2/erc7730/account-op')
     expect(descriptorPaths).toEqual([`/${registryPath}`])
     expect(descriptors[0]?.path).toBe(registryPath)
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
@@ -1014,7 +1031,7 @@ describe('ERC-7730 descriptors', () => {
     let relayerPath = ''
     const descriptorPaths: string[] = []
     const callRelayer = async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712/clear-signing') {
+      if (path === '/v2/erc7730/eip-712') {
         expect(method).toBe('GET')
 
         relayerPath = path
@@ -1029,7 +1046,7 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+      if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
         descriptorPaths.push(body.descriptorPath)
@@ -1067,7 +1084,7 @@ describe('ERC-7730 descriptors', () => {
 
     const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
 
-    expect(relayerPath).toBe('/v2/erc7730/eip-712/clear-signing')
+    expect(relayerPath).toBe('/v2/erc7730/eip-712')
     expect(descriptorPaths).toEqual([`/${registryPath}`])
     expect(descriptor?.path).toBe(registryPath)
   })

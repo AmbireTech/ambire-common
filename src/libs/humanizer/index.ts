@@ -146,7 +146,14 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
         const originalCall = accountOp.calls[index]
         if (!originalCall) return call
 
-        return humanizeCallWithErc7730(originalCall, accountOp.chainId, resolvedDescriptor) || call
+        return (
+          humanizeCallWithErc7730(
+            originalCall,
+            accountOp.chainId,
+            accountOp.accountAddr,
+            resolvedDescriptor
+          ) || call
+        )
       } catch (error) {
         console.error(error)
         return call

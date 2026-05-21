@@ -18,6 +18,7 @@ import {
   getText,
   getToken
 } from '../utils'
+import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
   Erc7730Descriptor,
@@ -37,6 +38,7 @@ type DescriptorFormatMatch = {
 
 type FormatContext = {
   descriptor: Erc7730Descriptor
+  descriptorPath?: string
   root: Record<string, unknown>
   chainId?: bigint
 }
@@ -532,6 +534,30 @@ const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknow
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
 
+const getMorphoGeneralAdapterCalldataValue = (
+  context: FormatContext,
+  calldata: unknown,
+  callee: unknown,
+  amount: unknown
+): HumanizerVisualization[] | null => {
+  if (!context.descriptorPath?.includes('registry/morpho/calldata-MorphoBundlerV3.json'))
+    return null
+  if (typeof calldata !== 'string' || !calldata.startsWith('0x')) return null
+  if (typeof callee !== 'string' || !isAddress(callee)) return null
+
+  const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
+  if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
+
+  const decodedCall = decodeGeneralAdapterCall(accountAddr, {
+    to: callee,
+    data: calldata,
+    value: toBigIntOrNull(amount) || 0n
+  })
+  const decodedValue = decodedCall.fullVisualization?.filter((item) => item.type !== 'break')
+
+  return decodedValue?.length ? decodedValue : null
+}
+
 const resolveCalldataParam = (
   field: Erc7730Field,
   context: FormatContext,
@@ -554,6 +580,7 @@ const getCalldataRows = (
   const values = Array.isArray(value) ? value : [value]
   const calleeValues = resolveCalldataParam(field, context, base, 'calleePath', 'callee')
   const selectorValues = resolveCalldataParam(field, context, base, 'selectorPath', 'selector')
+  const amountValues = resolveCalldataParam(field, context, base, 'amountPath', 'amount')
 
   return values.reduce<HumanizerErc7730Row[] | null>((acc, calldata, index) => {
     if (!acc) return null
@@ -561,6 +588,17 @@ const getCalldataRows = (
     const rowValue: HumanizerVisualization[] = []
     const callee = getArrayValueAt(calleeValues, index)
     const selector = getArrayValueAt(selectorValues, index)
+    const amount = getArrayValueAt(amountValues, index)
+    const decodedValue = getMorphoGeneralAdapterCalldataValue(context, calldata, callee, amount)
+
+    if (decodedValue) {
+      acc.push({
+        label: field.label || field.path || '',
+        value: decodedValue
+      })
+
+      return acc
+    }
 
     if (typeof callee === 'string' && isAddress(callee)) {
       rowValue.push(getAddressVisualization(callee))
@@ -698,6 +736,7 @@ const formatToVisualizations = (
 export const humanizeCallWithErc7730 = (
   call: Call,
   chainId: bigint,
+  accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor
 ): IrCall | null => {
   const match = getCalldataFormatMatch(call, resolvedDescriptor.descriptor)
@@ -705,9 +744,11 @@ export const humanizeCallWithErc7730 = (
 
   const context: FormatContext = {
     descriptor: resolvedDescriptor.descriptor,
+    descriptorPath: resolvedDescriptor.path,
     root: {
       ...match.values,
       '@': {
+        accountAddr,
         to: call.to,
         value: call.value,
         data: call.data,
@@ -732,6 +773,7 @@ export const humanizeMessageWithErc7730 = (
     toBigIntOrNull(message.content.domain.chainId ?? message.chainId) ?? message.chainId
   const context: FormatContext = {
     descriptor: resolvedDescriptor.descriptor,
+    descriptorPath: resolvedDescriptor.path,
     root: {
       ...match.values,
       '@': {
