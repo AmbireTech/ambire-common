@@ -12,7 +12,7 @@ import { Account, AccountOnchainState, IAccountsController } from '../../interfa
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
-import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
+import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
@@ -121,6 +121,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   #accounts: IAccountsController
 
   #networks: INetworksController
@@ -205,6 +207,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     externalSignerControllers,
     activity,
     phishing,
+    dapps,
     accounts,
     networks,
     providers,
@@ -236,6 +239,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }>
     activity: IActivityController
     phishing: IPhishingController
+    dapps: IDappsController
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
@@ -264,6 +268,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#externalSignerControllers = externalSignerControllers
     this.#activity = activity
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
@@ -1800,7 +1805,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 ...calls.map((call) => ({
                   ...call,
                   id: uuidv4(),
-                  to: call.to,
+                  // `to` is falsy in contract deployment transactions
+                  to: !!call.to ? getAddress(call.to) : call.to,
                   data: call.data || '0x',
                   value: call.value ? getBigInt(call.value) : 0n
                 }))
@@ -1870,6 +1876,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           network,
           provider: this.#providers.providers[network.chainId.toString()]!,
           phishing: this.#phishing,
+          dapps: this.#dapps,
           fromRequestId: requestId,
           accountOp: providedAccountOp
             ? { ...providedAccountOp, nonce: meta.safeTxnProps?.nonce ?? accountState.nonce }
@@ -1888,7 +1895,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                   ...calls.map((call) => ({
                     ...call,
                     id: uuidv4(),
-                    to: call.to,
+                    // `to` is falsy in contract deployment transactions
+                    to: !!call.to ? getAddress(call.to) : call.to,
                     data: call.data || '0x',
                     value: call.value ? getBigInt(call.value) : 0n
                   }))

@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
+import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import {
@@ -12,6 +13,13 @@ import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+const TEST_DAPP = makeDapp({
+  id: MOCK_SESSION.id,
+  name: 'Test Dapp',
+  url: MOCK_SESSION.origin,
+  chainId: 1,
+  chainIds: [1]
+})
 
 const accounts = [
   {
@@ -61,11 +69,12 @@ const accounts = [
   }
 ]
 
-const prepareTest = async () => {
+const prepareTest = async (seedTestDapp = false) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
     async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
       await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+      if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
     }
   )
 
@@ -124,6 +133,7 @@ const prepareTest = async () => {
       eventEmitterRegistry,
       provider: mainCtrl.providers.providers[network.chainId.toString()]!,
       phishing: mainCtrl.phishing,
+      dapps: mainCtrl.dapps,
       fromRequestId: requestId,
       accountOp: {
         id: generateUuid(),
@@ -274,6 +284,40 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+  test('build contract deployment dapp request', async () => {
+    const { controller } = await prepareTest(true)
+
+    await expect(
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [
+              {
+                from: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+                value: '0x0',
+                data: '0x6080604052348015600e575f5ffd5b50600080fd'
+              }
+            ],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+    ).resolves.toBeUndefined()
+
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0]!.kind).toBe('calls')
+    expect(
+      (controller.userRequests[0] as CallsUserRequest).signAccountOp.accountOp.calls[0]!.to
+    ).toBeUndefined()
   })
   test('resolve user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()

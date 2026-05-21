@@ -307,8 +307,7 @@ describe('uniswap', () => {
         getToken('0xb0b195aefa3650a6908f15cdac7d92f8a5791b0b', 0n),
         getLabel('for'),
         getToken('0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', 0n),
-        getDeadline(1743507804n),
-        getToken('0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c', 0n, true) // hidden
+        getDeadline(1743507804n)
       ]
     ]
 
@@ -337,9 +336,7 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken('0x0000000000000000000000000000000000000000', 0n),
         getLabel('for'),
-        getToken('0xfca95aeb5bf44ae355806a5ad14659c940dc6bf7', 0n),
-        getToken('0x0000000000000000000000000000000000000000', 0n, true),
-        getToken('0xfca95aeb5bf44ae355806a5ad14659c940dc6bf7', 0n, true)
+        getToken('0xfca95aeb5bf44ae355806a5ad14659c940dc6bf7', 0n)
       ],
       [
         getAction('Grant approval'),
@@ -351,11 +348,7 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken('0x188c68e2cd63baa16e4504597a0d30bd8bab325d', 0n),
         getLabel('for'),
-        getToken('0x0000000000000000000000000000000000000000', 0n),
-        getToken('0x1111111111166b7fe7bd91427724b487980afc69', 0n, true),
-        getToken('0x1111111111166b7fe7bd91427724b487980afc69', 0n, true), // duplicated, but hidden
-        getToken('0x5e5d19d22c85a4aef7c1fdf25fb22a5a38f71040', 0n, true),
-        getToken('0x1111111111166b7fe7bd91427724b487980afc69', 0n, true)
+        getToken('0x0000000000000000000000000000000000000000', 0n)
       ]
     ]
 
@@ -378,8 +371,7 @@ describe('uniswap', () => {
         getToken(ZeroAddress, 0n),
         getLabel('for'),
         getToken('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 0n),
-        getDeadline(1770862740n),
-        getToken('0x590830dfdf9a3f68afcdde2694773debdf267774', 0n, true)
+        getDeadline(1770862740n)
       ]
     ]
     const irCalls = uniswapHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
@@ -401,8 +393,7 @@ describe('uniswap', () => {
         getToken(ZeroAddress, 0n),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n),
-        getDeadline(1774010876n),
-        getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 0n, true)
+        getDeadline(1774010876n)
       ]
     ]
     const irCalls = uniswapHumanizer(

@@ -5,10 +5,12 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -374,13 +376,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       chainId,
       tokenAddrs,
       blockTag,
-      accountAddr
+      accountAddr,
+      receipts
     }: {
       accountId: string
       chainId: bigint
       tokenAddrs: string[]
       blockTag: number
       accountAddr?: string
+      receipts?: BalanceChangesReceipt[]
     },
     requestId: string
   ) {
@@ -414,7 +418,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         portfolioAccountId: string,
         _chainId: bigint,
         portfolioTokenAddrs: string[],
-        portfolioBlockTag: number,
+        portfolioBlockTag: GetOptions['blockTag'],
         portfolioAccountAddr?: string
       ) =>
         portfolio.getTokensByAddresses(
@@ -428,7 +432,9 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         chainId,
         tokenAddrs,
         receiptBlockNumber: blockTag,
-        getTokenBalancesOnBlock
+        getTokenBalancesOnBlock,
+        receipts,
+        debugTraceTransaction: getDebugTraceTransaction(chainId, provider)
       })
 
       return this.#sendUiMessage({

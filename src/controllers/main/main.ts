@@ -9,6 +9,7 @@ import {
 } from '@/consts/derivation'
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
+import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
@@ -18,6 +19,7 @@ import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
 import { AccountData, BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
+import { ContractInfoController } from '@/controllers/contractInfo/contractInfo'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
 import { DomainsController } from '@/controllers/domains/domains'
@@ -42,6 +44,8 @@ import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
+/* eslint-disable no-underscore-dangle */
+import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
@@ -49,6 +53,7 @@ import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
 import { Banner, IBannerController } from '@/interfaces/banner'
+import { IContractInfoController } from '@/interfaces/contractInfo'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDomainsController } from '@/interfaces/domains'
@@ -71,7 +76,6 @@ import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
-/* eslint-disable no-underscore-dangle */
 import { ISafeController } from '@/interfaces/safe'
 import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 import { ISignAccountOpController } from '@/interfaces/signAccountOp'
@@ -81,6 +85,7 @@ import { ISurveyController } from '@/interfaces/survey'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
+import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
@@ -100,6 +105,7 @@ import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketAPI } from '@/services/socket/api'
+import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
@@ -161,11 +167,15 @@ export class MainController extends EventEmitter implements IMainController {
 
   activity: IActivityController
 
+  transferScanner: ITransfersScannerController
+
   addressBook: IAddressBookController
 
   domains: IDomainsController
 
   contractNames: IContractNamesController
+
+  contractInfo: IContractInfoController
 
   autoLogin: IAutoLoginController
 
@@ -207,6 +217,7 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl,
     liFiApiKey,
     bungeeApiKey,
+    squidIntegratorId,
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
@@ -221,6 +232,7 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl: string
     liFiApiKey: string
     bungeeApiKey: string
+    squidIntegratorId: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -406,15 +418,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.selectedAccount,
       eventEmitterRegistry
     )
-    this.signMessage = new SignMessageController(
-      this.keystore,
-      this.providers,
-      this.networks,
-      this.accounts,
-      this.#externalSignerControllers,
-      this.invite,
-      eventEmitterRegistry
-    )
     this.phishing = new PhishingController({
       eventEmitterRegistry,
       fetch: this.fetch,
@@ -422,6 +425,25 @@ export class MainController extends EventEmitter implements IMainController {
       addressBook: this.addressBook,
       ui: this.ui
     })
+    this.dapps = new DappsController({
+      eventEmitterRegistry,
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
+    })
+    this.signMessage = new SignMessageController(
+      this.keystore,
+      this.providers,
+      this.networks,
+      this.accounts,
+      this.#externalSignerControllers,
+      this.invite,
+      eventEmitterRegistry,
+      this.dapps
+    )
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
@@ -439,8 +461,16 @@ export class MainController extends EventEmitter implements IMainController {
       },
       eventEmitterRegistry
     )
+    this.transferScanner = new TransfersScannerController({
+      activity: this.activity,
+      networks: this.networks,
+      portfolio: this.portfolio,
+      providers: this.providers,
+      eventEmitterRegistry
+    })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
+    const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -454,7 +484,8 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       storage: this.storage,
       phishing: this.phishing,
-      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
+      dapps: this.dapps,
+      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
@@ -502,6 +533,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.providers,
       this.phishing,
+      this.dapps,
       relayerUrl,
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
@@ -546,6 +578,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.activity,
       phishing: this.phishing,
+      dapps: this.dapps,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -583,14 +616,11 @@ export class MainController extends EventEmitter implements IMainController {
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
 
-    this.dapps = new DappsController({
+    this.contractInfo = new ContractInfoController({
       eventEmitterRegistry,
-      appVersion: this.#appVersion,
       fetch: this.fetch,
       storage: this.storage,
-      networks: this.networks,
-      phishing: this.phishing,
-      ui: this.ui
+      featureFlags: this.featureFlags
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -696,6 +726,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accounts.initialLoadPromise
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
+    await this.contractInfo.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -718,6 +749,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.keystore.lock()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
+    this.continuousUpdates?.updatePortfolioInterval.restart({
+      timeout: LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+    })
   }
 
   async selectAccount(toAccountAddr: string) {
@@ -999,9 +1033,12 @@ export class MainController extends EventEmitter implements IMainController {
     const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
     dappHandlers.forEach((handler) => {
       if (txnId) {
-        // If the call has a txnId, resolve the promise with it.
-        // This could happen when an EOA account is broadcasting multiple transactions.
-        handler.promise.resolve({ hash: handler.txnId || txnId })
+        // for MultipleTxns, the correct txnId is passed to the handler;
+        // otherwise, use the confirmed txnId
+        const finalTxnId =
+          submittedAccountOp.identifiedBy.type === 'MultipleTxns' ? handler.txnId || txnId : txnId
+
+        handler.promise.resolve({ hash: finalTxnId })
       } else {
         handler.promise.reject(
           ethErrors.rpc.transactionRejected({
@@ -1027,6 +1064,22 @@ export class MainController extends EventEmitter implements IMainController {
         signedMessage.content.isAutoLoginEnabledByUser,
         signedMessage.content.autoLoginDuration
       )
+    }
+
+    // signing typed messages might trigger a txn
+    if (signedMessage.content.kind === 'typedMessage') {
+      this.transferScanner
+        .startScanLogsLoop({
+          accAddr: signedMessage.accountAddr,
+          chainId: signedMessage.chainId
+        })
+        .catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: `Failed to scan token transfer logs on network with id ${signedMessage.chainId}.`,
+            error
+          })
+        })
     }
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
@@ -1266,6 +1319,28 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          // we scan for logs only if Success & a dapp interaction has been made
+          // because only a dapp interaction might have a receiving txn after;
+          // receiving txns for inner bridges are handled in swapAndBridge.ts
+          const shouldScanLogs =
+            op.status === AccountOpStatus.Success && op.calls.some((call) => !!call.dapp)
+
+          if (shouldScanLogs) {
+            this.transferScanner
+              .startScanLogsLoop({
+                accAddr: op.accountAddr,
+                chainId: op.chainId,
+                fromBlock: op.blockNumber!
+              })
+              .catch((error) => {
+                this.emitError({
+                  level: 'silent',
+                  message: `Failed to scan token transfer logs on network with id ${op.chainId}.`,
+                  error
+                })
+              })
+          }
         })
       }
     )
@@ -1690,7 +1765,13 @@ export class MainController extends EventEmitter implements IMainController {
       if (dappPromise.meta.isWalletSendCalls) {
         dappPromise.resolve({ hash: getDappIdentifier(submittedAccountOp) })
       } else {
-        dappHandlers.push({ promise: dappPromise, txnId: submittedAccountOp.txnId })
+        // if the submittedAccountOp identifier is MultipleTxns,
+        // the txnId for the dappPromise will be in the call itself
+        const submittedCall = submittedAccountOp.calls.find(
+          (call) => call.dappPromiseId === dappPromise.id
+        )
+
+        dappHandlers.push({ promise: dappPromise, txnId: submittedCall?.txnId })
       }
     })
 

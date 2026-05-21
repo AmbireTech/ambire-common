@@ -14,9 +14,14 @@ export enum AccountOpStatus {
   PartiallyComplete = 'partially-complete'
 }
 
+export type CallTuple = [string | undefined, string, string]
+
 export interface Call {
   id?: string
-  to: string
+  /**
+   * Omitted in case of contract deployment transactions
+   */
+  to?: string
   value: bigint
   data: string
   txnId?: Hex

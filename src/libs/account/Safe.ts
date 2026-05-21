@@ -202,4 +202,8 @@ export class Safe extends BaseAccount {
   canSetCustomGasPrices(): boolean {
     return true
   }
+
+  canSetCustomGas(): boolean {
+    return this.canSetCustomGasPrices()
+  }
 }
