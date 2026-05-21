@@ -817,6 +817,8 @@ export class DappsController extends EventEmitter implements IDappsController {
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
+          // Don't persist the preferences after the dapp has been disconnected
+          delete this.dappToConnect.accountPreferences
           this.emitUpdate()
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
