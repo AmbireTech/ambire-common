@@ -17,6 +17,7 @@ export const dappIdsToBeRemoved = new Set([
   'core.app', // not supported,
   'new.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
   'multitx.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
+  'jumper.exchange', // jumper.exchange was moved to jumper.xyz
   // unsupported or outdated protocols returned by DefiLlama
   'bridge.base.org',
   'binance.com',
