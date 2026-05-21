@@ -6,6 +6,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
+import { GeneralAdapter1 } from './const/abis/GeneralAdapter1'
 import { fetchErc7730DescriptorForMessage, fetchErc7730DescriptorsForAccountOp } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
@@ -15,6 +16,7 @@ import {
   getDeadline,
   getErc7730Visualization,
   getLabel,
+  hasErc7730Humanization,
   getText,
   getToken
 } from './utils'
@@ -572,6 +574,163 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('uses the Morpho Bundler3 ERC-7730 descriptor for Base multicall calldata', async () => {
+    const morphoBundler = '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4'
+    const generalAdapter = '0xb98c948cfa24072e58935bc004a8a7b376ae746a'
+    const baseUsdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const baseCbBtc = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const owner = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const registryPath = 'registry/morpho/calldata-MorphoBundlerV3.json'
+    const iface = new ethers.Interface([
+      'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
+    ])
+    const generalAdapterInterface = new ethers.Interface(GeneralAdapter1)
+    const marketParams = [
+      baseUsdc,
+      baseCbBtc,
+      '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
+      '0x46415998764c29ab2a25cbea6254146d50d22687',
+      86145408065551n
+    ]
+    const morphoAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: morphoBundler,
+          value: 0n,
+          data: iface.encodeFunctionData('multicall', [
+            [
+              {
+                to: generalAdapter,
+                data: generalAdapterInterface.encodeFunctionData('erc20TransferFrom', [
+                  baseUsdc,
+                  generalAdapter,
+                  2n
+                ]),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              },
+              {
+                to: generalAdapter,
+                data: generalAdapterInterface.encodeFunctionData('morphoRepay', [
+                  marketParams,
+                  220292767985000000n,
+                  0n,
+                  1n,
+                  owner,
+                  '0x'
+                ]),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              },
+              {
+                to: generalAdapter,
+                data: generalAdapterInterface.encodeFunctionData('morphoWithdrawCollateral', [
+                  marketParams,
+                  2n,
+                  owner
+                ]),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              },
+              {
+                to: generalAdapter,
+                data: generalAdapterInterface.encodeFunctionData('erc20Transfer', [
+                  baseUsdc,
+                  owner,
+                  ethers.MaxUint256
+                ]),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              },
+              {
+                to: generalAdapter,
+                data: generalAdapterInterface.encodeFunctionData('erc20Transfer', [
+                  baseCbBtc,
+                  owner,
+                  ethers.MaxUint256
+                ]),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              }
+            ]
+          ])
+        }
+      ]
+    }
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op/clear-signing') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${morphoBundler.toLowerCase()}`]: registryPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)':
+                {
+                  intent: 'Bundler3 Multicall',
+                  fields: [
+                    {
+                      path: '#.bundle.[].data',
+                      label: 'Action',
+                      format: 'calldata',
+                      params: {
+                        calleePath: '#.bundle.[].to',
+                        amountPath: '#.bundle.[].value'
+                      },
+                      visible: 'always'
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(morphoAccountOp, callRelayer)
+    const irCalls = humanizeAccountOp(morphoAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe(registryPath)
+    expect(hasErc7730Humanization(irCalls)).toBe(true)
+    const visualization = irCalls[0]!.fullVisualization?.[0]
+    expect(visualization).toMatchObject({
+      type: 'erc7730',
+      title: 'Bundler3 Multicall'
+    })
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+
+    expect(visualization.rows).toHaveLength(5)
+    expect(visualization.rows.every((row) => row.label === 'Action')).toBe(true)
+    expect(
+      visualization.rows.map((row) => row.value.find((value) => value.type === 'address')?.address)
+    ).toEqual([generalAdapter, generalAdapter, generalAdapter, generalAdapter, generalAdapter])
+    expect(
+      visualization.rows.map((row) => row.value.find((value) => value.type === 'text')?.content)
+    ).toEqual(['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d', '0x3790767d'])
+  })
+
   test('uses standard ERC-7730 approval descriptors in a Permit2 + Universal Router batch', async () => {
     const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
     const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
@@ -663,7 +822,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const callRelayer = async (path: string) => {
+    const callRelayer = async (path: string, method?: string, body?: any) => {
       if (path === '/v2/erc7730/account-op/clear-signing') {
         return {
           success: true,
@@ -674,7 +833,10 @@ describe('ERC-7730 descriptors', () => {
         }
       }
 
-      if (path === `/${wethRegistryPath}`) {
+      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${wethRegistryPath}` })
+
         return {
           success: true,
           display: {

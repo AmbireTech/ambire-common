@@ -165,7 +165,9 @@ const readPath = (source: unknown, path: string): unknown => {
 
     if (Array.isArray(currentValue)) {
       const index = Number(segment)
-      return Number.isInteger(index) ? currentValue[index] : undefined
+      if (Number.isInteger(index)) return currentValue[index]
+
+      return currentValue.map((item) => (isRecord(item) ? item[segment] : undefined))
     }
 
     return isRecord(currentValue) ? currentValue[segment] : undefined
@@ -527,6 +529,60 @@ const formatFieldValue = (
 const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown =>
   field.value !== undefined ? field.value : resolvePath(field.path, context, base)
 
+const getArrayValueAt = (value: unknown, index: number): unknown =>
+  Array.isArray(value) ? value[index] : value
+
+const resolveCalldataParam = (
+  field: Erc7730Field,
+  context: FormatContext,
+  base: unknown,
+  pathKey: string,
+  valueKey: string
+): unknown => {
+  const pathParam = field.params?.[pathKey]
+  if (typeof pathParam === 'string') return resolvePath(pathParam, context, base)
+
+  return resolveParamValue(field.params?.[valueKey], context, base, true)
+}
+
+const getCalldataRows = (
+  field: Erc7730Field,
+  value: unknown,
+  context: FormatContext,
+  base: unknown
+): HumanizerErc7730Row[] | null => {
+  const values = Array.isArray(value) ? value : [value]
+  const calleeValues = resolveCalldataParam(field, context, base, 'calleePath', 'callee')
+  const selectorValues = resolveCalldataParam(field, context, base, 'selectorPath', 'selector')
+
+  return values.reduce<HumanizerErc7730Row[] | null>((acc, calldata, index) => {
+    if (!acc) return null
+
+    const rowValue: HumanizerVisualization[] = []
+    const callee = getArrayValueAt(calleeValues, index)
+    const selector = getArrayValueAt(selectorValues, index)
+
+    if (typeof callee === 'string' && isAddress(callee)) {
+      rowValue.push(getAddressVisualization(callee))
+    }
+
+    if (typeof selector === 'string') {
+      rowValue.push(getText(selector))
+    } else if (typeof calldata === 'string' && calldata.startsWith('0x') && calldata.length >= 10) {
+      rowValue.push(getText(calldata.slice(0, 10)))
+    } else {
+      rowValue.push(getText(valueToText(calldata)))
+    }
+
+    acc.push({
+      label: field.label || field.path || '',
+      value: rowValue
+    })
+
+    return acc
+  }, [])
+}
+
 const isZeroAddressValue = (value: unknown): boolean =>
   typeof value === 'string' && isAddress(value) && value.toLowerCase() === ZeroAddress
 
@@ -578,6 +634,8 @@ const fieldToRows = (
 
   if (value === undefined) return resolvedField.visible === 'optional' ? [] : null
   if (shouldHideZeroAddressToRow(resolvedField, value)) return []
+  if (resolvedField.format === 'calldata')
+    return getCalldataRows(resolvedField, value, context, base)
 
   return [
     {
