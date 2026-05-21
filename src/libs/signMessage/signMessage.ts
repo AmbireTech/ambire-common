@@ -17,6 +17,7 @@ import {
   TypedDataDomain
 } from 'ethers'
 
+import { CallTuple } from '@/libs/accountOp/types'
 import { verifyMessage as signatureValidatorVerifyMessage } from '@ambire/signature-validator'
 import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
@@ -241,7 +242,7 @@ export const getTypedData = (
  */
 export const get7702UserOpTypedData = (
   chainId: bigint,
-  txns: [string, string, string][],
+  txns: CallTuple[],
   packedUserOp: PackedUserOperation,
   userOpHash: string
 ): TypedMessageUserRequest['meta']['params'] => {
