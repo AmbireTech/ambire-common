@@ -616,7 +616,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     const existing = this.#dapps.get(dapp.id)
 
     if (existing) {
-      this.updateDapp(dapp.id, { chainId: dapp.chainId, isConnected: dapp.isConnected })
+      this.updateDapp(dapp.id, {
+        chainId: dapp.chainId,
+        isConnected: dapp.isConnected,
+        accountPreferences: dapp.accountPreferences
+      })
     } else {
       this.#dapps.set(dapp.id, dapp)
 
