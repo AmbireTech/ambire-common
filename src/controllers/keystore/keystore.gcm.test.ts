@@ -24,8 +24,6 @@ const { CIPHER, CIPHER_OLD, getBytesForSecret, SCRYPT_PARAMS } = keystoreLib
 
 const uiManager = mockUiManager().uiManager
 
-// Uses prepareTest to ensure that every test starts with a clean state of the keystore, so we can test migrations in isolation
-// @TODO: Refactor the entire test file to not rely on state from previous tests and use prepareTest
 const MOCK_MIGRATION_PASS = 'mockMigrationPass'
 
 const MOCK_12_WORD_SEED =
@@ -44,8 +42,11 @@ const ALL_SEEDS: string[] = [
   MOCK_15_WORD_SEED,
   MOCK_18_WORD_SEED,
   MOCK_21_WORD_SEED,
+  MOCK_24_WORD_SEED,
   MOCK_24_WORD_SEED
 ]
+
+const SEED_PASSPHRASE = 'somepassword#23'
 
 const MOCK_INTERNAL_KEY: StoredKey = {
   addr: '0x085f8A348f6fBc6F8d8FC3f1e427473436506D65',
@@ -98,11 +99,21 @@ const MOCK_INVALID_KEY: StoredKey = {
   }
 }
 
-const encryptSeedWithCtr = (payload: string, key: Uint8Array, iv: Uint8Array) => {
+const encryptSeedWithCtr = (
+  seed: string,
+  passphrase: string | null,
+  key: Uint8Array,
+  iv: Uint8Array
+) => {
   const counter = new aes.Counter(iv)
   const aesCtr = new aes.ModeOfOperation.ctr(key, counter)
 
-  return hexlify(aesCtr.encrypt(new TextEncoder().encode(payload)))
+  return {
+    seed: hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))) as Hex,
+    passphrase: passphrase
+      ? (hexlify(aesCtr.encrypt(new TextEncoder().encode(passphrase))) as Hex)
+      : null
+  }
 }
 
 const encryptPrivateKeyWithCtr = (payload: string, key: Uint8Array, iv: Uint8Array) => {
@@ -161,22 +172,41 @@ const createMockOldAesStorageFixture = async (
         ciphertext: hexlify(ciphertext) as Hex,
         iv: hexlify(iv) as Hex,
         mac,
-        cipherType: CIPHER_OLD
+        cipherType: CIPHER_OLD as 'aes-128-ctr'
       }
     }
   }
 
   const mockSeeds: StoredKeystoreSeed[] = [
-    ...ALL_SEEDS.map((seed) => ({
-      id: `seed-${seed.split(' ').length}-word`,
-      label: 'Recovery Phrase',
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE as HD_PATH_TEMPLATE_TYPE,
-      seed: encryptSeedWithCtr(seed, mainKey.key, mainKey.iv)
-    })),
-    ...additionalMockSeeds.map((seed) => ({
-      ...seed,
-      seed: encryptSeedWithCtr(seed.seed as string, mainKey.key, mainKey.iv)
-    }))
+    ...ALL_SEEDS.map((seed, index) => {
+      const { seed: encryptedSeed, passphrase: encryptedSeedPassphrase } = encryptSeedWithCtr(
+        seed,
+        index === ALL_SEEDS.length - 1 ? SEED_PASSPHRASE : null,
+        mainKey.key,
+        mainKey.iv
+      )
+      return {
+        id: `seed-${seed.split(' ').length}-word${index === ALL_SEEDS.length - 1 ? '-with-passphrase' : ''}`,
+        label: 'Recovery Phrase',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE as HD_PATH_TEMPLATE_TYPE,
+        seed: encryptedSeed,
+        seedPassphrase: encryptedSeedPassphrase
+      }
+    }),
+    ...additionalMockSeeds.map((seed) => {
+      const { seed: encryptedSeed, passphrase: encryptedSeedPassphrase } = encryptSeedWithCtr(
+        seed.seed as string,
+        seed.seedPassphrase as string,
+        mainKey.key,
+        mainKey.iv
+      )
+
+      return {
+        ...seed,
+        seed: encryptedSeed,
+        seedPassphrase: encryptedSeedPassphrase
+      }
+    })
   ]
 
   const mockKeys: StoredKey[] = [
@@ -283,7 +313,7 @@ describe('CTR to GCM migration', () => {
 
     const initialSeeds = await storageCtrl.get('keystoreSeeds', [])
 
-    expect(initialSeeds).toHaveLength(5)
+    expect(initialSeeds).toHaveLength(6)
     expect(keystoreCtrl.isUnlocked).toBe(false)
     expect(initialSeeds[0]!.seed).toBeDefined()
     expect(typeof initialSeeds[0]?.seed).toBe('string')
@@ -291,7 +321,7 @@ describe('CTR to GCM migration', () => {
     await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
 
     expect(keystoreCtrl.isUnlocked).toBe(true)
-    expect(keystoreCtrl.seeds).toHaveLength(5)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
 
     const rawSeedOne = (await keystoreCtrl.getSavedSeed('seed-12-word')).seed
 
@@ -301,8 +331,13 @@ describe('CTR to GCM migration', () => {
 
     expect(rawSeedTwo).toBe(MOCK_24_WORD_SEED)
 
+    const rawSeedWithPassphrase = await keystoreCtrl.getSavedSeed('seed-24-word-with-passphrase')
+
+    expect(rawSeedWithPassphrase.seed).toBe(MOCK_24_WORD_SEED)
+    expect(rawSeedWithPassphrase.seedPassphrase).toBe(SEED_PASSPHRASE)
+
     const seedsAfter = await storageCtrl.get('keystoreSeeds', [])
-    expect(seedsAfter).toHaveLength(5)
+    expect(seedsAfter).toHaveLength(6)
     expect(typeof seedsAfter[0]?.seed).not.toBe('string')
     expect(typeof seedsAfter[1]?.seed).not.toBe('string')
   })
@@ -349,7 +384,7 @@ describe('CTR to GCM migration', () => {
     expect(secretsAfter).toHaveLength(1)
     expect(secretsAfter[0]!.aesEncrypted.cipherType).toBe(CIPHER)
     expect(secretsAfter[0]?.aesEncrypted.ciphertext).not.toBeUndefined()
-    expect(keystoreCtrl.seeds).toHaveLength(5)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
 
     const rawSeedOne = (await keystoreCtrl.getSavedSeed('seed-12-word')).seed
 
@@ -392,7 +427,7 @@ describe('CTR to GCM migration', () => {
     expect(secretsAfter).toHaveLength(1)
     expect(secretsAfter[0]!.aesEncrypted.cipherType).toBe(CIPHER)
     expect(secretsAfter[0]?.aesEncrypted.ciphertext).not.toBeUndefined()
-    expect(keystoreCtrl.seeds).toHaveLength(5)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
 
     restore()
   })
@@ -425,17 +460,29 @@ describe('CTR to GCM migration', () => {
     expect(keysAfter.filter(({ privKey }) => privKey === null).length).toBe(2)
   })
   it('should migrate with real storage data', async () => {
+    // Uses different mock data to ensure it's not just working with the specific fixture we create in the test,
+    // but can handle real-world data that was encrypted with the old method.
+    const seeds = {
+      12: 'maze raccoon else prevent melody poet rail shed sing love under because',
+      15: 'chest good fun mimic camera draft tiger current slush movie first symptom bag wreck example',
+      18: 'sudden shop illegal awkward kidney motion man enlist notice sound balance turkey learn mountain penalty sea crawl mercy',
+      21: 'practice total hollow mansion tortoise minimum innocent depart spin vague loyal lamp decorate burst census purchase moment step false lunch powder',
+      24: 'hub party field valve cliff help miracle rotate sock random picture early salt cloth nice dish prefer love caution prize clerk mimic purse spread',
+      '24-with-passphrase':
+        'buzz crawl extend pact flush model exhibit rescue patrol wrap bright equip glide peace decide diagram course number street guilt cluster excite derive hybrid'
+    }
+
     const { keystoreCtrl, storageCtrl } = await prepareTest(async (storageCtrl) => {
       await storageCtrl.set('keystoreSecrets', JSON.parse(CTR_STORAGE.keystoreSecrets))
       await storageCtrl.set('keystoreSeeds', JSON.parse(CTR_STORAGE.keystoreSeeds))
       await storageCtrl.set('keystoreKeys', JSON.parse(CTR_STORAGE.keystoreKeys))
-      await storageCtrl.set('keystoreUid', CTR_STORAGE.keyStoreUid)
+      await storageCtrl.set('keyStoreUid', CTR_STORAGE.keyStoreUid)
     }, true)
 
     expect(keystoreCtrl.isUnlocked).toBe(false)
     expect(keystoreCtrl.isReadyToStoreKeys).toBe(true)
-    expect(keystoreCtrl.seeds).toHaveLength(2)
-    expect(keystoreCtrl.keys).toHaveLength(3)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
+    expect(keystoreCtrl.keys).toHaveLength(6)
 
     await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
 
@@ -445,24 +492,31 @@ describe('CTR to GCM migration', () => {
     expect(secretsAfter).toHaveLength(1)
     expect(secretsAfter[0]!.aesEncrypted.cipherType).toBe(CIPHER)
     expect(secretsAfter[0]?.aesEncrypted.ciphertext).not.toBeUndefined()
-    expect(keystoreCtrl.seeds).toHaveLength(2)
-    expect(keystoreCtrl.keys).toHaveLength(3)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
+    expect(keystoreCtrl.keys).toHaveLength(6)
 
-    const rawSeedOne = (await keystoreCtrl.getSavedSeed(keystoreCtrl.seeds[0]!.id)).seed
+    for (const seed of keystoreCtrl.seeds) {
+      const { seed: decryptedSeed, seedPassphrase } = await keystoreCtrl.getSavedSeed(seed.id)
 
-    expect(rawSeedOne).toBe(MOCK_12_WORD_SEED)
+      expect(decryptedSeed).toBeDefined()
+      expect(typeof decryptedSeed).toBe('string')
 
-    const rawSeedTwo = (await keystoreCtrl.getSavedSeed(keystoreCtrl.seeds[1]!.id)).seed
+      const length = decryptedSeed.split(' ').length
 
-    expect(rawSeedTwo).toBe(MOCK_24_WORD_SEED)
+      if (seedPassphrase) {
+        expect(decryptedSeed).toBe(seeds[`${length}-with-passphrase` as keyof typeof seeds])
+      } else {
+        expect(decryptedSeed).toBe(seeds[length as keyof typeof seeds])
+      }
+    }
 
     const internalKeyJson = await keystoreCtrl.exportKeyWithPasscode(
-      MOCK_INTERNAL_KEY.addr,
-      MOCK_INTERNAL_KEY.type,
+      '0x72d9Cd4B2f614809101fc8537290Eb8828928811',
+      'internal',
       'tempPass'
     )
     const wallet = await Wallet.fromEncryptedJson(JSON.parse(internalKeyJson), 'tempPass')
-    expect(wallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+    expect(wallet.address).toBe('0x72d9Cd4B2f614809101fc8537290Eb8828928811')
   })
   it('should migrate only the secret on unlock if the seeds and keys are already migrated', async () => {
     const { keystoreCtrl, storageCtrl } = await prepareTest(async (storageCtrl) => {
@@ -480,7 +534,7 @@ describe('CTR to GCM migration', () => {
     await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
 
     expect(keystoreCtrl.isUnlocked).toBe(true)
-    expect(keystoreCtrl.seeds).toHaveLength(5)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
     expect(keystoreCtrl.keys).toHaveLength(3)
 
     const secretsAfterPasswordUnlock = await storageCtrl.get('keystoreSecrets', [])
@@ -576,11 +630,11 @@ describe('CTR to GCM migration', () => {
     await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
 
     expect(keystoreCtrl.isUnlocked).toBe(true)
-    expect(keystoreCtrl.seeds).toHaveLength(6)
+    expect(keystoreCtrl.seeds).toHaveLength(7)
     expect(keystoreCtrl.keys).toHaveLength(4)
 
     const migratedSeeds = await storageCtrl.get('keystoreSeeds', [])
-    expect(migratedSeeds).toHaveLength(6)
+    expect(migratedSeeds).toHaveLength(7)
     const migratedSeedOne = migratedSeeds.find(({ id }) => id === 'seed-12-word')
     const migratedSeedTwo = migratedSeeds.find(({ id }) => id === 'seed-24-word')
     const invalidSeed = migratedSeeds.find(({ id }) => id === 'invalid-seed')
@@ -696,7 +750,7 @@ describe('CTR to GCM migration', () => {
     await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
 
     expect(keystoreCtrl.isUnlocked).toBe(true)
-    expect(keystoreCtrl.seeds).toHaveLength(5)
+    expect(keystoreCtrl.seeds).toHaveLength(6)
 
     // Verify that seeds can be accessed despite the secret migration failing
     const rawSeedOne = (await keystoreCtrl.getSavedSeed('seed-12-word')).seed

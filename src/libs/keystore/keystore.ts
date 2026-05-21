@@ -172,6 +172,35 @@ export const decryptWithKeyOld = async (
 }
 
 /**
+ * We cannot!! use decryptWithKey or decryptWithKeyOld directly to decrypt CTR-encrypted seed data,
+ * because that would require two method calls, which in turn initializes the AES instance twice and
+ * results in different output, due to the counter being reset (starting from 0 on each initialization,
+ * while the original encryption method continued the counter from the seed to the seedPassphrase)
+ */
+export const decryptSeedWithKeyOld = async (
+  key: MainKey,
+  encryptedSeed: string,
+  encryptedSeedPassphrase: string | null
+): Promise<{ seed: Uint8Array; seedPassphrase: Uint8Array | null }> => {
+  const exported = await crypto.subtle.exportKey('raw', key)
+
+  // key is first 16, iv is second 16 bytes of the exported key material
+  const mainKeyOld: MainKeyOld = {
+    key: new Uint8Array(exported.slice(0, 16)),
+    iv: new Uint8Array(exported.slice(16, 32))
+  }
+  const counter = new aes.Counter(mainKeyOld.iv)
+  const aesCtr = new aes.ModeOfOperation.ctr(mainKeyOld.key, counter)
+
+  const decryptedSeed = aesCtr.decrypt(getBytes(encryptedSeed))
+  const decryptedSeedPassphrase = encryptedSeedPassphrase
+    ? aesCtr.decrypt(getBytes(encryptedSeedPassphrase))
+    : null
+
+  return { seed: decryptedSeed, seedPassphrase: decryptedSeedPassphrase }
+}
+
+/**
  * Computes a derived key from the given secret and salt using scrypt, yielding a key that can be used for encryption/decryption.
  *
  * @example - computes a secret key from a password
@@ -246,14 +275,16 @@ export const migrateStoredPayloadsToGCM = async (
         const isAlreadyMigrated = typeof storedSeed.seed !== 'string'
         if (isAlreadyMigrated) return storedSeed
 
-        const decryptedSeedBytes = await decryptWithKey(mainKey, storedSeed.seed as string)
+        const { seed: decryptedSeedBytes, seedPassphrase: decryptedSeedPassphrase } =
+          await decryptSeedWithKeyOld(
+            mainKey,
+            storedSeed.seed as string,
+            storedSeed.seedPassphrase as string | null
+          )
+
         const decryptedSeedString = new TextDecoder().decode(decryptedSeedBytes)
         // Convert to entropy bytes, which is the raw form of the seed phrase without the mnemonic encoding
         const entropy = extractEntropyFromSeed(decryptedSeedString)
-
-        const decryptedSeedPassphrase = storedSeed.seedPassphrase
-          ? await decryptWithKey(mainKey, storedSeed.seedPassphrase as string)
-          : null
 
         return {
           ...storedSeed,
