@@ -17,17 +17,29 @@ import {
 const ERC7730_CALLDATA_INDEX_RELAYER_PATH = '/v2/erc7730/account-op'
 const ERC7730_EIP712_INDEX_RELAYER_PATH = '/v2/erc7730/eip-712'
 const ERC7730_DESCRIPTOR_PATH = '/v2/erc7730/fetch-descriptor'
+const ERC7730_CACHE_TTL_MS = 8 * 60 * 60 * 1000 // 8 hours
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
 const PERMIT2_APPROVE_SELECTOR = '0x87517c45'
 const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
 
-const relayerCalldataIndexPromises = new WeakMap<
-  Erc7730RelayerCall,
-  Promise<Erc7730CalldataIndex>
->()
-const relayerEip712IndexPromises = new WeakMap<Erc7730RelayerCall, Promise<Erc7730Eip712Index>>()
+type CacheEntry<T> = {
+  value: T
+  fetchedAt: number
+}
+
+let relayerCalldataIndexCache: CacheEntry<Erc7730CalldataIndex> | null = null
+let relayerCalldataIndexPromise: Promise<Erc7730CalldataIndex> | null = null
+let relayerEip712IndexCache: CacheEntry<Erc7730Eip712Index> | null = null
+let relayerEip712IndexPromise: Promise<Erc7730Eip712Index> | null = null
+const descriptorCache = new Map<string, CacheEntry<Erc7730Descriptor>>()
+const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
+
+const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is CacheEntry<T> =>
+  !!entry && Date.now() - entry.fetchedAt < ERC7730_CACHE_TTL_MS
+
+const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
 
 const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   path: 'built-in/erc20-approve',
@@ -152,6 +164,41 @@ const fetchRelayerResource = async <T>(
   return payload
 }
 
+const fetchCachedIndex = async <T>({
+  path,
+  callRelayer,
+  cache,
+  promise,
+  setCache,
+  setPromise
+}: {
+  path: string
+  callRelayer: Erc7730RelayerCall
+  cache: CacheEntry<T> | null
+  promise: Promise<T> | null
+  setCache: (entry: CacheEntry<T> | null) => void
+  setPromise: (promise: Promise<T> | null) => void
+}): Promise<T> => {
+  if (isCacheEntryValid(cache)) return cache.value
+
+  setCache(null)
+
+  if (promise) return promise
+
+  const nextPromise = fetchRelayerResource<T>(path, callRelayer)
+    .then((index) => {
+      setCache(createCacheEntry(index))
+      return index
+    })
+    .finally(() => {
+      setPromise(null)
+    })
+
+  setPromise(nextPromise)
+
+  return nextPromise
+}
+
 const postRelayerResource = async <T>(
   path: string,
   callRelayer: Erc7730RelayerCall,
@@ -208,6 +255,38 @@ const mergeDescriptors = (
   return merge(base, override) as Erc7730Descriptor
 }
 
+const fetchDescriptorResource = async (
+  relayerPath: string,
+  callRelayer: Erc7730RelayerCall
+): Promise<Erc7730Descriptor> => {
+  const cachedDescriptor = descriptorCache.get(relayerPath)
+  if (isCacheEntryValid(cachedDescriptor)) return cachedDescriptor.value
+
+  if (cachedDescriptor) descriptorCache.delete(relayerPath)
+
+  const pendingDescriptor = descriptorPromises.get(relayerPath)
+  if (pendingDescriptor) return pendingDescriptor
+
+  const descriptorFetchPromise = postRelayerResource<Erc7730Descriptor>(
+    ERC7730_DESCRIPTOR_PATH,
+    callRelayer,
+    {
+      descriptorPath: relayerPath
+    }
+  )
+    .then((descriptor) => {
+      descriptorCache.set(relayerPath, createCacheEntry(descriptor))
+      return descriptor
+    })
+    .finally(() => {
+      descriptorPromises.delete(relayerPath)
+    })
+
+  descriptorPromises.set(relayerPath, descriptorFetchPromise)
+
+  return descriptorFetchPromise
+}
+
 const fetchDescriptor = async (
   pathOrUrl: string,
   callRelayer: Erc7730RelayerCall,
@@ -216,13 +295,7 @@ const fetchDescriptor = async (
   const relayerPath = normalizeRelayerPath(pathOrUrl)
 
   const descriptorPromise = (async () => {
-    const descriptor = await postRelayerResource<Erc7730Descriptor>(
-      ERC7730_DESCRIPTOR_PATH,
-      callRelayer,
-      {
-        descriptorPath: relayerPath
-      }
-    )
+    const descriptor = await fetchDescriptorResource(relayerPath, callRelayer)
     const includes = descriptor.includes
       ? Array.isArray(descriptor.includes)
         ? descriptor.includes
@@ -248,42 +321,37 @@ const fetchDescriptor = async (
     }
   })()
 
-  // todo: implement caching
   return descriptorPromise
 }
 
 const getCalldataIndex = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730CalldataIndex> => {
-  const cachedRelayerIndex = relayerCalldataIndexPromises.get(callRelayer)
-  if (cachedRelayerIndex) return cachedRelayerIndex
-
-  const relayerCalldataIndexPromise = fetchRelayerResource<Erc7730CalldataIndex>(
-    ERC7730_CALLDATA_INDEX_RELAYER_PATH,
-    callRelayer
-  ).catch((error) => {
-    relayerCalldataIndexPromises.delete(callRelayer)
-    throw error
+  return fetchCachedIndex<Erc7730CalldataIndex>({
+    path: ERC7730_CALLDATA_INDEX_RELAYER_PATH,
+    callRelayer,
+    cache: relayerCalldataIndexCache,
+    promise: relayerCalldataIndexPromise,
+    setCache: (entry) => {
+      relayerCalldataIndexCache = entry
+    },
+    setPromise: (promise) => {
+      relayerCalldataIndexPromise = promise
+    }
   })
-
-  relayerCalldataIndexPromises.set(callRelayer, relayerCalldataIndexPromise)
-
-  return relayerCalldataIndexPromise
 }
 
 const getEip712Index = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730Eip712Index> => {
-  const cachedRelayerIndex = relayerEip712IndexPromises.get(callRelayer)
-  if (cachedRelayerIndex) return cachedRelayerIndex
-
-  const relayerEip712IndexPromise = fetchRelayerResource<Erc7730Eip712Index>(
-    ERC7730_EIP712_INDEX_RELAYER_PATH,
-    callRelayer
-  ).catch((error) => {
-    relayerEip712IndexPromises.delete(callRelayer)
-    throw error
+  return fetchCachedIndex<Erc7730Eip712Index>({
+    path: ERC7730_EIP712_INDEX_RELAYER_PATH,
+    callRelayer,
+    cache: relayerEip712IndexCache,
+    promise: relayerEip712IndexPromise,
+    setCache: (entry) => {
+      relayerEip712IndexCache = entry
+    },
+    setPromise: (promise) => {
+      relayerEip712IndexPromise = promise
+    }
   })
-
-  relayerEip712IndexPromises.set(callRelayer, relayerEip712IndexPromise)
-
-  return relayerEip712IndexPromise
 }
 
 const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
