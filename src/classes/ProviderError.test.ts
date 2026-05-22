@@ -15,7 +15,7 @@ describe('ProviderError', () => {
     expect(newError.message).toContain('Original error message')
     expect(newError.code).toBe('SOME_ERROR_CODE')
     expect(newError.statusCode).toBe(500)
-    // @ts-ignore
+    // @ts-expect-error
     expect(newError.info).toEqual({ detail: 'Some additional info' })
     expect(newError.isProviderInvictus).toBe(true)
     expect(newError.providerUrl).toBe('https://invictus.ambire.com/ethereum')

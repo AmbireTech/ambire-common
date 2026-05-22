@@ -30,7 +30,7 @@ export function stringify(obj: any, opts?: Options): string {
         const error: any = {}
 
         Object.getOwnPropertyNames(value).forEach((propName) => {
-          // @ts-ignore
+          // @ts-expect-error
           error[propName] = value[propName]
         })
 
@@ -53,7 +53,7 @@ export function parse(json: string) {
       const error = new Error(value.message)
       Object.getOwnPropertyNames(value).forEach((propName) => {
         if (propName !== 'message') {
-          // @ts-ignore
+          // @ts-expect-error
           error[propName] = value[propName]
         }
       })

@@ -405,7 +405,7 @@ export async function verifyMessage({
       } else {
         // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
         finalDigest = hexlify(
-          // @ts-ignore
+          // @ts-expect-error
           TypedDataUtils.eip712Hash(
             adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
             SignTypedDataVersion.V4

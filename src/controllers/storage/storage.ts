@@ -135,7 +135,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
         accounts.map((a: any) => {
           return {
             ...a,
-            // @ts-ignore
+            // @ts-expect-error
             preferences: this.#storage.accountPreferences[a.addr] || {
               label: DEFAULT_ACCOUNT_LABEL,
               pfp: a.addr
@@ -582,7 +582,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
 
-    // @ts-ignore-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
+    // @ts-expect-error-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
     const shouldCleanupUsedOnNetworks = accounts.some((a) => 'usedOnNetworks' in a)
     if (shouldCleanupUsedOnNetworks) {
       await this.#storage.set(
