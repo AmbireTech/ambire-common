@@ -70,6 +70,7 @@ module.exports = [
       'react-hooks/exhaustive-deps': 'warn',
       'react/react-in-jsx-scope': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
       semi: ['error', 'never'],
       'import/no-cycle': 'error',
       'import/no-unresolved': 'off' // because typescript already covers this
