@@ -171,7 +171,7 @@ export default class EventEmitter {
     ) {
       this.emitError({
         level: errorLevel,
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        message: `Please wait for the completion of the previous action before initiating another one, ${callName}`,
         error: new Error(
           'Another function is already being handled by withStatus refrain from invoking a second function.'
         )

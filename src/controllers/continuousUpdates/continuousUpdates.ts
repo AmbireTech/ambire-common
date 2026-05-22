@@ -225,6 +225,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     await this.initialLoadPromise
     await this.#main.accounts.accountStateInitialLoadPromise
 
+    if (!this.#main.accounts.accounts.length) return // no accounts imported yet
+
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
       return

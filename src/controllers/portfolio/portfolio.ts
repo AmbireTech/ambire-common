@@ -680,7 +680,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const networkState = this.#state[accountAddr][chainId.toString()]!
 
-      if (!networkState.result) return
+      // The simulation error is no longer relevant once its simulated balances are removed.
+      // Keeping it would leave the portfolio balance in a warning state.
+      const clearedSimulationError = !!networkState.criticalError?.simulationErrorMsg
+      if (clearedSimulationError) {
+        delete networkState.criticalError
+      }
+
+      if (!networkState.result) {
+        if (clearedSimulationError) this.emitUpdate()
+        return
+      }
 
       networkState.result.tokens = networkState.result.tokens.map((token) => {
         const { amountPostSimulation, simulationAmount, ...rest } = token
