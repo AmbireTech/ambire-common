@@ -6,6 +6,7 @@ const typescriptParser = require('@typescript-eslint/parser')
 const globals = require('globals')
 
 // Import custom rules
+const importPlugin = require('eslint-plugin-import')
 const ambirePlugin = require('./eslint-rules')
 
 module.exports = [
@@ -37,6 +38,7 @@ module.exports = [
       'react-hooks': reactHooks,
       prettier,
       '@typescript-eslint': typescriptEslint,
+      import: importPlugin,
       ambire: ambirePlugin
     },
     rules: {
@@ -68,7 +70,9 @@ module.exports = [
       'react-hooks/exhaustive-deps': 'warn',
       'react/react-in-jsx-scope': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
-      semi: ['error', 'never']
+      semi: ['error', 'never'],
+      'import/no-cycle': 'error',
+      'import/no-unresolved': 'off' // because typescript already covers this
     }
   },
   // Custom rules for controllers only
