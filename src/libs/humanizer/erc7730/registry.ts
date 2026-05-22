@@ -9,6 +9,7 @@ import {
   Erc7730Descriptor,
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
+  Erc7730Field,
   Erc7730RelayerCall,
   Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes
@@ -40,6 +41,144 @@ const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is
   !!entry && Date.now() - entry.fetchedAt < ERC7730_CACHE_TTL_MS
 
 const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isRegistryKey = (key: string): boolean => /^eip155:\d+:0x[a-fA-F0-9]{40}$/.test(key)
+
+const isHexHash = (value: string): boolean => /^0x[a-fA-F0-9]{64}$/.test(value)
+
+const throwInvalidRelayerResource = (path: string): never => {
+  throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+}
+
+const validateCalldataIndex = (payload: unknown, path: string): payload is Erc7730CalldataIndex => {
+  if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
+
+  const index = payload as Record<string, unknown>
+
+  Object.entries(index).forEach(([key, value]) => {
+    if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRelayerResource(path)
+  })
+
+  return true
+}
+
+const validateEip712IndexEntry = (
+  entry: unknown,
+  path: string
+): entry is Erc7730Eip712IndexEntry => {
+  if (!isPlainObject(entry)) throwInvalidRelayerResource(path)
+
+  const indexEntry = entry as Record<string, unknown>
+  if (typeof indexEntry.path !== 'string') throwInvalidRelayerResource(path)
+
+  const { encodeTypeHashes } = indexEntry
+  if (
+    encodeTypeHashes !== undefined &&
+    (!Array.isArray(encodeTypeHashes) ||
+      encodeTypeHashes.some((hash: unknown) => typeof hash !== 'string' || !isHexHash(hash)))
+  ) {
+    throwInvalidRelayerResource(path)
+  }
+
+  return true
+}
+
+const validateEip712Index = (payload: unknown, path: string): payload is Erc7730Eip712Index => {
+  if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
+
+  const index = payload as Record<string, unknown>
+
+  Object.entries(index).forEach(([registryKey, primaryTypes]) => {
+    if (!isRegistryKey(registryKey) || !isPlainObject(primaryTypes)) {
+      throwInvalidRelayerResource(path)
+    }
+
+    const primaryTypesIndex = primaryTypes as Record<string, unknown>
+
+    Object.entries(primaryTypesIndex).forEach(([primaryType, entries]) => {
+      if (typeof primaryType !== 'string' || !Array.isArray(entries)) {
+        throwInvalidRelayerResource(path)
+      }
+
+      const indexEntries = entries as unknown[]
+      indexEntries.forEach((entry) => validateEip712IndexEntry(entry, path))
+    })
+  })
+
+  return true
+}
+
+const validateDescriptorField = (field: unknown, path: string): field is Erc7730Field => {
+  if (!isPlainObject(field)) throwInvalidRelayerResource(path)
+
+  const descriptorField = field as Record<string, unknown>
+
+  if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
+    throwInvalidRelayerResource(path)
+  if (descriptorField.label !== undefined && typeof descriptorField.label !== 'string')
+    throwInvalidRelayerResource(path)
+  if (descriptorField.format !== undefined && typeof descriptorField.format !== 'string') {
+    throwInvalidRelayerResource(path)
+  }
+
+  const { fields } = descriptorField
+  if (fields !== undefined) {
+    if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
+
+    const nestedFields = fields as unknown[]
+    nestedFields.forEach((nestedField) => validateDescriptorField(nestedField, path))
+  }
+
+  return true
+}
+
+const validateDescriptor = (payload: unknown, path: string): payload is Erc7730Descriptor => {
+  if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
+
+  const descriptor = payload as Record<string, unknown>
+  const { includes } = descriptor
+
+  if (
+    includes !== undefined &&
+    typeof includes !== 'string' &&
+    (!Array.isArray(includes) ||
+      includes.some((includePath: unknown) => typeof includePath !== 'string'))
+  ) {
+    throwInvalidRelayerResource(path)
+  }
+
+  const { display } = descriptor
+  if (display === undefined) return true
+  if (!isPlainObject(display)) throwInvalidRelayerResource(path)
+
+  const { formats, definitions } = display as Record<string, unknown>
+  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRelayerResource(path)
+  if (formats === undefined) return true
+  if (!isPlainObject(formats)) throwInvalidRelayerResource(path)
+
+  const descriptorFormats = formats as Record<string, unknown>
+
+  Object.values(descriptorFormats).forEach((format: unknown) => {
+    if (!isPlainObject(format)) throwInvalidRelayerResource(path)
+
+    const descriptorFormat = format as Record<string, unknown>
+    if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
+      throwInvalidRelayerResource(path)
+    }
+
+    const { fields } = descriptorFormat
+    if (fields === undefined) return
+    if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
+
+    const descriptorFields = fields as unknown[]
+    descriptorFields.forEach((field) => validateDescriptorField(field, path))
+  })
+
+  return true
+}
 
 const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   path: 'built-in/erc20-approve',
@@ -152,14 +291,13 @@ const getRelayerPayload = <T>(response: any, path: string): T => {
 
 const fetchRelayerResource = async <T>(
   path: string,
-  callRelayer: Erc7730RelayerCall
+  callRelayer: Erc7730RelayerCall,
+  validate: (payload: unknown, path: string) => payload is T
 ): Promise<T> => {
   const response = await callRelayer(path, 'GET')
   const payload = getRelayerPayload<T>(response, path)
 
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
-  }
+  validate(payload, path)
 
   return payload
 }
@@ -169,6 +307,7 @@ const fetchCachedIndex = async <T>({
   callRelayer,
   cache,
   promise,
+  validate,
   setCache,
   setPromise
 }: {
@@ -176,6 +315,7 @@ const fetchCachedIndex = async <T>({
   callRelayer: Erc7730RelayerCall
   cache: CacheEntry<T> | null
   promise: Promise<T> | null
+  validate: (payload: unknown, path: string) => payload is T
   setCache: (entry: CacheEntry<T> | null) => void
   setPromise: (promise: Promise<T> | null) => void
 }): Promise<T> => {
@@ -185,7 +325,7 @@ const fetchCachedIndex = async <T>({
 
   if (promise) return promise
 
-  const nextPromise = fetchRelayerResource<T>(path, callRelayer)
+  const nextPromise = fetchRelayerResource<T>(path, callRelayer, validate)
     .then((index) => {
       setCache(createCacheEntry(index))
       return index
@@ -202,14 +342,13 @@ const fetchCachedIndex = async <T>({
 const postRelayerResource = async <T>(
   path: string,
   callRelayer: Erc7730RelayerCall,
-  body: any
+  body: any,
+  validate: (payload: unknown, path: string) => payload is T
 ): Promise<T> => {
   const response = await callRelayer(path, 'POST', body)
   const payload = getRelayerPayload<T>(response, path)
 
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
-  }
+  validate(payload, path)
 
   return payload
 }
@@ -230,9 +369,6 @@ const getIncludePath = (includePath: string, parentPath: string): string => {
 
   return new URL(includePath, `https://relayer.local${normalizeRelayerPath(parentPath)}`).pathname
 }
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
 
 const mergeDescriptors = (
   base: Erc7730Descriptor,
@@ -272,7 +408,8 @@ const fetchDescriptorResource = async (
     callRelayer,
     {
       descriptorPath: relayerPath
-    }
+    },
+    validateDescriptor
   )
     .then((descriptor) => {
       descriptorCache.set(relayerPath, createCacheEntry(descriptor))
@@ -330,6 +467,7 @@ const getCalldataIndex = async (callRelayer: Erc7730RelayerCall): Promise<Erc773
     callRelayer,
     cache: relayerCalldataIndexCache,
     promise: relayerCalldataIndexPromise,
+    validate: validateCalldataIndex,
     setCache: (entry) => {
       relayerCalldataIndexCache = entry
     },
@@ -345,6 +483,7 @@ const getEip712Index = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730E
     callRelayer,
     cache: relayerEip712IndexCache,
     promise: relayerEip712IndexPromise,
+    validate: validateEip712Index,
     setCache: (entry) => {
       relayerEip712IndexCache = entry
     },
@@ -475,7 +614,7 @@ export const fetchErc7730DescriptorForMessage = async (
     )
     if (!entry) return null
 
-    return fetchDescriptor(entry.path, callRelayer)
+    return await fetchDescriptor(entry.path, callRelayer)
   } catch (error) {
     console.error(error)
     return null
