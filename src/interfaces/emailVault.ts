@@ -5,7 +5,7 @@ export type IEmailVaultController = ControllerInterface<
   InstanceType<typeof import('../controllers/emailVault/emailVault').EmailVaultController>
 >
 
-export type MagicLinkFlow = 'recovery' | 'setup'
+export type MagicLinkFlow = 'recovery' | 'setup' | 'removeSecret'
 
 export enum SecretType {
   RecoveryKey = 'recoveryKey',

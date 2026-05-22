@@ -133,7 +133,7 @@ export async function getTxnData(
   broadcastOption: string,
   nonce: number,
   call?: Call
-): Promise<{ to: Hex; value: bigint; data: Hex; gasLimit?: bigint }> {
+): Promise<{ to: Hex | undefined; value: bigint; data: Hex; gasLimit?: bigint }> {
   if (account.safeCreation) {
     const safeData = getSafeBroadcastTxn(op, accountState)
     return {
@@ -155,7 +155,7 @@ export async function getTxnData(
 
     if (!call) throw new Error('single txn broadcast misconfig')
     return {
-      to: call.to as Hex,
+      to: call.to as Hex | undefined,
       value: call.value,
       data: call.data as Hex,
       gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
@@ -173,7 +173,7 @@ export async function getTxnData(
     }
 
     const singleCallTxn = {
-      to: call.to as Hex,
+      to: call.to as Hex | undefined,
       value: call.value,
       data: call.data as Hex,
       gasLimit
