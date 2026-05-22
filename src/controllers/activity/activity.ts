@@ -1036,6 +1036,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }>
   ) {
     console.log('Debug: executing balance changes tasks for account ops:', balanceChangesTasks)
+    // THIS FIXES PERFORMANCE. UNCOMMENT TO TEST
+    // if (balanceChangesTasks.length === 0) return
+
     await Promise.all(
       balanceChangesTasks.map(
         ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
