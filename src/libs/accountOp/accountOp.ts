@@ -9,7 +9,7 @@ import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
 import { UserOperation } from '../userOperation/types'
-import { AccountOpStatus, Call } from './types'
+import { AccountOpStatus, Call, CallTuple } from './types'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -141,7 +141,7 @@ export function toSingletonCall(call: Call): Call {
   }
 }
 
-export function callToTuple(call: Call): [string, string, string] {
+export function callToTuple(call: Call): CallTuple {
   return [call.to, call.value.toString(), call.data]
 }
 
@@ -162,7 +162,7 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   return true
 }
 
-export function getSignableCalls(op: AccountOp): [string, string, string][] {
+export function getSignableCalls(op: AccountOp): CallTuple[] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
@@ -173,7 +173,7 @@ export function getSignableHash(
   addr: AccountId,
   chainId: bigint,
   nonce: bigint,
-  calls: [string, string, string][]
+  calls: CallTuple[]
 ): Uint8Array {
   const abiCoder = new AbiCoder()
   return getBytes(

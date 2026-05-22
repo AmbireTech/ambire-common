@@ -56,6 +56,10 @@ export function decodeFeeCall(
   isGasTank: boolean
   chainId: bigint
 } {
+  if (!to) {
+    throw new Error('Invalid fee call: missing `to` field')
+  }
+
   if (to === FEE_COLLECTOR) {
     if (data === '0x') {
       return {

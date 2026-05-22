@@ -427,7 +427,8 @@ export const dappsNotToFilterOutByDomain = [
   'bungee.exchange',
   'altitude.fi',
   'zora.co',
-  'swap.defillama.com'
+  'swap.defillama.com',
+  'jumper.xyz'
 ]
 
 export const CATEGORY_MAP: Record<string, string> = {
