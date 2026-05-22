@@ -7,9 +7,20 @@ const globals = require('globals')
 
 // Import custom rules
 const importPlugin = require('eslint-plugin-import')
+const eslintConfigPrettier = require('eslint-config-prettier')
 const ambirePlugin = require('./eslint-rules')
 
 module.exports = [
+  {
+    ignores: [
+      'node_modules/**',
+      'babel_cache/**',
+      'artifacts/**',
+      'dist/**',
+      'coverage/**',
+      'contracts/**'
+    ]
+  },
   {
     files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
     languageOptions: {
@@ -31,7 +42,9 @@ module.exports = [
     settings: {
       react: {
         version: 'detect'
-      }
+      },
+      // Prevents eslint-plugin-import from parsing node_modules (e.g. react-native Flow syntax).
+      'import/ignore': ['node_modules']
     },
     plugins: {
       react,
@@ -87,5 +100,7 @@ module.exports = [
     rules: {
       'ambire/no-emit-update-in-on-update': 'error'
     }
-  }
+  },
+  // disables ESLint formatting rules that conflict with Prettier (must be last)
+  eslintConfigPrettier
 ]
