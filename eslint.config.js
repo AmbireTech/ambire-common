@@ -35,6 +35,9 @@ module.exports = [
       ambire: ambirePlugin
     },
     rules: {
+      ...typescriptEslint.configs.recommended.rules,
+      ...react.configs.flat.recommended.rules,
+      ...reactHooks.configs.recommended.rules,
       'prettier/prettier': [
         'error',
         {
