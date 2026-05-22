@@ -258,6 +258,118 @@ describe('ERC-7730 registry cache', () => {
     expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712', 'GET')
   })
 
+  test('resolves a SafeTx descriptor by reading the Safe proxy singleton', async () => {
+    const { fetchErc7730DescriptorForMessage } =
+      jest.requireActual<typeof import('./registry')>('./registry')
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
+    const registryPath = 'registry/safe/dynamic-safe-version.json'
+    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/eip-712') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${safeSingleton}`]: {
+              SafeTx: [
+                {
+                  path: registryPath,
+                  encodeTypeHashes: [
+                    '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
+                  ]
+                }
+              ]
+            }
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe transaction',
+                  fields: []
+                }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    })
+    const provider = {
+      getStorage: jest.fn(async (address: string, slot: bigint) => {
+        expect(address).toBe(safeProxy)
+        expect(slot).toBe(0n)
+
+        return `0x000000000000000000000000${safeSingleton.slice(2)}`
+      })
+    }
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: '0x3333333333333333333333333333333333333333',
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeProxy,
+          chainId: 8453
+        },
+        message: {
+          to: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
+          value: '0',
+          data: '0xa9059cbb000000000000000000000000a04d21b7ae298d8e4a61a507de2b7ceafd90ba010000000000000000000000000000000000000000000000000000000000000064',
+          operation: 0,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: '0x0000000000000000000000000000000000000000',
+          refundReceiver: '0x0000000000000000000000000000000000000000',
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const descriptor = await fetchErc7730DescriptorForMessage(
+      safeTxMessage as any,
+      callRelayer,
+      provider as any
+    )
+
+    expect(descriptor?.path).toBe(registryPath)
+    expect(provider.getStorage).toHaveBeenCalledTimes(1)
+    expect(callRelayer).toHaveBeenCalledTimes(2)
+  })
+
   test('rejects malformed index responses', async () => {
     const { fetchErc7730DescriptorForCall, fetchErc7730DescriptorForMessage } =
       jest.requireActual<typeof import('./registry')>('./registry')

@@ -1,10 +1,24 @@
-import { isAddress } from 'ethers'
+import { getAddress, isAddress, isHexString, ZeroAddress } from 'ethers'
+
+import {
+  ERC20_APPROVE_SELECTOR,
+  ERC20_TRANSFER_SELECTOR,
+  ERC7730_CACHE_TTL_MS,
+  ERC7730_CALLDATA_INDEX_RELAYER_PATH,
+  ERC7730_DESCRIPTOR_PATH,
+  ERC7730_EIP712_INDEX_RELAYER_PATH,
+  PERMIT2_ADDRESS,
+  PERMIT2_APPROVE_SELECTOR,
+  SAFE_PROXY_SINGLETON_SLOT,
+  SAFE_TX_PRIMARY_TYPE
+} from '@/libs/humanizer/erc7730/consts'
 
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { getEip712EncodeTypeHash } from './eip712'
 import {
+  CacheEntry,
   Erc7730CalldataIndex,
   Erc7730Descriptor,
   Erc7730Eip712Index,
@@ -12,23 +26,9 @@ import {
   Erc7730Field,
   Erc7730RelayerCall,
   Erc7730ResolvedDescriptor,
-  Erc7730TypedDataTypes
+  Erc7730TypedDataTypes,
+  SafeSingletonProvider
 } from './types'
-
-const ERC7730_CALLDATA_INDEX_RELAYER_PATH = '/v2/erc7730/account-op'
-const ERC7730_EIP712_INDEX_RELAYER_PATH = '/v2/erc7730/eip-712'
-const ERC7730_DESCRIPTOR_PATH = '/v2/erc7730/fetch-descriptor'
-const ERC7730_CACHE_TTL_MS = 8 * 60 * 60 * 1000 // 8 hours
-
-const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
-const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
-const PERMIT2_APPROVE_SELECTOR = '0x87517c45'
-const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
-
-type CacheEntry<T> = {
-  value: T
-  fetchedAt: number
-}
 
 let relayerCalldataIndexCache: CacheEntry<Erc7730CalldataIndex> | null = null
 let relayerCalldataIndexPromise: Promise<Erc7730CalldataIndex> | null = null
@@ -36,7 +36,12 @@ let relayerEip712IndexCache: CacheEntry<Erc7730Eip712Index> | null = null
 let relayerEip712IndexPromise: Promise<Erc7730Eip712Index> | null = null
 const descriptorCache = new Map<string, CacheEntry<Erc7730Descriptor>>()
 const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
+const safeSingletonCache = new Map<string, CacheEntry<string>>()
+const safeSingletonPromises = new Map<string, Promise<string | null>>()
 
+/**
+ * A helper function to use in the tests only
+ */
 export const clearErc7730RegistryCache = () => {
   relayerCalldataIndexCache = null
   relayerCalldataIndexPromise = null
@@ -44,6 +49,8 @@ export const clearErc7730RegistryCache = () => {
   relayerEip712IndexPromise = null
   descriptorCache.clear()
   descriptorPromises.clear()
+  safeSingletonCache.clear()
+  safeSingletonPromises.clear()
 }
 
 const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is CacheEntry<T> =>
@@ -531,6 +538,53 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
   }
 }
 
+const getAddressFromStorageSlot = (slotValue: string): string | null => {
+  if (!isHexString(slotValue) || slotValue.length < 40) return null
+
+  const address = getAddress(`0x${slotValue.slice(-40)}`)
+  return address.toLowerCase() === ZeroAddress ? null : address
+}
+
+const getSafeSingletonCacheKey = (chainId: bigint, safeAddress: string): string =>
+  `${chainId.toString()}:${safeAddress.toLowerCase()}`
+
+const getSafeSingletonFromProxy = async (
+  provider: SafeSingletonProvider | undefined,
+  chainId: bigint,
+  safeAddress: string
+): Promise<string | null> => {
+  if (!provider) return null
+
+  const cacheKey = getSafeSingletonCacheKey(chainId, safeAddress)
+  const cachedSingleton = safeSingletonCache.get(cacheKey)
+  if (isCacheEntryValid(cachedSingleton)) return cachedSingleton.value
+
+  if (cachedSingleton) safeSingletonCache.delete(cacheKey)
+
+  const pendingSingleton = safeSingletonPromises.get(cacheKey)
+  if (pendingSingleton) return pendingSingleton
+
+  const singletonPromise = provider
+    .getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT)
+    .then((slotValue) => {
+      const singletonAddress = getAddressFromStorageSlot(slotValue)
+      if (singletonAddress) safeSingletonCache.set(cacheKey, createCacheEntry(singletonAddress))
+
+      return singletonAddress
+    })
+    .catch((error) => {
+      console.error(error)
+      return null
+    })
+    .finally(() => {
+      safeSingletonPromises.delete(cacheKey)
+    })
+
+  safeSingletonPromises.set(cacheKey, singletonPromise)
+
+  return singletonPromise
+}
+
 const selectEip712IndexEntry = (
   entries: Erc7730Eip712IndexEntry[],
   types: Erc7730TypedDataTypes,
@@ -551,6 +605,23 @@ const selectEip712IndexEntry = (
         entry.encodeTypeHashes.some((hash) => hash.toLowerCase() === encodeTypeHash)
     ) || null
   )
+}
+
+const fetchEip712DescriptorFromIndex = async (
+  index: Erc7730Eip712Index,
+  chainId: bigint,
+  verifyingContract: string,
+  types: Erc7730TypedDataTypes,
+  primaryType: string,
+  callRelayer: Erc7730RelayerCall
+): Promise<Erc7730ResolvedDescriptor | null> => {
+  const entries = index[getRegistryKey(chainId, verifyingContract)]?.[primaryType]
+  if (!entries?.length) return null
+
+  const entry = selectEip712IndexEntry(entries, types, primaryType)
+  if (!entry) return null
+
+  return fetchDescriptor(entry.path, callRelayer)
 }
 
 export const fetchErc7730DescriptorForCall = async (
@@ -602,28 +673,44 @@ export const fetchErc7730DescriptorsForAccountOp = async (
 
 export const fetchErc7730DescriptorForMessage = async (
   message: Message,
-  callRelayer: Erc7730RelayerCall
+  callRelayer: Erc7730RelayerCall,
+  provider?: SafeSingletonProvider
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (message.content.kind !== 'typedMessage') return null
 
   const verifyingContract = message.content.domain.verifyingContract
   const chainId = getTypedMessageChainId(message)
   if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
+  const primaryType = String(message.content.primaryType)
+  const types = message.content.types as Erc7730TypedDataTypes
 
   try {
     const index = await getEip712Index(callRelayer)
-    const primaryType = String(message.content.primaryType)
-    const entries = index[getRegistryKey(chainId, verifyingContract)]?.[primaryType]
-    if (!entries?.length) return null
-
-    const entry = selectEip712IndexEntry(
-      entries,
-      message.content.types as Erc7730TypedDataTypes,
-      primaryType
+    const registryDescriptor = await fetchEip712DescriptorFromIndex(
+      index,
+      chainId,
+      verifyingContract,
+      types,
+      primaryType,
+      callRelayer
     )
-    if (!entry) return null
+    if (registryDescriptor) return registryDescriptor
 
-    return await fetchDescriptor(entry.path, callRelayer)
+    if (primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+
+    const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, verifyingContract)
+    if (!safeSingleton || safeSingleton.toLowerCase() === verifyingContract.toLowerCase()) {
+      return null
+    }
+
+    return await fetchEip712DescriptorFromIndex(
+      index,
+      chainId,
+      safeSingleton,
+      types,
+      primaryType,
+      callRelayer
+    )
   } catch (error) {
     console.error(error)
     return null

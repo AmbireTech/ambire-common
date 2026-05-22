@@ -1,13 +1,17 @@
 import { ethers, ZeroAddress } from 'ethers'
 
-import { describe, jest, test } from '@jest/globals'
+import { beforeEach, describe, jest, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
 import { GeneralAdapter1 } from './const/abis/GeneralAdapter1'
-import { fetchErc7730DescriptorForMessage, fetchErc7730DescriptorsForAccountOp } from './erc7730'
+import {
+  clearErc7730RegistryCache,
+  fetchErc7730DescriptorForMessage,
+  fetchErc7730DescriptorsForAccountOp
+} from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
 import {
@@ -69,6 +73,10 @@ const keys: Key[] = [
     }
   }
 ]
+
+beforeEach(() => {
+  clearErc7730RegistryCache()
+})
 const transactions = {
   generic: [
     // simple transafer

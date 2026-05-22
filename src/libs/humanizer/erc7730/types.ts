@@ -1,6 +1,7 @@
+import { RPCProvider } from '../../../interfaces/provider'
+import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { Message } from '../../../interfaces/userRequest'
 
 export type Erc7730RelayerCall = (
   path: string,
@@ -12,6 +13,7 @@ export type Erc7730RelayerCall = (
 
 export type Erc7730RegistryOptions = {
   callRelayer?: Erc7730RelayerCall
+  provider?: RPCProvider
 }
 
 export type Erc7730Primitive = string | number | boolean | null
@@ -88,3 +90,10 @@ export type FetchErc7730DescriptorForMessage = (
   message: Message,
   options?: Erc7730RegistryOptions
 ) => Promise<Erc7730ResolvedDescriptor | null>
+
+export type CacheEntry<T> = {
+  value: T
+  fetchedAt: number
+}
+
+export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>

@@ -290,9 +290,13 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     }, ERC7730_DESCRIPTOR_WAIT_MS)
 
     try {
+      const provider = this.network
+        ? this.#providers.providers[this.network.chainId.toString()]
+        : undefined
       const erc7730Descriptor = await fetchErc7730DescriptorForMessage(
         this.messageToSign,
-        this.#callRelayer
+        this.#callRelayer,
+        provider
       )
       hasResolvedBeforeFallback = true
       clearTimeout(fallbackTimeout)
