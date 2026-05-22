@@ -11,6 +11,16 @@ const ambirePlugin = require('./eslint-rules')
 
 module.exports = [
   {
+    ignores: [
+      'node_modules/**',
+      'babel_cache/**',
+      'artifacts/**',
+      'dist/**',
+      'coverage/**',
+      'contracts/**'
+    ]
+  },
+  {
     files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
     languageOptions: {
       parser: typescriptParser,
@@ -31,7 +41,9 @@ module.exports = [
     settings: {
       react: {
         version: 'detect'
-      }
+      },
+      // Prevents eslint-plugin-import from parsing node_modules (e.g. react-native Flow syntax).
+      'import/ignore': ['node_modules']
     },
     plugins: {
       react,
