@@ -932,11 +932,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
-          // Never auto-update the receive network when the send network changes,
-          // to preserve the user's receive network selection
-          if (!this.toSelectedToken) {
-            shouldUpdateToTokenList = true
-          }
+          shouldUpdateToTokenList = true
         }
       }
 
