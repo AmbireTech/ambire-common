@@ -617,9 +617,9 @@ describe('ERC-7730 descriptors', () => {
                 to: generalAdapter,
                 data: generalAdapterInterface.encodeFunctionData('morphoRepay', [
                   marketParams,
-                  220292767985000000n,
                   0n,
-                  1n,
+                  220292767985000000n,
+                  10n ** 27n,
                   owner,
                   '0x'
                 ]),

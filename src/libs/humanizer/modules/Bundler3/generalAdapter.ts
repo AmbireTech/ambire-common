@@ -36,6 +36,14 @@ const getWarnings = (accAddr: string, onBehalf: string): HumanizerWarning[] => {
     : []
 }
 
+const toRepayAssets = (assets: bigint, shares: bigint, maxSharePriceE27: bigint): bigint => {
+  if (assets > 0n) return assets
+  if (shares <= 0n || maxSharePriceE27 <= 0n) return assets
+
+  const precision = 10n ** 27n
+  return (shares * maxSharePriceE27 + precision - 1n) / precision
+}
+
 const matcher: Record<string, (accAddr: string, call: IrCall) => IrCall | undefined> = {
   [generalAdapterInterface.getFunction('erc20TransferFrom')?.selector!]: (
     _accAddr: string,
@@ -129,8 +137,13 @@ const matcher: Record<string, (accAddr: string, call: IrCall) => IrCall | undefi
     accAddr: string,
     call: IrCall
   ): IrCall | undefined => {
-    const { marketParams, assets, onBehalf } = generalAdapterInterface.parseTransaction(call)!.args
-    const fullVisualization = [getBreak(), getAction('Repay'), getToken(marketParams[0], assets)]
+    const { marketParams, assets, shares, maxSharePriceE27, onBehalf } =
+      generalAdapterInterface.parseTransaction(call)!.args
+    const fullVisualization = [
+      getBreak(),
+      getAction('Repay'),
+      getToken(marketParams[0], toRepayAssets(assets, shares, maxSharePriceE27))
+    ]
     return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
   },
   [generalAdapterInterface.getFunction('morphoWithdrawCollateral')?.selector!]: (

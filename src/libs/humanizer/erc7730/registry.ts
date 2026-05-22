@@ -37,6 +37,15 @@ let relayerEip712IndexPromise: Promise<Erc7730Eip712Index> | null = null
 const descriptorCache = new Map<string, CacheEntry<Erc7730Descriptor>>()
 const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
 
+export const clearErc7730RegistryCache = () => {
+  relayerCalldataIndexCache = null
+  relayerCalldataIndexPromise = null
+  relayerEip712IndexCache = null
+  relayerEip712IndexPromise = null
+  descriptorCache.clear()
+  descriptorPromises.clear()
+}
+
 const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is CacheEntry<T> =>
   !!entry && Date.now() - entry.fetchedAt < ERC7730_CACHE_TTL_MS
 
