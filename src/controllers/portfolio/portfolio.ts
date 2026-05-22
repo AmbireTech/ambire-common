@@ -461,7 +461,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.customTokens = await this.#storage.get('customTokens', [])
 
       this.#learnedAssets = await this.#storage.get('learnedAssets', this.#learnedAssets)
-      this.#previousHints = await this.#storage.get('previousHints', {})
+      this.#previousHints = await this.#storage.get('previousHints', {
+        learnedNfts: {},
+        learnedTokens: {},
+        fromExternalAPI: {}
+      })
       // Don't load fromExternalAPI hints in memory as they are no longer used
       this.#previousHints.fromExternalAPI = {}
       this.#networksWithPositionsByAccounts = await this.#storage.get(
@@ -676,7 +680,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       const networkState = this.#state[accountAddr][chainId.toString()]!
 
-      if (!networkState.result) return
+      // The simulation error is no longer relevant once its simulated balances are removed.
+      // Keeping it would leave the portfolio balance in a warning state.
+      const clearedSimulationError = !!networkState.criticalError?.simulationErrorMsg
+      if (clearedSimulationError) {
+        delete networkState.criticalError
+      }
+
+      if (!networkState.result) {
+        if (clearedSimulationError) this.emitUpdate()
+        return
+      }
 
       networkState.result.tokens = networkState.result.tokens.map((token) => {
         const { amountPostSimulation, simulationAmount, ...rest } = token
