@@ -761,6 +761,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #selectAccount(toAccountAddr: string | null) {
+    const start = Date.now()
+    console.log('Debug: main.#selectAccount started', start)
     if (!toAccountAddr) {
       await this.selectedAccount.setAccount(null)
 
@@ -812,6 +814,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
+    console.log('Debug: main.#selectAccount finished', Date.now(), 'took', Date.now() - start, 'ms')
   }
 
   async #onAccountPickerSuccess() {

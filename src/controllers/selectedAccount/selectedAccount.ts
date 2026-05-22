@@ -189,7 +189,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     if (!account) {
       await this.#storage.remove('selectedAccount')
     } else {
+      const start = Date.now()
       await this.#storage.set('selectedAccount', account.addr)
+      console.log(
+        'Debug: called storage set for selectedAccount: setAccount (took',
+        Date.now() - start,
+        'ms)'
+      )
     }
   }
 

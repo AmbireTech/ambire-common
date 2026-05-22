@@ -398,6 +398,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       migratedNetworksWithPositionsByAccounts
     )
     await this.#storage.set('accountsOps', migratedAccountsOps)
+    console.log('Debug: called storage set for accountsOps: storage.ts')
     await this.#storage.set('signedMessages', migratedSignedMessages)
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
@@ -442,6 +443,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
   }
 
   async set<K extends keyof StorageProps>(key: K, value: StorageProps[K]) {
+    console.log('Debug: set called with', key, 'has queue', !!this.#storageUpdateQueue)
     await this.#storageMigrationsPromise
     this.#storageUpdateQueue = this.#storageUpdateQueue.then(async () => {
       try {

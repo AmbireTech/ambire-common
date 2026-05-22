@@ -1274,12 +1274,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs?: number
       isManualUpdate?: boolean
     }
-  ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
+  ): Promise<['success' | 'fail' | 'skipped', FormattedPortfolioDiscoveryResponse | null]> {
     const { maxDataAgeMs, isManualUpdate, defiMaxDataAgeMs } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
-    if (!accountState) return [false, null]
+    if (!accountState) return ['fail', null]
 
     if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
@@ -1292,7 +1292,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs
     )
 
-    if (canSkipUpdate) return [true, null]
+    if (canSkipUpdate) return ['skipped', null]
 
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
@@ -1416,7 +1416,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
       this.emitUpdate()
-      return [true, discoveryData]
+      return ['success', discoveryData]
     } catch (e: any) {
       this.emitError({
         level: 'silent',
@@ -1442,7 +1442,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
       this.emitUpdate()
 
-      return [false, null]
+      return ['fail', null]
     }
   }
 
@@ -1783,7 +1783,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
           const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null
 
-          const [isSuccessful, discoveryResponse] = await this.updatePortfolioState(
+          const [updateStatus, discoveryResponse] = await this.updatePortfolioState(
             selectedAccount,
             network,
             portfolioLib,
@@ -1808,7 +1808,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
 
           // Learn tokens and nfts from the portfolio lib
-          if (isSuccessful && accountState[network.chainId.toString()]?.result) {
+          if (updateStatus === 'success' && accountState[network.chainId.toString()]?.result) {
             const networkResult = accountState[network.chainId.toString()]!.result
             const { erc20s, erc721s } = networkResult?.toBeLearned || {}
             let shouldUpdateLearnedInStorage = false

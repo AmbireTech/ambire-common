@@ -493,6 +493,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     this.emitUpdate()
 
+    const backfillStart = Date.now()
+
     // find ops with no balance changes recorded and backfill them;
     // no need to console.log anything in the catch statement here
     // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
@@ -503,7 +505,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
         op.balanceChanges === undefined
     )
     if (opsWithNoBalanceChanges.length)
-      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
+      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges)
+        .then(() => {
+          const backfillEnd = Date.now()
+          console.log(
+            `Debug: finished backfilling balance changes for account ${filters.account} in ${(backfillEnd - backfillStart) / 1000} seconds`
+          )
+        })
+        .catch((e) => null)
   }
 
   setDashboardBannersSeen(sessionId: string, accountAddr: string) {
@@ -559,7 +568,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   private async persistAccountsOps() {
+    const start = Date.now()
     await this.#storage.set('accountsOps', this.#accountsOps)
+    console.log(
+      'Debug: called storage set for accountsOps: persistAccountsOps (took',
+      Date.now() - start,
+      'ms)'
+    )
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -679,6 +694,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.syncFilteredAccountsOps()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
+    console.log('Debug: called storage set for accountsOps: addAccountOp')
     this.emitUpdate()
   }
 
@@ -862,6 +878,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * as we're persisting the state right after the operation
    */
   async backfillAccountOpBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
+    console.log('Debug: backfilling balance changes for account ops:', accountOps)
     await Promise.all(accountOps.map((accOp) => this.backfillAccountOpBalanceChanges(accOp)))
     await this.persistAccountsOps()
   }
@@ -983,6 +1000,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
     >
   > {
+    console.log('Debug: updating accounts ops statuses for addresses:', accountAddresses)
     const selectedAddr = this.#selectedAccount.account?.addr
     // ensure ops are always updated for selected account if no addresses are passed
     const uniqueAddresses = Array.from(
@@ -1017,6 +1035,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       receipts?: BalanceChangesReceipt[]
     }>
   ) {
+    console.log('Debug: executing balance changes tasks for account ops:', balanceChangesTasks)
     await Promise.all(
       balanceChangesTasks.map(
         ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
@@ -1348,9 +1367,25 @@ export class ActivityController extends EventEmitter implements IActivityControl
       await this.persistAccountsOps()
     }
 
+    console.log(
+      'Debug: starting to execute balance changes tasks for account:',
+      accountAddr,
+      balanceChangesTasks
+    )
+    const executeStartTime = Date.now()
+
     // record the balance changes but do not await them
     // no need to console.log errors in the catch() as it's handled inside
-    this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null)
+    this.#executeBalanceChanges(balanceChangesTasks)
+      .catch((e) => null)
+      .then(() => {
+        const executeEndTime = Date.now()
+        const executionTime = (executeEndTime - executeStartTime) / 1000
+        console.log(
+          `Debug: finished executing balance changes tasks for account ${accountAddr} in ${executionTime} seconds:`,
+          balanceChangesTasks
+        )
+      })
 
     return {
       shouldEmitUpdate,
@@ -1438,6 +1473,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.syncSignedMessages()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
+    console.log('Debug: called storage set for accountsOps: removeAccountData')
     await this.#storage.set('signedMessages', this.#signedMessages)
 
     this.emitUpdate()
