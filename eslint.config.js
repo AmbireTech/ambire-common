@@ -27,6 +27,11 @@ module.exports = [
         ...globals.es2021
       }
     },
+    settings: {
+      react: {
+        version: 'detect'
+      }
+    },
     plugins: {
       react,
       'react-hooks': reactHooks,
