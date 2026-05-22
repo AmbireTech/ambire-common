@@ -356,7 +356,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       await this.#getEmailVaultInfo(email, 'setup')
     }
 
-    let result: Boolean | null = false
+    let result: boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
 
     if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
@@ -414,7 +414,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       await this.#getEmailVaultInfo(email)
     }
 
-    let result: Boolean | null = false
+    let result: boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
 
     if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {

@@ -43,7 +43,7 @@ export const getPrivateKeyFromSeed = (
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
 export class KeyIterator implements KeyIteratorInterface {
-  type = 'internal' as 'internal'
+  type = 'internal' as const
 
   subType: 'seed' | 'private-key'
 
@@ -172,7 +172,7 @@ export class KeyIterator implements KeyIteratorInterface {
           return [
             {
               addr: new Wallet(privateKey).address,
-              type: 'internal' as 'internal',
+              type: 'internal' as const,
               label:
                 getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
                 getDefaultKeyLabel(
@@ -211,7 +211,7 @@ export class KeyIterator implements KeyIteratorInterface {
         return [
           {
             addr: new Wallet(this.#privateKey).address,
-            type: 'internal' as 'internal',
+            type: 'internal' as const,
             label:
               getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
               getDefaultKeyLabel(

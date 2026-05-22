@@ -9,16 +9,10 @@ import toSolidity from './toSolidity'
 import { createHash } from 'crypto'
 
 export default async function parseEmail(email: any) {
-
   const dkims = parse(email).dkims.map((dkim: any) => {
-    const algorithm = dkim.algorithm
-      .split('-')
-      .pop()
-      .toUpperCase()
+    const algorithm = dkim.algorithm.split('-').pop().toUpperCase()
 
-    const bodyHash = createHash(algorithm)
-      .update(dkim.processedBody)
-      .digest()
+    const bodyHash = createHash(algorithm).update(dkim.processedBody).digest()
 
     const bodyHashMatched = bodyHash.compare(dkim.signature.hash) !== 0
 
@@ -26,9 +20,7 @@ export default async function parseEmail(email: any) {
       throw new Error('body hash did not verify')
     }
 
-    const hash = createHash(algorithm)
-      .update(dkim.processedHeader)
-      .digest()
+    const hash = createHash(algorithm).update(dkim.processedHeader).digest()
 
     return {
       ...dkim,

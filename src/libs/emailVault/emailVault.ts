@@ -8,14 +8,14 @@ import { Fetch } from '../../interfaces/fetch'
 import { relayerCall } from '../relayerCall/relayerCall'
 
 export interface Secret {
-  key: String
-  type: String
+  key: string
+  type: string
 }
 
 // NOTE: its a quick fix. Will be updated in other branch
 export interface EmailVaultInfo {
-  email: String
-  recoveryKey: String
+  email: string
+  recoveryKey: string
   availableSecrets: Secret[]
   availableAccounts: any
 }
@@ -27,16 +27,16 @@ export class EmailVault {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  async getRecoveryKeyAddress(email: String, authKey: String): Promise<RecoveryKey> {
+  async getRecoveryKeyAddress(email: string, authKey: string): Promise<RecoveryKey> {
     return (await this.callRelayer(`/email-vault/get-recovery-key/${email}/${authKey}`)).data
   }
 
-  async getSessionKey(email: String, authKey: String): Promise<string> {
+  async getSessionKey(email: string, authKey: string): Promise<string> {
     return (await this.callRelayer(`/email-vault/get-session-key/${email}/${authKey}`))?.data
       ?.sessionKey
   }
 
-  async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData | null> {
+  async getEmailVaultInfo(email: string, authKey: string): Promise<EmailVaultData | null> {
     const result = await this.callRelayer(`/email-vault/email-vault-info/${email}/${authKey}`).then(
       (res: any) => res.data
     )
@@ -53,8 +53,8 @@ export class EmailVault {
   }
 
   async operations(
-    email: String,
-    authKey: String,
+    email: string,
+    authKey: string,
     operations: EmailVaultOperation[]
   ): Promise<EmailVaultOperation[] | null> {
     return (
@@ -65,8 +65,8 @@ export class EmailVault {
   }
 
   async getOperations(
-    email: String,
-    authKey: String,
+    email: string,
+    authKey: string,
     operations: EmailVaultOperation[]
   ): Promise<EmailVaultOperation[] | null> {
     return (
@@ -77,11 +77,11 @@ export class EmailVault {
   }
 
   async addKeyStoreSecret(
-    email: String,
-    authKey: String,
-    keyStoreUid: String,
-    secret: String
-  ): Promise<Boolean> {
+    email: string,
+    authKey: string,
+    keyStoreUid: string,
+    secret: string
+  ): Promise<boolean> {
     return (
       await this.callRelayer(`/email-vault/add-key-store-secret/${email}/${authKey}`, 'POST', {
         secret,
@@ -91,10 +91,10 @@ export class EmailVault {
   }
 
   async removeKeyStoreSecretFromRelayer(
-    email: String,
-    authKey: String,
-    keyStoreUid: String
-  ): Promise<Boolean> {
+    email: string,
+    authKey: string,
+    keyStoreUid: string
+  ): Promise<boolean> {
     return (
       await this.callRelayer(`/email-vault/remove-key-store-secret/${email}/${authKey}`, 'POST', {
         uid: keyStoreUid
@@ -103,9 +103,9 @@ export class EmailVault {
   }
 
   async retrieveKeyStoreSecret(
-    email: String,
-    authKey: String,
-    keyStoreUid: String
+    email: string,
+    authKey: string,
+    keyStoreUid: string
   ): Promise<EmailVaultSecret> {
     return (
       await this.callRelayer(
@@ -115,11 +115,11 @@ export class EmailVault {
   }
 
   async addKeyBackup(
-    email: String,
-    authKey: String,
-    keyAddress: String,
-    privateKeyEncryptedJSON: String
-  ): Promise<Boolean> {
+    email: string,
+    authKey: string,
+    keyAddress: string,
+    privateKeyEncryptedJSON: string
+  ): Promise<boolean> {
     return (
       await this.callRelayer(`/email-vault/add-key-backup/${email}/${authKey}`, 'POST', {
         keyAddress,
@@ -129,16 +129,16 @@ export class EmailVault {
   }
 
   async retrieveKeyBackup(
-    email: String,
-    authKey: String,
-    keyAddress: String
+    email: string,
+    authKey: string,
+    keyAddress: string
   ): Promise<EmailVaultSecret> {
     return (
       await this.callRelayer(`/email-vault/retrieve-key-backup/${email}/${keyAddress}/${authKey}`)
     ).data
   }
 
-  async getInfo(email: String, authKey: String): Promise<EmailVaultInfo> {
+  async getInfo(email: string, authKey: string): Promise<EmailVaultInfo> {
     return (await this.callRelayer(`/email-vault/email-vault-info/${email}/${authKey}`)).data
   }
 }

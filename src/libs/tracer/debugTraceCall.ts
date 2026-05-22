@@ -115,7 +115,7 @@ export async function debugTraceCall(
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const account = baseAcc.getAccount()
   const opts = {
-    blockTag: 'latest' as 'latest',
+    blockTag: 'latest' as const,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract,
     isEOA: isBasicAccount(account, accountState),

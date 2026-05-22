@@ -178,7 +178,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       {
         addr: new Wallet(eoaSigner.privKey).address,
         privateKey: eoaSigner.privKey,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 1',
         dedicatedToOneSA: true,
         meta: {
@@ -187,7 +187,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       },
       {
         addr: new Wallet(v1siger.privKey).address,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 2',
         privateKey: v1siger.privKey,
         dedicatedToOneSA: false,
@@ -197,7 +197,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       },
       {
         addr: eoaAccountHackedDelegation.addr,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Anvil key 1',
         privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
         dedicatedToOneSA: true,
@@ -977,7 +977,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       {
         addr: new Wallet(eoaSigner.privKey).address,
         privateKey: eoaSigner.privKey,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 1',
         dedicatedToOneSA: false,
         meta: {
@@ -1051,7 +1051,7 @@ describe('Sign Message, Safe accounts', () => {
       {
         addr: new Wallet(eoaSigner.privKey).address,
         privateKey: eoaSigner.privKey,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 1',
         dedicatedToOneSA: false,
         meta: {

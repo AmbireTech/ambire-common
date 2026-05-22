@@ -9,17 +9,17 @@ import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
 
-let email: String
-let email2: String
+let email: string
+let email2: string
 
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
-let authKey: String
-let authSecret: String // this will not be return in prod mode
-let recoveryKey: String
-let authKey2: String
-let authSecret2: String // this will not be return in prod mode
-let recoveryKey2: String
+let authKey: string
+let authSecret: string // this will not be return in prod mode
+let recoveryKey: string
+let authKey2: string
+let authSecret2: string // this will not be return in prod mode
+let recoveryKey2: string
 const keyStoreSecret = 'keyStoreSecretHere'
 
 const initEmailVaultTest = async () => {
