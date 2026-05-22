@@ -7,6 +7,7 @@ const globals = require('globals')
 
 // Import custom rules
 const importPlugin = require('eslint-plugin-import')
+const eslintConfigPrettier = require('eslint-config-prettier')
 const ambirePlugin = require('./eslint-rules')
 
 module.exports = [
@@ -99,5 +100,7 @@ module.exports = [
     rules: {
       'ambire/no-emit-update-in-on-update': 'error'
     }
-  }
+  },
+  // disables ESLint formatting rules that conflict with Prettier (must be last)
+  eslintConfigPrettier
 ]
