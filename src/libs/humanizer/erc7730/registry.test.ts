@@ -286,6 +286,16 @@ describe('ERC-7730 registry cache', () => {
         }
       }
 
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {},
+          errorState: []
+        }
+      }
+
       if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
@@ -366,8 +376,9 @@ describe('ERC-7730 registry cache', () => {
     )
 
     expect(descriptor?.path).toBe(registryPath)
+    expect(descriptor?.safeTxCallDescriptor?.path).toBe('built-in/erc20-transfer')
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
-    expect(callRelayer).toHaveBeenCalledTimes(2)
+    expect(callRelayer).toHaveBeenCalledTimes(3)
   })
 
   test('rejects malformed index responses', async () => {

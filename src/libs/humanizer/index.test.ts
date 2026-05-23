@@ -1286,4 +1286,420 @@ describe('ERC-7730 descriptors', () => {
       ])
     ])
   })
+
+  test('humanizes the nested transaction row in a SafeTx EIP-712 message', async () => {
+    const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const recipient = '0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce',
+          chainId: 8453
+        },
+        message: {
+          to: tokenAddress,
+          value: '0',
+          data: `0xa9059cbb000000000000000000000000${recipient.slice(
+            2
+          )}0000000000000000000000000000000000000000000000000000000000000064`,
+          operation: 0,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        },
+        safeTxCallDescriptor: {
+          descriptor: {
+            display: {
+              formats: {
+                'transfer(address _to, uint256 _value)': {
+                  intent: 'Send',
+                  fields: [
+                    {
+                      path: '_value',
+                      label: 'Amount',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    },
+                    {
+                      path: '_to',
+                      label: 'To',
+                      format: 'addressName',
+                      visible: 'always'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('0')]
+        },
+        {
+          label: 'Transaction',
+          value: [
+            getErc7730Visualization('Send', [
+              {
+                label: 'Amount',
+                value: [getToken(tokenAddress, 100n, 8453n)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(recipient)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization(ZeroAddress)]
+        }
+      ])
+    ])
+  })
+
+  test('humanizes SafeTx multisend transactions as nested transaction rows', async () => {
+    const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const recipientOne = '0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'
+    const recipientTwo = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const transferDataOne = `0xa9059cbb000000000000000000000000${recipientOne.slice(
+      2
+    )}0000000000000000000000000000000000000000000000000000000000000064`
+    const transferDataTwo = `0xa9059cbb000000000000000000000000${recipientTwo.slice(
+      2
+    )}00000000000000000000000000000000000000000000000000000000000000c8`
+    const transactionsData = ethers.concat([
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, tokenAddress, 0n, BigInt(ethers.getBytes(transferDataOne).length), transferDataOne]
+      ),
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, tokenAddress, 0n, BigInt(ethers.getBytes(transferDataTwo).length), transferDataTwo]
+      )
+    ])
+    const multiSendData = new ethers.Interface([
+      'function multiSend(bytes transactions)'
+    ]).encodeFunctionData('multiSend', [transactionsData])
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce',
+          chainId: 8453
+        },
+        message: {
+          to: '0x8d80ff0a632a8a7ba2e219e2c4b79f8f3cd2d81b',
+          value: '0',
+          data: multiSendData,
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('1')]
+        },
+        {
+          label: 'Transactions',
+          value: [
+            getErc7730Visualization('Send', [
+              {
+                label: 'Send',
+                value: [getToken(tokenAddress, 100n)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(recipientOne)]
+              }
+            ]),
+            getErc7730Visualization('Send', [
+              {
+                label: 'Send',
+                value: [getToken(tokenAddress, 200n)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(recipientTwo)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization(ZeroAddress)]
+        }
+      ])
+    ])
+  })
+
+  test('humanizes SafeTx multisend with truncated ABI padding as separate transaction rows', async () => {
+    const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+    const settlement = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce',
+          chainId: 8453
+        },
+        message: {
+          to: '0x9641d764fc13c8b624c04430c7356c1c7c8102e2',
+          value: '0',
+          data: '0x8d80ff0a0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000019200cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000000000000000000005ea009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a4ec6cb13f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000038cc9abd7869bc44faf6552057bc09b84f0d691eb0b0e484600012cca91d529763714fd3db837e72bd49b8eda02b8f4d53dfdde5ce6a11965300000000000000000000000000000000000000000000',
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('1')]
+        },
+        {
+          label: 'Transactions',
+          value: [
+            getErc7730Visualization('Grant approval', [
+              {
+                label: 'For',
+                value: [getToken(tokenAddress, 1514n)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(spender)]
+              }
+            ]),
+            getErc7730Visualization('setPreSignature', [
+              {
+                label: 'Contract',
+                value: [getAddressVisualization(settlement)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization(ZeroAddress)]
+        }
+      ])
+    ])
+  })
 })

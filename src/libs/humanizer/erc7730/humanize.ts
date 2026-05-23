@@ -8,9 +8,19 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { Call } from '../../accountOp/types'
-import { HumanizerErc7730Row, HumanizerVisualization, IrCall, IrMessage } from '../interfaces'
+import { decodeMultiSend } from '../../safe/safe'
+import {
+  HumanizerMeta,
+  HumanizerErc7730Row,
+  HumanizerErc7730Visualization,
+  HumanizerVisualization,
+  IrCall,
+  IrMessage
+} from '../interfaces'
+import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   getAddressVisualization,
   getChain,
@@ -19,6 +29,7 @@ import {
   getToken
 } from '../utils'
 import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
+import { SAFE_TX_PRIMARY_TYPE } from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
   Erc7730Descriptor,
@@ -733,6 +744,269 @@ const formatToVisualizations = (
   return [getErc7730Visualization(intent, rows, dapp)]
 }
 
+const getSafeTxCallFromMessage = (message: Message): Call | null => {
+  if (message.content.kind !== 'typedMessage') return null
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+
+  const { to, value, data, operation } = message.content.message
+  if (toBigIntOrNull(operation ?? 0) !== 0n) return null
+  if (typeof to !== 'string' || !isAddress(to)) return null
+  if (typeof data !== 'string' || !data.startsWith('0x')) return null
+
+  const bigintValue = toBigIntOrNull(value ?? 0)
+  if (bigintValue === null) return null
+
+  return {
+    to,
+    data,
+    value: bigintValue
+  }
+}
+
+const multiSendInterface = new Interface(['function multiSend(bytes transactions)'])
+const MULTI_SEND_SELECTOR = multiSendInterface.getFunction('multiSend')?.selector || '0x8d80ff0a'
+
+const getAbiBytesCalldataWithPadding = (data: string): string => {
+  const hex = data.slice(2)
+  if (hex.slice(0, 8).toLowerCase() !== MULTI_SEND_SELECTOR.slice(2).toLowerCase()) return data
+
+  try {
+    const paramsOffset = Number(BigInt(`0x${hex.slice(8, 72)}`))
+    const bytesLengthOffset = 8 + paramsOffset * 2
+    const bytesLength = Number(BigInt(`0x${hex.slice(bytesLengthOffset, bytesLengthOffset + 64)}`))
+    const bytesStart = bytesLengthOffset + 64
+    const minimumHexLength = bytesStart + bytesLength * 2
+    const expectedHexLength = bytesStart + Math.ceil(bytesLength / 32) * 64
+
+    if (hex.length < minimumHexLength || hex.length >= expectedHexLength) return data
+
+    return `0x${hex.padEnd(expectedHexLength, '0')}`
+  } catch {
+    return data
+  }
+}
+
+const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
+  if (message.content.kind !== 'typedMessage') return null
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+
+  const { to, value, data, operation } = message.content.message
+  if (typeof to !== 'string' || !isAddress(to)) return null
+  if (typeof data !== 'string' || !data.startsWith('0x')) return null
+
+  const bigintValue = toBigIntOrNull(value ?? 0)
+  const bigintOperation = toBigIntOrNull(operation ?? 0)
+  if (bigintValue === null || bigintOperation === null) return null
+
+  if (bigintOperation === 0n) {
+    return [
+      {
+        to,
+        data,
+        value: bigintValue
+      }
+    ]
+  }
+
+  if (bigintOperation !== 1n) return null
+
+  try {
+    const decoded = multiSendInterface.decodeFunctionData(
+      'multiSend',
+      getAbiBytesCalldataWithPadding(data)
+    )
+    const transactionsHex = decoded[0]
+    if (typeof transactionsHex !== 'string') return null
+
+    const transactions = decodeMultiSend(transactionsHex)
+
+    return transactions.map((transaction) => ({
+      to: transaction.to,
+      data: transaction.data,
+      value: transaction.value
+    }))
+  } catch {
+    return null
+  }
+}
+
+const getKnownFunctionName = (call: Call): string | null => {
+  const selector = call.data?.slice(0, 10).toLowerCase()
+  if (!selector) return null
+
+  const matchingFragment = Object.values((humanizerInfo as HumanizerMeta).abis)
+    .map((abi) => abi[selector])
+    .find((fragment) => fragment?.type === 'function')
+  const functionName = matchingFragment?.signature.match(/^function\s+([^(]+)/)?.[1]
+
+  return functionName || null
+}
+
+const capitalizeLabel = (value: string): string => {
+  if (!value) return value
+
+  return `${value[0]!.toUpperCase()}${value.slice(1)}`
+}
+
+const getRowsFromErc7730CallVisualization = (
+  visualization: HumanizerVisualization & HumanizerErc7730Visualization
+): HumanizerErc7730Row[] | null => {
+  const [firstRow, ...additionalRows] = visualization.rows
+  if (!firstRow) return null
+
+  return [
+    {
+      label: visualization.title || firstRow.label,
+      value: firstRow.value
+    },
+    ...additionalRows
+  ]
+}
+
+const getRowsFromFlatCallVisualization = (
+  visualizations: HumanizerVisualization[] | undefined
+): HumanizerErc7730Row[] | null => {
+  const firstActionIndex =
+    visualizations?.findIndex((visualization) => visualization.type === 'action') ?? -1
+  if (!visualizations || firstActionIndex < 0) return null
+
+  const action = visualizations[firstActionIndex]
+  if (!action || action.type !== 'action' || !action.content) return null
+
+  const rows: HumanizerErc7730Row[] = [{ label: action.content, value: [] }]
+  let currentRow = rows[0]!
+
+  visualizations.slice(firstActionIndex + 1).forEach((visualization) => {
+    if (visualization.type === 'break') return
+
+    if (visualization.type === 'label' && visualization.content) {
+      currentRow = { label: capitalizeLabel(visualization.content), value: [] }
+      rows.push(currentRow)
+      return
+    }
+
+    currentRow.value.push(visualization)
+  })
+
+  const rowsWithValues = rows.filter((row) => row.value.length)
+
+  return rowsWithValues.length ? rowsWithValues : null
+}
+
+const getActionTitleFromFlatCallVisualization = (
+  visualizations: HumanizerVisualization[] | undefined
+): string | null => {
+  const action = visualizations?.find((visualization) => visualization.type === 'action')
+
+  return action?.type === 'action' ? action.content || null : null
+}
+
+const getKnownCallVisualization = (
+  call: Call
+): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
+  const functionName = getKnownFunctionName(call)
+  if (!functionName || !call.to) return null
+
+  return getErc7730Visualization(functionName, [
+    {
+      label: 'Contract',
+      value: [getAddressVisualization(call.to)]
+    }
+  ])
+}
+
+const getSafeTxCallRows = (
+  message: Message,
+  chainId: bigint,
+  resolvedDescriptor: Erc7730ResolvedDescriptor
+): HumanizerErc7730Row[] | null => {
+  const safeTxCalls = getSafeTxCallsFromMessage(message)
+  if (!safeTxCalls?.length) return null
+
+  const safeTxCallVisualizations = safeTxCalls
+    .map((safeTxCall) => {
+      if (resolvedDescriptor.safeTxCallDescriptor) {
+        const humanizedCall = humanizeCallWithErc7730(
+          safeTxCall,
+          chainId,
+          message.accountAddr,
+          resolvedDescriptor.safeTxCallDescriptor
+        )
+        const erc7730Visualization = humanizedCall?.fullVisualization?.find(
+          (visualization) => visualization.type === 'erc7730'
+        )
+        if (erc7730Visualization) return erc7730Visualization
+      }
+
+      const [fallbackCall] = genericErc20Humanizer({ accountAddr: message.accountAddr }, [
+        safeTxCall
+      ])
+      const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
+      if (!rows) return getKnownCallVisualization(safeTxCall)
+
+      return getErc7730Visualization(
+        getActionTitleFromFlatCallVisualization(fallbackCall?.fullVisualization) || rows[0]!.label,
+        rows
+      )
+    })
+    .filter(
+      (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
+        !!visualization && visualization.type === 'erc7730'
+    )
+
+  if (safeTxCallVisualizations.length) {
+    return [
+      {
+        label: safeTxCallVisualizations.length === 1 ? 'Transaction' : 'Transactions',
+        value: safeTxCallVisualizations
+      }
+    ]
+  }
+
+  const safeTxCall = getSafeTxCallFromMessage(message)
+  if (!safeTxCall) return null
+  if (resolvedDescriptor.safeTxCallDescriptor) {
+    const humanizedCall = humanizeCallWithErc7730(
+      safeTxCall,
+      chainId,
+      message.accountAddr,
+      resolvedDescriptor.safeTxCallDescriptor
+    )
+    const erc7730Visualization = humanizedCall?.fullVisualization?.find(
+      (visualization) => visualization.type === 'erc7730'
+    )
+    const rows = erc7730Visualization
+      ? getRowsFromErc7730CallVisualization(erc7730Visualization)
+      : null
+    if (rows) return rows
+  }
+
+  const [fallbackCall] = genericErc20Humanizer({ accountAddr: message.accountAddr }, [safeTxCall])
+
+  return getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
+}
+
+const replaceSafeTxTransactionRow = (
+  fullVisualization: HumanizerVisualization[],
+  message: Message,
+  chainId: bigint,
+  resolvedDescriptor: Erc7730ResolvedDescriptor
+): HumanizerVisualization[] => {
+  const safeTxCallRows = getSafeTxCallRows(message, chainId, resolvedDescriptor)
+  if (!safeTxCallRows) return fullVisualization
+
+  return fullVisualization.map((visualization) => {
+    if (visualization.type !== 'erc7730') return visualization
+
+    return {
+      ...visualization,
+      rows: visualization.rows.flatMap((row) =>
+        row.label.trim().toLowerCase() === 'transaction' ? safeTxCallRows : [row]
+      )
+    }
+  })
+}
+
 export const humanizeCallWithErc7730 = (
   call: Call,
   chainId: bigint,
@@ -787,8 +1061,17 @@ export const humanizeMessageWithErc7730 = (
     chainId
   }
   const fullVisualization = formatToVisualizations(match.format, context)
+  const safeTxVisualization =
+    fullVisualization && message.content.primaryType === SAFE_TX_PRIMARY_TYPE
+      ? replaceSafeTxTransactionRow(fullVisualization, message, chainId, resolvedDescriptor)
+      : fullVisualization
 
-  return fullVisualization?.length
-    ? { ...message, fullVisualization, warnings: [], canHideDropdownArrow: true }
+  return safeTxVisualization?.length
+    ? {
+        ...message,
+        fullVisualization: safeTxVisualization,
+        warnings: [],
+        canHideDropdownArrow: true
+      }
     : null
 }

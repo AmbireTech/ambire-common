@@ -538,6 +538,30 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
   }
 }
 
+const getSafeTxCallFromMessage = (message: Message): Call | null => {
+  if (message.content.kind !== 'typedMessage') return null
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+
+  const { to, value, data, operation } = message.content.message
+  try {
+    if (BigInt((operation ?? 0) as string | number | bigint) !== 0n) return null
+  } catch {
+    return null
+  }
+  if (typeof to !== 'string' || !isAddress(to)) return null
+  if (typeof data !== 'string' || !isHexString(data)) return null
+
+  try {
+    return {
+      to,
+      data,
+      value: BigInt((value ?? 0) as string | number | bigint)
+    }
+  } catch {
+    return null
+  }
+}
+
 const getAddressFromStorageSlot = (slotValue: string): string | null => {
   if (!isHexString(slotValue) || slotValue.length < 40) return null
 
@@ -624,6 +648,22 @@ const fetchEip712DescriptorFromIndex = async (
   return fetchDescriptor(entry.path, callRelayer)
 }
 
+const addSafeTxCallDescriptor = async (
+  message: Message,
+  chainId: bigint,
+  descriptor: Erc7730ResolvedDescriptor | null,
+  callRelayer: Erc7730RelayerCall
+): Promise<Erc7730ResolvedDescriptor | null> => {
+  if (!descriptor || message.content.kind !== 'typedMessage') return descriptor
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return descriptor
+
+  const safeTxCall = getSafeTxCallFromMessage(message)
+  if (!safeTxCall) return descriptor
+
+  const safeTxCallDescriptor = await fetchErc7730DescriptorForCall(safeTxCall, chainId, callRelayer)
+  return safeTxCallDescriptor ? { ...descriptor, safeTxCallDescriptor } : descriptor
+}
+
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
@@ -694,7 +734,9 @@ export const fetchErc7730DescriptorForMessage = async (
       primaryType,
       callRelayer
     )
-    if (registryDescriptor) return registryDescriptor
+    if (registryDescriptor) {
+      return addSafeTxCallDescriptor(message, chainId, registryDescriptor, callRelayer)
+    }
 
     if (primaryType !== SAFE_TX_PRIMARY_TYPE) return null
 
@@ -703,7 +745,7 @@ export const fetchErc7730DescriptorForMessage = async (
       return null
     }
 
-    return await fetchEip712DescriptorFromIndex(
+    const safeSingletonDescriptor = await fetchEip712DescriptorFromIndex(
       index,
       chainId,
       safeSingleton,
@@ -711,6 +753,8 @@ export const fetchErc7730DescriptorForMessage = async (
       primaryType,
       callRelayer
     )
+
+    return addSafeTxCallDescriptor(message, chainId, safeSingletonDescriptor, callRelayer)
   } catch (error) {
     console.error(error)
     return null

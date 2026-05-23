@@ -65,6 +65,7 @@ export type Erc7730Descriptor = {
 export type Erc7730ResolvedDescriptor = {
   descriptor: Erc7730Descriptor
   path?: string
+  safeTxCallDescriptor?: Erc7730ResolvedDescriptor
 }
 
 export type Erc7730CallDescriptors = Record<number, Erc7730ResolvedDescriptor>
