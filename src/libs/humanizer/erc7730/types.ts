@@ -66,6 +66,9 @@ export type Erc7730ResolvedDescriptor = {
   descriptor: Erc7730Descriptor
   path?: string
   safeTxCallDescriptor?: Erc7730ResolvedDescriptor
+  safeTxCalls?: Call[]
+  safeTxCallDescriptors?: Record<number, Erc7730ResolvedDescriptor>
+  safeTxTransactionsOnly?: boolean
 }
 
 export type Erc7730CallDescriptors = Record<number, Erc7730ResolvedDescriptor>

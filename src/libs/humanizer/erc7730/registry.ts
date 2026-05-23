@@ -1,4 +1,4 @@
-import { getAddress, isAddress, isHexString, ZeroAddress } from 'ethers'
+import { getAddress, Interface, isAddress, isHexString, ZeroAddress } from 'ethers'
 
 import {
   ERC20_APPROVE_SELECTOR,
@@ -13,9 +13,11 @@ import {
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
 
+import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
+import { decodeMultiSend } from '../../safe/safe'
 import { getEip712EncodeTypeHash } from './eip712'
 import {
   CacheEntry,
@@ -25,6 +27,7 @@ import {
   Erc7730Eip712IndexEntry,
   Erc7730Field,
   Erc7730RelayerCall,
+  Erc7730RegistryOptions,
   Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes,
   SafeSingletonProvider
@@ -38,6 +41,9 @@ const descriptorCache = new Map<string, CacheEntry<Erc7730Descriptor>>()
 const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
 const safeSingletonCache = new Map<string, CacheEntry<string>>()
 const safeSingletonPromises = new Map<string, Promise<string | null>>()
+const safeExecTransactionInterface = new Interface(execTransactionAbi)
+const multiSendInterface = new Interface(['function multiSend(bytes transactions)'])
+const MULTI_SEND_SELECTOR = multiSendInterface.getFunction('multiSend')?.selector || '0x8d80ff0a'
 
 /**
  * A helper function to use in the tests only
@@ -57,6 +63,14 @@ const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is
   !!entry && Date.now() - entry.fetchedAt < ERC7730_CACHE_TTL_MS
 
 const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
+
+const normalizeRegistryOptions = (
+  options?: Erc7730RegistryOptions | Erc7730RelayerCall
+): Erc7730RegistryOptions => {
+  if (typeof options === 'function') return { callRelayer: options }
+
+  return options || {}
+}
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -562,6 +576,68 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
   }
 }
 
+const getAbiBytesCalldataWithPadding = (data: string): string => {
+  const hex = data.slice(2)
+  if (hex.slice(0, 8).toLowerCase() !== MULTI_SEND_SELECTOR.slice(2).toLowerCase()) return data
+
+  try {
+    const paramsOffset = Number(BigInt(`0x${hex.slice(8, 72)}`))
+    const bytesLengthOffset = 8 + paramsOffset * 2
+    const bytesLength = Number(BigInt(`0x${hex.slice(bytesLengthOffset, bytesLengthOffset + 64)}`))
+    const bytesStart = bytesLengthOffset + 64
+    const minimumHexLength = bytesStart + bytesLength * 2
+    const expectedHexLength = bytesStart + Math.ceil(bytesLength / 32) * 64
+
+    if (hex.length < minimumHexLength || hex.length >= expectedHexLength) return data
+
+    return `0x${hex.padEnd(expectedHexLength, '0')}`
+  } catch {
+    return data
+  }
+}
+
+const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
+  if (!call.data || !isHexString(call.data)) return null
+
+  try {
+    const decoded = safeExecTransactionInterface.decodeFunctionData('execTransaction', call.data)
+    const [to, value, data, operation] = decoded
+
+    if (typeof to !== 'string' || !isAddress(to)) return null
+    if (typeof data !== 'string' || !isHexString(data)) return null
+
+    const bigintValue = BigInt(value)
+    const bigintOperation = BigInt(operation)
+
+    if (bigintOperation === 0n) {
+      return [
+        {
+          to,
+          data,
+          value: bigintValue
+        }
+      ]
+    }
+
+    if (bigintOperation !== 1n) return null
+
+    const multiSendDecoded = multiSendInterface.decodeFunctionData(
+      'multiSend',
+      getAbiBytesCalldataWithPadding(data)
+    )
+    const transactionsHex = multiSendDecoded[0]
+    if (typeof transactionsHex !== 'string') return null
+
+    return decodeMultiSend(transactionsHex).map((transaction) => ({
+      to: transaction.to,
+      data: transaction.data,
+      value: transaction.value
+    }))
+  } catch {
+    return null
+  }
+}
+
 const getAddressFromStorageSlot = (slotValue: string): string | null => {
   if (!isHexString(slotValue) || slotValue.length < 40) return null
 
@@ -664,17 +740,68 @@ const addSafeTxCallDescriptor = async (
   return safeTxCallDescriptor ? { ...descriptor, safeTxCallDescriptor } : descriptor
 }
 
+const fetchSafeExecTransactionDescriptor = async (
+  call: Call,
+  chainId: AccountOp['chainId'],
+  options: Erc7730RegistryOptions
+): Promise<Erc7730ResolvedDescriptor | null> => {
+  const { callRelayer, provider } = options
+  if (!callRelayer || !provider || !call.to || !isAddress(call.to)) return null
+
+  const safeTxCalls = getSafeTxCallsFromExecTransactionCall(call)
+  if (!safeTxCalls?.length) return null
+
+  const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, call.to)
+  if (!safeSingleton || safeSingleton.toLowerCase() === call.to.toLowerCase()) return null
+
+  const index = await getCalldataIndex(callRelayer)
+  const descriptorPath = index[getRegistryKey(chainId, safeSingleton)]
+  if (!descriptorPath) return null
+
+  const safeDescriptor = await fetchDescriptor(descriptorPath, callRelayer)
+  const safeTxCallDescriptors = await Promise.all(
+    safeTxCalls.map(async (safeTxCall, index) => {
+      const descriptor = await fetchErc7730DescriptorForCall(safeTxCall, chainId, callRelayer)
+      return descriptor ? ([index, descriptor] as const) : null
+    })
+  )
+
+  return {
+    ...safeDescriptor,
+    safeTxCalls,
+    safeTxTransactionsOnly: true,
+    safeTxCallDescriptors: safeTxCallDescriptors.reduce<Record<number, Erc7730ResolvedDescriptor>>(
+      (acc, entry) => {
+        if (!entry) return acc
+
+        acc[entry[0]] = entry[1]
+        return acc
+      },
+      {}
+    )
+  }
+}
+
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
-  callRelayer?: Erc7730RelayerCall
+  options?: Erc7730RegistryOptions | Erc7730RelayerCall
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
 
+  const registryOptions = normalizeRegistryOptions(options)
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
-  if (!callRelayer) return builtInDescriptor
+  if (!registryOptions.callRelayer) return builtInDescriptor
 
   try {
+    const safeExecTransactionDescriptor = await fetchSafeExecTransactionDescriptor(
+      call,
+      chainId,
+      registryOptions
+    )
+    if (safeExecTransactionDescriptor) return safeExecTransactionDescriptor
+
+    const { callRelayer } = registryOptions
     const index = await getCalldataIndex(callRelayer)
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
     if (!descriptorPath) return builtInDescriptor
@@ -694,11 +821,11 @@ export const fetchErc7730DescriptorForCall = async (
 
 export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
-  callRelayer?: Erc7730RelayerCall
+  options?: Erc7730RegistryOptions | Erc7730RelayerCall
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
-      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, callRelayer)
+      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
       return descriptor ? ([index, descriptor] as const) : null
     })
   )

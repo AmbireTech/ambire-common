@@ -907,30 +907,33 @@ const getKnownCallVisualization = (
   const functionName = getKnownFunctionName(call)
   if (!functionName || !call.to) return null
 
-  return getErc7730Visualization(functionName, [
+  const visualization = getErc7730Visualization(functionName, [
     {
       label: 'Contract',
       value: [getAddressVisualization(call.to)]
     }
   ])
+
+  return visualization.type === 'erc7730' ? visualization : null
 }
 
-const getSafeTxCallRows = (
-  message: Message,
+const getSafeTxCallVisualizations = (
+  safeTxCalls: Call[],
   chainId: bigint,
+  accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor
-): HumanizerErc7730Row[] | null => {
-  const safeTxCalls = getSafeTxCallsFromMessage(message)
-  if (!safeTxCalls?.length) return null
+): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
+  return safeTxCalls
+    .map((safeTxCall, index) => {
+      const safeTxCallDescriptor =
+        resolvedDescriptor.safeTxCallDescriptors?.[index] || resolvedDescriptor.safeTxCallDescriptor
 
-  const safeTxCallVisualizations = safeTxCalls
-    .map((safeTxCall) => {
-      if (resolvedDescriptor.safeTxCallDescriptor) {
+      if (safeTxCallDescriptor) {
         const humanizedCall = humanizeCallWithErc7730(
           safeTxCall,
           chainId,
-          message.accountAddr,
-          resolvedDescriptor.safeTxCallDescriptor
+          accountAddr,
+          safeTxCallDescriptor
         )
         const erc7730Visualization = humanizedCall?.fullVisualization?.find(
           (visualization) => visualization.type === 'erc7730'
@@ -938,9 +941,7 @@ const getSafeTxCallRows = (
         if (erc7730Visualization) return erc7730Visualization
       }
 
-      const [fallbackCall] = genericErc20Humanizer({ accountAddr: message.accountAddr }, [
-        safeTxCall
-      ])
+      const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [safeTxCall])
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
       if (!rows) return getKnownCallVisualization(safeTxCall)
 
@@ -953,6 +954,22 @@ const getSafeTxCallRows = (
       (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
         !!visualization && visualization.type === 'erc7730'
     )
+}
+
+const getSafeTxCallRows = (
+  message: Message,
+  chainId: bigint,
+  resolvedDescriptor: Erc7730ResolvedDescriptor
+): HumanizerErc7730Row[] | null => {
+  const safeTxCalls = getSafeTxCallsFromMessage(message)
+  if (!safeTxCalls?.length) return null
+
+  const safeTxCallVisualizations = getSafeTxCallVisualizations(
+    safeTxCalls,
+    chainId,
+    message.accountAddr,
+    resolvedDescriptor
+  )
 
   if (safeTxCallVisualizations.length) {
     return [
@@ -1013,6 +1030,17 @@ export const humanizeCallWithErc7730 = (
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor
 ): IrCall | null => {
+  if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
+    const fullVisualization = getSafeTxCallVisualizations(
+      resolvedDescriptor.safeTxCalls,
+      chainId,
+      accountAddr,
+      resolvedDescriptor
+    )
+
+    return fullVisualization.length ? { ...call, fullVisualization, warnings: [] } : null
+  }
+
   const match = getCalldataFormatMatch(call, resolvedDescriptor.descriptor)
   if (!match) return null
 

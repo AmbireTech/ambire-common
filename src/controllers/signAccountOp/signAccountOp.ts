@@ -842,10 +842,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }, ERC7730_DESCRIPTOR_WAIT_MS)
 
     try {
-      const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(
-        this.accountOp,
-        this.#callRelayer as Erc7730RelayerCall
-      )
+      const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(this.accountOp, {
+        callRelayer: this.#callRelayer as Erc7730RelayerCall,
+        provider: this.provider
+      })
       hasResolvedBeforeFallback = true
       clearTimeout(fallbackTimeout)
 

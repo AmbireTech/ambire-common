@@ -3,6 +3,7 @@ import { ethers, ZeroAddress } from 'ethers'
 import { beforeEach, describe, jest, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { execTransactionAbi } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
@@ -1000,6 +1001,95 @@ describe('ERC-7730 descriptors', () => {
     } finally {
       consoleErrorSpy.mockRestore()
     }
+  })
+
+  test('resolves Safe execTransaction through the Safe singleton and humanizes inner calls only', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
+    const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
+    const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+    const settlement = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+    const multiSendData =
+      '0x8d80ff0a0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000019200cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000000000000000000005ea009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a4ec6cb13f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000038cc9abd7869bc44faf6552057bc09b84f0d691eb0b0e484600012cca91d529763714fd3db837e72bd49b8eda02b8f4d53dfdde5ce6a11965300000000000000000000000000000000000000000000'
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [multiSend, 0, multiSendData, 1, 0, 0, 0, ZeroAddress, ZeroAddress, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const provider = {
+      getStorage: jest.fn(async (address: string) => {
+        expect(address.toLowerCase()).toBe(safeProxy)
+
+        return ethers.zeroPadValue(safeSingleton, 32)
+      })
+    }
+    const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${safeSingleton}`]: descriptorPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${descriptorPath}` })
+
+        return {
+          success: true,
+          display: {
+            formats: {}
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+      callRelayer,
+      provider: provider as any
+    })
+    const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(provider.getStorage).toHaveBeenCalledTimes(1)
+    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
+    expect(descriptors[0]?.safeTxCalls).toHaveLength(2)
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Approve', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization(spender)]
+        },
+        {
+          label: 'Amount',
+          value: [getToken(tokenAddress, 1514n, 8453n)]
+        }
+      ]),
+      getErc7730Visualization('setPreSignature', [
+        {
+          label: 'Contract',
+          value: [getAddressVisualization(settlement)]
+        }
+      ])
+    ])
   })
 
   test('fetches the EIP-712 descriptor index through the relayer', async () => {
