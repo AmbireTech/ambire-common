@@ -73,7 +73,7 @@ export const getSafeHumanization = (
         getAction('Add owner'),
         getAddressVisualization(newOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
@@ -89,7 +89,7 @@ export const getSafeHumanization = (
   if (selector === changeThreshold) {
     const decoded = iface.decodeFunctionData('changeThreshold', data)
     const newThreshold = decoded[0]
-    fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
+    fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold.toString())])
     warnings.push(
       getWarning(`Threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE')
     )
@@ -109,7 +109,7 @@ export const getSafeHumanization = (
         getAction('Remove owner'),
         getAddressVisualization(removedOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(

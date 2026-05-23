@@ -1529,6 +1529,199 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('humanizes a SafeTx owner change with the Safe singleton descriptor fallback', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
+    const newOwner = '0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'
+    const eip712DescriptorPath = 'registry/safe/eip712-SafeL2-1.4.1.json'
+    const calldataDescriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeProxy,
+          chainId: 8453
+        },
+        message: {
+          to: safeProxy,
+          value: '0',
+          data: `0x0d582f13000000000000000000000000${newOwner.slice(
+            2
+          )}0000000000000000000000000000000000000000000000000000000000000003`,
+          operation: 0,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 85,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+    const fetchedDescriptorPaths: string[] = []
+    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/eip-712') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${safeSingleton}`]: {
+              SafeTx: [
+                {
+                  path: eip712DescriptorPath
+                }
+              ]
+            }
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${safeSingleton}`]: calldataDescriptorPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        fetchedDescriptorPaths.push(body.descriptorPath)
+
+        if (body.descriptorPath === `/${eip712DescriptorPath}`) {
+          return {
+            success: true,
+            display: {
+              formats: {
+                'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                  {
+                    intent: 'Safe',
+                    fields: [
+                      { path: 'operation', label: 'Operation type' },
+                      {
+                        path: 'data',
+                        label: 'Transaction',
+                        format: 'calldata',
+                        params: { calleePath: '#.to' }
+                      },
+                      { path: 'safeTxGas', label: 'Gas amount' },
+                      { path: 'gasPrice', label: 'Gas price' },
+                      { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                      { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+
+        if (body.descriptorPath === `/${calldataDescriptorPath}`) {
+          return {
+            success: true,
+            display: {
+              formats: {}
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    })
+    const provider = {
+      getStorage: jest.fn(async (address: string, slot: bigint) => {
+        expect(address).toBe(safeProxy)
+        expect(slot).toBe(0n)
+
+        return `0x000000000000000000000000${safeSingleton.slice(2)}`
+      })
+    }
+
+    const descriptor = await fetchErc7730DescriptorForMessage(
+      safeTxMessage as any,
+      callRelayer,
+      provider as any
+    )
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: descriptor || undefined
+    })
+
+    expect(descriptor?.path).toBe(eip712DescriptorPath)
+    expect(descriptor?.safeTxCallDescriptor?.path).toBe(calldataDescriptorPath)
+    expect(fetchedDescriptorPaths).toEqual([
+      `/${eip712DescriptorPath}`,
+      `/${calldataDescriptorPath}`
+    ])
+    expect(provider.getStorage).toHaveBeenCalledTimes(1)
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('0')]
+        },
+        {
+          label: 'Transaction',
+          value: [
+            getErc7730Visualization('Add owner', [
+              {
+                label: 'Add owner',
+                value: [
+                  getAddressVisualization(newOwner),
+                  getAction('and set threshold to'),
+                  getLabel('3')
+                ]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization(ZeroAddress)]
+        }
+      ])
+    ])
+  })
+
   test('humanizes SafeTx multisend transactions as nested transaction rows', async () => {
     const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
     const recipientOne = '0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'

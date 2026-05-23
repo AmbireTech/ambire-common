@@ -21,6 +21,7 @@ import {
   IrMessage
 } from '../interfaces'
 import { genericErc20Humanizer } from '../modules/Tokens'
+import { getSafeHumanization } from '../modules/Safe'
 import {
   getAddressVisualization,
   getChain,
@@ -917,6 +918,39 @@ const getKnownCallVisualization = (
   return visualization.type === 'erc7730' ? visualization : null
 }
 
+const getSafeCallFallbackVisualization = (
+  call: Call
+): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
+  const safeHumanization = getSafeHumanization(call.to, call.to, call.value, call.data)
+  const action = safeHumanization?.visuals?.find((visualization) => visualization.type === 'action')
+  if (!safeHumanization?.visuals || !action || action.type !== 'action' || !action.content) {
+    return null
+  }
+
+  const firstActionIndex = safeHumanization.visuals.indexOf(action)
+  const value = safeHumanization.visuals
+    .slice(firstActionIndex + 1)
+    .filter((visualization) => visualization.type !== 'break')
+    .map((visualization) =>
+      visualization.content !== undefined && typeof visualization.content !== 'string'
+        ? { ...visualization, content: String(visualization.content) }
+        : visualization
+    )
+  const rows: HumanizerErc7730Row[] = value.length
+    ? [
+        {
+          label: action.content,
+          value
+        }
+      ]
+    : []
+  if (!rows.length) return null
+
+  const visualization = getErc7730Visualization(action.content, rows)
+
+  return visualization.type === 'erc7730' ? visualization : null
+}
+
 const getSafeTxCallVisualizations = (
   safeTxCalls: Call[],
   chainId: bigint,
@@ -940,6 +974,9 @@ const getSafeTxCallVisualizations = (
         )
         if (erc7730Visualization) return erc7730Visualization
       }
+
+      const safeFallbackVisualization = getSafeCallFallbackVisualization(safeTxCall)
+      if (safeFallbackVisualization) return safeFallbackVisualization
 
       const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [safeTxCall])
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)

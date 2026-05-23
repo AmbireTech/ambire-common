@@ -724,11 +724,21 @@ const fetchEip712DescriptorFromIndex = async (
   return fetchDescriptor(entry.path, callRelayer)
 }
 
+const getNestedSafeCallOptions = (
+  safeAddress: string,
+  call: Call,
+  options: Erc7730RegistryOptions
+): Erc7730RegistryOptions | Erc7730RelayerCall => {
+  if (call.to && call.to.toLowerCase() === safeAddress.toLowerCase()) return options
+
+  return options.callRelayer || options
+}
+
 const addSafeTxCallDescriptor = async (
   message: Message,
   chainId: bigint,
   descriptor: Erc7730ResolvedDescriptor | null,
-  callRelayer: Erc7730RelayerCall
+  options: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!descriptor || message.content.kind !== 'typedMessage') return descriptor
   if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return descriptor
@@ -736,7 +746,14 @@ const addSafeTxCallDescriptor = async (
   const safeTxCall = getSafeTxCallFromMessage(message)
   if (!safeTxCall) return descriptor
 
-  const safeTxCallDescriptor = await fetchErc7730DescriptorForCall(safeTxCall, chainId, callRelayer)
+  const verifyingContract = message.content.domain.verifyingContract
+  const safeTxCallDescriptor = await fetchErc7730DescriptorForCall(
+    safeTxCall,
+    chainId,
+    typeof verifyingContract === 'string'
+      ? getNestedSafeCallOptions(verifyingContract, safeTxCall, options)
+      : options
+  )
   return safeTxCallDescriptor ? { ...descriptor, safeTxCallDescriptor } : descriptor
 }
 
@@ -761,7 +778,11 @@ const fetchSafeExecTransactionDescriptor = async (
   const safeDescriptor = await fetchDescriptor(descriptorPath, callRelayer)
   const safeTxCallDescriptors = await Promise.all(
     safeTxCalls.map(async (safeTxCall, index) => {
-      const descriptor = await fetchErc7730DescriptorForCall(safeTxCall, chainId, callRelayer)
+      const descriptor = await fetchErc7730DescriptorForCall(
+        safeTxCall,
+        chainId,
+        getNestedSafeCallOptions(call.to!, safeTxCall, options)
+      )
       return descriptor ? ([index, descriptor] as const) : null
     })
   )
@@ -780,6 +801,24 @@ const fetchSafeExecTransactionDescriptor = async (
       {}
     )
   }
+}
+
+const fetchProxySingletonDescriptorForCall = async (
+  call: Call,
+  chainId: AccountOp['chainId'],
+  options: Erc7730RegistryOptions,
+  index: Erc7730CalldataIndex
+): Promise<Erc7730ResolvedDescriptor | null> => {
+  const { callRelayer, provider } = options
+  if (!callRelayer || !provider || !call.to || !isAddress(call.to)) return null
+
+  const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, call.to)
+  if (!safeSingleton || safeSingleton.toLowerCase() === call.to.toLowerCase()) return null
+
+  const descriptorPath = index[getRegistryKey(chainId, safeSingleton)]
+  if (!descriptorPath) return null
+
+  return fetchDescriptor(descriptorPath, callRelayer)
 }
 
 export const fetchErc7730DescriptorForCall = async (
@@ -804,9 +843,13 @@ export const fetchErc7730DescriptorForCall = async (
     const { callRelayer } = registryOptions
     const index = await getCalldataIndex(callRelayer)
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
-    if (!descriptorPath) return builtInDescriptor
+    const registryDescriptor = descriptorPath
+      ? await fetchDescriptor(descriptorPath, callRelayer)
+      : !builtInDescriptor
+        ? await fetchProxySingletonDescriptorForCall(call, chainId, registryOptions, index)
+        : null
 
-    const registryDescriptor = await fetchDescriptor(descriptorPath, callRelayer)
+    if (!registryDescriptor) return builtInDescriptor
     if (!builtInDescriptor) return registryDescriptor
 
     return {
@@ -862,7 +905,10 @@ export const fetchErc7730DescriptorForMessage = async (
       callRelayer
     )
     if (registryDescriptor) {
-      return addSafeTxCallDescriptor(message, chainId, registryDescriptor, callRelayer)
+      return addSafeTxCallDescriptor(message, chainId, registryDescriptor, {
+        callRelayer,
+        provider
+      })
     }
 
     if (primaryType !== SAFE_TX_PRIMARY_TYPE) return null
@@ -881,7 +927,10 @@ export const fetchErc7730DescriptorForMessage = async (
       callRelayer
     )
 
-    return addSafeTxCallDescriptor(message, chainId, safeSingletonDescriptor, callRelayer)
+    return addSafeTxCallDescriptor(message, chainId, safeSingletonDescriptor, {
+      callRelayer,
+      provider
+    })
   } catch (error) {
     console.error(error)
     return null
