@@ -1073,20 +1073,27 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
     expect(descriptors[0]?.safeTxCalls).toHaveLength(2)
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
-      getErc7730Visualization('Approve', [
+      getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
         {
-          label: 'Spender',
-          value: [getAddressVisualization(spender)]
-        },
-        {
-          label: 'Amount',
-          value: [getToken(tokenAddress, 1514n, 8453n)]
-        }
-      ]),
-      getErc7730Visualization('setPreSignature', [
-        {
-          label: 'Contract',
-          value: [getAddressVisualization(settlement)]
+          label: '',
+          value: [
+            getErc7730Visualization('Approve', [
+              {
+                label: 'Spender',
+                value: [getAddressVisualization(spender)]
+              },
+              {
+                label: 'Amount',
+                value: [getToken(tokenAddress, 1514n, 8453n)]
+              }
+            ]),
+            getErc7730Visualization('setPreSignature', [
+              {
+                label: 'Contract',
+                value: [getAddressVisualization(settlement)]
+              }
+            ])
+          ]
         }
       ])
     ])

@@ -11,9 +11,11 @@ export type Erc7730RelayerCall = (
   timeoutMs?: number
 ) => Promise<any>
 
+export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>
+
 export type Erc7730RegistryOptions = {
   callRelayer?: Erc7730RelayerCall
-  provider?: RPCProvider
+  provider?: SafeSingletonProvider
 }
 
 export type Erc7730Primitive = string | number | boolean | null
@@ -99,5 +101,3 @@ export type CacheEntry<T> = {
   value: T
   fetchedAt: number
 }
-
-export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>

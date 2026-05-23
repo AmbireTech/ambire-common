@@ -1031,14 +1031,27 @@ export const humanizeCallWithErc7730 = (
   resolvedDescriptor: Erc7730ResolvedDescriptor
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
-    const fullVisualization = getSafeTxCallVisualizations(
+    const safeTxCallVisualizations = getSafeTxCallVisualizations(
       resolvedDescriptor.safeTxCalls,
       chainId,
       accountAddr,
       resolvedDescriptor
     )
 
-    return fullVisualization.length ? { ...call, fullVisualization, warnings: [] } : null
+    if (!safeTxCallVisualizations.length) return null
+
+    return {
+      ...call,
+      fullVisualization: [
+        getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
+          {
+            label: '',
+            value: safeTxCallVisualizations
+          }
+        ])
+      ],
+      warnings: []
+    }
   }
 
   const match = getCalldataFormatMatch(call, resolvedDescriptor.descriptor)
