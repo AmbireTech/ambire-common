@@ -245,9 +245,15 @@ describe('ERC-7730 registry cache', () => {
 
     expect(firstDescriptor?.path).toBe(registryPath)
     expect(callRelayer).toHaveBeenCalledTimes(2)
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor', 'POST', {
-      descriptorPath: `/${registryPath}`
-    })
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/fetch-descriptor',
+      'POST',
+      {
+        descriptorPath: `/${registryPath}`
+      },
+      undefined,
+      4000
+    )
 
     callRelayer.mockClear()
 
@@ -255,7 +261,13 @@ describe('ERC-7730 registry cache', () => {
 
     expect(cachedDescriptor?.path).toBe(registryPath)
     expect(callRelayer).toHaveBeenCalledTimes(1)
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712', 'GET')
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/eip-712',
+      'GET',
+      undefined,
+      undefined,
+      4000
+    )
   })
 
   test('resolves a SafeTx descriptor by reading the Safe proxy singleton', async () => {

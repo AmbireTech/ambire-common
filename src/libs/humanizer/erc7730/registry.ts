@@ -20,6 +20,7 @@ import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/safe'
 import { getEip712EncodeTypeHash } from './eip712'
+import { fetchRelayerResource, postRelayerResource } from './fetch'
 import {
   CacheEntry,
   Erc7730CalldataIndex,
@@ -303,36 +304,6 @@ const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   }
 }
 
-const getRelayerPayload = <T>(response: any, path: string): T => {
-  if (response?.success === false) {
-    throw new Error(`Failed to fetch ERC-7730 relayer resource: ${path}`)
-  }
-
-  if (response?.data !== undefined) return response.data as T
-
-  if (response?.success === undefined) return response as T
-
-  const { success, status, errorState, message, ...payload } = response
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
-  }
-
-  return payload as T
-}
-
-const fetchRelayerResource = async <T>(
-  path: string,
-  callRelayer: Erc7730RelayerCall,
-  validate: (payload: unknown, path: string) => payload is T
-): Promise<T> => {
-  const response = await callRelayer(path, 'GET')
-  const payload = getRelayerPayload<T>(response, path)
-
-  validate(payload, path)
-
-  return payload
-}
-
 const fetchCachedIndex = async <T>({
   path,
   callRelayer,
@@ -371,20 +342,6 @@ const fetchCachedIndex = async <T>({
   setPromise(nextPromise)
 
   return nextPromise
-}
-
-const postRelayerResource = async <T>(
-  path: string,
-  callRelayer: Erc7730RelayerCall,
-  body: any,
-  validate: (payload: unknown, path: string) => payload is T
-): Promise<T> => {
-  const response = await callRelayer(path, 'POST', body)
-  const payload = getRelayerPayload<T>(response, path)
-
-  validate(payload, path)
-
-  return payload
 }
 
 const normalizeRelayerPath = (pathOrUrl: string): string => {
