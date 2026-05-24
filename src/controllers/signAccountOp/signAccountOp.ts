@@ -15,6 +15,7 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
@@ -210,8 +211,6 @@ export const noStateUpdateStatuses = [
   SigningStatus.UpdatesPaused,
   SigningStatus.WaitingForPaymaster
 ]
-
-const ERC7730_DESCRIPTOR_WAIT_MS = 4000
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds

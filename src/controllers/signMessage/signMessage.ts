@@ -1,5 +1,6 @@
 import { toUtf8String } from 'ethers'
 
+import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
@@ -50,8 +51,6 @@ import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
-
-const ERC7730_DESCRIPTOR_WAIT_MS = 4000
 
 export class SignMessageController extends EventEmitter implements ISignMessageController {
   #keystore: IKeystoreController
