@@ -10,6 +10,7 @@ import {
   PERMIT2_ADDRESS,
   PERMIT2_APPROVE_SELECTOR,
   SAFE_PROXY_SINGLETON_SLOT,
+  SAFE_SINGLETOn_CACHE_TTL_MS,
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
 
@@ -26,8 +27,8 @@ import {
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
   Erc7730Field,
-  Erc7730RelayerCall,
   Erc7730RegistryOptions,
+  Erc7730RelayerCall,
   Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes,
   SafeSingletonProvider
@@ -349,9 +350,7 @@ const fetchCachedIndex = async <T>({
   setCache: (entry: CacheEntry<T> | null) => void
   setPromise: (promise: Promise<T> | null) => void
 }): Promise<T> => {
-  if (isCacheEntryValid(cache)) return cache.value
-
-  setCache(null)
+  if (cache && Date.now() - cache.fetchedAt < ERC7730_CACHE_TTL_MS) return cache.value
 
   if (promise) return promise
 
@@ -359,6 +358,11 @@ const fetchCachedIndex = async <T>({
     .then((index) => {
       setCache(createCacheEntry(index))
       return index
+    })
+    .catch((e) => {
+      // serve stale cache if any
+      if (cache) return cache.value
+      throw e
     })
     .finally(() => {
       setPromise(null)
@@ -426,9 +430,8 @@ const fetchDescriptorResource = async (
   callRelayer: Erc7730RelayerCall
 ): Promise<Erc7730Descriptor> => {
   const cachedDescriptor = descriptorCache.get(relayerPath)
-  if (isCacheEntryValid(cachedDescriptor)) return cachedDescriptor.value
-
-  if (cachedDescriptor) descriptorCache.delete(relayerPath)
+  if (cachedDescriptor && Date.now() - cachedDescriptor.fetchedAt < ERC7730_CACHE_TTL_MS)
+    return cachedDescriptor.value
 
   const pendingDescriptor = descriptorPromises.get(relayerPath)
   if (pendingDescriptor) return pendingDescriptor
@@ -444,6 +447,11 @@ const fetchDescriptorResource = async (
     .then((descriptor) => {
       descriptorCache.set(relayerPath, createCacheEntry(descriptor))
       return descriptor
+    })
+    .catch((e) => {
+      // serve stale cache if any
+      if (cachedDescriptor) return cachedDescriptor.value
+      throw e
     })
     .finally(() => {
       descriptorPromises.delete(relayerPath)
@@ -657,9 +665,8 @@ const getSafeSingletonFromProxy = async (
 
   const cacheKey = getSafeSingletonCacheKey(chainId, safeAddress)
   const cachedSingleton = safeSingletonCache.get(cacheKey)
-  if (isCacheEntryValid(cachedSingleton)) return cachedSingleton.value
-
-  if (cachedSingleton) safeSingletonCache.delete(cacheKey)
+  if (cachedSingleton && Date.now() - cachedSingleton.fetchedAt < SAFE_SINGLETOn_CACHE_TTL_MS)
+    return cachedSingleton.value
 
   const pendingSingleton = safeSingletonPromises.get(cacheKey)
   if (pendingSingleton) return pendingSingleton
@@ -671,6 +678,11 @@ const getSafeSingletonFromProxy = async (
       if (singletonAddress) safeSingletonCache.set(cacheKey, createCacheEntry(singletonAddress))
 
       return singletonAddress
+    })
+    .catch((e) => {
+      // serve stale if any
+      if (cachedSingleton) return cachedSingleton.value
+      throw e
     })
     .catch((error) => {
       console.error(error)
