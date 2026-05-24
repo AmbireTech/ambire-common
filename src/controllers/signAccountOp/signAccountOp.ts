@@ -15,6 +15,7 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -164,7 +165,6 @@ import {
   SignAccountOpType
 } from './helper'
 
-import type { Erc7730RelayerCall } from '../../libs/humanizer'
 export enum SigningStatus {
   EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
@@ -242,7 +242,7 @@ export type OnBroadcastFailed = (accountOp: AccountOp) => void
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
   #type: SignAccountOpType
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #accounts: IAccountsController
 
@@ -421,7 +421,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
@@ -843,7 +843,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     try {
       const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-        callRelayer: this.#callRelayer as Erc7730RelayerCall,
+        callRelayer: this.#callRelayer,
         provider: this.provider
       })
       hasResolvedBeforeFallback = true

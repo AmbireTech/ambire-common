@@ -1,5 +1,6 @@
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+
 import { withTimeout } from '../../../utils/with-timeout'
-import { Erc7730RelayerCall } from './types'
 
 const ERC7730_RELAYER_RESOURCE_TIMEOUT_MS = 4000
 
@@ -22,7 +23,7 @@ const getRelayerPayload = <T>(response: any, path: string): T => {
 
 export const fetchRelayerResource = async <T>(
   path: string,
-  callRelayer: Erc7730RelayerCall,
+  callRelayer: BindedRelayerCall,
   validate: (payload: unknown, path: string) => payload is T
 ): Promise<T> => {
   const response = await withTimeout(
@@ -41,7 +42,7 @@ export const fetchRelayerResource = async <T>(
 
 export const postRelayerResource = async <T>(
   path: string,
-  callRelayer: Erc7730RelayerCall,
+  callRelayer: BindedRelayerCall,
   body: any,
   validate: (payload: unknown, path: string) => payload is T
 ): Promise<T> => {

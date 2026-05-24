@@ -1,20 +1,14 @@
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+
 import { RPCProvider } from '../../../interfaces/provider'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 
-export type Erc7730RelayerCall = (
-  path: string,
-  method?: string,
-  body?: any,
-  headers?: any,
-  timeoutMs?: number
-) => Promise<any>
-
 export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>
 
 export type Erc7730RegistryOptions = {
-  callRelayer?: Erc7730RelayerCall
+  callRelayer?: BindedRelayerCall
   provider?: SafeSingletonProvider
 }
 

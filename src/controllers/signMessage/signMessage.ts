@@ -1,5 +1,6 @@
 import { toUtf8String } from 'ethers'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
@@ -45,7 +46,6 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-import type { Erc7730RelayerCall } from '../../libs/humanizer'
 import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
@@ -68,7 +68,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #dapps?: IDappsController
 
-  #callRelayer?: Erc7730RelayerCall
+  #callRelayer?: BindedRelayerCall
 
   #humanizationSeq = 0
 
@@ -122,7 +122,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     dapps?: IDappsController,
-    callRelayer?: Erc7730RelayerCall
+    callRelayer?: BindedRelayerCall
   ) {
     super(eventEmitterRegistry)
 

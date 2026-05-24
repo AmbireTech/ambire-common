@@ -96,11 +96,10 @@ import {
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
-import { Erc7730RelayerCall } from '@/libs/humanizer'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
-import { relayerCall } from '@/libs/relayerCall/relayerCall'
+import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
@@ -121,7 +120,7 @@ export class MainController extends EventEmitter implements IMainController {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  callRelayer: Function
+  callRelayer: BindedRelayerCall
 
   isReady: boolean = false
 
@@ -445,7 +444,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.callRelayer as Erc7730RelayerCall
+      this.callRelayer
     )
 
     this.activity = new ActivityController(

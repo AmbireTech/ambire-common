@@ -13,6 +13,7 @@ import {
   SAFE_SINGLETOn_CACHE_TTL_MS,
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
@@ -29,7 +30,6 @@ import {
   Erc7730Eip712IndexEntry,
   Erc7730Field,
   Erc7730RegistryOptions,
-  Erc7730RelayerCall,
   Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes,
   SafeSingletonProvider
@@ -67,7 +67,7 @@ const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is
 const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
 
 const normalizeRegistryOptions = (
-  options?: Erc7730RegistryOptions | Erc7730RelayerCall
+  options?: Erc7730RegistryOptions | BindedRelayerCall
 ): Erc7730RegistryOptions => {
   if (typeof options === 'function') return { callRelayer: options }
 
@@ -314,7 +314,7 @@ const fetchCachedIndex = async <T>({
   setPromise
 }: {
   path: string
-  callRelayer: Erc7730RelayerCall
+  callRelayer: BindedRelayerCall
   cache: CacheEntry<T> | null
   promise: Promise<T> | null
   validate: (payload: unknown, path: string) => payload is T
@@ -384,7 +384,7 @@ const mergeDescriptors = (
 
 const fetchDescriptorResource = async (
   relayerPath: string,
-  callRelayer: Erc7730RelayerCall
+  callRelayer: BindedRelayerCall
 ): Promise<Erc7730Descriptor> => {
   const cachedDescriptor = descriptorCache.get(relayerPath)
   if (cachedDescriptor && Date.now() - cachedDescriptor.fetchedAt < ERC7730_CACHE_TTL_MS)
@@ -421,7 +421,7 @@ const fetchDescriptorResource = async (
 
 const fetchDescriptor = async (
   pathOrUrl: string,
-  callRelayer: Erc7730RelayerCall,
+  callRelayer: BindedRelayerCall,
   depth = 0
 ): Promise<Erc7730ResolvedDescriptor> => {
   const relayerPath = normalizeRelayerPath(pathOrUrl)
@@ -456,7 +456,7 @@ const fetchDescriptor = async (
   return descriptorPromise
 }
 
-const getCalldataIndex = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730CalldataIndex> => {
+const getCalldataIndex = async (callRelayer: BindedRelayerCall): Promise<Erc7730CalldataIndex> => {
   return fetchCachedIndex<Erc7730CalldataIndex>({
     path: ERC7730_CALLDATA_INDEX_RELAYER_PATH,
     callRelayer,
@@ -472,7 +472,7 @@ const getCalldataIndex = async (callRelayer: Erc7730RelayerCall): Promise<Erc773
   })
 }
 
-const getEip712Index = async (callRelayer: Erc7730RelayerCall): Promise<Erc7730Eip712Index> => {
+const getEip712Index = async (callRelayer: BindedRelayerCall): Promise<Erc7730Eip712Index> => {
   return fetchCachedIndex<Erc7730Eip712Index>({
     path: ERC7730_EIP712_INDEX_RELAYER_PATH,
     callRelayer,
@@ -682,7 +682,7 @@ const fetchEip712DescriptorFromIndex = async (
   verifyingContract: string,
   types: Erc7730TypedDataTypes,
   primaryType: string,
-  callRelayer: Erc7730RelayerCall
+  callRelayer: BindedRelayerCall
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   const entries = index[getRegistryKey(chainId, verifyingContract)]?.[primaryType]
   if (!entries?.length) return null
@@ -697,7 +697,7 @@ const getNestedSafeCallOptions = (
   safeAddress: string,
   call: Call,
   options: Erc7730RegistryOptions
-): Erc7730RegistryOptions | Erc7730RelayerCall => {
+): Erc7730RegistryOptions | BindedRelayerCall => {
   if (call.to && call.to.toLowerCase() === safeAddress.toLowerCase()) return options
 
   return options.callRelayer || options
@@ -793,7 +793,7 @@ const fetchProxySingletonDescriptorForCall = async (
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
-  options?: Erc7730RegistryOptions | Erc7730RelayerCall
+  options?: Erc7730RegistryOptions | BindedRelayerCall
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
 
@@ -833,7 +833,7 @@ export const fetchErc7730DescriptorForCall = async (
 
 export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
-  options?: Erc7730RegistryOptions | Erc7730RelayerCall
+  options?: Erc7730RegistryOptions | BindedRelayerCall
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
@@ -852,7 +852,7 @@ export const fetchErc7730DescriptorsForAccountOp = async (
 
 export const fetchErc7730DescriptorForMessage = async (
   message: Message,
-  callRelayer: Erc7730RelayerCall,
+  callRelayer: BindedRelayerCall,
   provider?: SafeSingletonProvider
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (message.content.kind !== 'typedMessage') return null
