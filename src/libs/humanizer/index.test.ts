@@ -583,6 +583,87 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('humanizes nested calldata in execute with permit descriptors', async () => {
+    const router = '0x111111125421cA6dc452d289314280a0f8842A65'
+    const aave = '0x76fb31fb4af56892a25e32cfc43de717950c9278'
+    const uni = '0x6fd9d7AD17242c41f7131d257212c54A0e816691'
+
+    accountOp.calls = [
+      {
+        to: router,
+        value: 0n,
+        data: '0x5816d7230000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000f476fb31fb4af56892a25e32cfc43de717950c9278000000000000000000000000d8293ad21678c6f09da139b4b62d38e514a03b78000000000000000000000000111111125421ca6dc452d289314280a0f8842a65ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000006a13cf37000000000000000000000000000000000000000000000000000000000000001c1d4b8b137bc2b190c4cdd763daf3a632def588253947eb17c1f4500633acec530f631e7f60adb923b939e9c581487490c717ac1334618ee2297710ad5fcbd77c000000000000000000000000000000000000000000000000000000000000000000000000000000000000020407ed23790000000000000000000000004c3ccc98c01103be72bcfd29e1d2454c98d1a6e300000000000000000000000076fb31fb4af56892a25e32cfc43de717950c92780000000000000000000000006fd9d7ad17242c41f7131d257212c54a0e8166910000000000000000000000004c3ccc98c01103be72bcfd29e1d2454c98d1a6e3000000000000000000000000d8293ad21678c6f09da139b4b62d38e514a03b78000000000000000000000000000000000000000000000000008b7a659c7c71c20000000000000000000000000000000000000000000000000d8913fd9b88e3c40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000b700000000000000000000000000000000000000000000000000009900006b02a00000000000000000000000000000000000000000000000000d77aa671b6577d948c95033806fd9d7ad17242c41f7131d257212c54a0e81669176fb31fb4af56892a25e32cfc43de717950c9278000bb800003c0000111111125421ca6dc452d289314280a0f8842a650020d6bdbf786fd9d7ad17242c41f7131d257212c54a0e816691111111125421ca6dc452d289314280a0f8842a6500000000000000000000000000000000000000000000000000000000000000000000000000ab0003904a82836d'
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'permitAndCall(bytes permit, bytes action)': {
+            intent: 'Execute with permit',
+            fields: [
+              {
+                path: 'action',
+                label: '',
+                format: 'calldata',
+                params: { calleePath: '@.to' }
+              }
+            ]
+          },
+          'swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes data)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'desc.amount',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'desc.srcToken' }
+                },
+                {
+                  path: 'desc.minReturnAmount',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'desc.dstToken' }
+                }
+              ]
+            }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(
+      { ...accountOp, chainId: 10n },
+      {
+        erc7730Descriptors: {
+          0: { descriptor }
+        }
+      }
+    )
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Execute with permit', [
+          {
+            label: '',
+            value: [
+              getErc7730Visualization('Swap', [
+                {
+                  label: 'Amount to Send',
+                  value: [getToken(aave, 39259598598468034n, 10n)]
+                },
+                {
+                  label: 'Minimum to Receive',
+                  value: [getToken(uni, 975332774259516356n, 10n)]
+                }
+              ])
+            ]
+          }
+        ])
+      ]
+    ])
+  })
+
   test('uses the Morpho Bundler3 ERC-7730 descriptor for Base multicall calldata', async () => {
     const morphoBundler = '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4'
     const generalAdapter = '0xb98c948cfa24072e58935bc004a8a7b376ae746a'

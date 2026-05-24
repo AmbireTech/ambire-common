@@ -53,6 +53,7 @@ type FormatContext = {
   descriptorPath?: string
   root: Record<string, unknown>
   chainId?: bigint
+  nestedCalldataDepth?: number
 }
 
 type VisibilityResult = {
@@ -61,6 +62,7 @@ type VisibilityResult = {
 }
 
 const MAX_INTERPOLATED_VALUE_LENGTH = 80
+const MAX_NESTED_CALLDATA_DEPTH = 4
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -570,6 +572,39 @@ const getMorphoGeneralAdapterCalldataValue = (
   return decodedValue?.length ? decodedValue : null
 }
 
+const getNestedErc7730CalldataValue = (
+  context: FormatContext,
+  calldata: unknown,
+  callee: unknown,
+  amount: unknown
+): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
+  if ((context.nestedCalldataDepth || 0) >= MAX_NESTED_CALLDATA_DEPTH) return null
+  if (typeof calldata !== 'string' || !calldata.startsWith('0x') || calldata.length < 10)
+    return null
+  if (typeof callee !== 'string' || !isAddress(callee)) return null
+  if (!context.chainId) return null
+
+  const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
+  if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
+
+  const humanizedCall = humanizeCallWithErc7730(
+    {
+      to: callee,
+      data: calldata,
+      value: toBigIntOrNull(amount) || 0n
+    },
+    context.chainId,
+    accountAddr,
+    { descriptor: context.descriptor, path: context.descriptorPath },
+    (context.nestedCalldataDepth || 0) + 1
+  )
+  const erc7730Visualization = humanizedCall?.fullVisualization?.find(
+    (visualization) => visualization.type === 'erc7730'
+  )
+
+  return erc7730Visualization?.type === 'erc7730' ? erc7730Visualization : null
+}
+
 const resolveCalldataParam = (
   field: Erc7730Field,
   context: FormatContext,
@@ -607,6 +642,16 @@ const getCalldataRows = (
       acc.push({
         label: field.label || field.path || '',
         value: decodedValue
+      })
+
+      return acc
+    }
+
+    const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
+    if (nestedVisualization) {
+      acc.push({
+        label: field.label ?? field.path ?? '',
+        value: [nestedVisualization]
       })
 
       return acc
@@ -1065,7 +1110,8 @@ export const humanizeCallWithErc7730 = (
   call: Call,
   chainId: bigint,
   accountAddr: string,
-  resolvedDescriptor: Erc7730ResolvedDescriptor
+  resolvedDescriptor: Erc7730ResolvedDescriptor,
+  nestedCalldataDepth = 0
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
     const safeTxCallVisualizations = getSafeTxCallVisualizations(
@@ -1107,7 +1153,8 @@ export const humanizeCallWithErc7730 = (
         chainId
       }
     },
-    chainId
+    chainId,
+    nestedCalldataDepth
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
 
