@@ -1,6 +1,5 @@
 import { toUtf8String } from 'ethers'
 
-import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
@@ -45,14 +44,17 @@ import {
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import HumanizationController from '../humanization/humanization'
 
 import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter implements ISignMessageController {
+export class SignMessageController
+  extends HumanizationController
+  implements ISignMessageController
+{
   #keystore: IKeystoreController
 
   #providers: IProvidersController
@@ -68,8 +70,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   #dapps?: IDappsController
 
   #callRelayer?: BindedRelayerCall
-
-  #humanizationSeq = 0
 
   signer?: KeystoreSignerInterface
 
@@ -247,17 +247,14 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   #startHumanization() {
-    this.isHumanizing = true
-    this.humanizedMessage = undefined
-    const currentHumanizationId = this.#humanizationSeq + 1
-    this.#humanizationSeq = currentHumanizationId
-    this.emitUpdate()
-
-    return currentHumanizationId
+    return this.startHumanization(() => {
+      this.isHumanizing = true
+      this.humanizedMessage = undefined
+    })
   }
 
   #setHumanizedMessage(humanizedMessage: IrMessage, humanizationId: number) {
-    if (this.#humanizationSeq !== humanizationId) return false
+    if (!this.isCurrentHumanization(humanizationId)) return false
 
     this.humanizedMessage = humanizedMessage
     this.isHumanizing = false
@@ -273,53 +270,41 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   async #applyDescriptorFirstHumanization(humanizationId: number) {
-    if (!this.messageToSign) return
-    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
+    const messageToSign = this.messageToSign
+    const callRelayer = this.#callRelayer
+
+    if (!messageToSign) return
+    if (messageToSign.content.kind !== 'typedMessage' || !callRelayer) {
       this.#setFallbackHumanization(humanizationId)
       return
     }
 
-    let hasResolvedBeforeFallback = false
-    let hasDisplayedFallback = false
+    await this.applyDescriptorFirstHumanization({
+      humanizationId,
+      fetchDescriptor: async () => {
+        const provider = this.network
+          ? this.#providers.providers[this.network.chainId.toString()]
+          : undefined
 
-    const fallbackTimeout = setTimeout(() => {
-      if (hasResolvedBeforeFallback || this.#humanizationSeq !== humanizationId) return
+        return fetchErc7730DescriptorForMessage(messageToSign, callRelayer, provider)
+      },
+      applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
+        if (!erc7730Descriptor) return false
 
-      hasDisplayedFallback = this.#setFallbackHumanization(humanizationId)
-    }, ERC7730_DESCRIPTOR_WAIT_MS)
+        const erc7730Humanization = humanizeMessage(messageToSign, { erc7730Descriptor })
 
-    try {
-      const provider = this.network
-        ? this.#providers.providers[this.network.chainId.toString()]
-        : undefined
-      const erc7730Descriptor = await fetchErc7730DescriptorForMessage(
-        this.messageToSign,
-        this.#callRelayer,
-        provider
-      )
-      hasResolvedBeforeFallback = true
-      clearTimeout(fallbackTimeout)
-
-      if (erc7730Descriptor && this.messageToSign) {
-        const erc7730Humanization = humanizeMessage(this.messageToSign, { erc7730Descriptor })
-        if (this.#setHumanizedMessage(erc7730Humanization, humanizationId)) return
-      }
-
-      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
-    } catch (error) {
-      console.error(error)
-      hasResolvedBeforeFallback = true
-      clearTimeout(fallbackTimeout)
-      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
-    }
+        return this.#setHumanizedMessage(erc7730Humanization, currentHumanizationId)
+      },
+      applyFallbackHumanization: (currentHumanizationId) =>
+        this.#setFallbackHumanization(currentHumanizationId)
+    })
   }
 
   humanize() {
     if (!this.messageToSign) return
 
     if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
-      const currentHumanizationId = this.#humanizationSeq + 1
-      this.#humanizationSeq = currentHumanizationId
+      const currentHumanizationId = this.createHumanizationId()
       this.#setFallbackHumanization(currentHumanizationId)
       return
     }

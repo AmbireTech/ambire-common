@@ -8,8 +8,8 @@ import {
   blacklistedDapp,
   customDapp,
   failedDapp,
-  getDappVerificationTestDapps,
   getDappRequestData,
+  getDappVerificationTestDapps,
   loadingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -214,7 +214,7 @@ describe('SignMessageController', () => {
       }
     }
     const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712/clear-signing') {
+      if (path === '/v2/erc7730/eip-712') {
         expect(method).toBe('GET')
 
         return {
@@ -228,7 +228,7 @@ describe('SignMessageController', () => {
         }
       }
 
-      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+      if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
 
@@ -280,8 +280,8 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712/clear-signing', 'GET')
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor/clear-signing', 'POST', {
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712', 'GET')
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor', 'POST', {
       descriptorPath: `/${registryPath}`
     })
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
@@ -339,7 +339,7 @@ describe('SignMessageController', () => {
       }
     }
     const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712/clear-signing') {
+      if (path === '/v2/erc7730/eip-712') {
         expect(method).toBe('GET')
 
         return {
@@ -360,7 +360,7 @@ describe('SignMessageController', () => {
         }
       }
 
-      if (path === '/v2/erc7730/fetch-descriptor/clear-signing') {
+      if (path === '/v2/erc7730/fetch-descriptor') {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
 
@@ -422,8 +422,8 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712/clear-signing', 'GET')
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor/clear-signing', 'POST', {
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712', 'GET')
+    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor', 'POST', {
       descriptorPath: `/${registryPath}`
     })
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({

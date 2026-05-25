@@ -15,7 +15,6 @@ import {
   ZeroAddress
 } from 'ethers'
 
-import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
@@ -155,8 +154,8 @@ import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
+import HumanizationController from '../humanization/humanization'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -238,7 +237,10 @@ export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void
 
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
-export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
+export class SignAccountOpController
+  extends HumanizationController
+  implements ISignAccountOpController
+{
   #type: SignAccountOpType
 
   #callRelayer: BindedRelayerCall
@@ -342,8 +344,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   humanization: IrCall[] = []
 
   humanizationId: number | null = null
-
-  #humanizationSeq: number = 0
 
   isHumanizing: boolean = false
 
@@ -744,8 +744,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
     this.humanization = humanization
     this.isHumanizing = false
-    const currentHumanizationId = existingHumanizationId ?? this.#humanizationSeq + 1
-    if (existingHumanizationId === undefined) this.#humanizationSeq = currentHumanizationId
+    const currentHumanizationId = existingHumanizationId ?? this.createHumanizationId()
     this.humanizationId = currentHumanizationId
 
     if (this.humanization.length) {
@@ -759,7 +758,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             )
             .filter((addr): addr is string => Boolean(addr)),
           (addressesStatus) => {
-            if (this.humanizationId !== currentHumanizationId) return
+            if (!this.isCurrentHumanization(currentHumanizationId)) return
 
             for (const call of this.humanization) {
               if (!call.fullVisualization) continue
@@ -792,18 +791,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #startHumanization() {
-    this.isHumanizing = true
-    this.humanization = []
-    const currentHumanizationId = this.#humanizationSeq + 1
-    this.#humanizationSeq = currentHumanizationId
-    this.humanizationId = currentHumanizationId
-    this.emitUpdate()
-
-    return currentHumanizationId
+    return this.startHumanization((humanizationId) => {
+      this.isHumanizing = true
+      this.humanization = []
+      this.humanizationId = humanizationId
+    })
   }
 
   #setFallbackHumanization(humanizationId: number) {
-    if (this.humanizationId !== humanizationId) return false
+    if (!this.isCurrentHumanization(humanizationId) || this.humanizationId !== humanizationId) {
+      return false
+    }
 
     this.#setHumanization(humanizeAccountOp(this.accountOp), humanizationId)
     this.learnTokens()
@@ -815,12 +813,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     humanizationId: number,
     erc7730Descriptors: Awaited<ReturnType<typeof fetchErc7730DescriptorsForAccountOp>>
   ) {
-    if (this.humanizationId !== humanizationId || !Object.keys(erc7730Descriptors).length) {
+    if (
+      !this.isCurrentHumanization(humanizationId) ||
+      this.humanizationId !== humanizationId ||
+      !Object.keys(erc7730Descriptors).length
+    ) {
       return false
     }
 
     const erc7730Humanization = humanizeAccountOp(this.accountOp, { erc7730Descriptors })
-    if (!hasErc7730Humanization(erc7730Humanization) || this.humanizationId !== humanizationId) {
+    if (
+      !hasErc7730Humanization(erc7730Humanization) ||
+      !this.isCurrentHumanization(humanizationId) ||
+      this.humanizationId !== humanizationId
+    ) {
       return false
     }
 
@@ -831,32 +837,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   async #applyDescriptorFirstHumanization(humanizationId: number) {
-    let hasResolvedBeforeFallback = false
-    let hasDisplayedFallback = false
-
-    const fallbackTimeout = setTimeout(() => {
-      if (hasResolvedBeforeFallback || this.humanizationId !== humanizationId) return
-
-      hasDisplayedFallback = this.#setFallbackHumanization(humanizationId)
-    }, ERC7730_DESCRIPTOR_WAIT_MS)
-
-    try {
-      const erc7730Descriptors = await fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-        callRelayer: this.#callRelayer,
-        provider: this.provider
-      })
-      hasResolvedBeforeFallback = true
-      clearTimeout(fallbackTimeout)
-
-      if (this.#setErc7730Humanization(humanizationId, erc7730Descriptors)) return
-
-      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
-    } catch (error) {
-      console.error(error)
-      hasResolvedBeforeFallback = true
-      clearTimeout(fallbackTimeout)
-      if (!hasDisplayedFallback) this.#setFallbackHumanization(humanizationId)
-    }
+    await this.applyDescriptorFirstHumanization({
+      humanizationId,
+      fetchDescriptor: () =>
+        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
+          callRelayer: this.#callRelayer,
+          provider: this.provider
+        }),
+      applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
+        this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
+      applyFallbackHumanization: (currentHumanizationId) =>
+        this.#setFallbackHumanization(currentHumanizationId)
+    })
   }
 
   humanize() {
