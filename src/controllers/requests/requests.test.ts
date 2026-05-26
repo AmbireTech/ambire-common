@@ -659,4 +659,84 @@ describe('RequestsController ', () => {
       ).resolves.toBeUndefined()
     })
   })
+
+  describe('eth_signTypedData_v4 typed data validation', () => {
+    const FROM = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+    const VALID_TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' }
+        ],
+        Mail: [
+          { name: 'from', type: 'address' },
+          { name: 'to', type: 'address' },
+          { name: 'contents', type: 'string' }
+        ]
+      },
+      primaryType: 'Mail',
+      domain: { name: 'Test Mail', version: '1', chainId: 1 },
+      message: {
+        from: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        to: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
+        contents: 'Hello!'
+      }
+    }
+
+    const buildSignTypedDataRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      typedData: object
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_signTypedData_v4',
+            params: [FROM, JSON.stringify(typedData)],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+
+    test('rejects when primaryType is missing from types', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: { EIP712Domain: VALID_TYPED_DATA.types.EIP712Domain }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The primary data type is missing from the provided types'
+      )
+    })
+
+    test('rejects when message contents do not match the declared types', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        message: {
+          from: 'not-a-valid-address',
+          to: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
+          contents: 'Hello!'
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The message contents did not match the provided types.'
+      )
+    })
+
+    test('accepts valid typed data and creates a typedMessage user request', async () => {
+      const { controller } = await prepareTest(true)
+      await expect(buildSignTypedDataRequest(controller, VALID_TYPED_DATA)).resolves.toBeUndefined()
+      expect(controller.userRequests.length).toBe(1)
+      expect(controller.userRequests[0]!.kind).toBe('typedMessage')
+    })
+  })
 })
