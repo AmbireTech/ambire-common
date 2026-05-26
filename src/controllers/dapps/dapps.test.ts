@@ -558,4 +558,101 @@ describe('DappsController', () => {
       expect(stored).toBeNull()
     })
   })
+
+  describe('connection sources', () => {
+    const baseDapp = (): Dapp =>
+      makeDapp({
+        id: 'sources-dapp.com',
+        name: 'Sources Dapp',
+        url: 'https://sources-dapp.com',
+        isCustom: true,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    test('addDapp seeds connectedSources from the provided source (defaults to injected)', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp())
+
+      const stored = controller.getDapp('sources-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+    })
+
+    test('addDapp merges sources without duplicating', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'injected')
+      await controller.addDapp(baseDapp(), 'wc')
+      await controller.addDapp(baseDapp(), 'wc') // duplicate
+
+      const stored = controller.getDapp('sources-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected', 'wc'])
+    })
+
+    test('hasPermission(id, source) is source-scoped; hasPermission(id) is any-source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'wc')
+
+      expect(controller.hasPermission('sources-dapp.com')).toBe(true)
+      expect(controller.hasPermission('sources-dapp.com', 'wc')).toBe(true)
+      // Core behavior change: an injected request must still re-prompt even when WC is connected.
+      expect(controller.hasPermission('sources-dapp.com', 'injected')).toBe(false)
+    })
+
+    test('disconnectDappSource removes only the targeted source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // Use a non-custom dapp so partial disconnect doesn't trigger removeDapp.
+      const dapp = makeDapp({
+        id: 'multi-source-dapp.com',
+        name: 'Multi Source',
+        url: 'https://multi-source-dapp.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      await controller.addDapp(dapp, 'injected')
+      await controller.addDapp(dapp, 'wc')
+
+      await controller.disconnectDappSource('multi-source-dapp.com', 'injected')
+
+      const stored = controller.getDapp('multi-source-dapp.com')!
+      expect(stored.connectedSources).toEqual(['wc'])
+      expect(stored.isConnected).toBe(true)
+      expect(controller.hasPermission('multi-source-dapp.com', 'wc')).toBe(true)
+      expect(controller.hasPermission('multi-source-dapp.com', 'injected')).toBe(false)
+    })
+
+    test('disconnectDappSource on the last source fully disconnects (and removes custom dapp)', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'wc')
+      expect(controller.getDapp('sources-dapp.com')).toBeDefined()
+
+      await controller.disconnectDappSource('sources-dapp.com', 'wc')
+
+      // Custom dapps that lose their last source are removed from the catalog.
+      expect(controller.getDapp('sources-dapp.com')).toBeUndefined()
+    })
+  })
 })

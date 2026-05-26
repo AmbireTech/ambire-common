@@ -16,6 +16,7 @@ import {
   predefinedDapps
 } from '../../consts/dapps/dapps'
 import {
+  ConnectionSource,
   Dapp,
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
@@ -48,6 +49,14 @@ import { networkChainIdToHex } from '../../libs/networks/networks'
 /* eslint-disable no-continue */
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const mergeSource = (
+  existing: ConnectionSource[] | undefined,
+  source: ConnectionSource
+): ConnectionSource[] => {
+  const current = existing ?? []
+  return current.includes(source) ? current : [...current, source]
+}
 
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
@@ -172,11 +181,12 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     for (const [key, d] of filteredMap) {
       const isPredefined = predefinedDapps.some((pd) => pd.id === d.id)
-      if (!d.isConnected && d.blacklisted === 'BLACKLISTED') {
+      const isConnected = !!d.connectedSources?.length
+      if (!isConnected && d.blacklisted === 'BLACKLISTED') {
         filteredMap.delete(key)
         continue
       }
-      if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
+      if (isPredefined || d.isFeatured || isConnected || d.isCustom) continue
 
       const domainId = getDomainFromUrl(d.url)
       const isInDappsNotToFilterOutByDomain =
@@ -352,6 +362,7 @@ export class DappsController extends EventEmitter implements IDappsController {
             this.#networks.allNetworks.find((n) => n.chainId.toString() === chainId.toString())
         )
 
+      const prevSources = prevStoredDapp?.connectedSources ?? []
       const updatedDapp: Dapp = {
         id,
         name: formatDappName(dapp.name),
@@ -361,7 +372,8 @@ export class DappsController extends EventEmitter implements IDappsController {
         category: CATEGORY_MAP[dapp.category] || dapp.category,
         tvl: dapp.tvl,
         chainIds,
-        isConnected: prevStoredDapp?.isConnected || false,
+        isConnected: prevSources.length > 0,
+        connectedSources: prevSources,
         isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
         isCustom: !!prevStoredDapp?.isCustom,
         chainId: prevStoredDapp?.chainId || 1,
@@ -389,6 +401,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       const prevStoredDapp = prevDapps.get(id)
 
       if (!dappsMap.has(id)) {
+        const prevSources = prevStoredDapp?.connectedSources ?? []
         dappsMap.set(id, {
           id,
           name: formatDappName(pd.name),
@@ -398,7 +411,8 @@ export class DappsController extends EventEmitter implements IDappsController {
           category: pd.category ? CATEGORY_MAP[pd.category] || pd.category : null,
           tvl: null,
           chainIds: pd.chainIds || [],
-          isConnected: prevStoredDapp?.isConnected ?? false,
+          isConnected: prevSources.length > 0,
+          connectedSources: prevSources,
           isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(pd.url)!),
           isCustom: false,
           chainId: prevStoredDapp?.chainId ?? 1,
@@ -411,7 +425,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     const prevDappsArray = Array.from(prevDapps.values())
-    const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
+    const prevConnectedDapps = prevDappsArray.filter((d) => (d.connectedSources?.length ?? 0) > 0)
     const prevCustomDapps = prevDappsArray.filter((d) => d.isCustom)
 
     // Add connected + custom
@@ -557,7 +571,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     ev: any,
     data?: any,
     id?: string,
-    skipPermissionCheck?: boolean
+    skipPermissionCheck?: boolean,
+    sourceFilter?: ConnectionSource
   ) => {
     await this.initialLoadPromise
     let dappSessions: { sessionId: string; data: Session }[] = []
@@ -570,6 +585,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
     if (id) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.id === id)
+    }
+    // Source filter: 'wc' → only sessions with a wcTopic; 'injected' → only sessions without one.
+    // Used by `disconnectDappSource` so disconnecting one channel doesn't tear down the other.
+    if (sourceFilter) {
+      dappSessions = dappSessions.filter((dappSession) =>
+        sourceFilter === 'wc' ? !!dappSession.data.wcTopic : !dappSession.data.wcTopic
+      )
     }
 
     dappSessions.forEach((dappSession) => {
@@ -617,7 +639,8 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         ...existing,
         chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
-        isConnected: dapp.isConnected
+        isConnected: dapp.isConnected,
+        connectedSources: existing.connectedSources ?? []
       }
     }
 
@@ -633,6 +656,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       category: existingByDomain?.category || null,
       favorite: existingByDomain?.favorite || false,
       isConnected: dapp.isConnected,
+      connectedSources: [],
       chainIds: existingByDomain?.chainIds || [],
       isFeatured: existingByDomain?.isFeatured || false,
       isCustom: existingByDomain?.isCustom ?? true,
@@ -643,36 +667,74 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
   }
 
-  async addDapp(dapp: Dapp) {
+  /**
+   * Convenience for callers that have a dapp identity (id/url/name/icon) but not a full
+   * Dapp record yet — used by the WalletConnect session setup/restore paths, which need
+   * to register the dapp with `'wc'` as the source even when there's no prior catalog
+   * entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
+   */
+  async addDappFromIdentity(
+    identity: {
+      id: Dapp['id']
+      name: Dapp['name']
+      url: Dapp['url']
+      icon: Dapp['icon']
+      chainId?: Dapp['chainId']
+    },
+    source: ConnectionSource
+  ) {
+    if (!this.isReady) return
+    const dapp = await this.#buildDapp({ ...identity, isConnected: true })
+    await this.addDapp(dapp, source)
+  }
+
+  /**
+   * Add a dapp and mark it connected via `source`. `source` defaults to `'injected'`
+   * to keep the existing web/extension call sites (which don't know about sources)
+   * behaving exactly as before. Calling `addDapp` again with a different source
+   * appends it to `connectedSources` rather than overwriting.
+   */
+  async addDapp(dapp: Dapp, source: ConnectionSource = 'injected') {
     if (!this.isReady) return
 
     const existing = this.#dapps.get(dapp.id)
 
     if (existing) {
-      this.updateDapp(dapp.id, { chainId: dapp.chainId, isConnected: dapp.isConnected })
-    } else {
-      this.#dapps.set(dapp.id, dapp)
+      const mergedSources = mergeSource(existing.connectedSources, source)
+      this.updateDapp(dapp.id, {
+        chainId: dapp.chainId,
+        connectedSources: mergedSources,
+        isConnected: mergedSources.length > 0
+      })
+      return
+    }
 
-      await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
-      this.emitUpdate()
+    const sources: ConnectionSource[] = dapp.isConnected ? [source] : []
+    this.#dapps.set(dapp.id, {
+      ...dapp,
+      connectedSources: sources,
+      isConnected: sources.length > 0
+    })
 
-      if (dapp.isConnected) {
-        const network = this.#networks.allNetworks.find(
-          (n) => n.chainId.toString() === dapp.chainId?.toString()
-        )
-        const DEFAULT_CHAIN_ID = 1
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    this.emitUpdate()
 
-        await this.broadcastDappSessionEvent(
-          'chainChanged',
-          {
-            chain: dapp.chainId
-              ? networkChainIdToHex(dapp.chainId)
-              : networkChainIdToHex(DEFAULT_CHAIN_ID),
-            networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
-          },
-          dapp.id
-        )
-      }
+    if (sources.length > 0) {
+      const network = this.#networks.allNetworks.find(
+        (n) => n.chainId.toString() === dapp.chainId?.toString()
+      )
+      const DEFAULT_CHAIN_ID = 1
+
+      await this.broadcastDappSessionEvent(
+        'chainChanged',
+        {
+          chain: dapp.chainId
+            ? networkChainIdToHex(dapp.chainId)
+            : networkChainIdToHex(DEFAULT_CHAIN_ID),
+          networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
+        },
+        dapp.id
+      )
     }
   }
 
@@ -682,15 +744,33 @@ export class DappsController extends EventEmitter implements IDappsController {
     const existing = this.#dapps.get(id)
     if (!existing) return
 
-    // remove the custom dapp if it gets disconnected
-    if (dapp.isConnected !== undefined) {
-      if (existing.isCustom && !dapp.isConnected && existing.isConnected) {
-        this.removeDapp(id)
-        return
-      }
+    const dappPropsToUpdate = { ...dapp }
+
+    // Treat connectedSources as the source of truth and keep isConnected derived from it
+    // so the two cannot drift. Callers may pass either (or both) — connectedSources wins.
+    if (dappPropsToUpdate.connectedSources !== undefined) {
+      dappPropsToUpdate.isConnected = dappPropsToUpdate.connectedSources.length > 0
+    } else if (dappPropsToUpdate.isConnected !== undefined) {
+      // Legacy callers (web/extension code that still passes `isConnected`) — translate
+      // it to a full sources update. `true` → add 'injected' if not already present.
+      const nextSources: ConnectionSource[] = dappPropsToUpdate.isConnected
+        ? mergeSource(existing.connectedSources, 'injected')
+        : []
+      dappPropsToUpdate.connectedSources = nextSources
+      dappPropsToUpdate.isConnected = nextSources.length > 0
     }
 
-    const dappPropsToUpdate = { ...dapp }
+    const wasConnected = (existing.connectedSources?.length ?? 0) > 0
+    const willBeConnected = dappPropsToUpdate.connectedSources
+      ? dappPropsToUpdate.connectedSources.length > 0
+      : wasConnected
+
+    // remove the custom dapp if it gets fully disconnected
+    if (existing.isCustom && wasConnected && !willBeConnected) {
+      this.removeDapp(id)
+      return
+    }
+
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
     if (!existing.isCustom) {
@@ -710,6 +790,30 @@ export class DappsController extends EventEmitter implements IDappsController {
     void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
 
     this.emitUpdate()
+  }
+
+  /**
+   * Disconnect a single connection source (e.g. only WalletConnect or only injected).
+   * Broadcasts `disconnect` only to the sessions of that source. If no sources remain,
+   * the dapp is fully disconnected (and removed if custom).
+   */
+  async disconnectDappSource(id: string, source: ConnectionSource) {
+    if (!this.isReady) return
+
+    const existing = this.#dapps.get(id)
+    if (!existing) return
+
+    const current = existing.connectedSources ?? []
+    if (!current.includes(source)) return
+
+    const nextSources = current.filter((s) => s !== source)
+
+    await this.broadcastDappSessionEvent('disconnect', undefined, id, false, source)
+
+    this.updateDapp(id, {
+      connectedSources: nextSources,
+      isConnected: nextSources.length > 0
+    })
   }
 
   removeDapp(id: string) {
@@ -752,13 +856,15 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
   }
 
-  hasPermission(id: string) {
+  hasPermission(id: string, source?: ConnectionSource) {
     if (!id) return false
 
     const dapp = this.#dapps.get(id)
     if (!dapp) return false
 
-    return dapp.isConnected
+    const sources = dapp.connectedSources ?? []
+    if (source) return sources.includes(source)
+    return sources.length > 0
   }
 
   getDapp(id: string) {
