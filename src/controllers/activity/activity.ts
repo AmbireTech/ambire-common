@@ -39,6 +39,7 @@ import {
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
 import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
@@ -790,7 +791,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     try {
-      const foundTokens = await getTransferLogTokens(receipt.logs, accountAddr)
+      const foundTokens = filterStaticBlacklistedAddrs(
+        await getTransferLogTokens(receipt.logs, accountAddr),
+        chainId
+      )
       if (shouldLearnTokens) {
         const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
         const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
