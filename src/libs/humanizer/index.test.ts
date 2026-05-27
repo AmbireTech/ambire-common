@@ -393,3 +393,108 @@ describe('with (Account | Key)[] arg', () => {
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })
+
+// Non-strict / dirty-bytes ABI encoding: the 12 leading zero bytes that pad a 20-byte
+// address to a 32-byte ABI slot (or the 31 zero bytes that pad a bool) are replaced with
+// non-zero random values. Some on-chain calldata produced by buggy or non-standard
+// encoders contains such garbage padding, and the humanizer must either decode it
+// correctly or degrade gracefully instead of throwing.
+describe('non-strict encoding / dirty bytes', () => {
+  // 12 random non-zero bytes used to corrupt the address-slot padding
+  const dirtyPadding = 'deadbeefcafe12345678abcd'
+
+  const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+  const nftAddress = '0x59468516a8259058bad1ca5f8f4bff190d30e066'
+  const spender = '46705dfff24256421a05d056c29e81bdc09723b8'
+  // deliberately not accountOp.accountAddr so transferFrom takes the "Move" path
+  const sender = 'c89b38119c58536d818f3bf19a9e3870828c1994'
+
+  // Standard ABI value slot for 10^9 (0x3b9aca00)
+  const valueSlot = '000000000000000000000000000000000000000000000000000000003b9aca00'
+
+  beforeEach(() => {
+    accountOp.calls = []
+  })
+
+  test('approve with dirty address padding decodes correctly', () => {
+    // approve(address _spender, uint256 _value)
+    // Dirty: the 12 leading zero bytes of the spender slot are replaced with random bytes
+    const data = `0x095ea7b3${dirtyPadding}${spender}${valueSlot}`
+
+    accountOp.calls = [{ to: usdtAddress, value: 0n, data }]
+
+    const irCalls = humanizeAccountOp(accountOp)
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(usdtAddress, 1000000000n),
+        getLabel('to'),
+        getAddressVisualization(`0x${spender}`)
+      ]
+    ])
+  })
+
+  test('transfer with dirty address padding decodes correctly', () => {
+    // transfer(address _to, uint256 _value)
+    // Dirty: the 12 leading zero bytes of the recipient slot are replaced with random bytes
+    const data = `0xa9059cbb${dirtyPadding}${spender}${valueSlot}`
+
+    accountOp.calls = [{ to: usdtAddress, value: 0n, data }]
+
+    const irCalls = humanizeAccountOp(accountOp)
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Send'),
+        getToken(usdtAddress, 1000000000n),
+        getLabel('to'),
+        getAddressVisualization(`0x${spender}`)
+      ]
+    ])
+  })
+
+  test('transferFrom with dirty address padding on the from-slot decodes correctly', () => {
+    // transferFrom(address _from, address _to, uint256 _value)
+    // Dirty: the 12 leading zero bytes of the _from slot are replaced with random bytes;
+    // _to slot uses standard zero padding
+    const cleanAddressSlot = (addr: string) => `000000000000000000000000${addr}`
+    const data =
+      `0x23b872dd` +
+      `${dirtyPadding}${sender}` + // dirty _from slot
+      cleanAddressSlot(spender) + // clean _to slot
+      valueSlot
+
+    accountOp.calls = [{ to: usdtAddress, value: 0n, data }]
+
+    const irCalls = humanizeAccountOp(accountOp)
+    // _from !== accountOp.accountAddr and _to !== accountOp.accountAddr → Move
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Move'),
+        getToken(usdtAddress, 1000000000n),
+        getLabel('from'),
+        getAddressVisualization(`0x${sender}`),
+        getLabel('to'),
+        getAddressVisualization(`0x${spender}`)
+      ]
+    ])
+  })
+
+  test('setApprovalForAll with dirty bool padding falls back gracefully', () => {
+    // setApprovalForAll(address operator, bool approved)
+    // Dirty: the bool slot uses 0xff instead of the valid 0x01, which viem rejects
+    // as an invalid boolean. The module should throw and the humanizer should degrade
+    // to the generic fallback visualization rather than crashing.
+    const data =
+      `0xa22cb465` +
+      `000000000000000000000000${spender}` + // operator slot (clean)
+      `00000000000000000000000000000000000000000000000000000000000000ff` // dirty bool (0xff)
+
+    accountOp.calls = [{ to: nftAddress, value: 0n, data }]
+
+    const irCalls = humanizeAccountOp(accountOp)
+    compareHumanizerVisualizations(irCalls, [
+      [getAction('Interacting'), getLabel('with'), getAddressVisualization(nftAddress)]
+    ])
+  })
+})

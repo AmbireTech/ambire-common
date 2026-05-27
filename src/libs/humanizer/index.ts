@@ -118,6 +118,7 @@ const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {
     try {
       currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta)
     } catch (error) {
+      console.log(hm.name)
       console.error(error)
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
     }
