@@ -585,7 +585,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       id: dapp.id,
       url: dapp.url,
       name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
-      chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+      chainId: network ? dapp.chainId! : existingByDomain?.chainId || DEFAULT_CHAIN_ID,
       description: existingByDomain?.description || '',
       icon: existingByDomain?.icon || dapp.icon,
       category: existingByDomain?.category || null,
@@ -710,12 +710,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
         const { dappPromises } = currentRequest
+        const existingDapp = this.#dapps.get(dappPromises[0].session.id)
         const dapp = await this.#buildDapp({
           id: dappPromises[0].session.id,
           name: dappPromises[0].session.name,
           url: dappPromises[0].session.origin,
           icon: dappPromises[0].session.icon,
-          chainId: 1,
+          chainId: existingDapp?.chainId || 1,
           isConnected: false
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
