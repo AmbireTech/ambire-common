@@ -167,7 +167,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getAction('Bridge'),
             getToken(fromToken, amount),
             getLabel('to'),
-            getToken(toToken, minOutputTokenAmount, false, chainId),
+            getToken(toToken, minOutputTokenAmount, chainId),
             getLabel('on'),
             getChain(chainId)
           ]
@@ -176,7 +176,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getToken(fromToken, amount),
           getLabel('to'),
-          getToken(toToken, 0n, false, chainId),
+          getToken(toToken, 0n, chainId),
           getLabel('on'),
           getChain(chainId)
         ]

@@ -15,6 +15,7 @@ import {
 } from '../libs/portfolio/interfaces'
 import { Account, AccountId, AccountPreferences } from './account'
 import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
+import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
 import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
@@ -96,6 +97,7 @@ export type StorageProps = {
   shouldSkipTransactionQueuedModal: boolean
   isBatchingEnabled: boolean
   surveysRespondedTo: string[]
+  functionSelectors: Selectors
 }
 
 export interface Storage {

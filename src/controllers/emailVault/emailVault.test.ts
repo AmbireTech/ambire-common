@@ -100,9 +100,9 @@ describe('happy cases', () => {
   test('upload keystore secret', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
-    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
+    expect(Object.keys(ev.emailVaultStates.email[email]!.availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
-    const newSecrets = ev.emailVaultStates.email[email].availableSecrets
+    const newSecrets = ev.emailVaultStates.email[email]!.availableSecrets
     expect(Object.keys(newSecrets).length).toBe(2)
     const key = Object.keys(newSecrets).find((k) => newSecrets[k]?.type === 'keyStore')
     expect(key).toBeTruthy()
@@ -111,9 +111,9 @@ describe('happy cases', () => {
   test('recoverKeyStore', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
-    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
+    expect(Object.keys(ev.emailVaultStates.email[email]!.availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
-    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(2)
+    expect(Object.keys(ev.emailVaultStates.email[email]!.availableSecrets).length).toBe(2)
 
     expect(keystore.isUnlocked).toBeFalsy()
     await ev.recoverKeyStore(email, 'new_password')
@@ -182,10 +182,10 @@ describe('happy cases', () => {
       email,
       keys.map((k) => k.address)
     )
-    expect(ev2.emailVaultStates.email[email].operations.length).toBe(2)
+    expect(ev2.emailVaultStates.email[email]!.operations.length).toBe(2)
 
     await ev.fulfillSyncRequests(email, 'password')
-    expect(ev.emailVaultStates.email[email].operations.length).toBe(2)
+    expect(ev.emailVaultStates.email[email]!.operations.length).toBe(2)
     await ev2.finalizeSyncKeys(
       email,
       keys.map((k) => k.address),
@@ -205,6 +205,37 @@ describe('happy cases', () => {
       done()
     }, 4000)
 
-    ev.handleMagicLinkKey(email, () => console.log('ready'))
+    void ev.handleMagicLinkKey(email, () => console.log('ready'))
+  })
+  test('remove keyStoreSecret', async () => {
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
+    await ev.getEmailVaultInfo(email)
+    await ev.uploadKeyStoreSecret(email)
+    expect(Object.keys(ev.emailVaultStates.email[email]!.availableSecrets).length).toBe(2)
+
+    // hacky way to get the secret so we can make sure the keystore cannot be decoded
+    // later with that secret
+    const uid = await keystore.getKeyStoreUid()
+    const evLib = new EmailVault(fetch, relayerUrl)
+    const key = ev.getMagicLinkKeyByEmail(email)?.key || ''
+    const recoverySecret = await evLib.retrieveKeyStoreSecret(email, key, uid)
+
+    await ev.removeKeyStoreSecret(email)
+    expect(Object.keys(ev.emailVaultStates.email[email]!.availableSecrets).length).toBe(1)
+    const remainingSecret = Object.values(ev.emailVaultStates.email[email]!.availableSecrets)[0]
+    expect(remainingSecret?.type).toBe('recoveryKey')
+
+    // attempt to unlock keystore with previous secret
+    await keystore.unlockWithSecret('EmailVaultRecoverySecret', recoverySecret.value!)
+    expect(keystore.isUnlocked).toBeFalsy()
+
+    expect(ev.keystoreRecoveryEmail).toBeFalsy()
+    expect(ev.hasKeystoreRecovery).toBeFalsy()
+  })
+  test('remove non-existing keyStoreSecret', async () => {
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
+    await ev.getEmailVaultInfo(email)
+    await ev.removeKeyStoreSecret(email)
+    expect(ev.emittedErrors.length).toBeGreaterThan(0)
   })
 })

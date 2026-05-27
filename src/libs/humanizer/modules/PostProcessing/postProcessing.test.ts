@@ -16,15 +16,8 @@ describe('postProcessing', () => {
           fullVisualization: [getAction('Wrap'), getToken(ZeroAddress, 100n)]
         }
       ],
-      EMPTY_HUMANIZER_META,
-      {}
+      EMPTY_HUMANIZER_META
     )
-    compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Wrap'),
-        getToken(ZeroAddress, 100n),
-        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
-      ]
-    ])
+    compareHumanizerVisualizations(irCalls, [[getAction('Wrap'), getToken(ZeroAddress, 100n)]])
   })
 })
