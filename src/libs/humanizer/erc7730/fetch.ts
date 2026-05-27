@@ -1,8 +1,7 @@
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import { withTimeout } from '../../../utils/with-timeout'
-
-const ERC7730_RELAYER_RESOURCE_TIMEOUT_MS = 4000
+import { ERC7730_DESCRIPTOR_WAIT_MS } from './consts'
 
 const getRelayerPayload = <T>(response: any, path: string): T => {
   if (response?.success === false) {
@@ -27,9 +26,9 @@ export const fetchRelayerResource = async <T>(
   validate: (payload: unknown, path: string) => payload is T
 ): Promise<T> => {
   const response = await withTimeout(
-    () => callRelayer(path, 'GET', undefined, undefined, ERC7730_RELAYER_RESOURCE_TIMEOUT_MS),
+    () => callRelayer(path, 'GET', undefined, undefined, ERC7730_DESCRIPTOR_WAIT_MS),
     {
-      timeoutMs: ERC7730_RELAYER_RESOURCE_TIMEOUT_MS,
+      timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
       message: `Timed out fetching ERC-7730 relayer resource: ${path}`
     }
   )
@@ -47,9 +46,9 @@ export const postRelayerResource = async <T>(
   validate: (payload: unknown, path: string) => payload is T
 ): Promise<T> => {
   const response = await withTimeout(
-    () => callRelayer(path, 'POST', body, undefined, ERC7730_RELAYER_RESOURCE_TIMEOUT_MS),
+    () => callRelayer(path, 'POST', body, undefined, ERC7730_DESCRIPTOR_WAIT_MS),
     {
-      timeoutMs: ERC7730_RELAYER_RESOURCE_TIMEOUT_MS,
+      timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
       message: `Timed out fetching ERC-7730 relayer resource: ${path}`
     }
   )

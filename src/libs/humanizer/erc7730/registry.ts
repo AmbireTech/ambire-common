@@ -6,6 +6,7 @@ import {
   ERC7730_CACHE_TTL_MS,
   ERC7730_CALLDATA_INDEX_RELAYER_PATH,
   ERC7730_DESCRIPTOR_PATH,
+  ERC7730_DESCRIPTOR_WAIT_MS,
   ERC7730_EIP712_INDEX_RELAYER_PATH,
   PERMIT2_ADDRESS,
   PERMIT2_APPROVE_SELECTOR,
@@ -17,9 +18,11 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
+import { withTimeout } from '../../../utils/with-timeout'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/safe'
+import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
 import { fetchRelayerResource, postRelayerResource } from './fetch'
 import {
@@ -44,8 +47,6 @@ const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
 const safeSingletonCache = new Map<string, CacheEntry<string>>()
 const safeSingletonPromises = new Map<string, Promise<string | null>>()
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
-const multiSendInterface = new Interface(['function multiSend(bytes transactions)'])
-const MULTI_SEND_SELECTOR = multiSendInterface.getFunction('multiSend')?.selector || '0x8d80ff0a'
 
 /**
  * A helper function to use in the tests only
@@ -325,7 +326,10 @@ const fetchCachedIndex = async <T>({
 
   if (promise) return promise
 
-  const nextPromise = fetchRelayerResource<T>(path, callRelayer, validate)
+  const nextPromise = withTimeout(() => fetchRelayerResource<T>(path, callRelayer, validate), {
+    timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
+    message: `Timed out fetching ERC-7730 relayer index: ${path}`
+  })
     .then((index) => {
       setCache(createCacheEntry(index))
       return index
@@ -492,6 +496,8 @@ const getRegistryKey = (chainId: bigint | number | string, address: string): str
   `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
 
 const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | null => {
+  if (!call.data || !isHexString(call.data)) return null
+
   const selector = call.data.slice(0, 10).toLowerCase()
 
   if (selector === ERC20_APPROVE_SELECTOR) return ERC20_APPROVE_DESCRIPTOR
@@ -538,26 +544,6 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
     }
   } catch {
     return null
-  }
-}
-
-const getAbiBytesCalldataWithPadding = (data: string): string => {
-  const hex = data.slice(2)
-  if (hex.slice(0, 8).toLowerCase() !== MULTI_SEND_SELECTOR.slice(2).toLowerCase()) return data
-
-  try {
-    const paramsOffset = Number(BigInt(`0x${hex.slice(8, 72)}`))
-    const bytesLengthOffset = 8 + paramsOffset * 2
-    const bytesLength = Number(BigInt(`0x${hex.slice(bytesLengthOffset, bytesLengthOffset + 64)}`))
-    const bytesStart = bytesLengthOffset + 64
-    const minimumHexLength = bytesStart + bytesLength * 2
-    const expectedHexLength = bytesStart + Math.ceil(bytesLength / 32) * 64
-
-    if (hex.length < minimumHexLength || hex.length >= expectedHexLength) return data
-
-    return `0x${hex.padEnd(expectedHexLength, '0')}`
-  } catch {
-    return data
   }
 }
 
@@ -628,8 +614,13 @@ const getSafeSingletonFromProxy = async (
   const pendingSingleton = safeSingletonPromises.get(cacheKey)
   if (pendingSingleton) return pendingSingleton
 
-  const singletonPromise = provider
-    .getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT)
+  const singletonPromise = withTimeout(
+    () => provider.getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT),
+    {
+      timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
+      message: `Timed out fetching Safe singleton: ${safeAddress}`
+    }
+  )
     .then((slotValue) => {
       const singletonAddress = getAddressFromStorageSlot(slotValue)
       if (singletonAddress) safeSingletonCache.set(cacheKey, createCacheEntry(singletonAddress))

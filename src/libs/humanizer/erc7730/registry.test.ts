@@ -270,6 +270,64 @@ describe('ERC-7730 registry cache', () => {
     )
   })
 
+  test('does not crash while resolving a call without calldata', async () => {
+    const { fetchErc7730DescriptorForCall } =
+      jest.requireActual<typeof import('./registry')>('./registry')
+
+    const descriptor = await fetchErc7730DescriptorForCall(
+      {
+        to: '0x1111111111111111111111111111111111111111',
+        value: 0n,
+        data: undefined
+      } as any,
+      1n as AccountOp['chainId']
+    )
+
+    expect(descriptor).toBe(null)
+  })
+
+  test('does not keep a hanging relayer index promise cached', async () => {
+    const { fetchErc7730DescriptorForCall } =
+      jest.requireActual<typeof import('./registry')>('./registry')
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const callRelayer = jest.fn(() => new Promise(() => {}))
+
+    jest.useFakeTimers()
+
+    try {
+      const firstDescriptor = fetchErc7730DescriptorForCall(
+        {
+          to: '0x1111111111111111111111111111111111111111',
+          value: 0n,
+          data: '0x12345678'
+        },
+        1n as AccountOp['chainId'],
+        callRelayer as any
+      )
+
+      await jest.advanceTimersByTimeAsync(4000)
+      await expect(firstDescriptor).resolves.toBe(null)
+      expect(callRelayer).toHaveBeenCalledTimes(1)
+
+      const secondDescriptor = fetchErc7730DescriptorForCall(
+        {
+          to: '0x1111111111111111111111111111111111111111',
+          value: 0n,
+          data: '0x12345678'
+        },
+        1n as AccountOp['chainId'],
+        callRelayer as any
+      )
+
+      await jest.advanceTimersByTimeAsync(4000)
+      await expect(secondDescriptor).resolves.toBe(null)
+      expect(callRelayer).toHaveBeenCalledTimes(2)
+    } finally {
+      jest.useRealTimers()
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
   test('resolves a SafeTx descriptor by reading the Safe proxy singleton', async () => {
     const { fetchErc7730DescriptorForMessage } =
       jest.requireActual<typeof import('./registry')>('./registry')
@@ -391,6 +449,98 @@ describe('ERC-7730 registry cache', () => {
     expect(descriptor?.safeTxCallDescriptor?.path).toBe('built-in/erc20-transfer')
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
     expect(callRelayer).toHaveBeenCalledTimes(3)
+  })
+
+  test('does not keep a hanging Safe singleton promise cached', async () => {
+    const { fetchErc7730DescriptorForMessage } =
+      jest.requireActual<typeof import('./registry')>('./registry')
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/eip-712') {
+        return {
+          success: true,
+          data: {},
+          errorState: []
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    })
+    const provider = {
+      getStorage: jest.fn(() => new Promise(() => {}))
+    }
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: '0x3333333333333333333333333333333333333333',
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeProxy,
+          chainId: 8453
+        },
+        message: {
+          to: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
+          value: '0',
+          data: '0xa9059cbb000000000000000000000000a04d21b7ae298d8e4a61a507de2b7ceafd90ba010000000000000000000000000000000000000000000000000000000000000064',
+          operation: 0,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: '0x0000000000000000000000000000000000000000',
+          refundReceiver: '0x0000000000000000000000000000000000000000',
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    jest.useFakeTimers()
+
+    try {
+      const firstDescriptor = fetchErc7730DescriptorForMessage(
+        safeTxMessage as any,
+        callRelayer as any,
+        provider as any
+      )
+
+      await jest.advanceTimersByTimeAsync(4000)
+      await expect(firstDescriptor).resolves.toBe(null)
+      expect(provider.getStorage).toHaveBeenCalledTimes(1)
+
+      const secondDescriptor = fetchErc7730DescriptorForMessage(
+        safeTxMessage as any,
+        callRelayer as any,
+        provider as any
+      )
+
+      await jest.advanceTimersByTimeAsync(4000)
+      await expect(secondDescriptor).resolves.toBe(null)
+      expect(provider.getStorage).toHaveBeenCalledTimes(2)
+    } finally {
+      jest.useRealTimers()
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   test('rejects malformed index responses', async () => {
