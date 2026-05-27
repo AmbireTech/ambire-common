@@ -306,6 +306,56 @@ describe('swapAndBridge lib', () => {
       }
     })
 
+    test('should return extreme price impact warning when estimated loss exceeds $100k', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 50_000_000,
+        outputValueInUsd: 36_000,
+        fromAmount: 50,
+        minAmountOut: 36_000
+      })
+      const result = calculateAmountWarnings(selectedRoute, '50000000', '50', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('highPriceImpact')
+      if (result?.type === 'highPriceImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('should return extreme slippage warning when slippage loss exceeds $100k', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 5_000_000,
+        outputValueInUsd: 4_950_000,
+        fromAmount: 50,
+        minAmountOut: 3_800_000
+      })
+      const result = calculateAmountWarnings(selectedRoute, '5000000', '50', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('should include elevated severity for existing high price impact warnings', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 0.05,
+        minAmountOut: 95
+      })
+      const result = calculateAmountWarnings(selectedRoute, '100', '0.05', 18)
+
+      expect(result).not.toBeNull()
+      if (result?.type === 'highPriceImpact') {
+        expect(result.severity).toBe('elevated')
+        expect(result.estimatedLossUsd).toBe(5)
+      }
+    })
+
     test('should catch errors gracefully and return null', () => {
       // Create a route where price impact is < 5% so it reaches the slippage check
       // But userTxs is empty, which will cause an error when accessing userTxs[length - 1]

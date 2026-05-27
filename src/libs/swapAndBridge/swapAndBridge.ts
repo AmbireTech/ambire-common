@@ -11,6 +11,15 @@ import {
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
 import {
+  getSwapEstimatedLossUsd,
+  getSwapQuoteLossUsd,
+  getSwapSlippageLossUsd,
+  HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
+  isExtremeSwapLoss,
+  SLIPPAGE_MIN_QUOTE_DIFF_USD
+} from '../../consts/safeguards/extremeSwapLoss'
+import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
+import {
   BRIDGE_STATUS_INTERVAL,
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 } from '../../consts/intervals'
@@ -594,16 +603,7 @@ export const calculateAmountWarnings = (
   fromAmountInFiat: string,
   fromAmount: string,
   fromSelectedTokenDecimals: number
-):
-  | { type: 'highPriceImpact'; percentageDiff: number }
-  | {
-      type: 'slippageImpact'
-      possibleSlippage: number
-      minInUsd: number
-      minInToken: string
-      symbol: string
-    }
-  | null => {
+): SwapAmountWarning | null => {
   if (!selectedRoute) return null
 
   let inputValueInUsd = 0
@@ -626,15 +626,9 @@ export const calculateAmountWarnings = (
     // Can be negative if the output is higher
     // (possible during arbitrage swaps)
     const difference = inputValueInUsd - outputValueInUsd
+    if (difference <= 0) return null
 
     const percentageDiff = (difference / inputValueInUsd) * 100
-
-    if (percentageDiff >= 5) {
-      return {
-        type: 'highPriceImpact',
-        percentageDiff
-      }
-    }
 
     // try to calculate the slippage
     const txn = selectedRoute.userTxs[selectedRoute.userTxs.length - 1]
@@ -646,24 +640,61 @@ export const calculateAmountWarnings = (
       selectedRoute.toToken.decimals,
       Number(selectedRoute.toToken.priceUSD)
     )
+    const minInUsdNumber = Number(minInUsd)
     const allowedSlippage =
       Number(inputValueInUsd) < 400
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
-    const possibleSlippage = (1 - Number(minInUsd) / outputValueInUsd) * 100
+    const possibleSlippage = (1 - minInUsdNumber / outputValueInUsd) * 100
     // @precautionary if
     const diffBetweenQuoteAndMinAmount =
-      outputValueInUsd > Number(minInUsd) ? outputValueInUsd - Number(minInUsd) : 0
+      outputValueInUsd > minInUsdNumber ? outputValueInUsd - minInUsdNumber : 0
 
+    const quoteLossUsd = getSwapQuoteLossUsd(inputValueInUsd, outputValueInUsd)
+    const slippageLossUsd = getSwapSlippageLossUsd(inputValueInUsd, minInUsdNumber)
+    const estimatedLossUsd = getSwapEstimatedLossUsd(
+      inputValueInUsd,
+      outputValueInUsd,
+      minInUsdNumber
+    )
+    const isExtreme = isExtremeSwapLoss(estimatedLossUsd)
+    const isElevatedPriceImpact = percentageDiff >= HIGH_PRICE_IMPACT_PERCENT_THRESHOLD
     // It seems a bit odd to display a slippage warning only if the difference
     // is > $50?
-    if (possibleSlippage > allowedSlippage && diffBetweenQuoteAndMinAmount > 50) {
+    const isElevatedSlippage =
+      possibleSlippage > allowedSlippage &&
+      diffBetweenQuoteAndMinAmount > SLIPPAGE_MIN_QUOTE_DIFF_USD
+
+    if (isExtreme && slippageLossUsd > quoteLossUsd) {
       return {
         type: 'slippageImpact',
         possibleSlippage,
-        minInUsd: Number(minInUsd),
+        minInUsd: minInUsdNumber,
         minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
-        symbol: selectedRoute.toToken.symbol
+        symbol: selectedRoute.toToken.symbol,
+        estimatedLossUsd: slippageLossUsd,
+        severity: 'extreme'
+      }
+    }
+
+    if (isExtreme || isElevatedPriceImpact) {
+      return {
+        type: 'highPriceImpact',
+        percentageDiff,
+        estimatedLossUsd: quoteLossUsd,
+        severity: isExtreme ? 'extreme' : 'elevated'
+      }
+    }
+
+    if (isElevatedSlippage) {
+      return {
+        type: 'slippageImpact',
+        possibleSlippage,
+        minInUsd: minInUsdNumber,
+        minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
+        symbol: selectedRoute.toToken.symbol,
+        estimatedLossUsd: slippageLossUsd,
+        severity: 'elevated'
       }
     }
 
