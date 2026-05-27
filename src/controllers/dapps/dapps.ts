@@ -668,10 +668,39 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
+   * Picks the best chainId for a WalletConnect dapp out of the chains it approved in its
+   * eip155 namespace. WC sessions can approve multiple chains, and the chain the user is
+   * actually transacting on is not necessarily the first one. Blindly taking `chains[0]`
+   * (or hard-defaulting to mainnet) can strand the dapp on the wrong network, so prefer:
+   *   1. the first approved chain that maps to an ENABLED wallet network,
+   *   2. then the first approved chain that maps to any known wallet network,
+   *   3. then the first approved chain as-is (so a not-yet-loaded custom network still
+   *      round-trips its real chainId instead of being replaced by a default).
+   * Returns `undefined` when there are no candidates, leaving the default handling to the caller.
+   */
+  pickWalletConnectChainId(candidateChainIds?: number[]): number | undefined {
+    if (!candidateChainIds?.length) return undefined
+
+    const enabledChainIds = new Set(this.#networks.networks.map((n) => Number(n.chainId)))
+    const enabledMatch = candidateChainIds.find((chainId) => enabledChainIds.has(Number(chainId)))
+    if (enabledMatch !== undefined) return enabledMatch
+
+    const knownChainIds = new Set(this.#networks.allNetworks.map((n) => Number(n.chainId)))
+    const knownMatch = candidateChainIds.find((chainId) => knownChainIds.has(Number(chainId)))
+    if (knownMatch !== undefined) return knownMatch
+
+    return candidateChainIds[0]
+  }
+
+  /**
    * Convenience for callers that have a dapp identity (id/url/name/icon) but not a full
    * Dapp record yet — used by the WalletConnect session setup/restore paths, which need
    * to register the dapp with `'wc'` as the source even when there's no prior catalog
    * entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
+   *
+   * `candidateChainIds` are the chains the WC dapp approved in its eip155 namespace; the
+   * dapp's stored chainId is resolved from them via `pickWalletConnectChainId`, falling
+   * back to `identity.chainId` when no candidates are provided.
    */
   async addDappFromIdentity(
     identity: {
@@ -680,11 +709,20 @@ export class DappsController extends EventEmitter implements IDappsController {
       url: Dapp['url']
       icon: Dapp['icon']
       chainId?: Dapp['chainId']
+      candidateChainIds?: number[]
     },
     source: ConnectionSource
   ) {
     if (!this.isReady) return
-    const dapp = await this.#buildDapp({ ...identity, isConnected: true })
+    await this.initialLoadPromise
+
+    const { candidateChainIds, ...identityRest } = identity
+    const resolvedChainId = this.pickWalletConnectChainId(candidateChainIds) ?? identity.chainId
+    const dapp = await this.#buildDapp({
+      ...identityRest,
+      chainId: resolvedChainId,
+      isConnected: true
+    })
     await this.addDapp(dapp, source)
   }
 

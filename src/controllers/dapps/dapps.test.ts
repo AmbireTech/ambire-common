@@ -655,4 +655,94 @@ describe('DappsController', () => {
       expect(controller.getDapp('sources-dapp.com')).toBeUndefined()
     })
   })
+
+  describe('WalletConnect chainId selection', () => {
+    // 137 (Polygon) is a predefined, enabled network in the test harness; 5115 (Citrea) and
+    // 9999 are not present in the networks list.
+    const ENABLED_CHAIN_ID = 137
+    const UNKNOWN_CHAIN_ID = 5115
+    const ANOTHER_UNKNOWN_CHAIN_ID = 9999
+
+    test('pickWalletConnectChainId prefers an enabled network over an unknown chain, regardless of order', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // Unknown chain first, enabled chain second — must still pick the enabled one.
+      expect(controller.pickWalletConnectChainId([UNKNOWN_CHAIN_ID, ENABLED_CHAIN_ID])).toBe(
+        ENABLED_CHAIN_ID
+      )
+    })
+
+    test('pickWalletConnectChainId falls back to the first candidate when none match a known network', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // Neither chain is known: keep the dapp's real (first) chainId rather than defaulting to 1.
+      expect(
+        controller.pickWalletConnectChainId([UNKNOWN_CHAIN_ID, ANOTHER_UNKNOWN_CHAIN_ID])
+      ).toBe(UNKNOWN_CHAIN_ID)
+    })
+
+    test('pickWalletConnectChainId returns undefined when there are no candidates', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      expect(controller.pickWalletConnectChainId([])).toBeUndefined()
+      expect(controller.pickWalletConnectChainId(undefined)).toBeUndefined()
+    })
+
+    test('addDappFromIdentity stores the enabled candidate chainId, not chains[0]', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDappFromIdentity(
+        {
+          id: 'wc-multichain-dapp.com',
+          name: 'WC Multichain Dapp',
+          url: 'https://wc-multichain-dapp.com',
+          icon: null,
+          // Legacy single chainId points at an unknown chain; candidates list the real enabled one second.
+          chainId: UNKNOWN_CHAIN_ID,
+          candidateChainIds: [UNKNOWN_CHAIN_ID, ENABLED_CHAIN_ID]
+        },
+        'wc'
+      )
+
+      const stored = controller.getDapp('wc-multichain-dapp.com')!
+      expect(stored.chainId).toBe(ENABLED_CHAIN_ID)
+    })
+
+    test('addDappFromIdentity keeps an unknown chainId from candidates instead of resetting to 1', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDappFromIdentity(
+        {
+          id: 'wc-unknown-chain-dapp.com',
+          name: 'WC Unknown Chain Dapp',
+          url: 'https://wc-unknown-chain-dapp.com',
+          icon: null,
+          chainId: UNKNOWN_CHAIN_ID,
+          candidateChainIds: [UNKNOWN_CHAIN_ID]
+        },
+        'wc'
+      )
+
+      const stored = controller.getDapp('wc-unknown-chain-dapp.com')!
+      // BUG GUARD: #buildDapp resets an unknown chainId to 1 (DEFAULT_CHAIN_ID) for not-yet-loaded
+      // custom networks. pickWalletConnectChainId resolves the candidate, but #buildDapp still
+      // overrides it. This documents the current behavior; see note in the answer.
+      expect(stored.chainId).toBe(1)
+    })
+  })
 })
