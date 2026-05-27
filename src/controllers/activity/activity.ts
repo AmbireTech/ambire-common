@@ -182,11 +182,14 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
   accountOp: SubmittedAccountOp,
   receipts: TransactionReceipt[]
 ) => {
-  const foundTokens = (
-    await Promise.all(
-      receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
-    )
-  ).flat()
+  const foundTokens = filterStaticBlacklistedAddrs(
+    (
+      await Promise.all(
+        receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
+      )
+    ).flat(),
+    accountOp.chainId
+  )
 
   return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
 }
@@ -1270,7 +1273,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   }
 
                   const foundTokens = isSuccess
-                    ? await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+                    ? filterStaticBlacklistedAddrs(
+                        await getTransferLogTokens(receipt.logs, accountOp.accountAddr),
+                        accountOp.chainId
+                      )
                     : []
                   if (foundTokens.length)
                     this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
