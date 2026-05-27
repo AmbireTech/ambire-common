@@ -1,10 +1,9 @@
-import { Interface } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { StkWallet } from '../../const/abis/stkWallet'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getLabel, getToken } from '../../utils'
+import { HexIrCall, getAction, getLabel, getToken, isHexCall } from '../../utils'
 import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
@@ -18,14 +17,18 @@ const stakingAddresses = [
 const WALLET_SUPPLY_CONTROLLER_MAPPING = WALLETSupplyControllerMapping()
 const STAKING_POOLS = StakingPools()
 
-const stkWalletIface = new Interface(StkWallet)
+const wrapAllAbi = parseAbi(['function wrapAll()'])
+const stkWrapAbi = parseAbi(['function wrap(uint256 shareAmount)'])
+const stkUnwrapAbi = parseAbi(['function unwrap(uint256 shareAmount)'])
+const stkEnterAbi = parseAbi(['function enter(uint256 amount)'])
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
     supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,
     stakingPool: STAKING_POOLS,
     stkWallet: {
-      [stkWalletIface.getFunction('wrapAll')!.selector]: () => {
+      [toFunctionSelector(wrapAllAbi[0])]: () => {
         return [
           getAction('Wrap all'),
           getToken(WALLET_STAKING_ADDR, 0n),
@@ -33,8 +36,9 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           getToken(STK_WALLET, 0n)
         ]
       },
-      [stkWalletIface.getFunction('wrap')!.selector]: ({ data }: IrCall) => {
-        const [shareAmount] = stkWalletIface.parseTransaction({ data })!.args
+      [toFunctionSelector(stkWrapAbi[0])]: ({ data }: HexIrCall) => {
+        const { args } = decodeFunctionData({ abi: stkWrapAbi, data })
+        const [shareAmount] = args
 
         return [
           getAction('Wrap'),
@@ -43,8 +47,9 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           getToken(STK_WALLET, 0n)
         ]
       },
-      [stkWalletIface.getFunction('unwrap')!.selector]: ({ data }: IrCall) => {
-        const [shareAmount] = stkWalletIface.parseTransaction({ data })!.args
+      [toFunctionSelector(stkUnwrapAbi[0])]: ({ data }: HexIrCall) => {
+        const { args } = decodeFunctionData({ abi: stkUnwrapAbi, data })
+        const [shareAmount] = args
 
         return [
           getAction('Unwrap'),
@@ -53,8 +58,9 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           getToken(WALLET_STAKING_ADDR, shareAmount)
         ]
       },
-      [stkWalletIface.getFunction('enter')!.selector]: ({ data }: IrCall) => {
-        const [amount] = stkWalletIface.parseTransaction({ data })!.args
+      [toFunctionSelector(stkEnterAbi[0])]: ({ data }: HexIrCall) => {
+        const { args } = decodeFunctionData({ abi: stkEnterAbi, data })
+        const [amount] = args
 
         return [
           getAction('Stake and wrap'),
@@ -66,6 +72,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
     }
   }
   const newCalls = irCalls.map((call: IrCall) => {
+    if (!isHexCall(call)) return call
     const selector = call.data.slice(0, 10)
     if (call.to && stakingAddresses.includes(call.to.toLowerCase()) && !call.fullVisualization) {
       if (matcher.stakingPool[selector]) {

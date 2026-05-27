@@ -1,6 +1,5 @@
-import { Interface, ZeroHash } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector, zeroHash } from 'viem'
 
-import AmbireAccount from '../../../../../contracts/compiled/AmbireAccount.json'
 import { ENTRY_POINT_MARKER } from '../../../../consts/deploy'
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
@@ -9,18 +8,21 @@ import {
   HumanizerVisualization,
   IrCall
 } from '../../interfaces'
-import { getAction, getAddressVisualization, getKnownName, getLabel } from '../../utils'
+import { HexIrCall, getAction, getAddressVisualization, getKnownName, getLabel, isHexCall } from '../../utils'
 
-const iface = new Interface(AmbireAccount.abi)
+const setAddrPrivilegeAbi = parseAbi([
+  'function setAddrPrivilege(address addr, bytes32 priv) payable'
+])
 
 const parsePrivilegeCall = (
   humanizerMeta: HumanizerMeta,
-  call: IrCall
+  call: HexIrCall
 ): HumanizerVisualization[] => {
-  const { addr, priv } = iface.parseTransaction(call)!.args
+  const { args } = decodeFunctionData({ abi: setAddrPrivilegeAbi, data: call.data })
+  const [addr, priv] = args
   if (getKnownName(humanizerMeta, addr)?.includes('entry point') && priv === ENTRY_POINT_MARKER)
     return [getAction('Enable'), getAddressVisualization(addr)]
-  if (priv === ZeroHash)
+  if (priv === zeroHash)
     return [getAction('Revoke access'), getLabel('of'), getAddressVisualization(addr)]
   return [
     getAction('Update access status'),
@@ -39,7 +41,7 @@ export const privilegeHumanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta
 ) => {
   const newCalls = irCalls.map((call) => {
-    if (call.data.slice(0, 10) === iface.getFunction('setAddrPrivilege')?.selector) {
+    if (isHexCall(call) && call.data.slice(0, 10) === toFunctionSelector(setAddrPrivilegeAbi[0])) {
       return {
         ...call,
         fullVisualization: parsePrivilegeCall(humanizerMeta, call)

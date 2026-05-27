@@ -1,9 +1,18 @@
-import { AbiCoder, Interface, ZeroAddress } from 'ethers'
+import {
+  decodeAbiParameters,
+  decodeFunctionData,
+  parseAbi,
+  parseAbiParameters,
+  toFunctionSelector,
+  zeroAddress,
+  type AbiParameter,
+  type Hex
+} from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { UniswapUniversalRouter } from '../../const/abis'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import {
+  HexIrCall,
   getAction,
   getAddressVisualization,
   getDeadline,
@@ -14,13 +23,12 @@ import {
 import { COMMANDS, COMMANDS_DESCRIPTIONS, V4_ACTION_CODES, V4_ACTION_DESCRIPTORS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath, uniReduce } from './utils'
+import { AbiCoder } from 'ethers'
 
 const coder = new AbiCoder()
-
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
   const decodedInput = coder.decode(types, input)
-
   const params: any = {}
   inputsDetails.forEach((item: any, index: number) => {
     params[item.name] = decodedInput[index]
@@ -45,7 +53,7 @@ function parseCommands(commands: string): string[] | null {
 
 function parseV4Actions(
   actions: string,
-  totalParams: string[],
+  totalParams: Hex[],
   accountAddr: string
 ): HumanizerVisualization[] {
   const parsedActions = parseCommands(actions)
@@ -128,15 +136,15 @@ function parseV4Actions(
   return uniReduce(parsed)
 }
 
-const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
+const executeWithDeadlineAbi = parseAbi([
+  'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable'
+])
+
 export const uniUniversalRouter: HumanizerUniMatcher = {
-  [`${
-    ifaceUniversalRouter.getFunction(
-      'execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)'
-    )?.selector
-  }`]: (accountOp: AccountOp, call: IrCall) => {
+  [toFunctionSelector(executeWithDeadlineAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
     if (!call.to) throw Error('Humanizer: should not be inside the uniswap module when !call.to')
-    const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
+    const { args } = decodeFunctionData({ abi: executeWithDeadlineAbi, data: call.data })
+    const [commands, inputs, deadline] = args
     const parsedCommands = parseCommands(commands)
     const parsed: HumanizerVisualization[][] = []
 
@@ -272,7 +280,10 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
                 // sigDeadline
               }
               // signature
-            } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, inputs[index])
+            } = extractParams(
+              COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails,
+              inputs[index]
+            )
             parsed.push([
               getAction('Grant approval'),
               getLabel('for'),
@@ -283,7 +294,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
           } else if (command === COMMANDS.WRAP_ETH) {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
             const params = extractParams(inputsDetails, inputs[index])
-            params.amountMin && parsed.push(getWrapping(ZeroAddress, params.amountMin))
+            params.amountMin && parsed.push(getWrapping(zeroAddress, params.amountMin))
           } else if (command === COMMANDS.UNWRAP_WETH) {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
             const params = extractParams(inputsDetails, inputs[index])
@@ -291,7 +302,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
             params.amountMin &&
               parsed.push([
                 getAction('Unwrap'),
-                getToken(ZeroAddress, 0n),
+                getToken(zeroAddress, 0n),
                 ...getUniRecipientText(accountOp.accountAddr, params.recipient)
               ])
           } else if (command === COMMANDS.V4_SWAP) {
