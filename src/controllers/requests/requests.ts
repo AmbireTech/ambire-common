@@ -1,6 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField } from 'ethers'
+import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField, isAddress } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import { EIP712TypedData } from '@safe-global/types-kit'
@@ -82,6 +82,7 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { isHex } from 'viem'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -1085,6 +1086,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       let calls: AccountOp['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
+
+      if (calls.some(({ data }) => data && data.length % 2 === 1))
+        throw ethErrors.rpc.invalidParams('A call has uneven number of character in the hex data.')
+      if (calls.some(({ data }) => data && !isHex(data)))
+        throw ethErrors.rpc.invalidParams('A call has invalid data.')
+
+      // we are checking if to exists, because if it does not the call is a
+      // valid contract  deployment
+      if (calls.some(({ to }) => to && !isAddress(to)))
+        throw ethErrors.rpc.invalidParams('A call has invalid "to" field ')
 
       calls = calls.map((c) => ({
         ...c,

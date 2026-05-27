@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
+import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import {
@@ -12,6 +13,13 @@ import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+const TEST_DAPP = makeDapp({
+  id: MOCK_SESSION.id,
+  name: 'Test Dapp',
+  url: MOCK_SESSION.origin,
+  chainId: 1,
+  chainIds: [1]
+})
 
 const accounts = [
   {
@@ -61,11 +69,12 @@ const accounts = [
   }
 ]
 
-const prepareTest = async () => {
+const prepareTest = async (seedTestDapp = false) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
     async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
       await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+      if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
     }
   )
 
@@ -275,6 +284,40 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+  test('build contract deployment dapp request', async () => {
+    const { controller } = await prepareTest(true)
+
+    await expect(
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [
+              {
+                from: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+                value: '0x0',
+                data: '0x6080604052348015600e575f5ffd5b50600080fd'
+              }
+            ],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+    ).resolves.toBeUndefined()
+
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0]!.kind).toBe('calls')
+    expect(
+      (controller.userRequests[0] as CallsUserRequest).signAccountOp.accountOp.calls[0]!.to
+    ).toBeUndefined()
   })
   test('resolve user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
@@ -494,5 +537,126 @@ describe('RequestsController ', () => {
 
     const json = controller.toJSON()
     expect(json).toBeDefined()
+  })
+
+  describe('call data and "to" field validation', () => {
+    const FROM = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const VALID_TO = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+    const buildEthSendTx = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      txParams: { from: string; to?: string; value?: string; data?: string }
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [txParams],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+
+    const buildWalletSendCalls = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      calls: { to?: string; value?: string; data?: string }[]
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'wallet_sendCalls',
+            params: [{ from: FROM, chainId: '0x1', calls }],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+
+    test('rejects eth_sendTransaction with odd-length hex data', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: '0x1' })
+      ).rejects.toThrow('A call has uneven number of character in the hex data.')
+    })
+
+    test('rejects eth_sendTransaction with non-hex data (even length, no 0x prefix)', async () => {
+      const { controller } = await prepareTest(true)
+
+      // Even length so it passes the odd-length check; no 0x prefix so isHex returns false
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: 'aabbccdd' })
+      ).rejects.toThrow('A call has invalid data.')
+    })
+
+    test('rejects eth_sendTransaction with invalid "to" address', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: 'not-an-address', value: '0x0' })
+      ).rejects.toThrow('A call has invalid "to" field ')
+    })
+
+    test('accepts eth_sendTransaction without a "to" field (contract deployment)', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, value: '0x0', data: '0x6080604052' })
+      ).resolves.toBeUndefined()
+    })
+
+    test('accepts eth_sendTransaction without a data field', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0' })
+      ).resolves.toBeUndefined()
+    })
+
+    test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x0', data: '0x1234' },
+          { to: VALID_TO, value: '0x0', data: '0x1' }
+        ])
+      ).rejects.toThrow('A call has uneven number of character in the hex data.')
+    })
+
+    test('rejects wallet_sendCalls when any call has an invalid "to" address', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x0' },
+          { to: 'bad-address', value: '0x0' }
+        ])
+      ).rejects.toThrow('A call has invalid "to" field ')
+    })
+
+    test('accepts wallet_sendCalls where a call omits "to" (contract deployment within batch)', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x0' },
+          { value: '0x0', data: '0x6080604052' }
+        ])
+      ).resolves.toBeUndefined()
+    })
   })
 })
