@@ -151,7 +151,7 @@ describe('Transfer Controller', () => {
     })
 
     expect(transferController.amount).toBe(
-      formatUnits(nativeToken.amount - feeAmount, nativeToken.decimals)
+      formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
     )
   })
   test('should set validation form messages', async () => {

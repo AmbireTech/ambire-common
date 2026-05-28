@@ -1,12 +1,19 @@
-import { getAddress, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
 import {
   HumanizerErc7730Row,
-  IrCall,
   HumanizerMeta,
   HumanizerVisualization,
-  HumanizerWarning
+  HumanizerWarning,
+  IrCall
 } from './interfaces'
+
+export type HexIrCall = IrCall & { data: Hex }
+
+/** Type guard that narrows an IrCall to one with a valid hex data field. */
+export function isHexCall(call: IrCall): call is HexIrCall {
+  return isHex(call.data)
+}
 
 export function getWarning(
   content: string,
@@ -17,8 +24,11 @@ export function getWarning(
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
-export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
-  return { type: 'label', content, id: randomId(), isBold }
+export function getLabel(
+  content: string | bigint | number,
+  isBold?: boolean
+): HumanizerVisualization {
+  return { type: 'label', content: content.toString(), id: randomId(), isBold }
 }
 export function getAction(
   content: string,
@@ -171,4 +181,4 @@ export const uintToAddress = (uint: bigint): string =>
   `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
 
 export const eToNative = (address: string): string =>
-  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? zeroAddress : address
