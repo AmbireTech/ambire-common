@@ -10,7 +10,7 @@ const iface = new Interface(WETH)
 export const wrappingModule: HumanizerCallModule = (
   _: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta
+  humanizerMeta?: HumanizerMeta
 ) => {
   const newCalls = irCalls.map((call: IrCall) => {
     if (!isAddress(call.to)) return call

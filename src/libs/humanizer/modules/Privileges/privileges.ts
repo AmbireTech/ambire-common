@@ -36,8 +36,11 @@ const parsePrivilegeCall = (
 export const privilegeHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta
+  humanizerMeta?: HumanizerMeta
 ) => {
+  // humanizerMeta should be always provided
+  if (!humanizerMeta) return irCalls
+
   const newCalls = irCalls.map((call) => {
     if (call.data.slice(0, 10) === iface.getFunction('setAddrPrivilege')?.selector) {
       return {
