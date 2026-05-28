@@ -380,6 +380,24 @@ describe('SwapAndBridge Controller', () => {
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
   })
+  test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
+    const preselectedToken = PORTFOLIO_TOKENS[1]!
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: {
+        address: preselectedToken.address,
+        chainId: preselectedToken.chainId
+      }
+    })
+
+    expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(preselectedToken.address)
+    expect(swapAndBridgeController.fromChainId).toEqual(Number(preselectedToken.chainId))
+    expect(swapAndBridgeController.toChainId).toEqual(Number(preselectedToken.chainId))
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
   test('should update toChainId', (done) => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
