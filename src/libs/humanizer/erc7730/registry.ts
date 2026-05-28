@@ -523,25 +523,42 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
   }
 }
 
-const getSafeTxCallFromMessage = (message: Message): Call | null => {
+const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
   if (message.content.kind !== 'typedMessage') return null
   if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
 
   const { to, value, data, operation } = message.content.message
-  try {
-    if (BigInt((operation ?? 0) as string | number | bigint) !== 0n) return null
-  } catch {
-    return null
-  }
   if (typeof to !== 'string' || !isAddress(to)) return null
   if (typeof data !== 'string' || !isHexString(data)) return null
 
   try {
-    return {
-      to,
-      data,
-      value: BigInt((value ?? 0) as string | number | bigint)
+    const bigintValue = BigInt((value ?? 0) as string | number | bigint)
+    const bigintOperation = BigInt((operation ?? 0) as string | number | bigint)
+
+    if (bigintOperation === 0n) {
+      return [
+        {
+          to,
+          data,
+          value: bigintValue
+        }
+      ]
     }
+
+    if (bigintOperation !== 1n) return null
+
+    const multiSendDecoded = multiSendInterface.decodeFunctionData(
+      'multiSend',
+      getAbiBytesCalldataWithPadding(data)
+    )
+    const transactionsHex = multiSendDecoded[0]
+    if (typeof transactionsHex !== 'string') return null
+
+    return decodeMultiSend(transactionsHex).map((transaction) => ({
+      to: transaction.to,
+      data: transaction.data,
+      value: transaction.value
+    }))
   } catch {
     return null
   }
@@ -703,18 +720,41 @@ const addSafeTxCallDescriptor = async (
   if (!descriptor || message.content.kind !== 'typedMessage') return descriptor
   if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return descriptor
 
-  const safeTxCall = getSafeTxCallFromMessage(message)
-  if (!safeTxCall) return descriptor
+  const safeTxCalls = getSafeTxCallsFromMessage(message)
+  if (!safeTxCalls?.length) return descriptor
 
   const verifyingContract = message.content.domain.verifyingContract
-  const safeTxCallDescriptor = await fetchErc7730DescriptorForCall(
-    safeTxCall,
-    chainId,
-    typeof verifyingContract === 'string'
-      ? getNestedSafeCallOptions(verifyingContract, safeTxCall, options)
-      : options
+  const safeTxCallDescriptors = await Promise.all(
+    safeTxCalls.map(async (safeTxCall, index) => {
+      const safeTxCallDescriptor = await fetchErc7730DescriptorForCall(
+        safeTxCall,
+        chainId,
+        typeof verifyingContract === 'string'
+          ? getNestedSafeCallOptions(verifyingContract, safeTxCall, options)
+          : options
+      )
+
+      return safeTxCallDescriptor ? ([index, safeTxCallDescriptor] as const) : null
+    })
   )
-  return safeTxCallDescriptor ? { ...descriptor, safeTxCallDescriptor } : descriptor
+
+  const descriptorsByIndex = safeTxCallDescriptors.reduce<
+    Record<number, Erc7730ResolvedDescriptor>
+  >((acc, entry) => {
+    if (!entry) return acc
+
+    acc[entry[0]] = entry[1]
+    return acc
+  }, {})
+
+  if (!Object.keys(descriptorsByIndex).length) return descriptor
+
+  return {
+    ...descriptor,
+    safeTxCallDescriptor:
+      safeTxCalls.length === 1 ? descriptorsByIndex[0] : descriptor.safeTxCallDescriptor,
+    safeTxCallDescriptors: descriptorsByIndex
+  }
 }
 
 const fetchSafeExecTransactionDescriptor = async (

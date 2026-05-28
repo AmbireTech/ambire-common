@@ -10,6 +10,7 @@ import {
 
 import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
+import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/safe'
 import {
@@ -23,6 +24,7 @@ import {
 } from '../interfaces'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
+import AllowanceModule from '../modules/Allowance'
 import {
   getAddressVisualization,
   getChain,
@@ -975,6 +977,30 @@ const getSafeCallFallbackVisualization = (
   return visualization.type === 'erc7730' ? visualization : null
 }
 
+const getModuleFallbackVisualization = (
+  call: Call,
+  chainId: bigint,
+  accountAddr: string
+): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
+  const [humanizedCall] = AllowanceModule(
+    {
+      accountAddr,
+      chainId,
+      calls: [call]
+    } as AccountOp,
+    [call as IrCall]
+  )
+  const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
+  if (!rows) return null
+
+  const visualization = getErc7730Visualization(
+    getActionTitleFromFlatCallVisualization(humanizedCall?.fullVisualization) || rows[0]!.label,
+    rows
+  )
+
+  return visualization.type === 'erc7730' ? visualization : null
+}
+
 const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   const warningKeys = new Set<string>()
 
@@ -1035,6 +1061,13 @@ const getSafeTxCallVisualizations = (
 
       const safeFallbackVisualization = getSafeCallFallbackVisualization(safeTxCall)
       if (safeFallbackVisualization) return safeFallbackVisualization
+
+      const moduleFallbackVisualization = getModuleFallbackVisualization(
+        safeTxCall,
+        chainId,
+        accountAddr
+      )
+      if (moduleFallbackVisualization) return moduleFallbackVisualization
 
       const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [safeTxCall])
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
@@ -1110,11 +1143,17 @@ const replaceSafeTxTransactionRow = (
   return fullVisualization.map((visualization) => {
     if (visualization.type !== 'erc7730') return visualization
 
+    let didReplaceTransactionRow = false
+    const rows = visualization.rows.flatMap((row) => {
+      if (row.label.trim().toLowerCase() !== 'transaction') return [row]
+
+      didReplaceTransactionRow = true
+      return safeTxCallRows
+    })
+
     return {
       ...visualization,
-      rows: visualization.rows.flatMap((row) =>
-        row.label.trim().toLowerCase() === 'transaction' ? safeTxCallRows : [row]
-      )
+      rows: didReplaceTransactionRow ? rows : [...rows, ...safeTxCallRows]
     }
   })
 }
