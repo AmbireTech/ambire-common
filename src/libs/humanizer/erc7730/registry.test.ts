@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 import { ethers } from 'ethers'
+
+import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { AccountOp } from '../../accountOp/accountOp'
 
@@ -53,7 +54,7 @@ describe('ERC-7730 registry cache', () => {
         data: '0x12345678'
       },
       1n as AccountOp['chainId'],
-      callRelayer
+      { callRelayer }
     )
 
     expect(firstDescriptor?.path).toBe(registryPath)
@@ -68,7 +69,7 @@ describe('ERC-7730 registry cache', () => {
         data: '0x12345678'
       },
       1n as AccountOp['chainId'],
-      callRelayer
+      { callRelayer }
     )
 
     expect(cachedDescriptor?.path).toBe(registryPath)
@@ -241,7 +242,7 @@ describe('ERC-7730 registry cache', () => {
         data: '0x12345678'
       },
       1n as AccountOp['chainId'],
-      callRelayer
+      { callRelayer }
     )
 
     expect(firstDescriptor?.path).toBe(registryPath)
@@ -303,7 +304,7 @@ describe('ERC-7730 registry cache', () => {
           data: '0x12345678'
         },
         1n as AccountOp['chainId'],
-        callRelayer as any
+        { callRelayer }
       )
 
       await jest.advanceTimersByTimeAsync(4000)
@@ -317,7 +318,7 @@ describe('ERC-7730 registry cache', () => {
           data: '0x12345678'
         },
         1n as AccountOp['chainId'],
-        callRelayer as any
+        { callRelayer }
       )
 
       await jest.advanceTimersByTimeAsync(4000)
@@ -755,7 +756,7 @@ describe('ERC-7730 registry cache', () => {
           data: '0x12345678'
         },
         1n as AccountOp['chainId'],
-        callRelayer
+        { callRelayer }
       )
       const eip712Descriptor = await fetchErc7730DescriptorForMessage(message as any, callRelayer)
 

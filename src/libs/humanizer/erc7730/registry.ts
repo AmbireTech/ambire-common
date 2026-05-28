@@ -64,14 +64,6 @@ export const clearErc7730RegistryCache = () => {
 
 const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
 
-const normalizeRegistryOptions = (
-  options?: Erc7730RegistryOptions | BindedRelayerCall
-): Erc7730RegistryOptions => {
-  if (typeof options === 'function') return { callRelayer: options }
-
-  return options || {}
-}
-
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -702,10 +694,10 @@ const getNestedSafeCallOptions = (
   safeAddress: string,
   call: Call,
   options: Erc7730RegistryOptions
-): Erc7730RegistryOptions | BindedRelayerCall => {
+): Erc7730RegistryOptions => {
   if (call.to && call.to.toLowerCase() === safeAddress.toLowerCase()) return options
 
-  return options.callRelayer || options
+  return options
 }
 
 const addSafeTxCallDescriptor = async (
@@ -821,29 +813,28 @@ const fetchProxySingletonDescriptorForCall = async (
 export const fetchErc7730DescriptorForCall = async (
   call: Call,
   chainId: AccountOp['chainId'],
-  options?: Erc7730RegistryOptions | BindedRelayerCall
+  options?: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
 
-  const registryOptions = normalizeRegistryOptions(options)
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
-  if (!registryOptions.callRelayer) return builtInDescriptor
+  if (!options?.callRelayer) return builtInDescriptor
 
   try {
     const safeExecTransactionDescriptor = await fetchSafeExecTransactionDescriptor(
       call,
       chainId,
-      registryOptions
+      options
     )
     if (safeExecTransactionDescriptor) return safeExecTransactionDescriptor
 
-    const { callRelayer } = registryOptions
+    const { callRelayer } = options
     const index = await getCalldataIndex(callRelayer)
     const descriptorPath = index[getRegistryKey(chainId, call.to)]
     const registryDescriptor = descriptorPath
       ? await fetchDescriptor(descriptorPath, callRelayer)
       : !builtInDescriptor
-        ? await fetchProxySingletonDescriptorForCall(call, chainId, registryOptions, index)
+        ? await fetchProxySingletonDescriptorForCall(call, chainId, options, index)
         : null
 
     if (!registryDescriptor) return builtInDescriptor
@@ -861,7 +852,7 @@ export const fetchErc7730DescriptorForCall = async (
 
 export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
-  options?: Erc7730RegistryOptions | BindedRelayerCall
+  options?: Erc7730RegistryOptions
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
