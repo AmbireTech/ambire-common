@@ -17,11 +17,12 @@ import {
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
   HumanizerVisualization,
+  HumanizerWarning,
   IrCall,
   IrMessage
 } from '../interfaces'
 import { genericErc20Humanizer } from '../modules/Tokens'
-import { getSafeHumanization } from '../modules/Safe'
+import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import {
   getAddressVisualization,
   getChain,
@@ -974,6 +975,40 @@ const getSafeCallFallbackVisualization = (
   return visualization.type === 'erc7730' ? visualization : null
 }
 
+const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
+  const warningKeys = new Set<string>()
+
+  return warnings.filter((warning) => {
+    const warningKey = `${warning.code}:${warning.content}`
+    if (warningKeys.has(warningKey)) return false
+    warningKeys.add(warningKey)
+
+    return true
+  })
+}
+
+const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[] => {
+  return getSafeHumanization(safeAddr, call.to, call.value, call.data)?.warnings || []
+}
+
+const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
+  if (message.content.kind !== 'typedMessage') return []
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return []
+
+  const warnings: HumanizerWarning[] = []
+  const { to, operation } = message.content.message
+  const bigintOperation = toBigIntOrNull(operation ?? 0)
+
+  if (bigintOperation !== null && typeof to === 'string') {
+    warnings.push(...getDelegateCallWarning(bigintOperation, to))
+  }
+
+  const safeTxCalls = getSafeTxCallsFromMessage(message) || []
+  safeTxCalls.forEach((safeTxCall) => warnings.push(...getSafeCallWarnings(safeTxCall)))
+
+  return dedupeWarnings(warnings)
+}
+
 const getSafeTxCallVisualizations = (
   safeTxCalls: Call[],
   chainId: bigint,
@@ -1111,7 +1146,9 @@ export const humanizeCallWithErc7730 = (
           }
         ])
       ],
-      warnings: []
+      warnings: dedupeWarnings(
+        resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall))
+      )
     }
   }
 
@@ -1136,7 +1173,13 @@ export const humanizeCallWithErc7730 = (
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
 
-  return fullVisualization?.length ? { ...call, fullVisualization, warnings: [] } : null
+  return fullVisualization?.length
+    ? {
+        ...call,
+        fullVisualization,
+        warnings: dedupeWarnings(getSafeCallWarnings(call, accountAddr))
+      }
+    : null
 }
 
 export const humanizeMessageWithErc7730 = (
@@ -1173,7 +1216,7 @@ export const humanizeMessageWithErc7730 = (
     ? {
         ...message,
         fullVisualization: safeTxVisualization,
-        warnings: [],
+        warnings: getSafeTxMessageWarnings(message),
         canHideDropdownArrow: true
       }
     : null

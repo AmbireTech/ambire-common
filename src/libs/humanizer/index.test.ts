@@ -23,6 +23,7 @@ import {
   getLabel,
   getText,
   getToken,
+  getWarning,
   hasErc7730Humanization
 } from './utils'
 
@@ -1797,6 +1798,9 @@ describe('ERC-7730 descriptors', () => {
           value: [getAddressVisualization(ZeroAddress)]
         }
       ])
+    ])
+    expect(irMessage.warnings).toEqual([
+      getWarning('Owner & threshold configuration changes detected', 'SAFE{WALLET}_CONFIG_CHANGE')
     ])
   })
 
