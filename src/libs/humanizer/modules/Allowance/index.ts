@@ -8,12 +8,22 @@ import { getAction, getAddressVisualization, getLabel, getToken } from '../../ut
 
 const iface = new Interface(Allowance)
 
-const getTimeString = (resetTimeMin: bigint): string => {
+export const getAllowanceResetText = (resetTimeMin: bigint): string => {
+  if (resetTimeMin === 0n) return 'No reset'
   if (resetTimeMin === 1440n) return 'Daily'
   if (resetTimeMin === 10080n) return 'Weekly'
   if (resetTimeMin === 20160n) return 'Biweekly'
   if (resetTimeMin === 43200n) return 'Monthly'
   return `Every ${resetTimeMin.toString()} minutes`
+}
+
+export const getSetAllowanceResetText = (call: IrCall): string | null => {
+  if (!call.data) return null
+  if (call.data.slice(0, 10) !== iface.getFunction('setAllowance')?.selector) return null
+
+  const { resetTimeMin } = iface.parseTransaction(call)!.args
+
+  return getAllowanceResetText(resetTimeMin)
 }
 
 const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
@@ -27,7 +37,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
         getAddressVisualization(delegate),
         getLabel('to spend'),
         getToken(token, allowanceAmount),
-        getLabel(getTimeString(resetTimeMin))
+        getLabel(getAllowanceResetText(resetTimeMin))
       ]
 
       return { ...call, fullVisualization }

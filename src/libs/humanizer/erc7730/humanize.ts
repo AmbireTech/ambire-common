@@ -24,7 +24,7 @@ import {
 } from '../interfaces'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
-import AllowanceModule from '../modules/Allowance'
+import AllowanceModule, { getSetAllowanceResetText } from '../modules/Allowance'
 import {
   getAddressVisualization,
   getChain,
@@ -993,9 +993,22 @@ const getModuleFallbackVisualization = (
   const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
   if (!rows) return null
 
+  const resetText = getSetAllowanceResetText(call as IrCall)
+  const rowsWithReset = resetText
+    ? rows.map((row) =>
+        row.value.some((value) => value.type === 'token')
+          ? {
+              ...row,
+              value: [...row.value, getText(resetText)]
+            }
+          : row
+      )
+    : rows
+
   const visualization = getErc7730Visualization(
-    getActionTitleFromFlatCallVisualization(humanizedCall?.fullVisualization) || rows[0]!.label,
-    rows
+    getActionTitleFromFlatCallVisualization(humanizedCall?.fullVisualization) ||
+      rowsWithReset[0]!.label,
+    rowsWithReset
   )
 
   return visualization.type === 'erc7730' ? visualization : null

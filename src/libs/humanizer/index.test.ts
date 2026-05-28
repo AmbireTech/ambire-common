@@ -280,6 +280,39 @@ describe('Humanizer main function', () => {
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 
+  test('humanizes Safe allowance with no reset instead of every 0 minutes', async () => {
+    const allowanceInterface = new ethers.Interface([
+      'function setAllowance(address delegate, address token, uint96 allowanceAmount, uint16 resetTimeMin, uint32 resetBaseMin)'
+    ])
+    const delegate = '0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'
+
+    accountOp.calls = [
+      {
+        to: '0x9641d764fc13c8b624c04430c7356c1c7c8102e2',
+        value: 0n,
+        data: allowanceInterface.encodeFunctionData('setAllowance', [
+          delegate,
+          ZeroAddress,
+          1000000000000000000n,
+          0n,
+          0n
+        ])
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Allow'),
+        getAddressVisualization(delegate),
+        getLabel('to spend'),
+        getToken(ZeroAddress, 1000000000000000000n),
+        getLabel('No reset')
+      ]
+    ])
+  })
+
   test('erc20 humanize end to end', async () => {
     // const ir: Ir = []
     const expectedVisualizations = [
@@ -2200,7 +2233,7 @@ describe('ERC-7730 descriptors', () => {
               },
               {
                 label: 'To spend',
-                value: [getToken(ZeroAddress, 1000000000000000000n)]
+                value: [getToken(ZeroAddress, 1000000000000000000n), getText('No reset')]
               }
             ])
           ]
