@@ -968,7 +968,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(morphoAccountOp, callRelayer)
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(morphoAccountOp, { callRelayer })
     const irCalls = humanizeAccountOp(morphoAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
@@ -1134,7 +1134,9 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp, callRelayer)
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp, {
+      callRelayer
+    })
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
     expect(Object.keys(descriptors)).toEqual(['0'])
@@ -1211,7 +1213,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(relayerAccountOp, callRelayer)
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(relayerAccountOp, { callRelayer })
     const irCalls = humanizeAccountOp(relayerAccountOp, { erc7730Descriptors: descriptors })
 
     expect(relayerPath).toBe('/v2/erc7730/account-op')
@@ -1244,7 +1246,9 @@ describe('ERC-7730 descriptors', () => {
     }
 
     try {
-      const descriptors = await fetchErc7730DescriptorsForAccountOp(fallbackAccountOp, callRelayer)
+      const descriptors = await fetchErc7730DescriptorsForAccountOp(fallbackAccountOp, {
+        callRelayer
+      })
       expect(Object.keys(descriptors)).toEqual(['0'])
       expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
     } finally {
