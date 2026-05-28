@@ -566,10 +566,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     // on disconnect clean up the WC sessions
     if (ev === 'disconnect') {
       dappSessions.forEach((dappSession) => {
-        if (
-          this.dappSessions[dappSession.sessionId] &&
-          this.dappSessions[dappSession.sessionId]?.wcTopic
-        ) {
+        if (this.dappSessions[dappSession.sessionId]?.wcTopic) {
           this.deleteDappSession(dappSession.sessionId)
         }
       })
