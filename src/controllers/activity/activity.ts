@@ -39,6 +39,7 @@ import {
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
 import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
@@ -181,11 +182,14 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
   accountOp: SubmittedAccountOp,
   receipts: TransactionReceipt[]
 ) => {
-  const foundTokens = (
-    await Promise.all(
-      receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
-    )
-  ).flat()
+  const foundTokens = filterStaticBlacklistedAddrs(
+    (
+      await Promise.all(
+        receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
+      )
+    ).flat(),
+    accountOp.chainId
+  )
 
   return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
 }
@@ -790,7 +794,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     try {
-      const foundTokens = await getTransferLogTokens(receipt.logs, accountAddr)
+      const foundTokens = filterStaticBlacklistedAddrs(
+        await getTransferLogTokens(receipt.logs, accountAddr),
+        chainId
+      )
       if (shouldLearnTokens) {
         const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
         const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
@@ -1266,7 +1273,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   }
 
                   const foundTokens = isSuccess
-                    ? await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+                    ? filterStaticBlacklistedAddrs(
+                        await getTransferLogTokens(receipt.logs, accountOp.accountAddr),
+                        accountOp.chainId
+                      )
                     : []
                   if (foundTokens.length)
                     this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
