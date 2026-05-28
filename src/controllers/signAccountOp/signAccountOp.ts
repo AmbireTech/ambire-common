@@ -1142,30 +1142,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
-    // if 7702 EOA that is not ambire
-    // and another delegation is there, show the warning
-    const broadcastOption = this.selectedOption
-      ? this.baseAccount.getBroadcastOption(this.selectedOption, {
-          op: this.accountOp,
-          isSponsored: this.isSponsored
-        })
-      : null
-    if (
-      'is7702' in this.baseAccount &&
-      this.baseAccount.is7702 &&
-      this.delegatedContract &&
-      this.delegatedContract !== ZeroAddress &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
-      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
-      (broadcastOption === BROADCAST_OPTIONS.byBundler ||
-        broadcastOption === BROADCAST_OPTIONS.delegation) &&
-      WARNINGS.delegationDetected
-    ) {
-      warnings.push(WARNINGS.delegationDetected)
-    }
-
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (this.account.creation && !accountState?.isV2 && WARNINGS.v1Acc)
