@@ -27,6 +27,7 @@ import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
+  eToNative,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
@@ -430,11 +431,42 @@ const getChainIdFromField = (
   return chainId ?? context.chainId
 }
 
+const isNativeTokenReference = (value: unknown): boolean => {
+  if (value === undefined || value === null || value === '') return true
+  if (typeof value !== 'string' || !isAddress(value)) return false
+
+  return eToNative(value).toLowerCase() === ZeroAddress.toLowerCase()
+}
+
+const getNativeCurrencyAddressesFromField = (
+  field: Erc7730Field,
+  context: FormatContext,
+  base: unknown
+): string[] => {
+  const nativeCurrencyAddress = field.params?.nativeCurrencyAddress
+  const values = Array.isArray(nativeCurrencyAddress)
+    ? nativeCurrencyAddress
+    : [nativeCurrencyAddress]
+
+  return values
+    .map((value) =>
+      typeof value === 'string' && isAddress(value)
+        ? value
+        : resolveParamValue(value, context, base)
+    )
+    .filter((value): value is string => typeof value === 'string' && isAddress(value))
+}
+
 const getTokenAddressFromField = (
   field: Erc7730Field,
   context: FormatContext,
   base: unknown
 ): string | null => {
+  const nativeAddresses = getNativeCurrencyAddressesFromField(field, context, base)
+  const hasTokenSource =
+    typeof field.params?.tokenPath === 'string' ||
+    field.params?.token !== undefined ||
+    nativeAddresses.length > 0
   const tokenPath =
     typeof field.params?.tokenPath === 'string'
       ? resolvePath(field.params.tokenPath, context, base)
@@ -442,18 +474,14 @@ const getTokenAddressFromField = (
   const tokenParam = resolveParamValue(field.params?.token, context, base)
   const tokenAddress = tokenPath ?? tokenParam
 
+  if (hasTokenSource && isNativeTokenReference(tokenAddress)) return ZeroAddress
   if (typeof tokenAddress !== 'string' || !isAddress(tokenAddress)) return null
 
-  const nativeCurrencyAddress = field.params?.nativeCurrencyAddress
-  const nativeAddresses = Array.isArray(nativeCurrencyAddress)
-    ? nativeCurrencyAddress
-    : [nativeCurrencyAddress]
-
   return nativeAddresses.some(
-    (address) => typeof address === 'string' && address.toLowerCase() === tokenAddress.toLowerCase()
+    (address) => eToNative(address).toLowerCase() === eToNative(tokenAddress).toLowerCase()
   )
     ? ZeroAddress
-    : tokenAddress
+    : eToNative(tokenAddress)
 }
 
 const getCollectionAddressFromField = (

@@ -62,9 +62,6 @@ export const clearErc7730RegistryCache = () => {
   safeSingletonPromises.clear()
 }
 
-const isCacheEntryValid = <T>(entry: CacheEntry<T> | null | undefined): entry is CacheEntry<T> =>
-  !!entry && Date.now() - entry.fetchedAt < ERC7730_CACHE_TTL_MS
-
 const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
 
 const normalizeRegistryOptions = (

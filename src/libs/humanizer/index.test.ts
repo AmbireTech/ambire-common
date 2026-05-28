@@ -615,6 +615,143 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
+  test('treats missing token references in tokenAmount descriptors as native token', async () => {
+    const uniswapRouter = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
+    const tokenIn = transactions.erc20[1]!.to
+    const swapIface = new ethers.Interface([
+      'function exactInput((bytes path,address recipient,uint256 amountIn,uint256 amountOutMinimum) params)'
+    ])
+    const exactInputPath = ethers.concat([tokenIn, '0x000bb8', WETH_ADDRESS])
+
+    accountOp.calls = [
+      {
+        to: uniswapRouter,
+        value: 0n,
+        data: swapIface.encodeFunctionData('exactInput', [
+          {
+            path: exactInputPath,
+            recipient: accountOp.accountAddr,
+            amountIn: 1000000n,
+            amountOutMinimum: 1341586354762554134n
+          }
+        ])
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'params.amountIn',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.path.[0:20]' }
+                },
+                {
+                  path: 'params.amountOutMinimum',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.nativeToken' }
+                }
+              ]
+            }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: { descriptor }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(tokenIn, 1000000n, 1n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(ZeroAddress, 1341586354762554134n, 1n)]
+          }
+        ])
+      ]
+    ])
+  })
+  test('treats nativeCurrencyAddress-only tokenAmount descriptors as native token', async () => {
+    const uniswapRouter = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
+    const tokenIn = transactions.erc20[1]!.to
+    const swapIface = new ethers.Interface([
+      'function exactInput((bytes path,address recipient,uint256 amountIn,uint256 amountOutMinimum) params)'
+    ])
+
+    accountOp.calls = [
+      {
+        to: uniswapRouter,
+        value: 0n,
+        data: swapIface.encodeFunctionData('exactInput', [
+          {
+            path: ethers.concat([tokenIn, '0x000bb8', WETH_ADDRESS]),
+            recipient: accountOp.accountAddr,
+            amountIn: 1000000n,
+            amountOutMinimum: 1341586354762554134n
+          }
+        ])
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params)':
+            {
+              intent: 'Swap',
+              fields: [
+                {
+                  path: 'params.amountIn',
+                  label: 'Amount to Send',
+                  format: 'tokenAmount',
+                  params: { tokenPath: 'params.path.[0:20]' }
+                },
+                {
+                  path: 'params.amountOutMinimum',
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: { nativeCurrencyAddress: ZeroAddress }
+                }
+              ]
+            }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: { descriptor }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(tokenIn, 1000000n, 1n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(ZeroAddress, 1341586354762554134n, 1n)]
+          }
+        ])
+      ]
+    ])
+  })
   test('humanizes nested calldata in execute with permit descriptors', async () => {
     const router = '0x111111125421cA6dc452d289314280a0f8842A65'
     const aave = '0x76fb31fb4af56892a25e32cfc43de717950c9278'
@@ -2233,7 +2370,7 @@ describe('ERC-7730 descriptors', () => {
               },
               {
                 label: 'To spend',
-                value: [getToken(ZeroAddress, 1000000000000000000n), getText('No reset')]
+                value: [getToken(ZeroAddress, 1000000000000000000n), getText('No reset', true)]
               }
             ])
           ]
