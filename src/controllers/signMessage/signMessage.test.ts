@@ -2,6 +2,8 @@
 
 import { hexlify, randomBytes } from 'ethers'
 
+import { clearErc7730RegistryCache } from '@/libs/humanizer'
+import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import {
@@ -102,6 +104,9 @@ describe('SignMessageController', () => {
   let inviteCtrl: IInviteController
   let dappsCtrl: IDappsController
 
+  beforeEach(() => {
+    clearErc7730RegistryCache()
+  })
   beforeAll(async () => {
     const { mainCtrl } = await makeMainController(
       async (storageCtrl) => {
@@ -280,10 +285,22 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712', 'GET')
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor', 'POST', {
-      descriptorPath: `/${registryPath}`
-    })
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/eip-712',
+      'GET',
+      undefined,
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/fetch-descriptor',
+      'POST',
+      {
+        descriptorPath: `/${registryPath}`
+      },
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: 'Authorize spending of tokens'
@@ -422,10 +439,22 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/eip-712', 'GET')
-    expect(callRelayer).toHaveBeenCalledWith('/v2/erc7730/fetch-descriptor', 'POST', {
-      descriptorPath: `/${registryPath}`
-    })
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/eip-712',
+      'GET',
+      undefined,
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/fetch-descriptor',
+      'POST',
+      {
+        descriptorPath: `/${registryPath}`
+      },
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: '1inch Order'
