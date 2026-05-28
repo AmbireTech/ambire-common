@@ -82,7 +82,7 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { isHex } from 'viem'
+import { hashTypedData, isHex } from 'viem'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -1266,6 +1266,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.methodNotSupported(
           'Invalid typedData format - only typedData v4 is supported'
         )
+      }
+
+      if (!typedData.types[typedData.primaryType])
+        throw ethErrors.rpc.invalidParams(
+          'The primary data type is missing from the provided types'
+        )
+      try {
+        // we ignore the result because we only care if the func will fail
+        hashTypedData({
+          types: typedData.types,
+          primaryType: typedData.primaryType,
+          message: typedData.message,
+          domain: typedData.domain
+        })
+      } catch (e) {
+        console.log(e)
+        throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
       if (
