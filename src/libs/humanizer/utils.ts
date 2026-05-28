@@ -74,8 +74,8 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getText(text: string): HumanizerVisualization {
-  return { type: 'text', content: text, id: randomId() }
+export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
+  return { type: 'text', content: text, id: randomId(), mlMi }
 }
 
 export function getErc7730Visualization(

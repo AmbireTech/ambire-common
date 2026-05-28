@@ -54,6 +54,7 @@ export type HumanizerVisualization = (
   warning?: boolean
   chainId?: bigint
   verification?: BlacklistedStatus
+  mlMi?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]

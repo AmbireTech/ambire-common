@@ -14,17 +14,18 @@ import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/safe'
 import {
-  HumanizerMeta,
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
+  HumanizerMeta,
   HumanizerVisualization,
   HumanizerWarning,
   IrCall,
   IrMessage
 } from '../interfaces'
-import { genericErc20Humanizer } from '../modules/Tokens'
-import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import AllowanceModule, { getSetAllowanceResetText } from '../modules/Allowance'
+import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
+import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
+import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   getAddressVisualization,
   getChain,
@@ -33,7 +34,6 @@ import {
   getToken
 } from '../utils'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
-import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
@@ -999,7 +999,7 @@ const getModuleFallbackVisualization = (
         row.value.some((value) => value.type === 'token')
           ? {
               ...row,
-              value: [...row.value, getText(resetText)]
+              value: [...row.value, getText(resetText, true)]
             }
           : row
       )
