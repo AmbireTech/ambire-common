@@ -123,7 +123,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       const tokenOut = path[2].at(-1)
       const tokenIn = path[2][0]
       if (!tokenOut || !tokenIn) throw new Error('Traderjoe module: missing tokenOut or tokenIn')
-
       return [
         getAction('Swap'),
         getToken(tokenIn, amountIn),
@@ -143,7 +142,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       const tokenOut = path[2].at(-1)
       const tokenIn = path[2][0]
       if (!tokenOut || !tokenIn) throw new Error('Traderjoe module: missing tokenOut or tokenIn')
-
       return [
         getAction('Swap up to'),
         getToken(tokenIn, amountInMax),

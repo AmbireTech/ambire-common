@@ -120,7 +120,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       this.emitError.bind(this)
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -272,7 +271,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   async #addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
-    // eslint-disable-next-line no-param-reassign
+
     accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }))
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
     const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))

@@ -49,7 +49,6 @@ export class BannerController extends EventEmitter implements IBannerController 
     this.#getAccountData = getAccountData
     this.#appVersion = appVersion
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })

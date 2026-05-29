@@ -5,7 +5,6 @@ import { IStorageController } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 export enum INVITE_STATUS {
   UNVERIFIED = 'UNVERIFIED',
   VERIFIED = 'VERIFIED'

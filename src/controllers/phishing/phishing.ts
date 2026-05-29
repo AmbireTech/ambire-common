@@ -1,6 +1,5 @@
-/* eslint-disable no-nested-ternary */
 import { getDomain } from 'tldts'
-/* eslint-disable no-param-reassign */
+
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -16,7 +15,7 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl } from '../../libs/dapps/helpers'
-/* eslint-disable no-restricted-syntax */
+
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -115,7 +114,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -334,7 +332,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     dappsToFetch.forEach(({ dappId }) => {
       this.#domainsBlacklistedStatus.set(
-        dappId, // eslint-disable-next-line no-nested-ternary
+        dappId,
         !domainsBlacklistedStatus || domainsBlacklistedStatus[dappId] === undefined
           ? 'FAILED_TO_GET'
           : domainsBlacklistedStatus[dappId]
@@ -456,7 +454,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     addressesToFetch.forEach((addr) => {
       this.#addressesBlacklistedStatus.set(
         addr,
-        // eslint-disable-next-line no-nested-ternary
+
         !addressesBlacklistedStatus || addressesBlacklistedStatus[addr] === undefined
           ? 'FAILED_TO_GET'
           : addressesBlacklistedStatus[addr]

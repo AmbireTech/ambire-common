@@ -369,7 +369,6 @@ export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) 
     label = isSingle ? 'token' : 'tokens'
   }
 
-  // eslint-disable-next-line no-nested-ternary
   const prefix = isSingle
     ? `The destination ${label}`
     : `${blacklistedItemsCount} of the destination ${label}`

@@ -133,8 +133,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
         ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
           getAddress(call.to)
         )) ||
-      !isHexCall(call) ||
-      !matcher[call.data.slice(0, 10)]
+      !isHexCall(call)
     )
       return call
     const match = matcher[call.data.slice(0, 10)]

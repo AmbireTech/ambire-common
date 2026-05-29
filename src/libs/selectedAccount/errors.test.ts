@@ -1,6 +1,6 @@
 import { networks } from '../../consts/networks'
 import { Network } from '../../interfaces/network'
-/* eslint-disable no-param-reassign */
+
 import { RPCProvider } from '../../interfaces/provider'
 import {
   SelectedAccountPortfolio,

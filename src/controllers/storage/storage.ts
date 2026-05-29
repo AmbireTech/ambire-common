@@ -1,9 +1,8 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
-import { Dapp } from '../../interfaces/dapp'
+import { ConnectionSource, Dapp } from '../../interfaces/dapp'
 import { EmailVaultData } from '../../interfaces/emailVault'
-/* eslint-disable no-restricted-syntax */
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
@@ -39,7 +38,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     super(eventEmitterRegistry)
 
     this.#storage = storage
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
     this.#storageMigrationsPromise = this.#loadMigrations()
   }
 
@@ -65,6 +64,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
+      await this.#migrateDappsAddConnectionSources() // As of v6.11.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -510,9 +510,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     let page = 1
     while (page <= 10) {
-      // eslint-disable-next-line no-await-in-loop
       await accountPicker.setPage({ page })
-      // eslint-disable-next-line no-await-in-loop
+
       await accountPicker.findAndSetLinkedAccountsPromise
 
       const matchingAddresses = accountPicker.allKeysOnPage.filter((k) =>
@@ -636,6 +635,32 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'migrateLegacyDappsToDappsV2'])
     ])
+  }
+
+  // Per-source dapp connections (`connectedSources`) replaced the single `isConnected` flag.
+  // Seed the new field from the legacy flag so existing connections survive the upgrade.
+  // All legacy connections were injected (WC sessions live in the WalletKit SDK and are
+  // re-added on restore via RESTORE_WC_SESSIONS), so this is correct on both web and mobile.
+  async #migrateDappsAddConnectionSources() {
+    const MIGRATION_KEY = 'migrateDappsAddConnectionSources'
+    const [passedMigrations, dapps] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('dappsV2', [] as Dapp[])
+    ])
+
+    if (passedMigrations.includes(MIGRATION_KEY)) return
+
+    const needsMigration = dapps.some((d: Dapp) => !Array.isArray(d.connectedSources))
+    if (needsMigration) {
+      const migratedDapps = dapps.map((d: Dapp) =>
+        Array.isArray(d.connectedSources)
+          ? d
+          : { ...d, connectedSources: d.isConnected ? (['injected'] as ConnectionSource[]) : [] }
+      )
+      await this.#storage.set('dappsV2', migratedDapps)
+    }
+
+    await this.#storage.set('passedMigrations', [...new Set([...passedMigrations, MIGRATION_KEY])])
   }
 
   /**

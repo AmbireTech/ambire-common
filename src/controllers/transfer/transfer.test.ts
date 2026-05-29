@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { ZeroAddress, formatUnits } from 'ethers'
 
 import { expect } from '@jest/globals'

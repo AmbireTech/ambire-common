@@ -1,7 +1,5 @@
-/* eslint-disable no-await-in-loop */
-
 import { suppressConsole } from '../../../test/helpers/console'
-/* eslint-disable prettier/prettier */
+
 import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'

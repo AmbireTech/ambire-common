@@ -1,6 +1,5 @@
 import { ZeroAddress } from 'ethers'
 
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import { describe, expect, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'

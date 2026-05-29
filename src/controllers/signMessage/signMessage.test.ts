@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-
 import { hexlify, randomBytes } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'

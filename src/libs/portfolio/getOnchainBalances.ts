@@ -4,7 +4,7 @@ import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-/* eslint-disable no-console */
+
 import { yieldToMain } from '../../utils/scheduler'
 import {
   getNotAmbireStateOverride,

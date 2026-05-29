@@ -1,6 +1,5 @@
 import { Contract } from 'ethers'
 
-/* eslint-disable no-underscore-dangle */
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
@@ -116,7 +115,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       }
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })

@@ -188,7 +188,6 @@ export class SquidAPI implements SwapProvider {
     if (integratorId) this.#headers['x-integrator-id'] = integratorId
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     return true
   }
@@ -414,7 +413,6 @@ export class SquidAPI implements SwapProvider {
     }
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
     const rawRoute = route.rawRoute as SquidRoute
     const transactionRequest = rawRoute.transactionRequest
