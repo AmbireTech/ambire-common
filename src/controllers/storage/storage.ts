@@ -135,7 +135,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
         accounts.map((a: any) => {
           return {
             ...a,
-            // @ts-expect-error
+            // @ts-expect-error expected to warn, because "accountPreferences" are now legacy (now missing)
             preferences: this.#storage.accountPreferences[a.addr] || {
               label: DEFAULT_ACCOUNT_LABEL,
               pfp: a.addr
@@ -364,6 +364,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
             const chainId = networkIdToChainId[networkId]
             return [
               chainId,
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               ops.map(({ networkId, ...rest }: any) => ({
                 ...rest,
                 chainId // Migrate networkId inside SubmittedAccountOp
@@ -385,6 +386,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     )
 
     const migratedNetworks = Object.fromEntries(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
     )
 
@@ -582,13 +584,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
 
-    // @ts-expect-error-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
     const shouldCleanupUsedOnNetworks = accounts.some((a) => 'usedOnNetworks' in a)
     if (shouldCleanupUsedOnNetworks) {
       await this.#storage.set(
         'accounts',
         accounts.map((acc) =>
           // destructure and re-build to remove the `usedOnNetworks` property
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           'usedOnNetworks' in acc ? (({ usedOnNetworks, ...rest }) => ({ ...rest }))(acc) : acc
         )
       )
@@ -654,6 +656,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
         'accounts',
         accounts.map((acc) =>
           // destructure and re-build to remove the `newlyCreated` property
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           'newlyCreated' in acc ? (({ newlyCreated, ...rest }) => ({ ...rest }))(acc) : acc
         )
       )
@@ -732,6 +735,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
                         // IIFE executes inline, destructuring with rest operator -
                         // extracts 'value' and collects all other properties into 'rest' object.
                         // This removes 'value' from the secret.
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         const { value, ...rest } = secret
                         return rest
                       })()

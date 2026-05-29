@@ -6,9 +6,7 @@ import { LegacyTokenPreference } from '../portfolio/customToken'
 
 export const getShouldMigrateKeystoreSeedsWithoutHdPath = (
   keystoreSeeds: string[] | KeystoreSeed[]
-) =>
-  // @ts-expect-error TS complains, but we know that keystoreSeeds is either an array of strings or an array of objects
-  !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string')
+) => !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string')
 
 export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: StoredKey[]) =>
   keystoreKeys.some((key) => {
