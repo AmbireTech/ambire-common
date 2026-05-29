@@ -1,4 +1,5 @@
 import { ethers, ZeroAddress } from 'ethers'
+import { encodeFunctionData } from 'viem'
 
 import { beforeEach, describe, jest, test } from '@jest/globals'
 
@@ -7,13 +8,18 @@ import { execTransactionAbi } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
-import { GeneralAdapter1 } from './const/abis/GeneralAdapter1'
 import {
   clearErc7730RegistryCache,
   fetchErc7730DescriptorForMessage,
   fetchErc7730DescriptorsForAccountOp
 } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
+import {
+  erc20TransferAbi,
+  erc20TransferFromAbi,
+  morphoRepayAbi,
+  morphoWithdrawCollateralAbi
+} from './modules/Bundler3/generalAdapter'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
 import {
   getAction,
@@ -842,14 +848,13 @@ describe('ERC-7730 descriptors', () => {
     const iface = new ethers.Interface([
       'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
     ])
-    const generalAdapterInterface = new ethers.Interface(GeneralAdapter1)
-    const marketParams = [
-      baseUsdc,
-      baseCbBtc,
-      '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
-      '0x46415998764c29ab2a25cbea6254146d50d22687',
-      86145408065551n
-    ]
+    const marketParams = {
+      loanToken: baseUsdc,
+      collateralToken: baseCbBtc,
+      oracle: '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
+      irm: '0x46415998764c29ab2a25cbea6254146d50d22687',
+      lltv: 86145408065551n
+    }
     const morphoAccountOp: AccountOp = {
       ...accountOp,
       accountAddr: owner,
@@ -862,58 +867,50 @@ describe('ERC-7730 descriptors', () => {
             [
               {
                 to: generalAdapter,
-                data: generalAdapterInterface.encodeFunctionData('erc20TransferFrom', [
-                  baseUsdc,
-                  generalAdapter,
-                  2n
-                ]),
+                data: encodeFunctionData({
+                  abi: erc20TransferFromAbi,
+                  args: [baseUsdc, generalAdapter, 2n]
+                }),
                 value: 0n,
                 skipRevert: false,
                 callbackHash: ethers.ZeroHash
               },
               {
                 to: generalAdapter,
-                data: generalAdapterInterface.encodeFunctionData('morphoRepay', [
-                  marketParams,
-                  0n,
-                  220292767985000000n,
-                  10n ** 27n,
-                  owner,
-                  '0x'
-                ]),
+                data: encodeFunctionData({
+                  abi: morphoRepayAbi,
+                  args: [marketParams, 0n, 220292767985000000n, 10n ** 27n, owner, '0x']
+                }),
                 value: 0n,
                 skipRevert: false,
                 callbackHash: ethers.ZeroHash
               },
               {
                 to: generalAdapter,
-                data: generalAdapterInterface.encodeFunctionData('morphoWithdrawCollateral', [
-                  marketParams,
-                  2n,
-                  owner
-                ]),
+                data: encodeFunctionData({
+                  abi: morphoWithdrawCollateralAbi,
+                  args: [marketParams, 2n, owner]
+                }),
                 value: 0n,
                 skipRevert: false,
                 callbackHash: ethers.ZeroHash
               },
               {
                 to: generalAdapter,
-                data: generalAdapterInterface.encodeFunctionData('erc20Transfer', [
-                  baseUsdc,
-                  owner,
-                  ethers.MaxUint256
-                ]),
+                data: encodeFunctionData({
+                  abi: erc20TransferAbi,
+                  args: [baseUsdc, owner, ethers.MaxUint256]
+                }),
                 value: 0n,
                 skipRevert: false,
                 callbackHash: ethers.ZeroHash
               },
               {
                 to: generalAdapter,
-                data: generalAdapterInterface.encodeFunctionData('erc20Transfer', [
-                  baseCbBtc,
-                  owner,
-                  ethers.MaxUint256
-                ]),
+                data: encodeFunctionData({
+                  abi: erc20TransferAbi,
+                  args: [baseCbBtc, owner, ethers.MaxUint256]
+                }),
                 value: 0n,
                 skipRevert: false,
                 callbackHash: ethers.ZeroHash

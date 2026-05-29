@@ -1,8 +1,8 @@
-import { getAddress, isAddress } from 'ethers'
+import { getAddress, isAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction } from '../../utils'
+import { getAction, isHexCall } from '../../utils'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV3Mapping } from './uniV3'
@@ -90,6 +90,10 @@ export const uniswapHumanizer: HumanizerCallModule = (
       return
     }
 
+    if (!isHexCall(call)) {
+      newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] })
+      return
+    }
     const sigHash = call.data.substring(0, 10)
     if (fullUniswapHumanizerMapping[sigHash])
       newCalls.push({

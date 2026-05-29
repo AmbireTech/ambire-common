@@ -1,11 +1,18 @@
-import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
+import {
+  decodeFunctionData,
+  getAddress,
+  isAddress,
+  parseAbi,
+  toFunctionSelector,
+  zeroAddress
+} from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getUnwrapping, getWrapping } from '../../utils'
+import { getUnwrapping, getWrapping, isHexCall } from '../../utils'
 
-const iface = new Interface(WETH)
+const depositAbi = parseAbi(['function deposit() payable'])
+const withdrawAbi = parseAbi(['function withdraw(uint256 wad)'])
 
 export const wrappingModule: HumanizerCallModule = (
   _: AccountOp,
@@ -13,7 +20,7 @@ export const wrappingModule: HumanizerCallModule = (
   humanizerMeta?: HumanizerMeta
 ) => {
   const newCalls = irCalls.map((call: IrCall) => {
-    if (!isAddress(call.to)) return call
+    if (!call.to || !isAddress(call.to)) return call
     const knownAddressData = humanizerMeta?.knownAddresses[getAddress(call.to)]
     if (
       knownAddressData?.name === 'Wrapped ETH' ||
@@ -24,18 +31,19 @@ export const wrappingModule: HumanizerCallModule = (
       knownAddressData?.token?.symbol === 'WAVAX'
     ) {
       // 0xd0e30db0
-      if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
+      if (isHexCall(call) && call.data.slice(0, 10) === toFunctionSelector(depositAbi[0])) {
         return {
           ...call,
-          fullVisualization: getWrapping(ZeroAddress, call.value)
+          fullVisualization: getWrapping(zeroAddress, call.value)
         }
       }
       // 0x2e1a7d4d
-      if (call.data.slice(0, 10) === iface.getFunction('withdraw')?.selector) {
-        const [amount] = iface.parseTransaction(call)?.args || []
+      if (isHexCall(call) && call.data.slice(0, 10) === toFunctionSelector(withdrawAbi[0])) {
+        const { args } = decodeFunctionData({ abi: withdrawAbi, data: call.data })
+        const [amount] = args
         return {
           ...call,
-          fullVisualization: getUnwrapping(ZeroAddress, amount)
+          fullVisualization: getUnwrapping(zeroAddress, amount)
         }
       }
     }

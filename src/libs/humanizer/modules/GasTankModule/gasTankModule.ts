@@ -27,7 +27,7 @@ export const gasTankModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall
       call.fullVisualization?.[0]?.content === 'Send' &&
       call.fullVisualization?.[1]?.type === 'token' &&
       call.fullVisualization?.[2]?.content === 'to' &&
-      call.fullVisualization?.[3].type === 'address' &&
+      call.fullVisualization?.[3]?.type === 'address' &&
       call.fullVisualization[3].address!.toLowerCase() === FEE_COLLECTOR.toLowerCase()
     )
       return {
