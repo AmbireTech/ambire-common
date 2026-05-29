@@ -27,13 +27,6 @@ const WARNINGS: { [key: string]: Warning } = {
     id: 'feeTokenPriceUnavailable',
     title: 'Unable to estimate the transaction fee in USD.'
   },
-  delegationDetected: {
-    id: 'delegationDetected',
-    title: 'Delegation detected',
-    text: 'The transaction you are about to sign will override the existing EIP-7702 delegation on your account. Are you sure you want to proceed?',
-    promptBefore: ['one-click-sign', 'sign'],
-    type: 'info'
-  },
   v1Acc: {
     id: 'v1Acc',
     title: 'You can only broadcast transactions for Ambire v1 accounts from an EOA'
