@@ -2,7 +2,14 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerVisualization } from '../../interfaces'
-import { HexIrCall, getAction, getAddressVisualization, getLabel, getOnBehalfOf, getToken } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getOnBehalfOf,
+  getToken
+} from '../../utils'
 
 const depositAbi = parseAbi([
   'function deposit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)'
@@ -17,7 +24,9 @@ const borrowAbi = parseAbi([
   'function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)'
 ])
 
-export const aaveLendingPoolV2 = (): { [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[] } => {
+export const aaveLendingPoolV2 = (): {
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+} => {
   const matcher = {
     [toFunctionSelector(depositAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')

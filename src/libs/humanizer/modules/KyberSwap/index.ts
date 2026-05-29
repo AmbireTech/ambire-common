@@ -37,8 +37,9 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => 
     }
   }
   const newCalls = calls.map((call) => {
-    if (call.fullVisualization || !isHexCall(call) || !matcher[call.data.slice(0, 10)]) return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
+    const match = matcher[call.data.slice(0, 10)]
+    if (call.fullVisualization || !isHexCall(call) || !match) return call
+    return { ...call, fullVisualization: match(call) }
   })
 
   return newCalls

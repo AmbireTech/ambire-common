@@ -2,7 +2,14 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getAddressVisualization, getLabel, getToken, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getToken,
+  isHexCall
+} from '../../utils'
 
 const setAllowanceAbi = parseAbi([
   'function setAllowance(address delegate, address token, uint96 allowanceAmount, uint16 resetTimeMin, uint32 resetBaseMin)'

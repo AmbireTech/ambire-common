@@ -179,7 +179,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         callI[3].address === callJ[1].address
       ) {
         callI[3].value = callJ[3].value!
-        callI[3].address! = callJ[3]?.address!
+        callI[3].address = callJ[3].address
 
         calls.splice(j, 1)
       }

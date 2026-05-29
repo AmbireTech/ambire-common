@@ -128,7 +128,9 @@ const supplyWithPermitAbi = parseAbi([
 ])
 const withdrawBytes32Abi = parseAbi(['function withdraw(bytes32 args) returns (uint256)'])
 
-export const aaveV3Pool = (): { [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[] } => {
+export const aaveV3Pool = (): {
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+} => {
   return {
     [toFunctionSelector(supplyAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
@@ -188,10 +190,15 @@ export const aaveV3Pool = (): { [key: string]: (a: AccountOp, c: HexIrCall) => H
       const [packedArgs] = args
       const amountAsString = packedArgs.slice(30, 62)
       const tokenIndex = Number(`0x${packedArgs.slice(62)}`)
-      if (!AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()])
+      const tokensByIndex = AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()]
+      if (!tokensByIndex)
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
-      if (tokenIndex >= AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()].length)
+      if (tokenIndex >= tokensByIndex.length)
+        return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
+
+      const token = tokensByIndex[tokenIndex]
+      if (!token)
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
       // stores amount inn uint128 instead of uint256, but max value is treated as max value
@@ -199,7 +206,7 @@ export const aaveV3Pool = (): { [key: string]: (a: AccountOp, c: HexIrCall) => H
 
       return [
         getAction('Withdraw'),
-        getToken(AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()][tokenIndex], amount),
+        getToken(token, amount),
         getLabel('from'),
         getAddressVisualization(call.to)
       ]

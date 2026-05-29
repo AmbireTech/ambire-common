@@ -266,11 +266,14 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         data: call.data
       })
       const [, , path, to] = args
+      const firstToken = path[0]
+      const lastToken = path[path.length - 1]
+      if (!firstToken || !lastToken) throw new Error('UniV3: missing tokens in path')
       return [
         getAction('Swap'),
-        getToken(path[0], 0n),
+        getToken(firstToken, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], 0n),
+        getToken(lastToken, 0n),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
     },
@@ -284,19 +287,19 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         data: call.data
       })
       const [, , path, to] = args
+      const firstToken = path[0]
+      const lastToken = path[path.length - 1]
+      if (!firstToken || !lastToken) throw new Error('UniV3: missing tokens in path')
       return [
         getAction('Swap'),
-        getToken(path[0], 0n),
+        getToken(firstToken, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], 0n),
+        getToken(lastToken, 0n),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
     },
     // 0x49616997
-    [toFunctionSelector(unwrapWETH9NoRecipientAbi[0])]: (
-      _accountOp: AccountOp,
-      _call: HexIrCall
-    ): HumanizerVisualization[] => {
+    [toFunctionSelector(unwrapWETH9NoRecipientAbi[0])]: (): HumanizerVisualization[] => {
       return [getAction('Unwrap'), getToken(zeroAddress, 0n)]
     },
     // 0x49404b7c

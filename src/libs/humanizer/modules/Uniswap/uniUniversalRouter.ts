@@ -280,10 +280,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
                 // sigDeadline
               }
               // signature
-            } = extractParams(
-              COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails,
-              inputs[index]
-            )
+            } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, inputs[index])
             parsed.push([
               getAction('Grant approval'),
               getLabel('for'),

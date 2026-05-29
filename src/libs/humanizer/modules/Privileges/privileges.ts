@@ -8,7 +8,14 @@ import {
   HumanizerVisualization,
   IrCall
 } from '../../interfaces'
-import { HexIrCall, getAction, getAddressVisualization, getKnownName, getLabel, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getKnownName,
+  getLabel,
+  isHexCall
+} from '../../utils'
 
 const setAddrPrivilegeAbi = parseAbi([
   'function setAddrPrivilege(address addr, bytes32 priv) payable'

@@ -31,11 +31,13 @@ export const StakingPools = (): { [key: string]: (c: HexIrCall) => HumanizerVisu
   return {
     [toFunctionSelector(enterAbi[0])]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
+      const baseToken = STAKING_POOLS[call.to.toLowerCase()]?.baseToken
+      if (!baseToken) throw Error('Humanizer: unknown staking pool')
       const { args } = decodeFunctionData({ abi: enterAbi, data: call.data })
       const [amount] = args
       return [
         getAction('Deposit'),
-        getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, amount),
+        getToken(baseToken, amount),
         getLabel('to'),
         getAddressVisualization(call.to)
       ]

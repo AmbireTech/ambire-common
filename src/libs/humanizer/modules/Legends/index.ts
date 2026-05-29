@@ -9,7 +9,14 @@ import {
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getAddressVisualization, getImage, getLabel, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getImage,
+  getLabel,
+  isHexCall
+} from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
 const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
@@ -61,7 +68,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[0][Number(heroType)] || characterTypes[0][0]),
+        getImage((characterTypes[0] ?? [])[Number(heroType)] || (characterTypes[0] ?? [])[0] || ''),
         getLabel('for Ambire Rewards')
       ]
     },
@@ -71,7 +78,11 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[Number(season)][Number(heroType)] || characterTypes[0][0]),
+        getImage(
+          (characterTypes[Number(season)] ?? [])[Number(heroType)] ||
+            (characterTypes[0] ?? [])[0] ||
+            ''
+        ),
         getLabel(`for Ambire Rewards season ${season}`)
       ]
     },
@@ -126,7 +137,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       !matcher[call.data.slice(0, 10)]
     )
       return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
+    const match = matcher[call.data.slice(0, 10)]
+    if (!match) return call
+    return { ...call, fullVisualization: match(call) }
   })
 
   return newCalls
