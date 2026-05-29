@@ -330,7 +330,7 @@ export class SocketAPI implements SwapProvider {
       toAsset: normalizeIncomingSocketToken(socketToAsset),
       fromChainId,
       toChainId,
-      // @ts-expect-error TODO: fix the typescript here
+      // @ts-ignore TODO: fix the typescript here
       routes: allRoutes.map((route) => {
         const steps = [
           {

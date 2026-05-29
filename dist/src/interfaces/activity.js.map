@@ -1,0 +1,1 @@
+{"version":3,"file":"activity.js","sourceRoot":"","sources":["../../../src/interfaces/activity.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IActivityController = ControllerInterface<\n  InstanceType<typeof import('../controllers/activity/activity').ActivityController>\n>\n"]}

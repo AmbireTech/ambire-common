@@ -38,7 +38,7 @@ describe('Generic error fallbacks work', () => {
   it('Null error type', () => {
     const LAST_RESORT_ERROR_MESSAGE =
       'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
-    // @ts-expect-error
+    // @ts-ignore
     const message = getGenericMessageFromType(null, null, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
 
     expect(message).toBe(LAST_RESORT_ERROR_MESSAGE)
@@ -47,7 +47,7 @@ describe('Generic error fallbacks work', () => {
     const { restore } = suppressConsole()
     try {
       const variable = undefined
-      // @ts-expect-error
+      // @ts-ignore
       const propertyOfUndefined = variable.property
 
       return propertyOfUndefined

@@ -1,0 +1,1 @@
+{"version":3,"file":"ExternalSignerError.d.ts","sourceRoot":"","sources":["../../../src/classes/ExternalSignerError.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,4BAA4B,CAAA;AAErD,MAAM,CAAC,OAAO,OAAO,mBAAoB,SAAQ,KAAK;IACpD,eAAe,CAAC,EAAE,QAAQ,CAAC,iBAAiB,CAAC,CAAA;gBAG3C,OAAO,EAAE,MAAM,EACf,MAAM,CAAC,EAAE;QACP,eAAe,CAAC,EAAE,QAAQ,CAAC,iBAAiB,CAAC,CAAA;KAC9C;CASJ"}

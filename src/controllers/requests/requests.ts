@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField, isAddress } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'

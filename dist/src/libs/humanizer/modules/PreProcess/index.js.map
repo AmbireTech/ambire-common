@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/PreProcess/index.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,mBAAmB,EAAE,MAAM,oBAAoB,CAAA;AAExD,eAAe,mBAAmB,CAAA","sourcesContent":["import { preProcessHumanizer } from './preProcessModule'\n\nexport default preProcessHumanizer\n"]}

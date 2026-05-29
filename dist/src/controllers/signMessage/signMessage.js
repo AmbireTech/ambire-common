@@ -1,0 +1,399 @@
+import { toUtf8String } from 'ethers';
+import EmittableError from '../../classes/EmittableError';
+import ExternalSignerError from '../../classes/ExternalSignerError';
+import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp';
+import { SignMessageStatus } from '../../interfaces/signMessage';
+import { addMessage, addMessageSignature, getImportedSignersThatHaveNotSigned, sortSigs } from '../../libs/safe/safe';
+import { getAppFormatted, getEIP712Signature, getPlainTextSignature, getVerifyMessageSignature, verifyMessage } from '../../libs/signMessage/signMessage';
+import hexStringToUint8Array from '../../utils/hexStringToUint8Array';
+import EventEmitter from '../eventEmitter/eventEmitter';
+const STATUS_WRAPPED_METHODS = {
+    sign: 'INITIAL'
+};
+export class SignMessageController extends EventEmitter {
+    #keystore;
+    #providers;
+    networks;
+    #externalSignerControllers;
+    #accounts;
+    #invite;
+    #dapps;
+    signer;
+    isInitialized = false;
+    statuses = STATUS_WRAPPED_METHODS;
+    dapp = null;
+    messageToSign = null;
+    signedMessage = null;
+    #account;
+    network;
+    // who are the signers that already signed this message
+    // applicable on Safe message
+    signed = [];
+    // the already signed signatures
+    // applicable on Safe message
+    signatures = [];
+    signers;
+    /**
+     * the signed hash
+     */
+    hash;
+    status;
+    constructor(keystore, providers, networks, accounts, externalSignerControllers, invite, eventEmitterRegistry, dapps) {
+        super(eventEmitterRegistry);
+        this.#keystore = keystore;
+        this.#providers = providers;
+        this.networks = networks;
+        this.#externalSignerControllers = externalSignerControllers;
+        this.#accounts = accounts;
+        this.#invite = invite;
+        this.#dapps = dapps;
+        this.status = SignMessageStatus.Initial;
+    }
+    async init({ dapp, messageToSign, signed, hash, signatures }) {
+        // In the unlikely case that the signMessage controller was already
+        // initialized, but not reset, force reset it to prevent misleadingly
+        // displaying the prev sign message request.
+        if (this.isInitialized)
+            this.reset();
+        await this.#accounts.initialLoadPromise;
+        if (['message', 'typedMessage', 'authorization-7702', 'siwe'].includes(messageToSign.content.kind)) {
+            if (dapp)
+                this.dapp = dapp;
+            this.messageToSign = messageToSign;
+            this.signed = signed || [];
+            this.signatures = signatures || [];
+            this.isInitialized = true;
+            this.#account = this.#accounts.accounts.find((acc) => acc.addr === this.messageToSign?.accountAddr);
+            if (!this.#account) {
+                throw new Error('Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.');
+            }
+            this.network = this.networks.networks.find((n) => n.chainId === this.messageToSign.chainId);
+            if (!this.network) {
+                throw new Error('Network not supported on Ambire. Please contract support.');
+            }
+            const accountState = await this.#accounts.getOrFetchAccountOnChainState(this.#account.addr, this.network.chainId);
+            if (!accountState) {
+                if (this.network.disabled) {
+                    throw new Error(`Please enable ${this.network.name} from settings -> networks to sign messages on it`);
+                }
+                throw new Error(`Account details missing. Please try again`);
+            }
+            if (this.#account.safeCreation) {
+                const notSigned = getImportedSignersThatHaveNotSigned(this.signed, accountState.importedAccountKeys.map((k) => k.addr));
+                if (this.signed.length && notSigned.length === 0)
+                    this.status = SignMessageStatus.Partial;
+                this.hash = hash;
+            }
+            else {
+                // if the account is not safe & view only, set a default signer
+                // the default signer should be the internal key if any
+                this.signers = accountState.importedAccountKeys
+                    ? [
+                        accountState.importedAccountKeys.find((k) => k.type === 'internal') ||
+                            accountState.importedAccountKeys[0]
+                    ]
+                    : undefined;
+            }
+            this.emitUpdate();
+        }
+        else {
+            this.emitError({
+                level: 'major',
+                message: 'Ambire does not support this request format for signing messages. Please contact support if you believe could be a glitch.',
+                error: new Error(`The ${messageToSign.content.kind} signing method is not supported by signMessageController.`)
+            });
+        }
+    }
+    reset() {
+        if (!this.isInitialized)
+            return;
+        this.#onAbortOperation();
+        this.isInitialized = false;
+        this.dapp = null;
+        this.messageToSign = null;
+        this.signedMessage = null;
+        this.#account = undefined;
+        this.network = undefined;
+        this.signed = [];
+        this.signers = undefined;
+        this.signer = undefined;
+        this.status = SignMessageStatus.Initial;
+        this.emitUpdate();
+    }
+    update({ isAutoLoginEnabledByUser, autoLoginDuration }) {
+        if (!this.isInitialized) {
+            this.emitError({
+                level: 'major',
+                message: 'There was an error while updating the sign message request. Please try again.',
+                error: new Error('signMessage: controller not initialized')
+            });
+            return;
+        }
+        if (this.messageToSign && this.messageToSign.content.kind === 'siwe') {
+            if (typeof isAutoLoginEnabledByUser === 'boolean') {
+                this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser;
+            }
+            if (typeof autoLoginDuration === 'number') {
+                this.messageToSign.content.autoLoginDuration = autoLoginDuration;
+            }
+        }
+        this.emitUpdate();
+    }
+    setSigners(signers) {
+        this.signers = signers;
+        this.emitUpdate();
+    }
+    /**
+     * Checks if the signing operation is still valid after each async step, to guard
+     * against a race condition where the operation is reset before the async operation is completed.
+     */
+    #isSigningOperationValidAfterAsyncOperation() {
+        return this.isInitialized && !!this.messageToSign;
+    }
+    async addMsgToSafeGlobal(sig, message) {
+        if (!this.network || !this.#account)
+            return;
+        // send only to Safe Global if it doesn't already exists and if the threshold is not met
+        await addMessage(this.network.chainId, this.#account.addr, message, sig).catch((e) => {
+            console.log('failed to send message to Safe Global: ', e);
+        });
+    }
+    async addSigToSafeGlobal(sig, hash) {
+        if (!this.network)
+            return;
+        await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+            console.log('failed to send message to Safe Global: ', e);
+        });
+    }
+    /*
+     * ⚠️ IMPORTANT: If you make changes here and they involve async operations,
+     * make sure to check `isSigningOperationValidAfterAsyncOperation` afterwards
+     * to ensure you’re not acting on obsolete data.
+     */
+    async #sign() {
+        if (!this.isInitialized) {
+            return SignMessageController.#throwNotInitialized();
+        }
+        if (!this.messageToSign) {
+            return SignMessageController.#throwMissingMessage();
+        }
+        if (!this.signers?.length) {
+            return SignMessageController.#throwMissingSigningKey();
+        }
+        // we're always signing with the first signer
+        // the goal was to have an array of signers that sign simultaneously
+        // but it was too confusing, so we threw it away
+        // the array of signers should be changed back to a single signer
+        const signerKey = this.signers[0];
+        this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type);
+        if (this.signer.init) {
+            this.signer.init(this.#externalSignerControllers[signerKey.type]);
+        }
+        this.emitUpdate(); // pass the signer to the UI
+        try {
+            if (!this.#isSigningOperationValidAfterAsyncOperation())
+                return;
+            if (!this.#account) {
+                throw new Error('Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.');
+            }
+            if (!this.network) {
+                throw new Error('Network not supported on Ambire. Please contract support.');
+            }
+            const accountState = await this.#accounts.getOrFetchAccountOnChainState(this.#account.addr, this.network.chainId);
+            if (!accountState) {
+                throw new Error(`Account details missing. Please try again`);
+            }
+            const provider = this.#providers.providers[this.network.chainId.toString()];
+            if (!provider)
+                throw new Error(`Network details missing. Please try again`);
+            let signature;
+            try {
+                if (this.messageToSign.content.kind === 'message' ||
+                    this.messageToSign.content.kind === 'siwe') {
+                    const signed = await getPlainTextSignature(this.messageToSign.content.message, this.network, this.#account, accountState, this.signer, this.#invite.isOG);
+                    this.signatures.push(signed.signature);
+                    this.signed.push(signerKey.addr);
+                    if (accountState.threshold > 1) {
+                        if (!!this.#account.safeCreation && signed.hash) {
+                            this.hash = signed.hash;
+                            if (this.signed.length === 1) {
+                                await this.addMsgToSafeGlobal(signed.signature, toUtf8String(this.messageToSign.content.message));
+                            }
+                            else {
+                                await this.addSigToSafeGlobal(signed.signature, signed.hash);
+                            }
+                        }
+                    }
+                    if (!this.#isSigningOperationValidAfterAsyncOperation())
+                        return;
+                    // get the final signature
+                    signature =
+                        this.signatures.length === 1 || !signed.hash
+                            ? this.signatures[0]
+                            : sortSigs(this.signatures, signed.hash);
+                }
+                if (this.messageToSign.content.kind === 'typedMessage') {
+                    if (this.#account.creation && this.messageToSign.content.primaryType === 'Permit') {
+                        throw new Error('It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.');
+                    }
+                    const signed = await getEIP712Signature(this.messageToSign.content, this.#account, accountState, this.signer, this.network, this.#invite.isOG);
+                    this.signatures.push(signed.signature);
+                    this.signed.push(signerKey.addr);
+                    if (accountState.threshold > 1) {
+                        if (!!this.#account.safeCreation && signed.hash) {
+                            this.hash = signed.hash;
+                            if (this.signed.length === 1) {
+                                await this.addMsgToSafeGlobal(signed.signature, this.messageToSign.content.message);
+                            }
+                            else {
+                                await this.addSigToSafeGlobal(signed.signature, signed.hash);
+                            }
+                        }
+                    }
+                    if (!this.#isSigningOperationValidAfterAsyncOperation())
+                        return;
+                    signature =
+                        this.signatures.length === 1 || !signed.hash
+                            ? this.signatures[0]
+                            : sortSigs(this.signatures, signed.hash);
+                }
+                if (this.messageToSign.content.kind === 'authorization-7702') {
+                    // TODO: Deprecated. Sync with the latest sign7702 method changes if used
+                    // signature = this.signer.sign7702(this.messageToSign.content.message)
+                    throw new ExternalSignerError('Signing EIP-7702 authorization via this flow is not implemented', { sendCrashReport: true });
+                }
+            }
+            catch (error) {
+                throw new ExternalSignerError(error?.message ||
+                    'Something went wrong while signing the message. Please try again later or contact support if the problem persists.', {
+                    sendCrashReport: error?.sendCrashReport
+                });
+            }
+            if (!signature) {
+                throw new Error('Ambire was not able to retrieve the signature. Please try again or contact support if the problem persists.');
+            }
+            // skip the message verification for safe accounts & EOAs. Reasons:
+            // * for EOAs: bcz it's a privacy issue
+            // * for Safes: bcz the Safe API will return an error on invalid sig
+            if (!this.#account.safeCreation && !accountState.isEOA) {
+                const verifyMessageParams = {
+                    provider,
+                    // the signer is always the account even if the actual
+                    // signature is from a key that has privs to the account
+                    signer: this.messageToSign.accountAddr,
+                    signature: getVerifyMessageSignature(signature, this.#account, accountState),
+                    ...(this.messageToSign.content.kind === 'message' ||
+                        this.messageToSign.content.kind === 'siwe'
+                        ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
+                        : this.messageToSign.content.kind === 'typedMessage'
+                            ? {
+                                typedData: {
+                                    domain: this.messageToSign.content.domain,
+                                    types: this.messageToSign.content.types,
+                                    message: this.messageToSign.content.message,
+                                    primaryType: this.messageToSign.content.primaryType
+                                }
+                            }
+                            : {
+                                authorization: this.messageToSign.content.message
+                            })
+                };
+                const isValidSignature = await verifyMessage(verifyMessageParams);
+                if (!this.#isSigningOperationValidAfterAsyncOperation())
+                    return;
+                if (!isValidSignature) {
+                    throw new Error('Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.');
+                }
+            }
+            this.signedMessage = {
+                ...this.messageToSign,
+                timestamp: new Date().getTime(),
+                // todo: configure
+                signature: getAppFormatted(signature, this.#account, accountState),
+                dapp: this.dapp
+            };
+            // update the status to Partial if signing has not concluded
+            this.status =
+                this.signed.length >= accountState.threshold
+                    ? SignMessageStatus.Done
+                    : SignMessageStatus.Partial;
+            return this.signedMessage;
+        }
+        catch (e) {
+            const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`);
+            const message = e?.message || 'Something went wrong while signing the message. Please try again.';
+            return Promise.reject(new EmittableError({
+                level: 'major',
+                message,
+                error,
+                sendCrashReport: e?.sendCrashReport
+            }));
+        }
+    }
+    async sign() {
+        await this.withStatus('sign', async () => this.#sign());
+    }
+    removeAccountData(address) {
+        if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
+            this.reset();
+        }
+    }
+    /**
+     * Unbrick mechanism.
+     * Use this only when you are sure there's no way to continue, or
+     * a promise waiting to resolve that might change the state
+     */
+    cancelSignReq() {
+        this.statuses.sign = 'INITIAL';
+        this.emitUpdate();
+    }
+    #onAbortOperation() {
+        if (this.signer?.signingCleanup) {
+            this.signer.signingCleanup();
+        }
+    }
+    static #throwNotInitialized() {
+        const message = 'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.';
+        const error = new Error('signMessage: controller not initialized');
+        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+    }
+    static #throwMissingMessage() {
+        const message = 'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.';
+        const error = new Error('signMessage: missing message to sign');
+        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+    }
+    static #throwMissingSigningKey() {
+        const message = 'Please select a signer.';
+        const error = new Error('signMessage: missing selected signer');
+        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+    }
+    #getDappVerificationBanner() {
+        if (!this.#dapps || !this.dapp?.url)
+            return null;
+        const banner = this.#dapps.getDappVerificationBanner([this.dapp.url.toLowerCase()], {
+            // SignMessage operates on a single dApp, and the request window already shows it,
+            // so repeating the dApp name in the banner text adds noise.
+            includeDappNamesInText: false
+        });
+        if (!banner)
+            return null;
+        // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.
+        if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG)
+            return null;
+        return banner;
+    }
+    get banners() {
+        const banner = this.#getDappVerificationBanner();
+        if (!banner)
+            return [];
+        return [banner];
+    }
+    toJSON() {
+        return {
+            ...this,
+            ...super.toJSON(),
+            banners: this.banners
+        };
+    }
+}
+//# sourceMappingURL=signMessage.js.map

@@ -954,18 +954,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       if (!this.isUnlocked) throw new Error('keystore: not unlocked')
 
       const encryptedBytes = getBytes(storedKey.privKey as string)
-      // @ts-expect-error
+      // @ts-ignore
       const counter = new aes.Counter(this.#mainKey.iv)
-      // @ts-expect-error
+      // @ts-ignore
       const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
       const decryptedBytes = aesCtr.decrypt(encryptedBytes)
       const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
 
-      // @ts-expect-error TODO: Figure out the correct type definition
+      // @ts-ignore TODO: Figure out the correct type definition
       return new SignerInitializer(key, decryptedPrivateKey)
     }
 
-    // @ts-expect-error TODO: Figure out the correct type definition
+    // @ts-ignore TODO: Figure out the correct type definition
     return new SignerInitializer(key)
   }
 
@@ -980,9 +980,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
 
     const encryptedSeedBytes = getBytes(keystoreSeed.seed)
-    // @ts-expect-error
+    // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
-    // @ts-expect-error
+    // @ts-ignore
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
     const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)

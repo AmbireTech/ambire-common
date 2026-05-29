@@ -1,36 +1,46 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getTokens = exports.getNFTs = exports.EOA_SIMULATION_NONCE = void 0;
-const ethers_1 = require("ethers");
-const AmbireAccount_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
-const deploy_1 = require("../../consts/deploy");
-const account_1 = require("../account/account");
-const accountOp_1 = require("../accountOp/accountOp");
-const deployless_1 = require("../deployless/deployless");
-const deploy_2 = require("../proxyDeploy/deploy");
-const helpers_1 = require("./helpers");
-// fake nonce for EOA simulation
-exports.EOA_SIMULATION_NONCE = '0x1000000000000000000000000000000000000000000000000000000000000000';
+import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy';
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless';
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag';
+import { yieldToMain } from '../../utils/scheduler';
+import { getNotAmbireStateOverride, getShouldStateOverride } from '../../utils/simulationStateOverride';
+import { getAccountDeployParams } from '../account/account';
+import { callToTuple, toSingletonCall } from '../accountOp/accountOp';
+import { DeploylessMode } from '../deployless/deployless';
+import { decodeError } from '../errorDecoder';
+import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors';
+import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers';
+import { mapToken } from './helpers';
 class SimulationError extends Error {
+    simulationErrorMsg;
+    beforeNonce;
+    afterNonce;
     constructor(message, beforeNonce, afterNonce) {
-        super(`simulation error: ${message}`);
+        super(message);
         this.simulationErrorMsg = message;
         this.beforeNonce = beforeNonce;
         this.afterNonce = afterNonce;
+        console.error('simulation error: ', {
+            beforeNonce,
+            afterNonce,
+            message
+        });
     }
 }
-function handleSimulationError(error, beforeNonce, afterNonce, simulationOps) {
-    if (error !== '0x')
-        throw new SimulationError((0, deployless_1.parseErr)(error) || error, beforeNonce, afterNonce);
+function handleSimulationError(errorData, beforeNonce, afterNonce, simulationOps) {
+    if (errorData !== '0x') {
+        const error = new Error(errorData);
+        error.data = errorData;
+        const decodedError = decodeError(error);
+        const humanizedError = getHumanReadableErrorMessage(null, DEPLOYLESS_ERRORS, 'Transaction cannot be simulated because', decodedError, error);
+        const fallbackMessage = `Transaction cannot be simulated because of an unknown error. Error code: ${decodedError.reason || errorData.slice(0, 10)}`;
+        throw new SimulationError(humanizedError || fallbackMessage, beforeNonce, afterNonce);
+    }
     // If the afterNonce is 0, it means that we reverted, even if the error is empty
     // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
     if (afterNonce === 0n)
         throw new SimulationError('Simulation reverted', beforeNonce, afterNonce);
     if (afterNonce < beforeNonce)
-        throw new SimulationError('lower "after" nonce, should not be possible', beforeNonce, afterNonce);
+        throw new SimulationError('simulation error: lower "after" nonce, should not be possible', beforeNonce, afterNonce);
     if (simulationOps.length && afterNonce === beforeNonce)
         throw new SimulationError('Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op', beforeNonce, afterNonce);
     // make sure the afterNonce (after all the accOps execution) is
@@ -38,37 +48,38 @@ function handleSimulationError(error, beforeNonce, afterNonce, simulationOps) {
     const nonces = simulationOps
         .map((op) => op.nonce ?? -1n)
         .filter((nonce) => nonce !== -1n)
-        .sort();
+        .sort((a, b) => {
+        if (a === b)
+            return 0;
+        if (a > b)
+            return 1;
+        return -1;
+    });
     if (nonces.length && afterNonce < nonces[nonces.length - 1] + 1n) {
-        throw new SimulationError('Failed to increment the nonce to the final account op nonce', beforeNonce, afterNonce);
+        throw new SimulationError('simulation error: Failed to increment the nonce to the final account op nonce', beforeNonce, afterNonce);
     }
 }
-function getDeploylessOpts(accountAddr, opts) {
+export function getDeploylessOpts(accountAddr, network, opts) {
+    const shouldStateOverride = !!opts.simulation && getShouldStateOverride(network, opts.simulation.baseAccount);
     return {
         blockTag: opts.blockTag,
-        from: deploy_1.DEPLOYLESS_SIMULATION_FROM,
-        mode: opts.isEOA ? deployless_1.DeploylessMode.StateOverride : deployless_1.DeploylessMode.Detect,
-        stateToOverride: opts.isEOA
-            ? {
-                [accountAddr]: {
-                    code: AmbireAccount_json_1.default.binRuntime,
-                    stateDiff: {
-                        // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-                        [`0x${(0, deploy_2.privSlot)(0, 'address', accountAddr, 'bytes32')}`]: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-                        // any number with leading zeros is not supported on some RPCs
-                        [(0, ethers_1.toBeHex)(1, 32)]: exports.EOA_SIMULATION_NONCE
-                    }
-                }
-            }
-            : null
+        from: DEPLOYLESS_SIMULATION_FROM,
+        mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+        stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr, network) : null
     };
 }
-async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limits) {
-    const deploylessOpts = getDeploylessOpts(accountAddr, opts);
-    const mapToken = (token) => {
+export async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limits) {
+    const deploylessOpts = getDeploylessOpts(accountAddr, network, {
+        ...opts,
+        blockTag: opts.blockTag === 'pending' || opts.blockTag === 'both'
+            ? getPendingBlockTagIfSupported(network)
+            : opts.blockTag
+    });
+    const mapNft = (token, address) => {
         return {
             name: token.name,
-            networkId: network.id,
+            chainId: network.chainId,
+            address,
             symbol: token.symbol,
             amount: BigInt(token.nfts.length),
             decimals: 1,
@@ -76,87 +87,178 @@ async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limit
         };
     };
     if (!opts.simulation) {
-        const collections = (await deployless.call('getAllNFTs', [
+        const collections = await deployless.call('getAllNFTs', [
             accountAddr,
             tokenAddrs.map(([address]) => address),
-            tokenAddrs.map(([, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)),
+            tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
             limits.erc721Tokens
-        ], deploylessOpts))[0];
-        return collections.map((token) => [token.error, mapToken(token)]);
+        ], deploylessOpts);
+        return [
+            collections.map((token, index) => [
+                token.error,
+                mapNft(token, tokenAddrs[index][0])
+            ]),
+            {}
+        ];
     }
-    const { accountOps, account } = opts.simulation;
-    const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
-    const simulationOps = accountOps.map(({ nonce, calls }) => ({
-        // EOA starts from a fake, specified nonce
-        nonce: (0, account_1.isSmartAccount)(account) ? nonce : BigInt(exports.EOA_SIMULATION_NONCE),
-        calls: calls.map(accountOp_1.callToTuple)
+    const { accountOps, baseAccount, state } = opts.simulation;
+    const account = baseAccount.getAccount();
+    const [factory, factoryCalldata] = getAccountDeployParams(account);
+    const shouldStateOverride = getShouldStateOverride(network, baseAccount);
+    const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
+        // state overriden accounts start from a fake, specified nonce
+        nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+        calls: calls.map(toSingletonCall).map(callToTuple)
     }));
-    const [before, after, simulationErr] = await deployless.call('simulateAndGetAllNFTs', [
+    const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call('simulateAndGetAllNFTs', [
         accountAddr,
-        account.associatedKeys,
+        shouldStateOverride ? [account.addr] : account.associatedKeys,
         tokenAddrs.map(([address]) => address),
-        tokenAddrs.map(([, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
+        tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
         limits.erc721Tokens,
         factory,
         factoryCalldata,
         simulationOps.map((op) => Object.values(op))
     ], deploylessOpts);
-    const beforeNonce = before[1];
-    const afterNonce = after[1];
+    const beforeNonce = before.nonce;
+    const afterNonce = after.nonce;
     handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps);
-    // no simulation was performed if the nonce is the same
-    const postSimulationAmounts = (after[1] === before[1] ? before[0] : after[0]).map(mapToken);
-    return before[0].map((token, i) => [
-        token.error,
-        { ...mapToken(token), amountPostSimulation: postSimulationAmounts[i].amount }
-    ]);
+    // simulation was performed if the nonce is changed
+    const hasSimulation = afterNonce !== beforeNonce;
+    const simulationTokens = hasSimulation
+        ? after.collections.map((simulationToken, tokenIndex) => ({
+            ...mapNft(simulationToken, deltaAddressesMapping[tokenIndex]),
+            addr: deltaAddressesMapping[tokenIndex]
+        }))
+        : null;
+    return [
+        before.collections.map((beforeToken, i) => {
+            const simulationToken = simulationTokens
+                ? simulationTokens.find((token) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase())
+                : null;
+            const token = mapNft(beforeToken, tokenAddrs[i][0]);
+            const receiving = [];
+            const sending = [];
+            token.collectibles.forEach((oldCollectible) => {
+                // the first check is required because if there are no changes we will always have !undefined from the second check
+                if (simulationToken?.collectibles &&
+                    !simulationToken?.collectibles?.includes(oldCollectible))
+                    sending.push(oldCollectible);
+            });
+            simulationToken?.collectibles?.forEach((newCollectible) => {
+                if (!token.collectibles.includes(newCollectible))
+                    receiving.push(newCollectible);
+            });
+            return [
+                beforeToken.error,
+                {
+                    ...token,
+                    // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
+                    simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
+                    amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
+                    postSimulation: { receiving, sending }
+                }
+            ];
+        }),
+        {}
+    ];
 }
-exports.getNFTs = getNFTs;
-async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
-    const mapToken = (token, address) => {
+export async function getTokens(network, deployless, opts, accountAddr, tokenAddrs, pageIndex) {
+    if (typeof pageIndex === 'number' && pageIndex > 0) {
+        // Allow the main thread to process other tasks before continuing
+        // as encode/decode operations (in deployless) are very CPU intensive
+        await yieldToMain();
+    }
+    const isFetchingBothBlocks = opts.blockTag === 'both';
+    const deploylessOpts = getDeploylessOpts(accountAddr, network, {
+        ...opts,
+        blockTag: opts.blockTag === 'pending' || isFetchingBothBlocks
+            ? getPendingBlockTagIfSupported(network)
+            : opts.blockTag
+    });
+    const getMainResults = async () => {
+        const { accountOps, baseAccount } = opts.simulation || {};
+        if (!baseAccount) {
+            throw new Error('Base account is required for simulation');
+        }
+        const account = baseAccount.getAccount();
+        const shouldStateOverride = getShouldStateOverride(network, baseAccount);
+        const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
+            // state overriden accounts start from a fake, specified nonce
+            nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+            calls: calls.map(toSingletonCall).map(callToTuple)
+        }));
+        const [factory, factoryCalldata] = getAccountDeployParams(account);
         return {
-            amount: token.amount,
-            networkId: network.id,
-            decimals: Number(token.decimals),
-            symbol: address === '0x0000000000000000000000000000000000000000'
-                ? network.nativeAssetSymbol
-                : (0, helpers_1.overrideSymbol)(address, network.id, token.symbol),
-            address,
-            flags: (0, helpers_1.getFlags)({}, network.id, network.id, address)
+            simulationOps,
+            result: await deployless.call('simulateAndGetBalances', [
+                accountAddr,
+                shouldStateOverride ? [account.addr] : account.associatedKeys,
+                tokenAddrs,
+                factory,
+                factoryCalldata,
+                simulationOps?.map((op) => Object.values(op))
+            ], deploylessOpts)
         };
     };
-    const deploylessOpts = getDeploylessOpts(accountAddr, opts);
     if (!opts.simulation) {
-        const [results] = await deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts);
-        return results.map((token, i) => [token.error, mapToken(token, tokenAddrs[i])]);
+        const [results, blockNumber] = await deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts);
+        return [
+            results.map((token, i) => [
+                token.error,
+                mapToken(token, network, tokenAddrs[i], opts, undefined, token.amount)
+            ]),
+            {
+                blockNumber
+            }
+        ];
     }
-    const { accountOps, account } = opts.simulation;
-    const simulationOps = accountOps.map(({ nonce, calls }) => ({
-        // EOA starts from a fake, specified nonce
-        nonce: (0, account_1.isSmartAccount)(account) ? nonce : BigInt(exports.EOA_SIMULATION_NONCE),
-        calls: calls.map(accountOp_1.callToTuple)
-    }));
-    const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
-    const [before, after, simulationErr] = await deployless.call('simulateAndGetBalances', [
-        accountAddr,
-        account.associatedKeys,
-        tokenAddrs,
-        factory,
-        factoryCalldata,
-        simulationOps.map((op) => Object.values(op))
-    ], deploylessOpts);
-    const beforeNonce = before[1];
-    const afterNonce = after[1];
-    handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps);
-    // no simulation was performed if the nonce is the same
-    const postSimulationAmounts = afterNonce === beforeNonce ? before[0] : after[0];
-    return before[0].map((token, i) => [
-        token.error,
+    const mainResults = await getMainResults();
+    const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = mainResults.result;
+    const beforeNonce = before.nonce;
+    const afterNonce = after.nonce;
+    handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps || []);
+    // simulation was performed if the nonce is changed
+    const hasSimulation = afterNonce !== beforeNonce;
+    const simulationTokens = hasSimulation
+        ? after.balances.map((simulationToken, tokenIndex) => ({
+            ...simulationToken,
+            amount: simulationToken.amount,
+            addr: deltaAddressesMapping[tokenIndex]
+        }))
+        : null;
+    return [
+        before.balances.map((token, i) => {
+            const simulation = simulationTokens
+                ? simulationTokens.find((simulationToken) => simulationToken.addr === tokenAddrs[i])
+                : null;
+            const simulationAmount = simulation ? simulation.amount - token.amount : undefined;
+            const amountPostSimulation = simulation ? simulation.amount : token.amount;
+            // Here's the math before `simulationAmount` and `amountPostSimulation`.
+            // AccountA initial balance: 10 USDC.
+            // AccountA attempts to transfer 5 USDC (not signed yet).
+            // An external entity sends 3 USDC to AccountA on-chain.
+            // Deployless simulation contract processing:
+            //   - Balance before simulation (before.balances): 10 USDC + 3 USDC = 13 USDC.
+            //   - Balance after simulation (after.balances): 10 USDC - 5 USDC + 3 USDC = 8 USDC.
+            // Simulation-only balance displayed on the Sign Screen (we will call it `simulationAmount`):
+            //   - difference between after simulation and before: 8 USDC - 13 USDC = -5 USDC
+            // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
+            //   - after.balances, 8 USDC.
+            return [
+                token.error,
+                {
+                    ...mapToken(token, network, tokenAddrs[i], opts, !!simulationAmount, token.amount),
+                    simulationAmount,
+                    amountPostSimulation
+                }
+            ];
+        }),
         {
-            ...mapToken(token, tokenAddrs[i]),
-            amountPostSimulation: postSimulationAmounts[i].amount
+            blockNumber,
+            beforeNonce,
+            afterNonce
         }
-    ]);
+    ];
 }
-exports.getTokens = getTokens;
 //# sourceMappingURL=getOnchainBalances.js.map

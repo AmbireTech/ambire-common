@@ -83,13 +83,13 @@ describe('Portfolio', () => {
 
     const [{ hints: hints1 }, { hints: hints2 }]: [{ hints: Hints }, { hints: Hints }] =
       await Promise.all([
-        // @ts-expect-error
+        // @ts-ignore
         portfolio.externalHintsAPIDiscovery({
           chainId: 1n,
           accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
           baseCurrency: 'usd'
         }),
-        // @ts-expect-error
+        // @ts-ignore
         portfolio.externalHintsAPIDiscovery({
           chainId: 1n,
           accountAddr: '0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6',
@@ -659,14 +659,14 @@ describe('Portfolio', () => {
       beforeEach(() => {
         // Simulate a Velcro Discovery failure
         jest.spyOn(global, 'fetch').mockImplementation((url: any) => {
-          // @ts-expect-error
+          // @ts-ignore
           const { Response } = jest.requireActual('node-fetch')
           if (url.includes(`${velcroUrl}/multi-hints`)) {
             const body = stringify({ message: 'API error' })
             const headers = { status: 200 }
             return Promise.resolve(new Response(body, headers))
           }
-          // @ts-expect-error
+          // @ts-ignore
           return jest.requireActual('node-fetch')(url)
         })
       })
@@ -677,7 +677,7 @@ describe('Portfolio', () => {
       })
       test('An error is added when the external api hints call fails', async () => {
         const { restore } = suppressConsole()
-        // @ts-expect-error
+        // @ts-ignore
         const portfolioInner = new Portfolio(global.fetch, provider, ethereum, velcroUrl)
 
         const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {})
@@ -726,7 +726,7 @@ describe('Portfolio', () => {
         }
       }
 
-      // @ts-expect-error
+      // @ts-ignore
       jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
         hints
       })

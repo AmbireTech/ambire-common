@@ -1,0 +1,1 @@
+{"version":3,"file":"ModuleProxyFactory.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/const/abis/ModuleProxyFactory.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,MAAM,kBAAkB,GAAG;IAChC,wFAAwF;CACzF,CAAA","sourcesContent":["export const ModuleProxyFactory = [\n  'function deployModule(address masterCopy, bytes memory initializer, uint256 saltNonce)'\n]\n"]}

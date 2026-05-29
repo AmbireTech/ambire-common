@@ -1,0 +1,1 @@
+{"version":3,"file":"interop.d.ts","sourceRoot":"","sources":["../../../src/interfaces/interop.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,YAAY,EAAE,oBAAoB,EAAE,MAAM,WAAW,CAAA;AAE9D,MAAM,MAAM,oBAAoB,GAAG,YAAY,GAAG;IAChD,cAAc,EAAE,MAAM,CAAA;CACvB,CAAA;AAED,MAAM,MAAM,4BAA4B,GAAG,oBAAoB,GAAG;IAChE,cAAc,CAAC,EAAE,MAAM,CAAA;CACxB,CAAA"}

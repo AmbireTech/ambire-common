@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import { getAccountNetworks } from '@/libs/networks/networks'

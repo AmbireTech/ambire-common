@@ -1,0 +1,1 @@
+{"version":3,"file":"accountPicker.js","sourceRoot":"","sources":["../../../src/interfaces/accountPicker.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IAccountPickerController = ControllerInterface<\n  InstanceType<typeof import('../controllers/accountPicker/accountPicker').AccountPickerController>\n>\n"]}

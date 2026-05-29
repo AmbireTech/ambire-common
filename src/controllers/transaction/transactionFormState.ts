@@ -670,7 +670,7 @@ export class TransactionFormState extends EventEmitter {
         ;(async () => {
           let route = currentActiveRoute.route
           if (this.dependencies.serviceProviderAPI.id === 'socket') {
-            // @ts-expect-error TODO: types mismatch by a bit, align types better
+            // @ts-ignore TODO: types mismatch by a bit, align types better
             route = await this.dependencies.serviceProviderAPI.getActiveRoute(activeRouteId)
           }
           this.updateActiveRoute(activeRouteId, { route })

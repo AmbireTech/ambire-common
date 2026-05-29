@@ -1,0 +1,1 @@
+{"version":3,"file":"ErrorHumanizerError.d.ts","sourceRoot":"","sources":["../../../src/classes/ErrorHumanizerError.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,OAAO,mBAAoB,SAAQ,KAAK;IACpD,iBAAiB,EAAE,OAAO,CAAA;gBAGxB,OAAO,EAAE,MAAM,EACf,EACE,KAAK,EACL,iBAAiB,EAClB,EAAE;QACD,KAAK,CAAC,EAAE,MAAM,GAAG,IAAI,CAAA;QACrB,iBAAiB,CAAC,EAAE,OAAO,CAAA;KAC5B;CAOJ"}

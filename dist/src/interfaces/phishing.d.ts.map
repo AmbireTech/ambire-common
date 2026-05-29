@@ -1,0 +1,1 @@
+{"version":3,"file":"phishing.d.ts","sourceRoot":"","sources":["../../../src/interfaces/phishing.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,mBAAmB,EAAE,MAAM,cAAc,CAAA;AAElD,MAAM,MAAM,mBAAmB,GAAG,mBAAmB,CACnD,YAAY,CAAC,cAAc,kCAAkC,EAAE,kBAAkB,CAAC,CACnF,CAAA;AAED,MAAM,MAAM,iBAAiB,GAAG,SAAS,GAAG,eAAe,GAAG,aAAa,GAAG,UAAU,CAAA"}

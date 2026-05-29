@@ -1,0 +1,1 @@
+{"version":3,"file":"contractNames.js","sourceRoot":"","sources":["../../../src/interfaces/contractNames.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IContractNamesController = ControllerInterface<\n  InstanceType<typeof import('../controllers/contractNames/contractNames').ContractNamesController>\n>\n"]}

@@ -1,0 +1,72 @@
+import { WARNINGS } from '../../consts/signAccountOp/errorHandling';
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp';
+import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers';
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters';
+function getFeeSpeedIdentifier(option, accountAddr) {
+    return `${option.paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${option.token.flags.onGasTank ? 'gasTank' : 'feeToken'}`;
+}
+function getTokenUsdAmount(token, gasAmount) {
+    const isUsd = (price) => price.baseCurrency === 'usd';
+    const usdPrice = token.priceIn.find(isUsd)?.price;
+    if (!usdPrice)
+        return '';
+    return safeTokenAmountAndNumberMultiplication(gasAmount, token.decimals, usdPrice);
+}
+function getSignificantBalanceDecreaseWarning(portfolioState, chainId, traceCallDiscoveryStatus) {
+    const portfolioNetworkState = portfolioState?.[chainId.toString()];
+    if (portfolioNetworkState && portfolioNetworkState.result && !portfolioNetworkState.isLoading) {
+        const totalInUSD = getAccountPortfolioTotal(portfolioState, ['rewards', 'gasTank', 'projectedRewards'], false);
+        const simulatedTokens = portfolioNetworkState.result.tokens.filter((t) => typeof t.amountPostSimulation === 'bigint');
+        if (!simulatedTokens.length)
+            return null;
+        // Calculates the amount on the pending block * the price of the token
+        const simulatedTokensValueBeforeSimulationInUSD = getTotal(simulatedTokens, null, {
+            includeHiddenTokens: true,
+            beforeSimulation: true
+        })?.usd;
+        // Calculates the amount after the simulation * the price of the token
+        const simulatedTokensValueAfterSimulationInUSD = getTotal(simulatedTokens, null, {
+            includeHiddenTokens: true,
+            beforeSimulation: false
+        })?.usd;
+        if (typeof simulatedTokensValueBeforeSimulationInUSD !== 'number' ||
+            typeof simulatedTokensValueAfterSimulationInUSD !== 'number')
+            return null;
+        const absoluteDecreaseInUSD = simulatedTokensValueBeforeSimulationInUSD - simulatedTokensValueAfterSimulationInUSD;
+        // In case the balance increased or stayed the same
+        if (absoluteDecreaseInUSD <= 0)
+            return null;
+        const hasSignificantBalanceDecrease = absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000;
+        if (!hasSignificantBalanceDecrease)
+            return null;
+        // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
+        // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
+        // which could incorrectly trigger a significant balance drop warning.
+        // To prevent this, we ensure the discovery process is completed first.
+        if (traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Done) {
+            return WARNINGS.significantBalanceDecrease;
+        }
+        // If the discovery process takes too long (more than 2 seconds) or fails,
+        // we still show a warning, but we indicate that our balance decrease assumption may be incorrect.
+        if (traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed ||
+            traceCallDiscoveryStatus === TraceCallDiscoveryStatus.SlowPendingResponse) {
+            return WARNINGS.possibleBalanceDecrease;
+        }
+    }
+    return null;
+}
+const getUnknownTokenWarning = (pending, chainId) => {
+    const networkData = pending?.[chainId.toString()];
+    if (networkData?.isLoading)
+        return null;
+    const tokens = networkData?.result?.tokens || [];
+    const hasUnknownTokens = tokens.some((t) => t.flags.suspectedType);
+    return hasUnknownTokens ? WARNINGS.unknownToken : null;
+};
+const getFeeTokenPriceUnavailableWarning = (hasSpeed, feeTokenHasPrice) => {
+    if (!hasSpeed || feeTokenHasPrice)
+        return null;
+    return WARNINGS.feeTokenPriceUnavailable;
+};
+export { getFeeSpeedIdentifier, getFeeTokenPriceUnavailableWarning, getSignificantBalanceDecreaseWarning, getTokenUsdAmount, getUnknownTokenWarning };
+//# sourceMappingURL=helper.js.map

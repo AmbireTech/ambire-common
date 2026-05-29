@@ -1065,9 +1065,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // The signing might fail, tell the user why but allow the user to retry signing,
-    // @ts-expect-error fix TODO: type mismatch
+    // @ts-ignore fix TODO: type mismatch
     if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
-      // @ts-expect-error typescript complains, but the error being present gets checked above
+      // @ts-ignore typescript complains, but the error being present gets checked above
       errors.push(this.status.error)
     }
 

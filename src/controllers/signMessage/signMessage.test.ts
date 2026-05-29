@@ -147,7 +147,7 @@ describe('SignMessageController', () => {
     const invalidMessageToSign: Message = {
       id: 1,
       content: {
-        // @ts-expect-error that's on purpose, for the test
+        // @ts-ignore that's on purpose, for the test
         kind: 'unsupportedKind',
         message: '0x74657374'
       }
@@ -183,12 +183,12 @@ describe('SignMessageController', () => {
       '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
 
     const mockSigner = {
-      // @ts-expect-error for mocking purposes only
+      // @ts-ignore for mocking purposes only
       signMessage: jest.fn().mockResolvedValue(dummySignature),
       key: { addr: signingKeyAddr, type: 'internal', dedicatedToOneSA: true, meta: {} }
     }
 
-    // @ts-expect-error spy on the getSigner method and mock its implementation
+    // @ts-ignore spy on the getSigner method and mock its implementation
     const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
 
     await signMessageController.init({ messageToSign })

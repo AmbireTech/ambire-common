@@ -1,0 +1,1 @@
+{"version":3,"file":"deployless.js","sourceRoot":"","sources":["../../../src/consts/deployless.ts"],"names":[],"mappings":"AAAA,gCAAgC;AAChC,MAAM,CAAC,MAAM,oBAAoB,GAC/B,oEAAoE,CAAA","sourcesContent":["// fake nonce for EOA simulation\nexport const EOA_SIMULATION_NONCE =\n  '0x1000000000000000000000000000000000000000000000000000000000000000'\n"]}

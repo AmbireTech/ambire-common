@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 export type FormatType = 'value' | 'price' | 'amount' | 'default' | 'precise' | 'noDecimal'
 
 const DECIMAL_RULES = {

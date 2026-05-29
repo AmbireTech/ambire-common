@@ -1,0 +1,1 @@
+{"version":3,"file":"invite.js","sourceRoot":"","sources":["../../../src/interfaces/invite.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IInviteController = ControllerInterface<\n  InstanceType<typeof import('../controllers/invite/invite').InviteController>\n>\n"]}

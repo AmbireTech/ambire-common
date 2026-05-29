@@ -1,0 +1,1 @@
+{"version":3,"file":"featureFlags.js","sourceRoot":"","sources":["../../../src/interfaces/featureFlags.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IFeatureFlagsController = ControllerInterface<\n  InstanceType<typeof import('../controllers/featureFlags/featureFlags').FeatureFlagsController>\n>\n"]}

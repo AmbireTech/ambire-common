@@ -1,0 +1,551 @@
+import { toBeHex } from 'ethers';
+import { isAmbireV1LinkedAccount } from '@/libs/account/account';
+import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy';
+import { networks as predefinedNetworks } from '../../consts/networks';
+import { Bundler } from '../../services/bundlers/bundler';
+import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks';
+import { getSASupport } from '../deployless/simulateDeployCall';
+// bnb, gnosis, fantom, metis
+export const relayerAdditionalNetworks = [
+    {
+        chainId: 56n,
+        name: 'binance-smart-chain'
+    },
+    {
+        chainId: 100n,
+        name: 'gnosis'
+    },
+    {
+        chainId: 250n,
+        name: 'fantom'
+    },
+    {
+        chainId: 1088n,
+        name: 'andromeda'
+    }
+];
+// 4337 network support
+// if it is supported on the network (hasBundlerSupport),
+// we check if the network is predefinedNetwork and we
+// have specifically disabled 4337
+// finally, we fallback to the bundler support
+export function is4337Enabled(hasBundlerSupport, network) {
+    if (!hasBundlerSupport)
+        return false;
+    // if we have set it specifically
+    if (network && network.predefined)
+        return true;
+    // this will be true in this case
+    return hasBundlerSupport;
+}
+export const getNetworksWithFailedRPC = ({ providers }) => {
+    return Object.keys(providers).filter((chainId) => providers[chainId] &&
+        typeof providers[chainId].isWorking === 'boolean' &&
+        !providers[chainId].isWorking);
+};
+async function retryRequest(init, counter = 0) {
+    if (counter >= 2) {
+        throw new Error('flagged');
+    }
+    const promise = init();
+    const result = await promise.catch(async () => {
+        const retryRes = await retryRequest(init, counter + 1);
+        return retryRes;
+    });
+    return result;
+}
+export function getProviderBatchMaxCount(network, rpcUrl) {
+    const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl;
+    // if the user hasn't changed the RPC the relayer has returned for this network
+    // and there's a set suggestedRpcBatchCount, return it
+    // there are cases where we use invictus (hyperevm) and regardless, we want
+    // to disable batching. Therefore, always use suggestedRpcBatchCount with priority
+    // if the RPC hasn't changed
+    if (!hasUserChangedRpc && network.suggestedRpcBatchCount)
+        return network.suggestedRpcBatchCount;
+    if (rpcUrl.includes('invictus.ambire.com'))
+        return 20;
+    // no batching for custom networks
+    if (!network.predefinedConfigVersion)
+        return 1;
+    // a special rule for ethereum because we're resolving ENSes there:
+    // no invictus = batch limit of 3 to prevent rate limit
+    if (network.chainId === 1n && hasUserChangedRpc)
+        return 3;
+    // if suggestedRpcBatchCount is not provided, make the limit 1
+    // as we don't want to risk it by making it infinite
+    const suggestedRpcBatchCount = network.suggestedRpcBatchCount ?? 1;
+    return hasUserChangedRpc ? 1 : suggestedRpcBatchCount;
+}
+/**
+ * Fetches detailed network information from an RPC provider.
+ * Used when adding a new network, updating network info, or when the RPC provider is changed,
+ * And once every 24 hours for custom networks.
+ *
+ * - Checks smart account (SA) support, singleton contract, and state override capabilities.
+ * - Determines if the network supports ERC-4337 and Account Abstraction.
+ * - Fetches additional metadata from external sources (e.g., CoinGecko).
+ */
+export async function getNetworkInfo(fetch, chainId, provider, callback, network) {
+    let networkInfo = {
+        chainId,
+        isSAEnabled: 'LOADING',
+        hasSingleton: 'LOADING',
+        isOptimistic: 'LOADING',
+        rpcNoStateOverride: 'LOADING',
+        erc4337: 'LOADING',
+        areContractsDeployed: 'LOADING',
+        feeOptions: 'LOADING',
+        platformId: 'LOADING',
+        nativeAssetId: 'LOADING',
+        flagged: 'LOADING'
+    };
+    callback(networkInfo);
+    const timeout = (time = 30000) => {
+        return new Promise((resolve) => {
+            setTimeout(resolve, time, 'timeout reached');
+        });
+    };
+    let flagged = false;
+    const raiseFlagged = (e, returnData) => {
+        if (e.message === 'flagged') {
+            flagged = true;
+        }
+        return returnData;
+    };
+    const info = await Promise.race([
+        Promise.all([
+            (async () => {
+                const responses = await Promise.all([
+                    retryRequest(() => provider.getCode(SINGLETON)),
+                    retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
+                    retryRequest(() => getSASupport(provider)),
+                    Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
+                    // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
+                ]).catch((e) => raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }]));
+                const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses;
+                const areContractsDeployed = factoryCode !== '0x';
+                // const has4337 = entryPointCode !== '0x' && hasBundler
+                // Ambire support is as follows:
+                // - either the addresses match after simulation, that's perfect
+                // - or we can't do the simulation with this RPC but we have the factory
+                // deployed on the network
+                const supportsAmbire = saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed);
+                networkInfo = {
+                    ...networkInfo,
+                    hasSingleton: singletonCode !== '0x',
+                    isSAEnabled: supportsAmbire && singletonCode !== '0x',
+                    areContractsDeployed,
+                    rpcNoStateOverride: network && network.rpcNoStateOverride === true
+                        ? true
+                        : !saSupport.supportsStateOverride,
+                    erc4337: {
+                        enabled: is4337Enabled(hasBundlerSupport, network),
+                        hasPaymaster: network ? network.erc4337.hasPaymaster : false,
+                        hasBundlerSupport
+                    }
+                };
+                callback(networkInfo);
+            })(),
+            (async () => {
+                const oracleCode = await retryRequest(() => provider.getCode(OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
+                const isOptimistic = oracleCode !== '0x';
+                networkInfo = { ...networkInfo, isOptimistic };
+                callback(networkInfo);
+            })(),
+            (async () => {
+                const block = await retryRequest(() => provider.getBlock('latest')).catch((e) => raiseFlagged(e, null));
+                const feeOptions = { is1559: block?.baseFeePerGas !== null };
+                networkInfo = { ...networkInfo, feeOptions };
+                callback(networkInfo);
+            })(),
+            (async () => {
+                // Keep the old value if the request fails
+                let platformId = network?.platformId || '';
+                let nativeAssetId = network?.nativeAssetId || '';
+                try {
+                    const coingeckoRequest = await fetch(`https://cena.ambire.com/api/v3/platform/${Number(chainId)}`);
+                    const coingeckoInfo = await coingeckoRequest.json();
+                    if (!coingeckoInfo.error) {
+                        // Coingecko info found
+                        platformId = coingeckoInfo.platformId;
+                        nativeAssetId = coingeckoInfo.nativeAssetId;
+                    }
+                }
+                catch (e) {
+                    console.error('Error fetching coingecko info', e);
+                }
+                networkInfo = {
+                    ...networkInfo,
+                    platformId,
+                    nativeAssetId
+                };
+                callback(networkInfo);
+            })()
+        ]),
+        timeout()
+    ]);
+    networkInfo = { ...networkInfo, flagged: flagged || info === 'timeout reached' };
+    callback(networkInfo);
+}
+/**
+ * Determines supported features for a network based on its properties.
+ *
+ * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
+ */
+// call this if you have the network props already calculated
+export function getFeaturesByNetworkProperties(networkInfo, network) {
+    const features = [
+        {
+            id: 'saSupport',
+            title: 'Ambire Smart Accounts',
+            level: 'loading'
+        },
+        {
+            id: 'simulation',
+            title: 'Transaction simulation',
+            level: 'loading'
+        },
+        {
+            id: 'prices',
+            title: 'Token prices',
+            level: 'loading'
+        }
+    ];
+    if (!networkInfo)
+        return features.map((f) => ({ ...f, level: 'initial' }));
+    const { flagged, isSAEnabled, areContractsDeployed, erc4337, rpcNoStateOverride, nativeAssetId, hasSingleton } = networkInfo;
+    const updateFeature = (id, update) => {
+        const foundFeature = features.find((f) => f.id === id);
+        if (foundFeature) {
+            Object.assign(foundFeature, update);
+        }
+    };
+    if (flagged && flagged !== 'LOADING') {
+        return [
+            {
+                id: 'flagged',
+                title: 'RPC error',
+                level: 'danger',
+                msg: 'We were unable to fetch the network information with the provided RPC. Try choosing a different RPC.'
+            }
+        ];
+    }
+    if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
+        const canBroadcast = erc4337.enabled || network?.hasRelayer;
+        if (!isSAEnabled || !canBroadcast) {
+            updateFeature('saSupport', {
+                level: 'danger',
+                title: 'Smart contract wallets are not supported',
+                msg: hasSingleton
+                    ? 'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
+                    : "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
+            });
+        }
+        const erc4337Settings = {
+            enabled: is4337Enabled(erc4337.enabled, network),
+            hasPaymaster: network
+                ? network.erc4337.hasPaymaster
+                : erc4337.hasPaymaster
+        };
+        const title = erc4337Settings?.enabled
+            ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
+            : 'Ambire Smart Accounts';
+        if (canBroadcast && isSAEnabled && areContractsDeployed) {
+            updateFeature('saSupport', {
+                title,
+                level: 'success',
+                msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
+            });
+        }
+        else if (canBroadcast && isSAEnabled && !areContractsDeployed) {
+            updateFeature('saSupport', {
+                title,
+                level: 'warning',
+                msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using an EOA account and the deploy contracts option to unlock the Smart Accounts feature. Otherwise, only EOA accounts can be used on this network."
+            });
+        }
+    }
+    if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
+        const isPredefinedNetwork = network?.predefined;
+        if (!rpcNoStateOverride && isPredefinedNetwork) {
+            updateFeature('simulation', {
+                level: 'success',
+                title: 'Transaction simulation is fully supported',
+                msg: 'Transaction simulation helps predict the outcome of a transaction and your future account balance before it’s broadcasted to the blockchain, enhancing security.'
+            });
+        }
+        else if (!rpcNoStateOverride) {
+            updateFeature('simulation', {
+                level: 'warning',
+                title: 'Transaction simulation is partially supported',
+                msg: 'Transaction simulation, one of our security features that predicts the outcome of a transaction before it is broadcast to the blockchain, is not fully functioning on this chain. The reasons might be network or RPC limitations. Try choosing a different RPC.'
+            });
+        }
+        else {
+            updateFeature('simulation', {
+                level: 'danger',
+                title: 'Transaction simulation is not supported',
+                msg: "Transaction simulation helps predict the outcome of a transaction and your future account balance before it’s broadcasted to the blockchain, enhancing security. Unfortunately, this feature isn't available for the current network or RPC. Try choosing a different RPC."
+            });
+        }
+    }
+    if (nativeAssetId !== 'LOADING') {
+        const hasNativeAssetId = nativeAssetId && nativeAssetId !== '';
+        updateFeature('prices', {
+            level: hasNativeAssetId ? 'success' : 'danger',
+            msg: hasNativeAssetId
+                ? 'We pull token price information in real-time using third-party providers.'
+                : "Our third-party providers don't support this network yet, so we cannot show token prices."
+        });
+    }
+    return features;
+}
+// call this if you have only the rpcUrls and chainId
+// this method makes an RPC request, calculates the network info and returns the features
+export function getFeatures(networkInfo, network) {
+    return getFeaturesByNetworkProperties(networkInfo, network);
+}
+export function hasRelayerSupport(network) {
+    return (network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId));
+}
+/**
+ * Validates a single network object against some of the Network interface requirements.
+ */
+function sanityCheckImportantNetworkProperties(network) {
+    if (!network || typeof network !== 'object')
+        return false;
+    if (typeof network.chainId !== 'bigint')
+        return false;
+    if (typeof network.name !== 'string')
+        return false;
+    if (typeof network.nativeAssetSymbol !== 'string')
+        return false;
+    if (typeof network.nativeAssetName !== 'string')
+        return false;
+    if (typeof network.explorerUrl !== 'string')
+        return false;
+    if (typeof network.selectedRpcUrl !== 'string')
+        return false;
+    if (!Array.isArray(network.rpcUrls))
+        return false;
+    if (network.rpcUrls.some((url) => typeof url !== 'string'))
+        return false;
+    return true;
+}
+/**
+ * Validates networks coming from the storage, filtering out the invalid ones.
+ * This prevents crashes when networks have missing or invalid mandatory properties.
+ */
+export function getValidNetworks(networksInStorage) {
+    const validNetworks = {};
+    Object.values(networksInStorage).forEach((network) => {
+        const hadValidChainId = typeof network?.chainId === 'bigint';
+        // Based on the crash reports received, it turned out there are users with
+        // messed-up networks in storage. So perform comprehensive validation against
+        // some of the Network interface requirements
+        if (sanityCheckImportantNetworkProperties(network)) {
+            validNetworks[network.chainId.toString()] = network;
+        }
+        else if (hadValidChainId) {
+            // Attempt to replace broken network with predefined version, if available
+            const predefinedNetwork = predefinedNetworks.find((n) => n.chainId === network.chainId);
+            if (predefinedNetwork)
+                validNetworks[network.chainId.toString()] = predefinedNetwork;
+            else {
+                console.error(`Invalid network found in storage for chainId ${network.chainId}`, network);
+            }
+        }
+    });
+    return validNetworks;
+}
+/**
+ * Updates the currently stored networks with the networks coming from the relayer.
+ * To determine which networks to update, it compares the predefinedConfigVersion of the stored network
+ * with the relayer network. If no network is found in the storage, it adds the relayer network as a new one.
+ * Even if the predefinedConfigVersion is the same or lower, some properties of the stored network should be updated.
+ */
+export const getNetworksUpdatedWithRelayerNetworks = (currentNetworks, relayerNetworks) => {
+    const networks = structuredClone(currentNetworks);
+    // New networks and networks with updated RPC providers
+    const updatedNetworkChainIds = [];
+    Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
+        const chainId = BigInt(_chainId);
+        const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network);
+        const currentNetwork = networks[chainId.toString()];
+        if (!currentNetwork) {
+            updatedNetworkChainIds.push(relayerNetwork.chainId);
+            networks[chainId.toString()] = {
+                ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
+                ...relayerNetwork,
+                disabled: !!relayerNetwork.disabledByDefault
+            };
+            return;
+        }
+        // If the network is custom we assume predefinedConfigVersion = 0
+        if (currentNetwork.predefinedConfigVersion === undefined) {
+            currentNetwork.predefinedConfigVersion = 0;
+        }
+        // Mechanism to force an update network preferences if needed
+        const shouldOverrideStoredNetwork = relayerNetwork.predefinedConfigVersion > 0 &&
+            relayerNetwork.predefinedConfigVersion > currentNetwork.predefinedConfigVersion;
+        if (shouldOverrideStoredNetwork) {
+            updatedNetworkChainIds.push(relayerNetwork.chainId);
+            networks[chainId.toString()] = {
+                ...currentNetwork,
+                ...relayerNetwork,
+                rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])]
+            };
+            // update the selectedRpcUrl on disabledByDefault networks as we can
+            // determine better which RPC is the best for our custom networks
+            if (relayerNetwork.disabledByDefault)
+                networks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl;
+        }
+        else {
+            // No need to add this network to the updated list
+            // as the selectedRpcUrl is not changed and the network is
+            // already in the extension
+            networks[chainId.toString()] = {
+                ...currentNetwork,
+                rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
+                suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
+                suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
+                iconUrls: relayerNetwork.iconUrls,
+                predefined: relayerNetwork.predefined
+            };
+        }
+    });
+    // Step 3: Ensure predefined networks are marked correctly and handle special cases
+    let predefinedChainIds = Object.keys(relayerNetworks);
+    if (!predefinedChainIds.length) {
+        predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString());
+    }
+    Object.keys(networks).forEach((chainId) => {
+        if (!networks[chainId])
+            return;
+        // Remove unnecessary properties:
+        if ('disabledByDefault' in networks[chainId]) {
+            delete networks[chainId].disabledByDefault;
+        }
+        const network = networks[chainId];
+        // If a predefined network is removed by the relayer, mark it as custom
+        // and remove the predefined flag
+        // Update the hasRelayer flag to false just in case
+        if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
+            networks[chainId] = { ...network, predefined: false, hasRelayer: false };
+        }
+    });
+    return {
+        mergedNetworks: networks,
+        updatedNetworkChainIds
+    };
+};
+export const networkChainIdToHex = (chainId) => {
+    try {
+        // Remove leading zero in hex representation
+        // to match the format expected by dApps (e.g., "0xa" instead of "0x0a")
+        return toBeHex(chainId).replace(/^0x0/, '0x');
+    }
+    catch (error) {
+        return `0x${chainId.toString(16)}`;
+    }
+};
+export const getAccountNetworks = (networks, accountStates, acc) => {
+    if (!acc)
+        return [];
+    // NOT a [Gnosis] Safe account
+    if (!acc.safeCreation) {
+        // EOA
+        if (!acc.creation)
+            return networks;
+        // v1 SA
+        if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+            // v1s don't work without the relayer
+            return networks.filter((network) => !!network.hasRelayer);
+        }
+        // v2 SA
+        return networks.filter((network) => network.areContractsDeployed && (network.hasRelayer || network.erc4337.enabled));
+    }
+    if (!accountStates[acc.addr])
+        return networks;
+    return networks.filter((n) => {
+        const networkAccState = accountStates[acc.addr]?.[n.chainId.toString()];
+        if (!networkAccState)
+            return true;
+        return networkAccState.isDeployed;
+    });
+};
+export const getAccountNotSupportedReason = (acc) => {
+    if (!acc?.addr)
+        return '';
+    if (!acc.safeCreation) {
+        if (!acc.creation)
+            return ''; // EOA
+        if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+            return 'Ambire v1 accounts are not supported on this network';
+        }
+        // v2
+        return 'Ambire smart accounts are not supported on this network';
+    }
+    // safe
+    return 'Safe account is not activated on this network';
+};
+export const getSupportedNetworks = (networks, accountStates, acc, additionalCheck) => {
+    if (!acc)
+        return [];
+    let checkedNetworks = networks;
+    // apply the additionalChecks, if any
+    if (additionalCheck) {
+        checkedNetworks = networks.map((n) => {
+            if (!!additionalCheck.chainIds.includes(n.chainId))
+                return { ...n };
+            return {
+                ...n,
+                isNotSupported: true,
+                notSupportedReason: additionalCheck.reason
+            };
+        });
+    }
+    // NOT a [Gnosis] Safe account
+    if (!acc.safeCreation) {
+        // EOA
+        if (!acc.creation)
+            return checkedNetworks;
+        // v1 SA
+        if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+            // v1s don't work without the relayer
+            return checkedNetworks.map((n) => {
+                if (!!n.hasRelayer)
+                    return { ...n };
+                return {
+                    ...n,
+                    isNotSupported: true,
+                    notSupportedReason: 'Ambire v1 accounts are not supported on this network'
+                };
+            });
+        }
+        // v2 SA
+        return checkedNetworks.map((n) => {
+            if (n.areContractsDeployed && (n.hasRelayer || n.erc4337.enabled))
+                return { ...n };
+            return {
+                ...n,
+                isNotSupported: true,
+                notSupportedReason: 'Ambire smart accounts are not supported on this network'
+            };
+        });
+    }
+    if (!accountStates[acc.addr])
+        return checkedNetworks;
+    return checkedNetworks.map((n) => {
+        const networkAccState = accountStates[acc.addr]?.[n.chainId.toString()];
+        if (!networkAccState || networkAccState.isDeployed)
+            return { ...n };
+        return {
+            ...n,
+            isNotSupported: true,
+            notSupportedReason: 'Safe account is not activated on this network'
+        };
+    });
+};
+//# sourceMappingURL=networks.js.map

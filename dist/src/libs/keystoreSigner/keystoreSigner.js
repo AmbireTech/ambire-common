@@ -1,0 +1,156 @@
+import { concat, encodeRlp, getBytes, hexlify, isHexString, keccak256, toBeHex, Wallet } from 'ethers';
+import { ecdsaSign } from 'secp256k1';
+import { decrypt, getEncryptionPublicKey, signTypedData as signTypedDataWithMetaMaskSigUtil, SignTypedDataVersion } from '@metamask/eth-sig-util';
+import { stripHexPrefix } from '../../utils/stripHexPrefix';
+import { adaptTypedMessageForMetaMaskSigUtil, getAuthorizationHash } from '../signMessage/signMessage';
+export class KeystoreSigner {
+    key;
+    #signer;
+    // use this key only for sign7702
+    #authorizationPrivkey;
+    constructor(_key, _privKey) {
+        if (!_key)
+            throw new Error('keystoreSigner: no key provided in constructor');
+        if (!_privKey)
+            throw new Error('keystoreSigner: no decrypted private key provided in constructor');
+        this.key = _key;
+        this.#signer = new Wallet(_privKey);
+        if (_privKey) {
+            this.#authorizationPrivkey = isHexString(_privKey) ? _privKey : `0x${_privKey}`;
+        }
+    }
+    async signRawTransaction(params) {
+        const sig = await this.#signer.signTransaction(params);
+        return sig;
+    }
+    async signTypedData(typedMessage) {
+        const sig = signTypedDataWithMetaMaskSigUtil({
+            privateKey: Buffer.from(getBytes(this.#signer.privateKey)),
+            data: adaptTypedMessageForMetaMaskSigUtil(typedMessage),
+            // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+            version: SignTypedDataVersion.V4
+        });
+        return sig;
+    }
+    async signMessage(hex) {
+        // interface implementation expects a hex number
+        // if something different is passed, we have two options:
+        // * throw an error
+        // * convert to hex
+        // converting to hex is not so straightforward, though
+        // you might do ethers.toUtf8Bytes() if it's a string
+        // or you might do ethers.toBeHex() for a number with a specific length
+        // or you might do ethers.hexlify() if you don't care
+        // therefore, it's the job of the client to think what he wants
+        // to pass. Throwing an error here might save debuging hours
+        if (!isHexString(hex)) {
+            throw new Error('Keystore signer, signMessage: passed value is not a hex');
+        }
+        return this.#signer.signMessage(getBytes(hex));
+    }
+    async sendTransaction(transaction) {
+        const transactionRes = await this.#signer.sendTransaction(transaction);
+        return transactionRes;
+    }
+    sign7702 = async ({ chainId, contract, nonce }) => {
+        if (!this.#authorizationPrivkey)
+            throw new Error('no key to perform sign');
+        const hex = getAuthorizationHash(chainId, contract, nonce);
+        const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey));
+        const signature = hexlify(data.signature);
+        return {
+            yParity: toBeHex(data.recid, 1),
+            r: signature.substring(0, 66),
+            s: `0x${signature.substring(66)}`
+        };
+    };
+    signTransactionTypeFour = async ({ txnRequest, eip7702Auth }) => {
+        if (!this.#authorizationPrivkey)
+            throw new Error('no key to perform sign');
+        const maxPriorityFeePerGas = txnRequest.maxPriorityFeePerGas ?? txnRequest.gasPrice;
+        const maxFeePerGas = txnRequest.maxFeePerGas ?? txnRequest.gasPrice;
+        const txnTypeFourHash = keccak256(concat([
+            '0x04',
+            encodeRlp([
+                toBeHex(txnRequest.chainId),
+                txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+                maxPriorityFeePerGas ? toBeHex(maxPriorityFeePerGas) : '0x',
+                maxFeePerGas ? toBeHex(maxFeePerGas) : '0x',
+                txnRequest.gasLimit ? toBeHex(txnRequest.gasLimit) : '0x',
+                txnRequest.to || '0x',
+                txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+                txnRequest.data,
+                [],
+                [
+                    [
+                        eip7702Auth.chainId,
+                        eip7702Auth.address,
+                        eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+                        eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+                        // strip leading zeros
+                        toBeHex(BigInt(eip7702Auth.r)),
+                        toBeHex(BigInt(eip7702Auth.s))
+                    ]
+                ]
+            ])
+        ]));
+        const data = ecdsaSign(getBytes(txnTypeFourHash), getBytes(this.#authorizationPrivkey));
+        const signature = hexlify(data.signature);
+        const txnTypeFourSignature = {
+            yParity: toBeHex(data.recid, 1),
+            r: signature.substring(0, 66),
+            s: `0x${signature.substring(66)}`
+        };
+        return concat([
+            '0x04',
+            encodeRlp([
+                toBeHex(txnRequest.chainId),
+                txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+                maxPriorityFeePerGas ? toBeHex(maxPriorityFeePerGas) : '0x',
+                maxFeePerGas ? toBeHex(maxFeePerGas) : '0x',
+                txnRequest.gasLimit ? toBeHex(txnRequest.gasLimit) : '0x',
+                txnRequest.to || '0x',
+                txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+                txnRequest.data,
+                [],
+                [
+                    [
+                        eip7702Auth.chainId,
+                        eip7702Auth.address,
+                        eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+                        eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+                        // strip leading zeros
+                        toBeHex(BigInt(eip7702Auth.r)),
+                        toBeHex(BigInt(eip7702Auth.s))
+                    ]
+                ],
+                txnTypeFourSignature.yParity === '0x00' ? '0x' : txnTypeFourSignature.yParity,
+                // strip leading zeros
+                toBeHex(BigInt(txnTypeFourSignature.r)),
+                toBeHex(BigInt(txnTypeFourSignature.s))
+            ])
+        ]);
+    };
+    /**
+     * Gets account public encryption key computed from entropy associated with
+     * the specified user account, using the nacl implementation of the
+     * X25519_XSalsa20_Poly1305 algorithm.
+     */
+    getEncryptionPublicKey = async () => {
+        const encryptionPublicKeyBase64 = getEncryptionPublicKey(stripHexPrefix(this.#signer.privateKey));
+        return encryptionPublicKeyBase64;
+    };
+    /**
+     * Decrypt a message (encrypted by the encryption public key).
+     */
+    decrypt = (encryptedDataHex) => {
+        const jsonString = Buffer.from(encryptedDataHex, 'hex').toString('utf8');
+        const encryptedData = JSON.parse(jsonString);
+        const plaintext = decrypt({
+            encryptedData,
+            privateKey: stripHexPrefix(this.#signer.privateKey)
+        });
+        return plaintext;
+    };
+}
+//# sourceMappingURL=keystoreSigner.js.map

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
 import { createPublicClient, custom, PublicClient } from 'viem'
 

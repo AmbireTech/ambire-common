@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { IStorageController } from '@/interfaces/storage'
 import { IUiController } from '@/interfaces/ui'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'

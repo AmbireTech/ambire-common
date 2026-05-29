@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../src/libs/scamFilter/index.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,UAAU,EAAE,MAAM,cAAc,CAAA;AAEzC,OAAO,EAAE,UAAU,EAAE,CAAA","sourcesContent":["import { ScamFilter } from './scamFilter'\n\nexport { ScamFilter }\n"]}

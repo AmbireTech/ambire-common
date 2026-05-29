@@ -1,0 +1,210 @@
+import { getAddress, Interface, keccak256, toQuantity, toUtf8Bytes } from 'ethers';
+import { privSlot } from '@/libs/proxyDeploy/deploy';
+import { getShouldStateOverride } from '@/utils/simulationStateOverride';
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json';
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
+import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json';
+import NFTGetter from '../../../contracts/compiled/NFTGetter.json';
+import { ProviderError } from '../../classes/ProviderError';
+import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy';
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless';
+import { getRpcProvider } from '../../services/provider';
+import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account';
+import { callToTuple, getSignableCalls } from '../accountOp/accountOp';
+import { DeploylessMode, fromDescriptor } from '../deployless/deployless';
+import { getDeploylessOpts } from '../portfolio/getOnchainBalances';
+const NFT_COLLECTION_LIMIT = 100;
+export function getStateOverride(account, op, accountState) {
+    // if the account is a Safe,
+    // add an additional state override that gives privileges to the assKey;
+    // also, we changed privs storage slot to ambire.smart.contracts.storage
+    // so privs no longer override slot number 0
+    const stateDiff = !!account.safeCreation
+        ? {
+            [privSlot(keccak256(toUtf8Bytes('ambire.smart.contracts.storage')), 'uint256', account.associatedKeys[0], 'bytes32')]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+        }
+        : undefined;
+    // add stateOverride when using a Safe as well
+    const stateOverride = !!account.safeCreation || (op.calls.length > 1 && isBasicAccount(account, accountState))
+        ? {
+            [account.addr]: {
+                code: AmbireAccount7702.binRuntime,
+                stateDiff
+            }
+        }
+        : undefined;
+    return stateOverride;
+}
+// if using EOA, use the first and only call of the account op
+// if it's SA, make the data execute or deployAndExecute,
+// set the spoof+addr and pass all the calls
+export function getFunctionParams(account, op, accountState) {
+    if (isBasicAccount(account, accountState) && op.calls.length === 1) {
+        const call = op.calls[0];
+        return {
+            to: call.to,
+            value: toQuantity(call.value.toString()),
+            data: call.data,
+            from: op.accountAddr
+        };
+    }
+    if (isBasicAccount(account, accountState)) {
+        const saAbi = new Interface(AmbireAccount.abi);
+        const callData = saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)]);
+        return {
+            to: account.addr,
+            value: 0,
+            data: callData,
+            from: DEPLOYLESS_SIMULATION_FROM
+        };
+    }
+    if (!!account.safeCreation && !accountState.isDeployed)
+        return null;
+    const saAbi = new Interface(AmbireAccount.abi);
+    const factoryAbi = new Interface(AmbireFactory.abi);
+    const callData = accountState.isDeployed
+        ? saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
+        : factoryAbi.encodeFunctionData('deployAndExecute', [
+            account.creation.bytecode,
+            account.creation.salt,
+            getSignableCalls(op),
+            getSpoof(account)
+        ]);
+    return {
+        from: DEPLOYLESS_SIMULATION_FROM,
+        to: accountState.isDeployed ? account.addr : account.creation.factoryAddr,
+        value: 0,
+        data: callData
+    };
+}
+export async function debugTraceCall(baseAcc, op, network, accountState, overrideData) {
+    const account = baseAcc.getAccount();
+    const opts = {
+        blockTag: 'latest',
+        from: DEPLOYLESS_SIMULATION_FROM,
+        mode: DeploylessMode.ProxyContract,
+        isEOA: isBasicAccount(account, accountState),
+        simulation: {
+            accountOps: [op],
+            baseAccount: baseAcc,
+            state: accountState
+        }
+    };
+    const deploylessOpts = getDeploylessOpts(account.addr, network, opts);
+    const [factory, factoryCalldata] = getAccountDeployParams(account);
+    const simulationOps = [
+        [
+            !isBasicAccount(account, accountState) ? op.nonce : BigInt(EOA_SIMULATION_NONCE),
+            op.calls.map(callToTuple)
+        ]
+    ];
+    // initialize a new provider for debug trace call to avoid batching it
+    // as sometimes debug_traceCall gets handled really slowly from the RPCs
+    // and that affects wallet performance
+    const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl);
+    const params = getFunctionParams(account, op, accountState);
+    if (!params)
+        return { tokens: [], nfts: [] };
+    const results = await provider
+        .send('debug_traceCall', [
+        {
+            to: params.to,
+            value: toQuantity(params.value.toString()),
+            data: params.data,
+            from: params.from
+        },
+        'latest',
+        {
+            tracer: `{
+          discovered: [],
+          fault: function (log) {},
+          step: function (log) {
+            const found = this.discovered.map(ob => ob.address)
+            if (log.contract && log.contract.getAddress() && found.indexOf(toHex(log.contract.getAddress())) === -1) {
+              this.discovered.push({
+                erc: 20,
+                address: toHex(log.contract.getAddress())
+              })
+            }
+            if (log.op.toString() === 'LOG4') {
+              this.discovered.push({
+                erc: 721,
+                address: toHex(log.contract.getAddress()),
+                tokenId: '0x' + log.stack.peek(5).toString(16)
+              })
+            }
+          },
+          result: function () {
+            return this.discovered
+          }
+        }`,
+            enableMemory: false,
+            enableReturnData: true,
+            disableStorage: true,
+            stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
+                ? {
+                    // TODO: if it's an EOA, add the EOA state override data
+                    [params.from]: {
+                        balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+                    },
+                    ...overrideData
+                }
+                : {}
+        }
+    ])
+        .catch((e) => {
+        throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
+    });
+    const foundTokens = [
+        ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
+    ];
+    const foundNftTransfersObject = results
+        .filter((i) => i?.erc === 721)
+        .reduce((res, i) => {
+        if (!res[i?.address])
+            res[i?.address] = new Set();
+        res[i.address].add(i.tokenId);
+        return res;
+    }, {});
+    const foundNftTransfers = Object.entries(foundNftTransfersObject).map(([address, id]) => [getAddress(address), Array.from(id).map((i) => BigInt(i))]);
+    // we set the 3rd param to "true" as we don't need state override
+    const deploylessTokens = fromDescriptor(provider, BalanceGetter, true);
+    const deploylessNfts = fromDescriptor(provider, NFTGetter, true);
+    const getNftsPromise = deploylessNfts.call('simulateAndGetAllNFTs', [
+        op.accountAddr,
+        account.associatedKeys,
+        foundNftTransfers.map(([address]) => address),
+        foundNftTransfers.map(([, x]) => x),
+        NFT_COLLECTION_LIMIT,
+        factory,
+        factoryCalldata,
+        simulationOps
+    ], deploylessOpts);
+    const result = await Promise.all([
+        deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
+        getNftsPromise
+    ]);
+    const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = result;
+    const beforeNftCollections = before.collections;
+    const afterNftCollections = after.collections;
+    // clean up the provider after usage
+    try {
+        provider.destroy();
+    }
+    catch (e) {
+        console.error(e);
+    }
+    return {
+        tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
+        nfts: foundNftTransfers.filter((nft, i) => {
+            if (!beforeNftCollections[i][3] || beforeNftCollections[i][3] === '0x')
+                return true;
+            const foundAfterToken = afterNftCollections.find((t, j) => deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i][0].toLowerCase());
+            if (!foundAfterToken || !foundAfterToken[0])
+                return false;
+            return !foundAfterToken[i][3] || foundAfterToken[0][3] === '0x';
+        })
+    };
+}
+//# sourceMappingURL=debugTraceCall.js.map

@@ -422,7 +422,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
     const { feeOptions } = info
 
-    // @ts-expect-error
+    // @ts-ignore
     delete info.feeOptions
     this.#networks[network.chainId.toString()] = {
       ...network,

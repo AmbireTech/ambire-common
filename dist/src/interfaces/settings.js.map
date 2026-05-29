@@ -1,0 +1,1 @@
+{"version":3,"file":"settings.js","sourceRoot":"","sources":["../../../src/interfaces/settings.ts"],"names":[],"mappings":"","sourcesContent":["export interface Settings {\n  shouldDisable7702Popup(accAddr: string): boolean\n  setShouldDisable7702Popup(accAddr: string, shouldDisable: boolean): void\n}\n"]}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "baseUrl": "src/",
+    "paths": {
+      "@/*": ["*"],
+      "@test/*": ["../test/*"]
+    },
+    "outDir": "./dist",
+    "noEmit": false,
+    "noEmitOnError": false,
+    "noEmitHelpers": true,
+    "lib": ["ESNext", "DOM"],
+    "types": ["node", "jest", "mocha", "chrome"],
+    "target": "ESNext",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": true,
+    "noFallthroughCasesInSwitch": true,
+    "inlineSources": true,
+    "noImplicitAny": false,
+    "noImplicitReturns": false,
+    "noImplicitThis": true,
+    "strictNullChecks": false,
+    "removeComments": false,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "strict": false,
+    "strictPropertyInitialization": false,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
+  },
+  "include": [
+    "src",
+    "v1"
+  ],
+  "exclude": ["node_modules", "dist", "test", "scripts", "src/**/*.test.ts", "src/**/tests"]
+}

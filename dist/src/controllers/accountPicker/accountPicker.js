@@ -1,0 +1,1077 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { getCreate2Address, keccak256 } from 'ethers';
+import EmittableError from '../../classes/EmittableError';
+import ExternalSignerError from '../../classes/ExternalSignerError';
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account';
+import { MAX_UINT256 } from '../../consts/deploy';
+import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation';
+import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets';
+import { ImportStatus } from '../../interfaces/account';
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore';
+import { getAccountImportStatus, getBasicAccount, getDefaultAccountPreferences, getEmailAccount, getSmartAccount, isDerivedForSmartAccountKeyOnly, isSmartAccount } from '../../libs/account/account';
+import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker';
+import { getAccountState } from '../../libs/accountState/accountState';
+import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys';
+import { relayerCall } from '../../libs/relayerCall/relayerCall';
+import EventEmitter from '../eventEmitter/eventEmitter';
+export const DEFAULT_PAGE = 1;
+export const DEFAULT_PAGE_SIZE = 1;
+const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true;
+const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true;
+const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true;
+/**
+ * Account Picker Controller
+ * is responsible for listing accounts that can be selected for adding.
+ * It uses a KeyIterator interface allow iterating all the keys in a specific
+ * underlying store such as a hardware device or an object holding a seed.
+ */
+export class AccountPickerController extends EventEmitter {
+    #callRelayer;
+    #accounts;
+    #keystore;
+    #networks;
+    #providers;
+    #externalSignerControllers;
+    initParams = null;
+    keyIterator;
+    hdPathTemplate;
+    isInitialized = false;
+    shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS;
+    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS;
+    shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY;
+    /* This is only the index of the current page */
+    page = DEFAULT_PAGE;
+    /* The number of accounts to be displayed on a single page */
+    pageSize = DEFAULT_PAGE_SIZE;
+    /* State to indicate the page requested fails to load (and the reason why) */
+    pageError = null;
+    selectedAccountsFromCurrentSession = [];
+    // Accounts which identity is created on the Relayer (if needed), and are ready
+    // to be added to the user's account list by the Main Controller
+    readyToAddAccounts = [];
+    // Accounts that were selected in a previous session but are now deselected in the current one
+    readyToRemoveAccounts = [];
+    // The keys for the `readyToAddAccounts`, that are ready to be added to the
+    // user's keystore by the Main Controller
+    readyToAddKeys = { internal: [], external: [] };
+    // Identity for the smart accounts must be created on the Relayer, this
+    // represents the status of the operation, needed managing UI state
+    addAccountsStatus = 'INITIAL';
+    selectNextAccountStatus = 'INITIAL';
+    #addedAccountsFromCurrentSession = [];
+    accountsLoading = false;
+    linkedAccountsLoading = false;
+    linkedAccountsError = '';
+    networksWithAccountStateError = [];
+    #derivedAccounts = [];
+    #linkedAccounts = [];
+    #alreadyImportedAccounts = [];
+    addAccountsPromise;
+    #onAddAccountsSuccessCallback;
+    #onAddAccountsSuccessCallbackPromise;
+    #controllerSubscriptions = [];
+    // Used in order to expose the ongoing "find linked accounts" task, so other
+    // code can await it, preventing race conditions.
+    findAndSetLinkedAccountsPromise;
+    /**
+     * Needed in order to cancel the ongoing findAndSetLinkedAccounts operation
+     * when reset() is called (usually when the user navigates away/closes the Account Picker).
+     * This prevents the operation from continuing after the controller state has been
+     * cleared, avoiding errors in #verifyLinkedAccounts when #derivedAccounts is empty.
+     */
+    #findAndSetLinkedAccountsAbortController;
+    #shouldDebounceFlags = {};
+    #addAccountsOnKeystoreReady = null;
+    constructor({ eventEmitterRegistry, accounts, keystore, networks, providers, externalSignerControllers, relayerUrl, fetch, onAddAccountsSuccessCallback }) {
+        super(eventEmitterRegistry);
+        this.#accounts = accounts;
+        this.#keystore = keystore;
+        this.#networks = networks;
+        this.#providers = providers;
+        this.#externalSignerControllers = externalSignerControllers;
+        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback;
+        this.#controllerSubscriptions.push(this.#accounts.onUpdate(() => {
+            this.#debounceFunctionCalls('update-accounts', () => {
+                if (!this.isInitialized)
+                    return;
+                if (this.addAccountsStatus !== 'INITIAL')
+                    return;
+                this.#updateStateWithTheLatestFromAccounts();
+            }, 20);
+        }));
+        this.#controllerSubscriptions.push(this.#keystore.onUpdate(() => {
+            if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+                this.addAccounts(this.#addAccountsOnKeystoreReady.accounts);
+                this.#addAccountsOnKeystoreReady = null;
+            }
+        }));
+    }
+    get accountsOnPage() {
+        const processedAccounts = this.#derivedAccounts
+            // Remove smart accounts derived programmatically, because since v4.60.0
+            // unused smart accounts are no longer displayed on page.
+            .filter((a) => !isSmartAccount(a.account))
+            // The displayed (visible) accounts on page should not include the derived
+            // EOA (basic) accounts only used as smart account keys, they should not
+            // be visible nor importable (or selectable).
+            .filter((x) => !isDerivedForSmartAccountKeyOnly(x.index))
+            .flatMap((derivedAccount) => {
+            const associatedLinkedAccounts = this.#linkedAccounts.filter((linkedAcc) => !isSmartAccount(derivedAccount.account) &&
+                linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr));
+            const correspondingSmartAccount = this.#derivedAccounts.find((acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot);
+            let accountsToReturn = [];
+            if (!isSmartAccount(derivedAccount.account)) {
+                accountsToReturn.push(derivedAccount);
+                const duplicate = associatedLinkedAccounts.find((linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr);
+                // The derived smart account that matches the relayer's linked account
+                // should not be displayed as linked account. Use this cycle to mark it.
+                if (duplicate)
+                    duplicate.isLinked = false;
+                if (!duplicate && correspondingSmartAccount) {
+                    accountsToReturn.push(correspondingSmartAccount);
+                }
+            }
+            accountsToReturn = accountsToReturn.concat(associatedLinkedAccounts.map((linkedAcc) => ({
+                ...linkedAcc,
+                slot: derivedAccount.slot,
+                index: derivedAccount.index
+            })));
+            return accountsToReturn;
+        });
+        const unprocessedLinkedAccounts = this.#linkedAccounts
+            .filter((linkedAcc) => !processedAccounts.find((processedAcc) => processedAcc?.account.addr === linkedAcc.account.addr))
+            // Use `flatMap` instead of `map` in order to auto remove missing values.
+            // The `flatMap` has a built-in mechanism to flatten the array and remove
+            // null or undefined values (by returning empty array).
+            .flatMap((linkedAcc) => {
+            const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) => linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr));
+            // The `correspondingDerivedAccount` should always be found, except when
+            // something is wrong with the data we have stored on the Relayer.
+            // The this.#verifyLinkedAndDerivedAccounts() method should have
+            // already emitted an error in that case. Do not emit here, since
+            // this is a getter method (and emitting here is a no-go).
+            if (!correspondingDerivedAccount)
+                return [];
+            return [
+                {
+                    ...linkedAcc,
+                    slot: correspondingDerivedAccount.slot,
+                    index: correspondingDerivedAccount.index
+                }
+            ];
+        });
+        const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts].filter((a) => !isSmartAccount(a.account) ||
+            (isSmartAccount(a.account) &&
+                this.#linkedAccounts.find((linkedAcc) => linkedAcc.account.addr === a.account.addr)));
+        mergedAccounts.sort((a, b) => {
+            const prioritizeAccountType = (item) => {
+                if (!isSmartAccount(item.account))
+                    return -1;
+                if (item.isLinked)
+                    return 1;
+                return 0;
+            };
+            return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot;
+        });
+        const accountsWithStatus = mergedAccounts.map((acc) => ({
+            ...acc,
+            importStatus: getAccountImportStatus({
+                account: acc.account,
+                alreadyImportedAccounts: this.#alreadyImportedAccounts,
+                keys: this.#keystore.keys,
+                accountsOnPage: mergedAccounts,
+                keyIteratorType: this.keyIterator?.type
+            })
+        }));
+        // Since v4.60.0 there should always be 1 unused Smart Account on the page,
+        // except when all smart accounts are found via linked accounts (therefore, used).
+        const nextUnusedSmartAcc = this.#derivedAccounts
+            .filter((acc) => isSmartAccount(acc.account))
+            .filter((acc) => !accountsWithStatus.map((as) => as.account.addr).includes(acc.account.addr))
+            .sort((a, b) => a.index - b.index)[0];
+        if (nextUnusedSmartAcc) {
+            accountsWithStatus.push({
+                ...nextUnusedSmartAcc,
+                importStatus: getAccountImportStatus({
+                    account: nextUnusedSmartAcc.account,
+                    alreadyImportedAccounts: this.#alreadyImportedAccounts,
+                    keys: this.#keystore.keys,
+                    accountsOnPage: mergedAccounts,
+                    keyIteratorType: this.keyIterator?.type
+                })
+            });
+        }
+        return accountsWithStatus;
+    }
+    get allKeysOnPage() {
+        const derivedKeys = this.#derivedAccounts.flatMap((a) => a.account.associatedKeys);
+        const linkedKeys = this.#linkedAccounts.flatMap((a) => a.account.associatedKeys);
+        return [...new Set([...derivedKeys, ...linkedKeys])];
+    }
+    get selectedAccounts() {
+        const accountsOnPageWithKeys = this.#alreadyImportedAccounts.filter((a) => this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr)));
+        const accountsAddrOnPage = accountsOnPageWithKeys.map((a) => a.addr);
+        const selectedAccountsFromPrevSession = this.accountsOnPage
+            .filter((a) => accountsAddrOnPage.includes(a.account.addr) &&
+            a.importStatus === ImportStatus.ImportedWithTheSameKeys)
+            .map((a) => {
+            const accountsOnPageWithThisAcc = this.accountsOnPage.filter((accOnPage) => accOnPage.account.addr === a.account.addr);
+            const accountKeys = this.#getAccountKeys(a.account, accountsOnPageWithThisAcc);
+            return {
+                account: a.account,
+                isLinked: a.isLinked,
+                accountKeys: accountKeys.map((accKey) => ({
+                    addr: accKey.account.addr,
+                    slot: accKey.slot,
+                    index: accKey.index
+                }))
+            };
+        });
+        const nextSelectedAccount = [
+            ...selectedAccountsFromPrevSession,
+            ...this.selectedAccountsFromCurrentSession
+        ];
+        const readyToRemoveAccountsAddr = this.readyToRemoveAccounts.map((a) => a.addr);
+        return nextSelectedAccount.filter((a) => !readyToRemoveAccountsAddr.includes(a.account.addr));
+    }
+    get addedAccountsFromCurrentSession() {
+        return this.#addedAccountsFromCurrentSession;
+    }
+    set addedAccountsFromCurrentSession(val) {
+        this.#addedAccountsFromCurrentSession = Array.from(new Map(val.map((account) => [account.addr, account])).values());
+    }
+    setInitParams(params) {
+        this.initParams = params;
+        this.emitUpdate();
+    }
+    async init() {
+        if (!this.initParams) {
+            this.emitError({
+                level: 'silent',
+                message: 'AccountPickerController init failed: missing initParams.',
+                error: new Error('AccountPickerController init failed: missing initParams.')
+            });
+            return;
+        }
+        const { keyIterator, hdPathTemplate, page, pageSize, shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS, shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS, shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY } = this.initParams;
+        await this.reset(false);
+        this.keyIterator = keyIterator;
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        this.page = page || DEFAULT_PAGE;
+        if (pageSize)
+            this.pageSize = pageSize;
+        this.hdPathTemplate = hdPathTemplate;
+        this.isInitialized = true;
+        this.#alreadyImportedAccounts = [...this.#accounts.accounts];
+        this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts;
+        this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks;
+        if (shouldAddNextAccountAutomatically) {
+            await this.selectNextAccount();
+            await this.addAccounts();
+        }
+        else {
+            await this.forceEmitUpdate();
+        }
+    }
+    get type() {
+        return this.keyIterator?.type || this.initParams?.keyIterator?.type;
+    }
+    get subType() {
+        return this.keyIterator?.subType || this.initParams?.keyIterator?.subType;
+    }
+    async reset(resetInitParams = true) {
+        await this.addAccountsPromise;
+        // Abort any ongoing findAndSetLinkedAccounts operation
+        if (this.#findAndSetLinkedAccountsAbortController) {
+            this.#findAndSetLinkedAccountsAbortController.abort();
+            this.#findAndSetLinkedAccountsAbortController = undefined;
+        }
+        if (resetInitParams)
+            this.initParams = null;
+        this.keyIterator = null;
+        this.selectedAccountsFromCurrentSession = [];
+        this.page = DEFAULT_PAGE;
+        this.pageSize = DEFAULT_PAGE_SIZE;
+        this.hdPathTemplate = undefined;
+        this.shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS;
+        this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS;
+        this.pageError = null;
+        this.linkedAccountsLoading = false;
+        this.linkedAccountsError = '';
+        this.addAccountsStatus = 'INITIAL';
+        this.#derivedAccounts = [];
+        this.#linkedAccounts = [];
+        this.readyToAddAccounts = [];
+        this.networksWithAccountStateError = [];
+        this.readyToAddKeys = { internal: [], external: [] };
+        this.isInitialized = false;
+        this.addedAccountsFromCurrentSession = [];
+        this.#addAccountsOnKeystoreReady = null;
+        await this.forceEmitUpdate();
+    }
+    destroy() {
+        super.destroy();
+        // We must unsubscribe from the controllers and CAN'T call
+        // their destroy methods. That is because they are also used
+        // outside of this controller instance.
+        this.#controllerSubscriptions.forEach((unsubscribe) => unsubscribe());
+        this.#controllerSubscriptions = [];
+    }
+    resetAccountsSelection() {
+        this.selectedAccountsFromCurrentSession = [];
+        this.readyToRemoveAccounts = [];
+        this.emitUpdate();
+    }
+    async setHDPathTemplateAndPage({ hdPathTemplate, page = this.page }) {
+        const arePropsUnchanged = this.hdPathTemplate === hdPathTemplate && page === this.page;
+        if (arePropsUnchanged)
+            return;
+        this.hdPathTemplate = hdPathTemplate;
+        // Reset the currently selected accounts, because for the keys of these
+        // accounts, as of v4.32.0, we don't store their hd path. When import
+        // completes, only the latest hd path of the controller is stored.
+        this.selectedAccountsFromCurrentSession = [];
+        this.#derivedAccounts = [];
+        this.emitUpdate();
+        await this.setPage({
+            page,
+            shouldGetAccountsUsedOnNetworks: DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
+            shouldSearchForLinkedAccounts: DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+        });
+    }
+    #getAccountKeys(account, accountsOnPageWithThisAcc) {
+        // should never happen
+        if (accountsOnPageWithThisAcc.length === 0) {
+            const message = `accountPicker: account ${account.addr} was not found in the accountsOnPage.`;
+            this.emitError({ message, level: 'silent', error: new Error(message) });
+            return [];
+        }
+        // Case 1: The account is a EOA
+        const isBasicAcc = !isSmartAccount(account);
+        // The key of the EOA is the EOA itself
+        if (isBasicAcc)
+            return accountsOnPageWithThisAcc;
+        // Case 2: The account is a Smart account, but not a linked one
+        const isSmartAccountAndNotLinked = isSmartAccount(account) &&
+            accountsOnPageWithThisAcc.length === 1 &&
+            accountsOnPageWithThisAcc[0]?.isLinked === false;
+        if (isSmartAccountAndNotLinked) {
+            // The key of the smart account is the EOA on the same slot
+            // that is explicitly derived for a smart account key only.
+            const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find((a) => a.slot === accountsOnPageWithThisAcc[0]?.slot &&
+                !isSmartAccount(a.account) &&
+                isDerivedForSmartAccountKeyOnly(a.index));
+            return basicAccOnThisSlotDerivedForSmartAccKey
+                ? [basicAccOnThisSlotDerivedForSmartAccKey]
+                : [];
+        }
+        // Case 3: The account is a smart account (v1 or v2) and a linked one.
+        // Since it's found as linked, the key(s) must be one or more of the EOAs
+        // derived, because linked accounts are searched on the EOAs only.
+        return this.#derivedAccounts
+            .filter((a) => !isSmartAccount(a.account))
+            .filter((a) => account.associatedKeys.includes(a.account.addr));
+    }
+    selectAccount(_account) {
+        if (!this.isInitialized)
+            return this.#throwNotInitialized();
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        const account = 'usedOnNetworks' in _account
+            ? // destructure and re-build to remove the `usedOnNetworks` property
+                (({ usedOnNetworks, ...rest }) => ({ ...rest }))(_account)
+            : _account;
+        // Needed, because linked accounts could have multiple keys (EOAs),
+        // and therefore - same linked account could be found on different slots.
+        const accountsOnPageWithThisAcc = this.accountsOnPage.filter((accOnPage) => accOnPage.account.addr === account.addr);
+        const accountKeys = this.#getAccountKeys(account, accountsOnPageWithThisAcc);
+        if (!accountKeys.length)
+            return this.emitError({
+                level: 'major',
+                message: `Selecting ${account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
+                error: new Error(`Trying to select ${account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`)
+            });
+        const nextSelectedAccount = {
+            account,
+            // If the account has more than 1 key, it is for sure linked account,
+            // since EOAs have only 1 key and smart accounts with more than
+            // one key present should always be found as linked accounts anyways.
+            isLinked: accountKeys.length > 1,
+            accountKeys: accountKeys.map((a) => ({
+                addr: a.account.addr,
+                slot: a.slot,
+                index: a.index
+            }))
+        };
+        const accountExists = this.selectedAccountsFromCurrentSession.some((x) => x.account.addr === nextSelectedAccount.account.addr);
+        if (!accountExists)
+            this.selectedAccountsFromCurrentSession.push(nextSelectedAccount);
+        this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter((a) => a.addr !== nextSelectedAccount.account.addr);
+        this.emitUpdate();
+    }
+    deselectAccount(account) {
+        if (!this.isInitialized)
+            return this.#throwNotInitialized();
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        if (!this.selectedAccounts.find((x) => x.account.addr === account.addr))
+            return;
+        this.selectedAccountsFromCurrentSession = this.selectedAccountsFromCurrentSession.filter((a) => a.account.addr !== account.addr);
+        const accountInAlreadyAddedAccounts = this.#alreadyImportedAccounts.find((a) => a.addr === account.addr);
+        if (accountInAlreadyAddedAccounts) {
+            const accountInReadyToRemoveAccounts = this.readyToRemoveAccounts.find((a) => a.addr === account.addr);
+            if (!accountInReadyToRemoveAccounts)
+                this.readyToRemoveAccounts.push(account);
+        }
+        this.emitUpdate();
+    }
+    /**
+     * For internal keys only! Returns the ready to be added internal (private)
+     * keys of the currently selected accounts.
+     */
+    retrieveInternalKeysOfSelectedAccounts() {
+        if (!this.hdPathTemplate) {
+            this.#throwMissingHdPath();
+            return [];
+        }
+        if (!this.keyIterator?.retrieveInternalKeys) {
+            this.#throwMissingKeyIteratorRetrieveInternalKeysMethod();
+            return [];
+        }
+        return this.keyIterator?.retrieveInternalKeys(this.selectedAccountsFromCurrentSession, this.hdPathTemplate, this.#keystore.keys);
+    }
+    async setPage({ page = this.page, pageSize, shouldSearchForLinkedAccounts, shouldGetAccountsUsedOnNetworks }) {
+        if (!this.isInitialized)
+            return this.#throwNotInitialized();
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        if (shouldSearchForLinkedAccounts !== undefined) {
+            this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts;
+        }
+        if (shouldGetAccountsUsedOnNetworks !== undefined) {
+            this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks;
+        }
+        if (pageSize && pageSize !== this.pageSize) {
+            this.pageSize = pageSize;
+            this.page = page;
+        }
+        else if (page === this.page && this.#derivedAccounts.length)
+            return;
+        this.page = page;
+        this.pageError = null;
+        this.#derivedAccounts = [];
+        this.#linkedAccounts = [];
+        this.accountsLoading = true;
+        this.networksWithAccountStateError = [];
+        this.linkedAccountsLoading = false;
+        this.emitUpdate();
+        if (page <= 0) {
+            this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`;
+            this.page = DEFAULT_PAGE; // fallback to the default (initial) page
+            this.emitUpdate();
+            return;
+        }
+        try {
+            const derivedAccounts = await this.#deriveAccounts();
+            if (this.page !== page)
+                return;
+            this.#derivedAccounts = derivedAccounts;
+            // The used on information is not critical. Allow the user to proceed after
+            // 1 second. It will get popuplated in the background.
+            const minWaitTimeout = setTimeout(() => {
+                if (this.page !== page)
+                    return;
+                this.accountsLoading = false;
+                this.emitUpdate();
+            }, 1000);
+            const derivedAccountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
+                accounts: this.#derivedAccounts,
+                page
+            });
+            if (this.page !== page)
+                return;
+            this.#derivedAccounts = derivedAccountsWithUsedOn;
+            if (minWaitTimeout)
+                clearTimeout(minWaitTimeout);
+            this.accountsLoading = false;
+            this.emitUpdate();
+            if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
+                const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked);
+                const usedAccounts = accountsOnPageWithoutTheLinked.filter((acc) => acc.account.usedOnNetworks?.length);
+                // If at least one account is used - preselect all accounts on the page
+                // (except the linked ones). Usually there are are two accounts
+                // (since the private key flow gas `pageSize` of 1)
+                if (usedAccounts.length) {
+                    accountsOnPageWithoutTheLinked.forEach((acc) => this.selectAccount(acc.account));
+                }
+            }
+        }
+        catch (e) {
+            if (this.page !== page)
+                return;
+            const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`;
+            this.accountsLoading = false;
+            this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage;
+            this.emitUpdate();
+        }
+        if (this.page !== page)
+            return;
+        await this.findAndSetLinkedAccounts();
+    }
+    #updateStateWithTheLatestFromAccounts() {
+        this.#alreadyImportedAccounts = [...this.#accounts.accounts];
+        this.addedAccountsFromCurrentSession = Array.from(new Set([
+            ...this.addedAccountsFromCurrentSession
+                .map((a) => this.#accounts.accounts.find((acc) => acc.addr === a.addr))
+                .filter(Boolean)
+        ]));
+        this.#derivedAccounts = this.#derivedAccounts.map((derivedAcc) => {
+            const updatedAccount = this.#accounts.accounts.find((acc) => acc.addr === derivedAcc.account.addr);
+            if (updatedAccount) {
+                return {
+                    ...derivedAcc,
+                    account: { ...derivedAcc.account, ...updatedAccount }
+                };
+            }
+            return derivedAcc;
+        });
+        const accountsAddr = this.#accounts.accounts.map((a) => a.addr);
+        this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter((a) => accountsAddr.includes(a.addr));
+        this.readyToAddAccounts = this.readyToAddAccounts.filter((a) => !accountsAddr.includes(a.addr));
+        this.emitUpdate();
+    }
+    /**
+     * Triggers the process of adding accounts via the AccountPicker flow by
+     * creating identity for the smart accounts (if needed) on the Relayer.
+     * Then the `onAccountPickerSuccess` listener in the Main Controller gets
+     * triggered, which uses the `readyToAdd...` properties to further set
+     * the newly added accounts data (like preferences, keys and others)
+     */
+    async addAccounts(accounts) {
+        this.addAccountsPromise = this.#addAccounts(accounts).finally(() => {
+            this.addAccountsPromise = undefined;
+        });
+        await this.addAccountsPromise;
+    }
+    async #addAccounts(accounts) {
+        if (!this.isInitialized)
+            return this.#throwNotInitialized();
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        if (!this.#keystore.isReadyToStoreKeys) {
+            this.#addAccountsOnKeystoreReady = { accounts };
+            return;
+        }
+        this.addAccountsStatus = 'LOADING';
+        await this.forceEmitUpdate();
+        this.readyToAddAccounts = [
+            ...(accounts || this.selectedAccountsFromCurrentSession).map((x, i) => {
+                const alreadyImportedAcc = this.#alreadyImportedAccounts.find((a) => a.addr === x.account.addr);
+                return {
+                    ...x.account,
+                    // Persist the already imported account preferences on purpose, otherwise,
+                    // re-importing the same account via different key type(s) would reset them.
+                    preferences: alreadyImportedAcc
+                        ? alreadyImportedAcc.preferences
+                        : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i)
+                };
+            })
+        ];
+        const readyToAddKeys = {
+            internal: [],
+            external: []
+        };
+        if (this.type === 'internal') {
+            readyToAddKeys.internal = this.retrieveInternalKeysOfSelectedAccounts();
+        }
+        else {
+            // External keys flow
+            const keyType = this.type;
+            const deviceIds = {
+                ledger: this.#externalSignerControllers.ledger?.deviceId || '',
+                trezor: this.#externalSignerControllers.trezor?.deviceId || '',
+                lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
+                qr: this.#externalSignerControllers.qr?.deviceId || ''
+            };
+            const deviceModels = {
+                ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
+                trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
+                lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
+                qr: this.#externalSignerControllers.qr?.deviceModel || ''
+            };
+            const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || '';
+            const hdPathTemplate = this.hdPathTemplate;
+            const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(({ account, accountKeys }) => accountKeys.map(({ addr, index }, i) => ({
+                addr,
+                type: keyType,
+                label: `${HARDWARE_WALLET_DEVICE_NAMES[this.type]} ${getExistingKeyLabel(this.#keystore.keys, addr, this.type) ||
+                    getDefaultKeyLabel(this.#keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)), i)}`,
+                dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+                meta: {
+                    deviceId: deviceIds[keyType],
+                    deviceModel: deviceModels[keyType],
+                    // always defined in the case of external keys
+                    hdPathTemplate,
+                    ...(keyType === 'qr'
+                        ? {
+                            masterFingerprint
+                        }
+                        : {}),
+                    index,
+                    createdAt: new Date().getTime()
+                }
+            })));
+            readyToAddKeys.external = readyToAddExternalKeys;
+        }
+        this.readyToAddKeys = readyToAddKeys;
+        this.addedAccountsFromCurrentSession = [
+            ...this.addedAccountsFromCurrentSession,
+            ...this.readyToAddAccounts
+        ];
+        this.selectedAccountsFromCurrentSession = [];
+        this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
+            this.#onAddAccountsSuccessCallbackPromise = undefined;
+        });
+        // Explicitly emit an update here because the front-end needs this state immediately,
+        // without waiting for the promise below to resolve.
+        // Previously, this caused a bug in AccountPersonalizeScreen where
+        // `addedAccountsFromCurrentSession` was still empty while waiting for the Promise.
+        // As a result, the app redirected to the NextRoute instead of showing the Personalize screen.
+        await this.forceEmitUpdate();
+        await this.#onAddAccountsSuccessCallbackPromise;
+        this.addAccountsStatus = 'SUCCESS';
+        await this.forceEmitUpdate();
+        this.#updateStateWithTheLatestFromAccounts();
+        // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
+        this.addAccountsStatus = 'INITIAL';
+        await this.forceEmitUpdate();
+    }
+    async selectNextAccount() {
+        if (!this.isInitialized)
+            return this.#throwNotInitialized();
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        this.selectNextAccountStatus = 'LOADING';
+        await this.forceEmitUpdate();
+        let currentPage = this.page;
+        let nextAccount;
+        const maxPages = 10000; // limit, acts as a safeguard to prevent infinite loops
+        while (currentPage <= maxPages) {
+            // TODO: Flag that excludes getting smart account key addresses
+            // Load the accounts for the current page
+            await this.setPage({
+                page: currentPage,
+                pageSize: this.pageSize,
+                shouldGetAccountsUsedOnNetworks: false,
+                shouldSearchForLinkedAccounts: false
+            });
+            if (this.pageError) {
+                throw new EmittableError({
+                    message: this.pageError,
+                    level: 'major',
+                    error: new Error(this.pageError)
+                });
+            }
+            nextAccount = this.accountsOnPage.find(({ isLinked, account, importStatus }) => importStatus !== ImportStatus.ImportedWithTheSameKeys &&
+                !isLinked &&
+                !isSmartAccount(account))?.account;
+            if (nextAccount) {
+                this.selectAccount(nextAccount);
+                break;
+            }
+            // If no account found on the page, move to the next page
+            currentPage++;
+        }
+        // Should never happen
+        if (!nextAccount) {
+            const message = 'accountPicker: selectNextAccount called, but no next account found.';
+            this.emitError({ message, level: 'silent', error: new Error(message) });
+        }
+        this.selectNextAccountStatus = 'SUCCESS';
+        await this.forceEmitUpdate();
+        this.selectNextAccountStatus = 'INITIAL';
+        await this.forceEmitUpdate();
+    }
+    async createAndAddEmailAccount(selectedAccount) {
+        const { account: { email }, accountKeys: [recoveryKey] } = selectedAccount;
+        if (!this.isInitialized)
+            return this.#throwNotInitialized();
+        if (!this.keyIterator)
+            return this.#throwMissingKeyIterator();
+        const keyPublicAddress = (await this.keyIterator.retrieve([{ from: 0, to: 1 }]))[0];
+        if (!keyPublicAddress) {
+            const message = 'accountPicker: createAndAddEmailAccount called, but failed to derive the public key address.';
+            this.emitError({ message, level: 'silent', error: new Error(message) });
+            return;
+        }
+        const emailSmartAccount = await getEmailAccount({
+            emailFrom: email,
+            secondaryKey: recoveryKey.addr
+        }, keyPublicAddress);
+        await this.addAccounts([{ ...selectedAccount, account: { ...emailSmartAccount, email } }]);
+    }
+    // updates the account picker state so the main ctrl receives the readyToAddAccounts
+    // that should be added to the storage of the app
+    async addExistingEmailAccounts(accounts) {
+        // There is no need to call the addAccounts method in order to add that
+        // account to the relayer because this func will be called only for accounts returned
+        // from relayer that only need to be stored in the storage of the app
+        this.readyToAddAccounts = accounts;
+        this.addAccountsStatus = 'SUCCESS';
+        this.emitUpdate();
+    }
+    removeNetworkData(chainId) {
+        this.networksWithAccountStateError = this.networksWithAccountStateError.filter((n) => n !== chainId);
+        this.emitUpdate();
+    }
+    async #deriveAccounts() {
+        // Should never happen, because before the #deriveAccounts method gets
+        // called - there is a check if the keyIterator exists.
+        if (!this.keyIterator) {
+            const message = 'accountPicker: #deriveAccounts called, but keyIterator was missing';
+            this.emitError({ message, level: 'silent', error: new Error(message) });
+            return [];
+        }
+        const accounts = [];
+        const startIdx = (this.page - 1) * this.pageSize;
+        const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1);
+        const indicesToRetrieve = [
+            { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
+        ];
+        // Since v4.31.0, do not retrieve smart accounts for the private key
+        // type. That's because we can't use the common derivation offset
+        // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
+        // accounts out of the private key (with another approach - salt and
+        // extra entropy) was creating confusion.
+        //
+        // + no smart accounts for QR wallets. Reasons:
+        // - some hws sign only if the signer is imported
+        // - we are generally moving in another direction
+        const shouldRetrieveSmartAccountIndices = this.keyIterator.subType !== 'private-key' && this.type !== 'qr';
+        if (shouldRetrieveSmartAccountIndices) {
+            // Indices for the smart accounts.
+            indicesToRetrieve.push({
+                from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+                to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+            });
+        }
+        // Combine the requests for all accounts in one call to the keyIterator.
+        // That's optimization primarily focused on hardware wallets, to reduce the
+        // number of calls to the hardware device. This is important, especially
+        // for Trezor, because it fires a confirmation popup for each call.
+        const combinedBasicAndSmartAccKeys = await this.keyIterator.retrieve(indicesToRetrieve, this.hdPathTemplate);
+        const basicAccKeys = combinedBasicAndSmartAccKeys.slice(0, this.pageSize);
+        const smartAccKeys = combinedBasicAndSmartAccKeys.slice(this.pageSize, combinedBasicAndSmartAccKeys.length);
+        const smartAccountsPromises = [];
+        // Replace the parallel getKeys with foreach to prevent issues with Ledger,
+        // which can only handle one request at a time.
+        for (const [index, smartAccKey] of smartAccKeys.entries()) {
+            const slot = startIdx + (index + 1);
+            const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
+            // The derived EOA (basic) account which is the key for the smart account
+            const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts);
+            accounts.push({ account, isLinked: false, slot, index: indexWithOffset });
+            // Derive the Ambire (smart) account
+            smartAccountsPromises.push(getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }], this.#alreadyImportedAccounts)
+                .then((smartAccount) => ({
+                account: smartAccount,
+                isLinked: false,
+                slot,
+                index: slot - 1
+            }))
+                // If the error isn't caught here and the promise is rejected, Promise.all
+                // will be rejected entirely.
+                .catch(() => {
+                // No need for emitting an error here, because a relevant error is already
+                // emitted in the method #getAccountsUsedOnNetworks
+                return null;
+            }));
+            // Yield to event loop to keep UI responsive
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises);
+        const smartAccounts = unfilteredSmartAccountsList.filter((x) => x !== null);
+        accounts.push(...smartAccounts);
+        for (const [index, basicAccKey] of basicAccKeys.entries()) {
+            const slot = startIdx + (index + 1);
+            // The EOA (basic) account on this slot
+            const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts);
+            const result = { account, isLinked: false, slot, index: slot - 1 };
+            accounts.push(result);
+        }
+        return accounts;
+    }
+    async #getAccountsUsedOnNetworks({ accounts, page }) {
+        if (!this.shouldGetAccountsUsedOnNetworks) {
+            return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: null } }));
+        }
+        const accountsObj = Object.fromEntries(accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }]));
+        const enabledNetworks = this.#networks.networks;
+        const accountsList = accounts.map((acc) => acc.account);
+        const promises = enabledNetworks.map(async (network) => {
+            const chainId = network.chainId.toString();
+            const provider = this.#providers.providers[chainId];
+            if (!provider)
+                return;
+            const accountState = await getAccountState(provider, network, accountsList, this.#keystore.keys).catch(() => {
+                if (this.page !== page)
+                    return;
+                if (this.networksWithAccountStateError.includes(BigInt(chainId)))
+                    return;
+                this.networksWithAccountStateError.push(BigInt(chainId));
+            });
+            if (!accountState)
+                return;
+            accountState.forEach((acc) => {
+                const isUsedOnThisNetwork = 
+                // Known limitation: checks only the native token balance. If this
+                // account has any other tokens than native ones, this check will
+                // fail to detect that the account was used on this network.
+                acc.balance > BigInt(0) ||
+                    (acc.isEOA
+                        ? [acc.nonce, acc.eoaNonce].some((nonce) => (nonce || BigInt(0)) > BigInt(0)) ||
+                            (acc.erc4337Nonce !== MAX_UINT256 && acc.erc4337Nonce !== BigInt(0))
+                        : // For smart accounts, check for 'isDeployed' instead because in
+                            // the erc-4337 scenario many cases might be missed with checking
+                            // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
+                            // might be actively using the account. This is because in erc-4337,
+                            // we use the entry point nonce. However, detecting the entry point
+                            // nonce is also not okay, because for various cases we do not use
+                            // sequential nonce - i.e., the entry point nonce could still be 0,
+                            // but the account is deployed. So the 'isDeployed' check is the
+                            // only reliable way to detect if account is used on network.
+                            acc.isDeployed);
+                const accObj = accountsObj[acc.accountAddr];
+                if (isUsedOnThisNetwork && accObj) {
+                    if (!accObj.account.usedOnNetworks)
+                        accObj.account.usedOnNetworks = [];
+                    accObj.account.usedOnNetworks.push(network);
+                }
+            });
+        });
+        await Promise.all(promises);
+        const finalAccountsWithNetworksArray = Object.values(accountsObj);
+        // Optimize the sort by caching network indices
+        const networkIndexMap = {};
+        this.#networks.networks.forEach((network, index) => {
+            networkIndexMap[network.chainId.toString()] = index;
+        });
+        const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
+            const getMinIndex = (acc) => {
+                const chainIds = (acc.account.usedOnNetworks || []).map((n) => n.chainId.toString());
+                if (chainIds.length === 0)
+                    return Infinity;
+                return Math.min(...chainIds.map((id) => networkIndexMap[id] ?? Infinity));
+            };
+            const networkIndexA = getMinIndex(a);
+            const networkIndexB = getMinIndex(b);
+            return networkIndexA - networkIndexB;
+        });
+        return sortedAccountsWithNetworksArray;
+    }
+    /**
+     * Guard to ensure we only proceed with data that matches the current page and
+     * that the operation hasn't been cancelled via reset().
+     * Similar to #isQuoteIdObsoleteAfterAsyncOperation in SwapAndBridgeController.
+     */
+    #isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController) {
+        return calledForAbortController?.signal.aborted || calledForPage !== this.page;
+    }
+    async #findAndSetLinkedAccounts({ accounts }) {
+        if (!this.shouldSearchForLinkedAccounts)
+            return;
+        if (accounts.length === 0)
+            return;
+        // Cache the page and the abort controller at the start to use throughout
+        // the operation, even if reset() clears them mid-process
+        const calledForPage = this.page;
+        const calledForAbortController = this.#findAndSetLinkedAccountsAbortController;
+        this.linkedAccountsLoading = true;
+        this.linkedAccountsError = '';
+        this.emitUpdate();
+        const ambireLinkedAccData = await getRelayerLinkedAccounts(accounts, this.#callRelayer);
+        if (ambireLinkedAccData.errorMessage) {
+            this.linkedAccountsError = ambireLinkedAccData.errorMessage;
+        }
+        const ambireLinkedAccounts = ambireLinkedAccData.linkedAccounts;
+        if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController))
+            return;
+        const linkedAccounts = Object.keys(ambireLinkedAccounts).flatMap((addr) => {
+            // In extremely rare cases, on the Relayer, the identity data could be
+            // missing in the identities table but could exist in the logs table.
+            // When this happens, the account data will be `null`.
+            const ambireLinkedAccount = ambireLinkedAccounts[addr];
+            if (!ambireLinkedAccount) {
+                // Same error for both cases, because most prob
+                this.emitError({
+                    level: 'minor',
+                    message: `The address ${addr} is not linked to an Ambire account. Please try again later or contact support if the problem persists.`,
+                    error: new Error(`The address ${addr} is not linked to an Ambire account. This could be because the identity data is missing in the identities table but could exist in the logs table.`)
+                });
+                return [];
+            }
+            const { factoryAddr, bytecode, salt, associatedKeys } = ambireLinkedAccount;
+            // Checks whether the account.addr matches the addr generated from the
+            // factory. Should never happen, but could be a possible attack vector.
+            const isInvalidAddress = getCreate2Address(factoryAddr, salt, keccak256(bytecode)).toLowerCase() !==
+                addr.toLowerCase();
+            if (isInvalidAddress) {
+                const message = `The address ${addr} can't be verified to be a smart account address.`;
+                this.emitError({ level: 'minor', message, error: new Error(message) });
+                return [];
+            }
+            const existingAccount = this.#alreadyImportedAccounts.find((acc) => acc.addr === addr);
+            return [
+                {
+                    account: {
+                        addr,
+                        associatedKeys: Object.keys(associatedKeys),
+                        initialPrivileges: ambireLinkedAccount.initialPrivilegesAddrs.map((address) => [
+                            address,
+                            // this is a default privilege hex we add on account creation
+                            '0x0000000000000000000000000000000000000000000000000000000000000001'
+                        ]),
+                        creation: {
+                            factoryAddr,
+                            bytecode,
+                            salt
+                        },
+                        preferences: {
+                            label: existingAccount?.preferences.label || DEFAULT_ACCOUNT_LABEL,
+                            pfp: existingAccount?.preferences?.pfp || addr
+                        }
+                    },
+                    isLinked: true
+                }
+            ];
+        });
+        // Check if operation was aborted or page changed
+        if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController))
+            return;
+        this.#linkedAccounts = linkedAccounts;
+        this.#verifyLinkedAccounts();
+        // The used on information is not critical. Allow the user to proceed after
+        // 1 second. It will get popuplated in the background.
+        const minWaitTimeout = setTimeout(() => {
+            this.linkedAccountsLoading = false;
+            this.emitUpdate();
+        }, 1000);
+        const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
+            accounts: linkedAccounts,
+            page: calledForPage
+        });
+        if (minWaitTimeout) {
+            clearTimeout(minWaitTimeout);
+        }
+        // Check if operation was aborted or page changed
+        if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController))
+            return;
+        this.#linkedAccounts = linkedAccountsWithNetworks;
+        this.linkedAccountsLoading = false;
+        this.emitUpdate();
+    }
+    async findAndSetLinkedAccounts() {
+        // Abort any previous operation
+        if (this.#findAndSetLinkedAccountsAbortController) {
+            this.#findAndSetLinkedAccountsAbortController.abort();
+        }
+        // Create a new AbortController for this operation
+        this.#findAndSetLinkedAccountsAbortController = new AbortController();
+        this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
+            accounts: this.#derivedAccounts
+                .filter((acc) => 
+            // Since v4.60.0, linked accounts are searched for 1) EOAs
+            // and 2) EOAs derived for Smart Account keys ONLY
+            // (workaround so that the Relayer returns information if the Smart
+            // Account with this key is used (with identity) or not).
+            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index))
+                .map((acc) => acc.account)
+        }).finally(() => {
+            this.findAndSetLinkedAccountsPromise = undefined;
+            this.#findAndSetLinkedAccountsAbortController = undefined;
+        });
+        await this.findAndSetLinkedAccountsPromise;
+    }
+    /**
+     * The corresponding derived account for the linked accounts should always be found,
+     * except when something is wrong with the data we have stored on the Relayer.
+     * Also, could be an attack vector. So indicate to the user that something is wrong.
+     */
+    #verifyLinkedAccounts() {
+        this.#linkedAccounts.forEach((linkedAcc) => {
+            const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) => linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr));
+            // The `correspondingDerivedAccount` should always be found,
+            // except something is wrong with the data we have stored on the Relayer
+            if (!correspondingDerivedAccount) {
+                this.emitError({
+                    level: 'major',
+                    message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
+                    error: new Error(`Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`)
+                });
+            }
+        });
+    }
+    #throwNotInitialized() {
+        this.emitError({
+            level: 'major',
+            message: 'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
+            error: new Error('accountPicker: requested a method of the AccountPicker controller, but the controller was not initialized')
+        });
+    }
+    #throwMissingKeyIterator() {
+        this.emitError({
+            level: 'major',
+            message: 'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
+            error: new Error('accountPicker: missing keyIterator')
+        });
+    }
+    #throwMissingKeyIteratorRetrieveInternalKeysMethod() {
+        this.emitError({
+            level: 'major',
+            message: 'Retrieving internal keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+            error: new Error('accountPicker: missing retrieveInternalKeys method')
+        });
+    }
+    #throwMissingHdPath() {
+        this.emitError({
+            level: 'major',
+            message: 'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+            error: new Error('accountPicker: missing hdPathTemplate')
+        });
+    }
+    #debounceFunctionCalls(funcName, func, ms = 0) {
+        if (this.#shouldDebounceFlags[funcName])
+            return;
+        this.#shouldDebounceFlags[funcName] = true;
+        setTimeout(() => {
+            this.#shouldDebounceFlags[funcName] = false;
+            try {
+                func();
+            }
+            catch (error) {
+                this.emitError({
+                    level: 'minor',
+                    message: `The execution of ${funcName} in the AccountPickerController failed`,
+                    error
+                });
+            }
+        }, ms);
+    }
+    toJSON() {
+        return {
+            ...this,
+            ...super.toJSON(),
+            // includes the getter in the stringified instance
+            accountsOnPage: this.accountsOnPage,
+            allKeysOnPage: this.allKeysOnPage,
+            selectedAccounts: this.selectedAccounts,
+            addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
+            type: this.type,
+            subType: this.subType
+        };
+    }
+}
+export default AccountPickerController;
+//# sourceMappingURL=accountPicker.js.map

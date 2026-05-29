@@ -1,0 +1,1 @@
+{"version":3,"file":"portfolio.js","sourceRoot":"","sources":["../../../src/interfaces/portfolio.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IPortfolioController = ControllerInterface<\n  InstanceType<typeof import('../controllers/portfolio/portfolio').PortfolioController>\n>\n"]}

@@ -193,7 +193,7 @@ describe('ContinuousUpdatesController intervals', () => {
     jest
       .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
       .mockReturnValue(Object.fromEntries(mainCtrl.accounts.accounts.map((a) => [a.addr, []])))
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
@@ -254,27 +254,27 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
 
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-ignore
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)

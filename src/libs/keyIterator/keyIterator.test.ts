@@ -35,7 +35,7 @@ describe('KeyIterator', () => {
     try {
       new KeyIterator(`${process.env.SEED}invalid-seed-phrase`)
     } catch (e) {
-      // @ts-expect-error
+      // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid argument provided to constructor')
     }
   })
@@ -63,10 +63,10 @@ describe('KeyIterator', () => {
     expect.assertions(1)
     try {
       const keyIteratorWithPrivKey = new KeyIterator(privKey150)
-      // @ts-expect-error
+      // @ts-ignore
       await keyIteratorWithPrivKey.retrieve([{ from: 0 }])
     } catch (e) {
-      // @ts-expect-error
+      // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid or missing arguments')
     }
   })

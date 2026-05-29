@@ -1,0 +1,1 @@
+{"version":3,"file":"SwapAndBridgeProviderApiError.d.ts","sourceRoot":"","sources":["../../../src/classes/SwapAndBridgeProviderApiError.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,OAAO,6BAA8B,SAAQ,KAAK;IAC9D,YAAY,CAAC,EAAE,MAAM,CAAA;gBAET,OAAO,EAAE,MAAM,EAAE,YAAY,CAAC,EAAE,MAAM;CAMnD"}

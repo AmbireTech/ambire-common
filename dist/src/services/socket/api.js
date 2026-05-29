@@ -1,0 +1,369 @@
+import { getAddress } from 'ethers';
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError';
+import { addCustomTokensIfNeeded, convertNullAddressToZeroAddressIfNeeded, isNoFeeToken } from '../../libs/swapAndBridge/swapAndBridge';
+import { CITREA_CHAIN_ID } from '../squid/constants';
+import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS, FEE_PERCENT, NULL_ADDRESS, PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE, ZERO_ADDRESS } from './constants';
+const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === ZERO_ADDRESS ? NULL_ADDRESS : addr;
+const normalizeIncomingSocketTokenAddress = (address) => 
+// incoming token addresses from Socket are all lowercased
+getAddress(
+// native token addresses come as null address instead of the zero address
+convertNullAddressToZeroAddressIfNeeded(address));
+export const normalizeIncomingSocketToken = (token) => ({
+    ...token,
+    address: normalizeIncomingSocketTokenAddress(token.address)
+});
+const normalizeOutgoingSocketTokenAddress = (address) => 
+// Socket expects to receive null address instead of the zero address for native tokens.
+convertZeroAddressToNullAddressIfNeeded(
+// Socket works only with all lowercased token addresses, otherwise, bad request
+address.toLocaleLowerCase());
+export class SocketAPI {
+    id = 'socket';
+    name = 'Socket';
+    #fetch;
+    #requestTimeoutMs = 15000;
+    #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange';
+    #headers;
+    isHealthy = null;
+    supportedChains = null;
+    constructor({ fetch, apiKey }) {
+        this.#fetch = fetch;
+        this.#headers = {
+            'x-api-key': apiKey,
+            affiliate: '609913096e183b62cecd0dfdc13382f618baedceb5fef75aad43e6cbff367039708902197e0b2b78b1d76cb0837ad0b318baedceb5fef75aad43e6cb',
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+        };
+    }
+    async getHealth() {
+        // deprecated mechanism
+        return true;
+    }
+    async updateHealth() {
+        this.isHealthy = await this.getHealth();
+    }
+    async updateHealthIfNeeded() {
+        // Update health status only if previously unhealthy
+        if (this.isHealthy)
+            return;
+        await this.updateHealth();
+    }
+    resetHealth() {
+        this.isHealthy = null;
+    }
+    /** disable explicitly citrea for socket */
+    areChainsSupported({ fromChainId, toChainId }) {
+        return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID;
+    }
+    /**
+     * Processes Socket API responses and throws custom errors for various
+     * failures, including handling the API's unique response structure.
+     */
+    async #handleResponse({ fetchPromise, errorPrefix }) {
+        let response;
+        try {
+            let timeoutPromise;
+            response = await Promise.race([
+                fetchPromise,
+                new Promise((_, reject) => {
+                    timeoutPromise = setTimeout(() => {
+                        reject(new SwapAndBridgeProviderApiError('Our service provider Socket is temporarily unavailable or your internet connection is too slow.'));
+                    }, this.#requestTimeoutMs);
+                })
+            ]);
+            if (timeoutPromise)
+                clearTimeout(timeoutPromise);
+        }
+        catch (e) {
+            const message = e?.message || 'no message';
+            const status = e?.status ? `, status: <${e.status}>` : '';
+            const error = `${errorPrefix} Upstream error: <${message}>${status}`;
+            throw new SwapAndBridgeProviderApiError(error);
+        }
+        if (response.status === 429) {
+            const error = `Our service provider received too many requests, temporarily preventing your request from being processed. ${errorPrefix}`;
+            throw new SwapAndBridgeProviderApiError(error);
+        }
+        let responseBody;
+        try {
+            responseBody = await response.json();
+        }
+        catch (e) {
+            const message = e?.message || 'no message';
+            const error = `${errorPrefix} Error details: <Unexpected non-JSON response from our service provider>, message: <${message}>`;
+            throw new SwapAndBridgeProviderApiError(error);
+        }
+        // Socket API returns 500 status code with a message in the body, even
+        // in case of a bad request. Not necessarily an internal server error.
+        if (!response.ok || !responseBody?.success) {
+            // API returns 2 types of errors, a generic one, on the top level:
+            const genericErrorMessage = responseBody?.message?.error || 'no message';
+            // ... and a detailed one, nested in the `details` object:
+            const specificError = responseBody?.message?.details?.error?.message;
+            const specificErrorMessage = specificError ? `, details: <${specificError}>` : '';
+            const specificErrorCode = responseBody?.message?.details?.error?.code;
+            const specificErrorCodeMessage = specificErrorCode ? `, code: <${specificErrorCode}>` : '';
+            const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>${specificErrorMessage}${specificErrorCodeMessage}`;
+            throw new SwapAndBridgeProviderApiError(error);
+        }
+        // Always attempt to update health status (if needed) when a response was
+        // successful, in case the API was previously unhealthy (to recover).
+        // Do not wait on purpose, to not block or delay the response
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.updateHealthIfNeeded();
+        return responseBody.result;
+    }
+    async getSupportedChains() {
+        const url = `${this.#bungeQuoteApiUrl}/api/v1/supported-chains`;
+        const response = await this.#handleResponse({
+            fetchPromise: this.#fetch(url, { headers: this.#headers }),
+            errorPrefix: 'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
+        });
+        const chains = response
+            .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
+            .map(({ chainId }) => ({
+            chainId
+        }));
+        this.supportedChains = chains;
+        return chains;
+    }
+    async getToTokenList({ toChainId }) {
+        const params = new URLSearchParams({
+            chainIds: toChainId.toString(),
+            // The long list for some networks is HUGE (e.g. Ethereum has 10,000+ tokens),
+            // which makes serialization and deserialization of this controller computationally expensive.
+            list: 'trending'
+        });
+        const url = `${this.#bungeQuoteApiUrl}/api/v1/tokens/list?${params.toString()}`;
+        const response = await this.#handleResponse({
+            fetchPromise: this.#fetch(url, { headers: this.#headers }),
+            errorPrefix: 'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
+        });
+        let tokens = response[toChainId] || [];
+        // Exception for Optimism, strip out the legacy ETH address
+        // TODO: Remove when Socket removes the legacy ETH address from their response
+        if (toChainId === 10)
+            tokens = tokens.filter((token) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS);
+        // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
+        // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
+        // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
+        if (toChainId === 1)
+            tokens = tokens.filter((token) => token.address !== ZERO_ADDRESS);
+        tokens = tokens.map(normalizeIncomingSocketToken);
+        return addCustomTokensIfNeeded({ chainId: toChainId, tokens });
+    }
+    async getToken({ address, chainId }) {
+        const params = new URLSearchParams({
+            q: address.toString()
+        });
+        const url = `${this.#bungeQuoteApiUrl}/api/v1/tokens/search?${params.toString()}`;
+        const response = await this.#handleResponse({
+            fetchPromise: this.#fetch(url, { headers: this.#headers }),
+            errorPrefix: 'Unable to retrieve token information by address.'
+        });
+        if (!response.tokens || !response.tokens[chainId] || !response.tokens[chainId].length)
+            return null;
+        return normalizeIncomingSocketToken(response.tokens[chainId][0]);
+    }
+    async quote({ fromAsset, toAsset, fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }) {
+        if (!fromAsset || !toAsset)
+            throw new SwapAndBridgeProviderApiError('Quote requested, but missing required params. Error details: <from token details are missing>');
+        const params = new URLSearchParams({
+            userAddress,
+            originChainId: fromChainId.toString(),
+            destinationChainId: toChainId.toString(),
+            inputToken: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
+            outputToken: normalizeOutgoingSocketTokenAddress(toTokenAddress),
+            inputAmount: fromAmount.toString(),
+            receiverAddress: userAddress,
+            useInbox: 'true',
+            enableManual: 'true'
+        });
+        const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
+        const shouldIncludeConvenienceFee = !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress);
+        if (shouldIncludeConvenienceFee) {
+            params.append('feeTakerAddress', feeTakerAddress);
+            params.append('feeBps', (FEE_PERCENT * 100).toString());
+        }
+        const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`;
+        const response = await this.#handleResponse({
+            fetchPromise: this.#fetch(url, { headers: this.#headers }),
+            errorPrefix: 'Unable to fetch the quote.'
+        });
+        // configure the toAsset
+        let socketToAsset = response.autoRoute ? response.autoRoute.output.token : null;
+        if (!socketToAsset) {
+            socketToAsset = response.manualRoutes.length ? response.manualRoutes[0].output.token : null;
+        }
+        if (!socketToAsset) {
+            socketToAsset = { ...toAsset, icon: toAsset.icon ?? '', logoURI: '' };
+        }
+        let allRoutes = [...response.manualRoutes];
+        if (response.autoRoute)
+            allRoutes.push({ ...response.autoRoute, isIntent: true });
+        allRoutes = allRoutes.sort((r1, r2) => {
+            const a = BigInt(r1.output.amount);
+            const b = BigInt(r2.output.amount);
+            if (a === b)
+                return 0;
+            if (a > b)
+                return -1;
+            return 1;
+        });
+        return {
+            fromAsset: normalizeIncomingSocketToken(response.input.token),
+            toAsset: normalizeIncomingSocketToken(socketToAsset),
+            fromChainId,
+            toChainId,
+            // @ts-ignore TODO: fix the typescript here
+            routes: allRoutes.map((route) => {
+                const steps = [
+                    {
+                        chainId: route.output.token.chainId,
+                        fromAmount: fromAmount.toString(),
+                        fromAsset: { ...fromAsset, chainId: Number(fromAsset.chainId) },
+                        serviceTime: route.estimatedTime ?? 1,
+                        minAmountOut: route.output.minAmountOut,
+                        protocol: {
+                            name: route.routeDetails.name,
+                            displayName: route.routeDetails.name,
+                            icon: route.routeDetails.logoURI
+                        },
+                        protocolFees: PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(route.routeDetails.name) &&
+                            route.routeDetails.routeFee &&
+                            route.routeDetails.routeFee.amount !== '0'
+                            ? {
+                                amount: route.routeDetails.routeFee.amount,
+                                asset: route.routeDetails.routeFee.token,
+                                feesInUsd: route.routeDetails.routeFee.feeInUsd
+                            }
+                            : undefined,
+                        swapSlippage: route.slippage,
+                        toAmount: route.output.amount,
+                        toAsset: normalizeIncomingSocketToken(route.output.token),
+                        type: 'swap',
+                        userTxIndex: 0
+                    }
+                ];
+                // set the service fee
+                const serviceFee = steps[0].protocolFees
+                    ? {
+                        amount: steps[0].protocolFees.amount,
+                        amountUSD: steps[0].protocolFees.feesInUsd.toString()
+                    }
+                    : undefined;
+                // disable routes the user does not have native to pay for
+                const disabled = serviceFee === undefined ? false : accountNativeBalance < BigInt(serviceFee.amount);
+                const disabledReason = disabled
+                    ? `Insufficient ${nativeSymbol}. This bridge imposes a fee that must be paid in ${nativeSymbol}.`
+                    : undefined;
+                return {
+                    ...steps[0],
+                    providerId: 'socket',
+                    outputValueInUsd: route.output.valueInUsd,
+                    routeId: route.quoteId,
+                    disabled,
+                    disabledReason,
+                    steps,
+                    serviceFee,
+                    userTxs: steps,
+                    userAddress,
+                    isOnlySwapRoute: fromChainId === route.output.token.chainId,
+                    currentUserTxIndex: 0,
+                    fromChainId,
+                    toChainId: route.output.token.chainId,
+                    inputValueInUsd: response.input.valueInUsd,
+                    toToken: {
+                        priceUSD: route.output.priceInUsd,
+                        symbol: route.output.token.symbol,
+                        decimals: route.output.token.decimals,
+                        name: route.output.token.name,
+                        logoURI: route.output.token.logoURI
+                    },
+                    approvalData: 'approvalData' in route ? route.approvalData : undefined,
+                    txData: 'txData' in route ? route.txData : undefined,
+                    rawRoute: '', // not needed for socket,
+                    withConvenienceFee: shouldIncludeConvenienceFee,
+                    usedBridgeNames: fromChainId !== route.output.token.chainId
+                        ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]
+                        : [route.isIntent ? 'bungeeAutoRoute' : '']
+                };
+            })
+        };
+    }
+    async startRoute(route) {
+        if (!route)
+            throw new Error('route not set');
+        // the socket auto route return a txData object so we already have it
+        if (route.txData) {
+            return {
+                activeRouteId: route.routeId,
+                approvalData: route.approvalData
+                    ? {
+                        allowanceTarget: route.approvalData.spenderAddress,
+                        approvalTokenAddress: route.approvalData.tokenAddress,
+                        minimumApprovalAmount: route.approvalData.amount,
+                        owner: route.approvalData.userAddress
+                    }
+                    : null,
+                chainId: route.fromChainId,
+                txData: route.txData.data,
+                txTarget: route.txData.to,
+                userTxIndex: route.steps.length ? route.steps[0].userTxIndex : 0,
+                value: route.txData.value
+            };
+        }
+        const response = await this.#handleResponse({
+            fetchPromise: this.#fetch(`${this.#bungeQuoteApiUrl}/api/v1/bungee/build-tx?quoteId=${route.routeId}`, {
+                method: 'GET',
+                headers: this.#headers
+            }),
+            errorPrefix: 'Unable to start the route.'
+        });
+        return {
+            activeRouteId: route.routeId,
+            approvalData: response.approvalData
+                ? {
+                    allowanceTarget: response.approvalData.spenderAddress,
+                    approvalTokenAddress: response.approvalData.tokenAddress,
+                    // we're using route.fromAmount instead of response.approvalData.amount
+                    // because the API wrongly returns the substracted approval amount
+                    // (meaning the amount after the swap&bridge fee) and it causes the
+                    // estimation to fail with a TRANSFER_FROM_FAILED
+                    minimumApprovalAmount: route.fromAmount,
+                    owner: response.approvalData.userAddress
+                }
+                : null,
+            chainId: route.fromChainId,
+            txData: response.txData.data,
+            txTarget: response.txData.to,
+            userTxIndex: 0,
+            value: response.txData.value
+        };
+    }
+    async getRouteStatus({ txHash }) {
+        const params = new URLSearchParams({
+            txHash
+        });
+        const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/status?${params.toString()}`;
+        const response = await this.#handleResponse({
+            fetchPromise: this.#fetch(url, { headers: this.#headers }),
+            errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
+        });
+        if (!response)
+            return { status: null };
+        const res = response[0];
+        if (!res)
+            return { status: null };
+        // everything below 3 is pending on our end
+        if (res.bungeeStatusCode < 3)
+            return { status: null };
+        // 3 and 4 is completed on our end
+        if (res.bungeeStatusCode < 5)
+            return { status: 'completed', txnId: res.hash };
+        // everything after is refunded
+        return { status: 'refunded', txnId: res.hash };
+    }
+}
+//# sourceMappingURL=api.js.map

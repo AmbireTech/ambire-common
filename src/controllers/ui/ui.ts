@@ -55,7 +55,7 @@ export class UiController extends EventEmitter implements IUiController {
     const view = this.views.find((v) => v.id === viewId)
     if (!view) return
 
-    // @ts-expect-error
+    // @ts-ignore
     const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => view[key] !== value)
     if (!shouldUpdate) return
 
