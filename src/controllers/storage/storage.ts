@@ -3,7 +3,6 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { ConnectionSource, Dapp } from '../../interfaces/dapp'
 import { EmailVaultData } from '../../interfaces/emailVault'
-
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
@@ -65,7 +64,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
-      await this.#migrateDappsAddConnectionSources()
+      await this.#migrateDappsAddConnectionSources() // As of v6.11.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
