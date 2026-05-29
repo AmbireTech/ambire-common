@@ -6,17 +6,19 @@ const typescriptParser = require('@typescript-eslint/parser')
 const globals = require('globals')
 
 // Import custom rules
+const importPlugin = require('eslint-plugin-import')
+const eslintConfigPrettier = require('eslint-config-prettier')
 const ambirePlugin = require('./eslint-rules')
 
 module.exports = [
   {
     ignores: [
-      '.eslintrc.js',
       'node_modules/**',
-      'coverage/**',
       'babel_cache/**',
       'artifacts/**',
-      'dist/**'
+      'dist/**',
+      'coverage/**',
+      'contracts/**'
     ]
   },
   {
@@ -39,14 +41,25 @@ module.exports = [
         ...globals.es2021
       }
     },
+    settings: {
+      react: {
+        version: 'detect'
+      },
+      // Prevents eslint-plugin-import from parsing node_modules (e.g. react-native Flow syntax).
+      'import/ignore': ['node_modules']
+    },
     plugins: {
       react,
       'react-hooks': reactHooks,
       prettier,
       '@typescript-eslint': typescriptEslint,
+      import: importPlugin,
       ambire: ambirePlugin
     },
     rules: {
+      ...typescriptEslint.configs.recommended.rules,
+      ...react.configs.flat.recommended.rules,
+      ...reactHooks.configs.recommended.rules,
       'prettier/prettier': [
         'error',
         {
@@ -72,7 +85,10 @@ module.exports = [
       'react-hooks/exhaustive-deps': 'warn',
       'react/react-in-jsx-scope': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
-      semi: ['error', 'never']
+      '@typescript-eslint/no-explicit-any': 'off',
+      semi: ['error', 'never'],
+      'import/no-cycle': 'error',
+      'import/no-unresolved': 'off' // because typescript already covers this
     }
   },
   // Custom rules for controllers only
@@ -86,5 +102,7 @@ module.exports = [
     rules: {
       'ambire/no-emit-update-in-on-update': 'error'
     }
-  }
+  },
+  // disables ESLint formatting rules that conflict with Prettier (must be last)
+  eslintConfigPrettier
 ]

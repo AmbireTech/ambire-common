@@ -471,14 +471,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
+  async getOrCreateDappSession({ windowId, tabId, url, wcTopic }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
-    return this.#createDappSession({ windowId, tabId, url })
+    return this.#createDappSession({ windowId, tabId, url, wcTopic })
+  }
+
+  getDappSessionByWcTopic(wcTopic: string): Session | undefined {
+    return Object.values(this.dappSessions).find((session) => session.wcTopic === wcTopic)
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
@@ -522,6 +526,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
   }
 
+  deleteDappSessionByWcTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (session) {
+      delete this.dappSessions[session.sessionId]
+      this.emitUpdate()
+    }
+  }
+
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,
@@ -529,7 +541,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     skipPermissionCheck?: boolean
   ) => {
     await this.initialLoadPromise
-
     let dappSessions: { sessionId: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
@@ -551,6 +562,15 @@ export class DappsController extends EventEmitter implements IDappsController {
         }
       }
     })
+
+    // on disconnect clean up the WC sessions
+    if (ev === 'disconnect') {
+      dappSessions.forEach((dappSession) => {
+        if (this.dappSessions[dappSession.sessionId]?.wcTopic) {
+          this.deleteDappSession(dappSession.sessionId)
+        }
+      })
+    }
   }
 
   async #buildDapp(dapp: {
@@ -585,7 +605,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       id: dapp.id,
       url: dapp.url,
       name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
-      chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+      chainId: network ? dapp.chainId! : existingByDomain?.chainId || DEFAULT_CHAIN_ID,
       description: existingByDomain?.description || '',
       icon: existingByDomain?.icon || dapp.icon,
       category: existingByDomain?.category || null,
@@ -710,12 +730,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
         const { dappPromises } = currentRequest
+        const existingDapp = this.#dapps.get(dappPromises[0].session.id)
         const dapp = await this.#buildDapp({
           id: dappPromises[0].session.id,
           name: dappPromises[0].session.name,
           url: dappPromises[0].session.origin,
           icon: dappPromises[0].session.icon,
-          chainId: 1,
+          chainId: existingDapp?.chainId || 1,
           isConnected: false
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {

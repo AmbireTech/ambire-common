@@ -57,6 +57,6 @@ export interface EmailVaultData {
 }
 
 export interface RecoveryKey {
-  key: String
-  type: String
+  key: string
+  type: string
 }

@@ -1,6 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField } from 'ethers'
+import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField, isAddress } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import { EIP712TypedData } from '@safe-global/types-kit'
@@ -82,6 +82,7 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { hashTypedData, isHex } from 'viem'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -683,6 +684,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
+      // Snapshot IDs synchronously before any awaits so requests that arrive
+      // during async operations below are not incorrectly bulk-rejected.
+      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
@@ -714,8 +719,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive
+        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
       )
+
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
@@ -1086,6 +1092,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].calls
         : [request.params[0]]
 
+      if (calls.some(({ data }) => data && data.length % 2 === 1))
+        throw ethErrors.rpc.invalidParams('A call has uneven number of character in the hex data.')
+      if (calls.some(({ data }) => data && !isHex(data)))
+        throw ethErrors.rpc.invalidParams('A call has invalid data.')
+
+      // we are checking if to exists, because if it does not the call is a
+      // valid contract  deployment
+      if (calls.some(({ to }) => to && !isAddress(to)))
+        throw ethErrors.rpc.invalidParams('A call has invalid "to" field ')
+
       calls = calls.map((c) => ({
         ...c,
         data: c.data || '0x',
@@ -1250,6 +1266,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.methodNotSupported(
           'Invalid typedData format - only typedData v4 is supported'
         )
+      }
+
+      if (!typedData.types[typedData.primaryType])
+        throw ethErrors.rpc.invalidParams(
+          'The primary data type is missing from the provided types'
+        )
+      try {
+        // we ignore the result because we only care if the func will fail
+        hashTypedData({
+          types: typedData.types,
+          primaryType: typedData.primaryType,
+          message: typedData.message,
+          domain: typedData.domain
+        })
+      } catch (e) {
+        console.log(e)
+        throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
       if (
