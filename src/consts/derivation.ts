@@ -27,7 +27,6 @@ export const LEGACY_POPULAR_DERIVATION_TEMPLATE = "m/44'/60'/0'/<account>"
  */
 export const BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE = "m/44'/1'/0'/0/<account>"
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 export type HD_PATH_TEMPLATE_TYPE =
   | typeof BIP44_STANDARD_DERIVATION_TEMPLATE
   | typeof BIP44_LEDGER_DERIVATION_TEMPLATE

@@ -74,7 +74,6 @@ describe('bigintJson', () => {
         ]
       }
 
-      // eslint-disable-next-line no-param-reassign
       data[`account-${current}`] = {
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         accountOp,

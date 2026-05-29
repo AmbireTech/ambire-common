@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-console */
 import { BUNDLER, GELATO } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -24,7 +22,6 @@ export class Gelato extends Bundler {
     const provider = getRpcProvider([this.getUrl(network)], network.chainId)
 
     const gelatoSend = async (method: string, params: Array<any> | Record<string, any>) => {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       const response = await fetch(this.getUrl(network), {
         method: 'POST',
         headers: {
@@ -103,9 +100,8 @@ export class Gelato extends Bundler {
     const provider = this.getProvider(network)
 
     const status = await provider.send('eth_getUserOperationReceipt', [userOpHash]).catch((e) => {
-      // eslint-disable-next-line no-console
       console.log('gelato failed to find the status of the user op')
-      // eslint-disable-next-line no-console
+
       console.log(e)
 
       return null

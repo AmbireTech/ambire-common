@@ -48,7 +48,7 @@ export default class MockProvider extends JsonRpcProvider {
       gasUsed: this.blockParams.gasUsed ?? 30000000n,
       miner: this.blockParams.miner ?? addressOne,
       extraData: this.blockParams.extraData ?? 'extra data',
-      /* eslint-disable no-prototype-builtins */
+
       baseFeePerGas: this.blockParams.hasOwnProperty('baseFeePerGas')
         ? this.blockParams.baseFeePerGas
         : parseUnits('1', 'gwei'),

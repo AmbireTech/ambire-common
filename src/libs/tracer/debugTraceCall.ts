@@ -115,7 +115,7 @@ export async function debugTraceCall(
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const account = baseAcc.getAccount()
   const opts = {
-    blockTag: 'latest' as 'latest',
+    blockTag: 'latest' as const,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract,
     isEOA: isBasicAccount(account, accountState),
@@ -192,7 +192,6 @@ export async function debugTraceCall(
         }
       ])
       .catch((e) => {
-        // eslint-disable-next-line no-underscore-dangle
         throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
       })
 
@@ -243,7 +242,6 @@ export async function debugTraceCall(
   try {
     provider.destroy()
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error(e)
   }
 

@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
 
 import { Banner } from '../../interfaces/banner'
@@ -356,7 +354,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       await this.#getEmailVaultInfo(email, 'setup')
     }
 
-    let result: Boolean | null = false
+    let result: boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
 
     if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
@@ -414,7 +412,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       await this.#getEmailVaultInfo(email)
     }
 
-    let result: Boolean | null = false
+    let result: boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
 
     if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {

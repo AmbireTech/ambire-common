@@ -114,7 +114,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       invite
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })

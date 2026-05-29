@@ -53,7 +53,6 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     this.#featureFlag = featureFlags
     this.#cenaUrl = cenaUrl
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })

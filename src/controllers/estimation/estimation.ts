@@ -82,7 +82,7 @@ export class EstimationController extends EventEmitter {
 
     return baseAcc.getAvailableFeeOptions(
       estimation,
-      // eslint-disable-next-line no-nested-ternary
+
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
@@ -234,7 +234,7 @@ export class EstimationController extends EventEmitter {
       // continue on error here as the flags are more like app helpers
       this.#accounts
         .updateAccountState(op.accountAddr, 'pending', [op.chainId])
-        // eslint-disable-next-line no-console
+
         .catch((e) => console.error(e))
     }
 

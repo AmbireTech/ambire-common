@@ -1,11 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Interface } from 'ethers'
 
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { getAction, getLabel, getToken } from '../../utils'
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETSupplyControllerMapping = (): {
   [key: string]: (arg1: IrCall) => HumanizerVisualization[]
 } => {
@@ -39,7 +37,7 @@ export const WALLETSupplyControllerMapping = (): {
           ]
         : [getAction('Claim rewards'), getLabel('in'), getToken(stakingPool, 0n)]
     },
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     [iface.getFunction('mintVesting')?.selector!]: (): HumanizerVisualization[] => {
       return [getAction('Claim vested tokens')]
     }

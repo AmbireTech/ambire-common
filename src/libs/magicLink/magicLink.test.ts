@@ -1,9 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
 import fetch from 'node-fetch'
 
-/* eslint-disable max-classes-per-file */
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'

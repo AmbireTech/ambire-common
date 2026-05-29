@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { AbiCoder, Interface, keccak256, parseEther, toBeHex, Wallet } from 'ethers'
 import fetch from 'node-fetch'
 

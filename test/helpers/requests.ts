@@ -25,20 +25,20 @@ function monitor(): any[] {
   const interceptedRequests: any[] = []
 
   // Intercept HTTP requests
-  // @ts-ignore
+  // @ts-expect-error
   // eslint-disable-next-line no-import-assign
   http.request = function (...args) {
-    // @ts-ignore
+    // @ts-expect-error
     const request = originalHttpRequest.apply(this, args)
     interceptedRequests.push({ method: 'HTTP', url: args[0] })
     return request
   }
 
   // Intercept HTTPS requests
-  // @ts-ignore
+  // @ts-expect-error
   // eslint-disable-next-line no-import-assign
   https.request = function (...args) {
-    // @ts-ignore
+    // @ts-expect-error
     const request = originalHttpsRequest.apply(this, args)
     interceptedRequests.push({ method: 'HTTPS', url: args[0] })
     return request
@@ -50,10 +50,10 @@ function monitor(): any[] {
 // Function to stop monitoring requests and restore original methods.
 // Always invoke `stopMonitoring` after your test finishes.
 function stopMonitoring() {
-  // @ts-ignore
+  // @ts-expect-error
   // eslint-disable-next-line no-import-assign
   http.request = originalHttpRequest
-  // @ts-ignore
+  // @ts-expect-error
   // eslint-disable-next-line no-import-assign
   https.request = originalHttpsRequest
 }

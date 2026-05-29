@@ -153,7 +153,7 @@ const mapWithConcurrency = async <T, R>(
     while (nextIndex < items.length) {
       const currentIndex = nextIndex
       nextIndex += 1
-      // eslint-disable-next-line no-await-in-loop
+
       results[currentIndex] = await mapper(items[currentIndex]!)
     }
   })

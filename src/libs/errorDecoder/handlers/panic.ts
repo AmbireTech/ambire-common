@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { AbiCoder, ErrorFragment } from 'ethers'
 
 import { PANIC_ERROR_PREFIX } from '../constants'
