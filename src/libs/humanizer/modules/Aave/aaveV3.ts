@@ -130,16 +130,78 @@ const supplyWithPermitAbi = parseAbi([
 const withdrawBytes32Abi = parseAbi(['function withdraw(bytes32 args) returns (uint256)'])
 const setUserEModeAbi = parseAbi(['function setUserEMode(uint8 categoryId)'])
 
-const AAVE_EMODE_CATEGORIES_BY_CHAIN_ID: {
-  [chainId: string]: { [categoryId: string]: string }
+const AAVE_EMODE_CATEGORY_TEXT_BY_CHAIN_ID: {
+  [chainId: string]: { [categoryId: string]: { action: string; category: string } }
 } = {
   '8453': {
-    '10': 'BTC correlated assets'
+    '1': {
+      action: 'Enable ETH-correlated efficiency mode',
+      category: 'ETH correlated'
+    },
+    '2': {
+      action: 'Enable ezETH / wstETH efficiency mode',
+      category: 'ezETH / wstETH'
+    },
+    '3': {
+      action: 'Enable ezETH stablecoin efficiency mode',
+      category: 'ezETH / stablecoins'
+    },
+    '4': {
+      action: 'Enable LBTC / cbBTC efficiency mode',
+      category: 'LBTC / cbBTC'
+    },
+    '5': {
+      action: 'Enable rsETH / wstETH efficiency mode',
+      category: 'rsETH / wstETH'
+    },
+    '6': {
+      action: 'Enable rsETH stablecoin efficiency mode',
+      category: 'rsETH / stablecoins'
+    },
+    '7': {
+      action: 'Enable weETH / WETH efficiency mode',
+      category: 'weETH / WETH'
+    },
+    '8': {
+      action: 'Enable wstETH / WETH efficiency mode',
+      category: 'wstETH / WETH'
+    },
+    '9': {
+      action: 'Enable cbETH / WETH efficiency mode',
+      category: 'cbETH / WETH'
+    },
+    '10': {
+      action: 'Enable cbBTC stablecoin efficiency mode',
+      category: 'cbBTC / stablecoins'
+    },
+    '11': {
+      action: 'Enable SyrupUSDC stablecoin efficiency mode',
+      category: 'SyrupUSDC / USDC / GHO'
+    },
+    '12': {
+      action: 'Enable AAVE stablecoin efficiency mode',
+      category: 'AAVE / USDC / GHO'
+    },
+    '13': {
+      action: 'Enable EURC stablecoin efficiency mode',
+      category: 'EURC / USDC / GHO'
+    },
+    '14': {
+      action: 'Enable LBTC stablecoin efficiency mode',
+      category: 'LBTC / USDC / GHO'
+    },
+    '15': {
+      action: 'Enable tBTC stablecoin efficiency mode',
+      category: 'tBTC / USDC / GHO'
+    }
   }
 }
 
-const getEModeCategory = (chainId: bigint, categoryId: number): string | null =>
-  AAVE_EMODE_CATEGORIES_BY_CHAIN_ID[chainId.toString()]?.[categoryId.toString()] || null
+const getEModeCategoryText = (
+  chainId: bigint,
+  categoryId: number
+): { action: string; category: string } | null =>
+  AAVE_EMODE_CATEGORY_TEXT_BY_CHAIN_ID[chainId.toString()]?.[categoryId.toString()] || null
 
 export const aaveV3Pool = (): {
   [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
@@ -227,18 +289,16 @@ export const aaveV3Pool = (): {
     [toFunctionSelector(setUserEModeAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       const { args } = decodeFunctionData({ abi: setUserEModeAbi, data: call.data })
       const [categoryId] = args
-      const category = getEModeCategory(accountOp.chainId, categoryId)
+      const eModeText = getEModeCategoryText(accountOp.chainId, categoryId)
 
       if (categoryId === 0) {
         return [getAction('Disable efficiency mode'), getLabel('Category'), getText('None')]
       }
 
       return [
-        getAction(
-          category ? `Enable ${category.split(' ')[0]} efficiency mode` : 'Set efficiency mode'
-        ),
+        getAction(eModeText?.action || 'Set efficiency mode'),
         getLabel('Category'),
-        getText(category || String(categoryId))
+        getText(eModeText?.category || String(categoryId))
       ]
     }
   }

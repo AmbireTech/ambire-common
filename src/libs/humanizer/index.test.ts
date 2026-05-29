@@ -838,7 +838,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
-  test('falls back to local modules for nested calldata that has no ERC-7730 match', async () => {
+  test('falls back to local modules for nested Aave calldata that has no ERC-7730 match', async () => {
     const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
     const cbBtc = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
     const aaveInterface = new ethers.Interface([
@@ -916,10 +916,10 @@ describe('ERC-7730 descriptors', () => {
           {
             label: '',
             value: [
-              getErc7730Visualization('Enable BTC efficiency mode', [
+              getErc7730Visualization('Enable cbBTC stablecoin efficiency mode', [
                 {
                   label: 'Category',
-                  value: [getText('BTC correlated assets')]
+                  value: [getText('cbBTC / stablecoins')]
                 }
               ])
             ]
@@ -946,6 +946,51 @@ describe('ERC-7730 descriptors', () => {
         )
         .some((visualization) => visualization.content === '0x28530a47')
     ).toBe(false)
+  })
+  test('humanizes Aave Base eMode categories', async () => {
+    const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
+    const aaveInterface = new ethers.Interface(['function setUserEMode(uint8 categoryId)'])
+    const eModeAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: aavePool,
+          value: 0n,
+          data: aaveInterface.encodeFunctionData('setUserEMode', [0])
+        },
+        {
+          to: aavePool,
+          value: 0n,
+          data: aaveInterface.encodeFunctionData('setUserEMode', [1])
+        },
+        {
+          to: aavePool,
+          value: 0n,
+          data: aaveInterface.encodeFunctionData('setUserEMode', [10])
+        }
+      ]
+    }
+
+    const irCalls = humanizeAccountOp(eModeAccountOp)
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Disable efficiency mode'),
+        getLabel('Category'),
+        getText('None')
+      ],
+      [
+        getAction('Enable ETH-correlated efficiency mode'),
+        getLabel('Category'),
+        getText('ETH correlated')
+      ],
+      [
+        getAction('Enable cbBTC stablecoin efficiency mode'),
+        getLabel('Category'),
+        getText('cbBTC / stablecoins')
+      ]
+    ])
   })
   test('uses the Morpho Bundler3 ERC-7730 descriptor for Base multicall calldata', async () => {
     const morphoBundler = '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4'
