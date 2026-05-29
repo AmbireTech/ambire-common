@@ -29,7 +29,7 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
-/* eslint-disable no-restricted-syntax */
+
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
@@ -44,7 +44,7 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
-/* eslint-disable no-continue */
+
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -151,7 +151,6 @@ export class DappsController extends EventEmitter implements IDappsController {
       }
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -471,14 +470,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
+  async getOrCreateDappSession({ windowId, tabId, url, wcTopic }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
-    return this.#createDappSession({ windowId, tabId, url })
+    return this.#createDappSession({ windowId, tabId, url, wcTopic })
+  }
+
+  getDappSessionByWcTopic(wcTopic: string): Session | undefined {
+    return Object.values(this.dappSessions).find((session) => session.wcTopic === wcTopic)
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
@@ -522,6 +525,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
   }
 
+  deleteDappSessionByWcTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (session) {
+      delete this.dappSessions[session.sessionId]
+      this.emitUpdate()
+    }
+  }
+
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,
@@ -529,7 +540,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     skipPermissionCheck?: boolean
   ) => {
     await this.initialLoadPromise
-
     let dappSessions: { sessionId: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
@@ -551,6 +561,15 @@ export class DappsController extends EventEmitter implements IDappsController {
         }
       }
     })
+
+    // on disconnect clean up the WC sessions
+    if (ev === 'disconnect') {
+      dappSessions.forEach((dappSession) => {
+        if (this.dappSessions[dappSession.sessionId]?.wcTopic) {
+          this.deleteDappSession(dappSession.sessionId)
+        }
+      })
+    }
   }
 
   async #buildDapp(dapp: {

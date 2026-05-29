@@ -1,8 +1,5 @@
-/* eslint-disable no-continue */
-/* eslint-disable no-restricted-syntax */
 /* eslint-disable @typescript-eslint/brace-style */
-/* eslint-disable no-await-in-loop */
-/* eslint-disable class-methods-use-this */
+
 import {
   AbiCoder,
   formatEther,
@@ -1149,9 +1146,9 @@ export class SignAccountOpController
     }
 
     // The signing might fail, tell the user why but allow the user to retry signing,
-    // @ts-ignore fix TODO: type mismatch
+    // @ts-expect-error fix TODO: type mismatch
     if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
-      // @ts-ignore typescript complains, but the error being present gets checked above
+      // @ts-expect-error typescript complains, but the error being present gets checked above
       errors.push(this.status.error)
     }
 
@@ -2330,7 +2327,6 @@ export class SignAccountOpController
     return this.#keystore.getAccountKeys(feePayer)
   }
 
-  // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
   }
@@ -2495,7 +2491,7 @@ export class SignAccountOpController
         if (counter === 0) {
           await this.#accounts
             .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-            // eslint-disable-next-line no-console
+
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
         }
@@ -2600,7 +2596,7 @@ export class SignAccountOpController
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
         .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-        // eslint-disable-next-line no-console
+
         .catch((e) => console.error(e))
     }
 
@@ -3209,9 +3205,8 @@ export class SignAccountOpController
           this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
             rawTxn: signedTxn
           }).catch((e: any) => {
-            // eslint-disable-next-line no-console
             console.log('failed to record EOA txn to relayer', accountOp.chainId)
-            // eslint-disable-next-line no-console
+
             console.log(e)
           })
         }
@@ -3228,7 +3223,6 @@ export class SignAccountOpController
           txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
         }
       } catch (error: any) {
-        // eslint-disable-next-line no-console
         console.error('Error broadcasting', error)
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
@@ -3515,7 +3509,7 @@ export class SignAccountOpController
         if (!this.hasCustomGasPrices) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {

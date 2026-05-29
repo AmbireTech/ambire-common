@@ -1173,7 +1173,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               }
 
               const txnId = fetchTxnIdResult.txnId as string
-              // eslint-disable-next-line no-param-reassign
+
               accountOp.txnId = txnId
               txIds.push(txnId)
             } else {
@@ -1203,15 +1203,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     isIdentifiedByUserOpHash(accountOp.identifiedBy) &&
                     txnId
                   ) {
-                    // eslint-disable-next-line no-await-in-loop
                     const frontRanTxnId = await fetchFrontRanTxnId(
                       accountOp.identifiedBy,
                       txnId,
                       network
                     )
-                    // eslint-disable-next-line no-param-reassign
+
                     accountOp.txnId = frontRanTxnId
-                    // eslint-disable-next-line no-await-in-loop
+
                     receipt = await provider.getTransactionReceipt(frontRanTxnId)
                     if (!receipt) return
                   }
@@ -1256,7 +1255,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   }
 
                   if (accountOp.isSingletonDeploy && receipt.status) {
-                    // eslint-disable-next-line no-await-in-loop
                     await this.#onContractsDeployed(network)
                   }
 
@@ -1282,13 +1280,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
                   foundTokens.forEach((tokenAddr) => foundTokensForBalanceChanges.add(tokenAddr))
 
-                  // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
 
-                  // eslint-disable-next-line no-param-reassign
                   accountOp.blockHash = receipt.blockHash
 
-                  // eslint-disable-next-line no-param-reassign
                   accountOp.gasUsed = toBeHex(receipt.gasUsed)
 
                   // Add accounts that are recipients of the AccountOp
@@ -1306,15 +1301,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // update the chain if a receipt has been received as otherwise, we're
                   // left hanging with a pending portfolio balance
                   chainsToUpdate.add(network.chainId)
-                  // eslint-disable-next-line no-continue
+
                   continue
                 }
 
                 // if there's no receipt, confirm there's a txn
                 // if there's no txn and 15 minutes have passed, declare it a failure
-                // eslint-disable-next-line no-await-in-loop
+
                 const txn = txnId ? await provider.getTransaction(txnId) : null
-                // eslint-disable-next-line no-continue
+
                 if (txn) continue
                 await declareStuckIfFiveMinsPassed(accountOp)
               }
@@ -1511,7 +1506,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
       // if the receipt cannot be confirmed after a lot of retries, continue on
       if (counter >= 30) return activityAccountOp.txnId
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       await wait(2000)
       return this.getConfirmedTxId(submittedAccountOp, counter + 1)
     }
@@ -1546,14 +1540,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
         timestamp: op.timestamp
       }))
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const acc of this.#accounts.accounts) {
       const addr = acc.addr
       const accountOps = this.#accountsOps[addr]
 
       if (!accountOps) {
         this.#bannersByAccount.set(addr, [])
-        // eslint-disable-next-line no-continue
+
         continue
       }
 

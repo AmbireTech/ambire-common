@@ -203,14 +203,13 @@ export async function createAccessListCall(
     return returned
   } catch (e: any) {
     console.error('Debug: eth_createAccessList error', e)
-    // eslint-disable-next-line no-underscore-dangle
+
     throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
   } finally {
     // Clean up the provider after usage
     try {
       provider.destroy()
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error(e)
     }
   }

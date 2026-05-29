@@ -13,7 +13,7 @@ import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
-/* eslint-disable no-await-in-loop */
+
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
@@ -44,7 +44,7 @@ import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
-/* eslint-disable no-underscore-dangle */
+
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { Account, IAccountsController } from '@/interfaces/account'
@@ -838,7 +838,6 @@ export class MainController extends EventEmitter implements IMainController {
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
 
     if (this.accountPicker.readyToRemoveAccounts) {
-      // eslint-disable-next-line no-restricted-syntax
       for (const acc of this.accountPicker.readyToRemoveAccounts) {
         await this.#removeAccount(acc.addr)
       }
@@ -873,7 +872,7 @@ export class MainController extends EventEmitter implements IMainController {
         localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
         return localCall
       })
-      // eslint-disable-next-line no-param-reassign
+
       submittedAccountOp.calls = calls
 
       const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId)

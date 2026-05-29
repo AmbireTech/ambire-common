@@ -1,4 +1,3 @@
-// eslint-disable-next-line max-classes-per-file
 import { concat, getBytes, zeroPadValue } from 'ethers'
 import { ethers } from 'hardhat'
 

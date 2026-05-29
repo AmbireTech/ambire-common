@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, hexlify, isAddress, TypedDataDomain, TypedDataField } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
@@ -382,7 +381,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     let hasTxInProgressErrorShown = false
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
       const { kind, meta, dappPromises } = req
 
@@ -685,6 +683,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
+      // Snapshot IDs synchronously before any awaits so requests that arrive
+      // during async operations below are not incorrectly bulk-rejected.
+      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
@@ -703,11 +705,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         })
       }
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const r of this.userRequests) {
         if (r.kind === 'walletAddEthereumChain') {
           const chainId = r.meta.params[0].chainId
-          // eslint-disable-next-line no-continue
+
           if (!chainId) continue
 
           const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
@@ -716,8 +717,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive
+        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
       )
+
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
@@ -783,10 +785,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const activeRouteIdsToRemove = [...paramActiveRouteIds]
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const callId of callIds) {
       const request = findRequestByCall((c) => c.id === callId)
-      // eslint-disable-next-line no-continue
+
       if (!request) continue
 
       const call = request.signAccountOp.accountOp.calls.find((c) => c.id === callId)
@@ -800,20 +801,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           activeRouteIdsToRemove.push(call.activeRouteId)
         }
 
-        // eslint-disable-next-line no-continue
         continue
       }
 
-      // eslint-disable-next-line no-continue
       if (!call) continue
 
       await rejectAndCleanup(request, [call.id])
     }
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const activeRouteId of activeRouteIdsToRemove) {
       const request = findRequestByCall((c) => c.activeRouteId === activeRouteId)
-      // eslint-disable-next-line no-continue
+
       if (!request) continue
 
       const callIdsToRemove = request.signAccountOp.accountOp.calls
@@ -821,7 +819,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         .map((c) => c.id)
         .filter(Boolean) as string[]
 
-      // eslint-disable-next-line no-continue
       if (callIdsToRemove.length === 0) continue
 
       await rejectAndCleanup(request, callIdsToRemove)

@@ -266,7 +266,6 @@ export class LiFiAPI implements SwapProvider {
     this.#apiKeyActivatedTimestamp = undefined
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     // Li.Fi's v1 API doesn't have a dedicated health endpoint
     return true
@@ -295,7 +294,7 @@ export class LiFiAPI implements SwapProvider {
   /**
    * Processes LiFi API responses and throws custom errors for various failures
    */
-  // eslint-disable-next-line class-methods-use-this
+
   async #handleResponse<T>({
     fetchPromise,
     errorPrefix

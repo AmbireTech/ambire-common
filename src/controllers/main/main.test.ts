@@ -77,7 +77,7 @@ describe('Main Controller ', () => {
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
     void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
-    // eslint-disable-next-line no-promise-executor-return
+
     await new Promise((resolve) => {
       if (controller.emailVault) {
         const unsubscribe = controller.emailVault.onUpdate(() => {
@@ -115,7 +115,6 @@ describe('Main Controller ', () => {
     let retries = 0
 
     while (!controller.isReady && retries < 20) {
-      // eslint-disable-next-line no-await-in-loop
       await wait(100)
       retries++
     }
@@ -140,7 +139,6 @@ describe('Main Controller ', () => {
 
     let retries2 = 0
     while (controller.accountPicker.accountsLoading && retries2 < 20) {
-      // eslint-disable-next-line no-await-in-loop
       await wait(100)
       retries2++
     }

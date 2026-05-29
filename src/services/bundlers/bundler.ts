@@ -1,5 +1,3 @@
-/* eslint-disable no-restricted-syntax */
-/* eslint-disable class-methods-use-this */
 import { toBeHex } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'

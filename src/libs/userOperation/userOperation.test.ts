@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { parseEther } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
