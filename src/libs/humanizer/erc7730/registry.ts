@@ -697,7 +697,10 @@ const getNestedSafeCallOptions = (
 ): Erc7730RegistryOptions => {
   if (call.to && call.to.toLowerCase() === safeAddress.toLowerCase()) return options
 
-  return options
+  return {
+    ...options,
+    provider: undefined
+  }
 }
 
 const addSafeTxCallDescriptor = async (
