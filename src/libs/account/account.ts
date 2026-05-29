@@ -38,11 +38,11 @@ import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 interface DKIMRecoveryAccInfo {
   emailFrom: string
   secondaryKey: string
-  waitUntilAcceptAdded?: BigInt
-  waitUntilAcceptRemoved?: BigInt
+  waitUntilAcceptAdded?: bigint
+  waitUntilAcceptRemoved?: bigint
   acceptEmptyDKIMSig?: boolean
   acceptEmptySecondSig?: boolean
-  onlyOneSigTimelock?: BigInt
+  onlyOneSigTimelock?: bigint
 }
 
 // returns to, data

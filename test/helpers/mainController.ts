@@ -94,7 +94,7 @@ export const makeMainController = async (
   let accountStateSpy: jest.SpyInstance | undefined
   if (skipAccountStateLoad) {
     accountStateSpy = jest
-      // @ts-ignore
+      // @ts-expect-error
       .spyOn(AccountsController.prototype, 'updateAccountStates')
       .mockImplementation(async () => {
         await wait(1)
@@ -120,7 +120,7 @@ export const makeMainController = async (
   })
 
   if (skipPortfolioFetchBlacklistOnLoad) {
-    // @ts-ignore
+    // @ts-expect-error
     jest.spyOn(PortfolioController.prototype, 'fetchBlacklist').mockImplementation(async () => {
       await wait(1)
     })
@@ -166,7 +166,7 @@ export const makeMainController = async (
   })
 
   // Disable simulation in requests' signAccountOps
-  // @ts-ignore
+  // @ts-expect-error
   mainCtrl.requests.shouldSimulateAccountOps = false
 
   // Applied synchronously before any async callbacks run, so the initial load
