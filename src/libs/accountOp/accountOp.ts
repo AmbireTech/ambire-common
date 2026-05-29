@@ -1,5 +1,6 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
+import { IrCall } from '@/libs/humanizer/interfaces'
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { EIP7702Auth } from '../../consts/7702'
@@ -104,7 +105,7 @@ export interface AccountOp {
       enabled: boolean
     }
     /** Descriptor-backed humanization persisted so activity, history and Benzin show the same clear signing details. */
-    clearSigningHumanization?: unknown
+    clearSigningHumanization?: IrCall[]
   }
   flags?: {
     hideActivityBanner?: boolean

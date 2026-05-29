@@ -107,16 +107,6 @@ export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
   )
 }
 
-export function getPersistedHumanization(meta?: {
-  clearSigningHumanization?: unknown
-}): IrCall[] | null {
-  const humanization = meta?.clearSigningHumanization
-  if (!Array.isArray(humanization)) return null
-
-  const persistedHumanization = humanization as IrCall[]
-  return hasErc7730Humanization(persistedHumanization) ? persistedHumanization : null
-}
-
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
     ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
