@@ -838,6 +838,115 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
+  test('falls back to local modules for nested calldata that has no ERC-7730 match', async () => {
+    const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
+    const cbBtc = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const aaveInterface = new ethers.Interface([
+      'function multicall(bytes[] data)',
+      'function setUserEMode(uint8 categoryId)',
+      'function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)'
+    ])
+
+    const aaveAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: aavePool,
+          value: 0n,
+          data: aaveInterface.encodeFunctionData('multicall', [
+            [
+              aaveInterface.encodeFunctionData('setUserEMode', [10]),
+              aaveInterface.encodeFunctionData('supply', [
+                cbBtc,
+                2838n,
+                accountOp.accountAddr,
+                0
+              ])
+            ]
+          ])
+        }
+      ]
+    }
+
+    const irCalls = humanizeAccountOp(aaveAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'multicall(bytes[] data)': {
+                  intent: 'Multicall',
+                  fields: [
+                    {
+                      path: 'data',
+                      label: 'Call',
+                      format: 'calldata',
+                      params: {
+                        calleePath: '@.to'
+                      },
+                      visible: 'always'
+                    }
+                  ]
+                },
+                'supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)': {
+                  intent: 'Supply',
+                  fields: [
+                    {
+                      path: 'amount',
+                      label: 'Amount',
+                      format: 'tokenAmount',
+                      params: {
+                        tokenPath: 'asset'
+                      },
+                      visible: 'always'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Multicall', [
+          {
+            label: '',
+            value: [
+              getErc7730Visualization('Enable BTC efficiency mode', [
+                {
+                  label: 'Category',
+                  value: [getText('BTC correlated assets')]
+                }
+              ])
+            ]
+          },
+          {
+            label: '',
+            value: [
+              getErc7730Visualization('Supply', [
+                {
+                  label: 'Amount',
+                  value: [getToken(cbBtc, 2838n, 8453n)]
+                }
+              ])
+            ]
+          }
+        ])
+      ]
+    ])
+
+    expect(
+      irCalls[0]!.fullVisualization
+        ?.flatMap((visualization) =>
+          visualization.type === 'erc7730' ? visualization.rows.flatMap((row) => row.value) : []
+        )
+        .some((visualization) => visualization.content === '0x28530a47')
+    ).toBe(false)
+  })
   test('uses the Morpho Bundler3 ERC-7730 descriptor for Base multicall calldata', async () => {
     const morphoBundler = '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4'
     const generalAdapter = '0xb98c948cfa24072e58935bc004a8a7b376ae746a'

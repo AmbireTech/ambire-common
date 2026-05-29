@@ -9,6 +9,7 @@ import {
   getDeadline,
   getLabel,
   getOnBehalfOf,
+  getText,
   getToken
 } from '../../utils'
 
@@ -127,6 +128,18 @@ const supplyWithPermitAbi = parseAbi([
   'function supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)'
 ])
 const withdrawBytes32Abi = parseAbi(['function withdraw(bytes32 args) returns (uint256)'])
+const setUserEModeAbi = parseAbi(['function setUserEMode(uint8 categoryId)'])
+
+const AAVE_EMODE_CATEGORIES_BY_CHAIN_ID: {
+  [chainId: string]: { [categoryId: string]: string }
+} = {
+  '8453': {
+    '10': 'BTC correlated assets'
+  }
+}
+
+const getEModeCategory = (chainId: bigint, categoryId: number): string | null =>
+  AAVE_EMODE_CATEGORIES_BY_CHAIN_ID[chainId.toString()]?.[categoryId.toString()] || null
 
 export const aaveV3Pool = (): {
   [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
@@ -209,6 +222,23 @@ export const aaveV3Pool = (): {
         getToken(token, amount),
         getLabel('from'),
         getAddressVisualization(call.to)
+      ]
+    },
+    [toFunctionSelector(setUserEModeAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+      const { args } = decodeFunctionData({ abi: setUserEModeAbi, data: call.data })
+      const [categoryId] = args
+      const category = getEModeCategory(accountOp.chainId, categoryId)
+
+      if (categoryId === 0) {
+        return [getAction('Disable efficiency mode'), getLabel('Category'), getText('None')]
+      }
+
+      return [
+        getAction(
+          category ? `Enable ${category.split(' ')[0]} efficiency mode` : 'Set efficiency mode'
+        ),
+        getLabel('Category'),
+        getText(category || String(categoryId))
       ]
     }
   }

@@ -16,6 +16,7 @@ import { Call } from '../../accountOp/types'
 import {
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
+  HumanizerCallModule,
   HumanizerMeta,
   HumanizerVisualization,
   HumanizerWarning,
@@ -23,6 +24,7 @@ import {
   IrMessage
 } from '../interfaces'
 import AllowanceModule, { getSetAllowanceResetText } from '../modules/Allowance'
+import { aaveHumanizer } from '../modules/Aave'
 import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
@@ -666,6 +668,9 @@ const getCalldataRows = (
   const calleeValues = resolveCalldataParam(field, context, base, 'calleePath', 'callee')
   const selectorValues = resolveCalldataParam(field, context, base, 'selectorPath', 'selector')
   const amountValues = resolveCalldataParam(field, context, base, 'amountPath', 'amount')
+  const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
+  const nestedRowLabel =
+    field.label?.trim().toLowerCase() === 'call' ? '' : field.label ?? field.path ?? ''
 
   return values.reduce<HumanizerErc7730Row[] | null>((acc, calldata, index) => {
     if (!acc) return null
@@ -688,11 +693,38 @@ const getCalldataRows = (
     const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
     if (nestedVisualization) {
       acc.push({
-        label: field.label ?? field.path ?? '',
+        label: nestedRowLabel,
         value: [nestedVisualization]
       })
 
       return acc
+    }
+
+    if (
+      typeof calldata === 'string' &&
+      typeof callee === 'string' &&
+      isAddress(callee) &&
+      typeof accountAddr === 'string' &&
+      context.chainId
+    ) {
+      const moduleFallbackVisualization = getModuleFallbackVisualization(
+        {
+          to: callee,
+          data: calldata,
+          value: toBigIntOrNull(amount) || 0n
+        },
+        context.chainId,
+        accountAddr
+      )
+
+      if (moduleFallbackVisualization) {
+        acc.push({
+          label: nestedRowLabel,
+          value: [moduleFallbackVisualization]
+        })
+
+        return acc
+      }
     }
 
     if (typeof callee === 'string' && isAddress(callee)) {
@@ -993,14 +1025,32 @@ const getModuleFallbackVisualization = (
   chainId: bigint,
   accountAddr: string
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  const [humanizedCall] = AllowanceModule(
-    {
-      accountAddr,
-      chainId,
-      calls: [call]
-    } as AccountOp,
-    [call as IrCall]
-  )
+  const accountOp = {
+    accountAddr,
+    chainId,
+    calls: [call]
+  } as AccountOp
+  const localFallbackModules: HumanizerCallModule[] = [aaveHumanizer, AllowanceModule]
+  let humanizedCall: IrCall | undefined
+
+  localFallbackModules.some((module) => {
+    try {
+      const [result] = module(accountOp, [call as IrCall])
+      if (!result?.fullVisualization?.length) return false
+
+      humanizedCall = result
+      return true
+    } catch (error) {
+      console.error(error)
+      return false
+    }
+  })
+
+  if (!humanizedCall?.fullVisualization?.length) {
+    const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [call as IrCall])
+    humanizedCall = fallbackCall
+  }
+
   const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
   if (!rows) return null
 
