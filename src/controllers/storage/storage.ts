@@ -3,7 +3,7 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Dapp } from '../../interfaces/dapp'
 import { EmailVaultData } from '../../interfaces/emailVault'
-/* eslint-disable no-restricted-syntax */
+
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
@@ -39,7 +39,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     super(eventEmitterRegistry)
 
     this.#storage = storage
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
     this.#storageMigrationsPromise = this.#loadMigrations()
   }
 
@@ -510,9 +510,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     let page = 1
     while (page <= 10) {
-      // eslint-disable-next-line no-await-in-loop
       await accountPicker.setPage({ page })
-      // eslint-disable-next-line no-await-in-loop
+
       await accountPicker.findAndSetLinkedAccountsPromise
 
       const matchingAddresses = accountPicker.allKeysOnPage.filter((k) =>

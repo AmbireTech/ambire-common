@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'

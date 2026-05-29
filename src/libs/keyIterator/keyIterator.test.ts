@@ -1,6 +1,5 @@
 import { Wallet } from 'ethers'
 
-/* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'

@@ -1,4 +1,3 @@
-/* eslint-disable no-continue */
 import { ZeroAddress } from 'ethers'
 
 import { networks } from '../../../../consts/networks'

@@ -1,7 +1,4 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
 
 import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
 
@@ -68,7 +65,6 @@ class InternalSigner {
 class LedgerSigner {
   key
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   constructor(_key: Key) {
     this.key = _key
   }

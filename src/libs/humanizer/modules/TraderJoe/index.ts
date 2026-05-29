@@ -17,7 +17,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     [iface.getFunction(
       'swapExactNATIVEForTokens(uint256 amountOutMin,(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountOutMin, path, to, deadline } = iface.parseTransaction(call)!.args
       const tokenOut = path[2][path[2].length - 1]
       return [
@@ -32,7 +31,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     [iface.getFunction(
       'swapNATIVEForExactTokens(uint256 amountOut,tuple(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountOut, path, to, deadline } = iface.parseTransaction(call)!.args
       const tokenOut = path[2][path[2].length - 1]
       return [
@@ -47,7 +45,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     [iface.getFunction(
       'swapExactTokensForNATIVE(uint256 amountIn,uint256 amountOutMinNATIVE,tuple(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountIn, amountOutMinNATIVE, path, to, deadline } =
         iface.parseTransaction(call)!.args
       return [
@@ -62,7 +59,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     [iface.getFunction(
       'swapTokensForExactNATIVE(uint256 amountNATIVEOut,uint256 amountInMax,tuple(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountNATIVEOut, amountInMax, path, to, deadline } =
         iface.parseTransaction(call)!.args
       return [
@@ -77,7 +73,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     [iface.getFunction(
       'swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,tuple(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountIn, amountOutMin, path, to, deadline } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
@@ -91,7 +86,6 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     [iface.getFunction(
       'swapTokensForExactTokens(uint256 amountOut,uint256 amountInMax,tuple(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountOut, amountInMax, path, to, deadline } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap up to'),

@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { BUNDLER, ETHERSPOT } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
@@ -44,9 +42,8 @@ export class Etherspot extends Bundler {
     const provider = this.getProvider(network)
 
     const status = await provider.send('eth_getUserOperationReceipt', [userOpHash]).catch((e) => {
-      // eslint-disable-next-line no-console
       console.log('etherspot failed to find the status of the user op')
-      // eslint-disable-next-line no-console
+
       console.log(e)
 
       return null

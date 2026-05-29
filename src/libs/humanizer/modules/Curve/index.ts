@@ -12,7 +12,6 @@ const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
     address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? ZeroAddress : address
 
   const handleBasicSwap = (curveRoute: string[], amountIn: bigint, amountOut: bigint) => {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     const route = curveRoute.filter((a: string) => a !== ZeroAddress)
     const [inToken, outToken] = [route[0], route[route.length - 1]]
     return [
@@ -27,7 +26,6 @@ const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
     [iface.getFunction(
       'exchange(address[11] _route, uint256[5][5] _swap_params, uint256 _amount, uint256 _expected, address[5] _pools)'
     )?.selector!]: (call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
       const { _route, _amount, _expected } = iface.parseTransaction(call)!.args
       return handleBasicSwap(_route, _amount, _expected)
     }

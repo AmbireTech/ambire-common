@@ -584,7 +584,6 @@ export class TransactionFormState extends EventEmitter {
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
         if (r.routeStatus !== 'failed') {
-          // eslint-disable-next-line no-param-reassign
           delete r.error
         }
       })
@@ -594,7 +593,6 @@ export class TransactionFormState extends EventEmitter {
 
         // update the activeRoute.route prop for the new session
         this.activeRoutes.forEach((r) => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateActiveRoute(r.activeRouteId, undefined, true)
         })
       }

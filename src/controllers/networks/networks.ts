@@ -112,7 +112,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
     this.#onReady = onReady
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -148,7 +147,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
       .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
 
     return uniqueNetworksByChainId.map((network) => {
-      // eslint-disable-next-line no-param-reassign
       network.features = getFeaturesByNetworkProperties(
         {
           isSAEnabled: network.isSAEnabled,
@@ -489,7 +487,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
           const info = { ...(networkToAddOrUpdate.info as NetworkInfo) }
           const { feeOptions } = info
 
-          // eslint-disable-next-line no-param-reassign
           delete (info as any).feeOptions
           this.#networks[stringChainId] = {
             ...this.#networks[stringChainId],
@@ -521,7 +518,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
                 const { feeOptions } = info as NetworkInfo
 
-                // eslint-disable-next-line no-param-reassign
                 delete (info as any).feeOptions
                 this.#networks[stringChainId] = {
                   ...(this.#networks[stringChainId] as Network),
