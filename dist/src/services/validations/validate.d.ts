@@ -1,7 +1,7 @@
 import isEmail from 'validator/lib/isEmail';
-import { Account, AccountStates } from '@/interfaces/account';
-import { Network } from '@/interfaces/network';
-import { AddressPoisoningMatch } from '@/interfaces/transfer';
+import { Account, AccountStates } from '../../interfaces/account';
+import { Network } from '../../interfaces/network';
+import { AddressPoisoningMatch } from '../../interfaces/transfer';
 import { TokenResult } from '../../libs/portfolio';
 export type Validation = {
     message: string;

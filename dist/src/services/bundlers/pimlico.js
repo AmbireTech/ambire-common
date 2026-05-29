@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Pimlico = void 0;
-const provider_1 = require("@/services/provider");
+const provider_1 = require("../provider");
 const bundlers_1 = require("../../consts/bundlers");
 const bundler_1 = require("./bundler");
 class Pimlico extends bundler_1.Bundler {

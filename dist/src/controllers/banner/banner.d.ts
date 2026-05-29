@@ -1,4 +1,4 @@
-import { ISurveyController } from '@/interfaces/survey';
+import { ISurveyController } from '../../interfaces/survey';
 import { Banner, IBannerController } from '../../interfaces/banner';
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
 import { IStorageController } from '../../interfaces/storage';

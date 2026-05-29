@@ -1,6 +1,6 @@
-import { MagicLinkKeys, SessionKeys } from '@/controllers/emailVault/emailVault';
-import { Contacts } from '@/interfaces/addressBook';
-import { EmailVaultData } from '@/interfaces/emailVault';
+import { MagicLinkKeys, SessionKeys } from '../controllers/emailVault/emailVault';
+import { Contacts } from './addressBook';
+import { EmailVaultData } from './emailVault';
 import { FeatureFlags } from '../consts/featureFlags';
 import { SignedMessage } from '../controllers/activity/types';
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp';

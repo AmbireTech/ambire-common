@@ -1,5 +1,5 @@
 import { JsonRpcProvider } from 'ethers';
-import { CallTuple } from '@/libs/accountOp/types';
+import { CallTuple } from '../accountOp/types';
 import { MessageTypes } from '@metamask/eth-sig-util';
 import { EIP7702Auth } from '../../consts/7702';
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account';

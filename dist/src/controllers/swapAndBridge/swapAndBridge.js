@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SwapAndBridgeController = exports.SwapAndBridgeFormStatus = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
-const networks_1 = require("@/libs/networks/networks");
+const networks_1 = require("../../libs/networks/networks");
 const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
 const SwapAndBridgeError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeError"));

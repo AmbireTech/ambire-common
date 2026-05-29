@@ -1,4 +1,4 @@
-import { RPCProvider } from '@/interfaces/provider';
+import { RPCProvider } from '../../interfaces/provider';
 import { BUNDLER } from '../../consts/bundlers';
 import { Network } from '../../interfaces/network';
 import { Bundler } from './bundler';

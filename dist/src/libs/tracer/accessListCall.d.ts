@@ -1,4 +1,4 @@
-import { RPCProvider } from '@/interfaces/provider';
+import { RPCProvider } from '../../interfaces/provider';
 import { Account, AccountOnchainState } from '../../interfaces/account';
 import { Network } from '../../interfaces/network';
 import { BaseAccount } from '../account/BaseAccount';

@@ -1,4 +1,4 @@
-import { Dapp } from '@/interfaces/dapp';
+import { Dapp } from '../../interfaces/dapp';
 export declare const dappIdsToBeRemoved: Set<string>;
 export declare const featuredDapps: Set<string>;
 export declare const predefinedDapps: Dapp[];

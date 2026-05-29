@@ -9,7 +9,7 @@
     "hardhat": "npx hardhat compile; npx hardhat test",
     "jest": "node runTests.js",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
-    "build:v2": "tsc -p tsconfig.build.json",
+    "build:v2": "tsc -p tsconfig.build.json && node scripts/rewriteDistAliases.js",
     "prettier": "prettier --write 'contracts/**/*.sol'",
     "lint": "eslint ./src",
     "lint:fix": "eslint ./src --fix",

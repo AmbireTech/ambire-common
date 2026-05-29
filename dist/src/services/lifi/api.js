@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LiFiAPI = void 0;
 const tslib_1 = require("tslib");
-const constants_1 = require("@/services/squid/constants");
+const constants_1 = require("../squid/constants");
 const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
 const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
 const constants_2 = require("../socket/constants");

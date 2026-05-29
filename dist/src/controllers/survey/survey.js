@@ -3,8 +3,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SurveyController = exports.ANSWERED_SURVEYS_STORAGE_KEY = void 0;
 const tslib_1 = require("tslib");
-const relayerCall_1 = require("@/libs/relayerCall/relayerCall");
-const survey_1 = require("@/utils/survey");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const survey_1 = require("../../utils/survey");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const helpers_1 = require("./helpers");
 exports.ANSWERED_SURVEYS_STORAGE_KEY = 'surveysRespondedTo';

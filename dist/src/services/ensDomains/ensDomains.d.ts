@@ -1,4 +1,4 @@
-import { RPCProvider } from '@/interfaces/provider';
+import { RPCProvider } from '../../interfaces/provider';
 export declare const NAMOSHI_UNIVERSAL_RESOLVER = "0xc5Ed1fA34AD1F23F0cD2E36DB288290488B1B493";
 export declare function getIsNamoshiDomain(domain: string): boolean;
 export declare function isCorrectAddress(address: string): boolean;

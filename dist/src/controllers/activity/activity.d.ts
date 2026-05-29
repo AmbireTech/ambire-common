@@ -1,5 +1,5 @@
 import { TransactionReceipt } from 'ethers';
-import { AddressPoisoningMatch } from '@/interfaces/transfer';
+import { AddressPoisoningMatch } from '../../interfaces/transfer';
 import { Account, AccountId, IAccountsController } from '../../interfaces/account';
 import { IActivityController } from '../../interfaces/activity';
 import { Banner } from '../../interfaces/banner';

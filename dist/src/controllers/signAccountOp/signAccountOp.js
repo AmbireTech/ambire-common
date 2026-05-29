@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SignAccountOpController = exports.noStateUpdateStatuses = exports.FeeSpeed = exports.SigningStatus = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
-const debugTraceCall_1 = require("@/libs/tracer/debugTraceCall");
+const debugTraceCall_1 = require("../../libs/tracer/debugTraceCall");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
 const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));

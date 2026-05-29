@@ -1,4 +1,4 @@
-import { Account, AccountStates } from '@/interfaces/account';
+import { Account, AccountStates } from '../../interfaces/account';
 import { Fetch } from '../../interfaces/fetch';
 import { Network, NetworkFeature, NetworkInfo, NetworkInfoLoading, RelayerNetwork, SupportedNetworks } from '../../interfaces/network';
 import { RPCProvider, RPCProviders } from '../../interfaces/provider';

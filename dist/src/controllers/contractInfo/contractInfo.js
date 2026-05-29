@@ -2,8 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ContractInfoController = exports.SELECTOR_ERROR_DEADLINE_MS = exports.SELECTOR_LOADING_DEADLINE = exports.SELECTOR_NOT_FOUND_DEADLINE_MS = exports.SELECTOR_SUCCESS_DEADLINE_MS = exports.FUNCTION_SELECTORS_STORAGE_KEY = void 0;
 const tslib_1 = require("tslib");
-const fetch_1 = require("@/utils/fetch");
-const wait_1 = tslib_1.__importDefault(require("@/utils/wait"));
+const fetch_1 = require("../../utils/fetch");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 exports.FUNCTION_SELECTORS_STORAGE_KEY = 'functionSelectors';
 exports.SELECTOR_SUCCESS_DEADLINE_MS = 30 * 24 * 60 * 60 * 1000;

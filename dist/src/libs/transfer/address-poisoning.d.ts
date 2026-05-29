@@ -1,4 +1,4 @@
-import { AddressPoisoningMatch } from '@/interfaces/transfer';
+import { AddressPoisoningMatch } from '../../interfaces/transfer';
 /**
  * Address poisoning lookalikes usually preserve a few consecutive chars from the left and/or
  * right side of the original address. We consider any recipient with at least 8 matched chars

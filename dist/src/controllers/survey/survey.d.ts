@@ -1,5 +1,5 @@
-import { IStorageController } from '@/interfaces/storage';
-import { IUiController } from '@/interfaces/ui';
+import { IStorageController } from '../../interfaces/storage';
+import { IUiController } from '../../interfaces/ui';
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
 import { Fetch } from '../../interfaces/fetch';
 import { ISurveyController, Survey, SurveyAnswers } from '../../interfaces/survey';

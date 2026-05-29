@@ -1,8 +1,8 @@
-import { IContractInfoController, Selectors } from '@/interfaces/contractInfo';
-import { IEventEmitterRegistryController } from '@/interfaces/eventEmitter';
-import { IFeatureFlagsController } from '@/interfaces/featureFlags';
-import { Fetch } from '@/interfaces/fetch';
-import { IStorageController } from '@/interfaces/storage';
+import { IContractInfoController, Selectors } from '../../interfaces/contractInfo';
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
+import { Fetch } from '../../interfaces/fetch';
+import { IStorageController } from '../../interfaces/storage';
 import EventEmitter from '../eventEmitter/eventEmitter';
 export declare const FUNCTION_SELECTORS_STORAGE_KEY = "functionSelectors";
 export declare const SELECTOR_SUCCESS_DEADLINE_MS: number;
@@ -25,7 +25,7 @@ export declare class ContractInfoController extends EventEmitter implements ICon
     toJSON(): this & {
         isReady: boolean;
         name: string;
-        emittedErrors: import("@/interfaces/eventEmitter").ErrorRef[];
+        emittedErrors: import("../../interfaces/eventEmitter").ErrorRef[];
     };
 }
 //# sourceMappingURL=contractInfo.d.ts.map

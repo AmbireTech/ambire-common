@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ActivityController = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
-const address_poisoning_1 = require("@/libs/transfer/address-poisoning");
+const address_poisoning_1 = require("../../libs/transfer/address-poisoning");
 const balanceChanges_1 = require("../../libs/accountOp/balanceChanges");
 const submittedAccountOp_1 = require("../../libs/accountOp/submittedAccountOp");
 const types_1 = require("../../libs/accountOp/types");
