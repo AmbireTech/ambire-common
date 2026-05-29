@@ -4,12 +4,12 @@ import { relayerCall } from '../relayerCall/relayerCall'
 
 export interface MagicLinkData {
   key: string
-  secret?: String // this will not be return in prod mode
+  secret?: string // this will not be return in prod mode
   expiry: number
 }
 
 export interface RequestMagicLinkResult {
-  success: Boolean
+  success: boolean
   data: MagicLinkData
   message: string
 }
