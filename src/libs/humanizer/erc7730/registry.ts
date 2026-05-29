@@ -24,7 +24,7 @@ import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/safe'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
-import { fetchRelayerResource, postRelayerResource } from './fetch'
+import { fetchRelayerResource } from './fetch'
 import {
   CacheEntry,
   Erc7730CalldataIndex,
@@ -325,7 +325,7 @@ const fetchCachedIndex = async <T>({
 
   if (promise) return promise
 
-  const nextPromise = fetchRelayerResource<T>(path, callRelayer, validate)
+  const nextPromise = fetchRelayerResource<T>(path, 'GET', callRelayer, validate)
     .then((index) => {
       setCache(createCacheEntry(index))
       return index
@@ -397,13 +397,14 @@ const fetchDescriptorResource = async (
   const pendingDescriptor = descriptorPromises.get(relayerPath)
   if (pendingDescriptor) return pendingDescriptor
 
-  const descriptorFetchPromise = postRelayerResource<Erc7730Descriptor>(
+  const descriptorFetchPromise = fetchRelayerResource<Erc7730Descriptor>(
     ERC7730_DESCRIPTOR_PATH,
+    'POST',
     callRelayer,
+    validateDescriptor,
     {
       descriptorPath: relayerPath
-    },
-    validateDescriptor
+    }
   )
     .then((descriptor) => {
       descriptorCache.set(relayerPath, createCacheEntry(descriptor))

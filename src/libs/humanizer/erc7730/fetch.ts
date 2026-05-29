@@ -1,6 +1,5 @@
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
-import { withTimeout } from '../../../utils/with-timeout'
 import { ERC7730_DESCRIPTOR_WAIT_MS } from './consts'
 
 const getRelayerPayload = <T>(response: any, path: string): T => {
@@ -9,7 +8,6 @@ const getRelayerPayload = <T>(response: any, path: string): T => {
   }
 
   if (response?.data !== undefined) return response.data as T
-
   if (response?.success === undefined) return response as T
 
   const { success, status, errorState, message, ...payload } = response
@@ -20,40 +18,18 @@ const getRelayerPayload = <T>(response: any, path: string): T => {
   return payload as T
 }
 
+/**
+ * Fetch and validate the resource from the relayer.
+ * We have this wrapper mainly because of the validate method
+ */
 export const fetchRelayerResource = async <T>(
   path: string,
+  method: string,
   callRelayer: BindedRelayerCall,
-  validate: (payload: unknown, path: string) => payload is T
+  validate: (payload: unknown, path: string) => payload is T,
+  body?: any
 ): Promise<T> => {
-  const response = await withTimeout(
-    () => callRelayer(path, 'GET', undefined, undefined, ERC7730_DESCRIPTOR_WAIT_MS),
-    {
-      timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
-      message: `Timed out fetching ERC-7730 relayer resource: ${path}`
-    }
-  )
-  const payload = getRelayerPayload<T>(response, path)
-
-  if (!validate(payload, path)) {
-    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
-  }
-
-  return payload
-}
-
-export const postRelayerResource = async <T>(
-  path: string,
-  callRelayer: BindedRelayerCall,
-  body: any,
-  validate: (payload: unknown, path: string) => payload is T
-): Promise<T> => {
-  const response = await withTimeout(
-    () => callRelayer(path, 'POST', body, undefined, ERC7730_DESCRIPTOR_WAIT_MS),
-    {
-      timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
-      message: `Timed out fetching ERC-7730 relayer resource: ${path}`
-    }
-  )
+  const response = await callRelayer(path, method, body, undefined, ERC7730_DESCRIPTOR_WAIT_MS)
   const payload = getRelayerPayload<T>(response, path)
 
   if (!validate(payload, path)) {
