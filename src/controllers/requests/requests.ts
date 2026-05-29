@@ -684,6 +684,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
+      // Snapshot IDs synchronously before any awaits so requests that arrive
+      // during async operations below are not incorrectly bulk-rejected.
+      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
@@ -715,8 +719,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive
+        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
       )
+
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
