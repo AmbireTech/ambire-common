@@ -1,24 +1,29 @@
-import assert from 'assert';
-import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, toQuantity } from 'ethers';
-import { decodeFunctionResult, encodeFunctionData } from 'viem';
-import DeploylessCompiled from '../../../contracts/compiled/Deployless.json';
-import { ProviderError } from '../../classes/ProviderError';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Deployless = exports.DeploylessMode = void 0;
+exports.fromDescriptor = fromDescriptor;
+const tslib_1 = require("tslib");
+const assert_1 = tslib_1.__importDefault(require("assert"));
+const ethers_1 = require("ethers");
+const viem_1 = require("viem");
+const Deployless_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Deployless.json"));
+const ProviderError_1 = require("../../classes/ProviderError");
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
-const deploylessProxyBin = DeploylessCompiled.bin;
+const deploylessProxyBin = Deployless_json_1.default.bin;
 // This is another magic contract that can return the contract code at an address; this is not the deploy bytecode but rather the contract code itself
 // see https://gist.github.com/Ivshti/fbcc37c0a8b88d6e51bb30db57f3d50e
 const codeOfContractCode = '0x608060405234801561001057600080fd5b506004361061002b5760003560e01c80631e05758f14610030575b600080fd5b61004a60048036038101906100459190610248565b61004c565b005b60008151602083016000f0905060008173ffffffffffffffffffffffffffffffffffffffff163b036100aa576040517fb4f5411100000000000000000000000000000000000000000000000000000000815260040160405180910390fd5b60008173ffffffffffffffffffffffffffffffffffffffff16803b806020016040519081016040528181526000908060200190933c90506000815190508060208301f35b6000604051905090565b600080fd5b600080fd5b600080fd5b600080fd5b6000601f19601f8301169050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b6101558261010c565b810181811067ffffffffffffffff821117156101745761017361011d565b5b80604052505050565b60006101876100ee565b9050610193828261014c565b919050565b600067ffffffffffffffff8211156101b3576101b261011d565b5b6101bc8261010c565b9050602081019050919050565b82818337600083830152505050565b60006101eb6101e684610198565b61017d565b90508281526020810184848401111561020757610206610107565b5b6102128482856101c9565b509392505050565b600082601f83011261022f5761022e610102565b5b813561023f8482602086016101d8565b91505092915050565b60006020828403121561025e5761025d6100f8565b5b600082013567ffffffffffffffff81111561027c5761027b6100fd565b5b6102888482850161021a565b9150509291505056fea2646970667358221220de4923c71abcedf68454c251a9becff7e8a4f8db4adee6fdb16d583f509c63bb64736f6c63430008120033';
 const codeOfContractAbi = ['function codeOf(bytes deployCode) external view'];
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969';
-const abiCoder = new AbiCoder();
-export var DeploylessMode;
+const abiCoder = new ethers_1.AbiCoder();
+var DeploylessMode;
 (function (DeploylessMode) {
     DeploylessMode[DeploylessMode["Detect"] = 0] = "Detect";
     DeploylessMode[DeploylessMode["ProxyContract"] = 1] = "ProxyContract";
     DeploylessMode[DeploylessMode["StateOverride"] = 2] = "StateOverride";
-})(DeploylessMode || (DeploylessMode = {}));
+})(DeploylessMode || (exports.DeploylessMode = DeploylessMode = {}));
 const defaultOptions = {
     mode: DeploylessMode.Detect,
     blockTag: 'latest',
@@ -26,7 +31,7 @@ const defaultOptions = {
     to: arbitraryAddr,
     stateToOverride: null
 };
-export class Deployless {
+class Deployless {
     abi;
     // the contract deploy (constructor) code: this is the code that tjhe solidity compiler outputs
     contractBytecode;
@@ -43,18 +48,18 @@ export class Deployless {
         return !this.stateOverrideSupported;
     }
     constructor(provider, abi, code, codeAtRuntime) {
-        assert.ok(code.startsWith('0x'), 'contract code must start with 0x');
-        assert.ok(!abi.includes((x) => x.type === 'constructor'), 'contract cannot have a constructor, as it is not supported in state override mode');
-        assert.ok(!!provider, 'provider must be provided');
+        assert_1.default.ok(code.startsWith('0x'), 'contract code must start with 0x');
+        assert_1.default.ok(!abi.includes((x) => x.type === 'constructor'), 'contract cannot have a constructor, as it is not supported in state override mode');
+        assert_1.default.ok(!!provider, 'provider must be provided');
         this.contractBytecode = code;
         this.provider = provider;
         this.abi = abi;
-        if (provider && provider instanceof JsonRpcProvider) {
+        if (provider && provider instanceof ethers_1.JsonRpcProvider) {
             this.providerUrl = provider._getConnection().url;
             this.isProviderInvictus = this.providerUrl?.includes('invictus');
         }
         if (codeAtRuntime !== undefined) {
-            assert.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x');
+            assert_1.default.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x');
             this.stateOverrideSupported = true;
             this.contractRuntimeCode = codeAtRuntime;
         }
@@ -67,7 +72,7 @@ export class Deployless {
         if (!isJsonRpcProvider) {
             throw new Error('state override mode (or auto-detect) not available unless you use JsonRpcProvider');
         }
-        const codeOfIface = new Interface(codeOfContractAbi);
+        const codeOfIface = new ethers_1.Interface(codeOfContractAbi);
         const code = await Deployless.handleResponse(this.provider.send('eth_call', [
             {
                 to: arbitraryAddr,
@@ -86,11 +91,11 @@ export class Deployless {
             return await callPromise;
         }
         catch (e) {
-            throw new ProviderError({ originalError: e, providerUrl });
+            throw new ProviderError_1.ProviderError({ originalError: e, providerUrl });
         }
     }
     static checkDataSize(data) {
-        if (getBytes(data).length >= 24576)
+        if ((0, ethers_1.getBytes)(data).length >= 24576)
             throw new Error('Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.');
         return data;
     }
@@ -100,7 +105,7 @@ export class Deployless {
      * This is the standard to make sure RPCs don't revert
      */
     static normalizeRpcBlockTag(blockTag) {
-        return typeof blockTag === 'number' ? toQuantity(blockTag) : blockTag;
+        return typeof blockTag === 'number' ? (0, ethers_1.toQuantity)(blockTag) : blockTag;
     }
     async call(methodName, args, _opts = {}) {
         const opts = { ...defaultOptions, ..._opts };
@@ -120,7 +125,7 @@ export class Deployless {
         if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
             throw new Error(`${methodName}: state override requested but not supported`);
         }
-        const callData = encodeFunctionData({
+        const callData = (0, viem_1.encodeFunctionData)({
             abi: this.abi,
             functionName: methodName,
             args
@@ -146,7 +151,7 @@ export class Deployless {
                 from: opts.from,
                 gasPrice: opts?.gasPrice,
                 gasLimit: opts?.gasLimit,
-                data: Deployless.checkDataSize(concat([
+                data: Deployless.checkDataSize((0, ethers_1.concat)([
                     deploylessProxyBin,
                     abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
                 ]))
@@ -161,14 +166,15 @@ export class Deployless {
                 setTimeout(() => reject(new Error(`rpc-timeout. Rpc: ${this.isProviderInvictus ? this.providerUrl : 'custom'}`)), this.isProviderInvictus ? 15000 : 20000);
             })
         ]), this.providerUrl);
-        return decodeFunctionResult({
+        return (0, viem_1.decodeFunctionResult)({
             abi: this.abi,
             functionName: methodName,
             data: returnDataRaw
         });
     }
 }
-export function fromDescriptor(provider, desc, supportStateOverride) {
+exports.Deployless = Deployless;
+function fromDescriptor(provider, desc, supportStateOverride) {
     return new Deployless(provider, desc.abi, desc.bin, supportStateOverride ? desc.binRuntime : undefined);
 }
 //# sourceMappingURL=deployless.js.map

@@ -1,7 +1,9 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 /**
  * Constructs the view state of the portfolio from all network data
  */
-export default class PortfolioViewBuilder {
+class PortfolioViewBuilder {
     tokens = [];
     defiPositions = [];
     collections = [];
@@ -117,4 +119,5 @@ export default class PortfolioViewBuilder {
         };
     }
 }
+exports.default = PortfolioViewBuilder;
 //# sourceMappingURL=portfolioView.js.map

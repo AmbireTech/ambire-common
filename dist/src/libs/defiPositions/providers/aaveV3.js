@@ -1,18 +1,22 @@
-import { Contract } from 'ethers';
-import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json';
-import { generateUuid } from '../../../utils/uuid';
-import { fromDescriptor } from '../../deployless/deployless';
-import { AAVE_V3 } from '../defiAddresses';
-import { getAssetValue } from '../helpers';
-import { AssetType } from '../types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAAVEPositions = getAAVEPositions;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const DeFiAAVEPosition_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiAAVEPosition.json"));
+const uuid_1 = require("../../../utils/uuid");
+const deployless_1 = require("../../deployless/deployless");
+const defiAddresses_1 = require("../defiAddresses");
+const helpers_1 = require("../helpers");
+const types_1 = require("../types");
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
-export async function getAAVEPositions(userAddr, provider, network) {
+async function getAAVEPositions(userAddr, provider, network) {
     const { chainId } = network;
-    if (chainId && !AAVE_V3[chainId.toString()])
+    if (chainId && !defiAddresses_1.AAVE_V3[chainId.toString()])
         return null;
-    const { poolAddr } = AAVE_V3[chainId.toString()];
-    const poolContract = new Contract(poolAddr, ['function getReservesCount() view returns (uint256)'], provider);
-    const deploylessDeFiPositionsGetter = fromDescriptor(provider, DeFiPositionsDeploylessCode, network.rpcNoStateOverride // Why?
+    const { poolAddr } = defiAddresses_1.AAVE_V3[chainId.toString()];
+    const poolContract = new ethers_1.Contract(poolAddr, ['function getReservesCount() view returns (uint256)'], provider);
+    const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiAAVEPosition_json_1.default, network.rpcNoStateOverride // Why?
     );
     const reservesLength = await poolContract.getFunction('getReservesCount').staticCall();
     const PAGE_SIZE = 15;
@@ -38,7 +42,7 @@ export async function getAAVEPositions(userAddr, provider, network) {
         accountData.healthFactor = null;
     }
     const position = {
-        id: generateUuid(),
+        id: (0, uuid_1.generateUuid)(),
         additionalData: {
             healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
             positionInUSD: 0,
@@ -72,8 +76,8 @@ export async function getAAVEPositions(userAddr, provider, network) {
                 decimals: Number(asset.decimals),
                 amount: asset.balance,
                 priceIn,
-                value: getAssetValue(asset.balance, Number(asset.decimals), [priceIn]),
-                type: AssetType.Collateral,
+                value: (0, helpers_1.getAssetValue)(asset.balance, Number(asset.decimals), [priceIn]),
+                type: types_1.AssetType.Collateral,
                 additionalData: {
                     APY: Number(asset.currentLiquidityRate) / 10 ** 25
                 },
@@ -94,8 +98,8 @@ export async function getAAVEPositions(userAddr, provider, network) {
                 decimals: Number(asset.decimals),
                 amount: asset.stableBorrowAssetBalanc,
                 priceIn,
-                value: getAssetValue(asset.stableBorrowAssetBalanc, Number(asset.decimals), [priceIn]),
-                type: AssetType.Borrow,
+                value: (0, helpers_1.getAssetValue)(asset.stableBorrowAssetBalanc, Number(asset.decimals), [priceIn]),
+                type: types_1.AssetType.Borrow,
                 additionalData: {
                     APY: Number(asset.currentStableBorrowRate) / 10 ** 25
                 },
@@ -116,8 +120,8 @@ export async function getAAVEPositions(userAddr, provider, network) {
                 decimals: Number(asset.decimals),
                 amount: asset.borrowAssetBalance,
                 priceIn,
-                value: getAssetValue(asset.borrowAssetBalance, Number(asset.decimals), [priceIn]),
-                type: AssetType.Borrow,
+                value: (0, helpers_1.getAssetValue)(asset.borrowAssetBalance, Number(asset.decimals), [priceIn]),
+                type: types_1.AssetType.Borrow,
                 additionalData: {
                     APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
                 },

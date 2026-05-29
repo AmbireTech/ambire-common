@@ -1,6 +1,10 @@
-import wait from '../../utils/wait';
-import { withTimeout } from '../../utils/with-timeout';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TransfersScannerController = void 0;
+const tslib_1 = require("tslib");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const with_timeout_1 = require("../../utils/with-timeout");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 const SCAN_LOGS_ATTEMPTS = 15;
 const SCAN_LOGS_RPC_TIMEOUT_MS = 10000;
@@ -21,7 +25,7 @@ function toError(error) {
     return error instanceof Error ? error : new Error(String(error));
 }
 function withScannerRpcTimeout(task, method) {
-    return withTimeout(task, {
+    return (0, with_timeout_1.withTimeout)(task, {
         timeoutMs: SCAN_LOGS_RPC_TIMEOUT_MS,
         message: `Transfer scanner ${method} RPC timed out after ${SCAN_LOGS_RPC_TIMEOUT_MS}ms`
     });
@@ -54,7 +58,7 @@ function getEarlierFromBlock(currentFromBlock, nextFromBlock) {
  * RPC errors, timeouts, and missing receipts keep the current cursor so the next attempt can retry
  * the same block range.
  */
-export class TransfersScannerController extends EventEmitter {
+class TransfersScannerController extends eventEmitter_1.default {
     #activity;
     #networks;
     #portfolio;
@@ -188,7 +192,7 @@ export class TransfersScannerController extends EventEmitter {
                 });
             }
             if (i < SCAN_LOGS_ATTEMPTS - 1)
-                await wait(getScanLogsDelay(i));
+                await (0, wait_1.default)(getScanLogsDelay(i));
         }
         if (this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] === scanLoopId) {
             this.#activeScanLoopIdsByChainAndAccount[scanLoopKey] = undefined;
@@ -196,4 +200,5 @@ export class TransfersScannerController extends EventEmitter {
         }
     }
 }
+exports.TransfersScannerController = TransfersScannerController;
 //# sourceMappingURL=transfersScanner.js.map

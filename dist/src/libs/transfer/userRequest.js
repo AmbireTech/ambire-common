@@ -1,18 +1,25 @@
-import { Interface, parseUnits } from 'ethers';
-import { v4 as uuidv4 } from 'uuid';
-import IERC20 from '../../../contracts/compiled/IERC20.json';
-import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json';
-import WETH from '../../../contracts/compiled/WETH.json';
-import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses';
-import { networks } from '../../consts/networks';
-import { getSanitizedAmount } from './amount';
-const ERC20 = new Interface(IERC20.abi);
-const supplyControllerInterface = new Interface(WALLETSupplyControllerABI);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getClaimWalletRequestParams = getClaimWalletRequestParams;
+exports.getMintVestingRequestParams = getMintVestingRequestParams;
+exports.getTransferRequestParams = getTransferRequestParams;
+exports.getIntentRequestParams = getIntentRequestParams;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const uuid_1 = require("uuid");
+const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const WALLETSupplyController_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/WALLETSupplyController.json"));
+const WETH_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/WETH.json"));
+const addresses_1 = require("../../consts/addresses");
+const networks_1 = require("../../consts/networks");
+const amount_1 = require("./amount");
+const ERC20 = new ethers_1.Interface(IERC20_json_1.default.abi);
+const supplyControllerInterface = new ethers_1.Interface(WALLETSupplyController_json_1.default);
 function getMintVestingRequestParams({ selectedAccount, selectedToken, addrVestingData }) {
     return {
         calls: [
             {
-                to: SUPPLY_CONTROLLER_ADDR,
+                to: addresses_1.SUPPLY_CONTROLLER_ADDR,
                 value: BigInt(0),
                 data: supplyControllerInterface.encodeFunctionData('mintVesting', [
                     addrVestingData?.addr,
@@ -31,13 +38,13 @@ function getClaimWalletRequestParams({ selectedAccount, selectedToken, claimable
     return {
         calls: [
             {
-                to: SUPPLY_CONTROLLER_ADDR,
+                to: addresses_1.SUPPLY_CONTROLLER_ADDR,
                 value: BigInt(0),
                 data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
                     claimableRewardsData?.totalClaimable,
                     claimableRewardsData?.proof,
                     0, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-                    STK_WALLET, // staking pool addr
+                    addresses_1.STK_WALLET, // staking pool addr
                     claimableRewardsData?.root,
                     claimableRewardsData?.signedRoot
                 ])
@@ -54,23 +61,23 @@ function getTransferRequestParams({ amount, amountInFiat, selectedToken, selecte
         return null;
     // if the request is a top up, the recipient is the relayer
     const recipientAddress = _recipientAddress?.toLowerCase();
-    const isTopUp = recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase();
-    const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals);
-    const bigNumberHexAmount = `0x${parseUnits(sanitizedAmount, Number(selectedToken.decimals)).toString(16)}`;
+    const isTopUp = recipientAddress.toLowerCase() === addresses_1.FEE_COLLECTOR.toLowerCase();
+    const sanitizedAmount = (0, amount_1.getSanitizedAmount)(amount, selectedToken.decimals);
+    const bigNumberHexAmount = `0x${(0, ethers_1.parseUnits)(sanitizedAmount, Number(selectedToken.decimals)).toString(16)}`;
     // if the top up is a native one, we should wrap the native before sending it
     // as otherwise a Transfer event is not emitted and the top up will not be
     // recorded
     const isNativeTopUp = Number(selectedToken.address) === 0 && isTopUp;
     if (isNativeTopUp) {
         // if not predefined network, we cannot make a native top up
-        const network = networks.find((n) => n.chainId === selectedToken.chainId);
+        const network = networks_1.networks.find((n) => n.chainId === selectedToken.chainId);
         if (!network)
             return null;
         // if a wrapped addr is not specified, we cannot make a native top up
         const wrappedAddr = network.wrappedAddr;
         if (!wrappedAddr)
             return null;
-        const wrapped = new Interface(WETH);
+        const wrapped = new ethers_1.Interface(WETH_json_1.default);
         const deposit = wrapped.encodeFunctionData('deposit');
         return {
             calls: [
@@ -122,7 +129,7 @@ function getTransferRequestParams({ amount, amountInFiat, selectedToken, selecte
 function getIntentRequestParams({ selectedToken, selectedAccount, recipientAddress, paymasterService, transactions }) {
     if (!selectedToken || !selectedAccount || !recipientAddress)
         return null;
-    const id = uuidv4();
+    const id = (0, uuid_1.v4)();
     return {
         calls: transactions.map((transaction, index) => ({
             id: `${id}-${index}`,
@@ -139,5 +146,4 @@ function getIntentRequestParams({ selectedToken, selectedAccount, recipientAddre
         }
     };
 }
-export { getClaimWalletRequestParams, getMintVestingRequestParams, getTransferRequestParams, getIntentRequestParams };
 //# sourceMappingURL=userRequest.js.map

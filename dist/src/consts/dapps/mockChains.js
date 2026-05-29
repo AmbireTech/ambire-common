@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const mockChains = [
     {
         gecko_id: 'bitcoin',
@@ -32,5 +34,5 @@ const mockChains = [
         chainId: 8453
     }
 ];
-export default mockChains;
+exports.default = mockChains;
 //# sourceMappingURL=mockChains.js.map

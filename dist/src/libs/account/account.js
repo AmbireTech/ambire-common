@@ -1,26 +1,40 @@
-import { AbiCoder, getAddress, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers';
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account';
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy';
-import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation';
-import { SPOOF_SIGTYPE } from '../../consts/signatures';
-import { ImportStatus } from '../../interfaces/account';
-import { has7702 } from '../7702/7702';
-import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery';
-import { getBytecode } from '../proxyDeploy/bytecode';
-import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDefaultAccountPreferences = exports.getAccountImportStatus = exports.getDefaultSelectedAccount = exports.isDerivedForSmartAccountKeyOnly = exports.isSmartAccount = exports.isAmbireV2Account = exports.isAmbireV1LinkedAccount = void 0;
+exports.getAccountDeployParams = getAccountDeployParams;
+exports.getBasicAccount = getBasicAccount;
+exports.getSmartAccount = getSmartAccount;
+exports.getSpoof = getSpoof;
+exports.getEmailAccount = getEmailAccount;
+exports.getUniqueAccountsArray = getUniqueAccountsArray;
+exports.isBasicAccount = isBasicAccount;
+exports.canBecomeSmarter = canBecomeSmarter;
+exports.canBecomeSmarterOnChain = canBecomeSmarterOnChain;
+exports.hasBecomeSmarter = hasBecomeSmarter;
+exports.shouldUseStateOverrideForEOA = shouldUseStateOverrideForEOA;
+const ethers_1 = require("ethers");
+const account_1 = require("../../consts/account");
+const deploy_1 = require("../../consts/deploy");
+const derivation_1 = require("../../consts/derivation");
+const signatures_1 = require("../../consts/signatures");
+const account_2 = require("../../interfaces/account");
+const _7702_1 = require("../7702/7702");
+const recovery_1 = require("../dkim/recovery");
+const bytecode_1 = require("../proxyDeploy/bytecode");
+const getAmbireAddressTwo_1 = require("../proxyDeploy/getAmbireAddressTwo");
 // returns to, data
-export function getAccountDeployParams(account) {
+function getAccountDeployParams(account) {
     // for EOAs, we do not throw an error anymore as we need fake
     // values for the simulation
     if (account.creation === null)
-        return [ZeroAddress, '0x'];
-    const factory = new Interface(['function deploy(bytes calldata code, uint256 salt) external']);
+        return [ethers_1.ZeroAddress, '0x'];
+    const factory = new ethers_1.Interface(['function deploy(bytes calldata code, uint256 salt) external']);
     return [
         account.creation.factoryAddr,
         factory.encodeFunctionData('deploy', [account.creation.bytecode, account.creation.salt])
     ];
 }
-export function getBasicAccount(addr, existingAccounts) {
+function getBasicAccount(addr, existingAccounts) {
     const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {};
     return {
         addr,
@@ -28,33 +42,33 @@ export function getBasicAccount(addr, existingAccounts) {
         initialPrivileges: [],
         creation: null,
         preferences: {
-            label: preferences?.label || DEFAULT_ACCOUNT_LABEL,
+            label: preferences?.label || account_1.DEFAULT_ACCOUNT_LABEL,
             pfp: preferences?.pfp || addr
         }
     };
 }
-export async function getSmartAccount(privileges, existingAccounts) {
-    const bytecode = await getBytecode(privileges);
-    const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode);
+async function getSmartAccount(privileges, existingAccounts) {
+    const bytecode = await (0, bytecode_1.getBytecode)(privileges);
+    const addr = (0, getAmbireAddressTwo_1.getAmbireAccountAddress)(deploy_1.AMBIRE_ACCOUNT_FACTORY, bytecode);
     const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {};
     return {
         addr,
         initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
         associatedKeys: privileges.map((priv) => priv.addr),
         creation: {
-            factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+            factoryAddr: deploy_1.AMBIRE_ACCOUNT_FACTORY,
             bytecode,
-            salt: toBeHex(0, 32)
+            salt: (0, ethers_1.toBeHex)(0, 32)
         },
         preferences: {
-            label: preferences?.label || DEFAULT_ACCOUNT_LABEL,
+            label: preferences?.label || account_1.DEFAULT_ACCOUNT_LABEL,
             pfp: preferences?.pfp || addr
         }
     };
 }
-export function getSpoof(account) {
-    const abiCoder = new AbiCoder();
-    return abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE;
+function getSpoof(account) {
+    const abiCoder = new ethers_1.AbiCoder();
+    return abiCoder.encode(['address'], [account.associatedKeys[0]]) + signatures_1.SPOOF_SIGTYPE;
 }
 /**
  * Create a DKIM recoverable email smart account
@@ -63,7 +77,7 @@ export function getSpoof(account) {
  * @param associatedKey the key that has privileges
  * @returns Promise<Account>
  */
-export async function getEmailAccount(recoveryInfo, associatedKey) {
+async function getEmailAccount(recoveryInfo, associatedKey) {
     // const domain: string = recoveryInfo.emailFrom.split('@')[1]
     // TODO: make getEmailAccount work with cloudflare
     // try to take the dkimKey from the list of knownSelectors
@@ -85,9 +99,9 @@ export async function getEmailAccount(recoveryInfo, associatedKey) {
     // if there's no dkimKey, standard DKIM recovery is not possible
     // we leave the defaults empty and the user will have to rely on
     // keys added through DNSSEC
-    const selector = hexlify(toUtf8Bytes(''));
-    const modulus = hexlify(toUtf8Bytes(''));
-    const exponent = hexlify(toUtf8Bytes(''));
+    const selector = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(''));
+    const modulus = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(''));
+    const exponent = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(''));
     // if (dkimKey) {
     //   const key = publicKeyToComponents(dkimKey.publicKey)
     //   modulus = hexlify(key.modulus)
@@ -95,18 +109,18 @@ export async function getEmailAccount(recoveryInfo, associatedKey) {
     // }
     // acceptUnknownSelectors should be always true
     // and should not be overriden by the FE at this point
-    const acceptUnknownSelectors = RECOVERY_DEFAULTS.acceptUnknownSelectors;
-    const waitUntilAcceptAdded = recoveryInfo.waitUntilAcceptAdded ?? RECOVERY_DEFAULTS.waitUntilAcceptAdded;
-    const waitUntilAcceptRemoved = recoveryInfo.waitUntilAcceptRemoved ?? RECOVERY_DEFAULTS.waitUntilAcceptRemoved;
-    const acceptEmptyDKIMSig = recoveryInfo.acceptEmptyDKIMSig ?? RECOVERY_DEFAULTS.acceptEmptyDKIMSig;
-    const acceptEmptySecondSig = recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig;
-    const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? RECOVERY_DEFAULTS.onlyOneSigTimelock;
-    const abiCoder = new AbiCoder();
-    const validatorAddr = DKIM_VALIDATOR_ADDR;
+    const acceptUnknownSelectors = recovery_1.RECOVERY_DEFAULTS.acceptUnknownSelectors;
+    const waitUntilAcceptAdded = recoveryInfo.waitUntilAcceptAdded ?? recovery_1.RECOVERY_DEFAULTS.waitUntilAcceptAdded;
+    const waitUntilAcceptRemoved = recoveryInfo.waitUntilAcceptRemoved ?? recovery_1.RECOVERY_DEFAULTS.waitUntilAcceptRemoved;
+    const acceptEmptyDKIMSig = recoveryInfo.acceptEmptyDKIMSig ?? recovery_1.RECOVERY_DEFAULTS.acceptEmptyDKIMSig;
+    const acceptEmptySecondSig = recoveryInfo.acceptEmptySecondSig ?? recovery_1.RECOVERY_DEFAULTS.acceptEmptySecondSig;
+    const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? recovery_1.RECOVERY_DEFAULTS.onlyOneSigTimelock;
+    const abiCoder = new ethers_1.AbiCoder();
+    const validatorAddr = recovery_1.DKIM_VALIDATOR_ADDR;
     const validatorData = abiCoder.encode(['tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'], [
         [
             recoveryInfo.emailFrom,
-            RECOVERY_DEFAULTS.emailTo,
+            recovery_1.RECOVERY_DEFAULTS.emailTo,
             selector,
             modulus,
             exponent,
@@ -119,19 +133,23 @@ export async function getEmailAccount(recoveryInfo, associatedKey) {
             onlyOneSigTimelock
         ]
     ]);
-    const { hash } = getSignerKey(validatorAddr, validatorData);
+    const { hash } = (0, recovery_1.getSignerKey)(validatorAddr, validatorData);
     const privileges = [{ addr: associatedKey, hash }];
     return getSmartAccount(privileges, []);
 }
-export const isAmbireV1LinkedAccount = (factoryAddr) => factoryAddr && getAddress(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA';
-export const isAmbireV2Account = (factoryAddr) => factoryAddr && getAddress(factoryAddr) === AMBIRE_ACCOUNT_FACTORY;
-export const isSmartAccount = (account) => !!account && (!!account.creation || !!account.safeCreation);
+const isAmbireV1LinkedAccount = (factoryAddr) => factoryAddr && (0, ethers_1.getAddress)(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA';
+exports.isAmbireV1LinkedAccount = isAmbireV1LinkedAccount;
+const isAmbireV2Account = (factoryAddr) => factoryAddr && (0, ethers_1.getAddress)(factoryAddr) === deploy_1.AMBIRE_ACCOUNT_FACTORY;
+exports.isAmbireV2Account = isAmbireV2Account;
+const isSmartAccount = (account) => !!account && (!!account.creation || !!account.safeCreation);
+exports.isSmartAccount = isSmartAccount;
 /**
  * Checks if a (basic) EOA account is a derived one,
  * that is meant to be used as a smart account key only.
  */
-export const isDerivedForSmartAccountKeyOnly = (index) => typeof index === 'number' && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
-export const getDefaultSelectedAccount = (accounts) => {
+const isDerivedForSmartAccountKeyOnly = (index) => typeof index === 'number' && index >= derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
+exports.isDerivedForSmartAccountKeyOnly = isDerivedForSmartAccountKeyOnly;
+const getDefaultSelectedAccount = (accounts) => {
     if (accounts.length === 0)
         return null;
     const smartAccounts = accounts.filter((acc) => acc.creation);
@@ -139,17 +157,18 @@ export const getDefaultSelectedAccount = (accounts) => {
         return smartAccounts[0];
     return accounts[0];
 };
-export const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accountsOnPage = [], keyIteratorType }) => {
+exports.getDefaultSelectedAccount = getDefaultSelectedAccount;
+const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accountsOnPage = [], keyIteratorType }) => {
     const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr);
     if (!isAlreadyImported)
-        return ImportStatus.NotImported;
+        return account_2.ImportStatus.NotImported;
     // Check if the account has been imported with at least one of the keys
     // that the account was originally associated with, when it was imported.
     const storedAssociatedKeys = alreadyImportedAccounts.find((x) => x.addr === account.addr)?.associatedKeys || [];
     const importedKeysForThisAcc = keys.filter((key) => storedAssociatedKeys.includes(key.addr));
     // Could be imported as a view only account (and therefore, without a key)
     if (!importedKeysForThisAcc.length)
-        return ImportStatus.ImportedWithoutKey;
+        return account_2.ImportStatus.ImportedWithoutKey;
     // Merge the `associatedKeys` from the account instances found on the page,
     // with the `associatedKeys` of the account from the extension storage. This
     // ensures up-to-date keys, considering the account existing associatedKeys
@@ -173,7 +192,7 @@ export const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys,
         const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) => associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr));
         const notImportedYetKeysExistInPage = accountsOnPage.some((x) => associatedKeysNotImportedYet.includes(x.account.addr));
         if (notImportedYetKeysExistInPage)
-            return ImportStatus.ImportedWithSomeOfTheKeys;
+            return account_2.ImportStatus.ImportedWithSomeOfTheKeys;
         // Could happen when user imports a smart account with one associated key.
         // Then imports an EOA. Then makes the EOA a second key
         // for the smart account. In this case, both associated keys of the smart
@@ -186,41 +205,43 @@ export const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys,
             return ![...incomingAssociatedKeysSet].every((k) => storedAssociatedKeysSet.has(k));
         });
         return associatedKeysFoundOnPageAreDifferent
-            ? ImportStatus.ImportedWithSomeOfTheKeys
-            : ImportStatus.ImportedWithTheSameKeys;
+            ? account_2.ImportStatus.ImportedWithSomeOfTheKeys
+            : account_2.ImportStatus.ImportedWithTheSameKeys;
     }
     // Since there are `importedKeysForThisAcc`, as a fallback -
     // for all other scenarios this account has been imported with different keys.
-    return ImportStatus.ImportedWithDifferentKeys;
+    return account_2.ImportStatus.ImportedWithDifferentKeys;
 };
-export const getDefaultAccountPreferences = (accountAddr, prevAccounts, i) => {
+exports.getAccountImportStatus = getAccountImportStatus;
+const getDefaultAccountPreferences = (accountAddr, prevAccounts, i) => {
     const number = i ? prevAccounts.length + (i + 1) : prevAccounts.length + 1;
     return {
         label: `Account ${number}`,
-        pfp: getAddress(accountAddr) // default pfp - a jazz icon generated from the addr
+        pfp: (0, ethers_1.getAddress)(accountAddr) // default pfp - a jazz icon generated from the addr
     };
 };
-export function getUniqueAccountsArray(accounts) {
+exports.getDefaultAccountPreferences = getDefaultAccountPreferences;
+function getUniqueAccountsArray(accounts) {
     return Array.from(new Map(accounts.map((account) => [account.addr, account])).values());
 }
 // use this in cases where you strictly want to enable/disable an action for
 // EOAs (excluding smart and smarter)
-export function isBasicAccount(account, state) {
+function isBasicAccount(account, state) {
     return !account.creation && !account.safeCreation && !state.isSmarterEoa;
 }
 const KEY_TYPES_ABLE_TO_BECOME_SMARTER = ['internal', 'lattice'];
 // can the account as a whole become smarter (disregarding chain and state)
-export function canBecomeSmarter(acc, accKeys) {
-    return (!isSmartAccount(acc) &&
+function canBecomeSmarter(acc, accKeys) {
+    return (!(0, exports.isSmartAccount)(acc) &&
         !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type)));
 }
 // can the account become smarter on a specific chain
-export function canBecomeSmarterOnChain(network, acc, state) {
-    return (has7702(network) &&
+function canBecomeSmarterOnChain(network, acc, state) {
+    return ((0, _7702_1.has7702)(network) &&
         isBasicAccount(acc, state) &&
         !!state.importedAccountKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type)));
 }
-export function hasBecomeSmarter(account, state) {
+function hasBecomeSmarter(account, state) {
     if (!state[account.addr])
         return false;
     const networks = Object.keys(state[account.addr]);
@@ -233,7 +254,7 @@ export function hasBecomeSmarter(account, state) {
     }
     return false;
 }
-export function shouldUseStateOverrideForEOA(account, state) {
+function shouldUseStateOverrideForEOA(account, state) {
     return isBasicAccount(account, state);
 }
 //# sourceMappingURL=account.js.map

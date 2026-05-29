@@ -1,5 +1,9 @@
-import { getErrorCodeStringFromReason, isReasonValid } from '../errorDecoder/helpers';
-import { ErrorType } from '../errorDecoder/types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHumanReadableErrorMessage = void 0;
+exports.getGenericMessageFromType = getGenericMessageFromType;
+const helpers_1 = require("../errorDecoder/helpers");
+const types_1 = require("../errorDecoder/types");
 /**
  * If we fail to match the error reason to a human-readable error,
  * we return a generic message based on the error type.
@@ -12,39 +16,39 @@ function getGenericMessageFromType(errorType, reason, messagePrefix, lastResortM
 // and we don't want to repeat it in the message.
 withReason = true) {
     const messageSuffixNoSupport = withReason
-        ? getErrorCodeStringFromReason(reason || originalError?.message || originalError?.error?.message || '')
+        ? (0, helpers_1.getErrorCodeStringFromReason)(reason || originalError?.message || originalError?.error?.message || '')
         : '';
     const messageSuffix = `${messageSuffixNoSupport}\nPlease try again or contact Ambire support for assistance.`;
     const origin = errorType?.split('Error')?.[0] || '';
     switch (errorType) {
-        case ErrorType.RelayerError:
-        case ErrorType.RpcError:
+        case types_1.ErrorType.RelayerError:
+        case types_1.ErrorType.RpcError:
             return `${messagePrefix} of an unknown error (Origin: ${origin} call).${messageSuffix}`;
-        case ErrorType.PaymasterError:
+        case types_1.ErrorType.PaymasterError:
             return `${messagePrefix} of a Paymaster Error.${messageSuffix}`;
-        case ErrorType.BundlerError:
+        case types_1.ErrorType.BundlerError:
             return `${messagePrefix} it's invalid.${messageSuffixNoSupport}`;
-        case ErrorType.CodeError:
+        case types_1.ErrorType.CodeError:
             return `${messagePrefix} of an unknown error.${messageSuffix}`;
-        case ErrorType.UnknownError: {
+        case types_1.ErrorType.UnknownError: {
             if (messageSuffixNoSupport) {
                 return `We encountered an unexpected issue:${messageSuffix.replace('Error code: ', '')}`;
             }
             return `${messagePrefix} of an unknown error.${messageSuffix}`;
         }
-        case ErrorType.InnerCallFailureError:
+        case types_1.ErrorType.InnerCallFailureError:
             if (reason === 'OOG')
                 return 'Transaction invalid: out of gas';
-            return isReasonValid(reason)
+            return (0, helpers_1.isReasonValid)(reason)
                 ? `${messagePrefix} it will revert onchain.${messageSuffixNoSupport}`
                 : `${messagePrefix} it will revert onchain with reason unknown.${messageSuffix}`;
         // I don't think we should say anything else for this case
-        case ErrorType.UserRejectionError:
+        case types_1.ErrorType.UserRejectionError:
             return 'Transaction rejected.';
         // Panic error may scare the user so let's call it a contract error
-        case ErrorType.CustomError:
-        case ErrorType.PanicError:
-        case ErrorType.RevertError:
+        case types_1.ErrorType.CustomError:
+        case types_1.ErrorType.PanicError:
+        case types_1.ErrorType.RevertError:
             return `${messagePrefix} of a contract error.${messageSuffixNoSupport}`;
         default:
             return lastResortMessage;
@@ -55,8 +59,8 @@ withReason = true) {
  * Note: As the relayer is called directly and used as a paymaster
  */
 function getHumanizedRelayerError(decodedError, originalError) {
-    if (decodedError.type !== ErrorType.RelayerError &&
-        decodedError.type !== ErrorType.PaymasterError)
+    if (decodedError.type !== types_1.ErrorType.RelayerError &&
+        decodedError.type !== types_1.ErrorType.PaymasterError)
         return null;
     if (!originalError.isHumanized)
         return null;
@@ -99,5 +103,5 @@ const getHumanReadableErrorMessage = (commonError, errors, messagePrefix, decode
     }
     return message;
 };
-export { getGenericMessageFromType, getHumanReadableErrorMessage };
+exports.getHumanReadableErrorMessage = getHumanReadableErrorMessage;
 //# sourceMappingURL=helpers.js.map

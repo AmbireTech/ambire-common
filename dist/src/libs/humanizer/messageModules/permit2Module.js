@@ -1,11 +1,14 @@
-import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts/addresses';
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils';
-export const permit2Module = (message) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.permit2Module = void 0;
+const addresses_1 = require("../../../consts/addresses");
+const utils_1 = require("../utils");
+const permit2Module = (message) => {
     if (message.content.kind !== 'typedMessage')
         return { fullVisualization: [] };
     const tm = message.content;
     if (!tm?.domain?.verifyingContract ||
-        ![PERMIT_2_ADDRESS.toLowerCase(), PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(tm.domain.verifyingContract.toLowerCase()))
+        ![addresses_1.PERMIT_2_ADDRESS.toLowerCase(), addresses_1.PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(tm.domain.verifyingContract.toLowerCase()))
         return { fullVisualization: [] };
     const messageType = tm?.types?.PermitSingle?.[0]?.type ||
         tm?.types?.PermitBatch?.[0]?.type ||
@@ -21,11 +24,11 @@ export const permit2Module = (message) => {
             return { fullVisualization: [] };
         return {
             fullVisualization: [
-                getAction('Approve'),
-                getAddressVisualization(spender),
-                getLabel('to use'),
-                getToken(token, amount),
-                getDeadline(deadline)
+                (0, utils_1.getAction)('Approve'),
+                (0, utils_1.getAddressVisualization)(spender),
+                (0, utils_1.getLabel)('to use'),
+                (0, utils_1.getToken)(token, amount),
+                (0, utils_1.getDeadline)(deadline)
             ]
         };
     }
@@ -42,21 +45,22 @@ export const permit2Module = (message) => {
             return { fullVisualization: [] };
         const permitVisualizations = permits
             .map(({ token, amount }) => [
-            getAddressVisualization(tm.message.spender),
-            getLabel('to use'),
-            getToken(token, amount),
-            getLabel('and')
+            (0, utils_1.getAddressVisualization)(tm.message.spender),
+            (0, utils_1.getLabel)('to use'),
+            (0, utils_1.getToken)(token, amount),
+            (0, utils_1.getLabel)('and')
         ])
             .flat()
             .slice(0, -1);
         return {
             fullVisualization: [
-                getAction('Approve'),
+                (0, utils_1.getAction)('Approve'),
                 ...permitVisualizations,
-                getDeadline(tm.message.sigDeadline)
+                (0, utils_1.getDeadline)(tm.message.sigDeadline)
             ]
         };
     }
     return { fullVisualization: [] };
 };
+exports.permit2Module = permit2Module;
 //# sourceMappingURL=permit2Module.js.map

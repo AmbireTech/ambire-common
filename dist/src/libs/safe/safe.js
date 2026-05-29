@@ -1,11 +1,39 @@
-import { AbiCoder, concat, Contract, getAddress, getBytes, getCreate2Address, hexlify, Interface, keccak256, recoverAddress, solidityPacked, toBeHex, toUtf8Bytes, ZeroAddress, zeroPadValue } from 'ethers';
-import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util';
-import SafeApiKit from '@safe-global/api-kit';
-import SafeAbi from '../../../contracts/compiled/Safe.json';
-import { execTransactionAbi, multiSendAddr } from '../../consts/safe';
-import wait from '../../utils/wait';
-import { getSignableCalls } from '../accountOp/accountOp';
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.encodeCalls = encodeCalls;
+exports.getCalculatedSafeAddress = getCalculatedSafeAddress;
+exports.decodeSetupData = decodeSetupData;
+exports.getSafeTxn = getSafeTxn;
+exports.getSafeBroadcastTxn = getSafeBroadcastTxn;
+exports.sortByAddress = sortByAddress;
+exports.getSafeTxnHash = getSafeTxnHash;
+exports.propose = propose;
+exports.confirm = confirm;
+exports.addMessage = addMessage;
+exports.getMessage = getMessage;
+exports.addMessageSignature = addMessageSignature;
+exports.getPendingTransactions = getPendingTransactions;
+exports.getLatestMessages = getLatestMessages;
+exports.getTransaction = getTransaction;
+exports.fetchAllPending = fetchAllPending;
+exports.toCallsUserRequest = toCallsUserRequest;
+exports.toSigMessageUserRequests = toSigMessageUserRequests;
+exports.getAlreadySignedOwners = getAlreadySignedOwners;
+exports.getImportedSignersThatHaveNotSigned = getImportedSignersThatHaveNotSigned;
+exports.getSigs = getSigs;
+exports.sortSigs = sortSigs;
+exports.getSameNonceRequests = getSameNonceRequests;
+exports.fetchExecutedTransactions = fetchExecutedTransactions;
+exports.getNonce = getNonce;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const eth_sig_util_1 = require("@metamask/eth-sig-util");
+const api_kit_1 = tslib_1.__importDefault(require("@safe-global/api-kit"));
+const Safe_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Safe.json"));
+const safe_1 = require("../../consts/safe");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const accountOp_1 = require("../accountOp/accountOp");
+const signMessage_1 = require("../signMessage/signMessage");
 const multiCallAbi = [
     { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
     {
@@ -18,8 +46,8 @@ const multiCallAbi = [
 ];
 const SAFE_CALL_OPERATION = 0;
 const SAFE_DELEGATE_CALL_OPERATION = 1;
-export function encodeCalls(op) {
-    const calls = getSignableCalls(op);
+function encodeCalls(op) {
+    const calls = (0, accountOp_1.getSignableCalls)(op);
     if (calls.length === 1) {
         const singleCall = calls[0];
         return {
@@ -29,22 +57,22 @@ export function encodeCalls(op) {
             operation: SAFE_CALL_OPERATION
         };
     }
-    const multiSendData = new Interface(multiCallAbi).encodeFunctionData('multiSend', [
-        concat(calls.map((call) => {
-            return solidityPacked(['uint8', 'address', 'uint256', 'uint256', 'bytes'], [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt(getBytes(call[2]).length), call[2]]);
+    const multiSendData = new ethers_1.Interface(multiCallAbi).encodeFunctionData('multiSend', [
+        (0, ethers_1.concat)(calls.map((call) => {
+            return (0, ethers_1.solidityPacked)(['uint8', 'address', 'uint256', 'uint256', 'bytes'], [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt((0, ethers_1.getBytes)(call[2]).length), call[2]]);
         }))
     ]);
     return {
-        to: multiSendAddr,
+        to: safe_1.multiSendAddr,
         value: 0n,
         data: multiSendData,
         operation: SAFE_DELEGATE_CALL_OPERATION
     };
 }
-export async function getCalculatedSafeAddress(creation, provider) {
-    const salt = keccak256(concat([keccak256(creation.setupData), zeroPadValue(toBeHex(creation.saltNonce || 0), 32)]));
+async function getCalculatedSafeAddress(creation, provider) {
+    const salt = (0, ethers_1.keccak256)((0, ethers_1.concat)([(0, ethers_1.keccak256)(creation.setupData), (0, ethers_1.zeroPadValue)((0, ethers_1.toBeHex)(creation.saltNonce || 0), 32)]));
     const factoryAbi = ['function proxyCreationCode() view returns (bytes)'];
-    const factory = new Contract(creation.factoryAddress, factoryAbi, provider);
+    const factory = new ethers_1.Contract(creation.factoryAddress, factoryAbi, provider);
     let proxyCreationCode;
     try {
         proxyCreationCode = await factory.proxyCreationCode();
@@ -53,23 +81,23 @@ export async function getCalculatedSafeAddress(creation, provider) {
         console.error(`failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`);
         return null;
     }
-    const abiCoder = new AbiCoder();
-    const bytecode = concat([
+    const abiCoder = new ethers_1.AbiCoder();
+    const bytecode = (0, ethers_1.concat)([
         proxyCreationCode,
         abiCoder.encode(['address'], [creation.singleton])
     ]);
-    return getCreate2Address(creation.factoryAddress, salt, keccak256(bytecode));
+    return (0, ethers_1.getCreate2Address)(creation.factoryAddress, salt, (0, ethers_1.keccak256)(bytecode));
 }
 /**
  * The setup() method is the same for v1.3, 1.4.1, 1.5. We decode it
  * to fetch the initial owners of the Safe so that we could put them
  * in the account associatedKeys
  */
-export function decodeSetupData(setupData) {
+function decodeSetupData(setupData) {
     const setupMethodAbi = [
         'function setup(address[] calldata _owners,uint256 _threshold,address to,bytes calldata data,address fallbackHandler,address paymentToken,uint256 payment,address payable paymentReceiver)'
     ];
-    const setupMethodInterface = new Interface(setupMethodAbi);
+    const setupMethodInterface = new ethers_1.Interface(setupMethodAbi);
     let decoded = null;
     try {
         decoded = setupMethodInterface.decodeFunctionData('setup', setupData);
@@ -83,39 +111,39 @@ export function decodeSetupData(setupData) {
 /**
  * Construct a Safe txn for signing
  */
-export function getSafeTxn(op, state) {
+function getSafeTxn(op, state) {
     // todo: we're blindly trusting the returned txn from Safe Global, is this OK?
     if (op.safeTx) {
         return {
             to: op.safeTx.to,
-            value: toBeHex(op.safeTx.value),
+            value: (0, ethers_1.toBeHex)(op.safeTx.value),
             data: op.safeTx.data ? op.safeTx.data : '0x',
             operation: op.safeTx.operation,
-            safeTxGas: toBeHex(op.safeTx.safeTxGas),
-            baseGas: toBeHex(op.safeTx.baseGas),
-            gasPrice: toBeHex(op.safeTx.gasPrice),
+            safeTxGas: (0, ethers_1.toBeHex)(op.safeTx.safeTxGas),
+            baseGas: (0, ethers_1.toBeHex)(op.safeTx.baseGas),
+            gasPrice: (0, ethers_1.toBeHex)(op.safeTx.gasPrice),
             gasToken: op.safeTx.gasToken,
             refundReceiver: op.safeTx.refundReceiver ? op.safeTx.refundReceiver : '0x',
-            nonce: toBeHex(op.safeTx.nonce)
+            nonce: (0, ethers_1.toBeHex)(op.safeTx.nonce)
         };
     }
-    const coder = new AbiCoder();
+    const coder = new ethers_1.AbiCoder();
     const { to, value, data, operation } = encodeCalls(op);
     return {
         to: to,
-        value: toBeHex(value),
+        value: (0, ethers_1.toBeHex)(value),
         data: data,
         operation,
-        safeTxGas: toBeHex(0),
-        baseGas: toBeHex(0),
-        gasPrice: toBeHex(0),
-        gasToken: ZeroAddress,
-        refundReceiver: ZeroAddress,
-        nonce: toBeHex(op.nonce || state.nonce || 0n)
+        safeTxGas: (0, ethers_1.toBeHex)(0),
+        baseGas: (0, ethers_1.toBeHex)(0),
+        gasPrice: (0, ethers_1.toBeHex)(0),
+        gasToken: ethers_1.ZeroAddress,
+        refundReceiver: ethers_1.ZeroAddress,
+        nonce: (0, ethers_1.toBeHex)(op.nonce || state.nonce || 0n)
     };
 }
-export function getSafeBroadcastTxn(op, state) {
-    const exec = new Interface(execTransactionAbi);
+function getSafeBroadcastTxn(op, state) {
+    const exec = new ethers_1.Interface(safe_1.execTransactionAbi);
     const safeTxn = getSafeTxn(op, state);
     return {
         to: op.accountAddr,
@@ -139,27 +167,27 @@ export function getSafeBroadcastTxn(op, state) {
  * the smallest ecrecover(sig) owner, ascending. Here, we
  * sort the owners in that way
  */
-export function sortByAddress(sortableKeys) {
+function sortByAddress(sortableKeys) {
     return sortableKeys.sort((a, b) => {
         const aBig = BigInt(a.addr.toLowerCase());
         const bBig = BigInt(b.addr.toLowerCase());
         return aBig < bBig ? -1 : aBig > bBig ? 1 : 0;
     });
 }
-export function getSafeTxnHash(typedData) {
-    return `0x${TypedDataUtils.eip712Hash(adaptTypedMessageForMetaMaskSigUtil({ ...typedData }), SignTypedDataVersion.V4).toString('hex')}`;
+function getSafeTxnHash(typedData) {
+    return `0x${eth_sig_util_1.TypedDataUtils.eip712Hash((0, signMessage_1.adaptTypedMessageForMetaMaskSigUtil)({ ...typedData }), eth_sig_util_1.SignTypedDataVersion.V4).toString('hex')}`;
 }
-export async function propose(txn, chainId, safeAddress, owner, ownerSig, safeTxHash) {
-    const apiKit = new SafeApiKit({
+async function propose(txn, chainId, safeAddress, owner, ownerSig, safeTxHash) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
     const proposeTransactionProps = {
-        safeAddress: getAddress(safeAddress),
+        safeAddress: (0, ethers_1.getAddress)(safeAddress),
         safeTxHash: safeTxHash,
         safeTransactionData: {
             ...txn,
-            to: getAddress(txn.to),
+            to: (0, ethers_1.getAddress)(txn.to),
             baseGas: BigInt(txn.baseGas).toString(),
             gasPrice: BigInt(txn.gasPrice).toString(),
             safeTxGas: BigInt(txn.safeTxGas).toString(),
@@ -171,15 +199,15 @@ export async function propose(txn, chainId, safeAddress, owner, ownerSig, safeTx
     };
     return apiKit.proposeTransaction(proposeTransactionProps);
 }
-export async function confirm(chainId, ownerSig, safeTxHash) {
-    const apiKit = new SafeApiKit({
+async function confirm(chainId, ownerSig, safeTxHash) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
     return apiKit.confirmTransaction(safeTxHash, ownerSig);
 }
-export async function addMessage(chainId, safeAddress, message, signature) {
-    const apiKit = new SafeApiKit({
+async function addMessage(chainId, safeAddress, message, signature) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
@@ -188,8 +216,8 @@ export async function addMessage(chainId, safeAddress, message, signature) {
         signature
     });
 }
-export async function getMessage({ chainId, threshold, messageHash }) {
-    const apiKit = new SafeApiKit({
+async function getMessage({ chainId, threshold, messageHash }) {
+    const apiKit = new api_kit_1.default({
         chainId: chainId,
         apiKey: process.env.SAFE_API_KEY
     });
@@ -201,15 +229,15 @@ export async function getMessage({ chainId, threshold, messageHash }) {
         isConfirmed: msg.confirmations.length >= threshold
     };
 }
-export async function addMessageSignature(chainId, hash, signature) {
-    const apiKit = new SafeApiKit({
+async function addMessageSignature(chainId, hash, signature) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
     return apiKit.addMessageSignature(hash, signature);
 }
-export async function getPendingTransactions(chainId, safeAddress) {
-    const apiKit = new SafeApiKit({
+async function getPendingTransactions(chainId, safeAddress) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
@@ -225,8 +253,8 @@ export async function getPendingTransactions(chainId, safeAddress) {
  * Removing an owner would do the same.
  * So we fetch the newest 15 and filter them on a higher level
  */
-export async function getLatestMessages(chainId, safeAddress) {
-    const apiKit = new SafeApiKit({
+async function getLatestMessages(chainId, safeAddress) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
@@ -240,14 +268,14 @@ export async function getLatestMessages(chainId, safeAddress) {
     const finalRes = response.results.filter((m) => new Date(m.created).getTime() + oneWeek > currentTime);
     return { ...response, results: finalRes, chainId, type: 'message' };
 }
-export async function getTransaction(chainId, safeTxnHash) {
-    const apiKit = new SafeApiKit({
+async function getTransaction(chainId, safeTxnHash) {
+    const apiKit = new api_kit_1.default({
         chainId,
         apiKey: process.env.SAFE_API_KEY
     });
     return apiKit.getTransaction(safeTxnHash);
 }
-export async function fetchAllPending(networks, safeAddr) {
+async function fetchAllPending(networks, safeAddr) {
     const results = {};
     for (let i = 0; i < networks.length; i++) {
         const network = networks[i];
@@ -269,19 +297,19 @@ export async function fetchAllPending(networks, safeAddr) {
     return results;
 }
 function decodeMultiSend(transactionsHex) {
-    const bytes = getBytes(transactionsHex);
+    const bytes = (0, ethers_1.getBytes)(transactionsHex);
     let i = 0;
     const results = [];
     while (i < bytes.length) {
         const operation = bytes[i];
         i += 1;
-        const to = hexlify(bytes.slice(i, i + 20));
+        const to = (0, ethers_1.hexlify)(bytes.slice(i, i + 20));
         i += 20;
-        const value = BigInt(hexlify(bytes.slice(i, i + 32)));
+        const value = BigInt((0, ethers_1.hexlify)(bytes.slice(i, i + 32)));
         i += 32;
-        const dataLength = Number(BigInt(hexlify(bytes.slice(i, i + 32))));
+        const dataLength = Number(BigInt((0, ethers_1.hexlify)(bytes.slice(i, i + 32))));
         i += 32;
-        const data = hexlify(bytes.slice(i, i + dataLength));
+        const data = (0, ethers_1.hexlify)(bytes.slice(i, i + dataLength));
         i += dataLength;
         results.push({
             operation,
@@ -292,7 +320,7 @@ function decodeMultiSend(transactionsHex) {
     }
     return results;
 }
-export function toCallsUserRequest(safeAddr, response) {
+function toCallsUserRequest(safeAddr, response) {
     const userRequests = [];
     Object.keys(response).forEach((chainId) => {
         const txns = response[chainId].txns;
@@ -301,7 +329,7 @@ export function toCallsUserRequest(safeAddr, response) {
             try {
                 // try to decode the data to check if it's a batch
                 // if it is, use it; otherwise, construct a single call reqx
-                const multisendInterface = new Interface(multiCallAbi);
+                const multisendInterface = new ethers_1.Interface(multiCallAbi);
                 const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data);
                 calls = decodeMultiSend(multiSendCall[0]).map((call) => ({
                     to: call.to,
@@ -314,7 +342,7 @@ export function toCallsUserRequest(safeAddr, response) {
                 calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }];
             }
             const signature = txn.confirmations
-                ? concat(txn.confirmations?.map((c) => c.signature))
+                ? (0, ethers_1.concat)(txn.confirmations?.map((c) => c.signature))
                 : null;
             if (!signature)
                 return;
@@ -341,13 +369,13 @@ export function toCallsUserRequest(safeAddr, response) {
     });
     return userRequests;
 }
-export function toSigMessageUserRequests(response) {
+function toSigMessageUserRequests(response) {
     const userRequests = [];
     Object.keys(response).forEach((chainId) => {
         const messages = response[chainId].messages;
         messages.forEach((message) => {
             const signature = message.confirmations
-                ? concat(message.confirmations.map((c) => c.signature))
+                ? (0, ethers_1.concat)(message.confirmations.map((c) => c.signature))
                 : null;
             if (!signature)
                 return;
@@ -357,7 +385,7 @@ export function toSigMessageUserRequests(response) {
                     chainId: BigInt(chainId),
                     signed: message.confirmations.map((confirm) => confirm.owner),
                     message: typeof message.message === 'string'
-                        ? hexlify(toUtf8Bytes(message.message))
+                        ? (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(message.message))
                         : message.message,
                     messageHash: message.messageHash,
                     signature: sortSigs(message.confirmations.map((c) => c.signature), message.messageHash, message.confirmations),
@@ -381,13 +409,13 @@ function recoverOwner(sig, hash, confirmations) {
     if (safeOwner)
         return safeOwner;
     // an ambire sig is always ecdsa
-    return recoverAddress(hash, sig);
+    return (0, ethers_1.recoverAddress)(hash, sig);
 }
 // the signature is 130 x number_of_sigs + 2 (0x) symbols long
 // so we cut the hex (0x) from the beginning
 // then take each sig (substring(0, 130)) and recover the address
 // finally, we update everything
-export function getAlreadySignedOwners(signature, hash, safeTx) {
+function getAlreadySignedOwners(signature, hash, safeTx) {
     const signatures = signature.substring(2);
     const signed = [];
     for (let i = 0; i < signatures.length; i += 130) {
@@ -396,10 +424,10 @@ export function getAlreadySignedOwners(signature, hash, safeTx) {
     }
     return signed;
 }
-export function getImportedSignersThatHaveNotSigned(signed, importedOwners) {
+function getImportedSignersThatHaveNotSigned(signed, importedOwners) {
     return importedOwners.filter((o) => !signed.includes(o));
 }
-export function getSigs(signature) {
+function getSigs(signature) {
     if (!signature)
         return [];
     const signed = [];
@@ -409,19 +437,19 @@ export function getSigs(signature) {
     }
     return signed;
 }
-export function sortSigs(signatures, hash, confirmations) {
+function sortSigs(signatures, hash, confirmations) {
     const signed = [];
     for (let i = 0; i < signatures.length; i++) {
         const sig = signatures[i];
         signed.push({ sig, addr: recoverOwner(sig, hash, confirmations) });
     }
     const sorted = sortByAddress(signed);
-    return concat(sorted.map((s) => s.sig));
+    return (0, ethers_1.concat)(sorted.map((s) => s.sig));
 }
 /**
  * Safe requests may have multiple "call" ones with the same nonce
  */
-export function getSameNonceRequests(requests) {
+function getSameNonceRequests(requests) {
     return requests.reduce((acc, r) => {
         const key = r.signAccountOp.accountOp.nonce?.toString() || '0';
         if (!acc[key]) {
@@ -431,7 +459,7 @@ export function getSameNonceRequests(requests) {
         return acc;
     }, {});
 }
-export async function fetchExecutedTransactions(txns) {
+async function fetchExecutedTransactions(txns) {
     let promises = [];
     const results = [];
     for (let i = 0; i < txns.length; i++) {
@@ -457,14 +485,14 @@ export async function fetchExecutedTransactions(txns) {
                     });
                 }
             });
-            await wait(1100);
+            await (0, wait_1.default)(1100);
             promises = [];
         }
     }
     return results;
 }
-export async function getNonce(safeAddr, provider) {
-    const safeInterface = new Contract(safeAddr, SafeAbi, provider);
+async function getNonce(safeAddr, provider) {
+    const safeInterface = new ethers_1.Contract(safeAddr, Safe_json_1.default, provider);
     return safeInterface.nonce();
 }
 //# sourceMappingURL=safe.js.map

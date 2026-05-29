@@ -1,12 +1,14 @@
-import { Interface } from 'ethers';
-import { ModuleProxyFactory } from '../../const/abis/ModuleProxyFactory';
-import { getAction, getAddressVisualization } from '../../utils';
-const iface = new Interface(ModuleProxyFactory);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
+const ModuleProxyFactory_1 = require("../../const/abis/ModuleProxyFactory");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface(ModuleProxyFactory_1.ModuleProxyFactory);
 const ModuleProxyFactoryModule = (accOp, calls) => {
     const matcher = {
         [iface.getFunction('deployModule')?.selector]: (call) => {
             const { masterCopy } = iface.parseTransaction(call).args;
-            const fullVisualization = [getAction('Deploy module'), getAddressVisualization(masterCopy)];
+            const fullVisualization = [(0, utils_1.getAction)('Deploy module'), (0, utils_1.getAddressVisualization)(masterCopy)];
             return { ...call, fullVisualization };
         }
     };
@@ -21,5 +23,5 @@ const ModuleProxyFactoryModule = (accOp, calls) => {
     });
     return newCalls;
 };
-export default ModuleProxyFactoryModule;
+exports.default = ModuleProxyFactoryModule;
 //# sourceMappingURL=index.js.map

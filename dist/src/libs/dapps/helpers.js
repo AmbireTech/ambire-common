@@ -1,9 +1,14 @@
-import { getDomain } from 'tldts';
-import { predefinedDapps } from '../../consts/dapps/dapps';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.modifyDappPropsIfNeeded = exports.sortDapps = exports.formatDappName = exports.getDomainFromUrl = exports.getDappIdFromUrl = void 0;
+exports.getDappNameFromId = getDappNameFromId;
+exports.unifyDefiLlamaDappUrl = unifyDefiLlamaDappUrl;
+const tldts_1 = require("tldts");
+const dapps_1 = require("../../consts/dapps/dapps");
 const getDappIdFromUrl = (url) => {
     if (!url || url === 'internal')
         return 'internal';
-    const predefinedDapp = predefinedDapps.find((d) => d.url === url);
+    const predefinedDapp = dapps_1.predefinedDapps.find((d) => d.url === url);
     if (predefinedDapp)
         return predefinedDapp.id;
     try {
@@ -14,12 +19,14 @@ const getDappIdFromUrl = (url) => {
         return url;
     }
 };
+exports.getDappIdFromUrl = getDappIdFromUrl;
 const getDomainFromUrl = (url) => {
-    const predefinedDapp = predefinedDapps.find((d) => d.url === url);
+    const predefinedDapp = dapps_1.predefinedDapps.find((d) => d.url === url);
     if (predefinedDapp)
         return predefinedDapp.id;
-    return getDomain(url);
+    return (0, tldts_1.getDomain)(url);
 };
+exports.getDomainFromUrl = getDomainFromUrl;
 const formatDappName = (name) => {
     if (name.toLowerCase().includes('uniswap'))
         return 'Uniswap';
@@ -27,6 +34,7 @@ const formatDappName = (name) => {
         return 'AAVE';
     return name;
 };
+exports.formatDappName = formatDappName;
 const sortDapps = (a, b) => {
     // 1. rewards.ambire.com always first
     if (a.id === 'rewards.ambire.com')
@@ -45,6 +53,7 @@ const sortDapps = (a, b) => {
     // 4. Custom dapps last
     return Number(a.isCustom) - Number(b.isCustom);
 };
+exports.sortDapps = sortDapps;
 const modifyDappPropsIfNeeded = (id, dappsMap, protocol, onModify) => {
     if (id === 'uniswap.org' || id === 'app.uniswap.org') {
         const uniswap = dappsMap.get(id);
@@ -75,6 +84,7 @@ const modifyDappPropsIfNeeded = (id, dappsMap, protocol, onModify) => {
         }
     }
 };
+exports.modifyDappPropsIfNeeded = modifyDappPropsIfNeeded;
 function getDappNameFromId(id) {
     try {
         return id
@@ -98,5 +108,4 @@ function unifyDefiLlamaDappUrl(url) {
         return url; // If it's not a valid URL, return as-is
     }
 }
-export { getDappIdFromUrl, getDomainFromUrl, formatDappName, sortDapps, modifyDappPropsIfNeeded, getDappNameFromId, unifyDefiLlamaDappUrl };
 //# sourceMappingURL=helpers.js.map

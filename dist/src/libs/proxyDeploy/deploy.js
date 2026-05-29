@@ -1,4 +1,9 @@
-import { solidityPackedKeccak256 } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.privSlot = privSlot;
+exports.getProxyDeployBytecode = getProxyDeployBytecode;
+exports.getStorageSlotsFromArtifact = getStorageSlotsFromArtifact;
+const ethers_1 = require("ethers");
 // @TODO: fix the any
 function evmPush(data) {
     if (data.length < 1)
@@ -11,8 +16,8 @@ function evmPush(data) {
     return Buffer.concat([opCodeBuf, data]);
 }
 // @TODO: fix the any
-export function privSlot(slotNumber, keyType, key, valueType) {
-    return solidityPackedKeccak256([keyType, valueType], [key, slotNumber]);
+function privSlot(slotNumber, keyType, key, valueType) {
+    return (0, ethers_1.solidityPackedKeccak256)([keyType, valueType], [key, slotNumber]);
 }
 // @TODO: fix the any
 function sstoreCode(slotNumber, keyType, key, valueType, valueBuf) {
@@ -24,7 +29,7 @@ function sstoreCode(slotNumber, keyType, key, valueType, valueBuf) {
         Buffer.from('55', 'hex')
     ]);
 }
-export function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { privSlot: '0' }) {
+function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { privSlot: '0' }) {
     const slotNumber = opts.privSlot ?? 0;
     if (privLevels.length > 3)
         throw new Error('getProxyDeployBytecode: max 3 privLevels');
@@ -42,7 +47,7 @@ export function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { 
         throw new Error('invalid address');
     return `0x${initialCode.toString('hex')}3d3981f3363d3d373d3d3d363d${evmPush(masterAddrBuf).toString('hex')}5af43d82803e903d91602b57fd5bf3`;
 }
-export function getStorageSlotsFromArtifact(buildInfo) {
+function getStorageSlotsFromArtifact(buildInfo) {
     if (!buildInfo)
         return { privSlot: 0 };
     const ambireAccountArtifact = buildInfo.output.sources['contracts/AmbireAccount.sol'];

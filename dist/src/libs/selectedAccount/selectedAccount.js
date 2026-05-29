@@ -1,11 +1,17 @@
-import PortfolioViewBuilder from './portfolioView';
-export const isInternalChain = (chainId) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = exports.isNetworkReady = exports.stripPortfolioState = exports.isInternalChain = void 0;
+exports.calculateSelectedAccountPortfolio = calculateSelectedAccountPortfolio;
+const tslib_1 = require("tslib");
+const portfolioView_1 = tslib_1.__importDefault(require("./portfolioView"));
+const isInternalChain = (chainId) => {
     return (chainId === 'gasTank' ||
         chainId === 'rewards' ||
         chainId === 'projectedRewards' ||
         chainId === 'defiApps');
 };
-export const stripPortfolioState = (portfolioState) => {
+exports.isInternalChain = isInternalChain;
+const stripPortfolioState = (portfolioState) => {
     const strippedState = {};
     Object.keys(portfolioState).forEach((chainId) => {
         const networkState = portfolioState[chainId];
@@ -39,10 +45,12 @@ export const stripPortfolioState = (portfolioState) => {
     });
     return strippedState;
 };
-export const isNetworkReady = (networkData) => {
+exports.stripPortfolioState = stripPortfolioState;
+const isNetworkReady = (networkData) => {
     return networkData && (networkData.isReady || networkData?.criticalError);
 };
-export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
+exports.isNetworkReady = isNetworkReady;
+exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
     tokens: [],
     collections: [],
     defiPositions: [],
@@ -60,12 +68,12 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 /**
  * Calculates the selected account portfolio that is used by the UI
  */
-export function calculateSelectedAccountPortfolio(portfolioState, shouldShowPartialResult, isManualUpdate) {
-    const strippedPortfolioState = stripPortfolioState(portfolioState);
+function calculateSelectedAccountPortfolio(portfolioState, shouldShowPartialResult, isManualUpdate) {
+    const strippedPortfolioState = (0, exports.stripPortfolioState)(portfolioState);
     if (Object.keys(portfolioState).length === 0) {
-        return DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
+        return exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
     }
-    const portfolioViewBuilder = new PortfolioViewBuilder();
+    const portfolioViewBuilder = new portfolioView_1.default();
     Object.entries(portfolioState).forEach(([chainId, networkData]) => {
         portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate);
     });

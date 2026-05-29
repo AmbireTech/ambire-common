@@ -1,5 +1,8 @@
-import { fetchWithTimeout } from '../../utils/fetch';
-export default function batcher(fetch, requestGenerator, options) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = batcher;
+const fetch_1 = require("../../utils/fetch");
+function batcher(fetch, requestGenerator, options) {
     const { timeoutSettings, batchDebounce = 0, dedupeByKeys = [] } = options;
     let queue = [];
     let timeoutId = null;
@@ -49,7 +52,7 @@ export default function batcher(fetch, requestGenerator, options) {
         // useful also if the API is limited to a certain # and we want to paginate
         requestGenerator(queueCopy).map(async ({ url, queueSegment }) => {
             try {
-                const fetchPromise = fetchWithTimeout(fetch, url, {}, timeoutSettings?.timeoutAfter || 20000).then(async (resp) => {
+                const fetchPromise = (0, fetch_1.fetchWithTimeout)(fetch, url, {}, timeoutSettings?.timeoutAfter || 20000).then(async (resp) => {
                     const body = await resp.json();
                     if (resp.status !== 200)
                         throw body;

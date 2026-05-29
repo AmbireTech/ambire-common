@@ -1,5 +1,8 @@
-import { Interface } from 'ethers';
-import { isHex } from 'viem';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.decodeCall = decodeCall;
+const ethers_1 = require("ethers");
+const viem_1 = require("viem");
 /**
  *
  * @param type string of the type of the solidity function argument, should be tuple
@@ -68,8 +71,8 @@ function arrayUnknownDecodedArgsToCustomType(args, types) {
     });
     return dataToReturn;
 }
-export function decodeCall(data, foundSignatures) {
-    if (!isHex(data))
+function decodeCall(data, foundSignatures) {
+    if (!(0, viem_1.isHex)(data))
         return null;
     let resultWithDiff = {
         diff: Infinity,
@@ -77,7 +80,7 @@ export function decodeCall(data, foundSignatures) {
     };
     for (const { signature } of foundSignatures) {
         try {
-            const iface = new Interface(['function ' + signature]);
+            const iface = new ethers_1.Interface(['function ' + signature]);
             const parsed = iface.parseTransaction({ data });
             if (!parsed)
                 continue;

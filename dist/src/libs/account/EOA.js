@@ -1,10 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EOA = void 0;
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ZeroAddress } from 'ethers';
-import { BROADCAST_OPTIONS } from '../broadcast/broadcast';
-import { BaseAccount } from './BaseAccount';
+const ethers_1 = require("ethers");
+const broadcast_1 = require("../broadcast/broadcast");
+const BaseAccount_1 = require("./BaseAccount");
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
-export class EOA extends BaseAccount {
+class EOA extends BaseAccount_1.BaseAccount {
     providerEstimation;
     ambireEstimation;
     getEstimationCriticalError(estimation, op) {
@@ -33,7 +36,7 @@ export class EOA extends BaseAccount {
     }
     getAvailableFeeOptions(estimation, feePaymentOptions) {
         const native = feePaymentOptions.find((opt) => opt.paidBy === this.account.addr &&
-            opt.token.address === ZeroAddress &&
+            opt.token.address === ethers_1.ZeroAddress &&
             !opt.token.flags.onGasTank);
         if (!native)
             throw new Error('no native fee payment option, it should not happen');
@@ -58,7 +61,7 @@ export class EOA extends BaseAccount {
         return gasUsed + gasUsed / 10n;
     }
     getBroadcastOption(feeOption, options) {
-        return BROADCAST_OPTIONS.bySelf;
+        return broadcast_1.BROADCAST_OPTIONS.bySelf;
     }
     shouldBroadcastCallsSeparately(op) {
         return op.calls.length > 1;
@@ -98,4 +101,5 @@ export class EOA extends BaseAccount {
         return this.canSetCustomGasPrices();
     }
 }
+exports.EOA = EOA;
 //# sourceMappingURL=EOA.js.map

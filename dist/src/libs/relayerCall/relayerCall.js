@@ -1,6 +1,11 @@
-import { fetchWithTimeout } from '../../utils/fetch';
-import { parse, stringify } from '../richJson/richJson';
-export class RelayerError extends Error {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RELAYER_DOWN_MESSAGE = exports.RelayerError = void 0;
+exports.relayerCallUncaught = relayerCallUncaught;
+exports.relayerCall = relayerCall;
+const fetch_1 = require("../../utils/fetch");
+const richJson_1 = require("../richJson/richJson");
+class RelayerError extends Error {
     input;
     output;
     isHumanized = false;
@@ -11,26 +16,27 @@ export class RelayerError extends Error {
         this.isHumanized = !!isHumanized;
     }
 }
-export const RELAYER_DOWN_MESSAGE = 'Currently, the Ambire relayer seems to be temporarily down. Please try again a few moments later';
-export async function relayerCallUncaught(url, fetch, method = 'GET', body = null, headers = null, timeoutMs = 20000) {
+exports.RelayerError = RelayerError;
+exports.RELAYER_DOWN_MESSAGE = 'Currently, the Ambire relayer seems to be temporarily down. Please try again a few moments later';
+async function relayerCallUncaught(url, fetch, method = 'GET', body = null, headers = null, timeoutMs = 20000) {
     if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
         return { success: false, message: 'bad method' };
     if (!url)
         return { success: false, message: 'no url or path' };
     if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
         return { success: false, message: 'should not have a body' };
-    const res = await fetchWithTimeout(fetch, url, {
+    const res = await (0, fetch_1.fetchWithTimeout)(fetch, url, {
         method,
         headers: {
             'Content-Type': 'application/json',
             ...headers
         },
-        body: body ? stringify(body) : undefined
+        body: body ? (0, richJson_1.stringify)(body) : undefined
     }, timeoutMs);
     const text = await res.text();
     const isStatusOk = res.status < 300 && res.status >= 200;
     try {
-        const json = parse(text);
+        const json = (0, richJson_1.parse)(text);
         if (!json.hasOwnProperty('success')) {
             return { success: isStatusOk, ...json, status: res.status };
         }
@@ -41,11 +47,11 @@ export async function relayerCallUncaught(url, fetch, method = 'GET', body = nul
             success: false,
             data: text,
             status: res.status,
-            message: RELAYER_DOWN_MESSAGE
+            message: exports.RELAYER_DOWN_MESSAGE
         };
     }
 }
-export async function relayerCall(path, method = 'GET', body = null, headers = null, timeoutMs = 20000) {
+async function relayerCall(path, method = 'GET', body = null, headers = null, timeoutMs = 20000) {
     if (!this.url || !this.fetch) {
         throw new RelayerError('Unable to connect to the Ambire relayer. Please try again later. Error code: RELAYERCALL_NOT_BINDED', { url: this.url, path, method, body, headers }, {}, true);
     }

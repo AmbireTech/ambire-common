@@ -1,12 +1,16 @@
-import EmittableError from '../../classes/EmittableError';
-import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
-import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals';
-import { networks as predefinedNetworks } from '../../consts/networks';
-import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks';
-import { getFeaturesByNetworkProperties, getNetworkInfo, getNetworksUpdatedWithRelayerNetworks, getValidNetworks } from '../../libs/networks/networks';
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const STATUS_WRAPPED_METHODS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.NetworksController = exports.STATUS_WRAPPED_METHODS = void 0;
+const tslib_1 = require("tslib");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
+const intervals_1 = require("../../consts/intervals");
+const networks_1 = require("../../consts/networks");
+const testnetNetworks_1 = require("../../consts/testnetNetworks");
+const networks_2 = require("../../libs/networks/networks");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.STATUS_WRAPPED_METHODS = {
     addNetwork: 'INITIAL',
     updateNetwork: 'INITIAL'
 };
@@ -15,7 +19,7 @@ export const STATUS_WRAPPED_METHODS = {
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
  * for adding, updating, and removing networks.
  */
-export class NetworksController extends EventEmitter {
+class NetworksController extends eventEmitter_1.default {
     // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
     // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
     // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
@@ -24,7 +28,7 @@ export class NetworksController extends EventEmitter {
     #fetch;
     #callRelayer;
     #networks = {};
-    statuses = STATUS_WRAPPED_METHODS;
+    statuses = exports.STATUS_WRAPPED_METHODS;
     networkToAddOrUpdate = null;
     #useTempProvider;
     /** Callback that gets called when adding or updating network */
@@ -39,7 +43,7 @@ export class NetworksController extends EventEmitter {
             this.defaultNetworksMode = defaultNetworksMode;
         this.#storage = storage;
         this.#fetch = fetch;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.#useTempProvider = useTempProvider;
         this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks;
         this.#onReady = onReady;
@@ -53,7 +57,7 @@ export class NetworksController extends EventEmitter {
          * to periodically refetch networks in case there are updates,
          * since the extension relies on the config from relayer.
          */
-        this.#updateWithRelayerNetworksInterval = new RecurringTimeout(this.synchronizeNetworks.bind(this), NETWORKS_UPDATE_INTERVAL, this.emitError.bind(this));
+        this.#updateWithRelayerNetworksInterval = new recurringTimeout_1.RecurringTimeout(this.synchronizeNetworks.bind(this), intervals_1.NETWORKS_UPDATE_INTERVAL, this.emitError.bind(this));
         if (this.defaultNetworksMode === 'mainnet') {
             this.#updateWithRelayerNetworksInterval.start();
         }
@@ -63,13 +67,13 @@ export class NetworksController extends EventEmitter {
     }
     get allNetworks() {
         if (!Object.keys(this.#networks).length) {
-            return this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks;
+            return this.defaultNetworksMode === 'mainnet' ? networks_1.networks : testnetNetworks_1.testnetNetworks;
         }
         const uniqueNetworksByChainId = Object.values(this.#networks)
             .sort((a, b) => +b.predefined - +a.predefined) // first predefined
             .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index); // unique by chainId (predefined with priority)
         return uniqueNetworksByChainId.map((network) => {
-            network.features = getFeaturesByNetworkProperties({
+            network.features = (0, networks_2.getFeaturesByNetworkProperties)({
                 isSAEnabled: network.isSAEnabled,
                 isOptimistic: network.isOptimistic ?? false,
                 rpcNoStateOverride: network.rpcNoStateOverride,
@@ -93,7 +97,7 @@ export class NetworksController extends EventEmitter {
     }
     async getNetworksInStorage() {
         const rawNetworksInStorage = await this.#storage.get('networks', {});
-        return getValidNetworks(rawNetworksInStorage);
+        return (0, networks_2.getValidNetworks)(rawNetworksInStorage);
     }
     /**
      * Loads and synchronizes network configurations from storage and the relayer.
@@ -116,7 +120,7 @@ export class NetworksController extends EventEmitter {
         let finalNetworks = {};
         // If networksInStorage is empty, set predefinedNetworks and emit update
         if (!Object.keys(networksInStorage).length) {
-            const defaultNetworks = this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks;
+            const defaultNetworks = this.defaultNetworksMode === 'mainnet' ? networks_1.networks : testnetNetworks_1.testnetNetworks;
             finalNetworks = defaultNetworks.reduce((acc, network) => {
                 acc[network.chainId.toString()] = network;
                 return acc;
@@ -186,7 +190,7 @@ export class NetworksController extends EventEmitter {
                 })
             ]);
             relayerNetworks = res.data.extensionConfigNetworks;
-            return getNetworksUpdatedWithRelayerNetworks(currentNetworks, relayerNetworks);
+            return (0, networks_2.getNetworksUpdatedWithRelayerNetworks)(currentNetworks, relayerNetworks);
         }
         catch (e) {
             console.error('Failed to fetch networks from the Relayer', e);
@@ -211,7 +215,7 @@ export class NetworksController extends EventEmitter {
                 chainId: network.chainId,
                 rpcUrl: network.selectedRpcUrl
             }, async (provider) => {
-                await getNetworkInfo(this.#fetch, network.chainId, provider, async (info) => {
+                await (0, networks_2.getNetworkInfo)(this.#fetch, network.chainId, provider, async (info) => {
                     if (Object.values(info).some((prop) => prop === 'LOADING')) {
                         return;
                     }
@@ -239,7 +243,7 @@ export class NetworksController extends EventEmitter {
             this.networkToAddOrUpdate = networkToAddOrUpdate;
             this.emitUpdate();
             await this.#useTempProvider({ chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl }, async (provider) => {
-                await getNetworkInfo(this.#fetch, networkToAddOrUpdate.chainId, provider, (info) => {
+                await (0, networks_2.getNetworkInfo)(this.#fetch, networkToAddOrUpdate.chainId, provider, (info) => {
                     if (this.networkToAddOrUpdate) {
                         this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info };
                         this.emitUpdate();
@@ -261,7 +265,7 @@ export class NetworksController extends EventEmitter {
         const chainIds = this.allNetworks.map((net) => net.chainId);
         // make sure the id and chainId of the network are unique
         if (chainIds.indexOf(BigInt(network.chainId)) !== -1) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'The network you are trying to add has already been added.',
                 level: 'expected',
                 error: new Error('settings: addNetwork chain already added (duplicate id/chainId)')
@@ -275,7 +279,7 @@ export class NetworksController extends EventEmitter {
             ...network,
             ...info,
             feeOptions,
-            features: getFeaturesByNetworkProperties(info, undefined),
+            features: (0, networks_2.getFeaturesByNetworkProperties)(info, undefined),
             hasRelayer: false,
             predefined: false,
             has7702: false
@@ -333,7 +337,7 @@ export class NetworksController extends EventEmitter {
                     chainId,
                     rpcUrl: changedNetwork.selectedRpcUrl
                 }, async (provider) => {
-                    await getNetworkInfo(this.#fetch, chainId, provider, async (info) => {
+                    await (0, networks_2.getNetworkInfo)(this.#fetch, chainId, provider, async (info) => {
                         if (Object.values(info).some((prop) => prop === 'LOADING')) {
                             return;
                         }
@@ -390,4 +394,5 @@ export class NetworksController extends EventEmitter {
         };
     }
 }
+exports.NetworksController = NetworksController;
 //# sourceMappingURL=networks.js.map

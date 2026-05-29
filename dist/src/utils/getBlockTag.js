@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getPendingBlockTagIfSupported = getPendingBlockTagIfSupported;
 /**
  * Basically, blockTag: pending is not supported on a lot
  * of RPCs on all kinds of networks and it's not reliable to use.
@@ -9,7 +12,7 @@
  * and the latest for all other networks. Block time on all other
  * networks is faster than Ethereum so it shouldn't impact the features
  */
-export function getPendingBlockTagIfSupported(network) {
+function getPendingBlockTagIfSupported(network) {
     return network.chainId === 1n ? 'pending' : 'latest';
 }
 //# sourceMappingURL=getBlockTag.js.map

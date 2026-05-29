@@ -1,4 +1,9 @@
-export function isValidResponseOption(r) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isValidResponseOption = isValidResponseOption;
+exports.isSurveyQuestion = isSurveyQuestion;
+exports.parseSurvey = parseSurvey;
+function isValidResponseOption(r) {
     return (!!r &&
         typeof r === 'object' &&
         'text' in r &&
@@ -6,7 +11,7 @@ export function isValidResponseOption(r) {
         'id' in r &&
         typeof r.id === 'number');
 }
-export function isSurveyQuestion(q) {
+function isSurveyQuestion(q) {
     if (!q || typeof q !== 'object')
         return null;
     if (!('id' in q) || typeof q.id !== 'number')
@@ -43,7 +48,7 @@ export function isSurveyQuestion(q) {
         return null;
     return question;
 }
-export function parseSurvey(res) {
+function parseSurvey(res) {
     if (!res)
         return { ok: false, error: 'No survey' };
     if (typeof res !== 'object')

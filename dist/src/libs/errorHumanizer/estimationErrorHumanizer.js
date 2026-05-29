@@ -1,38 +1,43 @@
-import EmittableError from '../../classes/EmittableError';
-import ErrorHumanizerError from '../../classes/ErrorHumanizerError';
-import ExternalSignerError from '../../classes/ExternalSignerError';
-import { decodeError } from '../errorDecoder';
-import { truncateReason } from '../errorDecoder/helpers';
-import { ESTIMATION_ERRORS, noPrefixReasons } from './errors';
-import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers';
-import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases';
-export const MESSAGE_PREFIX = 'Transaction cannot be sent because';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MESSAGE_PREFIX = void 0;
+exports.getHumanReadableEstimationError = getHumanReadableEstimationError;
+const tslib_1 = require("tslib");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const ErrorHumanizerError_1 = tslib_1.__importDefault(require("../../classes/ErrorHumanizerError"));
+const ExternalSignerError_1 = tslib_1.__importDefault(require("../../classes/ExternalSignerError"));
+const errorDecoder_1 = require("../errorDecoder");
+const helpers_1 = require("../errorDecoder/helpers");
+const errors_1 = require("./errors");
+const helpers_2 = require("./helpers");
+const humanizeCommonCases_1 = require("./humanizeCommonCases");
+exports.MESSAGE_PREFIX = 'Transaction cannot be sent because';
 const LAST_RESORT_ERROR_MESSAGE = 'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.';
 function getPrefix(reason) {
     if (!reason)
-        return MESSAGE_PREFIX;
-    const hasNoPrefix = noPrefixReasons.filter((noPrefix) => reason.includes(noPrefix)).length;
-    return hasNoPrefix === 0 ? MESSAGE_PREFIX : '';
+        return exports.MESSAGE_PREFIX;
+    const hasNoPrefix = errors_1.noPrefixReasons.filter((noPrefix) => reason.includes(noPrefix)).length;
+    return hasNoPrefix === 0 ? exports.MESSAGE_PREFIX : '';
 }
-export function getHumanReadableEstimationError(e) {
+function getHumanReadableEstimationError(e) {
     // These errors should be thrown as they are
     // as they are already human-readable
-    if (e instanceof EmittableError || e instanceof ExternalSignerError) {
-        return new ErrorHumanizerError(e.message, {
+    if (e instanceof EmittableError_1.default || e instanceof ExternalSignerError_1.default) {
+        return new ErrorHumanizerError_1.default(e.message, {
             cause: typeof e.cause === 'string' ? e.cause : null,
             isFallbackMessage: false
         });
     }
     let isFallbackMessage = false;
-    const decodedError = e instanceof Error ? decodeError(e) : e;
-    const commonError = humanizeEstimationOrBroadcastError(decodedError, getPrefix(decodedError.reason), e);
-    let errorMessage = getHumanReadableErrorMessage(commonError, ESTIMATION_ERRORS, MESSAGE_PREFIX, decodedError, e);
+    const decodedError = e instanceof Error ? (0, errorDecoder_1.decodeError)(e) : e;
+    const commonError = (0, humanizeCommonCases_1.humanizeEstimationOrBroadcastError)(decodedError, getPrefix(decodedError.reason), e);
+    let errorMessage = (0, helpers_2.getHumanReadableErrorMessage)(commonError, errors_1.ESTIMATION_ERRORS, exports.MESSAGE_PREFIX, decodedError, e);
     if (!errorMessage) {
         isFallbackMessage = true;
-        errorMessage = getGenericMessageFromType(decodedError.type, decodedError.reason, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE, e, false);
+        errorMessage = (0, helpers_2.getGenericMessageFromType)(decodedError.type, decodedError.reason, exports.MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE, e, false);
     }
-    return new ErrorHumanizerError(errorMessage, {
-        cause: decodedError.reason || (e instanceof Error ? truncateReason(e?.message) : ''),
+    return new ErrorHumanizerError_1.default(errorMessage, {
+        cause: decodedError.reason || (e instanceof Error ? (0, helpers_1.truncateReason)(e?.message) : ''),
         isFallbackMessage
     });
 }

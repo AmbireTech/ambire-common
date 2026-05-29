@@ -1,6 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.WARNINGS = exports.RETRY_TO_INIT_ACCOUNT_OP_MSG = exports.ERRORS = void 0;
 const ERRORS = {
     eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 };
+exports.ERRORS = ERRORS;
 const WARNINGS = {
     significantBalanceDecrease: {
         id: 'significantBalanceDecrease',
@@ -29,6 +33,7 @@ const WARNINGS = {
         title: 'You can only broadcast transactions for Ambire v1 accounts from an EOA'
     }
 };
+exports.WARNINGS = WARNINGS;
 const RETRY_TO_INIT_ACCOUNT_OP_MSG = 'Please attempt to initiate the transaction again or contact Ambire support.';
-export { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG, WARNINGS };
+exports.RETRY_TO_INIT_ACCOUNT_OP_MSG = RETRY_TO_INIT_ACCOUNT_OP_MSG;
 //# sourceMappingURL=errorHandling.js.map

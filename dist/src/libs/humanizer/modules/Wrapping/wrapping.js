@@ -1,12 +1,15 @@
-import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers';
-import { WETH } from '../../const/abis';
-import { getUnwrapping, getWrapping } from '../../utils';
-const iface = new Interface(WETH);
-export const wrappingModule = (_, irCalls, humanizerMeta) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.wrappingModule = void 0;
+const ethers_1 = require("ethers");
+const abis_1 = require("../../const/abis");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface(abis_1.WETH);
+const wrappingModule = (_, irCalls, humanizerMeta) => {
     const newCalls = irCalls.map((call) => {
-        if (!isAddress(call.to))
+        if (!(0, ethers_1.isAddress)(call.to))
             return call;
-        const knownAddressData = humanizerMeta?.knownAddresses[getAddress(call.to)];
+        const knownAddressData = humanizerMeta?.knownAddresses[(0, ethers_1.getAddress)(call.to)];
         if (knownAddressData?.name === 'Wrapped ETH' ||
             knownAddressData?.name === 'WETH' ||
             knownAddressData?.token?.symbol === 'WETH' ||
@@ -17,7 +20,7 @@ export const wrappingModule = (_, irCalls, humanizerMeta) => {
             if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
                 return {
                     ...call,
-                    fullVisualization: getWrapping(ZeroAddress, call.value)
+                    fullVisualization: (0, utils_1.getWrapping)(ethers_1.ZeroAddress, call.value)
                 };
             }
             // 0x2e1a7d4d
@@ -25,7 +28,7 @@ export const wrappingModule = (_, irCalls, humanizerMeta) => {
                 const [amount] = iface.parseTransaction(call)?.args || [];
                 return {
                     ...call,
-                    fullVisualization: getUnwrapping(ZeroAddress, amount)
+                    fullVisualization: (0, utils_1.getUnwrapping)(ethers_1.ZeroAddress, amount)
                 };
             }
         }
@@ -33,4 +36,5 @@ export const wrappingModule = (_, irCalls, humanizerMeta) => {
     });
     return newCalls;
 };
+exports.wrappingModule = wrappingModule;
 //# sourceMappingURL=wrapping.js.map

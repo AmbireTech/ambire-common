@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.yieldToMain = yieldToMain;
 /**
  * Allow the main thread to process other events.
  */
@@ -10,5 +13,4 @@ function yieldToMain() {
         setTimeout(resolve, 0);
     });
 }
-export { yieldToMain };
 //# sourceMappingURL=scheduler.js.map

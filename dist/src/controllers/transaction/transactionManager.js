@@ -1,21 +1,25 @@
-import { createPublicClient, http } from 'viem';
-import { arbitrumSepolia, baseSepolia, sepolia } from 'viem/chains';
-import EventEmitter from '../eventEmitter/eventEmitter';
-import { IntentController } from './controllers/intent';
-import { TransactionFormState } from './transactionFormState';
-export class TransactionManagerController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TransactionManagerController = void 0;
+const tslib_1 = require("tslib");
+const viem_1 = require("viem");
+const chains_1 = require("viem/chains");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+const intent_1 = require("./controllers/intent");
+const transactionFormState_1 = require("./transactionFormState");
+class TransactionManagerController extends eventEmitter_1.default {
     intent;
     formState;
     #controllers = [];
     transactionType = 'transfer';
     #dependencies;
-    #chainMap = [sepolia, arbitrumSepolia, baseSepolia];
+    #chainMap = [chains_1.sepolia, chains_1.arbitrumSepolia, chains_1.baseSepolia];
     constructor(deps) {
         super(deps.eventEmitterRegistry);
         // TODO: intialize interopSDK here
         this.#dependencies = { ...deps, interopSDK: null };
-        this.formState = new TransactionFormState(this.#dependencies);
-        this.intent = new IntentController(this.#dependencies, this.formState);
+        this.formState = new transactionFormState_1.TransactionFormState(this.#dependencies);
+        this.intent = new intent_1.IntentController(this.#dependencies, this.formState);
         this.#controllers = [this.formState, this.intent];
         this.registerControllerUpdates();
     }
@@ -79,9 +83,9 @@ export class TransactionManagerController extends EventEmitter {
         const chain = this.#chainMap.find((c) => c.id === chainId);
         if (!chain)
             return;
-        return createPublicClient({
+        return (0, viem_1.createPublicClient)({
             chain,
-            transport: http()
+            transport: (0, viem_1.http)()
         });
     }
     toJSON() {
@@ -94,4 +98,5 @@ export class TransactionManagerController extends EventEmitter {
         };
     }
 }
+exports.TransactionManagerController = TransactionManagerController;
 //# sourceMappingURL=transactionManager.js.map

@@ -1,13 +1,21 @@
-import { Interface, toBeHex, toQuantity } from 'ethers';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
-import { getSignableCalls } from '../accountOp/accountOp';
-import { getActivatorCall } from '../userOperation/userOperation';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MIN_GAS_PRICE = void 0;
+exports.getGasPriceRecommendations = getGasPriceRecommendations;
+exports.getProbableCallData = getProbableCallData;
+exports.getBroadcastGas = getBroadcastGas;
+exports.gasPriceToBundlerFormat = gasPriceToBundlerFormat;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+const accountOp_1 = require("../accountOp/accountOp");
+const userOperation_1 = require("../userOperation/userOperation");
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n;
 const DEFAULT_ELASTICITY_MULTIPLIER = 2n;
 // a 1 gwei min for gas price, non1559 networks
-export const MIN_GAS_PRICE = 1000000000n;
+exports.MIN_GAS_PRICE = 1000000000n;
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
 const speeds = [
@@ -86,9 +94,9 @@ async function getRpcBlockTag(provider, blockTag) {
     if (typeof blockTag !== 'number')
         return blockTag;
     if (blockTag >= 0)
-        return toQuantity(blockTag);
+        return (0, ethers_1.toQuantity)(blockTag);
     const currentBlockNumber = await provider.getBlockNumber();
-    return toQuantity(Math.max(currentBlockNumber + blockTag, 0));
+    return (0, ethers_1.toQuantity)(Math.max(currentBlockNumber + blockTag, 0));
 }
 async function fetchRawBlock(provider, blockTag) {
     const rpcBlockTag = await getRpcBlockTag(provider, blockTag);
@@ -147,7 +155,7 @@ async function refetchBlock(provider, network, blockTag, getIsActive, counter = 
     }
     return lastBlock;
 }
-export async function getGasPriceRecommendations(provider, network, _blockTag, getIsActive) {
+async function getGasPriceRecommendations(provider, network, _blockTag, getIsActive) {
     const blockTag = _blockTag ?? -1;
     const [lastBlock, ethGasPrice] = await Promise.all([
         refetchBlock(provider, network, blockTag, getIsActive),
@@ -217,7 +225,7 @@ export async function getGasPriceRecommendations(provider, network, _blockTag, g
     const prices = filterOutliers(txns.map((x) => x.gasPrice).filter((x) => x > 0));
     // use th fetched price as a min if not 0 as it could be actually lower
     // than the hardcoded MIN.
-    const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : MIN_GAS_PRICE;
+    const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : exports.MIN_GAS_PRICE;
     const fee = speeds.map(({ name }, i) => {
         const avgGasPrice = average(nthGroup(prices, i, speeds.length));
         return {
@@ -227,20 +235,20 @@ export async function getGasPriceRecommendations(provider, network, _blockTag, g
     });
     return { gasPrice: fee };
 }
-export function getProbableCallData(accountOp, accountState, shouldIncludeActivatorCall) {
+function getProbableCallData(accountOp, accountState, shouldIncludeActivatorCall) {
     let estimationCallData;
     // include the activator call for estimation if any
     const localOp = { ...accountOp };
     if (shouldIncludeActivatorCall)
-        localOp.activatorCall = getActivatorCall(localOp.accountAddr);
+        localOp.activatorCall = (0, userOperation_1.getActivatorCall)(localOp.accountAddr);
     // always call executeMultiple as the worts case scenario
     // we disregard the initCode
     if (accountState.isDeployed) {
-        const ambireAccount = new Interface(AmbireAccount.abi);
+        const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
         estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [
             [
                 [
-                    getSignableCalls(localOp),
+                    (0, accountOp_1.getSignableCalls)(localOp),
                     '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
                 ]
             ]
@@ -248,13 +256,13 @@ export function getProbableCallData(accountOp, accountState, shouldIncludeActiva
     }
     else {
         // deployAndExecuteMultiple is the worst case
-        const ambireFactory = new Interface(AmbireFactory.abi);
+        const ambireFactory = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
         estimationCallData = ambireFactory.encodeFunctionData('deployAndExecuteMultiple', [
             '0x7f00000000000000000000000000000000000000000000000000000000000000017fad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5553d602d80604d3d3981f3363d3d373d3d3d363d7353a31973ebcc225e219bb0d7c0c9324773f5b3e95af43d82803e903d91602b57fd5bf3',
             '0x0000000000000000000000000000000000000000000000000000000000000000',
             [
                 [
-                    getSignableCalls(localOp),
+                    (0, accountOp_1.getSignableCalls)(localOp),
                     '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
                 ]
             ]
@@ -262,7 +270,7 @@ export function getProbableCallData(accountOp, accountState, shouldIncludeActiva
     }
     return estimationCallData;
 }
-export function getBroadcastGas(baseAcc, op) {
+function getBroadcastGas(baseAcc, op) {
     const calldata = baseAcc.getBroadcastCalldata(op);
     if (calldata === '0x')
         return 0n;
@@ -280,21 +288,21 @@ export function getBroadcastGas(baseAcc, op) {
  * @param gasRecommendations - our lib's format
  * @returns GasSpeeds - the bundler format
  */
-export function gasPriceToBundlerFormat(gasRecommendations) {
+function gasPriceToBundlerFormat(gasRecommendations) {
     const formatted = {};
     for (let i = 0; i < gasRecommendations.length; i++) {
         const entry = gasRecommendations[i];
         if ('baseFeePerGas' in entry) {
             const eip1559 = entry;
             formatted[eip1559.name] = {
-                maxFeePerGas: toBeHex(eip1559.baseFeePerGas + eip1559.maxPriorityFeePerGas),
-                maxPriorityFeePerGas: toBeHex(eip1559.maxPriorityFeePerGas)
+                maxFeePerGas: (0, ethers_1.toBeHex)(eip1559.baseFeePerGas + eip1559.maxPriorityFeePerGas),
+                maxPriorityFeePerGas: (0, ethers_1.toBeHex)(eip1559.maxPriorityFeePerGas)
             };
         }
         else {
             const oldFormat = entry;
             formatted[oldFormat.name] = {
-                maxFeePerGas: toBeHex(oldFormat.gasPrice),
+                maxFeePerGas: (0, ethers_1.toBeHex)(oldFormat.gasPrice),
                 maxPriorityFeePerGas: 0
             };
         }

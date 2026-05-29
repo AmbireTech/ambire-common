@@ -1,1 +1,1 @@
-{"version":3,"file":"signatures.js","sourceRoot":"","sources":["../../../src/consts/signatures.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,MAAM,aAAa,GAAG,IAAI,CAAA","sourcesContent":["export const SPOOF_SIGTYPE = '03'\n"]}
+{"version":3,"file":"signatures.js","sourceRoot":"","sources":["../../../src/consts/signatures.ts"],"names":[],"mappings":";;;AAAa,QAAA,aAAa,GAAG,IAAI,CAAA","sourcesContent":["export const SPOOF_SIGTYPE = '03'\n"]}

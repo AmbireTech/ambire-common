@@ -1,6 +1,13 @@
-import { hexlify, TypedDataEncoder } from 'ethers';
-import { accountOpSignableHash } from '../accountOp/accountOp';
-import { getTypedData } from '../signMessage/signMessage';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSigningRequestDisplayData = getSigningRequestDisplayData;
+exports.getEIP712SigningRequest = getEIP712SigningRequest;
+exports.getRawTransactionSigningRequest = getRawTransactionSigningRequest;
+exports.getExecuteSigningRequest = getExecuteSigningRequest;
+exports.get7702AuthorizationSigningRequest = get7702AuthorizationSigningRequest;
+const ethers_1 = require("ethers");
+const accountOp_1 = require("../accountOp/accountOp");
+const signMessage_1 = require("../signMessage/signMessage");
 /**
  * The goal of this function is to traverse the passed value
  * and successfully parse it so a readable json
@@ -33,8 +40,8 @@ function getEIP712SigningRequestData(data) {
     let messageHash;
     try {
         const typesWithoutDomain = Object.fromEntries(Object.entries(typedData.types).filter(([typeName]) => typeName !== 'EIP712Domain'));
-        domainHash = TypedDataEncoder.hashDomain(typedData.domain);
-        messageHash = TypedDataEncoder.hashStruct(typedData.primaryType, typesWithoutDomain, typedData.message);
+        domainHash = ethers_1.TypedDataEncoder.hashDomain(typedData.domain);
+        messageHash = ethers_1.TypedDataEncoder.hashStruct(typedData.primaryType, typesWithoutDomain, typedData.message);
     }
     catch {
         return data;
@@ -48,24 +55,24 @@ function getEIP712SigningRequestData(data) {
         messageHash
     };
 }
-export function getSigningRequestDisplayData(request) {
+function getSigningRequestDisplayData(request) {
     const data = request.type === 'eip-712' ? getEIP712SigningRequestData(request.data) : request.data;
     return getSerializableSigningRequestData(data);
 }
-export function getEIP712SigningRequest(data) {
+function getEIP712SigningRequest(data) {
     return {
         type: 'eip-712',
         data
     };
 }
-export function getRawTransactionSigningRequest(data) {
+function getRawTransactionSigningRequest(data) {
     return {
         type: 'raw-transaction',
         data
     };
 }
-export function getExecuteSigningRequest({ accountOp, accountState, network }) {
-    const accountOpHash = hexlify(accountOpSignableHash(accountOp, network.chainId));
+function getExecuteSigningRequest({ accountOp, accountState, network }) {
+    const accountOpHash = (0, ethers_1.hexlify)((0, accountOp_1.accountOpSignableHash)(accountOp, network.chainId));
     if (!accountState.isV2) {
         return {
             type: 'message',
@@ -74,9 +81,9 @@ export function getExecuteSigningRequest({ accountOp, accountState, network }) {
             }
         };
     }
-    return getEIP712SigningRequest(getTypedData(network.chainId, accountState.accountAddr, accountOpHash));
+    return getEIP712SigningRequest((0, signMessage_1.getTypedData)(network.chainId, accountState.accountAddr, accountOpHash));
 }
-export function get7702AuthorizationSigningRequest({ chainId, contract, nonce }) {
+function get7702AuthorizationSigningRequest({ chainId, contract, nonce }) {
     return {
         type: 'eip-7702-authorization',
         data: {

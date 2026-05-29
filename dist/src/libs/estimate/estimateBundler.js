@@ -1,13 +1,18 @@
-import { Interface, toBeHex } from 'ethers';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import { paymasterFactory } from '../../services/paymaster';
-import wait from '../../utils/wait';
-import { getSignableCalls } from '../accountOp/accountOp';
-import { getHumanReadableEstimationError } from '../errorHumanizer';
-import { fetchNonce } from '../userOperation/fetchEntryPointNonce';
-import { getUserOperation } from '../userOperation/userOperation';
-import { getSigForCalculations } from './estimateHelpers';
-export async function fetchBundlerGasPrice(baseAcc, network, switcher) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.fetchBundlerGasPrice = fetchBundlerGasPrice;
+exports.bundlerEstimate = bundlerEstimate;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const paymaster_1 = require("../../services/paymaster");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const accountOp_1 = require("../accountOp/accountOp");
+const errorHumanizer_1 = require("../errorHumanizer");
+const fetchEntryPointNonce_1 = require("../userOperation/fetchEntryPointNonce");
+const userOperation_1 = require("../userOperation/userOperation");
+const estimateHelpers_1 = require("./estimateHelpers");
+async function fetchBundlerGasPrice(baseAcc, network, switcher) {
     const bundler = switcher.getBundler();
     // fetchGasPrices should complete in ms, so punish slow bundlers
     // by rotating them off
@@ -56,7 +61,7 @@ async function estimate(baseAcc, network, userOp, switcher, gasPrice) {
         if (e.message.indexOf('invalid account nonce') !== -1) {
             nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }));
         }
-        const humanReadable = getHumanReadableEstimationError(decodedError);
+        const humanReadable = (0, errorHumanizer_1.getHumanReadableEstimationError)(decodedError);
         humanReadable.cause = '4337_ESTIMATION';
         return humanReadable;
     };
@@ -78,13 +83,13 @@ async function estimate(baseAcc, network, userOp, switcher, gasPrice) {
         nonFatalErrors
     };
 }
-export async function bundlerEstimate(baseAcc, accountState, op, network, feeTokens, provider, gasPrice, switcher, eip7702Auth, pendingUserOp) {
+async function bundlerEstimate(baseAcc, accountState, op, network, feeTokens, provider, gasPrice, switcher, eip7702Auth, pendingUserOp) {
     if (!baseAcc.supportsBundlerEstimation())
         return null;
     const account = baseAcc.getAccount();
     const localOp = { ...op };
     const initialBundler = switcher.getBundler();
-    const userOp = getUserOperation({
+    const userOp = (0, userOperation_1.getUserOperation)({
         account,
         accountState,
         accountOp: localOp,
@@ -96,12 +101,12 @@ export async function bundlerEstimate(baseAcc, accountState, op, network, feeTok
     // set the callData
     if (userOp.activatorCall)
         localOp.activatorCall = userOp.activatorCall;
-    const ambireAccount = new Interface(AmbireAccount.abi);
-    userOp.signature = getSigForCalculations();
-    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)]);
-    const paymaster = await paymasterFactory.create(op, userOp, account, network, provider);
+    const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
+    userOp.signature = (0, estimateHelpers_1.getSigForCalculations)();
+    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(localOp)]);
+    const paymaster = await paymaster_1.paymasterFactory.create(op, userOp, account, network, provider);
     localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens);
-    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)]);
+    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(localOp)]);
     const feeCallType = paymaster.getFeeCallType(feeTokens);
     if (paymaster.isUsable()) {
         const paymasterEstimationData = paymaster.getEstimationData();
@@ -138,8 +143,8 @@ export async function bundlerEstimate(baseAcc, accountState, op, network, feeTok
             estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')) {
             flags.has4337NonceDiscrepancy = true;
             // wait a bit to allow the state to sync
-            await wait(2000);
-            const accountNonce = await fetchNonce(account, provider);
+            await (0, wait_1.default)(2000);
+            const accountNonce = await (0, fetchEntryPointNonce_1.fetchNonce)(account, provider);
             if (accountNonce === null || accountNonce === 0n) {
                 // RPC serious malfunction
                 return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE');
@@ -147,7 +152,7 @@ export async function bundlerEstimate(baseAcc, accountState, op, network, feeTok
             if (network.chainId === 1n && BigInt(userOp.nonce) === BigInt(accountNonce)) {
                 return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE');
             }
-            userOp.nonce = toBeHex(accountNonce);
+            userOp.nonce = (0, ethers_1.toBeHex)(accountNonce);
             continue;
         }
         // if there's an error but we can't switch, return the error

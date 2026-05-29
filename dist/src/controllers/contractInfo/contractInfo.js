@@ -1,13 +1,17 @@
-import { fetchWithTimeout } from '@/utils/fetch';
-import wait from '@/utils/wait';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const FUNCTION_SELECTORS_STORAGE_KEY = 'functionSelectors';
-export const SELECTOR_SUCCESS_DEADLINE_MS = 30 * 24 * 60 * 60 * 1000;
-export const SELECTOR_NOT_FOUND_DEADLINE_MS = SELECTOR_SUCCESS_DEADLINE_MS;
-export const SELECTOR_LOADING_DEADLINE = 1000 * 5;
-export const SELECTOR_ERROR_DEADLINE_MS = 5 * 60 * 1000;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ContractInfoController = exports.SELECTOR_ERROR_DEADLINE_MS = exports.SELECTOR_LOADING_DEADLINE = exports.SELECTOR_NOT_FOUND_DEADLINE_MS = exports.SELECTOR_SUCCESS_DEADLINE_MS = exports.FUNCTION_SELECTORS_STORAGE_KEY = void 0;
+const tslib_1 = require("tslib");
+const fetch_1 = require("@/utils/fetch");
+const wait_1 = tslib_1.__importDefault(require("@/utils/wait"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.FUNCTION_SELECTORS_STORAGE_KEY = 'functionSelectors';
+exports.SELECTOR_SUCCESS_DEADLINE_MS = 30 * 24 * 60 * 60 * 1000;
+exports.SELECTOR_NOT_FOUND_DEADLINE_MS = exports.SELECTOR_SUCCESS_DEADLINE_MS;
+exports.SELECTOR_LOADING_DEADLINE = 1000 * 5;
+exports.SELECTOR_ERROR_DEADLINE_MS = 5 * 60 * 1000;
 // The ContractInfoController is responsible for getting function selectors for contracts
-export class ContractInfoController extends EventEmitter {
+class ContractInfoController extends eventEmitter_1.default {
     #fetch;
     #storage;
     #debounceBufferForSelectors = new Set();
@@ -31,7 +35,7 @@ export class ContractInfoController extends EventEmitter {
         return !this.initialLoadPromise;
     }
     async #load() {
-        this.selectors = await this.#storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {});
+        this.selectors = await this.#storage.get(exports.FUNCTION_SELECTORS_STORAGE_KEY, {});
         this.emitUpdate();
     }
     async #storeSelectorsInStorage() {
@@ -41,19 +45,19 @@ export class ContractInfoController extends EventEmitter {
                 return;
             selectorsToStore[k] = v;
         });
-        await this.#storage.set(FUNCTION_SELECTORS_STORAGE_KEY, selectorsToStore);
+        await this.#storage.set(exports.FUNCTION_SELECTORS_STORAGE_KEY, selectorsToStore);
     }
     #isOld(status, updatedAt) {
         const timeSinceUpdate = Date.now() - updatedAt;
-        if (status === 'success' && timeSinceUpdate > SELECTOR_SUCCESS_DEADLINE_MS)
+        if (status === 'success' && timeSinceUpdate > exports.SELECTOR_SUCCESS_DEADLINE_MS)
             return true;
-        if (status === 'error' && timeSinceUpdate > SELECTOR_ERROR_DEADLINE_MS)
+        if (status === 'error' && timeSinceUpdate > exports.SELECTOR_ERROR_DEADLINE_MS)
             return true;
-        if (status === 'not-found' && timeSinceUpdate > SELECTOR_NOT_FOUND_DEADLINE_MS)
+        if (status === 'not-found' && timeSinceUpdate > exports.SELECTOR_NOT_FOUND_DEADLINE_MS)
             return true;
         if (status === 'fetching-disabled' && timeSinceUpdate >= 0)
             return true;
-        if (status === 'loading' && timeSinceUpdate > SELECTOR_LOADING_DEADLINE)
+        if (status === 'loading' && timeSinceUpdate > exports.SELECTOR_LOADING_DEADLINE)
             return true;
         return false;
     }
@@ -64,7 +68,7 @@ export class ContractInfoController extends EventEmitter {
             // for privacy reasons
             const joinPrivateSelectors = [...new Set(selectorsToFetch.map((s) => s.slice(0, 6)))].join(',');
             const cenaUrl = `${this.#cenaUrl}/api/v3/contracts/selectors?selectors=${joinPrivateSelectors}`;
-            const result = await fetchWithTimeout(this.#fetch, cenaUrl, {}, timeout).then((r) => r.json());
+            const result = await (0, fetch_1.fetchWithTimeout)(this.#fetch, cenaUrl, {}, timeout).then((r) => r.json());
             if (!result.success)
                 throw new Error('Failed to fetch contract selectors');
             if (!result.data ||
@@ -142,7 +146,7 @@ export class ContractInfoController extends EventEmitter {
         this.selectors[selector] = { status: 'loading', data: currentData, updatedAt: Date.now() };
         this.emitUpdate();
         if (!this.#debounceSelectorFetchPromise) {
-            this.#debounceSelectorFetchPromise = wait(100)
+            this.#debounceSelectorFetchPromise = (0, wait_1.default)(100)
                 .then(() => this.#fetchBufferedSelectors())
                 .catch((e) => {
                 console.error('The debounced this.#debounceSelectorFetchPromise failed', e);
@@ -160,4 +164,5 @@ export class ContractInfoController extends EventEmitter {
         };
     }
 }
+exports.ContractInfoController = ContractInfoController;
 //# sourceMappingURL=contractInfo.js.map

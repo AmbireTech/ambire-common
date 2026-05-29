@@ -1,9 +1,12 @@
-import { getBytes, keccak256, LangEn, Mnemonic, randomBytes } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EntropyGenerator = void 0;
+const ethers_1 = require("ethers");
 // Custom entropy generator that enhances ethers' randomBytes by incorporating:
 // - Time-based entropy for additional randomness.
 // - Optional extra entropy (like mouse position, timestamp...) provided by the user for added security.
 // This helps improve the security of mainKey generation and random seed phrase creation.
-export class EntropyGenerator {
+class EntropyGenerator {
     #entropyPool = new Uint8Array(0);
     generateRandomBytes(length, extraEntropy) {
         this.#resetEntropyPool();
@@ -16,8 +19,8 @@ export class EntropyGenerator {
         }
         if (this.#entropyPool.length === 0)
             throw new Error('Entropy pool is empty');
-        const hash = getBytes(keccak256(this.#entropyPool));
-        const randomBytesGenerated = randomBytes(length);
+        const hash = (0, ethers_1.getBytes)((0, ethers_1.keccak256)(this.#entropyPool));
+        const randomBytesGenerated = (0, ethers_1.randomBytes)(length);
         // Introduces additional entropy mixing via XOR
         for (let i = 0; i < length; i++) {
             randomBytesGenerated[i] ^= hash[i % hash.length];
@@ -28,7 +31,7 @@ export class EntropyGenerator {
         const wordCountToBytesLength = { 12: 16, 24: 32 };
         const bytesLength = wordCountToBytesLength[wordCount] || 16; // defaults to 12-word phrase
         const entropy = this.generateRandomBytes(bytesLength, extraEntropy);
-        const mnemonic = Mnemonic.fromEntropy(entropy, '', LangEn.wordlist());
+        const mnemonic = ethers_1.Mnemonic.fromEntropy(entropy, '', ethers_1.LangEn.wordlist());
         return mnemonic;
     }
     #collectTimeEntropy() {
@@ -45,7 +48,7 @@ export class EntropyGenerator {
         this.addEntropy(timeEntropy);
     }
     #collectCryptographicEntropy(length) {
-        this.addEntropy(randomBytes(length));
+        this.addEntropy((0, ethers_1.randomBytes)(length));
     }
     addEntropy(newEntropy) {
         this.#entropyPool = new Uint8Array(Buffer.concat([this.#entropyPool, newEntropy]));
@@ -54,4 +57,5 @@ export class EntropyGenerator {
         this.#entropyPool = new Uint8Array(0);
     }
 }
+exports.EntropyGenerator = EntropyGenerator;
 //# sourceMappingURL=entropyGenerator.js.map

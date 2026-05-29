@@ -1,8 +1,11 @@
-import { getAddress, Interface, ZeroAddress } from 'ethers';
-export const HYPER_EVM_CHAIN_ID = 999n;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHyperEvmBalanceChanges = exports.HYPER_EVM_CHAIN_ID = void 0;
+const ethers_1 = require("ethers");
+exports.HYPER_EVM_CHAIN_ID = 999n;
 const HYPER_EVM_TRACE_CONCURRENCY = 3;
 const TRANSFER_ABI = ['event Transfer(address indexed from, address indexed to, uint256 value)'];
-const transferInterface = new Interface(TRANSFER_ABI);
+const transferInterface = new ethers_1.Interface(TRANSFER_ABI);
 const isUsableTokenResult = (error, token) => !!token && error === '0x' && !!token.symbol;
 const buildTokenBalanceMap = (tokensWithErrors) => tokensWithErrors.reduce((acc, [error, token]) => {
     if (!isUsableTokenResult(error, token))
@@ -10,9 +13,9 @@ const buildTokenBalanceMap = (tokensWithErrors) => tokensWithErrors.reduce((acc,
     acc.set(token.address.toLowerCase(), token);
     return acc;
 }, new Map());
-const getBalanceChangeTokenAddresses = (tokenAddrs) => Array.from(new Set([ZeroAddress, ...tokenAddrs].map((tokenAddr) => {
+const getBalanceChangeTokenAddresses = (tokenAddrs) => Array.from(new Set([ethers_1.ZeroAddress, ...tokenAddrs].map((tokenAddr) => {
     try {
-        return getAddress(tokenAddr);
+        return (0, ethers_1.getAddress)(tokenAddr);
     }
     catch (e) {
         return null;
@@ -28,17 +31,17 @@ const getHexValue = (value) => {
 };
 const getTransferLogBalanceChangeByToken = (logs, accountAddr) => {
     const balanceChangeByToken = new Map();
-    const accAddr = getAddress(accountAddr);
+    const accAddr = (0, ethers_1.getAddress)(accountAddr);
     logs.forEach((log) => {
         try {
             const parsed = transferInterface.parseLog({ topics: [...log.topics], data: log.data });
             if (!parsed)
                 return;
-            const from = getAddress(parsed.args.from);
-            const to = getAddress(parsed.args.to);
+            const from = (0, ethers_1.getAddress)(parsed.args.from);
+            const to = (0, ethers_1.getAddress)(parsed.args.to);
             if (from !== accAddr && to !== accAddr)
                 return;
-            const tokenAddr = getAddress(log.address);
+            const tokenAddr = (0, ethers_1.getAddress)(log.address);
             const prevBalanceChange = balanceChangeByToken.get(tokenAddr) || 0n;
             let balanceChange = prevBalanceChange;
             if (from === accAddr)
@@ -60,9 +63,9 @@ const getNativeBalanceChangeFromTrace = (trace, accountAddr) => {
     if (valueMovesNativeBalance) {
         const value = getHexValue(trace.value);
         try {
-            if (trace.from && getAddress(trace.from) === accountAddr)
+            if (trace.from && (0, ethers_1.getAddress)(trace.from) === accountAddr)
                 balanceChange -= value;
-            if (trace.to && getAddress(trace.to) === accountAddr)
+            if (trace.to && (0, ethers_1.getAddress)(trace.to) === accountAddr)
                 balanceChange += value;
         }
         catch {
@@ -95,7 +98,7 @@ const mapWithConcurrency = async (items, concurrency, mapper) => {
 const getHyperEvmNativeBalanceChange = async ({ accountAddr, receipts, debugTraceTransaction }) => {
     if (!receipts?.length || !debugTraceTransaction)
         return 0n;
-    const checksummedAccountAddr = getAddress(accountAddr);
+    const checksummedAccountAddr = (0, ethers_1.getAddress)(accountAddr);
     const balanceChanges = await mapWithConcurrency(receipts, HYPER_EVM_TRACE_CONCURRENCY, async (receipt) => {
         if (!receipt.hash) {
             throw new Error('Missing transaction hash for HyperEVM native balance change trace');
@@ -108,14 +111,14 @@ const getHyperEvmNativeBalanceChange = async ({ accountAddr, receipts, debugTrac
         }
         let balanceChange = getNativeBalanceChangeFromTrace(trace, checksummedAccountAddr);
         const transactionSender = receipt.from || trace.from;
-        if (transactionSender && getAddress(transactionSender) === checksummedAccountAddr) {
+        if (transactionSender && (0, ethers_1.getAddress)(transactionSender) === checksummedAccountAddr) {
             balanceChange -= getReceiptFee(receipt);
         }
         return balanceChange;
     });
     return balanceChanges.reduce((acc, balanceChange) => acc + balanceChange, 0n);
 };
-export const getHyperEvmBalanceChanges = async ({ accountAddr, chainId, getTokenBalancesOnBlock, receipts, debugTraceTransaction }) => {
+const getHyperEvmBalanceChanges = async ({ accountAddr, chainId, getTokenBalancesOnBlock, receipts, debugTraceTransaction }) => {
     if (!receipts?.length)
         return [];
     const balanceChangeByToken = getTransferLogBalanceChangeByToken(receipts.flatMap((receipt) => receipt.logs), accountAddr);
@@ -124,15 +127,15 @@ export const getHyperEvmBalanceChanges = async ({ accountAddr, chainId, getToken
         receipts,
         debugTraceTransaction
     });
-    const erc20TokenAddrs = getBalanceChangeTokenAddresses(Array.from(balanceChangeByToken.keys())).filter((tokenAddr) => tokenAddr !== ZeroAddress);
-    const tokenAddrs = nativeBalanceChange !== 0n ? [ZeroAddress, ...erc20TokenAddrs] : erc20TokenAddrs;
+    const erc20TokenAddrs = getBalanceChangeTokenAddresses(Array.from(balanceChangeByToken.keys())).filter((tokenAddr) => tokenAddr !== ethers_1.ZeroAddress);
+    const tokenAddrs = nativeBalanceChange !== 0n ? [ethers_1.ZeroAddress, ...erc20TokenAddrs] : erc20TokenAddrs;
     if (!tokenAddrs.length)
         return [];
     const latestTokensWithErrors = await getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, 'latest', accountAddr);
     const latestTokens = buildTokenBalanceMap(latestTokensWithErrors);
     return tokenAddrs.reduce((changes, tokenAddr) => {
         const token = latestTokens.get(tokenAddr.toLowerCase());
-        const balanceChange = tokenAddr === ZeroAddress ? nativeBalanceChange : balanceChangeByToken.get(tokenAddr) || 0n;
+        const balanceChange = tokenAddr === ethers_1.ZeroAddress ? nativeBalanceChange : balanceChangeByToken.get(tokenAddr) || 0n;
         if (!token || balanceChange === 0n)
             return changes;
         const amountAfter = token.amount;
@@ -149,4 +152,5 @@ export const getHyperEvmBalanceChanges = async ({ accountAddr, chainId, getToken
         return changes;
     }, []);
 };
+exports.getHyperEvmBalanceChanges = getHyperEvmBalanceChanges;
 //# sourceMappingURL=hyperEvmBalanceChanges.js.map

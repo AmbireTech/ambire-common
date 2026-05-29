@@ -1,4 +1,6 @@
+"use strict";
 // @ts-nocheck
+Object.defineProperty(exports, "__esModule", { value: true });
 const DECIMAL_RULES = {
     value: {
         min: 2,
@@ -89,5 +91,5 @@ const formatDecimals = (value = undefined, type = 'default') => {
     const decimals = indexOfFirstNonZero + DECIMAL_RULES[type].max;
     return formatNumber(absoluteValue, withDollarPrefix, decimals, sign, type);
 };
-export default formatDecimals;
+exports.default = formatDecimals;
 //# sourceMappingURL=formatDecimals.js.map

@@ -1,6 +1,10 @@
-import { EventEmitter as UiEventEmitter } from 'events';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export class UiController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UiController = void 0;
+const tslib_1 = require("tslib");
+const events_1 = require("events");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+class UiController extends eventEmitter_1.default {
     uiEvent;
     views = [];
     window;
@@ -8,7 +12,7 @@ export class UiController extends EventEmitter {
     message;
     constructor({ eventEmitterRegistry, uiManager }) {
         super(eventEmitterRegistry);
-        this.uiEvent = new UiEventEmitter();
+        this.uiEvent = new events_1.EventEmitter();
         this.window = uiManager.window;
         this.notification = uiManager.notification;
         this.message = uiManager.message;
@@ -74,4 +78,5 @@ export class UiController extends EventEmitter {
         };
     }
 }
+exports.UiController = UiController;
 //# sourceMappingURL=ui.js.map

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { fetchCaught } from '../../services/fetch';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const react_1 = require("react");
+const fetch_1 = require("../../services/fetch");
 const useConstants = ({ fetch, endpoint }) => {
-    const [data, setData] = useState(null);
-    const [adexToStakingTransfers, setAdexToStakingTransfers] = useState(null);
-    const [hasError, setHasError] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
-    const fetchConstants = useCallback(async () => {
+    const [data, setData] = (0, react_1.useState)(null);
+    const [adexToStakingTransfers, setAdexToStakingTransfers] = (0, react_1.useState)(null);
+    const [hasError, setHasError] = (0, react_1.useState)(false);
+    const [isLoading, setIsLoading] = (0, react_1.useState)(true);
+    const fetchConstants = (0, react_1.useCallback)(async () => {
         try {
-            const response = await fetchCaught(fetch, `${endpoint}/result.json`).then((res) => res.body);
+            const response = await (0, fetch_1.fetchCaught)(fetch, `${endpoint}/result.json`).then((res) => res.body);
             if (!response)
                 throw new Error('Failed to get the constants.');
             const { tokenList, humanizerInfo, customTokens } = response;
@@ -28,14 +30,14 @@ const useConstants = ({ fetch, endpoint }) => {
             setIsLoading(false);
         }
     }, [fetch, endpoint]);
-    useEffect(() => {
+    (0, react_1.useEffect)(() => {
         fetchConstants();
     }, [fetchConstants]);
     const getAdexToStakingTransfersLogs = async () => {
         if (adexToStakingTransfers)
             return adexToStakingTransfers;
         try {
-            const adexToStakingTransfersLogs = await fetchCaught(fetch, `${endpoint}/adexToStakingTransfers.json`).then((res) => res.body || null);
+            const adexToStakingTransfersLogs = await (0, fetch_1.fetchCaught)(fetch, `${endpoint}/adexToStakingTransfers.json`).then((res) => res.body || null);
             setAdexToStakingTransfers(adexToStakingTransfersLogs);
             return adexToStakingTransfersLogs;
         }
@@ -51,5 +53,5 @@ const useConstants = ({ fetch, endpoint }) => {
         hasError
     };
 };
-export default useConstants;
+exports.default = useConstants;
 //# sourceMappingURL=useConstants.js.map

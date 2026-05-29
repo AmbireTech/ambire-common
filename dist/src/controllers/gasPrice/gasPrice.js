@@ -1,9 +1,13 @@
-import { decodeError } from '../../libs/errorDecoder';
-import { ErrorType } from '../../libs/errorDecoder/types';
-import { gasPriceToBundlerFormat, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice';
-import { getAvailableBunlders } from '../../services/bundlers/getBundler';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export class GasPriceController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GasPriceController = void 0;
+const tslib_1 = require("tslib");
+const errorDecoder_1 = require("../../libs/errorDecoder");
+const types_1 = require("../../libs/errorDecoder/types");
+const gasPrice_1 = require("../../libs/gasPrice/gasPrice");
+const getBundler_1 = require("../../services/bundlers/getBundler");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+class GasPriceController extends eventEmitter_1.default {
     #network;
     #provider;
     #baseAccount;
@@ -39,7 +43,7 @@ export class GasPriceController extends EventEmitter {
         // it is counter intuitive but the logic if the account supports the bundler
         // estimate, it would fetch the gas price from the bundler estimation itself,
         // therefore not being required here
-        const availableBundlers = getAvailableBunlders(this.#network);
+        const availableBundlers = (0, getBundler_1.getAvailableBunlders)(this.#network);
         if (availableBundlers.length && !this.#baseAccount.supportsBundlerEstimation()) {
             let timeoutId;
             const bundlerGasPrices = await Promise.race([
@@ -67,7 +71,7 @@ export class GasPriceController extends EventEmitter {
         // fallback to our gas price fetch if:
         // * all bundlers on the networks are not working or there are no bundlers
         // * we're doing a bundler estimate so we'd have a fallback option
-        const gasPriceData = await getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
+        const gasPriceData = await (0, gasPrice_1.getGasPriceRecommendations)(this.#provider, this.#network, -1, () => {
             return !this.#getSignAccountOpState().stopRefetching;
         }).catch((e) => {
             const signAccountOpState = this.#getSignAccountOpState();
@@ -77,9 +81,9 @@ export class GasPriceController extends EventEmitter {
             // is currently being displayed, do not emit another error
             if (this.gasPrices || !estimation || estimation.estimationRetryError)
                 return;
-            const { type } = decodeError(e);
+            const { type } = (0, errorDecoder_1.decodeError)(e);
             let message = "We couldn't retrieve the latest network fee information.";
-            if (type === ErrorType.ConnectivityError) {
+            if (type === types_1.ErrorType.ConnectivityError) {
                 message = 'Network connection issue prevented us from retrieving the current network fee.';
             }
             this.emitError({
@@ -90,7 +94,7 @@ export class GasPriceController extends EventEmitter {
             return null;
         });
         if (gasPriceData && gasPriceData.gasPrice)
-            this.gasPrices = gasPriceToBundlerFormat(gasPriceData.gasPrice);
+            this.gasPrices = (0, gasPrice_1.gasPriceToBundlerFormat)(gasPriceData.gasPrice);
         this.updatedAt = Date.now();
         this.emitUpdate();
     }
@@ -98,4 +102,5 @@ export class GasPriceController extends EventEmitter {
         super.destroy();
     }
 }
+exports.GasPriceController = GasPriceController;
 //# sourceMappingURL=gasPrice.js.map

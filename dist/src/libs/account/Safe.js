@@ -1,16 +1,19 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Safe = void 0;
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers';
-import { execTransactionAbi, multiSendAddr } from '../../consts/safe';
-import { getSafeTypedData, getSafeV1TypedData } from '../../libs/signMessage/signMessage';
-import { getSignableCalls } from '../accountOp/accountOp';
-import { BROADCAST_OPTIONS } from '../broadcast/broadcast';
-import { getSigForCalculations } from '../estimate/estimateHelpers';
-import { getBroadcastGas } from '../gasPrice/gasPrice';
-import { isNative } from '../portfolio/helpers';
-import { BaseAccount } from './BaseAccount';
+const ethers_1 = require("ethers");
+const safe_1 = require("../../consts/safe");
+const signMessage_1 = require("../../libs/signMessage/signMessage");
+const accountOp_1 = require("../accountOp/accountOp");
+const broadcast_1 = require("../broadcast/broadcast");
+const estimateHelpers_1 = require("../estimate/estimateHelpers");
+const gasPrice_1 = require("../gasPrice/gasPrice");
+const helpers_1 = require("../portfolio/helpers");
+const BaseAccount_1 = require("./BaseAccount");
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
-export class Safe extends BaseAccount {
+class Safe extends BaseAccount_1.BaseAccount {
     /**
      * We state override the Safe during estimate with the ambire SA
      * so that we could easily perform estimation. There's about a 15k
@@ -44,13 +47,13 @@ export class Safe extends BaseAccount {
         return false;
     }
     getAvailableFeeOptions(estimation, feePaymentOptions) {
-        return feePaymentOptions.filter((opt) => isNative(opt.token));
+        return feePaymentOptions.filter((opt) => (0, helpers_1.isNative)(opt.token));
     }
     getGasUsed(estimation, options) {
         const isError = estimation instanceof Error;
         if (isError || !estimation.ambireEstimation)
             return 0n;
-        const ambireBroaddcastGas = getBroadcastGas(this, options.op);
+        const ambireBroaddcastGas = (0, gasPrice_1.getBroadcastGas)(this, options.op);
         const nonceGas = this.accountState.nonce === 0n ? this.NONCE_ZERO_GAS : this.NONCE_GAS;
         // each call to self results in a 0 estimate bcz of state overrides
         let callToSelfGas = 0n;
@@ -67,33 +70,33 @@ export class Safe extends BaseAccount {
             nonceGas);
     }
     getBroadcastOption() {
-        return BROADCAST_OPTIONS.byOtherEOA;
+        return broadcast_1.BROADCAST_OPTIONS.byOtherEOA;
     }
     canUseReceivingNativeForFee() {
         return false; // because we're always paying with EOA atm
     }
     getBroadcastCalldata(accountOp) {
-        const exec = new Interface(execTransactionAbi);
-        const calls = getSignableCalls(accountOp);
-        const coder = new AbiCoder();
+        const exec = new ethers_1.Interface(safe_1.execTransactionAbi);
+        const calls = (0, accountOp_1.getSignableCalls)(accountOp);
+        const coder = new ethers_1.AbiCoder();
         const multiSendCalls = calls.map((call) => {
             return coder.encode(['uint8', 'address', 'uint256', 'uint256', 'bytes'], [0, call[0], call[1], call[2].length, call[2]]);
         });
         // signature cost is equal to the threshold
-        let signature = getSigForCalculations();
+        let signature = (0, estimateHelpers_1.getSigForCalculations)();
         for (let i = 1; i < this.accountState.threshold; i++) {
-            signature = concat([signature, getSigForCalculations()]);
+            signature = (0, ethers_1.concat)([signature, (0, estimateHelpers_1.getSigForCalculations)()]);
         }
         return exec.encodeFunctionData('execTransaction', [
-            multiSendAddr,
+            safe_1.multiSendAddr,
             0n,
-            concat(multiSendCalls),
+            (0, ethers_1.concat)(multiSendCalls),
             1n, // multiSend only works with delegate call
             0n, // safe, outer gas gets set
             0n, // safe, outer gas gets set
             0n, // safe, outer gas price gets set
-            ZeroAddress, // gasToken
-            ZeroAddress, // no refunder
+            ethers_1.ZeroAddress, // gasToken
+            ethers_1.ZeroAddress, // no refunder
             signature
         ]);
     }
@@ -138,8 +141,8 @@ export class Safe extends BaseAccount {
     getTxnTypedData(safeTx) {
         const safeCreation = this.account.safeCreation;
         if (safeCreation.version.startsWith('1.1.') || safeCreation.version.startsWith('1.2'))
-            return getSafeV1TypedData(this.account.addr, safeTx);
-        return getSafeTypedData(this.network.chainId, this.account.addr, safeTx);
+            return (0, signMessage_1.getSafeV1TypedData)(this.account.addr, safeTx);
+        return (0, signMessage_1.getSafeTypedData)(this.network.chainId, this.account.addr, safeTx);
     }
     canSetCustomGasPrices() {
         return true;
@@ -148,4 +151,5 @@ export class Safe extends BaseAccount {
         return this.canSetCustomGasPrices();
     }
 }
+exports.Safe = Safe;
 //# sourceMappingURL=Safe.js.map

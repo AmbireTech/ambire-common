@@ -1,14 +1,18 @@
-import { formatEther, getAddress, isAddress } from 'ethers';
-import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses';
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy';
-import { isSmartAccount } from '../../libs/account/account';
-import { defiPositionsOnDisabledNetworksBannerId, getDefiPositionsOnDisabledNetworksForTheSelectedAccount } from '../../libs/banners/banners';
-import { AssetType } from '../../libs/defiPositions/types';
-import { getNetworksWithDeFiPositionsErrorErrors, getNetworksWithErrors } from '../../libs/selectedAccount/errors';
-import { calculateSelectedAccountPortfolio, DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount';
-import { getProjectedRewardsStatsAndToken } from '../../utils/rewards';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export class SelectedAccountController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SelectedAccountController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const addresses_1 = require("../../consts/addresses");
+const deploy_1 = require("../../consts/deploy");
+const account_1 = require("../../libs/account/account");
+const banners_1 = require("../../libs/banners/banners");
+const types_1 = require("../../libs/defiPositions/types");
+const errors_1 = require("../../libs/selectedAccount/errors");
+const selectedAccount_1 = require("../../libs/selectedAccount/selectedAccount");
+const rewards_1 = require("../../utils/rewards");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+class SelectedAccountController extends eventEmitter_1.default {
     #storage;
     #accounts;
     #autoLogin;
@@ -22,7 +26,7 @@ export class SelectedAccountController extends EventEmitter {
      * It includes the portfolio and defi positions for the selected account.
      * It is updated when the portfolio or defi positions controllers are updated.
      */
-    portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
+    portfolio = selectedAccount_1.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
     balanceByAccounts = {};
     #portfolioLoadingTimeout = null;
     #isManualUpdate = true;
@@ -125,7 +129,7 @@ export class SelectedAccountController extends EventEmitter {
         if (isManualUpdate) {
             this.#isManualUpdate = true;
         }
-        this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
+        this.portfolio = selectedAccount_1.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
         this.balanceAffectingErrors = [];
         if (!skipUpdate) {
             this.emitUpdate();
@@ -135,21 +139,21 @@ export class SelectedAccountController extends EventEmitter {
         if (!this.#portfolio || !this.account)
             return;
         const portfolioAccountState = structuredClone(this.#portfolio.getAccountPortfolioState(this.account.addr));
-        const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(portfolioAccountState, this.portfolio.shouldShowPartialResult, this.#isManualUpdate);
+        const newSelectedAccountPortfolio = (0, selectedAccount_1.calculateSelectedAccountPortfolio)(portfolioAccountState, this.portfolio.shouldShowPartialResult, this.#isManualUpdate);
         // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
         try {
             // Find stkWALLET or WALLET token in the latest portfolio state
-            const walletOrStkWalletTokenPrice = portfolioAccountState['1']?.result?.tokens.find(({ address }) => address === STK_WALLET || address === WALLET_TOKEN)?.priceIn?.[0]?.price;
+            const walletOrStkWalletTokenPrice = portfolioAccountState['1']?.result?.tokens.find(({ address }) => address === addresses_1.STK_WALLET || address === addresses_1.WALLET_TOKEN)?.priceIn?.[0]?.price;
             const ethTokenPrice = portfolioAccountState['1']?.result?.tokens.find(({ symbol }) => symbol === 'ETH')?.priceIn?.[0]?.price;
-            const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(({ address }) => address === STK_WALLET);
+            const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(({ address }) => address === addresses_1.STK_WALLET);
             const stkBalanceUsd = stkTokenInPortfolio === undefined || stkTokenInPortfolio.priceIn[0]?.price === undefined
                 ? undefined
-                : Number(formatEther(stkTokenInPortfolio.amount)) * stkTokenInPortfolio.priceIn[0].price;
+                : Number((0, ethers_1.formatEther)(stkTokenInPortfolio.amount)) * stkTokenInPortfolio.priceIn[0].price;
             const walletEthProvidedLiquidityInUsd = portfolioAccountState['1']?.result?.defiPositions.positionsByProvider
                 .find((p) => p.providerName === 'Uniswap V3')
                 ?.positions.filter((p) => p.additionalData.inRange &&
-                isAddress(p.additionalData.pool?.id) &&
-                getAddress(p.additionalData.pool.id) === UNI_V3_WALLET_WETH_POOL)
+                (0, ethers_1.isAddress)(p.additionalData.pool?.id) &&
+                (0, ethers_1.getAddress)(p.additionalData.pool.id) === addresses_1.UNI_V3_WALLET_WETH_POOL)
                 .map((p) => p.assets)
                 .flat()
                 // assets in the uniswap positions can have asset type of liquidity or rewards
@@ -158,14 +162,14 @@ export class SelectedAccountController extends EventEmitter {
                 // uniswap liquidity position. To achieve minimal discrepancy between the
                 // extension and the app, we will not include assets with type Reward for the
                 // uniswap liquidity position
-                .filter((a) => a.type === AssetType.Liquidity)
+                .filter((a) => a.type === types_1.AssetType.Liquidity)
                 .map((a) => {
                 const tokenPriceFromPosition = a.priceIn?.price;
-                const tokenPriceFromPortfolio = a.address === WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice;
+                const tokenPriceFromPortfolio = a.address === addresses_1.WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice;
                 const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio;
                 if (tokenPriceToUse === undefined)
                     return undefined;
-                return tokenPriceToUse * Number(formatEther(a.amount));
+                return tokenPriceToUse * Number((0, ethers_1.formatEther)(a.amount));
             })
                 .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0);
             const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
@@ -175,7 +179,7 @@ export class SelectedAccountController extends EventEmitter {
                 .map(([, v]) => v)
                 .reduce((a, b) => a + b, 0);
             if (portfolioAccountState.projectedRewards) {
-                const projectedRewardsData = getProjectedRewardsStatsAndToken(portfolioAccountState.projectedRewards, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd);
+                const projectedRewardsData = (0, rewards_1.getProjectedRewardsStatsAndToken)(portfolioAccountState.projectedRewards, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd);
                 // Calculate and add projected rewards token
                 if (projectedRewardsData) {
                     newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token);
@@ -258,7 +262,7 @@ export class SelectedAccountController extends EventEmitter {
             return;
         }
         this.balanceAffectingErrors = [
-            ...getNetworksWithErrors({
+            ...(0, errors_1.getNetworksWithErrors)({
                 networks: this.#networks.networks,
                 shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
                 selectedAccountPortfolioState: this.portfolio.portfolioState,
@@ -267,7 +271,7 @@ export class SelectedAccountController extends EventEmitter {
                 providers: this.#providers.providers,
                 networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
             }),
-            ...getNetworksWithDeFiPositionsErrorErrors({
+            ...(0, errors_1.getNetworksWithDeFiPositionsErrorErrors)({
                 networks: this.#networks.networks,
                 portfolioState: this.portfolio.portfolioState,
                 providers: this.#providers.providers,
@@ -282,12 +286,12 @@ export class SelectedAccountController extends EventEmitter {
         }
     }
     get deprecatedSmartAccountBanner() {
-        if (!this.account || !isSmartAccount(this.account))
+        if (!this.account || !(0, account_1.isSmartAccount)(this.account))
             return [];
         if (!this.#accounts.accountStates[this.account.addr]?.['1']?.isV2)
             return [];
         if (!this.account.creation ||
-            getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY)
+            (0, ethers_1.getAddress)(this.account.creation.factoryAddr) === deploy_1.AMBIRE_ACCOUNT_FACTORY)
             return [];
         return [
             {
@@ -322,18 +326,18 @@ export class SelectedAccountController extends EventEmitter {
     async dismissDefiPositionsBannerForTheSelectedAccount() {
         if (!this.account)
             return;
-        const defiBanner = this.banners.find((b) => b.id === defiPositionsOnDisabledNetworksBannerId);
+        const defiBanner = this.banners.find((b) => b.id === banners_1.defiPositionsOnDisabledNetworksBannerId);
         if (!defiBanner)
             return;
         const action = defiBanner.actions[0]?.actionName === 'enable-networks' ? defiBanner.actions[0] : undefined;
         if (!action)
             return;
-        if (!this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId])
-            this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId] = [];
+        if (!this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId])
+            this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId] = [];
         action.meta.networkChainIds.forEach((chainId) => {
-            if (this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(`${this.account.addr}-${chainId}`))
+            if (this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId].includes(`${this.account.addr}-${chainId}`))
                 return;
-            this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].push(`${this.account.addr}-${chainId}`);
+            this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId].push(`${this.account.addr}-${chainId}`);
         });
         await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds);
         this.emitUpdate();
@@ -351,10 +355,10 @@ export class SelectedAccountController extends EventEmitter {
             !this.portfolio.isAllReady)
             return [];
         const defiPositionsCountOnDisabledNetworks = this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {};
-        const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
-            ? this.#networks.allNetworks.filter((n) => !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(`${this.account.addr}-${n.chainId}`))
+        const notDismissedNetworks = this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId]
+            ? this.#networks.allNetworks.filter((n) => !this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId]?.includes(`${this.account.addr}-${n.chainId}`))
             : this.#networks.allNetworks;
-        return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+        return (0, banners_1.getDefiPositionsOnDisabledNetworksForTheSelectedAccount)({
             defiPositionsCountOnDisabledNetworks,
             networks: notDismissedNetworks,
             accountAddr: this.account.addr
@@ -370,4 +374,5 @@ export class SelectedAccountController extends EventEmitter {
         };
     }
 }
+exports.SelectedAccountController = SelectedAccountController;
 //# sourceMappingURL=selectedAccount.js.map

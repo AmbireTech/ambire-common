@@ -1,24 +1,28 @@
-import { BundlerErrorHandler, CustomErrorHandler, InnerCallFailureHandler, PanicErrorHandler, PaymasterErrorHandler, RevertErrorHandler, RpcErrorHandler, UserRejectionHandler } from './handlers';
-import InternalHandler from './handlers/internal';
-import RelayerErrorHandler from './handlers/relayer';
-import { formatReason, getDataFromError, isReasonValid } from './helpers';
-import { ErrorType } from './types';
-const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler];
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.decodeError = decodeError;
+const tslib_1 = require("tslib");
+const handlers_1 = require("./handlers");
+const internal_1 = tslib_1.__importDefault(require("./handlers/internal"));
+const relayer_1 = tslib_1.__importDefault(require("./handlers/relayer"));
+const helpers_1 = require("./helpers");
+const types_1 = require("./types");
+const PREPROCESSOR_HANDLERS = [handlers_1.BundlerErrorHandler, relayer_1.default, handlers_1.InnerCallFailureHandler];
 const ERROR_HANDLERS = [
-    InternalHandler,
-    RpcErrorHandler,
-    CustomErrorHandler,
-    PanicErrorHandler,
-    RevertErrorHandler,
-    PaymasterErrorHandler,
-    UserRejectionHandler
+    internal_1.default,
+    handlers_1.RpcErrorHandler,
+    handlers_1.CustomErrorHandler,
+    handlers_1.PanicErrorHandler,
+    handlers_1.RevertErrorHandler,
+    handlers_1.PaymasterErrorHandler,
+    handlers_1.UserRejectionHandler
 ];
 // additionalHandlers is a list of handlers we want to add only for
 // specific decodeError cases (e.g. bundler estimation)
-export function decodeError(e) {
-    const errorData = getDataFromError(e);
+function decodeError(e) {
+    const errorData = (0, helpers_1.getDataFromError)(e);
     let decodedError = {
-        type: ErrorType.UnknownError,
+        type: types_1.ErrorType.UnknownError,
         reason: '',
         data: errorData
     };
@@ -34,14 +38,14 @@ export function decodeError(e) {
     // Run error handlers
     ERROR_HANDLERS.forEach((HandlerClass) => {
         const handler = new HandlerClass();
-        const isValidReason = isReasonValid(decodedError.reason);
+        const isValidReason = (0, helpers_1.isReasonValid)(decodedError.reason);
         const processedData = decodedError.data || errorData;
         if (handler.matches(processedData, e) && !isValidReason) {
             decodedError = handler.handle(processedData, e);
         }
     });
-    decodedError.reason = formatReason(decodedError.reason || '');
-    if (decodedError.type === ErrorType.UnknownError) {
+    decodedError.reason = (0, helpers_1.formatReason)(decodedError.reason || '');
+    if (decodedError.type === types_1.ErrorType.UnknownError) {
         console.error('Failed to decode error', e, 'data', errorData);
     }
     return decodedError;

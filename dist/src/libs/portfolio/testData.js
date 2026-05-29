@@ -1,5 +1,8 @@
+"use strict";
 // @ts-nocheck
-import { AssetType } from '../defiPositions/types';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PORTFOLIO_STATE = void 0;
+const types_1 = require("../defiPositions/types");
 const GAS_TANK_STATE = {
     isReady: true,
     isLoading: false,
@@ -125,7 +128,7 @@ const PORTFOLIO_STATE = {
                         isFeeToken: false,
                         isCustom: false,
                         canTopUpGasTank: false,
-                        defiTokenType: AssetType.Collateral,
+                        defiTokenType: types_1.AssetType.Collateral,
                         defiPositionId: '51ee679b-3fc4-4736-9a30-661175777122'
                     },
                     priceIn: [{ baseCurrency: 'usd', price: 310 }],
@@ -144,7 +147,7 @@ const PORTFOLIO_STATE = {
                         isFeeToken: false,
                         isCustom: false,
                         canTopUpGasTank: false,
-                        defiTokenType: AssetType.Collateral,
+                        defiTokenType: types_1.AssetType.Collateral,
                         defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                     },
                     priceIn: [{ baseCurrency: 'usd', price: 100 }],
@@ -182,7 +185,7 @@ const PORTFOLIO_STATE = {
                         isFeeToken: false,
                         isCustom: false,
                         canTopUpGasTank: false,
-                        defiTokenType: AssetType.Borrow,
+                        defiTokenType: types_1.AssetType.Borrow,
                         defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                     },
                     priceIn: [],
@@ -201,7 +204,7 @@ const PORTFOLIO_STATE = {
                         isFeeToken: false,
                         isCustom: false,
                         canTopUpGasTank: false,
-                        defiTokenType: AssetType.Borrow,
+                        defiTokenType: types_1.AssetType.Borrow,
                         defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                     },
                     priceIn: [],
@@ -471,5 +474,5 @@ const PORTFOLIO_STATE = {
     },
     gasTank: GAS_TANK_STATE // fixes a weird ts issue
 };
-export { PORTFOLIO_STATE };
+exports.PORTFOLIO_STATE = PORTFOLIO_STATE;
 //# sourceMappingURL=testData.js.map

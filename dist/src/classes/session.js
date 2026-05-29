@@ -1,5 +1,9 @@
-import { getDappIdFromUrl } from '../libs/dapps/helpers';
-export function getSessionId({ tabId, windowId, dappId }) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Session = void 0;
+exports.getSessionId = getSessionId;
+const helpers_1 = require("../libs/dapps/helpers");
+function getSessionId({ tabId, windowId, dappId }) {
     if (windowId) {
         return `${windowId}-${tabId}-${dappId}`;
     }
@@ -7,7 +11,7 @@ export function getSessionId({ tabId, windowId, dappId }) {
 }
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
-export class Session {
+class Session {
     /**
     @state {string} id = the domain of the dapp
      */
@@ -45,7 +49,7 @@ export class Session {
         else {
             this.origin = 'internal';
         }
-        this.id = getDappIdFromUrl(this.origin);
+        this.id = (0, helpers_1.getDappIdFromUrl)(this.origin);
         this.tabId = tabId || Date.now();
         this.windowId = windowId;
         this.wcTopic = wcTopic;
@@ -80,4 +84,5 @@ export class Session {
         };
     }
 }
+exports.Session = Session;
 //# sourceMappingURL=session.js.map

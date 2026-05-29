@@ -1,5 +1,9 @@
-import EventEmitter from '../../eventEmitter/eventEmitter';
-export class IntentController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.IntentController = void 0;
+const tslib_1 = require("tslib");
+const eventEmitter_1 = tslib_1.__importDefault(require("../../eventEmitter/eventEmitter"));
+class IntentController extends eventEmitter_1.default {
     dependencies;
     formState;
     formPreviousState;
@@ -116,4 +120,5 @@ export class IntentController extends EventEmitter {
         this.emitUpdate();
     }
 }
+exports.IntentController = IntentController;
 //# sourceMappingURL=intent.js.map

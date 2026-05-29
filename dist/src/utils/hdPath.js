@@ -1,12 +1,18 @@
-export const getHdPathFromTemplate = (hdPathTemplate, index) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHDPathIndices = exports.getHdPathWithoutRoot = exports.getParentHdPathFromTemplate = exports.getHdPathFromTemplate = void 0;
+const getHdPathFromTemplate = (hdPathTemplate, index) => {
     return hdPathTemplate.replace('<account>', index.toString());
 };
-export const getParentHdPathFromTemplate = (hdPathTemplate) => {
+exports.getHdPathFromTemplate = getHdPathFromTemplate;
+const getParentHdPathFromTemplate = (hdPathTemplate) => {
     return hdPathTemplate.split('/<account>')[0];
 };
-export const getHdPathWithoutRoot = (hdPath) => hdPath.slice(2);
+exports.getParentHdPathFromTemplate = getParentHdPathFromTemplate;
+const getHdPathWithoutRoot = (hdPath) => hdPath.slice(2);
+exports.getHdPathWithoutRoot = getHdPathWithoutRoot;
 const HARDENED_OFFSET = 0x80000000;
-export const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
+const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
     const path = hdPathTemplate.split('/').slice(1);
     const indices = [];
     let usedX = false;
@@ -39,4 +45,5 @@ export const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
         throw new Error('Only HD paths with up to 5 indices are allowed.');
     return indices;
 };
+exports.getHDPathIndices = getHDPathIndices;
 //# sourceMappingURL=hdPath.js.map

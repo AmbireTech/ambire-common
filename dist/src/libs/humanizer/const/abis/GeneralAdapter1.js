@@ -1,4 +1,7 @@
-export const GeneralAdapter1 = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GeneralAdapter1 = void 0;
+exports.GeneralAdapter1 = [
     'function erc20TransferFrom(address token, address receiver, uint256 amount)',
     'function wrapNative(uint256 amount, address receiver)',
     'function unwrapNative(uint256 amount, address receiver)',

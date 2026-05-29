@@ -1,5 +1,8 @@
-import { networks } from '../../consts/networks';
-export class SocketAPIMock {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SocketAPIMock = void 0;
+const networks_1 = require("../../consts/networks");
+class SocketAPIMock {
     id = 'socket';
     name = 'Socket';
     #fetch;
@@ -24,7 +27,7 @@ export class SocketAPIMock {
         this.isHealthy = null;
     }
     async getSupportedChains() {
-        return networks.map((network) => ({ chainId: network.chainId }));
+        return networks_1.networks.map((network) => ({ chainId: network.chainId }));
     }
     async getToTokenList({ toChainId }) {
         return [
@@ -398,4 +401,5 @@ export class SocketAPIMock {
         return { status: 'completed', txnId: txHash };
     }
 }
+exports.SocketAPIMock = SocketAPIMock;
 //# sourceMappingURL=socketApiMock.js.map

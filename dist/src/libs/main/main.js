@@ -1,9 +1,12 @@
-export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getShouldSimulateInTheBackground = exports.ACCOUNT_SWITCH_USER_REQUEST = void 0;
+exports.ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST';
 /**
  * Whether to simulate account ops if the request window is closed or the current
  * request is different.
  */
-export const getShouldSimulateInTheBackground = (currentReq, callUserRequests) => {
+const getShouldSimulateInTheBackground = (currentReq, callUserRequests) => {
     // simulations should get persisted for all non-Safe accounts
     if (!currentReq.signAccountOp.account.safeCreation)
         return true;
@@ -19,4 +22,5 @@ export const getShouldSimulateInTheBackground = (currentReq, callUserRequests) =
     });
     return !conflictingNonceUserRequests.length;
 };
+exports.getShouldSimulateInTheBackground = getShouldSimulateInTheBackground;
 //# sourceMappingURL=main.js.map

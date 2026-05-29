@@ -1,9 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.filterStaticBlacklistedAddrs = exports.STATIC_BLACKLIST = void 0;
 /**
  * Static list of tokens to exclude from display, keyed by chainId.
  * Addresses MUST BE CHECKSUMMED.
  * Symbol patterns are matched case-insensitively as substrings.
  */
-export const STATIC_BLACKLIST = {
+exports.STATIC_BLACKLIST = {
     blacklistAddrs: {
         // Gnosis Chain (xDAI)
         '100': [
@@ -33,11 +36,12 @@ export const STATIC_BLACKLIST = {
     },
     blacklistBySymbols: ['https', 'www.']
 };
-export const filterStaticBlacklistedAddrs = (tokenAddrs, chainId) => {
-    const staticBlacklistedAddrs = STATIC_BLACKLIST.blacklistAddrs[chainId.toString()] || [];
+const filterStaticBlacklistedAddrs = (tokenAddrs, chainId) => {
+    const staticBlacklistedAddrs = exports.STATIC_BLACKLIST.blacklistAddrs[chainId.toString()] || [];
     if (!staticBlacklistedAddrs.length)
         return tokenAddrs;
     const staticBlacklistedAddrsLower = new Set(staticBlacklistedAddrs.map((addr) => addr.toLowerCase()));
     return tokenAddrs.filter((addr) => !staticBlacklistedAddrsLower.has(addr.toLowerCase()));
 };
+exports.filterStaticBlacklistedAddrs = filterStaticBlacklistedAddrs;
 //# sourceMappingURL=blacklist.js.map

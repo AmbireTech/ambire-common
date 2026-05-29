@@ -1,12 +1,18 @@
-import { networks as predefinedNetworks } from '../../consts/networks';
-import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks';
-export const getShouldMigrateKeystoreSeedsWithoutHdPath = (keystoreSeeds) => !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string');
-export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys) => keystoreKeys.some((key) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.migrateCustomTokens = exports.migrateHiddenTokens = exports.getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = exports.getShouldMigrateKeystoreSeedsWithoutHdPath = void 0;
+exports.migrateNetworkPreferencesToNetworks = migrateNetworkPreferencesToNetworks;
+const networks_1 = require("../../consts/networks");
+const networks_2 = require("../networks/networks");
+const getShouldMigrateKeystoreSeedsWithoutHdPath = (keystoreSeeds) => !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string');
+exports.getShouldMigrateKeystoreSeedsWithoutHdPath = getShouldMigrateKeystoreSeedsWithoutHdPath;
+const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys) => keystoreKeys.some((key) => {
     const internalKeyWithoutMeta = key.type === 'internal' && !key.meta;
     const externalKeyWithoutCreatedAt = key.type !== 'internal' && !('createdAt' in key.meta);
     return internalKeyWithoutMeta || externalKeyWithoutCreatedAt;
 });
-export const migrateHiddenTokens = (tokenPreferences) => {
+exports.getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = getShouldMigrateKeyMetaNullToKeyMetaCreatedAt;
+const migrateHiddenTokens = (tokenPreferences) => {
     return tokenPreferences
         .filter(({ isHidden }) => isHidden)
         .map(({ address, networkId, isHidden }) => ({
@@ -15,7 +21,8 @@ export const migrateHiddenTokens = (tokenPreferences) => {
         isHidden
     }));
 };
-export const migrateCustomTokens = (tokenPreferences) => {
+exports.migrateHiddenTokens = migrateHiddenTokens;
+const migrateCustomTokens = (tokenPreferences) => {
     return tokenPreferences
         .filter(({ standard }) => !!standard)
         .map(({ address, standard, networkId }) => ({
@@ -24,11 +31,12 @@ export const migrateCustomTokens = (tokenPreferences) => {
         networkId
     }));
 };
-export async function migrateNetworkPreferencesToNetworks(networkPreferences) {
-    const predefinedNetworkIds = predefinedNetworks.map((n) => n.id);
+exports.migrateCustomTokens = migrateCustomTokens;
+async function migrateNetworkPreferencesToNetworks(networkPreferences) {
+    const predefinedNetworkIds = networks_1.networks.map((n) => n.id);
     const customNetworkIds = Object.keys(networkPreferences).filter((k) => !predefinedNetworkIds.includes(k));
     const networksToStore = {};
-    predefinedNetworks.forEach((n) => {
+    networks_1.networks.forEach((n) => {
         networksToStore[n.id] = n;
     });
     customNetworkIds.forEach((networkId) => {
@@ -57,8 +65,8 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences) {
             id: networkId,
             ...preference,
             ...networkInfo,
-            features: getFeaturesByNetworkProperties(networkInfo, undefined),
-            hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId),
+            features: (0, networks_2.getFeaturesByNetworkProperties)(networkInfo, undefined),
+            hasRelayer: !!networks_2.relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId),
             predefined: false
         };
     });

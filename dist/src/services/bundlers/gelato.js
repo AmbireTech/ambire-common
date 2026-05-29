@@ -1,7 +1,10 @@
-import { GELATO } from '../../consts/bundlers';
-import { getRpcProvider } from '../provider';
-import { Bundler } from './bundler';
-export class Gelato extends Bundler {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Gelato = void 0;
+const bundlers_1 = require("../../consts/bundlers");
+const provider_1 = require("../provider");
+const bundler_1 = require("./bundler");
+class Gelato extends bundler_1.Bundler {
     getUrl(network) {
         return `https://api.gelato.cloud/rpc/${network.chainId.toString()}`;
     }
@@ -11,7 +14,7 @@ export class Gelato extends Bundler {
      * @param network
      */
     getProvider(network) {
-        const provider = getRpcProvider([this.getUrl(network)], network.chainId);
+        const provider = (0, provider_1.getRpcProvider)([this.getUrl(network)], network.chainId);
         const gelatoSend = async (method, params) => {
             const response = await fetch(this.getUrl(network), {
                 method: 'POST',
@@ -94,10 +97,11 @@ export class Gelato extends Bundler {
         };
     }
     getName() {
-        return GELATO;
+        return bundlers_1.GELATO;
     }
     shouldReestimateBeforeBroadcast(network) {
         return true;
     }
 }
+exports.Gelato = Gelato;
 //# sourceMappingURL=gelato.js.map

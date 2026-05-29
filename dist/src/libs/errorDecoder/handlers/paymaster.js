@@ -1,4 +1,6 @@
-import { ErrorType } from '../types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const types_1 = require("../types");
 class PaymasterErrorHandler {
     matches(data, error) {
         const { name } = error;
@@ -7,11 +9,11 @@ class PaymasterErrorHandler {
     handle(data, error) {
         const { message: reason } = error;
         return {
-            type: ErrorType.PaymasterError,
+            type: types_1.ErrorType.PaymasterError,
             reason,
             data: ''
         };
     }
 }
-export default PaymasterErrorHandler;
+exports.default = PaymasterErrorHandler;
 //# sourceMappingURL=paymaster.js.map

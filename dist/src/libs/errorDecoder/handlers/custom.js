@@ -1,16 +1,18 @@
-import { ERROR_PREFIX, PANIC_ERROR_PREFIX } from '../constants';
-import { ErrorType } from '../types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const constants_1 = require("../constants");
+const types_1 = require("../types");
 /** Handles custom errors thrown by contracts */
 class CustomErrorHandler {
     matches(data) {
         return (!!data &&
             data !== '0x' &&
-            !data?.startsWith(ERROR_PREFIX) &&
-            !data?.startsWith(PANIC_ERROR_PREFIX));
+            !data?.startsWith(constants_1.ERROR_PREFIX) &&
+            !data?.startsWith(constants_1.PANIC_ERROR_PREFIX));
     }
     handle(data) {
         return {
-            type: ErrorType.CustomError,
+            type: types_1.ErrorType.CustomError,
             // Custom errors do not provide a specific reason.
             // Therefore, we return the raw data in hexadecimal format,
             // which can be used to map to a corresponding error message.
@@ -19,5 +21,5 @@ class CustomErrorHandler {
         };
     }
 }
-export default CustomErrorHandler;
+exports.default = CustomErrorHandler;
 //# sourceMappingURL=custom.js.map

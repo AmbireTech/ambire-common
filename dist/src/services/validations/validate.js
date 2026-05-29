@@ -1,25 +1,31 @@
-import { getAddress, parseUnits } from 'ethers';
-import isEmail from 'validator/lib/isEmail';
-import { getSupportedNetworks } from '@/libs/networks/networks';
-import { getTokenAmount } from '../../libs/portfolio/helpers';
-import { getSanitizedAmount } from '../../libs/transfer/amount';
-import shortenAddress from '../../utils/shortenAddress';
-import { isValidAddress } from '../address';
-export const validateAddress = (address) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.validateSendTransferAmount = exports.validateSendTransferAddress = exports.validateAddAuthSignerAddress = exports.isValidHostname = exports.isValidPassword = exports.isValidCode = exports.isEmail = exports.validateAddress = void 0;
+exports.isValidURL = isValidURL;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const isEmail_1 = tslib_1.__importDefault(require("validator/lib/isEmail"));
+exports.isEmail = isEmail_1.default;
+const networks_1 = require("@/libs/networks/networks");
+const helpers_1 = require("../../libs/portfolio/helpers");
+const amount_1 = require("../../libs/transfer/amount");
+const shortenAddress_1 = tslib_1.__importDefault(require("../../utils/shortenAddress"));
+const address_1 = require("../address");
+const validateAddress = (address) => {
     if (!(address && address.length)) {
         return {
             severity: 'error',
             message: ''
         };
     }
-    if (!(address && isValidAddress(address))) {
+    if (!(address && (0, address_1.isValidAddress)(address))) {
         return {
             severity: 'error',
             message: 'Invalid address.'
         };
     }
     try {
-        getAddress(address);
+        (0, ethers_1.getAddress)(address);
     }
     catch {
         return {
@@ -29,8 +35,9 @@ export const validateAddress = (address) => {
     }
     return { severity: 'success', message: '' };
 };
+exports.validateAddress = validateAddress;
 const validateAddAuthSignerAddress = (address, selectedAcc) => {
-    const isValidAddr = validateAddress(address);
+    const isValidAddr = (0, exports.validateAddress)(address);
     if (isValidAddr.severity === 'error')
         return isValidAddr;
     if (address && selectedAcc && address === selectedAcc) {
@@ -41,6 +48,7 @@ const validateAddAuthSignerAddress = (address, selectedAcc) => {
     }
     return { severity: 'success', message: '' };
 };
+exports.validateAddAuthSignerAddress = validateAddAuthSignerAddress;
 const NOT_IN_ADDRESS_BOOK_MESSAGE = "This address isn't in your Address Book. Double-check the details before confirming.";
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.';
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE; // same same as above, but keep it separate just in case
@@ -54,7 +62,7 @@ const getAddressPoisoningWarningMessage = (matchedAddress) => `Possible address 
 const formatAddressPoisoningMatchForMessage = ({ matchedAddress, matchedPrefixCharsCount, matchedSuffixCharsCount }) => {
     let normalizedAddress = matchedAddress;
     try {
-        normalizedAddress = getAddress(matchedAddress);
+        normalizedAddress = (0, ethers_1.getAddress)(matchedAddress);
     }
     catch {
         // keep original if checksum normalization fails
@@ -64,7 +72,7 @@ const formatAddressPoisoningMatchForMessage = ({ matchedAddress, matchedPrefixCh
         ? ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED
         : ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT;
     const fixedPreviewLength = visibleChars * 2 + 5; // 0x + left + ... + right
-    return shortenAddress(normalizedAddress, fixedPreviewLength, visibleChars);
+    return (0, shortenAddress_1.default)(normalizedAddress, fixedPreviewLength, visibleChars);
 };
 function getTimeAgo(date) {
     const now = new Date();
@@ -90,7 +98,7 @@ function getTimeAgo(date) {
 }
 const validateSendTransferAddress = (address, selectedAccAddr, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isDomain, isRecipientDomainResolving, networks, accountStates, recepientAccount, chainId, isRecipientAddressFirstTimeSend, lastRecipientTransactionDate, addressPoisoningMatch) => {
     // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
-    if (!isValidAddress(address) || isRecipientDomainResolving) {
+    if (!(0, address_1.isValidAddress)(address) || isRecipientDomainResolving) {
         return {
             message: '',
             severity: 'success'
@@ -104,7 +112,7 @@ const validateSendTransferAddress = (address, selectedAccAddr, addressConfirmed,
     }
     // check if the account is supported on the receiving network
     if (chainId) {
-        const accountNetworks = getSupportedNetworks(networks, accountStates, recepientAccount);
+        const accountNetworks = (0, networks_1.getSupportedNetworks)(networks, accountStates, recepientAccount);
         const foundNetwork = accountNetworks.find((n) => n.chainId === chainId);
         if (foundNetwork && foundNetwork.isNotSupported && foundNetwork.notSupportedReason) {
             return {
@@ -165,8 +173,9 @@ const validateSendTransferAddress = (address, selectedAccAddr, addressConfirmed,
     }
     return { severity: 'success', message: '' };
 };
+exports.validateSendTransferAddress = validateSendTransferAddress;
 const validateSendTransferAmount = (amount, selectedAsset) => {
-    const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals);
+    const sanitizedAmount = (0, amount_1.getSanitizedAmount)(amount, selectedAsset.decimals);
     if (!(sanitizedAmount && sanitizedAmount.length)) {
         return {
             severity: 'error',
@@ -193,8 +202,8 @@ const validateSendTransferAmount = (amount, selectedAsset) => {
                     message: 'Token amount too low.',
                     severity: 'error'
                 };
-            const currentAmount = parseUnits(sanitizedAmount, selectedAsset.decimals);
-            if (currentAmount > getTokenAmount(selectedAsset)) {
+            const currentAmount = (0, ethers_1.parseUnits)(sanitizedAmount, selectedAsset.decimals);
+            if (currentAmount > (0, helpers_1.getTokenAmount)(selectedAsset)) {
                 return {
                     message: 'Insufficient amount.',
                     severity: 'error',
@@ -213,8 +222,11 @@ const validateSendTransferAmount = (amount, selectedAsset) => {
     }
     return { severity: 'success', message: '' };
 };
+exports.validateSendTransferAmount = validateSendTransferAmount;
 const isValidCode = (code) => code.length === 6;
+exports.isValidCode = isValidCode;
 const isValidPassword = (password) => password.length >= 8;
+exports.isValidPassword = isValidPassword;
 function isValidURL(url) {
     const urlRegex = /^(?:https?|ftp):\/\/(?:\w+:{0,1}\w*@)?(?:\S+)(?::\d+)?(?:\/|\/(?:[\w#!:.?+=&%@!\-\/]))?$/;
     return urlRegex.test(url);
@@ -224,5 +236,5 @@ const isValidHostname = (str) => {
     const hostnameRegex = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
     return hostnameRegex.test(str);
 };
-export { isEmail, isValidCode, isValidPassword, isValidURL, isValidHostname, validateAddAuthSignerAddress, validateSendTransferAddress, validateSendTransferAmount };
+exports.isValidHostname = isValidHostname;
 //# sourceMappingURL=validate.js.map

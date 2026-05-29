@@ -1,11 +1,15 @@
-import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
-import { ACCOUNT_STATE_STAND_BY_INTERVAL, ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL, ACTIVITY_REFRESH_INTERVAL, INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '../../consts/intervals';
-import { AccountOpStatus } from '../../libs/accountOp/types';
-import { getNetworksWithFailedRPC } from '../../libs/networks/networks';
-import { sortSigs } from '../../libs/safe/safe';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ContinuousUpdatesController = void 0;
+const tslib_1 = require("tslib");
+const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
+const intervals_1 = require("../../consts/intervals");
+const types_1 = require("../../libs/accountOp/types");
+const networks_1 = require("../../libs/networks/networks");
+const safe_1 = require("../../libs/safe/safe");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 /* eslint-disable @typescript-eslint/no-floating-promises */
-export class ContinuousUpdatesController extends EventEmitter {
+class ContinuousUpdatesController extends eventEmitter_1.default {
     #main;
     #updatePortfolioInterval;
     get updatePortfolioInterval() {
@@ -43,11 +47,11 @@ export class ContinuousUpdatesController extends EventEmitter {
         //    Once the acc op is confirmed or failed, the portfolio interval will resume as normal.
         // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
         //    However, this is not a frequent case, and we can make a compromise here.
-        this.#updatePortfolioInterval = new RecurringTimeout(this.#updatePortfolio.bind(this), INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL, this.emitError.bind(this));
+        this.#updatePortfolioInterval = new recurringTimeout_1.RecurringTimeout(this.#updatePortfolio.bind(this), intervals_1.INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL, this.emitError.bind(this));
         this.#main.ui.uiEvent.on('addView', () => {
             if (this.#main.ui.views.length === 1) {
                 this.#updatePortfolioInterval.restart({
-                    timeout: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+                    timeout: intervals_1.ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
                 });
                 this.#fastAccountStateReFetchTimeout.start();
             }
@@ -57,7 +61,7 @@ export class ContinuousUpdatesController extends EventEmitter {
             // How it could happen: the user locks the extension manually and closes the popup
             if (!this.#main.ui.views.length && this.#main.keystore.isUnlocked) {
                 this.#updatePortfolioInterval.restart({
-                    timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+                    timeout: intervals_1.INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
                 });
                 this.#fastAccountStateReFetchTimeout.stop();
             }
@@ -65,15 +69,15 @@ export class ContinuousUpdatesController extends EventEmitter {
         /**
          * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
          */
-        this.#accountStateLatestInterval = new RecurringTimeout(this.#updateAccountStateLatest.bind(this), ACCOUNT_STATE_STAND_BY_INTERVAL, this.emitError.bind(this));
-        this.#accountsOpsStatusesInterval = new RecurringTimeout(this.#updateAccountsOpsStatuses.bind(this), ACTIVITY_REFRESH_INTERVAL, this.emitError.bind(this));
+        this.#accountStateLatestInterval = new recurringTimeout_1.RecurringTimeout(this.#updateAccountStateLatest.bind(this), intervals_1.ACCOUNT_STATE_STAND_BY_INTERVAL, this.emitError.bind(this));
+        this.#accountsOpsStatusesInterval = new recurringTimeout_1.RecurringTimeout(this.#updateAccountsOpsStatuses.bind(this), intervals_1.ACTIVITY_REFRESH_INTERVAL, this.emitError.bind(this));
         /**
          * Update failed network states more often. If a network's first failed
          *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
          */
-        this.#fastAccountStateReFetchTimeout = new RecurringTimeout(this.#fastAccountStateReFetch.bind(this), 8000, this.emitError.bind(this), 'fastAccountStateReFetchTimeout');
-        this.#safeGlobalTxnInterval = new RecurringTimeout(this.#resolveConfirmedSafeTxns.bind(this), 10000, this.emitError.bind(this), 'safeGlobalTxnInterval');
-        this.#safeGlobalMessageInterval = new RecurringTimeout(this.#resolveConfirmedSafeMessages.bind(this), 11000, this.emitError.bind(this), 'resolveConfirmedSafeMessages');
+        this.#fastAccountStateReFetchTimeout = new recurringTimeout_1.RecurringTimeout(this.#fastAccountStateReFetch.bind(this), 8000, this.emitError.bind(this), 'fastAccountStateReFetchTimeout');
+        this.#safeGlobalTxnInterval = new recurringTimeout_1.RecurringTimeout(this.#resolveConfirmedSafeTxns.bind(this), 10000, this.emitError.bind(this), 'safeGlobalTxnInterval');
+        this.#safeGlobalMessageInterval = new recurringTimeout_1.RecurringTimeout(this.#resolveConfirmedSafeMessages.bind(this), 11000, this.emitError.bind(this), 'resolveConfirmedSafeMessages');
         this.#main.swapAndBridge.onUpdate(() => {
             if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
                 this.#accountStateLatestInterval.restart();
@@ -138,7 +142,7 @@ export class ContinuousUpdatesController extends EventEmitter {
             console.error('No selected account to latest state');
             return;
         }
-        const failedChainIds = getNetworksWithFailedRPC({
+        const failedChainIds = (0, networks_1.getNetworksWithFailedRPC)({
             providers: this.#main.providers.providers
         });
         const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
@@ -177,7 +181,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     async #fastAccountStateReFetch() {
         await this.initialLoadPromise;
         const selectedAccountAddr = this.#main.selectedAccount.account?.addr;
-        const failedChainIds = getNetworksWithFailedRPC({
+        const failedChainIds = (0, networks_1.getNetworksWithFailedRPC)({
             providers: this.#main.providers.providers
         });
         const chainIdsToRetry = failedChainIds.filter((id) => {
@@ -194,7 +198,7 @@ export class ContinuousUpdatesController extends EventEmitter {
         chainIdsToRetry.forEach((id) => {
             this.#accountStateRetriesByNetwork[id] = (this.#accountStateRetriesByNetwork[id] || 0) + 1;
         });
-        const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
+        const failedChainIdsAfterUpdate = (0, networks_1.getNetworksWithFailedRPC)({
             providers: this.#main.providers.providers
         });
         // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
@@ -265,7 +269,7 @@ export class ContinuousUpdatesController extends EventEmitter {
                 const accountOp = callsUserR.signAccountOp.accountOp;
                 const submittedAccountOp = {
                     ...accountOp,
-                    status: AccountOpStatus.BroadcastedButNotConfirmed,
+                    status: types_1.AccountOpStatus.BroadcastedButNotConfirmed,
                     txnId: oneConfirmed.transactionHash,
                     nonce: BigInt(oneConfirmed.nonce),
                     identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
@@ -294,7 +298,7 @@ export class ContinuousUpdatesController extends EventEmitter {
             // we come here only if transactionHash is undefined
             const signatures = (oneConfirmed.confirmations?.map((c) => c.signature) || []);
             const safeGlobalSigs = callsUserR.signAccountOp.accountOp.txnId
-                ? sortSigs(signatures, callsUserR.signAccountOp.accountOp.txnId, callsUserR.signAccountOp.accountOp.safeTx?.confirmations)
+                ? (0, safe_1.sortSigs)(signatures, callsUserR.signAccountOp.accountOp.txnId, callsUserR.signAccountOp.accountOp.safeTx?.confirmations)
                 : null;
             if (safeGlobalSigs &&
                 callsUserR.signAccountOp.isInRegistry() && // update only if on foreground
@@ -343,4 +347,5 @@ export class ContinuousUpdatesController extends EventEmitter {
         }
     }
 }
+exports.ContinuousUpdatesController = ContinuousUpdatesController;
 //# sourceMappingURL=continuousUpdates.js.map

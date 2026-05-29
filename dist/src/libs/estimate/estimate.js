@@ -1,6 +1,10 @@
-import { ambireEstimateGas } from './ambireEstimation';
-import { bundlerEstimate, fetchBundlerGasPrice } from './estimateBundler';
-import { providerEstimateGas } from './providerEstimateGas';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getEstimation = getEstimation;
+exports.getEstimationSummary = getEstimationSummary;
+const ambireEstimation_1 = require("./ambireEstimation");
+const estimateBundler_1 = require("./estimateBundler");
+const providerEstimateGas_1 = require("./providerEstimateGas");
 // get all possible estimation combinations and leave it to the implementation
 // to decide which one is relevant depending on the case.
 // there are 3 estimations:
@@ -10,23 +14,23 @@ import { providerEstimateGas } from './providerEstimateGas';
 // each has an use case in diff scenarious:
 // - EOA: if payment is native, use estimateGas(); otherwise estimateBundler()
 // - SA: if ethereum, use Estimation.sol; otherwise estimateBundler()
-export async function getEstimation(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck, switcher, pendingUserOp) {
-    const ambireEstimation = ambireEstimateGas(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck);
+async function getEstimation(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck, switcher, pendingUserOp) {
+    const ambireEstimation = (0, ambireEstimation_1.ambireEstimateGas)(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck);
     let bundlerGasPrices;
     const bundlerEstimation = async () => {
         if (!baseAcc.supportsBundlerEstimation() || !network.erc4337.hasBundlerSupport)
             return null;
-        const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher);
+        const gasPrice = await (0, estimateBundler_1.fetchBundlerGasPrice)(baseAcc, network, switcher);
         if (gasPrice instanceof Error)
             return gasPrice;
-        const bundlerEstimateResponse = await bundlerEstimate(baseAcc, accountState, op, network, feeTokens, provider, gasPrice, switcher, undefined, pendingUserOp);
+        const bundlerEstimateResponse = await (0, estimateBundler_1.bundlerEstimate)(baseAcc, accountState, op, network, feeTokens, provider, gasPrice, switcher, undefined, pendingUserOp);
         bundlerGasPrices =
             !bundlerEstimateResponse || bundlerEstimateResponse instanceof Error
                 ? gasPrice
                 : bundlerEstimateResponse.gasPrice;
         return bundlerEstimateResponse;
     };
-    const providerEstimation = providerEstimateGas(baseAcc.getAccount(), op, provider, accountState, network, feeTokens);
+    const providerEstimation = (0, providerEstimateGas_1.providerEstimateGas)(baseAcc.getAccount(), op, provider, accountState, network, feeTokens);
     const estimations = await Promise.all([ambireEstimation, bundlerEstimation(), providerEstimation]);
     const ambireGas = estimations[0];
     const bundlerGas = estimations[1];
@@ -49,7 +53,7 @@ export async function getEstimation(baseAcc, accountState, op, network, provider
     fullEstimation.flags = flags;
     return fullEstimation;
 }
-export function getEstimationSummary(estimation) {
+function getEstimationSummary(estimation) {
     return {
         providerEstimation: estimation.provider && !(estimation.provider instanceof Error)
             ? estimation.provider

@@ -1,10 +1,14 @@
+"use strict";
 // @ts-nocheck
-import { relayerCall } from '@/libs/relayerCall/relayerCall';
-import { getNextQuestionForAnswers } from '@/utils/survey';
-import EventEmitter from '../eventEmitter/eventEmitter';
-import { parseSurvey } from './helpers';
-export const ANSWERED_SURVEYS_STORAGE_KEY = 'surveysRespondedTo';
-export class SurveyController extends EventEmitter {
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SurveyController = exports.ANSWERED_SURVEYS_STORAGE_KEY = void 0;
+const tslib_1 = require("tslib");
+const relayerCall_1 = require("@/libs/relayerCall/relayerCall");
+const survey_1 = require("@/utils/survey");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+const helpers_1 = require("./helpers");
+exports.ANSWERED_SURVEYS_STORAGE_KEY = 'surveysRespondedTo';
+class SurveyController extends eventEmitter_1.default {
     #callRelayer;
     #surveysRespondedTo;
     #storage;
@@ -18,7 +22,7 @@ export class SurveyController extends EventEmitter {
     errorMessage;
     constructor({ fetch, relayerUrl, storage, eventEmitterRegistry, ui, dismissBanner }) {
         super(eventEmitterRegistry);
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.#storage = storage;
         this.initialLoadPromise = this.#load().finally(() => (this.initialLoadPromise = undefined));
         this.#dismissBanner = dismissBanner;
@@ -29,7 +33,7 @@ export class SurveyController extends EventEmitter {
         });
     }
     async #load() {
-        const surveysRespondedTo = await this.#storage.get(ANSWERED_SURVEYS_STORAGE_KEY, []);
+        const surveysRespondedTo = await this.#storage.get(exports.ANSWERED_SURVEYS_STORAGE_KEY, []);
         this.#surveysRespondedTo = surveysRespondedTo;
         this.emitUpdate();
     }
@@ -64,7 +68,7 @@ export class SurveyController extends EventEmitter {
             this.emitUpdate();
             return;
         }
-        const parsedSurvey = parseSurvey(res.survey);
+        const parsedSurvey = (0, helpers_1.parseSurvey)(res.survey);
         if (!parsedSurvey.ok) {
             this.emitError({
                 message: 'There was error fetching the survey.',
@@ -153,7 +157,7 @@ export class SurveyController extends EventEmitter {
     }
     async answerQuestion(questionId, questionPosition, answer, instanceId, address) {
         this.answers[questionId] = { questionPosition, answer };
-        const hasNextQuestion = !!getNextQuestionForAnswers(this.questions || [], this.answers);
+        const hasNextQuestion = !!(0, survey_1.getNextQuestionForAnswers)(this.questions || [], this.answers);
         if (!hasNextQuestion)
             await this.sendResponse(instanceId, address);
         this.emitUpdate();
@@ -165,7 +169,7 @@ export class SurveyController extends EventEmitter {
             return;
         if (Object.keys(this.answers).length === 0)
             return this.#survey.questions.find((q) => q.questionPosition === 0);
-        return getNextQuestionForAnswers(this.#survey.questions, this.answers);
+        return (0, survey_1.getNextQuestionForAnswers)(this.#survey.questions, this.answers);
     }
     clearSurveyState() {
         this.status = 'not-started';
@@ -193,4 +197,5 @@ export class SurveyController extends EventEmitter {
         };
     }
 }
+exports.SurveyController = SurveyController;
 //# sourceMappingURL=survey.js.map

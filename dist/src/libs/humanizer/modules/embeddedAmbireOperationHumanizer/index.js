@@ -1,8 +1,11 @@
-import { getAction } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.embeddedAmbireOperationHumanizer = void 0;
+const utils_1 = require("../../utils");
 // the purpose of this module is simply to visualize attempts to hide ambire operations within the current account op
 // such thing can be done if the dapp requests a tryCatch/executeBySelfSingle/executeBySelf/... function call directed to the current account
 // this call will be executed without needing extra authentication. For more details check out AmbireAccount.sol
-export const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
+const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
     return irCalls.map((call) => {
         if (!call.to)
             return call;
@@ -12,11 +15,12 @@ export const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
             return {
                 ...call,
                 fullVisualization: [
-                    getAction('Allow multiple actions from this account!', { warning: true })
+                    (0, utils_1.getAction)('Allow multiple actions from this account!', { warning: true })
                 ]
             };
         }
         return call;
     });
 };
+exports.embeddedAmbireOperationHumanizer = embeddedAmbireOperationHumanizer;
 //# sourceMappingURL=index.js.map

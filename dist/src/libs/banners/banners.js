@@ -1,11 +1,16 @@
-import { getSameNonceRequests } from '../safe/safe';
-import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge';
-export const getCurrentAccountBanners = (banners, selectedAccount) => banners.filter((banner) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDefiPositionsOnDisabledNetworksForTheSelectedAccount = exports.defiPositionsOnDisabledNetworksBannerId = exports.getKeySyncBanner = exports.getAccountOpBanners = exports.getDappUserRequestsBanners = exports.getSafeMessageRequestBanners = exports.getBridgeBanners = exports.getCurrentAccountBanners = void 0;
+exports.getScamDetectedText = getScamDetectedText;
+const safe_1 = require("../safe/safe");
+const swapAndBridge_1 = require("../swapAndBridge/swapAndBridge");
+const getCurrentAccountBanners = (banners, selectedAccount) => banners.filter((banner) => {
     if (!banner.meta?.accountAddr)
         return true;
     return banner.meta.accountAddr === selectedAccount;
 });
-export const getBridgeBanners = (activeRoutes, callsUserRequests) => {
+exports.getCurrentAccountBanners = getCurrentAccountBanners;
+const getBridgeBanners = (activeRoutes, callsUserRequests) => {
     const isRouteTurnedIntoAccountOp = (route) => {
         return callsUserRequests.some((req) => {
             return req.signAccountOp.accountOp.calls.some((call) => call.id === route.activeRouteId ||
@@ -14,7 +19,7 @@ export const getBridgeBanners = (activeRoutes, callsUserRequests) => {
         });
     };
     const filteredRoutes = activeRoutes.filter((route) => {
-        if (!route.route || !getIsBridgeRoute(route.route))
+        if (!route.route || !(0, swapAndBridge_1.getIsBridgeRoute)(route.route))
             return false;
         if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
             return true;
@@ -85,7 +90,8 @@ export const getBridgeBanners = (activeRoutes, callsUserRequests) => {
     }
     return banners;
 };
-export const getSafeMessageRequestBanners = (account, userRequests) => {
+exports.getBridgeBanners = getBridgeBanners;
+const getSafeMessageRequestBanners = (account, userRequests) => {
     if (!account.safeCreation)
         return [];
     const requests = userRequests.filter((r) => ['message', 'typedMessage', 'siwe'].includes(r.kind));
@@ -106,7 +112,8 @@ export const getSafeMessageRequestBanners = (account, userRequests) => {
         }
     ];
 };
-export const getDappUserRequestsBanners = (account, userRequests) => {
+exports.getSafeMessageRequestBanners = getSafeMessageRequestBanners;
+const getDappUserRequestsBanners = (account, userRequests) => {
     if (!!account.safeCreation)
         return [];
     const requests = userRequests.filter((r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind));
@@ -127,6 +134,7 @@ export const getDappUserRequestsBanners = (account, userRequests) => {
         }
     ];
 };
+exports.getDappUserRequestsBanners = getDappUserRequestsBanners;
 const getSafeBanner = ({ requests, network, selectedAccount }) => {
     return {
         id: `${selectedAccount.addr}-${network.chainId.toString()}`,
@@ -143,14 +151,14 @@ const getSafeBanner = ({ requests, network, selectedAccount }) => {
         ]
     };
 };
-export const getAccountOpBanners = ({ callsUserRequestsByNetwork, selectedAccount, networks }) => {
+const getAccountOpBanners = ({ callsUserRequestsByNetwork, selectedAccount, networks }) => {
     if (!callsUserRequestsByNetwork)
         return [];
     const txnBanners = [];
     Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
         let remainingRequests = [];
         if (!!selectedAccount.safeCreation && requests.length > 1) {
-            const sameNonceRequests = getSameNonceRequests(requests);
+            const sameNonceRequests = (0, safe_1.getSameNonceRequests)(requests);
             const network = networks.filter((n) => n.chainId.toString() === netId)[0];
             Object.keys(sameNonceRequests).forEach((nonce) => {
                 const grouped = sameNonceRequests[nonce];
@@ -193,7 +201,8 @@ export const getAccountOpBanners = ({ callsUserRequestsByNetwork, selectedAccoun
     });
     return txnBanners;
 };
-export const getKeySyncBanner = (addr, email, keys) => {
+exports.getAccountOpBanners = getAccountOpBanners;
+const getKeySyncBanner = (addr, email, keys) => {
     const banner = {
         id: `keys-sync:${addr}:${email}`,
         meta: {
@@ -212,8 +221,9 @@ export const getKeySyncBanner = (addr, email, keys) => {
     };
     return banner;
 };
-export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner';
-export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({ defiPositionsCountOnDisabledNetworks, networks, accountAddr }) => {
+exports.getKeySyncBanner = getKeySyncBanner;
+exports.defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner';
+const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({ defiPositionsCountOnDisabledNetworks, networks, accountAddr }) => {
     const banners = [];
     const disabledNetworks = networks.filter((n) => n.disabled);
     if (!disabledNetworks.length)
@@ -241,7 +251,7 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({ defiPo
     };
     const formattedNetworkNames = formatNetworkNames(disabledNetworksWithDefiPosArray.map((n) => n.name));
     banners.push({
-        id: defiPositionsOnDisabledNetworksBannerId,
+        id: exports.defiPositionsOnDisabledNetworksBannerId,
         type: 'info',
         title: `DeFi ${totalCount === 1 ? 'position' : 'positions'} available on ${formattedNetworkNames}`,
         text: `Ambire API data providers report ${totalCount} more DeFi ${totalCount === 1 ? 'position' : 'positions'}. Enable ${disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'} to include ${totalCount === 1 ? 'it' : 'them'}?`,
@@ -262,7 +272,8 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({ defiPo
     });
     return banners;
 };
-export function getScamDetectedText(blacklistedItems) {
+exports.getDefiPositionsOnDisabledNetworksForTheSelectedAccount = getDefiPositionsOnDisabledNetworksForTheSelectedAccount;
+function getScamDetectedText(blacklistedItems) {
     const blacklistedItemsCount = blacklistedItems.length;
     const hasScamAddress = blacklistedItems.some((i) => i.type === 'address');
     const hasScamToken = blacklistedItems.some((i) => i.type === 'token');

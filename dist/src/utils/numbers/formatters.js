@@ -1,5 +1,8 @@
-import { formatUnits, parseUnits } from 'ethers';
-import { getSanitizedAmount } from '../../libs/transfer/amount';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.textToValidDecimal = exports.safeTokenAmountAndNumberMultiplication = exports.getSafeAmountFromFieldValue = exports.convertTokenPriceToBigInt = void 0;
+const ethers_1 = require("ethers");
+const amount_1 = require("../../libs/transfer/amount");
 /**
  * Converts floating point token price to big int
  */
@@ -17,15 +20,17 @@ const convertTokenPriceToBigInt = (tokenPrice) => {
     }
     // Regular number handling
     const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0;
-    const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals);
+    const tokenPriceBigInt = (0, ethers_1.parseUnits)(tokenPriceString, tokenPriceDecimals);
     return { tokenPriceBigInt, tokenPriceDecimals };
 };
+exports.convertTokenPriceToBigInt = convertTokenPriceToBigInt;
 const safeTokenAmountAndNumberMultiplication = (amount, decimals, tokenPrice) => {
     const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
-    return formatUnits(amount * tokenPriceBigInt, 
+    return (0, ethers_1.formatUnits)(amount * tokenPriceBigInt, 
     // Shift the decimal point by the number of decimals in the token price
     decimals + tokenPriceDecimals);
 };
+exports.safeTokenAmountAndNumberMultiplication = safeTokenAmountAndNumberMultiplication;
 /**
  * Sanitizes the amount by removing values outside of the token's decimal range.
  * Also formats `.`, `.${number}` and `${number}.` to `0.0`, `0.${number}` and `${number}.0` respectively
@@ -43,8 +48,9 @@ const getSafeAmountFromFieldValue = (fieldValue, tokenDecimals) => {
     // Don't sanitize the amount if there is no selected token
     if (!tokenDecimals)
         return parsedFieldValue;
-    return getSanitizedAmount(parsedFieldValue, tokenDecimals);
+    return (0, amount_1.getSanitizedAmount)(parsedFieldValue, tokenDecimals);
 };
+exports.getSafeAmountFromFieldValue = getSafeAmountFromFieldValue;
 const textToValidDecimal = (text) => {
     let formatted = text;
     // Remove invalid chars (only digits and dots allowed)
@@ -63,5 +69,5 @@ const textToValidDecimal = (text) => {
         formatted = '0';
     return formatted;
 };
-export { convertTokenPriceToBigInt, getSafeAmountFromFieldValue, safeTokenAmountAndNumberMultiplication, textToValidDecimal };
+exports.textToValidDecimal = textToValidDecimal;
 //# sourceMappingURL=formatters.js.map

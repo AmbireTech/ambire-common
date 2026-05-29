@@ -1,5 +1,8 @@
-import { HUMANIZED_ERRORS } from './consts';
-export const getHumanReadableErrorMessage = (errorPrefix, error) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHumanReadableErrorMessage = void 0;
+const consts_1 = require("./consts");
+const getHumanReadableErrorMessage = (errorPrefix, error) => {
     // The code should be safe but we must ensure that humanizing errors
     // does not throw an error itself
     try {
@@ -9,7 +12,7 @@ export const getHumanReadableErrorMessage = (errorPrefix, error) => {
         const checkAgainst = error?.message;
         let message = null;
         if (checkAgainst && typeof checkAgainst === 'string') {
-            HUMANIZED_ERRORS.forEach((humanizedError) => {
+            consts_1.HUMANIZED_ERRORS.forEach((humanizedError) => {
                 const { isExactMatch } = humanizedError;
                 const isMatching = humanizedError.reasons.some((errorReason) => {
                     const lowerCaseReason = errorReason.toLowerCase();
@@ -37,4 +40,5 @@ export const getHumanReadableErrorMessage = (errorPrefix, error) => {
         return null;
     }
 };
+exports.getHumanReadableErrorMessage = getHumanReadableErrorMessage;
 //# sourceMappingURL=helpers.js.map

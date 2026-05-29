@@ -1,4 +1,7 @@
-import { PIMLICO } from './bundlers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.testnetNetworks = void 0;
+const bundlers_1 = require("./bundlers");
 const ALCHEMY_API_KEY = process.env.REACT_APP_ALCHEMY_API_KEY;
 const testnetNetworks = [
     {
@@ -17,7 +20,7 @@ const testnetNetworks = [
             hasPaymaster: false,
             hasBundlerSupport: false,
             bundlers: [],
-            defaultBundler: PIMLICO
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: false,
         hasRelayer: false,
@@ -44,7 +47,7 @@ const testnetNetworks = [
             hasPaymaster: false,
             hasBundlerSupport: false,
             bundlers: [],
-            defaultBundler: PIMLICO
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: false,
         hasRelayer: false,
@@ -71,7 +74,7 @@ const testnetNetworks = [
             hasPaymaster: false,
             hasBundlerSupport: false,
             bundlers: [],
-            defaultBundler: PIMLICO
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: false,
         hasRelayer: false,
@@ -84,5 +87,5 @@ const testnetNetworks = [
         predefined: true
     }
 ];
-export { testnetNetworks };
+exports.testnetNetworks = testnetNetworks;
 //# sourceMappingURL=testnetNetworks.js.map

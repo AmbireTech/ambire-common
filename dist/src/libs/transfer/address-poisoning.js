@@ -1,4 +1,7 @@
-import { isAddress } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.pickBetterPoisoningMatch = exports.getAddressPoisoningMatchCounts = void 0;
+const ethers_1 = require("ethers");
 // can render the true shape of the match (for example 6-left / 5-right or even 0-left / 8-right).
 const MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS = 8;
 /**
@@ -6,11 +9,11 @@ const MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS = 8;
  * right side of the original address. We consider any recipient with at least 8 matched chars
  * in total as suspicious, while still keeping the exact prefix/suffix counts so downstream UI
  */
-export const getAddressPoisoningMatchCounts = (candidate, trustedAddress) => {
+const getAddressPoisoningMatchCounts = (candidate, trustedAddress) => {
     const normalizedCandidate = candidate.toLowerCase();
     const normalizedTrustedAddress = trustedAddress.toLowerCase();
-    if (!isAddress(normalizedCandidate) ||
-        !isAddress(normalizedTrustedAddress) ||
+    if (!(0, ethers_1.isAddress)(normalizedCandidate) ||
+        !(0, ethers_1.isAddress)(normalizedTrustedAddress) ||
         normalizedCandidate === normalizedTrustedAddress) {
         return null;
     }
@@ -35,10 +38,11 @@ export const getAddressPoisoningMatchCounts = (candidate, trustedAddress) => {
         matchedSuffixCharsCount
     };
 };
+exports.getAddressPoisoningMatchCounts = getAddressPoisoningMatchCounts;
 /**
  * Selects the stronger poisoning match by total overlap, then weakest side strength, then recency.
  */
-export const pickBetterPoisoningMatch = (bestMatch, candidateMatch) => {
+const pickBetterPoisoningMatch = (bestMatch, candidateMatch) => {
     if (!bestMatch)
         return candidateMatch;
     const totalMatchedChars = candidateMatch.matchedPrefixCharsCount + candidateMatch.matchedSuffixCharsCount;
@@ -54,4 +58,5 @@ export const pickBetterPoisoningMatch = (bestMatch, candidateMatch) => {
     }
     return bestMatch;
 };
+exports.pickBetterPoisoningMatch = pickBetterPoisoningMatch;
 //# sourceMappingURL=address-poisoning.js.map

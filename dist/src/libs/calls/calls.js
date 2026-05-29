@@ -1,25 +1,30 @@
-import { AbiCoder, Interface, ZeroAddress } from 'ethers';
-import ERC20 from '../../../contracts/compiled/IERC20.json';
-import { FEE_COLLECTOR } from '../../consts/addresses';
-import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy';
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens';
-const abiCoder = new AbiCoder();
-const ERC20Interface = new Interface(ERC20.abi);
-export function getFeeCall(feeToken) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getFeeCall = getFeeCall;
+exports.decodeFeeCall = decodeFeeCall;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const addresses_1 = require("../../consts/addresses");
+const deploy_1 = require("../../consts/deploy");
+const gasTankFeeTokens_1 = tslib_1.__importDefault(require("../../consts/gasTankFeeTokens"));
+const abiCoder = new ethers_1.AbiCoder();
+const ERC20Interface = new ethers_1.Interface(IERC20_json_1.default.abi);
+function getFeeCall(feeToken) {
     // set a bigger number for gas tank / approvals so on
     // L2s it could calculate the preVerificationGas better
     const gasTankOrApproveAmount = 500n * BigInt(feeToken.decimals);
     if (feeToken.flags.onGasTank) {
         return {
-            to: FEE_COLLECTOR,
+            to: addresses_1.FEE_COLLECTOR,
             value: 0n,
             data: abiCoder.encode(['string', 'uint256', 'string'], ['gasTank', gasTankOrApproveAmount, feeToken.symbol])
         };
     }
-    if (feeToken.address === ZeroAddress) {
+    if (feeToken.address === ethers_1.ZeroAddress) {
         // native payment
         return {
-            to: FEE_COLLECTOR,
+            to: addresses_1.FEE_COLLECTOR,
             value: 1n,
             data: '0x'
         };
@@ -29,19 +34,19 @@ export function getFeeCall(feeToken) {
         to: feeToken.address,
         value: 0n,
         data: ERC20Interface.encodeFunctionData('approve', [
-            DEPLOYLESS_SIMULATION_FROM,
+            deploy_1.DEPLOYLESS_SIMULATION_FROM,
             gasTankOrApproveAmount
         ])
     };
 }
-export function decodeFeeCall({ to, value, data }, network) {
+function decodeFeeCall({ to, value, data }, network) {
     if (!to) {
         throw new Error('Invalid fee call: missing `to` field');
     }
-    if (to === FEE_COLLECTOR) {
+    if (to === addresses_1.FEE_COLLECTOR) {
         if (data === '0x') {
             return {
-                address: ZeroAddress,
+                address: ethers_1.ZeroAddress,
                 amount: value,
                 isGasTank: false,
                 chainId: network.chainId
@@ -49,14 +54,14 @@ export function decodeFeeCall({ to, value, data }, network) {
         }
         const [, amount, symbol] = abiCoder.decode(['string', 'uint256', 'string'], data);
         // Prioritize Ethereum tokens
-        const ethereumToken = gasTankFeeTokens.find(({ symbol: tSymbol, chainId: tChainId }) => tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === 1n);
+        const ethereumToken = gasTankFeeTokens_1.default.find(({ symbol: tSymbol, chainId: tChainId }) => tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === 1n);
         // Fallback to network tokens
         const networkToken = network.chainId !== 1n
-            ? gasTankFeeTokens.find(({ symbol: tSymbol, chainId: tChainId }) => tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === network.chainId)
+            ? gasTankFeeTokens_1.default.find(({ symbol: tSymbol, chainId: tChainId }) => tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === network.chainId)
             : null;
         // Fallback to any network token. Example: user paid the fee on Base
         // with Wrapped Matic (neither Ethereum nor Base token)
-        const anyNetworkToken = gasTankFeeTokens.find(({ symbol: tSymbol }) => tSymbol.toLowerCase() === symbol.toLowerCase());
+        const anyNetworkToken = gasTankFeeTokens_1.default.find(({ symbol: tSymbol }) => tSymbol.toLowerCase() === symbol.toLowerCase());
         // This is done for backwards compatibility with the old gas tank. A known flaw
         // is that it may prioritize the wrong token. Example: a user had paid the fee with
         // USDT on BSC, but we prioritize the USDT on Ethereum. 18 vs 6 decimals.

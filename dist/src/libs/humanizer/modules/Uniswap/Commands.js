@@ -1,7 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.V4_ACTION_DESCRIPTORS = exports.V4_ACTION_CODES = exports.COMMANDS_DESCRIPTIONS = exports.COMMANDS = void 0;
 // @NOTE<Yosif>: updated as the techincal reference has been updated
 // the only difference comes in commands after 0x10 - some have been changed, some removed
 // the ones changed used to be about NFT trading, now are for the v4 contract
-export const COMMANDS = {
+exports.COMMANDS = {
     FLAG_ALLOW_REVERT: '0x80',
     COMMAND_TYPE_MASK: '0x3f',
     V3_SWAP_EXACT_IN: '0x00',
@@ -23,7 +26,7 @@ export const COMMANDS = {
  * ABI-like structure for each uniswap action
  * https://docs.uniswap.org/contracts/universal-router/technical-reference
  */
-export const COMMANDS_DESCRIPTIONS = {
+exports.COMMANDS_DESCRIPTIONS = {
     V3_SWAP_EXACT_IN: {
         command: '0x00',
         inputsDetails: [
@@ -145,7 +148,7 @@ var Subparser;
     Subparser[Subparser["PoolKey"] = 4] = "PoolKey";
 })(Subparser || (Subparser = {}));
 // taken from https://github.com/Uniswap/sdks/blob/9cf6edb2df79338ae58f7ea7ca979c35a8a9bd56/sdks/v4-sdk/src/utils/v4Planner.ts#L82C1-L163C2
-export const V4_ACTION_CODES = {
+exports.V4_ACTION_CODES = {
     // pool actions
     // liquidity actions
     INCREASE_LIQUIDITY: '0x00',
@@ -177,7 +180,7 @@ export const V4_ACTION_CODES = {
     // WRAP: "0x15",
     // UNWRAP: "0x16",
 };
-export const V4_ACTION_DESCRIPTORS = {
+exports.V4_ACTION_DESCRIPTORS = {
     // Liquidity commands
     INCREASE_LIQUIDITY: [
         { name: 'tokenId', type: 'uint256' },

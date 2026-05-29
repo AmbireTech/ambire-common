@@ -1,8 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Candide = void 0;
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { toBeHex } from 'ethers';
-import { CANDIDE } from '../../consts/bundlers';
-import { Bundler } from './bundler';
-export class Candide extends Bundler {
+const ethers_1 = require("ethers");
+const bundlers_1 = require("../../consts/bundlers");
+const bundler_1 = require("./bundler");
+class Candide extends bundler_1.Bundler {
     getUrl(network) {
         const API_KEY = process.env.REACT_APP_CANDIDE_API_KEY || '';
         if (!API_KEY) {
@@ -53,22 +56,23 @@ export class Candide extends Bundler {
         const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride);
         return {
             // add 20000n overhead as discussed with candide
-            preVerificationGas: toBeHex(BigInt(estimatiton.preVerificationGas) + 20000n),
-            verificationGasLimit: toBeHex(BigInt(estimatiton.verificationGasLimit) + 20000n),
-            callGasLimit: toBeHex(estimatiton.callGasLimit),
+            preVerificationGas: (0, ethers_1.toBeHex)(BigInt(estimatiton.preVerificationGas) + 20000n),
+            verificationGasLimit: (0, ethers_1.toBeHex)(BigInt(estimatiton.verificationGasLimit) + 20000n),
+            callGasLimit: (0, ethers_1.toBeHex)(estimatiton.callGasLimit),
             paymasterVerificationGasLimit: estimatiton.paymasterVerificationGasLimit
-                ? toBeHex(estimatiton.paymasterVerificationGasLimit)
+                ? (0, ethers_1.toBeHex)(estimatiton.paymasterVerificationGasLimit)
                 : '0x00',
             paymasterPostOpGasLimit: estimatiton.paymasterPostOpGasLimit
-                ? toBeHex(estimatiton.paymasterPostOpGasLimit)
+                ? (0, ethers_1.toBeHex)(estimatiton.paymasterPostOpGasLimit)
                 : '0x00'
         };
     }
     getName() {
-        return CANDIDE;
+        return bundlers_1.CANDIDE;
     }
     shouldReestimateBeforeBroadcast(network) {
         return true;
     }
 }
+exports.Candide = Candide;
 //# sourceMappingURL=candide.js.map

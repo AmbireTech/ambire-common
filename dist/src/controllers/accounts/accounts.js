@@ -1,18 +1,22 @@
-import { getAddress, isAddress } from 'ethers';
-import AmbireSmartAccountIdentityCreateError from '../../classes/AmbireSmartAccountIdentityCreateError';
-import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
-import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy';
-import { SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL, VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL } from '../../consts/intervals';
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore';
-import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account';
-import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker';
-import { getAccountState } from '../../libs/accountState/accountState';
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const STATUS_WRAPPED_METHODS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AccountsController = exports.STATUS_WRAPPED_METHODS = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireSmartAccountIdentityCreateError_1 = tslib_1.__importDefault(require("../../classes/AmbireSmartAccountIdentityCreateError"));
+const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
+const deploy_1 = require("../../consts/deploy");
+const intervals_1 = require("../../consts/intervals");
+const keystore_1 = require("../../interfaces/keystore");
+const account_1 = require("../../libs/account/account");
+const accountPicker_1 = require("../../libs/accountPicker/accountPicker");
+const accountState_1 = require("../../libs/accountState/accountState");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.STATUS_WRAPPED_METHODS = {
     addAccounts: 'INITIAL'
 };
-export class AccountsController extends EventEmitter {
+class AccountsController extends eventEmitter_1.default {
     #storage;
     #networks;
     #providers;
@@ -34,7 +38,7 @@ export class AccountsController extends EventEmitter {
     #accounts = [];
     accountStates = {};
     accountStatesLoadingState = {};
-    statuses = STATUS_WRAPPED_METHODS;
+    statuses = exports.STATUS_WRAPPED_METHODS;
     #onAddAccounts;
     #updateProviderIsWorking;
     #onAccountStateUpdate;
@@ -53,9 +57,9 @@ export class AccountsController extends EventEmitter {
         this.#onAddAccounts = onAddAccounts;
         this.#updateProviderIsWorking = updateProviderIsWorking;
         this.#onAccountStateUpdate = onAccountStateUpdate;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
-        this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(this.setViewOnlyAccountIdentitiesIfNeeded.bind(this), VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL, this.emitError.bind(this));
-        this.#smartAccountIdentityCreateInterval = new RecurringTimeout(this.createSmartAccountIdentitiesIfNeeded.bind(this), SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL, this.emitError.bind(this));
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
+        this.#viewOnlyAccountGetIdentityInterval = new recurringTimeout_1.RecurringTimeout(this.setViewOnlyAccountIdentitiesIfNeeded.bind(this), intervals_1.VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL, this.emitError.bind(this));
+        this.#smartAccountIdentityCreateInterval = new recurringTimeout_1.RecurringTimeout(this.createSmartAccountIdentitiesIfNeeded.bind(this), intervals_1.SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL, this.emitError.bind(this));
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
         });
@@ -74,7 +78,7 @@ export class AccountsController extends EventEmitter {
         await this.#providers.initialLoadPromise;
         const accounts = await this.#storage.get('accounts', []);
         const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null);
-        this.accounts = getUniqueAccountsArray(accounts);
+        this.accounts = (0, account_1.getUniqueAccountsArray)(accounts);
         // Emit an update before updating account states as the first state update may take some time
         this.emitUpdate();
         // Don't await this. Networks should update one by one
@@ -133,7 +137,7 @@ export class AccountsController extends EventEmitter {
                     });
                     return;
                 }
-                this.accountStatesLoadingState[network.chainId.toString()] = getAccountState(provider, network, accounts, this.#keystore.keys, blockTag);
+                this.accountStatesLoadingState[network.chainId.toString()] = (0, accountState_1.getAccountState)(provider, network, accounts, this.#keystore.keys, blockTag);
                 const networkAccountStates = await this.accountStatesLoadingState[network.chainId.toString()];
                 this.#updateProviderIsWorking(network.chainId, true);
                 networkAccountStates.forEach((accountState) => {
@@ -175,7 +179,7 @@ export class AccountsController extends EventEmitter {
     async #addAccounts(accounts = []) {
         if (!accounts.length)
             return;
-        accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }));
+        accounts = accounts.map((a) => ({ ...a, addr: (0, ethers_1.getAddress)(a.addr) }));
         const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr));
         const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr));
         const newAccountsAlreadyAdded = accounts.filter((acc) => alreadyAddedAddressSet.has(acc.addr));
@@ -197,7 +201,7 @@ export class AccountsController extends EventEmitter {
             })),
             ...newAccountsNotAddedYet.map((a) => ({ ...a, newlyAdded: true }))
         ];
-        this.accounts = getUniqueAccountsArray(nextAccounts);
+        this.accounts = (0, account_1.getUniqueAccountsArray)(nextAccounts);
         await this.#storage.set('accounts', this.accounts);
         this.#onAddAccounts(accounts);
         // update the state of new accounts. Otherwise, the user needs to restart his extension
@@ -220,8 +224,8 @@ export class AccountsController extends EventEmitter {
             const account = accounts.find((a) => a.addr === acc.addr);
             if (!account)
                 return acc;
-            if (isAddress(account.preferences.pfp)) {
-                account.preferences.pfp = getAddress(account.preferences.pfp);
+            if ((0, ethers_1.isAddress)(account.preferences.pfp)) {
+                account.preferences.pfp = (0, ethers_1.getAddress)(account.preferences.pfp);
             }
             return { ...acc, preferences: account.preferences };
         });
@@ -244,7 +248,7 @@ export class AccountsController extends EventEmitter {
         const updatedAccounts = [...this.accounts];
         const [movedAccount] = updatedAccounts.splice(fromIndex, 1);
         updatedAccounts.splice(toIndex, 0, movedAccount);
-        this.accounts = getUniqueAccountsArray(updatedAccounts);
+        this.accounts = (0, account_1.getUniqueAccountsArray)(updatedAccounts);
         this.emitUpdate();
         await this.#storage.set('accounts', this.accounts);
     }
@@ -293,7 +297,7 @@ export class AccountsController extends EventEmitter {
                     return null;
                 throw err;
             });
-            const { creation, initialPrivileges, associatedKeys } = await normalizeIdentityResponse(a.addr, identityRes);
+            const { creation, initialPrivileges, associatedKeys } = await (0, accountPicker_1.normalizeIdentityResponse)(a.addr, identityRes);
             const now = Date.now();
             return {
                 ...a,
@@ -326,7 +330,7 @@ export class AccountsController extends EventEmitter {
      * with the identityCreatedAt timestamp. Handles retry mechanism for failed requests.
      */
     async createSmartAccountIdentitiesIfNeeded() {
-        const smartAccountsNeedingIdentityCreate = this.accounts.filter((a) => isAmbireV2Account(a.creation?.factoryAddr) &&
+        const smartAccountsNeedingIdentityCreate = this.accounts.filter((a) => (0, account_1.isAmbireV2Account)(a.creation?.factoryAddr) &&
             this.#keystore.getAccountKeys(a).length &&
             !a.creation?.identityCreatedAt);
         if (!smartAccountsNeedingIdentityCreate.length)
@@ -338,13 +342,13 @@ export class AccountsController extends EventEmitter {
                 ? account.initialPrivileges
                 : // default initialPrivileges, Ambire v2 accounts always have these
                     // privileges, because key management for them got never implemented.
-                    [[account.associatedKeys[0], dedicatedToOneSAPriv]],
+                    [[account.associatedKeys[0], keystore_1.dedicatedToOneSAPriv]],
             creation: {
                 factoryAddr: account.creation.factoryAddr,
                 salt: account.creation.salt,
                 // No need to retrieve the base identity address from the bytecode
                 // because all Ambire smart accounts v2 has the same
-                baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+                baseIdentityAddr: deploy_1.PROXY_AMBIRE_ACCOUNT
             }
         }));
         try {
@@ -383,13 +387,13 @@ export class AccountsController extends EventEmitter {
             await this.#storage.set('accounts', this.accounts);
             const identityRequestsFailedToCreate = identityRequests.filter((req) => !identityExists.includes(req.addr));
             if (identityRequestsFailedToCreate.length)
-                throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate);
+                throw new AmbireSmartAccountIdentityCreateError_1.default(identityRequestsFailedToCreate);
             // Stop the interval immediately upon success (otherwise, it would make
             // one more circle and then stop because of the guard upfront)
             this.#smartAccountIdentityCreateInterval.stop();
         }
         catch (error) {
-            const identitiesFailedToCreate = error instanceof AmbireSmartAccountIdentityCreateError
+            const identitiesFailedToCreate = error instanceof AmbireSmartAccountIdentityCreateError_1.default
                 ? error.identityRequests.map((req) => req.addr) // only some failed
                 : identityRequests.map((req) => req.addr); // all failed
             const message = `accounts: Failed to create smart account identities for: ${identitiesFailedToCreate.join(', ')}`;
@@ -405,4 +409,5 @@ export class AccountsController extends EventEmitter {
         };
     }
 }
+exports.AccountsController = AccountsController;
 //# sourceMappingURL=accounts.js.map

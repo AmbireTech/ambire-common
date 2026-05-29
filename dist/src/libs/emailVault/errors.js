@@ -1,3 +1,7 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.classifyEmailVaultError = classifyEmailVaultError;
+exports.friendlyEmailVaultMessage = friendlyEmailVaultMessage;
 function classifyEmailVaultError(err) {
     const msg = (err?.message || '').toLowerCase();
     if (msg.includes('timeout'))
@@ -28,5 +32,4 @@ function friendlyEmailVaultMessage(code, email) {
             return `Something went wrong while verifying ${email}. Please try again in a moment.`;
     }
 }
-export { classifyEmailVaultError, friendlyEmailVaultMessage };
 //# sourceMappingURL=errors.js.map

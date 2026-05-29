@@ -1,4 +1,7 @@
-export var AccountOpStatus;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AccountOpStatus = void 0;
+var AccountOpStatus;
 (function (AccountOpStatus) {
     AccountOpStatus["Pending"] = "pending";
     AccountOpStatus["BroadcastedButNotConfirmed"] = "broadcasted-but-not-confirmed";
@@ -10,5 +13,5 @@ export var AccountOpStatus;
     // use this status as representational in activity/history
     // only for non-atomic batches that have incompleted transactions
     AccountOpStatus["PartiallyComplete"] = "partially-complete";
-})(AccountOpStatus || (AccountOpStatus = {}));
+})(AccountOpStatus || (exports.AccountOpStatus = AccountOpStatus = {}));
 //# sourceMappingURL=types.js.map

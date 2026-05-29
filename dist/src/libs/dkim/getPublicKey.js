@@ -1,9 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = getPublicKey;
+exports.getPublicKeyIfAny = getPublicKeyIfAny;
 /*
   fetch domainkey record (nodejs)
 */
 const { promisify } = require('util');
 const getKey = promisify(require('dkim/lib/get-key'));
-export default function getPublicKey({ domain, selector }) {
+function getPublicKey({ domain, selector }) {
     return getKey(domain, selector).then((key) => {
         const publicKey = '-----BEGIN PUBLIC KEY-----\n' + key.key.toString('base64') + '\n-----END PUBLIC KEY-----';
         return {
@@ -20,7 +24,7 @@ export default function getPublicKey({ domain, selector }) {
  * @param {domain: string, selector: string}
  * @returns base64encoded | null
  */
-export async function getPublicKeyIfAny({ domain, selector }) {
+async function getPublicKeyIfAny({ domain, selector }) {
     try {
         const dkimKey = await getPublicKey({ domain, selector: selector });
         return dkimKey;

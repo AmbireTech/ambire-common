@@ -1,5 +1,9 @@
-import { BROADCAST_OPTIONS } from '../broadcast/broadcast';
-export function increaseFee(amount, broadcaster = 'relayer') {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.increaseFee = increaseFee;
+exports.calculateFeeAmount = calculateFeeAmount;
+const broadcast_1 = require("../broadcast/broadcast");
+function increaseFee(amount, broadcaster = 'relayer') {
     if (broadcaster === 'paymaster')
         return amount + amount / 10n;
     return amount + amount / 20n;
@@ -16,17 +20,17 @@ function getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio,
     }
     return result;
 }
-export function calculateFeeAmount({ broadcastOption, simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative, usesPaymaster }) {
-    if (broadcastOption === BROADCAST_OPTIONS.bySelf ||
-        broadcastOption === BROADCAST_OPTIONS.bySelf7702 ||
-        broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
+function calculateFeeAmount({ broadcastOption, simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative, usesPaymaster }) {
+    if (broadcastOption === broadcast_1.BROADCAST_OPTIONS.bySelf ||
+        broadcastOption === broadcast_1.BROADCAST_OPTIONS.bySelf7702 ||
+        broadcastOption === broadcast_1.BROADCAST_OPTIONS.byOtherEOA) {
         return simulatedGasLimit * gasPrice + addedNative;
     }
     let amount = getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative);
-    if (broadcastOption === BROADCAST_OPTIONS.byBundler && usesPaymaster) {
+    if (broadcastOption === broadcast_1.BROADCAST_OPTIONS.byBundler && usesPaymaster) {
         amount = increaseFee(amount, 'paymaster');
     }
-    else if (broadcastOption !== BROADCAST_OPTIONS.byBundler) {
+    else if (broadcastOption !== broadcast_1.BROADCAST_OPTIONS.byBundler) {
         amount = increaseFee(amount);
     }
     return amount;

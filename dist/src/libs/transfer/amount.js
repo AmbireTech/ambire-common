@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSanitizedAmount = exports.getAmountAfterFeeSync = exports.getAmountAfterFeeReserve = void 0;
 const FEE_RESERVE_OVERHEAD_BPS = 2000n;
 const BPS = 10000n;
 const getFeeWithReserveOverhead = (fee) => {
@@ -10,6 +13,7 @@ const getAmountAfterFeeReserve = (amount, fee) => {
     const feeWithOverhead = getFeeWithReserveOverhead(fee);
     return amount > feeWithOverhead ? amount - feeWithOverhead : 0n;
 };
+exports.getAmountAfterFeeReserve = getAmountAfterFeeReserve;
 const getAmountAfterFeeSync = ({ currentAmount, totalAmount, fee, reservedFee, shouldReserveFee, isMaxAmountSelected }) => {
     const feeToReserve = reservedFee && reservedFee > fee ? reservedFee : fee;
     const maxTransferableAmount = shouldReserveFee
@@ -21,6 +25,7 @@ const getAmountAfterFeeSync = ({ currentAmount, totalAmount, fee, reservedFee, s
         return currentAmount;
     return currentAmount > maxTransferableAmount ? maxTransferableAmount : currentAmount;
 };
+exports.getAmountAfterFeeSync = getAmountAfterFeeSync;
 /**
  * Removes any extra decimals from the amount.
  * @example getSanitizedAmount('1.123456', 2) => '1.12'
@@ -31,5 +36,5 @@ const getSanitizedAmount = (amount, decimals) => {
         sanitizedAmount[1] = sanitizedAmount[1].slice(0, decimals);
     return sanitizedAmount.join('.');
 };
-export { getAmountAfterFeeReserve, getAmountAfterFeeSync, getSanitizedAmount };
+exports.getSanitizedAmount = getSanitizedAmount;
 //# sourceMappingURL=amount.js.map

@@ -1,4 +1,7 @@
-export const AAVE_V3 = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UNISWAP_V3 = exports.AAVE_V3 = void 0;
+exports.AAVE_V3 = {
     '1': {
         poolAddr: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2'
     },
@@ -66,7 +69,7 @@ export const AAVE_V3 = {
     // poolAddr: '0x3E59A31363E2ad014dcbc521c4a0d5757d9f3402'
     // }
 };
-export const UNISWAP_V3 = {
+exports.UNISWAP_V3 = {
     '1': {
         nonfungiblePositionManagerAddr: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
         factoryAddr: '0x1F98431c8aD98523631AE4a59f267346ea31F984'

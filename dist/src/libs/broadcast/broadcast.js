@@ -1,13 +1,21 @@
-import { Interface, toQuantity } from 'ethers';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
-import ERC20 from '../../../contracts/compiled/IERC20.json';
-import { getSafeBroadcastTxn } from '../../libs/safe/safe';
-import wait from '../../utils/wait';
-import { getSignableCalls } from '../accountOp/accountOp';
-import { getErrorCodeStringFromReason } from '../errorDecoder/helpers';
-const erc20interface = new Interface(ERC20.abi);
-export const BROADCAST_OPTIONS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BROADCAST_OPTIONS = void 0;
+exports.getByOtherEOATxnData = getByOtherEOATxnData;
+exports.getTxnData = getTxnData;
+exports.buildRawTransaction = buildRawTransaction;
+exports.broadcastTransaction = broadcastTransaction;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const safe_1 = require("../../libs/safe/safe");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const accountOp_1 = require("../accountOp/accountOp");
+const helpers_1 = require("../errorDecoder/helpers");
+const erc20interface = new ethers_1.Interface(IERC20_json_1.default.abi);
+exports.BROADCAST_OPTIONS = {
     bySelf: 'self', // standard txn
     bySelf7702: 'self7702', // executeBySender
     byBundler: 'bundler', // userOp
@@ -17,25 +25,25 @@ export const BROADCAST_OPTIONS = {
 };
 async function waitBeforeRetry(chainId) {
     // block time at ethereum is bigger, so we wait 3s per failures
-    await wait(chainId === 1n ? 3000 : 1500);
+    await (0, wait_1.default)(chainId === 1n ? 3000 : 1500);
 }
-export function getByOtherEOATxnData(account, op, accountState) {
+function getByOtherEOATxnData(account, op, accountState) {
     if (accountState.isDeployed) {
-        const ambireAccount = new Interface(AmbireAccount.abi);
+        const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
         return {
             to: op.accountAddr,
             value: 0n,
-            data: ambireAccount.encodeFunctionData('execute', [getSignableCalls(op), op.signature])
+            data: ambireAccount.encodeFunctionData('execute', [(0, accountOp_1.getSignableCalls)(op), op.signature])
         };
     }
-    const ambireFactory = new Interface(AmbireFactory.abi);
+    const ambireFactory = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
     return {
         to: account.creation.factoryAddr,
         value: 0n,
         data: ambireFactory.encodeFunctionData('deployAndExecute', [
             account.creation.bytecode,
             account.creation.salt,
-            getSignableCalls(op),
+            (0, accountOp_1.getSignableCalls)(op),
             op.signature
         ])
     };
@@ -44,16 +52,16 @@ export function getByOtherEOATxnData(account, op, accountState) {
 async function estimateGas(provider, from, call, nonce, chainId, error, counter = 0) {
     // this should happen only in the case of internet issues
     if (counter > 10) {
-        throw new Error(`Failed estimating gas for broadcast${error ? `: ${getErrorCodeStringFromReason(error.message)}` : ''}`);
+        throw new Error(`Failed estimating gas for broadcast${error ? `: ${(0, helpers_1.getErrorCodeStringFromReason)(error.message)}` : ''}`);
     }
     const callEstimateGas = provider
         .send('eth_estimateGas', [
         {
             from,
             to: call.to,
-            value: toQuantity(call.value),
+            value: (0, ethers_1.toQuantity)(call.value),
             data: call.data,
-            nonce: toQuantity(nonce)
+            nonce: (0, ethers_1.toQuantity)(nonce)
         },
         'pending'
     ])
@@ -91,22 +99,22 @@ async function estimateGas(provider, from, call, nonce, chainId, error, counter 
     // add a 10% overhead to prevent OOG
     return BigInt(gasLimit) + BigInt(gasLimit) / 10n;
 }
-export async function getTxnData(account, op, accountState, provider, broadcastOption, nonce, call) {
+async function getTxnData(account, op, accountState, provider, broadcastOption, nonce, call) {
     if (account.safeCreation) {
-        const safeData = getSafeBroadcastTxn(op, accountState);
+        const safeData = (0, safe_1.getSafeBroadcastTxn)(op, accountState);
         return {
             ...safeData,
             gasLimit: op.gasFeePayment.simulatedGasLimit
         };
     }
     // no need to estimate gas for delegation, it's already estimated
-    if (broadcastOption === BROADCAST_OPTIONS.delegation) {
+    if (broadcastOption === exports.BROADCAST_OPTIONS.delegation) {
         if (op.calls.length > 1) {
-            const ambireAccount = new Interface(AmbireAccount.abi);
+            const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
             return {
                 to: account.addr,
                 value: 0n,
-                data: ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+                data: ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(op)])
             };
         }
         if (!call)
@@ -118,7 +126,7 @@ export async function getTxnData(account, op, accountState, provider, broadcastO
             gasLimit: op.gasFeePayment.simulatedGasLimit
         };
     }
-    if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
+    if (broadcastOption === exports.BROADCAST_OPTIONS.bySelf) {
         if (!call)
             throw new Error('single txn broadcast misconfig');
         // if the accountOp has more than 1 calls, we have to calculate the gas
@@ -135,20 +143,20 @@ export async function getTxnData(account, op, accountState, provider, broadcastO
         };
         return singleCallTxn;
     }
-    if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
+    if (broadcastOption === exports.BROADCAST_OPTIONS.byOtherEOA) {
         const otherEOACall = getByOtherEOATxnData(account, op, accountState);
         const gasLimit = await estimateGas(provider, op.gasFeePayment.paidBy, otherEOACall, nonce, op.chainId);
         return { ...otherEOACall, gasLimit };
     }
     // 7702 executeBySender
-    const ambireAccount = new Interface(AmbireAccount.abi);
+    const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
     return {
         to: account.addr,
         value: 0n,
-        data: ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+        data: ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(op)])
     };
 }
-export async function buildRawTransaction(account, op, accountState, provider, network, nonce, broadcastOption, call) {
+async function buildRawTransaction(account, op, accountState, provider, network, nonce, broadcastOption, call) {
     const gasFeePayment = op.gasFeePayment;
     const txnData = await getTxnData(account, op, accountState, provider, broadcastOption, nonce, call);
     const rawTxn = {
@@ -169,7 +177,7 @@ export async function buildRawTransaction(account, op, accountState, provider, n
     }
     return rawTxn;
 }
-export async function broadcastTransaction(provider, signedTx, chainId, counter = 0) {
+async function broadcastTransaction(provider, signedTx, chainId, counter = 0) {
     if (counter > 2)
         throw new Error('broadcast failed');
     try {

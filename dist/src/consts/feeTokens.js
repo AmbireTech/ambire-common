@@ -1,7 +1,9 @@
+"use strict";
 // When adding a token to this list, please consider the following:
 // 1. Open a block explorer and confirm the address is legit
 // 2. Check if the token address exists on the relayer side
-export default [
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = [
     {
         // wrapped eth
         address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',

@@ -1,28 +1,37 @@
-import { getAddress, Interface, toQuantity } from 'ethers';
-import { DEPLOYLESS_SIMULATION_FROM } from '@/consts/deploy';
-import { getFunctionParams } from '@/libs/tracer/debugTraceCall';
-import SafeContract from '../../../contracts/compiled/Safe.json';
-import { ProviderError } from '../../classes/ProviderError';
-import { safeSimulateTxAccessor } from '../../consts/safe';
-import { getRpcProvider } from '../../services/provider';
-import { encodeCalls } from '../safe/safe';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSimulateTxnAccessor = getSimulateTxnAccessor;
+exports.getShouldUseAccessListCall = getShouldUseAccessListCall;
+exports.getSafeAccessListCallParams = getSafeAccessListCallParams;
+exports.parseAccessList = parseAccessList;
+exports.sendCreateAccessList = sendCreateAccessList;
+exports.createAccessListCall = createAccessListCall;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const deploy_1 = require("@/consts/deploy");
+const debugTraceCall_1 = require("@/libs/tracer/debugTraceCall");
+const Safe_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Safe.json"));
+const ProviderError_1 = require("../../classes/ProviderError");
+const safe_1 = require("../../consts/safe");
+const provider_1 = require("../../services/provider");
+const safe_2 = require("../safe/safe");
 const safeSimulateTxAccessorAbi = [
     'function simulate(address to, uint256 value, bytes data, uint8 operation)'
 ];
-const safeIface = new Interface(SafeContract);
-const simulateAccessorIface = new Interface(safeSimulateTxAccessorAbi);
-export function getSimulateTxnAccessor(version) {
+const safeIface = new ethers_1.Interface(Safe_json_1.default);
+const simulateAccessorIface = new ethers_1.Interface(safeSimulateTxAccessorAbi);
+function getSimulateTxnAccessor(version) {
     if (!version)
         return null;
     if (version.startsWith('1.3'))
-        return safeSimulateTxAccessor['v1.3.0'];
+        return safe_1.safeSimulateTxAccessor['v1.3.0'];
     if (version.startsWith('1.4'))
-        return safeSimulateTxAccessor['v1.4.1'];
+        return safe_1.safeSimulateTxAccessor['v1.4.1'];
     if (version.startsWith('1.5'))
-        return safeSimulateTxAccessor['v1.5.0'];
+        return safe_1.safeSimulateTxAccessor['v1.5.0'];
     return null;
 }
-export function getShouldUseAccessListCall(account, needsStateOverride) {
+function getShouldUseAccessListCall(account, needsStateOverride) {
     // Use eth_createAccessList for Safe only if we know the
     // simulateTxAccessor for the Safe version (see getSafeAccessListCallParams)
     if (account.safeCreation) {
@@ -39,13 +48,13 @@ export function getShouldUseAccessListCall(account, needsStateOverride) {
  * can easily select the right one based on the Safe version and fall back to debug_traceCall if the version is not supported
  * All deployments: https://github.com/safe-global/safe-deployments/blob/main/src/deployments.ts
  */
-export function getSafeAccessListCallParams(baseAcc, op, accountState) {
+function getSafeAccessListCallParams(baseAcc, op, accountState) {
     const account = baseAcc.getAccount();
     if (!account.safeCreation || !accountState.isDeployed)
         return null;
     if (!op.calls.length)
         return null;
-    const { to, value, data, operation } = encodeCalls(op);
+    const { to, value, data, operation } = (0, safe_2.encodeCalls)(op);
     const simulateTxAccessor = getSimulateTxnAccessor(account.safeCreation.version);
     if (!simulateTxAccessor)
         return null;
@@ -63,13 +72,13 @@ export function getSafeAccessListCallParams(baseAcc, op, accountState) {
         to: account.addr,
         value: 0,
         data: outerCalldata,
-        from: DEPLOYLESS_SIMULATION_FROM
+        from: deploy_1.DEPLOYLESS_SIMULATION_FROM
     };
 }
 /**
  * Parses an access list and extracts unique contract addresses
  */
-export function parseAccessList(accessList) {
+function parseAccessList(accessList) {
     if (!accessList || accessList.length === 0) {
         return [];
     }
@@ -78,7 +87,7 @@ export function parseAccessList(accessList) {
     accessList.forEach(({ address }) => {
         try {
             // Normalize the address using getAddress (checksum)
-            const normalized = getAddress(address);
+            const normalized = (0, ethers_1.getAddress)(address);
             uniqueAddresses.add(normalized);
         }
         catch (e) {
@@ -87,7 +96,7 @@ export function parseAccessList(accessList) {
     });
     return Array.from(uniqueAddresses);
 }
-export async function sendCreateAccessList(provider, params, network, 
+async function sendCreateAccessList(provider, params, network, 
 /**
  * State override was added in 2025 but is not yet widely supported, so it shouldn't be used
  * https://github.com/ethereum/go-ethereum/issues/27630
@@ -99,7 +108,7 @@ stateOverride) {
     const requestParams = [
         {
             to: params.to,
-            value: toQuantity(params.value.toString()),
+            value: (0, ethers_1.toQuantity)(params.value.toString()),
             data: params.data,
             from: params.from
         },
@@ -128,16 +137,16 @@ stateOverride) {
  * Uses eth_createAccessList to discover contract addresses accessed during transaction execution.
  * Traces all calls in the AccountOp and merges the discovered addresses.
  */
-export async function createAccessListCall(baseAcc, op, network, accountState) {
+async function createAccessListCall(baseAcc, op, network, accountState) {
     const account = baseAcc.getAccount();
     const params = account.safeCreation && accountState.isDeployed
         ? getSafeAccessListCallParams(baseAcc, op, accountState)
-        : getFunctionParams(account, op, accountState);
+        : (0, debugTraceCall_1.getFunctionParams)(account, op, accountState);
     if (!params || !params.to || typeof params.to !== 'string')
         return [];
     // Initialize a new provider for eth_createAccessList
     // Using separate provider to avoid batching issues that can impact performance
-    const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl);
+    const provider = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl);
     try {
         const response = await sendCreateAccessList(provider, {
             ...params,
@@ -149,7 +158,7 @@ export async function createAccessListCall(baseAcc, op, network, accountState) {
     }
     catch (e) {
         console.error('Debug: eth_createAccessList error', e);
-        throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
+        throw new ProviderError_1.ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
     }
     finally {
         // Clean up the provider after usage

@@ -1,9 +1,14 @@
-import { getAddress, isAddress } from 'ethers';
-import wait from '../../utils/wait';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const PERSIST_NOT_FOUND_IN_MS = 1000 * 60 * 60; // 60 minutes
-export const PERSIST_FAILED_IN_MS = 1000 * 60 * 2; // 2 minutes
-export function isUnderstandableName(name) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ContractNamesController = exports.PERSIST_FAILED_IN_MS = exports.PERSIST_NOT_FOUND_IN_MS = void 0;
+exports.isUnderstandableName = isUnderstandableName;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.PERSIST_NOT_FOUND_IN_MS = 1000 * 60 * 60; // 60 minutes
+exports.PERSIST_FAILED_IN_MS = 1000 * 60 * 2; // 2 minutes
+function isUnderstandableName(name) {
     const forbiddenWords = ['Ambire', 'Identity', 'Safe', 'Proxy', 'Diamond'];
     if (name.endsWith('able'))
         return false;
@@ -16,7 +21,7 @@ export function isUnderstandableName(name) {
  * Resolved names are saved in `contractNames` permanently, unless the lookup failed, then new
  * attempt will be made only after PERSIST_NOT_FOUND_IN_MS to avoid unnecessary lookups.
  */
-export class ContractNamesController extends EventEmitter {
+class ContractNamesController extends eventEmitter_1.default {
     #debounceTime;
     #fetch;
     #lastTimeScheduledFetch = 0;
@@ -64,7 +69,7 @@ export class ContractNamesController extends EventEmitter {
                     error: 'Request to relayer failed',
                     isLoading: false,
                     updatedAt: Date.now(),
-                    retryAfter: PERSIST_FAILED_IN_MS
+                    retryAfter: exports.PERSIST_FAILED_IN_MS
                 };
             });
             // this is just to keep the type safety in case of changes
@@ -88,7 +93,7 @@ export class ContractNamesController extends EventEmitter {
                     error: 'Request to relayer failed',
                     isLoading: false,
                     updatedAt: Date.now(),
-                    retryAfter: PERSIST_FAILED_IN_MS
+                    retryAfter: exports.PERSIST_FAILED_IN_MS
                 };
             });
             this.emitUpdate();
@@ -109,7 +114,7 @@ export class ContractNamesController extends EventEmitter {
                     error: 'Contract name not found',
                     isLoading: false,
                     updatedAt: Date.now(),
-                    retryAfter: PERSIST_NOT_FOUND_IN_MS
+                    retryAfter: exports.PERSIST_NOT_FOUND_IN_MS
                 };
         });
         this.emitUpdate();
@@ -133,14 +138,14 @@ export class ContractNamesController extends EventEmitter {
         return false;
     }
     getName(_address, chainId) {
-        if (!isAddress(_address))
+        if (!(0, ethers_1.isAddress)(_address))
             return this.emitError({
                 message: 'Non address passed to ContractNamesController.getName',
                 level: 'silent',
                 sendCrashReport: true,
                 error: new Error(`Non-address passed to ContractNamesController.getName: ${_address}, ${chainId}`)
             });
-        const address = getAddress(_address);
+        const address = (0, ethers_1.getAddress)(_address);
         if (this.#shouldSkipGetName(address, chainId))
             return;
         this.#contractsPendingToBeFetched.push({ address, chainId });
@@ -154,7 +159,7 @@ export class ContractNamesController extends EventEmitter {
         if (Date.now() - this.#lastTimeScheduledFetch < this.#debounceTime)
             return;
         this.#lastTimeScheduledFetch = Date.now();
-        wait(this.#debounceTime)
+        (0, wait_1.default)(this.#debounceTime)
             .then(() => this.#batchFetchNames())
             .catch((e) => {
             this.emitError({
@@ -173,4 +178,5 @@ export class ContractNamesController extends EventEmitter {
         };
     }
 }
+exports.ContractNamesController = ContractNamesController;
 //# sourceMappingURL=contractNames.js.map

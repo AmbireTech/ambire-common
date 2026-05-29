@@ -1,6 +1,9 @@
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast';
-import { getAvailableBundlerNames, getAvailableBunlders, getBundlerByName, getDefaultBundler } from './getBundler';
-export class BundlerSwitcher {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BundlerSwitcher = void 0;
+const broadcast_1 = require("../../libs/broadcast/broadcast");
+const getBundler_1 = require("./getBundler");
+class BundlerSwitcher {
     network;
     bundler;
     usedBundlers = [];
@@ -12,9 +15,9 @@ export class BundlerSwitcher {
     constructor(network, hasControllerForbiddenUpdates, opts = { canDelegate: false }) {
         this.network = network;
         this.bundler =
-            opts.preferredBundler && getAvailableBundlerNames(network).includes(opts.preferredBundler)
-                ? getBundlerByName(opts.preferredBundler)
-                : getDefaultBundler(network, opts);
+            opts.preferredBundler && (0, getBundler_1.getAvailableBundlerNames)(network).includes(opts.preferredBundler)
+                ? (0, getBundler_1.getBundlerByName)(opts.preferredBundler)
+                : (0, getBundler_1.getDefaultBundler)(network, opts);
         this.usedBundlers.push(this.bundler.getName());
         this.hasControllerForbiddenUpdates = hasControllerForbiddenUpdates;
     }
@@ -31,14 +34,14 @@ export class BundlerSwitcher {
             return false;
         if (!this.hasBundlers())
             return false;
-        const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+        const availableBundlers = (0, getBundler_1.getAvailableBunlders)(this.network).filter((bundler) => {
             return this.usedBundlers.indexOf(bundler.getName()) === -1;
         });
         if (availableBundlers.length === 0)
             return false;
         // only pimlico can do txn type 4 and if pimlico is
         // not working, we have nothing to fallback to
-        if (baseAcc && baseAcc.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler))
+        if (baseAcc && baseAcc.shouldSignAuthorization(broadcast_1.BROADCAST_OPTIONS.byBundler))
             return false;
         return true;
     }
@@ -46,7 +49,7 @@ export class BundlerSwitcher {
         if (!this.hasBundlers()) {
             throw new Error('no available bundlers to switch');
         }
-        const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+        const availableBundlers = (0, getBundler_1.getAvailableBunlders)(this.network).filter((bundler) => {
             return this.usedBundlers.indexOf(bundler.getName()) === -1;
         });
         this.bundler = availableBundlers[0];
@@ -58,13 +61,13 @@ export class BundlerSwitcher {
      * userOp and you are guessing. Otherwise, refrain from using it
      */
     forceSwitch() {
-        const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+        const availableBundlers = (0, getBundler_1.getAvailableBunlders)(this.network).filter((bundler) => {
             return this.usedBundlers.indexOf(bundler.getName()) === -1;
         });
         // reset on force so we always have a bundler available
         if (availableBundlers.length === 0) {
             this.usedBundlers = [];
-            this.bundler = getAvailableBunlders(this.network)[0];
+            this.bundler = (0, getBundler_1.getAvailableBunlders)(this.network)[0];
             return this.bundler;
         }
         this.bundler = availableBundlers[0];
@@ -75,4 +78,5 @@ export class BundlerSwitcher {
         this.usedBundlers = [this.bundler.getName()];
     }
 }
+exports.BundlerSwitcher = BundlerSwitcher;
 //# sourceMappingURL=bundlerSwitcher.js.map

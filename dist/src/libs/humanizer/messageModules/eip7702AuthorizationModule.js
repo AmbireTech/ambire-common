@@ -1,16 +1,20 @@
-import { getAction, getAddressVisualization, getChain, getLabel, getText } from '../utils';
-export const eip7702AuthorizationModule = (message) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.eip7702AuthorizationModule = void 0;
+const utils_1 = require("../utils");
+const eip7702AuthorizationModule = (message) => {
     if (message.content.kind !== 'authorization-7702')
         return { fullVisualization: [] };
     return {
         fullVisualization: [
-            getAction('EIP-7702 Authorization'),
-            getChain(message.chainId),
-            getText('Nonce'),
-            getLabel(message.content.nonce.toString()),
-            getText('Implementation'),
-            getAddressVisualization(message.content.contractAddr)
+            (0, utils_1.getAction)('EIP-7702 Authorization'),
+            (0, utils_1.getChain)(message.chainId),
+            (0, utils_1.getText)('Nonce'),
+            (0, utils_1.getLabel)(message.content.nonce.toString()),
+            (0, utils_1.getText)('Implementation'),
+            (0, utils_1.getAddressVisualization)(message.content.contractAddr)
         ]
     };
 };
+exports.eip7702AuthorizationModule = eip7702AuthorizationModule;
 //# sourceMappingURL=eip7702AuthorizationModule.js.map

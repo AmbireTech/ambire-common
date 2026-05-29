@@ -1,4 +1,8 @@
-export function paginate(input, limit) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.paginate = paginate;
+exports.flattenResults = flattenResults;
+function paginate(input, limit) {
     const pages = [];
     let from = 0;
     for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
@@ -7,7 +11,7 @@ export function paginate(input, limit) {
     }
     return pages;
 }
-export function flattenResults(everything) {
+function flattenResults(everything) {
     return Promise.all(everything).then((results) => {
         if (!results || !results.length) {
             return [[], {}];

@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const testDapps = [
     {
         id: '2269',
@@ -89,5 +91,5 @@ const testDapps = [
         change_7d: -14.54967690988093
     }
 ];
-export default testDapps;
+exports.default = testDapps;
 //# sourceMappingURL=mockDapps.js.map

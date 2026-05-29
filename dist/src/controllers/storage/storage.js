@@ -1,20 +1,24 @@
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account';
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation';
-import { getUniqueAccountsArray } from '../../libs/account/account';
-import { getDappNameFromId } from '../../libs/dapps/helpers';
-import { KeyIterator } from '../../libs/keyIterator/keyIterator';
-import { getShouldMigrateKeystoreSeedsWithoutHdPath, migrateCustomTokens, migrateHiddenTokens, migrateNetworkPreferencesToNetworks } from '../../libs/storage/storage';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const STATUS_WRAPPED_METHODS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StorageController = exports.STATUS_WRAPPED_METHODS = void 0;
+const tslib_1 = require("tslib");
+const account_1 = require("../../consts/account");
+const derivation_1 = require("../../consts/derivation");
+const account_2 = require("../../libs/account/account");
+const helpers_1 = require("../../libs/dapps/helpers");
+const keyIterator_1 = require("../../libs/keyIterator/keyIterator");
+const storage_1 = require("../../libs/storage/storage");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.STATUS_WRAPPED_METHODS = {
     associateAccountKeysWithLegacySavedSeedMigration: 'INITIAL'
 };
-export class StorageController extends EventEmitter {
+class StorageController extends eventEmitter_1.default {
     #storage;
     // Holds the initial load promise, so that one can wait until it completes
     #storageMigrationsPromise;
     #storageUpdateQueue = Promise.resolve();
     #associateAccountKeysWithLegacySavedSeedMigrationPassed = false;
-    statuses = STATUS_WRAPPED_METHODS;
+    statuses = exports.STATUS_WRAPPED_METHODS;
     constructor(storage, eventEmitterRegistry) {
         super(eventEmitterRegistry);
         this.#storage = storage;
@@ -80,7 +84,7 @@ export class StorageController extends EventEmitter {
         if (passedMigrations.includes('migrateNetworkPreferencesToNetworks'))
             return;
         if (!Object.keys(networks).length && networkPreferences) {
-            const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences);
+            const migratedNetworks = await (0, storage_1.migrateNetworkPreferencesToNetworks)(networkPreferences);
             await this.#storage.set('networks', migratedNetworks);
             await this.#storage.remove('networkPreferences');
         }
@@ -101,12 +105,12 @@ export class StorageController extends EventEmitter {
         if (passedMigrations.includes('migrateAccountPreferencesToAccounts'))
             return;
         if (accountPreferences) {
-            const migratedAccounts = getUniqueAccountsArray(accounts.map((a) => {
+            const migratedAccounts = (0, account_2.getUniqueAccountsArray)(accounts.map((a) => {
                 return {
                     ...a,
                     // @ts-ignore expected to warn, because "accountPreferences" are now legacy (now missing)
                     preferences: this.#storage.accountPreferences[a.addr] || {
-                        label: DEFAULT_ACCOUNT_LABEL,
+                        label: account_1.DEFAULT_ACCOUNT_LABEL,
                         pfp: a.addr
                     }
                 };
@@ -128,10 +132,10 @@ export class StorageController extends EventEmitter {
         ]);
         if (passedMigrations.includes('migrateKeystoreSeedsWithoutHdPathTemplate'))
             return;
-        if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
+        if ((0, storage_1.getShouldMigrateKeystoreSeedsWithoutHdPath)(keystoreSeeds)) {
             const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
                 seed,
-                hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+                hdPathTemplate: derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE
             }));
             await this.#storage.set('keystoreSeeds', migratedKeystoreSeeds);
         }
@@ -212,8 +216,8 @@ export class StorageController extends EventEmitter {
         if (passedMigrations.includes('migrateTokenPreferences'))
             return;
         if (tokenPreferences.some(({ symbol, decimals }) => !!symbol || !!decimals)) {
-            await this.#storage.set('tokenPreferences', migrateHiddenTokens(tokenPreferences));
-            await this.#storage.set('customTokens', migrateCustomTokens(tokenPreferences));
+            await this.#storage.set('tokenPreferences', (0, storage_1.migrateHiddenTokens)(tokenPreferences));
+            await this.#storage.set('customTokens', (0, storage_1.migrateCustomTokens)(tokenPreferences));
         }
         await this.#storage.set('passedMigrations', [
             ...new Set([...passedMigrations, 'migrateTokenPreferences'])
@@ -362,7 +366,7 @@ export class StorageController extends EventEmitter {
             return;
         }
         const keystoreSavedSeed = await keystore.getSavedSeed('legacy-saved-seed');
-        const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase);
+        const keyIterator = new keyIterator_1.KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase);
         const accountPicker = accountPickerInitFn();
         await accountPicker.setInitParams({
             keyIterator,
@@ -447,7 +451,7 @@ export class StorageController extends EventEmitter {
         dapps.forEach((dapp) => {
             const updatedDapp = {
                 ...dapp,
-                name: dapp.name || getDappNameFromId(dapp.id),
+                name: dapp.name || (0, helpers_1.getDappNameFromId)(dapp.id),
                 description: dapp?.description?.startsWith('Custom app automatically added')
                     ? ''
                     : dapp.description,
@@ -595,4 +599,5 @@ export class StorageController extends EventEmitter {
         };
     }
 }
+exports.StorageController = StorageController;
 //# sourceMappingURL=storage.js.map

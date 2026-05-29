@@ -1,8 +1,12 @@
-import { Interface } from 'ethers';
-import entryPointAbi from '../../../contracts/compiled/EntryPoint.json';
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy';
-export async function fetchNonce(account, provider) {
-    const epInterface = new Interface(entryPointAbi);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.fetchNonce = fetchNonce;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const EntryPoint_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/EntryPoint.json"));
+const deploy_1 = require("../../consts/deploy");
+async function fetchNonce(account, provider) {
+    const epInterface = new ethers_1.Interface(EntryPoint_json_1.default);
     const failure = () => {
         console.error('unable to fetch the entry point nonce, estimateBundler');
         return null;
@@ -10,14 +14,14 @@ export async function fetchNonce(account, provider) {
     const [accountNonceHexLatest, accountNonceHexPending] = await Promise.all([
         provider
             .call({
-            to: ERC_4337_ENTRYPOINT,
+            to: deploy_1.ERC_4337_ENTRYPOINT,
             data: epInterface.encodeFunctionData('getNonce', [account.addr, 0]),
             blockTag: 'latest'
         })
             .catch(failure),
         provider
             .call({
-            to: ERC_4337_ENTRYPOINT,
+            to: deploy_1.ERC_4337_ENTRYPOINT,
             data: epInterface.encodeFunctionData('getNonce', [account.addr, 0]),
             blockTag: 'pending'
         })

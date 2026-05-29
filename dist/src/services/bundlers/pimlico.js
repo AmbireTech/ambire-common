@@ -1,7 +1,10 @@
-import { getRpcProvider } from '@/services/provider';
-import { PIMLICO } from '../../consts/bundlers';
-import { Bundler } from './bundler';
-export class Pimlico extends Bundler {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Pimlico = void 0;
+const provider_1 = require("@/services/provider");
+const bundlers_1 = require("../../consts/bundlers");
+const bundler_1 = require("./bundler");
+class Pimlico extends bundler_1.Bundler {
     getUrl(network) {
         const API_KEY = process.env.REACT_APP_PIMLICO_API_KEY || '';
         if (!API_KEY) {
@@ -20,7 +23,7 @@ export class Pimlico extends Bundler {
             throw new Error('Pimlico API key is not set');
         }
         const url = `https://api-direct.pimlico.io/v2/${network.chainId}/rpc?apikey=${API_KEY}`;
-        return getRpcProvider([url], network.chainId);
+        return (0, provider_1.getRpcProvider)([url], network.chainId);
     }
     async getGasPrice(network) {
         const provider = this.getProvider(network);
@@ -44,10 +47,11 @@ export class Pimlico extends Bundler {
         return provider.send('pimlico_getUserOperationStatus', [userOpHash]);
     }
     getName() {
-        return PIMLICO;
+        return bundlers_1.PIMLICO;
     }
     shouldReestimateBeforeBroadcast() {
         return false;
     }
 }
+exports.Pimlico = Pimlico;
 //# sourceMappingURL=pimlico.js.map

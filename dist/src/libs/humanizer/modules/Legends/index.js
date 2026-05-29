@@ -1,6 +1,8 @@
-import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers';
-import { Legends } from '../../const/abis/Legends';
-import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
+const Legends_1 = require("../../const/abis/Legends");
+const utils_1 = require("../../utils");
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971';
 const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
     '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea',
@@ -9,7 +11,7 @@ const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
     '0xb850AcfBC7720873242D27A38E4AE987f914Ef5B',
     '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
 ];
-const iface = new Interface(Legends);
+const iface = new ethers_1.Interface(Legends_1.Legends);
 const legendsModule = (accOp, calls) => {
     const characterTypes = {
         '0': [
@@ -35,66 +37,66 @@ const legendsModule = (accOp, calls) => {
         [iface.getFunction('mint(uint256)')?.selector]: (call) => {
             const [heroType] = iface.parseTransaction(call).args;
             return [
-                getAction('Pick character'),
-                getImage(characterTypes[0][heroType] || characterTypes[0][0]),
-                getLabel('for Ambire Rewards')
+                (0, utils_1.getAction)('Pick character'),
+                (0, utils_1.getImage)(characterTypes[0][heroType] || characterTypes[0][0]),
+                (0, utils_1.getLabel)('for Ambire Rewards')
             ];
         },
         [iface.getFunction('mint(uint characterType, uint season)')?.selector]: (call) => {
             const [heroType, season] = iface.parseTransaction(call).args;
             return [
-                getAction('Pick character'),
-                getImage(characterTypes[season][heroType] || characterTypes[0][0]),
-                getLabel(`for Ambire Rewards season ${season}`)
+                (0, utils_1.getAction)('Pick character'),
+                (0, utils_1.getImage)(characterTypes[season][heroType] || characterTypes[0][0]),
+                (0, utils_1.getLabel)(`for Ambire Rewards season ${season}`)
             ];
         },
         [iface.getFunction('getDailyReward')?.selector]: () => [
-            getAction('Unlock the treasure chest')
+            (0, utils_1.getAction)('Unlock the treasure chest')
         ],
         [iface.getFunction('spinWheel')?.selector]: () => {
-            return [getAction('Unlock the wheel of fortune')];
+            return [(0, utils_1.getAction)('Unlock the wheel of fortune')];
         },
         [iface.getFunction('linkAndAcceptInvite')?.selector]: (call) => {
             const [inviteeV2Account, inviteeEoaOrV1, inviter] = iface.parseTransaction(call).args;
-            const acceptInvitationVisualizationPrefix = inviter !== ZeroAddress
+            const acceptInvitationVisualizationPrefix = inviter !== ethers_1.ZeroAddress
                 ? [
-                    getAction('Accept invitation'),
-                    getLabel('from'),
-                    getAddressVisualization(inviter),
-                    getLabel('and')
+                    (0, utils_1.getAction)('Accept invitation'),
+                    (0, utils_1.getLabel)('from'),
+                    (0, utils_1.getAddressVisualization)(inviter),
+                    (0, utils_1.getLabel)('and')
                 ]
                 : [];
             return [
                 ...acceptInvitationVisualizationPrefix,
-                getAction('Link account'),
-                getAddressVisualization(inviteeEoaOrV1),
-                getLabel('to'),
-                getAddressVisualization(inviteeV2Account)
+                (0, utils_1.getAction)('Link account'),
+                (0, utils_1.getAddressVisualization)(inviteeEoaOrV1),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(inviteeV2Account)
             ];
         },
         [iface.getFunction('invite')?.selector]: (call) => {
             const [invitee] = iface.parseTransaction(call).args;
-            return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Rewards')];
+            return [(0, utils_1.getAction)('Invite'), (0, utils_1.getAddressVisualization)(invitee), (0, utils_1.getLabel)('to Ambire Rewards')];
         },
         [iface.getFunction('claimXpFromFeedback')?.selector]: () => {
-            return [getAction('Claim XP'), getLabel('from'), getLabel('feedback form', true)];
+            return [(0, utils_1.getAction)('Claim XP'), (0, utils_1.getLabel)('from'), (0, utils_1.getLabel)('feedback form', true)];
         },
         [iface.getFunction('claimBitrefillCode')?.selector]: () => {
-            return [getAction('Claim'), getLabel('cashback code for'), getLabel('Bitrefill', true)];
+            return [(0, utils_1.getAction)('Claim'), (0, utils_1.getLabel)('cashback code for'), (0, utils_1.getLabel)('Bitrefill', true)];
         },
         [iface.getFunction('revealMascotLetter')?.selector]: () => {
-            return [getAction('Reveal'), getLabel('a letter from'), getLabel('SHI_T_', true)];
+            return [(0, utils_1.getAction)('Reveal'), (0, utils_1.getLabel)('a letter from'), (0, utils_1.getLabel)('SHI_T_', true)];
         }
     };
     const newCalls = calls.map((call) => {
         if ((call.to &&
-            isAddress(call.to) &&
-            ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(getAddress(call.to))) ||
+            (0, ethers_1.isAddress)(call.to) &&
+            ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes((0, ethers_1.getAddress)(call.to))) ||
             !matcher[call.data.slice(0, 10)])
             return call;
         return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) };
     });
     return newCalls;
 };
-export default legendsModule;
+exports.default = legendsModule;
 //# sourceMappingURL=index.js.map

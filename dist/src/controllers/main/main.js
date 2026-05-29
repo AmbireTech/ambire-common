@@ -1,60 +1,64 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MainController = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethErrors } from 'eth-rpc-errors';
-import EmittableError from '@/classes/EmittableError';
-import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy';
-import { BIP44_LEDGER_DERIVATION_TEMPLATE, BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation';
-import humanizerInfo from '@/consts/humanizer/humanizerInfo.json';
-import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals';
-import { AccountPickerController } from '@/controllers/accountPicker/accountPicker';
-import { AccountsController } from '@/controllers/accounts/accounts';
-import { ActivityController } from '@/controllers/activity/activity';
-import { AddressBookController } from '@/controllers/addressBook/addressBook';
-import { AutoLoginController } from '@/controllers/autoLogin/autoLogin';
-import { BannerController } from '@/controllers/banner/banner';
-import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates';
-import { ContractInfoController } from '@/controllers/contractInfo/contractInfo';
-import { ContractNamesController } from '@/controllers/contractNames/contractNames';
-import { DappsController } from '@/controllers/dapps/dapps';
-import { DomainsController } from '@/controllers/domains/domains';
-import { EmailVaultController } from '@/controllers/emailVault/emailVault';
-import { EstimationStatus } from '@/controllers/estimation/types';
-import EventEmitter from '@/controllers/eventEmitter/eventEmitter';
-import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags';
-import { InviteController } from '@/controllers/invite/invite';
-import { KeystoreController } from '@/controllers/keystore/keystore';
-import { NetworksController } from '@/controllers/networks/networks';
-import { PhishingController } from '@/controllers/phishing/phishing';
-import { PortfolioController } from '@/controllers/portfolio/portfolio';
-import { ProvidersController } from '@/controllers/providers/providers';
-import { RequestsController } from '@/controllers/requests/requests';
-import { SafeController } from '@/controllers/safe/safe';
-import { SelectedAccountController } from '@/controllers/selectedAccount/selectedAccount';
-import { SignMessageController } from '@/controllers/signMessage/signMessage';
-import { StorageController } from '@/controllers/storage/storage';
-import { SurveyController } from '@/controllers/survey/survey';
-import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge';
-import { TransactionManagerController } from '@/controllers/transaction/transactionManager';
-import { TransferController } from '@/controllers/transfer/transfer';
-import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner';
-import { UiController } from '@/controllers/ui/ui';
-import { STATUS_WRAPPED_METHODS } from '@/interfaces/main';
-import { SignMessageStatus } from '@/interfaces/signMessage';
-import { getDefaultSelectedAccount } from '@/libs/account/account';
-import { getDappIdentifier, isIdentifiedByUserOpHash } from '@/libs/accountOp/submittedAccountOp';
-import { AccountOpStatus } from '@/libs/accountOp/types';
-import { KeyIterator } from '@/libs/keyIterator/keyIterator';
-import { getAccountKeysCount } from '@/libs/keys/keys';
-import { relayerCall } from '@/libs/relayerCall/relayerCall';
-import { toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe';
-import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount';
-import { LiFiAPI } from '@/services/lifi/api';
-import { paymasterFactory } from '@/services/paymaster';
-import { SocketAPI } from '@/services/socket/api';
-import { SquidAPI } from '@/services/squid/api';
-import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor';
-import { getHdPathFromTemplate } from '@/utils/hdPath';
-import wait from '@/utils/wait';
-export class MainController extends EventEmitter {
+const eth_rpc_errors_1 = require("eth-rpc-errors");
+const EmittableError_1 = tslib_1.__importDefault(require("@/classes/EmittableError"));
+const deploy_1 = require("@/consts/deploy");
+const derivation_1 = require("@/consts/derivation");
+const humanizerInfo_json_1 = tslib_1.__importDefault(require("@/consts/humanizer/humanizerInfo.json"));
+const intervals_1 = require("@/consts/intervals");
+const accountPicker_1 = require("@/controllers/accountPicker/accountPicker");
+const accounts_1 = require("@/controllers/accounts/accounts");
+const activity_1 = require("@/controllers/activity/activity");
+const addressBook_1 = require("@/controllers/addressBook/addressBook");
+const autoLogin_1 = require("@/controllers/autoLogin/autoLogin");
+const banner_1 = require("@/controllers/banner/banner");
+const continuousUpdates_1 = require("@/controllers/continuousUpdates/continuousUpdates");
+const contractInfo_1 = require("@/controllers/contractInfo/contractInfo");
+const contractNames_1 = require("@/controllers/contractNames/contractNames");
+const dapps_1 = require("@/controllers/dapps/dapps");
+const domains_1 = require("@/controllers/domains/domains");
+const emailVault_1 = require("@/controllers/emailVault/emailVault");
+const types_1 = require("@/controllers/estimation/types");
+const eventEmitter_1 = tslib_1.__importDefault(require("@/controllers/eventEmitter/eventEmitter"));
+const featureFlags_1 = require("@/controllers/featureFlags/featureFlags");
+const invite_1 = require("@/controllers/invite/invite");
+const keystore_1 = require("@/controllers/keystore/keystore");
+const networks_1 = require("@/controllers/networks/networks");
+const phishing_1 = require("@/controllers/phishing/phishing");
+const portfolio_1 = require("@/controllers/portfolio/portfolio");
+const providers_1 = require("@/controllers/providers/providers");
+const requests_1 = require("@/controllers/requests/requests");
+const safe_1 = require("@/controllers/safe/safe");
+const selectedAccount_1 = require("@/controllers/selectedAccount/selectedAccount");
+const signMessage_1 = require("@/controllers/signMessage/signMessage");
+const storage_1 = require("@/controllers/storage/storage");
+const survey_1 = require("@/controllers/survey/survey");
+const swapAndBridge_1 = require("@/controllers/swapAndBridge/swapAndBridge");
+const transactionManager_1 = require("@/controllers/transaction/transactionManager");
+const transfer_1 = require("@/controllers/transfer/transfer");
+const transfersScanner_1 = require("@/controllers/transfersScanner/transfersScanner");
+const ui_1 = require("@/controllers/ui/ui");
+const main_1 = require("@/interfaces/main");
+const signMessage_2 = require("@/interfaces/signMessage");
+const account_1 = require("@/libs/account/account");
+const submittedAccountOp_1 = require("@/libs/accountOp/submittedAccountOp");
+const types_2 = require("@/libs/accountOp/types");
+const keyIterator_1 = require("@/libs/keyIterator/keyIterator");
+const keys_1 = require("@/libs/keys/keys");
+const relayerCall_1 = require("@/libs/relayerCall/relayerCall");
+const safe_2 = require("@/libs/safe/safe");
+const selectedAccount_2 = require("@/libs/selectedAccount/selectedAccount");
+const api_1 = require("@/services/lifi/api");
+const paymaster_1 = require("@/services/paymaster");
+const api_2 = require("@/services/socket/api");
+const api_3 = require("@/services/squid/api");
+const swapProviderParallelExecutor_1 = require("@/services/swapIntegrators/swapProviderParallelExecutor");
+const hdPath_1 = require("@/utils/hdPath");
+const wait_1 = tslib_1.__importDefault(require("@/utils/wait"));
+class MainController extends eventEmitter_1.default {
     #storageAPI;
     #appVersion;
     fetch;
@@ -100,7 +104,7 @@ export class MainController extends EventEmitter {
     accountOpsToBeConfirmed = {};
     lastUpdate = new Date();
     isOffline = false;
-    statuses = STATUS_WRAPPED_METHODS;
+    statuses = main_1.STATUS_WRAPPED_METHODS;
     ui;
     #continuousUpdates;
     safe;
@@ -112,18 +116,18 @@ export class MainController extends EventEmitter {
         this.#storageAPI = storageAPI;
         this.#appVersion = appVersion;
         this.fetch = fetch;
-        this.storage = new StorageController(this.#storageAPI, eventEmitterRegistry);
-        this.featureFlags = new FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry);
-        this.ui = new UiController({ eventEmitterRegistry, uiManager });
-        this.invite = new InviteController({
+        this.storage = new storage_1.StorageController(this.#storageAPI, eventEmitterRegistry);
+        this.featureFlags = new featureFlags_1.FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry);
+        this.ui = new ui_1.UiController({ eventEmitterRegistry, uiManager });
+        this.invite = new invite_1.InviteController({
             eventEmitterRegistry,
             relayerUrl,
             fetch,
             storage: this.storage
         });
-        this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, this.ui, eventEmitterRegistry);
+        this.keystore = new keystore_1.KeystoreController(platform, this.storage, keystoreSigners, this.ui, eventEmitterRegistry);
         this.#externalSignerControllers = externalSignerControllers;
-        this.networks = new NetworksController({
+        this.networks = new networks_1.NetworksController({
             eventEmitterRegistry,
             defaultNetworksMode: this.featureFlags.isFeatureEnabled('testnetMode')
                 ? 'testnet'
@@ -143,27 +147,27 @@ export class MainController extends EventEmitter {
                 await this.providers.init({ networks: this.networks.allNetworks });
             }
         });
-        this.providers = new ProvidersController({
+        this.providers = new providers_1.ProvidersController({
             eventEmitterRegistry,
             storage: this.storage,
             getNetworks: () => this.networks.allNetworks,
             sendUiMessage: this.ui.message.sendUiMessage
         });
-        this.accounts = new AccountsController(this.storage, this.providers, this.networks, this.keystore, async (accounts) => {
-            const defaultSelectedAccount = getDefaultSelectedAccount(accounts);
+        this.accounts = new accounts_1.AccountsController(this.storage, this.providers, this.networks, this.keystore, async (accounts) => {
+            const defaultSelectedAccount = (0, account_1.getDefaultSelectedAccount)(accounts);
             if (defaultSelectedAccount) {
                 await this.#selectAccount(defaultSelectedAccount.addr);
             }
         }, this.providers.updateProviderIsWorking.bind(this.providers), this.#updateIsOffline.bind(this), relayerUrl, this.fetch, eventEmitterRegistry);
-        this.autoLogin = new AutoLoginController(this.storage, this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry);
-        this.safe = new SafeController({
+        this.autoLogin = new autoLogin_1.AutoLoginController(this.storage, this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry);
+        this.safe = new safe_1.SafeController({
             eventEmitterRegistry,
             networks: this.networks,
             providers: this.providers,
             storage: this.storage,
             accounts: this.accounts
         });
-        this.survey = new SurveyController({
+        this.survey = new survey_1.SurveyController({
             fetch: this.fetch,
             relayerUrl,
             storage: this.storage,
@@ -173,7 +177,7 @@ export class MainController extends EventEmitter {
                 this.banner.dismissBanner(bannerId);
             }
         });
-        this.banner = new BannerController(this.storage, () => {
+        this.banner = new banner_1.BannerController(this.storage, () => {
             const currentSelectedAcc = this.selectedAccount.account;
             if (!currentSelectedAcc)
                 return { status: 'no-selected-account' };
@@ -182,7 +186,7 @@ export class MainController extends EventEmitter {
                 accountAddr: currentSelectedAcc.addr,
                 sortAccOps: false
             }).length;
-            const hasKeys = getAccountKeysCount({
+            const hasKeys = (0, keys_1.getAccountKeysCount)({
                 accountAddr: currentSelectedAcc.addr,
                 keys: this.keystore.keys,
                 accounts: this.accounts.accounts
@@ -196,18 +200,18 @@ export class MainController extends EventEmitter {
                 isBalanceReady: this.selectedAccount.portfolio.isAllReady
             };
         }, this.survey, this.#appVersion, eventEmitterRegistry);
-        this.selectedAccount = new SelectedAccountController({
+        this.selectedAccount = new selectedAccount_1.SelectedAccountController({
             eventEmitterRegistry,
             storage: this.storage,
             accounts: this.accounts,
             autoLogin: this.autoLogin,
             banner: this.banner
         });
-        this.portfolio = new PortfolioController(this.storage, this.fetch, this.providers, this.networks, this.accounts, this.keystore, relayerUrl, velcroUrl, this.banner, this.featureFlags, eventEmitterRegistry);
+        this.portfolio = new portfolio_1.PortfolioController(this.storage, this.fetch, this.providers, this.networks, this.accounts, this.keystore, relayerUrl, velcroUrl, this.banner, this.featureFlags, eventEmitterRegistry);
         if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
-            this.emailVault = new EmailVaultController(this.storage, this.fetch, relayerUrl, this.keystore, undefined, eventEmitterRegistry);
+            this.emailVault = new emailVault_1.EmailVaultController(this.storage, this.fetch, relayerUrl, this.keystore, undefined, eventEmitterRegistry);
         }
-        this.accountPicker = new AccountPickerController({
+        this.accountPicker = new accountPicker_1.AccountPickerController({
             eventEmitterRegistry,
             accounts: this.accounts,
             keystore: this.keystore,
@@ -227,15 +231,15 @@ export class MainController extends EventEmitter {
              */
             onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
         });
-        this.addressBook = new AddressBookController(this.storage, this.accounts, this.selectedAccount, eventEmitterRegistry);
-        this.phishing = new PhishingController({
+        this.addressBook = new addressBook_1.AddressBookController(this.storage, this.accounts, this.selectedAccount, eventEmitterRegistry);
+        this.phishing = new phishing_1.PhishingController({
             eventEmitterRegistry,
             fetch: this.fetch,
             storage: this.storage,
             addressBook: this.addressBook,
             ui: this.ui
         });
-        this.dapps = new DappsController({
+        this.dapps = new dapps_1.DappsController({
             eventEmitterRegistry,
             appVersion: this.#appVersion,
             fetch: this.fetch,
@@ -244,22 +248,22 @@ export class MainController extends EventEmitter {
             phishing: this.phishing,
             ui: this.ui
         });
-        this.signMessage = new SignMessageController(this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry, this.dapps);
-        this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch });
-        this.activity = new ActivityController(this.storage, this.fetch, this.callRelayer, this.accounts, this.selectedAccount, this.providers, this.networks, this.portfolio, this.safe, async (network) => {
+        this.signMessage = new signMessage_1.SignMessageController(this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry, this.dapps);
+        this.callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch: this.fetch });
+        this.activity = new activity_1.ActivityController(this.storage, this.fetch, this.callRelayer, this.accounts, this.selectedAccount, this.providers, this.networks, this.portfolio, this.safe, async (network) => {
             await this.setContractsDeployedToTrueIfDeployed(network);
         }, eventEmitterRegistry);
-        this.transferScanner = new TransfersScannerController({
+        this.transferScanner = new transfersScanner_1.TransfersScannerController({
             activity: this.activity,
             networks: this.networks,
             portfolio: this.portfolio,
             providers: this.providers,
             eventEmitterRegistry
         });
-        const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey });
-        const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey });
-        const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId });
-        this.swapAndBridge = new SwapAndBridgeController({
+        const LiFiProvider = new api_1.LiFiAPI({ fetch, apiKey: liFiApiKey });
+        const SocketProvider = new api_2.SocketAPI({ fetch, apiKey: bungeeApiKey });
+        const SquidProvider = new api_3.SquidAPI({ fetch, integratorId: squidIntegratorId });
+        this.swapAndBridge = new swapAndBridge_1.SwapAndBridgeController({
             eventEmitterRegistry,
             callRelayer: this.callRelayer,
             accounts: this.accounts,
@@ -273,7 +277,7 @@ export class MainController extends EventEmitter {
             storage: this.storage,
             phishing: this.phishing,
             dapps: this.dapps,
-            swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
+            swapProvider: new swapProviderParallelExecutor_1.SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
             relayerUrl,
             portfolioUpdate: (chainsToUpdate) => {
                 if (chainsToUpdate.length) {
@@ -290,7 +294,7 @@ export class MainController extends EventEmitter {
                 return (signAccountOp &&
                     fromChainId &&
                     toChainId &&
-                    signAccountOp.estimation.status === EstimationStatus.Error &&
+                    signAccountOp.estimation.status === types_1.EstimationStatus.Error &&
                     signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
                     fromChainId === toChainId);
             },
@@ -300,19 +304,19 @@ export class MainController extends EventEmitter {
             onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
             ui: this.ui
         });
-        this.transfer = new TransferController(this.callRelayer, this.storage, humanizerInfo, this.selectedAccount, this.networks, this.addressBook, this.accounts, this.keystore, this.portfolio, this.activity, this.#externalSignerControllers, this.providers, this.phishing, this.dapps, relayerUrl, this.commonHandlerForBroadcastSuccess.bind(this), this.ui, eventEmitterRegistry);
-        this.domains = new DomainsController({
+        this.transfer = new transfer_1.TransferController(this.callRelayer, this.storage, humanizerInfo_json_1.default, this.selectedAccount, this.networks, this.addressBook, this.accounts, this.keystore, this.portfolio, this.activity, this.#externalSignerControllers, this.providers, this.phishing, this.dapps, relayerUrl, this.commonHandlerForBroadcastSuccess.bind(this), this.ui, eventEmitterRegistry);
+        this.domains = new domains_1.DomainsController({
             eventEmitterRegistry,
             providers: this.providers.providers,
             defaultNetworksMode: this.networks.defaultNetworksMode
         });
-        this.contractNames = new ContractNamesController({
+        this.contractNames = new contractNames_1.ContractNamesController({
             eventEmitterRegistry,
             fetch: this.fetch
         });
         if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
             // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
-            this.transactionManager = new TransactionManagerController({
+            this.transactionManager = new transactionManager_1.TransactionManagerController({
                 eventEmitterRegistry,
                 accounts: this.accounts,
                 keystore: this.keystore,
@@ -329,7 +333,7 @@ export class MainController extends EventEmitter {
                 portfolioUpdate: this.updateSelectedAccountPortfolio.bind(this)
             });
         }
-        this.requests = new RequestsController({
+        this.requests = new requests_1.RequestsController({
             eventEmitterRegistry,
             relayerUrl,
             callRelayer: this.callRelayer,
@@ -371,7 +375,7 @@ export class MainController extends EventEmitter {
             },
             onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
         });
-        this.contractInfo = new ContractInfoController({
+        this.contractInfo = new contractInfo_1.ContractInfoController({
             eventEmitterRegistry,
             fetch: this.fetch,
             storage: this.storage,
@@ -381,7 +385,7 @@ export class MainController extends EventEmitter {
             this.initialLoadPromise = undefined;
         });
         if (this.featureFlags.isFeatureEnabled('withContinuousUpdatesController')) {
-            this.#continuousUpdates = new ContinuousUpdatesController({
+            this.#continuousUpdates = new continuousUpdates_1.ContinuousUpdatesController({
                 eventEmitterRegistry,
                 // Pass a read-only proxy of the main instance to ContinuousUpdatesController.
                 // This gives it full access to read main’s state and call its methods,
@@ -400,7 +404,7 @@ export class MainController extends EventEmitter {
                 })
             });
         }
-        paymasterFactory.init(relayerUrl, fetch, (e) => {
+        paymaster_1.paymasterFactory.init(relayerUrl, fetch, (e) => {
             if (this.requests.currentUserRequest?.kind !== 'calls')
                 return;
             this.emitError(e);
@@ -408,7 +412,7 @@ export class MainController extends EventEmitter {
         this.keystore.onUpdate(() => {
             if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                this.storage.associateAccountKeysWithLegacySavedSeedMigration(() => new AccountPickerController({
+                this.storage.associateAccountKeysWithLegacySavedSeedMigration(() => new accountPicker_1.AccountPickerController({
                     eventEmitterRegistry,
                     accounts: this.accounts,
                     keystore: this.keystore,
@@ -460,7 +464,7 @@ export class MainController extends EventEmitter {
         // #load is called in the constructor which is synchronous
         // we await (1 ms/next tick) for the constructor to extend the EventEmitter class
         // and then we call it's methods
-        await wait(1);
+        await (0, wait_1.default)(1);
         this.emitUpdate();
         await this.networks.initialLoadPromise;
         await this.providers.initialLoadPromise;
@@ -485,7 +489,7 @@ export class MainController extends EventEmitter {
         this.emailVault?.cleanMagicAndSessionKeys();
         this.selectedAccount.setDashboardNetworkFilter(null);
         this.continuousUpdates?.updatePortfolioInterval.restart({
-            timeout: LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+            timeout: intervals_1.LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         });
     }
     async selectAccount(toAccountAddr) {
@@ -573,11 +577,11 @@ export class MainController extends EventEmitter {
                 // if there's no tx id, we set it to Rejected and continue.
                 // it means broadcast has failed
                 if (!(i in txnIds)) {
-                    localCall.status = AccountOpStatus.Rejected;
+                    localCall.status = types_2.AccountOpStatus.Rejected;
                     return localCall;
                 }
                 localCall.txnId = txnIds[i];
-                localCall.status = AccountOpStatus.BroadcastedButNotConfirmed;
+                localCall.status = types_2.AccountOpStatus.BroadcastedButNotConfirmed;
                 return localCall;
             });
             submittedAccountOp.calls = calls;
@@ -703,7 +707,7 @@ export class MainController extends EventEmitter {
                 handler.promise.resolve({ hash: finalTxnId });
             }
             else {
-                handler.promise.reject(ethErrors.rpc.transactionRejected({
+                handler.promise.reject(eth_rpc_errors_1.ethErrors.rpc.transactionRejected({
                     message: 'Transaction rejected by the bundler'
                 }));
             }
@@ -755,10 +759,10 @@ export class MainController extends EventEmitter {
         if (!signedMessage)
             return;
         // some accounts may not resolve immediately, like a Safe acc
-        if (this.signMessage.status === SignMessageStatus.Done) {
+        if (this.signMessage.status === signMessage_2.SignMessageStatus.Done) {
             await this.#resolveSignMessage(signedMessage);
         }
-        else if (this.signMessage.status === SignMessageStatus.Partial) {
+        else if (this.signMessage.status === signMessage_2.SignMessageStatus.Partial) {
             // mark the request so it doesn't get removed on close
             this.requests.setPartiallyCompleteRequest(signedMessage.fromRequestId, {
                 signed: this.signMessage.signed,
@@ -776,7 +780,7 @@ export class MainController extends EventEmitter {
             const ledgerCtrl = this.#externalSignerControllers.ledger;
             if (!ledgerCtrl) {
                 const message = 'Could not initialize connection with your Ledger device. Please try again later or contact Ambire support.';
-                throw new EmittableError({ message, level: 'major', error: new Error(message) });
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
             }
             // Once a session with the Ledger device gets initiated, the user might
             // use the device with another app. In this scenario, when coming back to
@@ -786,13 +790,13 @@ export class MainController extends EventEmitter {
             // a new session when retrieving keys, in case there already is one.
             if (ledgerCtrl.walletSDK && ledgerCtrl.cleanUp)
                 await ledgerCtrl.cleanUp();
-            const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE;
-            const pathToUnlock = getHdPathFromTemplate(hdPathTemplate, 0);
+            const hdPathTemplate = derivation_1.BIP44_LEDGER_DERIVATION_TEMPLATE;
+            const pathToUnlock = (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, 0);
             if (ledgerCtrl.unlock)
                 await ledgerCtrl.unlock(pathToUnlock);
             if (!ledgerCtrl.walletSDK) {
                 const message = 'Could not establish connection with the Ledger device';
-                throw new EmittableError({ message, level: 'major', error: new Error(message) });
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
             }
             const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl });
             this.accountPicker.setInitParams({
@@ -804,7 +808,7 @@ export class MainController extends EventEmitter {
         }
         catch (error) {
             const message = error?.message || 'Could not unlock the Ledger device. Please try again.';
-            throw new EmittableError({ message, level: 'major', error });
+            throw new EmittableError_1.default({ message, level: 'major', error });
         }
     }
     async handleAccountPickerInitLedger(LedgerKeyIterator /* TODO: KeyIterator type mismatch */) {
@@ -815,9 +819,9 @@ export class MainController extends EventEmitter {
             const trezorCtrl = this.#externalSignerControllers.trezor;
             if (!trezorCtrl) {
                 const message = 'Could not initialize connection with your Trezor device. Please try again later or contact Ambire support.';
-                throw new EmittableError({ message, level: 'major', error: new Error(message) });
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
             }
-            const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE;
+            const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
             const { walletSDK } = trezorCtrl;
             await this.accountPicker.setInitParams({
                 keyIterator: new TrezorKeyIterator({ walletSDK }),
@@ -828,7 +832,7 @@ export class MainController extends EventEmitter {
         }
         catch (error) {
             const message = error?.message || 'Could not unlock the Trezor device. Please try again.';
-            throw new EmittableError({ message, level: 'major', error });
+            throw new EmittableError_1.default({ message, level: 'major', error });
         }
     }
     async handleAccountPickerInitTrezor(TrezorKeyIterator /* TODO: KeyIterator type mismatch */) {
@@ -839,9 +843,9 @@ export class MainController extends EventEmitter {
             const latticeCtrl = this.#externalSignerControllers.lattice;
             if (!latticeCtrl) {
                 const message = 'Could not initialize connection with your Lattice1 device. Please try again later or contact Ambire support.';
-                throw new EmittableError({ message, level: 'major', error: new Error(message) });
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
             }
-            const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE;
+            const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
             await this.accountPicker.setInitParams({
                 keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
                 hdPathTemplate,
@@ -851,7 +855,7 @@ export class MainController extends EventEmitter {
         }
         catch (error) {
             const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.';
-            throw new EmittableError({ message, level: 'major', error });
+            throw new EmittableError_1.default({ message, level: 'major', error });
         }
     }
     async handleAccountPickerInitLattice(LatticeKeyIterator /* TODO: KeyIterator type mismatch */) {
@@ -863,7 +867,7 @@ export class MainController extends EventEmitter {
             const qrCtrl = this.#externalSignerControllers.qr;
             if (!qrCtrl) {
                 const message = 'Could not initialize connection with your QR hardware wallet. Please try again later or contact Ambire support.';
-                throw new EmittableError({ message, level: 'major', error: new Error(message) });
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
             }
             const keyIterator = new QrKeyIterator({ controller: qrCtrl });
             // Initialize the QR iterator from payload before AccountPicker init.
@@ -873,7 +877,7 @@ export class MainController extends EventEmitter {
             const hdPathTemplate = keyIterator.hdPathTemplate;
             if (!hdPathTemplate) {
                 const message = 'Invalid QR hardware wallet payload. Please try again.';
-                throw new EmittableError({
+                throw new EmittableError_1.default({
                     message,
                     level: 'major',
                     error: new Error('Missing hdPathTemplate')
@@ -893,7 +897,7 @@ export class MainController extends EventEmitter {
         }
         catch (error) {
             const message = error?.message || 'Could not import the QR hardware wallet account. Please try again.';
-            throw new EmittableError({ message, level: 'major', error });
+            throw new EmittableError_1.default({ message, level: 'major', error });
         }
     }
     async handleAccountPickerInitQr(QrKeyIterator, // TODO: KeyIterator type mismatch
@@ -912,7 +916,7 @@ export class MainController extends EventEmitter {
                 // we scan for logs only if Success & a dapp interaction has been made
                 // because only a dapp interaction might have a receiving txn after;
                 // receiving txns for inner bridges are handled in swapAndBridge.ts
-                const shouldScanLogs = op.status === AccountOpStatus.Success && op.calls.some((call) => !!call.dapp);
+                const shouldScanLogs = op.status === types_2.AccountOpStatus.Success && op.calls.some((call) => !!call.dapp);
                 if (shouldScanLogs) {
                     this.transferScanner
                         .startScanLogsLoop({
@@ -942,8 +946,8 @@ export class MainController extends EventEmitter {
                         // as the portfolio has internal checks whether the nonce has changed
                         // to decide if to force refetch certain data
                         await this.accounts.updateAccountState(accountAddr, 'latest', networks?.map((net) => net.chainId));
-                        const finalizedAccountOps = updatedAccountsOps.filter((op) => op.status !== AccountOpStatus.Pending &&
-                            op.status !== AccountOpStatus.BroadcastedButNotConfirmed);
+                        const finalizedAccountOps = updatedAccountsOps.filter((op) => op.status !== types_2.AccountOpStatus.Pending &&
+                            op.status !== types_2.AccountOpStatus.BroadcastedButNotConfirmed);
                         await this.portfolio.discardSimulation(finalizedAccountOps);
                         // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
                         this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(accountAddr, updatedAccountsOps);
@@ -968,7 +972,7 @@ export class MainController extends EventEmitter {
         const provider = this.providers.providers[network.chainId.toString()];
         if (!provider)
             return;
-        const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY);
+        const factoryCode = await provider.getCode(deploy_1.AMBIRE_ACCOUNT_FACTORY);
         if (factoryCode === '0x')
             return;
         await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId);
@@ -979,7 +983,7 @@ export class MainController extends EventEmitter {
             .filter((key) => key.addr === address)
             .forEach((key) => {
             this.keystore.removeKey(key.addr, key.type).catch((e) => {
-                throw new EmittableError({
+                throw new EmittableError_1.default({
                     level: 'major',
                     message: 'Failed to remove account key',
                     error: e
@@ -1007,7 +1011,7 @@ export class MainController extends EventEmitter {
             this.emitUpdate();
         }
         catch (e) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 level: 'major',
                 message: 'Failed to remove account',
                 error: e || new Error('Failed to remove account')
@@ -1082,7 +1086,7 @@ export class MainController extends EventEmitter {
         for (let i = 0; i < networksAndThresholds.length; i++) {
             // wait a second to not hit 5 request per minute API limit
             if (i !== 0)
-                await wait(600);
+                await (0, wait_1.default)(600);
             const firstBatch = networksAndThresholds[i];
             const res = await this.safe
                 .fetchPending(safeAddr, [firstBatch])
@@ -1094,14 +1098,14 @@ export class MainController extends EventEmitter {
             if (!res)
                 continue;
             // build txn requests
-            const txnRequest = toCallsUserRequest(safeAddr, res);
+            const txnRequest = (0, safe_2.toCallsUserRequest)(safeAddr, res);
             for (let i = 0; i < txnRequest.length; i++) {
                 // build the requests only if the selected account hasn't changed
                 if (this.selectedAccount?.account?.addr === safeAddr)
                     await this.requests.build(txnRequest[i]).catch((e) => e);
             }
             // build and resolve message requests
-            const messageRequests = toSigMessageUserRequests(res);
+            const messageRequests = (0, safe_2.toSigMessageUserRequests)(res);
             for (let i = 0; i < messageRequests.length; i++) {
                 const req = messageRequests[i];
                 const userRequest = this.requests.userRequests.find((u) => u.meta.accountAddr === safeAddr &&
@@ -1131,7 +1135,7 @@ export class MainController extends EventEmitter {
         const portfolioState = this.portfolio.getAccountPortfolioState(accountAddr);
         const portfolioStateKeys = Object.keys(portfolioState);
         const isAllLoaded = portfolioStateKeys.every((chainId) => {
-            return isNetworkReady(portfolioState[chainId]) && !portfolioState[chainId]?.isLoading;
+            return (0, selectedAccount_2.isNetworkReady)(portfolioState[chainId]) && !portfolioState[chainId]?.isLoading;
         });
         // Set isOffline back to false if the portfolio is loading.
         // This is done to prevent the UI from flashing the offline error
@@ -1218,7 +1222,7 @@ export class MainController extends EventEmitter {
             meta.txnId = submittedAccountOp.txnId;
             meta.identifiedBy = submittedAccountOp.identifiedBy;
             meta.submittedAccountOp = submittedAccountOp;
-            if (isIdentifiedByUserOpHash(submittedAccountOp.identifiedBy)) {
+            if ((0, submittedAccountOp_1.isIdentifiedByUserOpHash)(submittedAccountOp.identifiedBy)) {
                 meta.userOpHash = submittedAccountOp.identifiedBy.identifier;
             }
         }
@@ -1246,7 +1250,7 @@ export class MainController extends EventEmitter {
         // 2) the identifier is different
         dappPromises.forEach((dappPromise) => {
             if (dappPromise.meta.isWalletSendCalls) {
-                dappPromise.resolve({ hash: getDappIdentifier(submittedAccountOp) });
+                dappPromise.resolve({ hash: (0, submittedAccountOp_1.getDappIdentifier)(submittedAccountOp) });
             }
             else {
                 // if the submittedAccountOp identifier is MultipleTxns,
@@ -1288,8 +1292,8 @@ export class MainController extends EventEmitter {
         this.emitUpdate();
     }
     async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({ privKeyOrSeed, seedPassphrase }) {
-        const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE;
-        const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase);
+        const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
+        const keyIterator = new keyIterator_1.KeyIterator(privKeyOrSeed, seedPassphrase);
         await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate });
     }
     // includes the getters in the stringified instance
@@ -1300,4 +1304,5 @@ export class MainController extends EventEmitter {
         };
     }
 }
+exports.MainController = MainController;
 //# sourceMappingURL=main.js.map

@@ -1,4 +1,7 @@
-export const SafeV2 = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SafeV2 = void 0;
+exports.SafeV2 = [
     'function VERSION() view returns (string)',
     'function addOwnerWithThreshold(address owner, uint256 _threshold)',
     'function approveHash(bytes32 hashToApprove)',

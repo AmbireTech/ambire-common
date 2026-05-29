@@ -1,13 +1,17 @@
-import EmittableError from '../../classes/EmittableError';
-import SwapAndBridgeError from '../../classes/SwapAndBridgeError';
-import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHumanReadableSwapAndBridgeError = getHumanReadableSwapAndBridgeError;
+const tslib_1 = require("tslib");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const SwapAndBridgeError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeError"));
+const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
 const MSG_MAX_LENGTH = 225;
-export function getHumanReadableSwapAndBridgeError(e) {
+function getHumanReadableSwapAndBridgeError(e) {
     // These errors should be thrown as they are
     // as they are already human-readable
-    if (e instanceof EmittableError ||
-        e instanceof SwapAndBridgeProviderApiError ||
-        e instanceof SwapAndBridgeError) {
+    if (e instanceof EmittableError_1.default ||
+        e instanceof SwapAndBridgeProviderApiError_1.default ||
+        e instanceof SwapAndBridgeError_1.default) {
         return e;
     }
     // Last resort (fallback) error handling

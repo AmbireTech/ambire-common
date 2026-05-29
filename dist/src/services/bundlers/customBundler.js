@@ -1,15 +1,18 @@
-import { toBeHex } from 'ethers';
-import { createPublicClient, defineChain, http } from 'viem';
-import { CUSTOM } from '../../consts/bundlers';
-import { Bundler } from './bundler';
-export class CustomBundler extends Bundler {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CustomBundler = void 0;
+const ethers_1 = require("ethers");
+const viem_1 = require("viem");
+const bundlers_1 = require("../../consts/bundlers");
+const bundler_1 = require("./bundler");
+class CustomBundler extends bundler_1.Bundler {
     getUrl(network) {
         if (!network.customBundlerUrl)
             throw new Error('custom bundler not set');
         return network.customBundlerUrl;
     }
     async getGasPrice(network) {
-        const chain = defineChain({
+        const chain = (0, viem_1.defineChain)({
             id: Number(network.chainId),
             name: network.name,
             nativeCurrency: {
@@ -32,27 +35,27 @@ export class CustomBundler extends Bundler {
                 }
             }
         });
-        const client = createPublicClient({
+        const client = (0, viem_1.createPublicClient)({
             chain,
-            transport: http()
+            transport: (0, viem_1.http)()
         });
         const data = await client.estimateFeesPerGas();
         return {
             slow: {
-                maxFeePerGas: toBeHex(data.maxFeePerGas),
-                maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas)
+                maxFeePerGas: (0, ethers_1.toBeHex)(data.maxFeePerGas),
+                maxPriorityFeePerGas: (0, ethers_1.toBeHex)(data.maxPriorityFeePerGas)
             },
             medium: {
-                maxFeePerGas: toBeHex(data.maxFeePerGas),
-                maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas)
+                maxFeePerGas: (0, ethers_1.toBeHex)(data.maxFeePerGas),
+                maxPriorityFeePerGas: (0, ethers_1.toBeHex)(data.maxPriorityFeePerGas)
             },
             fast: {
-                maxFeePerGas: toBeHex(data.maxFeePerGas),
-                maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas)
+                maxFeePerGas: (0, ethers_1.toBeHex)(data.maxFeePerGas),
+                maxPriorityFeePerGas: (0, ethers_1.toBeHex)(data.maxPriorityFeePerGas)
             },
             ape: {
-                maxFeePerGas: toBeHex(data.maxFeePerGas),
-                maxPriorityFeePerGas: toBeHex(data.maxPriorityFeePerGas)
+                maxFeePerGas: (0, ethers_1.toBeHex)(data.maxFeePerGas),
+                maxPriorityFeePerGas: (0, ethers_1.toBeHex)(data.maxPriorityFeePerGas)
             }
         };
     }
@@ -74,10 +77,11 @@ export class CustomBundler extends Bundler {
         };
     }
     getName() {
-        return CUSTOM;
+        return bundlers_1.CUSTOM;
     }
     shouldReestimateBeforeBroadcast() {
         return true;
     }
 }
+exports.CustomBundler = CustomBundler;
 //# sourceMappingURL=customBundler.js.map

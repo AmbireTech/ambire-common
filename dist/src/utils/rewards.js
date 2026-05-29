@@ -1,5 +1,8 @@
-import { WALLET_TOKEN } from '../consts/addresses';
-export const calculateRewardsStats = (projectedRewardsResult, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getProjectedRewardsStatsAndToken = exports.calculateRewardsStats = void 0;
+const addresses_1 = require("../consts/addresses");
+const calculateRewardsStats = (projectedRewardsResult, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd) => {
     if (!projectedRewardsResult || !walletOrStkWalletTokenPrice)
         return null;
     const reasonToNotDisplayProjectedRewards = projectedRewardsResult.reasonToNotDisplayProjectedRewards;
@@ -60,7 +63,8 @@ export const calculateRewardsStats = (projectedRewardsResult, walletOrStkWalletT
         reasonToNotDisplayProjectedRewards
     };
 };
-export const getProjectedRewardsStatsAndToken = (projectedRewards, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd) => {
+exports.calculateRewardsStats = calculateRewardsStats;
+const getProjectedRewardsStatsAndToken = (projectedRewards, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd) => {
     if (!projectedRewards)
         return;
     const result = projectedRewards?.result;
@@ -68,7 +72,7 @@ export const getProjectedRewardsStatsAndToken = (projectedRewards, walletOrStkWa
         return;
     // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
     const walletTokenPrice = walletOrStkWalletTokenPrice || result.walletPrice;
-    const data = calculateRewardsStats(result, walletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd);
+    const data = (0, exports.calculateRewardsStats)(result, walletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd);
     if (!data)
         return;
     let estimatedRewardsBothSeasons = data.estimatedRewards;
@@ -79,7 +83,7 @@ export const getProjectedRewardsStatsAndToken = (projectedRewards, walletOrStkWa
         token: {
             chainId: BigInt(1),
             amount: BigInt(estimatedRewardsBothSeasons) * BigInt(10 ** 18),
-            address: WALLET_TOKEN,
+            address: addresses_1.WALLET_TOKEN,
             symbol: 'WALLET',
             name: '$WALLET',
             decimals: 18,
@@ -95,4 +99,5 @@ export const getProjectedRewardsStatsAndToken = (projectedRewards, walletOrStkWa
         data
     };
 };
+exports.getProjectedRewardsStatsAndToken = getProjectedRewardsStatsAndToken;
 //# sourceMappingURL=rewards.js.map

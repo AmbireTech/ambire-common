@@ -1,4 +1,6 @@
-export default class ExternalSignerError extends Error {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+class ExternalSignerError extends Error {
     sendCrashReport;
     constructor(message, params) {
         super();
@@ -9,4 +11,5 @@ export default class ExternalSignerError extends Error {
         this.sendCrashReport = sendCrashReport;
     }
 }
+exports.default = ExternalSignerError;
 //# sourceMappingURL=ExternalSignerError.js.map

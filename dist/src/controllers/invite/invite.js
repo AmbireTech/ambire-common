@@ -1,10 +1,14 @@
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export var INVITE_STATUS;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InviteController = exports.INVITE_STATUS = void 0;
+const tslib_1 = require("tslib");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+var INVITE_STATUS;
 (function (INVITE_STATUS) {
     INVITE_STATUS["UNVERIFIED"] = "UNVERIFIED";
     INVITE_STATUS["VERIFIED"] = "VERIFIED";
-})(INVITE_STATUS || (INVITE_STATUS = {}));
+})(INVITE_STATUS || (exports.INVITE_STATUS = INVITE_STATUS = {}));
 const DEFAULT_STATE = {
     status: INVITE_STATUS.UNVERIFIED,
     verifiedAt: null,
@@ -17,7 +21,7 @@ const DEFAULT_STATE = {
  * upon extension installation. The controller is still used to manage OG status
  * and other invite-related data.
  */
-export class InviteController extends EventEmitter {
+class InviteController extends eventEmitter_1.default {
     #storage;
     #callRelayer;
     #state = DEFAULT_STATE;
@@ -32,7 +36,7 @@ export class InviteController extends EventEmitter {
     constructor({ eventEmitterRegistry, relayerUrl, fetch, storage }) {
         super(eventEmitterRegistry);
         this.#storage = storage;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.#initialLoadPromise = this.#load().finally(() => {
             this.#initialLoadPromise = undefined;
         });
@@ -84,4 +88,5 @@ export class InviteController extends EventEmitter {
         this.emitUpdate();
     }
 }
+exports.InviteController = InviteController;
 //# sourceMappingURL=invite.js.map

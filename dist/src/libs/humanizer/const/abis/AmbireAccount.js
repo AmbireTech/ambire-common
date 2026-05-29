@@ -1,4 +1,7 @@
-export const AmbireAccount = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AmbireAccount = void 0;
+exports.AmbireAccount = [
     // executable by address(this)
     'function tryCatch(address to, uint256 value, bytes calldata data)',
     'function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit)',

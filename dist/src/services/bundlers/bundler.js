@@ -1,10 +1,13 @@
-import { toBeHex } from 'ethers';
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy';
-import { decodeError } from '../../libs/errorDecoder';
-import { BundlerError } from '../../libs/errorDecoder/customErrors';
-import { getCleanUserOp } from '../../libs/userOperation/userOperation';
-import { getRpcProvider } from '../provider';
-export class Bundler {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Bundler = void 0;
+const ethers_1 = require("ethers");
+const deploy_1 = require("../../consts/deploy");
+const errorDecoder_1 = require("../../libs/errorDecoder");
+const customErrors_1 = require("../../libs/errorDecoder/customErrors");
+const userOperation_1 = require("../../libs/userOperation/userOperation");
+const provider_1 = require("../provider");
+class Bundler {
     /**
      * The default pollWaitTime. This is used to determine
      * how many milliseconds to wait until before another request to the
@@ -17,19 +20,19 @@ export class Bundler {
      * @param network
      */
     getProvider(network) {
-        return getRpcProvider([this.getUrl(network)], network.chainId);
+        return (0, provider_1.getRpcProvider)([this.getUrl(network)], network.chainId);
     }
     async sendEstimateReq(userOperation, network, stateOverride) {
         const provider = this.getProvider(network);
         return stateOverride
             ? provider.send('eth_estimateUserOperationGas', [
-                getCleanUserOp(userOperation)[0],
-                ERC_4337_ENTRYPOINT,
+                (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+                deploy_1.ERC_4337_ENTRYPOINT,
                 stateOverride
             ])
             : provider.send('eth_estimateUserOperationGas', [
-                getCleanUserOp(userOperation)[0],
-                ERC_4337_ENTRYPOINT
+                (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+                deploy_1.ERC_4337_ENTRYPOINT
             ]);
     }
     async estimate(userOperation, network, stateOverride) {
@@ -47,14 +50,14 @@ export class Bundler {
             ? BigInt(estimatiton.preVerificationGas) + BigInt(estimatiton.preVerificationGas) / division
             : BigInt(estimatiton.preVerificationGas);
         return {
-            preVerificationGas: toBeHex(preVerificationGas),
-            verificationGasLimit: toBeHex(estimatiton.verificationGasLimit),
-            callGasLimit: toBeHex(estimatiton.callGasLimit),
+            preVerificationGas: (0, ethers_1.toBeHex)(preVerificationGas),
+            verificationGasLimit: (0, ethers_1.toBeHex)(estimatiton.verificationGasLimit),
+            callGasLimit: (0, ethers_1.toBeHex)(estimatiton.callGasLimit),
             paymasterVerificationGasLimit: estimatiton.paymasterVerificationGasLimit
-                ? toBeHex(estimatiton.paymasterVerificationGasLimit)
+                ? (0, ethers_1.toBeHex)(estimatiton.paymasterVerificationGasLimit)
                 : '0x00',
             paymasterPostOpGasLimit: estimatiton.paymasterPostOpGasLimit
-                ? toBeHex(estimatiton.paymasterPostOpGasLimit)
+                ? (0, ethers_1.toBeHex)(estimatiton.paymasterPostOpGasLimit)
                 : '0x00'
         };
     }
@@ -77,8 +80,8 @@ export class Bundler {
     async broadcast(userOperation, network) {
         const provider = this.getProvider(network);
         return provider.send('eth_sendUserOperation', [
-            getCleanUserOp(userOperation)[0],
-            ERC_4337_ENTRYPOINT
+            (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+            deploy_1.ERC_4337_ENTRYPOINT
         ]);
     }
     // use this request to check if the bundler supports the network
@@ -94,8 +97,8 @@ export class Bundler {
     }
     // used when catching errors from bundler requests
     decodeBundlerError(e) {
-        const error = new BundlerError(e.message, this.getName());
-        return decodeError(error);
+        const error = new customErrors_1.BundlerError(e.message, this.getName());
+        return (0, errorDecoder_1.decodeError)(error);
     }
     /**
      * Different bundlers return the success flag differently:
@@ -116,4 +119,5 @@ export class Bundler {
         return statusAsNumber;
     }
 }
+exports.Bundler = Bundler;
 //# sourceMappingURL=bundler.js.map

@@ -1,7 +1,10 @@
-import { v4 as uuidv4 } from 'uuid';
-import wait from '../../utils/wait';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const tslib_1 = require("tslib");
+const uuid_1 = require("uuid");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100;
-export default class EventEmitter {
+class EventEmitter {
     id;
     #registry = null;
     #callbacksWithId = [];
@@ -19,7 +22,7 @@ export default class EventEmitter {
      * that should be registered only after a condition is met (e.g. when the request is open)
      */
     constructor(registry, registerImmediately = true) {
-        this.id = uuidv4();
+        this.id = (0, uuid_1.v4)();
         if (registry) {
             this.#registry = registry;
             if (registerImmediately) {
@@ -54,7 +57,7 @@ export default class EventEmitter {
      */
     async forceEmitUpdate() {
         // Bypassing background batching on the same tick
-        await wait(1);
+        await (0, wait_1.default)(1);
         // Passing `true` to the cb will bypass React batching
         for (const i of this.#callbacksWithId)
             i.cb(true);
@@ -134,7 +137,7 @@ export default class EventEmitter {
             return;
         }
         if (this.statuses[callName] === 'SUCCESS') {
-            await wait(2); // to let the INITIAL status be fired from the prev session
+            await (0, wait_1.default)(2); // to let the INITIAL status be fired from the prev session
         }
         this.statuses[callName] = 'LOADING';
         await this.forceEmitUpdate();
@@ -250,4 +253,5 @@ export default class EventEmitter {
         };
     }
 }
+exports.default = EventEmitter;
 //# sourceMappingURL=eventEmitter.js.map

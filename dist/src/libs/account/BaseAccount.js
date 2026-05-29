@@ -1,4 +1,7 @@
-export class BaseAccount {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BaseAccount = void 0;
+class BaseAccount {
     account;
     network;
     accountState;
@@ -47,4 +50,5 @@ export class BaseAccount {
         return op.nonce;
     }
 }
+exports.BaseAccount = BaseAccount;
 //# sourceMappingURL=BaseAccount.js.map

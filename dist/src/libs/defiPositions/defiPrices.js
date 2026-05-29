@@ -1,5 +1,8 @@
-import { fetchWithTimeout } from '../../utils/fetch';
-import { getAssetValue, getProviderId } from './helpers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.updatePositionsByProviderAssetPrices = updatePositionsByProviderAssetPrices;
+const fetch_1 = require("../../utils/fetch");
+const helpers_1 = require("./helpers");
 // This function is separated to its own file to allow mocking in the
 // portfolio controller test. If the function is in the same file as
 // the main defiPositions logic, it's being referenced directly from the
@@ -8,7 +11,7 @@ import { getAssetValue, getProviderId } from './helpers';
  * Fetches the USD prices for the assets in the provided positions
  * using cena and updates the positions with the fetched prices and values.
  */
-export async function updatePositionsByProviderAssetPrices(fetch, positionsByProvider, platformId = null) {
+async function updatePositionsByProviderAssetPrices(fetch, positionsByProvider, platformId = null) {
     // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
     // since it would return nothing.
     // This can happen when adding a custom network that doesn't have a CoinGecko platform ID.
@@ -26,7 +29,7 @@ export async function updatePositionsByProviderAssetPrices(fetch, positionsByPro
         });
     });
     const cenaUrl = `https://cena.ambire.com/api/v3/simple/token_price/${platformId}?contract_addresses=${dedup(addresses).join('%2C')}&vs_currencies=usd`;
-    const resp = await fetchWithTimeout(fetch, cenaUrl, {}, 3000);
+    const resp = await (0, fetch_1.fetchWithTimeout)(fetch, cenaUrl, {}, 3000);
     const body = await resp.json();
     if (resp.status !== 200)
         throw body;
@@ -35,7 +38,7 @@ export async function updatePositionsByProviderAssetPrices(fetch, positionsByPro
     if (body.hasOwnProperty('error'))
         throw body;
     const positionsByProviderWithPrices = positionsByProvider.map((posByProvider) => {
-        if (getProviderId(posByProvider.providerName).includes('aave'))
+        if ((0, helpers_1.getProviderId)(posByProvider.providerName).includes('aave'))
             return posByProvider;
         const updatedPositions = posByProvider.positions.map((position) => {
             let positionInUSD = position.additionalData.positionInUSD || 0;
@@ -49,7 +52,7 @@ export async function updatePositionsByProviderAssetPrices(fetch, positionsByPro
                     baseCurrency: currency,
                     price: price
                 }));
-                const value = getAssetValue(asset.amount, asset.decimals, priceIn) || 0;
+                const value = (0, helpers_1.getAssetValue)(asset.amount, asset.decimals, priceIn) || 0;
                 if (!position.additionalData.positionInUSD) {
                     positionInUSD += value;
                 }

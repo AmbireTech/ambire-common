@@ -1,24 +1,29 @@
-import { getAddress } from 'ethers';
-import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError';
-import { addCustomTokensIfNeeded, convertNullAddressToZeroAddressIfNeeded, isNoFeeToken } from '../../libs/swapAndBridge/swapAndBridge';
-import { CITREA_CHAIN_ID } from '../squid/constants';
-import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS, FEE_PERCENT, NULL_ADDRESS, PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE, ZERO_ADDRESS } from './constants';
-const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === ZERO_ADDRESS ? NULL_ADDRESS : addr;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SocketAPI = exports.normalizeIncomingSocketToken = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
+const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
+const constants_1 = require("../squid/constants");
+const constants_2 = require("./constants");
+const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === constants_2.ZERO_ADDRESS ? constants_2.NULL_ADDRESS : addr;
 const normalizeIncomingSocketTokenAddress = (address) => 
 // incoming token addresses from Socket are all lowercased
-getAddress(
+(0, ethers_1.getAddress)(
 // native token addresses come as null address instead of the zero address
-convertNullAddressToZeroAddressIfNeeded(address));
-export const normalizeIncomingSocketToken = (token) => ({
+(0, swapAndBridge_1.convertNullAddressToZeroAddressIfNeeded)(address));
+const normalizeIncomingSocketToken = (token) => ({
     ...token,
     address: normalizeIncomingSocketTokenAddress(token.address)
 });
+exports.normalizeIncomingSocketToken = normalizeIncomingSocketToken;
 const normalizeOutgoingSocketTokenAddress = (address) => 
 // Socket expects to receive null address instead of the zero address for native tokens.
 convertZeroAddressToNullAddressIfNeeded(
 // Socket works only with all lowercased token addresses, otherwise, bad request
 address.toLocaleLowerCase());
-export class SocketAPI {
+class SocketAPI {
     id = 'socket';
     name = 'Socket';
     #fetch;
@@ -54,7 +59,7 @@ export class SocketAPI {
     }
     /** disable explicitly citrea for socket */
     areChainsSupported({ fromChainId, toChainId }) {
-        return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID;
+        return fromChainId !== constants_1.CITREA_CHAIN_ID && toChainId !== constants_1.CITREA_CHAIN_ID;
     }
     /**
      * Processes Socket API responses and throws custom errors for various
@@ -68,7 +73,7 @@ export class SocketAPI {
                 fetchPromise,
                 new Promise((_, reject) => {
                     timeoutPromise = setTimeout(() => {
-                        reject(new SwapAndBridgeProviderApiError('Our service provider Socket is temporarily unavailable or your internet connection is too slow.'));
+                        reject(new SwapAndBridgeProviderApiError_1.default('Our service provider Socket is temporarily unavailable or your internet connection is too slow.'));
                     }, this.#requestTimeoutMs);
                 })
             ]);
@@ -79,11 +84,11 @@ export class SocketAPI {
             const message = e?.message || 'no message';
             const status = e?.status ? `, status: <${e.status}>` : '';
             const error = `${errorPrefix} Upstream error: <${message}>${status}`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         if (response.status === 429) {
             const error = `Our service provider received too many requests, temporarily preventing your request from being processed. ${errorPrefix}`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         let responseBody;
         try {
@@ -92,7 +97,7 @@ export class SocketAPI {
         catch (e) {
             const message = e?.message || 'no message';
             const error = `${errorPrefix} Error details: <Unexpected non-JSON response from our service provider>, message: <${message}>`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         // Socket API returns 500 status code with a message in the body, even
         // in case of a bad request. Not necessarily an internal server error.
@@ -105,7 +110,7 @@ export class SocketAPI {
             const specificErrorCode = responseBody?.message?.details?.error?.code;
             const specificErrorCodeMessage = specificErrorCode ? `, code: <${specificErrorCode}>` : '';
             const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>${specificErrorMessage}${specificErrorCodeMessage}`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         // Always attempt to update health status (if needed) when a response was
         // successful, in case the API was previously unhealthy (to recover).
@@ -121,7 +126,7 @@ export class SocketAPI {
             errorPrefix: 'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
         });
         const chains = response
-            .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
+            .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== constants_1.CITREA_CHAIN_ID)
             .map(({ chainId }) => ({
             chainId
         }));
@@ -144,14 +149,14 @@ export class SocketAPI {
         // Exception for Optimism, strip out the legacy ETH address
         // TODO: Remove when Socket removes the legacy ETH address from their response
         if (toChainId === 10)
-            tokens = tokens.filter((token) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS);
+            tokens = tokens.filter((token) => token.address !== constants_2.ETH_ON_OPTIMISM_LEGACY_ADDRESS);
         // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
         // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
         // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
         if (toChainId === 1)
-            tokens = tokens.filter((token) => token.address !== ZERO_ADDRESS);
-        tokens = tokens.map(normalizeIncomingSocketToken);
-        return addCustomTokensIfNeeded({ chainId: toChainId, tokens });
+            tokens = tokens.filter((token) => token.address !== constants_2.ZERO_ADDRESS);
+        tokens = tokens.map(exports.normalizeIncomingSocketToken);
+        return (0, swapAndBridge_1.addCustomTokensIfNeeded)({ chainId: toChainId, tokens });
     }
     async getToken({ address, chainId }) {
         const params = new URLSearchParams({
@@ -164,11 +169,11 @@ export class SocketAPI {
         });
         if (!response.tokens || !response.tokens[chainId] || !response.tokens[chainId].length)
             return null;
-        return normalizeIncomingSocketToken(response.tokens[chainId][0]);
+        return (0, exports.normalizeIncomingSocketToken)(response.tokens[chainId][0]);
     }
     async quote({ fromAsset, toAsset, fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }) {
         if (!fromAsset || !toAsset)
-            throw new SwapAndBridgeProviderApiError('Quote requested, but missing required params. Error details: <from token details are missing>');
+            throw new SwapAndBridgeProviderApiError_1.default('Quote requested, but missing required params. Error details: <from token details are missing>');
         const params = new URLSearchParams({
             userAddress,
             originChainId: fromChainId.toString(),
@@ -180,11 +185,11 @@ export class SocketAPI {
             useInbox: 'true',
             enableManual: 'true'
         });
-        const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
-        const shouldIncludeConvenienceFee = !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress);
+        const feeTakerAddress = constants_2.AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
+        const shouldIncludeConvenienceFee = !!feeTakerAddress && !isWrapOrUnwrap && !(0, swapAndBridge_1.isNoFeeToken)(fromChainId, fromTokenAddress);
         if (shouldIncludeConvenienceFee) {
             params.append('feeTakerAddress', feeTakerAddress);
-            params.append('feeBps', (FEE_PERCENT * 100).toString());
+            params.append('feeBps', (constants_2.FEE_PERCENT * 100).toString());
         }
         const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`;
         const response = await this.#handleResponse({
@@ -212,8 +217,8 @@ export class SocketAPI {
             return 1;
         });
         return {
-            fromAsset: normalizeIncomingSocketToken(response.input.token),
-            toAsset: normalizeIncomingSocketToken(socketToAsset),
+            fromAsset: (0, exports.normalizeIncomingSocketToken)(response.input.token),
+            toAsset: (0, exports.normalizeIncomingSocketToken)(socketToAsset),
             fromChainId,
             toChainId,
             // @ts-ignore TODO: fix the typescript here
@@ -230,7 +235,7 @@ export class SocketAPI {
                             displayName: route.routeDetails.name,
                             icon: route.routeDetails.logoURI
                         },
-                        protocolFees: PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(route.routeDetails.name) &&
+                        protocolFees: constants_2.PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(route.routeDetails.name) &&
                             route.routeDetails.routeFee &&
                             route.routeDetails.routeFee.amount !== '0'
                             ? {
@@ -241,7 +246,7 @@ export class SocketAPI {
                             : undefined,
                         swapSlippage: route.slippage,
                         toAmount: route.output.amount,
-                        toAsset: normalizeIncomingSocketToken(route.output.token),
+                        toAsset: (0, exports.normalizeIncomingSocketToken)(route.output.token),
                         type: 'swap',
                         userTxIndex: 0
                     }
@@ -366,4 +371,5 @@ export class SocketAPI {
         return { status: 'refunded', txnId: res.hash };
     }
 }
+exports.SocketAPI = SocketAPI;
 //# sourceMappingURL=api.js.map

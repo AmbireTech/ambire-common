@@ -1,4 +1,7 @@
-export const Legends = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Legends = void 0;
+exports.Legends = [
     // legacy mint function
     'function mint(uint256)',
     // mint function, since season 1

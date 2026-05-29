@@ -1,20 +1,23 @@
-import { canBecomeSmarterOnChain } from './account';
-import { EOA } from './EOA';
-import { EOA7702 } from './EOA7702';
-import { Safe } from './Safe';
-import { V1 } from './V1';
-import { V2 } from './V2';
-export function getBaseAccount(account, accountState, network) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getBaseAccount = getBaseAccount;
+const account_1 = require("./account");
+const EOA_1 = require("./EOA");
+const EOA7702_1 = require("./EOA7702");
+const Safe_1 = require("./Safe");
+const V1_1 = require("./V1");
+const V2_1 = require("./V2");
+function getBaseAccount(account, accountState, network) {
     if (account.safeCreation)
-        return new Safe(account, network, accountState);
+        return new Safe_1.Safe(account, network, accountState);
     if (accountState.isEOA) {
-        if (accountState.isSmarterEoa || canBecomeSmarterOnChain(network, account, accountState)) {
-            return new EOA7702(account, network, accountState);
+        if (accountState.isSmarterEoa || (0, account_1.canBecomeSmarterOnChain)(network, account, accountState)) {
+            return new EOA7702_1.EOA7702(account, network, accountState);
         }
-        return new EOA(account, network, accountState);
+        return new EOA_1.EOA(account, network, accountState);
     }
     return accountState.isV2
-        ? new V2(account, network, accountState)
-        : new V1(account, network, accountState);
+        ? new V2_1.V2(account, network, accountState)
+        : new V1_1.V1(account, network, accountState);
 }
 //# sourceMappingURL=getBaseAccount.js.map

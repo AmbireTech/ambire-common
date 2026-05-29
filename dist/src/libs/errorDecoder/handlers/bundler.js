@@ -1,4 +1,6 @@
-import { ErrorType } from '../types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const types_1 = require("../types");
 class BundlerErrorHandler {
     matches(data, error) {
         const { message } = error?.error || error || {};
@@ -34,11 +36,11 @@ class BundlerErrorHandler {
             }
         }
         return {
-            type: ErrorType.BundlerError,
+            type: types_1.ErrorType.BundlerError,
             reason,
             data: reason
         };
     }
 }
-export default BundlerErrorHandler;
+exports.default = BundlerErrorHandler;
 //# sourceMappingURL=bundler.js.map

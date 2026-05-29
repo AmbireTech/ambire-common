@@ -1,19 +1,23 @@
-import { formatUnits, isAddress, parseUnits } from 'ethers';
-import { FEE_COLLECTOR } from '../../consts/addresses';
-import { getBaseAccount } from '../../libs/account/getBaseAccount';
-import { AssetType } from '../../libs/defiPositions/types';
-import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677';
-import { randomId } from '../../libs/humanizer/utils';
-import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers';
-import { getAmountAfterFeeReserve, getAmountAfterFeeSync, getSanitizedAmount } from '../../libs/transfer/amount';
-import { getTransferRequestParams } from '../../libs/transfer/userRequest';
-import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations';
-import { getIsViewOnly } from '../../utils/accounts';
-import { getAddressFromAddressState } from '../../utils/domains';
-import { convertTokenPriceToBigInt, getSafeAmountFromFieldValue } from '../../utils/numbers/formatters';
-import { generateUuid } from '../../utils/uuid';
-import EventEmitter from '../eventEmitter/eventEmitter';
-import { SignAccountOpController } from '../signAccountOp/signAccountOp';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TransferController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const addresses_1 = require("../../consts/addresses");
+const getBaseAccount_1 = require("../../libs/account/getBaseAccount");
+const types_1 = require("../../libs/defiPositions/types");
+const erc7677_1 = require("../../libs/erc7677/erc7677");
+const utils_1 = require("../../libs/humanizer/utils");
+const helpers_1 = require("../../libs/portfolio/helpers");
+const amount_1 = require("../../libs/transfer/amount");
+const userRequest_1 = require("../../libs/transfer/userRequest");
+const validations_1 = require("../../services/validations");
+const accounts_1 = require("../../utils/accounts");
+const domains_1 = require("../../utils/domains");
+const formatters_1 = require("../../utils/numbers/formatters");
+const uuid_1 = require("../../utils/uuid");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+const signAccountOp_1 = require("../signAccountOp/signAccountOp");
 const CONVERSION_PRECISION = 16;
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION);
 const DEFAULT_ADDRESS_STATE = {
@@ -36,7 +40,7 @@ const HARD_CODED_CURRENCY = 'usd';
 const isTransfer = (route) => {
     return route === 'transfer' || route === 'top-up-gas-tank';
 };
-export class TransferController extends EventEmitter {
+class TransferController extends eventEmitter_1.default {
     #callRelayer;
     #storage;
     #networks;
@@ -176,7 +180,7 @@ export class TransferController extends EventEmitter {
     }
     #ensureTransferSessionId() {
         if (!this.#currentTransferSessionId) {
-            this.#currentTransferSessionId = String(randomId());
+            this.#currentTransferSessionId = String((0, utils_1.randomId)());
         }
     }
     get transferSessionId() {
@@ -185,7 +189,7 @@ export class TransferController extends EventEmitter {
     #setTokens() {
         const tokens = this.#selectedAccount.portfolio.tokens
             .filter((token) => {
-            const hasAmount = Number(getTokenAmount(token)) > 0;
+            const hasAmount = Number((0, helpers_1.getTokenAmount)(token)) > 0;
             const isVisible = !token.flags.isHidden;
             if (this.isTopUp) {
                 const tokenNetwork = this.#networks.networks.find((network) => network.chainId === token.chainId);
@@ -199,11 +203,11 @@ export class TransferController extends EventEmitter {
                 isVisible &&
                 !token.flags.onGasTank &&
                 !token.flags.rewardsType &&
-                token.flags.defiTokenType !== AssetType.Borrow);
+                token.flags.defiTokenType !== types_1.AssetType.Borrow);
         })
             .sort((a, b) => {
-            const tokenAinUSD = getTokenBalanceInUSD(a);
-            const tokenBinUSD = getTokenBalanceInUSD(b);
+            const tokenAinUSD = (0, helpers_1.getTokenBalanceInUSD)(a);
+            const tokenBinUSD = (0, helpers_1.getTokenBalanceInUSD)(b);
             return tokenBinUSD - tokenAinUSD;
         });
         this.#tokens = tokens;
@@ -264,7 +268,7 @@ export class TransferController extends EventEmitter {
         // is being sent in the latestBroadcastedAccountOp.
         if (this.hasProceeded)
             return;
-        if (!token || Number(getTokenAmount(token)) === 0) {
+        if (!token || Number((0, helpers_1.getTokenAmount)(token)) === 0) {
             this.#selectedToken = null;
             this.#isMaxAmountSelected = false;
             this.#resetMaxFeeReservation();
@@ -292,20 +296,20 @@ export class TransferController extends EventEmitter {
         return this.#tokens;
     }
     get maxAmount() {
-        if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n)
+        if (!this.selectedToken || (0, helpers_1.getTokenAmount)(this.selectedToken) === 0n)
             return '0';
-        return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals);
+        return (0, ethers_1.formatUnits)((0, helpers_1.getTokenAmount)(this.selectedToken), this.selectedToken.decimals);
     }
     get maxAmountInFiat() {
-        if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n)
+        if (!this.selectedToken || (0, helpers_1.getTokenAmount)(this.selectedToken) === 0n)
             return '0';
         const tokenPrice = this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price;
         if (!tokenPrice || !Number(this.maxAmount))
             return '0';
-        const maxAmount = getTokenAmount(this.selectedToken);
-        const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
+        const maxAmount = (0, helpers_1.getTokenAmount)(this.selectedToken);
+        const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
         // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
-        return formatUnits(maxAmount * tokenPriceBigInt, 
+        return (0, ethers_1.formatUnits)(maxAmount * tokenPriceBigInt, 
         // Shift the decimal point by the number of decimals in the token price
         this.selectedToken.decimals + tokenPriceDecimals);
     }
@@ -355,11 +359,11 @@ export class TransferController extends EventEmitter {
             // so that we could validate the account properly
             // example: Safe accounts may not be deployed on certain networks
             const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress);
-            validationFormMsgsNew.recipientAddress = validateSendTransferAddress(this.recipientAddress, this.#selectedAccount.account.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, !!this.addressState.resolvedAddress, this.addressState.isDomainResolving, this.#networks.networks, this.#accounts.accountStates, recipientAcc, this.selectedToken?.chainId, this.isRecipientAddressFirstTimeSend, this.lastSentToRecipientAt, this.addressPoisoningMatch);
+            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccount.account.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, !!this.addressState.resolvedAddress, this.addressState.isDomainResolving, this.#networks.networks, this.#accounts.accountStates, recipientAcc, this.selectedToken?.chainId, this.isRecipientAddressFirstTimeSend, this.lastSentToRecipientAt, this.addressPoisoningMatch);
         }
         // Validate the amount
         if (this.selectedToken) {
-            validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken);
+            validationFormMsgsNew.amount = (0, validations_1.validateSendTransferAmount)(this.amount, this.selectedToken);
         }
         return validationFormMsgsNew;
     }
@@ -369,7 +373,7 @@ export class TransferController extends EventEmitter {
         // if the amount is set, it's enough in topUp mode
         if (this.isTopUp) {
             return (this.selectedToken &&
-                validateSendTransferAmount(this.amount, this.selectedToken).severity === 'success');
+                (0, validations_1.validateSendTransferAmount)(this.amount, this.selectedToken).severity === 'success');
         }
         const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success';
         return areFormFieldsValid && !this.addressState.isDomainResolving;
@@ -380,7 +384,7 @@ export class TransferController extends EventEmitter {
             !!this.#networks.networks.length);
     }
     get recipientAddress() {
-        return getAddressFromAddressState(this.addressState);
+        return (0, domains_1.getAddressFromAddressState)(this.addressState);
     }
     async update({ humanizerInfo, selectedToken, amount, shouldSetMaxAmount, addressState, isRecipientAddressUnknownAgreed, amountFieldMode }) {
         if (humanizerInfo) {
@@ -430,7 +434,7 @@ export class TransferController extends EventEmitter {
         this.emitUpdate();
     }
     checkIsRecipientAddressUnknown() {
-        if (!isAddress(this.recipientAddress)) {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
             this.isRecipientAddressUnknown = false;
             this.isRecipientAddressUnknownAgreed = false;
             this.emitUpdate();
@@ -440,14 +444,14 @@ export class TransferController extends EventEmitter {
         this.isRecipientAddressUnknown =
             !isAddressInAddressBook &&
                 this.recipientAddress.toLowerCase() !== this.#selectedAccount.account?.addr.toLowerCase() &&
-                this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase();
+                this.recipientAddress.toLowerCase() !== addresses_1.FEE_COLLECTOR.toLowerCase();
         this.isRecipientAddressUnknownAgreed = false;
         this.emitUpdate();
     }
     checkIsRecipientAddressViewOnly() {
         const recipientAccount = this.#accounts.accounts.find(({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase());
         if (recipientAccount) {
-            const isViewOnly = getIsViewOnly(this.#keystore.keys, recipientAccount.associatedKeys);
+            const isViewOnly = (0, accounts_1.getIsViewOnly)(this.#keystore.keys, recipientAccount.associatedKeys);
             this.isRecipientAddressViewOnly = isViewOnly;
         }
         else {
@@ -455,7 +459,7 @@ export class TransferController extends EventEmitter {
         }
     }
     #onRecipientAddressChange() {
-        if (!isAddress(this.recipientAddress)) {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
             this.isRecipientAddressUnknown = false;
             this.isRecipientAddressUnknownAgreed = false;
             this.isRecipientHumanizerKnownTokenOrSmartContract = false;
@@ -503,13 +507,13 @@ export class TransferController extends EventEmitter {
             this.amountInFiat = fieldValue;
             // Get the number of decimals
             const amountInFiatDecimals = 10;
-            const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
+            const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
             // Convert the numbers to big int
-            const sanitizedFiat = getSanitizedAmount(fieldValue, amountInFiatDecimals);
+            const sanitizedFiat = (0, amount_1.getSanitizedAmount)(fieldValue, amountInFiatDecimals);
             const amountInFiatBigInt = sanitizedFiat
-                ? parseUnits(sanitizedFiat, amountInFiatDecimals)
+                ? (0, ethers_1.parseUnits)(sanitizedFiat, amountInFiatDecimals)
                 : 0n;
-            this.amount = formatUnits((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
+            this.amount = (0, ethers_1.formatUnits)((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
             // Shift the decimal point by the number of decimals in the token price
             amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals);
             return;
@@ -518,11 +522,11 @@ export class TransferController extends EventEmitter {
             this.amount = fieldValue;
             if (!this.selectedToken)
                 return;
-            const formattedAmount = parseUnits(getSafeAmountFromFieldValue(fieldValue, this.selectedToken.decimals), this.selectedToken.decimals);
+            const formattedAmount = (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(fieldValue, this.selectedToken.decimals), this.selectedToken.decimals);
             if (!formattedAmount)
                 return;
-            const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
-            this.amountInFiat = formatUnits(formattedAmount * tokenPriceBigInt, 
+            const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
+            this.amountInFiat = (0, ethers_1.formatUnits)(formattedAmount * tokenPriceBigInt, 
             // Shift the decimal point by the number of decimals in the token price
             this.selectedToken.decimals + tokenPriceDecimals);
         }
@@ -536,12 +540,12 @@ export class TransferController extends EventEmitter {
     #getMaxAmountAfterFeeReservation() {
         if (!this.selectedToken)
             return this.maxAmount;
-        const totalTokenAmount = getTokenAmount(this.selectedToken);
+        const totalTokenAmount = (0, helpers_1.getTokenAmount)(this.selectedToken);
         const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment;
         if (!this.#shouldReserveFeeFromTransferredToken() || !gasFeePayment) {
-            return formatUnits(totalTokenAmount, this.selectedToken.decimals);
+            return (0, ethers_1.formatUnits)(totalTokenAmount, this.selectedToken.decimals);
         }
-        return formatUnits(getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount), this.selectedToken.decimals);
+        return (0, ethers_1.formatUnits)((0, amount_1.getAmountAfterFeeReserve)(totalTokenAmount, gasFeePayment.amount), this.selectedToken.decimals);
     }
     #resetMaxFeeReservation() {
         this.#maxFeeReservation = null;
@@ -612,7 +616,7 @@ export class TransferController extends EventEmitter {
     #syncAmountWithFeeReservation(forceEmit) {
         if (!this.amount || !this.selectedToken || typeof this.selectedToken.decimals !== 'number')
             return false;
-        const totalTokenAmount = getTokenAmount(this.selectedToken);
+        const totalTokenAmount = (0, helpers_1.getTokenAmount)(this.selectedToken);
         const shouldReserveFee = this.#shouldReserveFeeFromTransferredToken();
         const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment;
         const fee = shouldReserveFee ? gasFeePayment?.amount || 0n : 0n;
@@ -620,9 +624,9 @@ export class TransferController extends EventEmitter {
         if (!shouldReserveFee)
             this.#resetMaxFeeReservation();
         const currentAmount = this.amount
-            ? parseUnits(getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals), this.selectedToken.decimals)
+            ? (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(this.amount, this.selectedToken.decimals), this.selectedToken.decimals)
             : 0n;
-        const desiredAmount = getAmountAfterFeeSync({
+        const desiredAmount = (0, amount_1.getAmountAfterFeeSync)({
             currentAmount,
             totalAmount: totalTokenAmount,
             fee,
@@ -632,7 +636,7 @@ export class TransferController extends EventEmitter {
         });
         if (currentAmount === desiredAmount)
             return false;
-        this.#setTokenAmount(desiredAmount === 0n ? '0' : formatUnits(desiredAmount, this.selectedToken.decimals), true);
+        this.#setTokenAmount(desiredAmount === 0n ? '0' : (0, ethers_1.formatUnits)(desiredAmount, this.selectedToken.decimals), true);
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.syncSignAccountOp();
         this.propagateUpdate(forceEmit);
@@ -652,8 +656,8 @@ export class TransferController extends EventEmitter {
         const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment;
         if (!gasFeePayment)
             return null;
-        const currentAmount = parseUnits(getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals), this.selectedToken.decimals);
-        const totalTokenAmount = getTokenAmount(this.selectedToken);
+        const currentAmount = (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(this.amount, this.selectedToken.decimals), this.selectedToken.decimals);
+        const totalTokenAmount = (0, helpers_1.getTokenAmount)(this.selectedToken);
         if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
             return {
                 severity: 'warning',
@@ -667,14 +671,14 @@ export class TransferController extends EventEmitter {
         let found = false;
         let lastTransactionDate = null;
         let addressPoisoningMatch = null;
-        if (isAddress(this.recipientAddress)) {
+        if ((0, ethers_1.isAddress)(this.recipientAddress)) {
             const result = await this.#activity.hasAccountOpsSentTo(this.recipientAddress, this.#selectedAccount.account?.addr || '');
             found = result.found;
             lastTransactionDate = result.lastTransactionDate;
             addressPoisoningMatch = result.addressPoisoningMatch;
         }
         this.isRecipientAddressFirstTimeSend =
-            !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase();
+            !found && this.recipientAddress.toLowerCase() !== addresses_1.FEE_COLLECTOR.toLowerCase();
         this.lastSentToRecipientAt = lastTransactionDate;
         this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null;
     }
@@ -686,16 +690,16 @@ export class TransferController extends EventEmitter {
         if (!this.#selectedAccount.account)
             return;
         const recipientAddress = this.isTopUp
-            ? FEE_COLLECTOR
-            : getAddressFromAddressState(this.addressState);
+            ? addresses_1.FEE_COLLECTOR
+            : (0, domains_1.getAddressFromAddressState)(this.addressState);
         // form field validation
-        if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress) || !this.isFormValid)
+        if (!this.#selectedToken || !this.amount || !(0, ethers_1.isAddress)(recipientAddress) || !this.isFormValid)
             return;
-        const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6);
-        const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n;
-        const userRequestParams = getTransferRequestParams({
+        const sanitizedFiat = (0, amount_1.getSanitizedAmount)(this.amountInFiat, 6);
+        const amountInFiatBigInt = sanitizedFiat ? (0, ethers_1.parseUnits)(sanitizedFiat, 6) : 0n;
+        const userRequestParams = (0, userRequest_1.getTransferRequestParams)({
             selectedAccount: this.#selectedAccount.account.addr,
-            amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
+            amount: (0, formatters_1.getSafeAmountFromFieldValue)(this.amount, this.selectedToken?.decimals),
             selectedToken: this.#selectedToken,
             recipientAddress,
             amountInFiat: amountInFiatBigInt
@@ -741,9 +745,9 @@ export class TransferController extends EventEmitter {
             });
             return;
         }
-        const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network);
+        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(this.#selectedAccount.account, accountState, network);
         const accountOp = {
-            id: generateUuid(),
+            id: (0, uuid_1.generateUuid)(),
             accountAddr: this.#selectedAccount.account.addr,
             chainId: network.chainId,
             signingKeyAddr: null,
@@ -754,13 +758,13 @@ export class TransferController extends EventEmitter {
             signature: null,
             calls,
             meta: {
-                paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+                paymasterService: (0, erc7677_1.getAmbirePaymasterService)(baseAcc, this.#relayerUrl),
                 topUpAmount,
                 allowTransferFeeTokenSelfReserve: true
             }
         };
         await this.#updateRecipientHistoryAndPoisoning();
-        this.signAccountOpController = new SignAccountOpController({
+        this.signAccountOpController = new signAccountOp_1.SignAccountOpController({
             type: 'one-click-transfer',
             callRelayer: this.#callRelayer,
             accounts: this.#accounts,
@@ -774,7 +778,7 @@ export class TransferController extends EventEmitter {
             provider,
             phishing: this.#phishing,
             dapps: this.#dapps,
-            fromRequestId: randomId(), // the account op and the request are fabricated,
+            fromRequestId: (0, utils_1.randomId)(), // the account op and the request are fabricated,
             accountOp,
             shouldSimulate: false,
             onBroadcastSuccess: async (props) => {
@@ -879,4 +883,5 @@ export class TransferController extends EventEmitter {
         };
     }
 }
+exports.TransferController = TransferController;
 //# sourceMappingURL=transfer.js.map

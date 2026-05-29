@@ -1,17 +1,24 @@
-import { getAddress, parseUnits, ZeroAddress } from 'ethers';
-import { isHex } from 'viem';
-import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters';
-import shortenAddress from '../../utils/shortenAddress';
-import { updatePositionsByProviderAssetPrices } from './defiPrices';
-import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers';
-import { getAAVEPositions, getDebankEnhancedUniV3Positions, getStakedWalletPositions } from './providers';
-import { AssetType, DeFiPositionsError } from './types';
-export const getIsExternalApiDefiPositionsCallSuccessful = (discoveryResponse) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.updatePositionsByProviderAssetPrices = exports.getUniqueMergedPositions = exports.getShouldBypassServerSideCache = exports.getNewDefiState = exports.getHasNonceChangedSinceLastUpdate = exports.getFormattedApiPositions = exports.getCustomProviderPositions = exports.getCanSkipUpdate = exports.getAssetValue = exports.getAllAssetsAsHints = exports.getAccountNetworksWithPositions = exports.enhancePortfolioTokensWithDefiPositions = exports.getIsExternalApiDefiPositionsCallSuccessful = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const viem_1 = require("viem");
+const formatters_1 = require("../../utils/numbers/formatters");
+const shortenAddress_1 = tslib_1.__importDefault(require("../../utils/shortenAddress"));
+const defiPrices_1 = require("./defiPrices");
+Object.defineProperty(exports, "updatePositionsByProviderAssetPrices", { enumerable: true, get: function () { return defiPrices_1.updatePositionsByProviderAssetPrices; } });
+const helpers_1 = require("./helpers");
+Object.defineProperty(exports, "getAssetValue", { enumerable: true, get: function () { return helpers_1.getAssetValue; } });
+const providers_1 = require("./providers");
+const types_1 = require("./types");
+const getIsExternalApiDefiPositionsCallSuccessful = (discoveryResponse) => {
     // If the request was skipped (no data, no errors) consider it successful
     if (!discoveryResponse)
         return true;
     return !!discoveryResponse.data?.defi;
 };
+exports.getIsExternalApiDefiPositionsCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful;
 /**
  * Fetches the defi positions of certain protocols using RPC calls and custom logic.
  * Cena is used for most of the positions, but some protocols require additional data
@@ -31,7 +38,7 @@ const getCustomProviderPositions = async (addr, provider, network, fetch, previo
         const providerErrors = [];
         let error;
         let newPositions = (await Promise.all([
-            getAAVEPositions(addr, provider, network).catch((e) => {
+            (0, providers_1.getAAVEPositions)(addr, provider, network).catch((e) => {
                 providerErrors.push({
                     providerName: 'AAVE v3',
                     error: e?.message || 'Unknown error'
@@ -39,7 +46,7 @@ const getCustomProviderPositions = async (addr, provider, network, fetch, previo
                 return null;
             }),
             // Uniswap is a bit of an odd case. We return the positions merged with Debank data
-            getDebankEnhancedUniV3Positions(addr, provider, network, previousPositions, debankNetworkPositionsByProvider ||
+            (0, providers_1.getDebankEnhancedUniV3Positions)(addr, provider, network, previousPositions, debankNetworkPositionsByProvider ||
                 previousPositions.filter((p) => p.source !== 'custom'), isDebankCallSuccessful).catch((e) => {
                 providerErrors.push({
                     providerName: 'Uniswap V3',
@@ -51,19 +58,19 @@ const getCustomProviderPositions = async (addr, provider, network, fetch, previo
         if (newPositions.length) {
             try {
                 newPositions =
-                    (await updatePositionsByProviderAssetPrices(fetch, newPositions, network.platformId)) ||
+                    (await (0, defiPrices_1.updatePositionsByProviderAssetPrices)(fetch, newPositions, network.platformId)) ||
                         newPositions;
             }
             catch (e) {
                 console.error(`#setAssetPrices error for ${addr} on ${network.name}:`, e);
-                error = DeFiPositionsError.AssetPriceError;
+                error = types_1.DeFiPositionsError.AssetPriceError;
             }
         }
         // Get the previous custom positions that were not updated in this call
         // This is done so the user doesn't lose their custom positions when the
         // new update fails
         const filteredPrevious = previousPositions.filter((prev) => prev.source === 'custom' &&
-            !newPositions.some((n) => getProviderId(n.providerName) === getProviderId(prev.providerName)));
+            !newPositions.some((n) => (0, helpers_1.getProviderId)(n.providerName) === (0, helpers_1.getProviderId)(prev.providerName)));
         return {
             positionsByProvider: [...filteredPrevious, ...newPositions],
             providerErrors,
@@ -75,21 +82,22 @@ const getCustomProviderPositions = async (addr, provider, network, fetch, previo
         return {
             positionsByProvider: previousPositions.filter((p) => p.source === 'custom'),
             providerErrors: [],
-            error: DeFiPositionsError.CriticalError
+            error: types_1.DeFiPositionsError.CriticalError
         };
     }
 };
+exports.getCustomProviderPositions = getCustomProviderPositions;
 /**
  * Merges Debank positions with custom fetched positions, ensuring uniqueness by provider.
  */
 const getUniqueMergedPositions = (debankNetworkPositionsByProvider, customPositions, stkWalletPosition) => {
-    const debankPositionMap = new Map(debankNetworkPositionsByProvider.map((p) => [getProviderId(p.providerName), p]));
+    const debankPositionMap = new Map(debankNetworkPositionsByProvider.map((p) => [(0, helpers_1.getProviderId)(p.providerName), p]));
     customPositions.forEach((custom) => {
-        const key = getProviderId(custom.providerName);
+        const key = (0, helpers_1.getProviderId)(custom.providerName);
         debankPositionMap.set(key, custom);
     });
     if (stkWalletPosition) {
-        const key = getProviderId(stkWalletPosition.providerName);
+        const key = (0, helpers_1.getProviderId)(stkWalletPosition.providerName);
         debankPositionMap.set(key, stkWalletPosition);
     }
     let positionsArray = Array.from(debankPositionMap.values());
@@ -106,6 +114,7 @@ const getUniqueMergedPositions = (debankNetworkPositionsByProvider, customPositi
     positionsArray = positionsArray.sort((a, b) => (b.positionInUSD || 0) - (a.positionInUSD || 0));
     return positionsArray;
 };
+exports.getUniqueMergedPositions = getUniqueMergedPositions;
 /**
  * Returns the addresses of all assets and their protocolAssets (if applicable) as an
  * array of addresses. These addresses can be used as hints by the portfolio controller.
@@ -117,11 +126,11 @@ const getAllAssetsAsHints = (portfolioState) => {
     portfolioState.positionsByProvider.forEach((providerPositions) => {
         providerPositions.positions.forEach((position) => {
             position.assets.forEach((asset) => {
-                if (!isHex(asset.address))
+                if (!(0, viem_1.isHex)(asset.address))
                     return;
                 hints.push(asset.address.toLowerCase());
                 if (asset.protocolAsset) {
-                    if (!isHex(asset.protocolAsset.address))
+                    if (!(0, viem_1.isHex)(asset.protocolAsset.address))
                         return;
                     hints.push(asset.protocolAsset.address.toLowerCase());
                 }
@@ -130,6 +139,7 @@ const getAllAssetsAsHints = (portfolioState) => {
     });
     return hints;
 };
+exports.getAllAssetsAsHints = getAllAssetsAsHints;
 /**
  * Calculates the new DeFi positions state based on the latest fetched data
  * from Debank and custom providers and the previous state.
@@ -138,25 +148,26 @@ const getAllAssetsAsHints = (portfolioState) => {
  */
 const getNewDefiState = (pastPortfolioState, discoveryResponse, customPositionsByProvider, customPositionsError, customProvidersErrors, stkWalletToken, nonceId) => {
     const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate;
-    const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse);
+    const isDebankCallSuccessful = (0, exports.getIsExternalApiDefiPositionsCallSuccessful)(discoveryResponse);
     const previousPositionsByProvider = pastPortfolioState?.defiPositions?.positionsByProvider || [];
     const debankPositionsByProvider = discoveryResponse?.data?.defi?.positions ||
         // Fallback to the old positions if the call failed or was skipped
         previousPositionsByProvider.filter((p) => p.source !== 'custom');
     const { lastForceApiUpdate, lastSuccessfulUpdate } = pastPortfolioState?.defiPositions || {};
-    const stkWalletPosition = getStakedWalletPositions(stkWalletToken);
+    const stkWalletPosition = (0, providers_1.getStakedWalletPositions)(stkWalletToken);
     const uniqueAndMerged = getUniqueMergedPositions(debankPositionsByProvider, customPositionsByProvider, 
     // Ethereum-specific. Add the Staked Wallet token as a defi position
     stkWalletPosition);
     return {
         nonceId,
-        error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
+        error: !isDebankCallSuccessful ? types_1.DeFiPositionsError.CriticalError : customPositionsError,
         lastSuccessfulUpdate: isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
         lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
         providerErrors: customProvidersErrors,
         positionsByProvider: uniqueAndMerged || previousPositionsByProvider
     };
 };
+exports.getNewDefiState = getNewDefiState;
 /**
  * Formats the response from Debank in a format that is expected by the extension.
  * Invalid positions are excluded from the formatted response.
@@ -173,7 +184,7 @@ const getFormattedApiPositions = (result) => {
                 if (pos.additionalData.name === 'Deposit') {
                     pos.additionalData.name = 'Deposit pool';
                     if (pos.additionalData.pool?.id) {
-                        pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11);
+                        pos.additionalData.positionIndex = (0, shortenAddress_1.default)(pos.additionalData.pool.id, 11);
                     }
                 }
                 return {
@@ -182,12 +193,12 @@ const getFormattedApiPositions = (result) => {
                         let amount = asset.amount;
                         if (isCustomAppChain) {
                             // Amount should be formatted with decimals and turned to bigint after that
-                            amount = parseUnits(String(amount), asset.decimals);
+                            amount = (0, ethers_1.parseUnits)(String(amount), asset.decimals);
                             // In else because app assets don't have addresses and we don't want to set them as zero addresses
                         }
                         else {
                             // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
-                            asset.address = isHex(asset.address) ? getAddress(asset.address) : ZeroAddress;
+                            asset.address = (0, viem_1.isHex)(asset.address) ? (0, ethers_1.getAddress)(asset.address) : ethers_1.ZeroAddress;
                         }
                         return {
                             ...asset,
@@ -196,9 +207,9 @@ const getFormattedApiPositions = (result) => {
                             protocolAsset: asset.protocolAsset
                                 ? {
                                     ...asset.protocolAsset,
-                                    address: isHex(asset.protocolAsset.address)
-                                        ? getAddress(asset.protocolAsset.address)
-                                        : ZeroAddress
+                                    address: (0, viem_1.isHex)(asset.protocolAsset.address)
+                                        ? (0, ethers_1.getAddress)(asset.protocolAsset.address)
+                                        : ethers_1.ZeroAddress
                                 }
                                 : undefined
                         };
@@ -213,6 +224,7 @@ const getFormattedApiPositions = (result) => {
             .filter(Boolean)
     }));
 };
+exports.getFormattedApiPositions = getFormattedApiPositions;
 /**
  * Enhances the portfolio tokens with Defi position data.
  * Examples:
@@ -241,7 +253,7 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
                     if (controllerAddress) {
                         defiAssetsMap.set(controllerAddress.toLowerCase(), {
                             positionId: pos.id,
-                            assetType: AssetType.Collateral,
+                            assetType: types_1.AssetType.Collateral,
                             priceIn: []
                         });
                     }
@@ -253,7 +265,7 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
                                 return true;
                             const priceUSD = t.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
                             const tokenBalanceUSD = priceUSD
-                                ? Number(safeTokenAmountAndNumberMultiplication(BigInt(t.amountPostSimulation || t.amount), t.decimals, priceUSD))
+                                ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(t.amountPostSimulation || t.amount), t.decimals, priceUSD))
                                 : undefined;
                             if (protocolAsset?.address) {
                                 return (!t.flags.rewardsType &&
@@ -274,7 +286,7 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
                                 // but should be a different token symbol
                                 t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
                                 // and prices should have no more than 0.5% diff
-                                isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0));
+                                (0, helpers_1.isTokenPriceWithinHalfPercent)(tokenBalanceUSD || 0, asset.value || 0));
                         });
                         if (tokenCorrespondingToProtocolAsset) {
                             defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {
@@ -296,7 +308,7 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
                                 latestAmount: asset.amount,
                                 marketDataIn: [],
                                 // Only list the borrowed asset with no price
-                                priceIn: asset.type === AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
+                                priceIn: asset.type === types_1.AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
                                 decimals: Number(protocolAsset.decimals),
                                 address: protocolAsset.address,
                                 symbol: protocolAsset.symbol,
@@ -325,7 +337,7 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
                 return token;
             let priceIn = token.priceIn;
             // Remove the prices of borrowed assets
-            if (defiAssetData?.assetType === AssetType.Borrow) {
+            if (defiAssetData?.assetType === types_1.AssetType.Borrow) {
                 priceIn = [];
             }
             else if (
@@ -354,12 +366,14 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
         return portfolioTokens;
     }
 };
+exports.enhancePortfolioTokensWithDefiPositions = enhancePortfolioTokensWithDefiPositions;
 const getHasNonceChangedSinceLastUpdate = (previousState, nonceId) => {
     // First time fetching positions
     if (!previousState || !previousState.nonceId)
         return false;
     return nonceId !== previousState.nonceId;
 };
+exports.getHasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate;
 /**
  * Whether the portfolio defi positions data should be updated
  */
@@ -371,6 +385,7 @@ const getCanSkipUpdate = (previousState, hasNonceChangedSinceLastUpdate, maxData
         return false;
     return Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs;
 };
+exports.getCanSkipUpdate = getCanSkipUpdate;
 const getShouldBypassServerSideCache = (previousState, isManualUpdate, hasKeys, sessionIds, hasNonceChangedSinceLastUpdate) => {
     // Always bypass cache if the nonce has changed
     if (hasNonceChangedSinceLastUpdate)
@@ -382,6 +397,7 @@ const getShouldBypassServerSideCache = (previousState, isManualUpdate, hasKeys, 
     const HALF_MINUTE_MS = 30000;
     return Date.now() - (previousState?.lastForceApiUpdate || 0) >= HALF_MINUTE_MS;
 };
+exports.getShouldBypassServerSideCache = getShouldBypassServerSideCache;
 /**
  * Returns the networks where the account has positions with certainty.
  * Certainty - there are no errors and the rpc is working.
@@ -408,5 +424,5 @@ const getAccountNetworksWithPositions = (accountId, accountState, oldNetworksWit
     });
     return networksWithPositions;
 };
-export { enhancePortfolioTokensWithDefiPositions, getAccountNetworksWithPositions, getAllAssetsAsHints, getAssetValue, getCanSkipUpdate, getCustomProviderPositions, getFormattedApiPositions, getHasNonceChangedSinceLastUpdate, getNewDefiState, getShouldBypassServerSideCache, getUniqueMergedPositions, updatePositionsByProviderAssetPrices };
+exports.getAccountNetworksWithPositions = getAccountNetworksWithPositions;
 //# sourceMappingURL=defiPositions.js.map

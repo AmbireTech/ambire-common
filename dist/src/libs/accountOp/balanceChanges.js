@@ -1,5 +1,8 @@
-import { getAddress, ZeroAddress } from 'ethers';
-import { getHyperEvmBalanceChanges, HYPER_EVM_CHAIN_ID } from './hyperEvmBalanceChanges';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAccountOpBalanceChanges = exports.compareTokenBalances = exports.getBalanceChangeTokenAddresses = void 0;
+const ethers_1 = require("ethers");
+const hyperEvmBalanceChanges_1 = require("./hyperEvmBalanceChanges");
 const ABSTRACT_CHAIN_ID = 2741n;
 const ABSTRACT_NATIVE_TOKEN_ADDRESS = '0x000000000000000000000000000000000000800A';
 /**
@@ -13,19 +16,20 @@ const filterAbstractNativeTokenAlias = (tokenAddrs, chainId) => {
         return tokenAddrs;
     return tokenAddrs.filter((tokenAddr) => tokenAddr.toLowerCase() !== ABSTRACT_NATIVE_TOKEN_ADDRESS.toLowerCase());
 };
-export const getBalanceChangeTokenAddresses = (tokenAddrs, chainId) => {
+const getBalanceChangeTokenAddresses = (tokenAddrs, chainId) => {
     const tokenAddrsToNormalize = filterAbstractNativeTokenAlias(tokenAddrs, chainId);
-    return Array.from(new Set([ZeroAddress, ...tokenAddrsToNormalize].map((tokenAddr) => {
+    return Array.from(new Set([ethers_1.ZeroAddress, ...tokenAddrsToNormalize].map((tokenAddr) => {
         try {
-            return getAddress(tokenAddr);
+            return (0, ethers_1.getAddress)(tokenAddr);
         }
         catch (e) {
             return null;
         }
     }))).filter((addr) => addr !== null);
 };
+exports.getBalanceChangeTokenAddresses = getBalanceChangeTokenAddresses;
 const isUsableTokenResult = (error, token) => !!token && error === '0x' && !!token.symbol;
-const isNativeTokenAddress = (tokenAddr) => tokenAddr.toLowerCase() === ZeroAddress.toLowerCase();
+const isNativeTokenAddress = (tokenAddr) => tokenAddr.toLowerCase() === ethers_1.ZeroAddress.toLowerCase();
 const buildTokenBalanceMap = (tokensWithErrors) => tokensWithErrors.reduce((acc, [error, token]) => {
     if (!isUsableTokenResult(error, token))
         return acc;
@@ -39,7 +43,7 @@ const assertTokenBalanceSnapshot = (tokensWithErrors, tokenAddrs, blockNumber) =
         throw new Error(`Missing token balance snapshot for ${missingTokenAddrs.join(', ')} at block ${blockNumber}`);
     }
 };
-export const compareTokenBalances = (beforeTokensWithErrors, afterTokensWithErrors) => {
+const compareTokenBalances = (beforeTokensWithErrors, afterTokensWithErrors) => {
     const beforeTokens = buildTokenBalanceMap(beforeTokensWithErrors);
     const afterTokens = buildTokenBalanceMap(afterTokensWithErrors);
     const tokenAddresses = new Set([...beforeTokens.keys(), ...afterTokens.keys()]);
@@ -66,11 +70,12 @@ export const compareTokenBalances = (beforeTokensWithErrors, afterTokensWithErro
         return changes;
     }, []);
 };
-export const getAccountOpBalanceChanges = async ({ accountAddr, chainId, tokenAddrs, receiptBlockNumber, getTokenBalancesOnBlock, prevBlockNumber, receipts, debugTraceTransaction }) => {
-    if (chainId === HYPER_EVM_CHAIN_ID) {
+exports.compareTokenBalances = compareTokenBalances;
+const getAccountOpBalanceChanges = async ({ accountAddr, chainId, tokenAddrs, receiptBlockNumber, getTokenBalancesOnBlock, prevBlockNumber, receipts, debugTraceTransaction }) => {
+    if (chainId === hyperEvmBalanceChanges_1.HYPER_EVM_CHAIN_ID) {
         // HyperEVM's public RPC only supports latest-state eth_call/getBalance, so
         // historical balance reads fail. Receipt logs still give exact ERC-20 deltas.
-        return getHyperEvmBalanceChanges({
+        return (0, hyperEvmBalanceChanges_1.getHyperEvmBalanceChanges)({
             accountAddr,
             chainId,
             getTokenBalancesOnBlock,
@@ -93,6 +98,7 @@ export const getAccountOpBalanceChanges = async ({ accountAddr, chainId, tokenAd
     // still required, but missing ERC-20s are allowed as 0 -> current balance.
     assertTokenBalanceSnapshot(currentBlockTokens, balanceChangeTokenAddrs, receiptBlockNumber);
     assertTokenBalanceSnapshot(previousBlockTokens, balanceChangeTokenAddrs.filter(isNativeTokenAddress), previousBlockNumber);
-    return compareTokenBalances(previousBlockTokens, currentBlockTokens);
+    return (0, exports.compareTokenBalances)(previousBlockTokens, currentBlockTokens);
 };
+exports.getAccountOpBalanceChanges = getAccountOpBalanceChanges;
 //# sourceMappingURL=balanceChanges.js.map

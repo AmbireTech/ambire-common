@@ -1,4 +1,7 @@
-import { isHexString } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SponsorshipPaymasterError = exports.RelayerPaymasterError = exports.InnerCallFailureError = exports.BundlerError = void 0;
+const ethers_1 = require("ethers");
 class InnerCallFailureError extends Error {
     data = '';
     calls;
@@ -12,11 +15,12 @@ class InnerCallFailureError extends Error {
         this.nativePortfolioValue = nativePortfolioValue;
         // If the message is a hex string pass it to
         // the data field so it can be used by other error handlers
-        if (isHexString(message)) {
+        if ((0, ethers_1.isHexString)(message)) {
             this.data = message;
         }
     }
 }
+exports.InnerCallFailureError = InnerCallFailureError;
 class RelayerPaymasterError extends Error {
     isHumanized;
     constructor(error) {
@@ -26,6 +30,7 @@ class RelayerPaymasterError extends Error {
         this.isHumanized = error.isHumanized || false;
     }
 }
+exports.RelayerPaymasterError = RelayerPaymasterError;
 class SponsorshipPaymasterError extends Error {
     isHumanized = false;
     constructor() {
@@ -35,6 +40,7 @@ class SponsorshipPaymasterError extends Error {
         this.message = message;
     }
 }
+exports.SponsorshipPaymasterError = SponsorshipPaymasterError;
 class BundlerError extends Error {
     bundlerName;
     constructor(message, bundlerName) {
@@ -44,5 +50,5 @@ class BundlerError extends Error {
         this.message = message;
     }
 }
-export { BundlerError, InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError };
+exports.BundlerError = BundlerError;
 //# sourceMappingURL=customErrors.js.map

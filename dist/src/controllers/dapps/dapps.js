@@ -1,12 +1,16 @@
-import { getDomain } from 'tldts';
-import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
-import { getSessionId, Session } from '../../classes/session';
-import { categoriesNotToFilterOut, categoriesToExclude, CATEGORY_MAP, dappIdsToBeRemoved, dappsNotToFilterOutByDomain, defiLlamaProtocolIdsToExclude, featuredDapps, predefinedDapps } from '../../consts/dapps/dapps';
-import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp';
-import { formatDappName, getDappIdFromUrl, getDappNameFromId, getDomainFromUrl, modifyDappPropsIfNeeded, sortDapps, unifyDefiLlamaDappUrl } from '../../libs/dapps/helpers';
-import { networkChainIdToHex } from '../../libs/networks/networks';
-import { fetchWithTimeout } from '../../utils/fetch';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DappsController = void 0;
+const tslib_1 = require("tslib");
+const tldts_1 = require("tldts");
+const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
+const session_1 = require("../../classes/session");
+const dapps_1 = require("../../consts/dapps/dapps");
+const dapp_1 = require("../../interfaces/dapp");
+const helpers_1 = require("../../libs/dapps/helpers");
+const networks_1 = require("../../libs/networks/networks");
+const fetch_1 = require("../../utils/fetch");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const mergeSource = (existing, source) => {
     const current = existing ?? [];
     return current.includes(source) ? current : [...current, source];
@@ -16,7 +20,7 @@ const mergeSource = (existing, source) => {
 // 2. Handling active sessions between dApps and the wallet
 // 3. Broadcasting events from the wallet to connected dApps via the Session
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
-export class DappsController extends EventEmitter {
+class DappsController extends eventEmitter_1.default {
     static MAX_RECENT_DAPPS = 20;
     #appVersion;
     #fetch;
@@ -60,7 +64,7 @@ export class DappsController extends EventEmitter {
             this.#phishing.resetShouldSyncDapps();
         });
         // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
-        this.#retryFetchAndUpdateInterval = new RecurringTimeout(this.fetchAndUpdateDapps.bind(this), 5 * 60 * 1000 // 5min.
+        this.#retryFetchAndUpdateInterval = new recurringTimeout_1.RecurringTimeout(this.fetchAndUpdateDapps.bind(this), 5 * 60 * 1000 // 5min.
         );
         this.#ui.uiEvent.on('addView', () => {
             if (this.#retryFetchAndUpdateInterval.running)
@@ -84,7 +88,7 @@ export class DappsController extends EventEmitter {
         // Clone the original map so we don’t mutate #dapps
         const filteredMap = new Map(this.#dapps);
         for (const [key, d] of filteredMap) {
-            const isPredefined = predefinedDapps.some((pd) => pd.id === d.id);
+            const isPredefined = dapps_1.predefinedDapps.some((pd) => pd.id === d.id);
             const isConnected = !!d.connectedSources?.length;
             if (!isConnected && d.blacklisted === 'BLACKLISTED') {
                 filteredMap.delete(key);
@@ -92,9 +96,9 @@ export class DappsController extends EventEmitter {
             }
             if (isPredefined || d.isFeatured || isConnected || d.isCustom)
                 continue;
-            const domainId = getDomainFromUrl(d.url);
-            const isInDappsNotToFilterOutByDomain = domainId && dappsNotToFilterOutByDomain.includes(domainId);
-            const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category);
+            const domainId = (0, helpers_1.getDomainFromUrl)(d.url);
+            const isInDappsNotToFilterOutByDomain = domainId && dapps_1.dappsNotToFilterOutByDomain.includes(domainId);
+            const shouldSkipByCategory = !dapps_1.categoriesNotToFilterOut.includes(d.category);
             const hasNoNetworks = !d.chainIds || d.chainIds.length === 0;
             const hasLowTVL = !d.tvl || d.tvl <= 15_000_000;
             // Remove dapps that are not in excluded categories and either have no networks or low TVL
@@ -106,16 +110,16 @@ export class DappsController extends EventEmitter {
             }
         }
         for (const [, d] of filteredMap) {
-            const domainId = getDomainFromUrl(d.url);
+            const domainId = (0, helpers_1.getDomainFromUrl)(d.url);
             if (!domainId)
                 continue;
-            if (dappsNotToFilterOutByDomain.includes(domainId))
+            if (dapps_1.dappsNotToFilterOutByDomain.includes(domainId))
                 continue;
             // If the dapp's id is NOT its domain and there's already a dapp using that domain id → delete the dapp with that domain
             if (domainId !== d.id && filteredMap.has(domainId))
                 filteredMap.delete(domainId);
         }
-        return Array.from(filteredMap.values()).sort(sortDapps);
+        return Array.from(filteredMap.values()).sort(helpers_1.sortDapps);
     }
     get recentDapps() {
         // Resolve each recent entry against #dapps; filter stale ids whose dapp was removed.
@@ -128,13 +132,13 @@ export class DappsController extends EventEmitter {
     }
     get categories() {
         return [
-            ...new Set(this.dapps.map((d) => d.category).filter((c) => !!c && !categoriesToExclude.includes(c)))
+            ...new Set(this.dapps.map((d) => d.category).filter((c) => !!c && !dapps_1.categoriesToExclude.includes(c)))
         ].sort();
     }
     async #load() {
         await this.#networks.initialLoadPromise;
         const [storedDapps, storedRecentDapps] = await Promise.all([
-            this.#storage.get('dappsV2', predefinedDapps),
+            this.#storage.get('dappsV2', dapps_1.predefinedDapps),
             this.#storage.get('recentDapps', [])
         ]);
         this.#dapps = new Map(storedDapps.map((d) => [d.id, d]));
@@ -186,8 +190,8 @@ export class DappsController extends EventEmitter {
         let fetchedDappsList = [];
         let fetchedChainsList = [];
         const [res, chainsRes] = await Promise.all([
-            fetchWithTimeout(this.#fetch, 'https://api.llama.fi/protocols', {}, this.#shouldRetryFetchAndUpdate ? 15000 : 10000),
-            fetchWithTimeout(this.#fetch, 'https://api.llama.fi/v2/chains', {}, this.#shouldRetryFetchAndUpdate ? 15000 : 10000)
+            (0, fetch_1.fetchWithTimeout)(this.#fetch, 'https://api.llama.fi/protocols', {}, this.#shouldRetryFetchAndUpdate ? 15000 : 10000),
+            (0, fetch_1.fetchWithTimeout)(this.#fetch, 'https://api.llama.fi/v2/chains', {}, this.#shouldRetryFetchAndUpdate ? 15000 : 10000)
         ]);
         if (!res.ok || !chainsRes.ok) {
             throw new Error(`Fetch failed: protocols=${res.status}, chains=${chainsRes.status}`);
@@ -206,14 +210,14 @@ export class DappsController extends EventEmitter {
             .map((c) => c.name.toLowerCase());
         const prevDapps = new Map(this.#dapps);
         for (const dapp of fetchedDappsList) {
-            if (categoriesToExclude.includes(dapp.category))
+            if (dapps_1.categoriesToExclude.includes(dapp.category))
                 continue;
-            if (defiLlamaProtocolIdsToExclude.includes(dapp.id))
+            if (dapps_1.defiLlamaProtocolIdsToExclude.includes(dapp.id))
                 continue;
-            const id = getDappIdFromUrl(dapp.url);
+            const id = (0, helpers_1.getDappIdFromUrl)(dapp.url);
             // Tries to find non-EVM protocols by matching their text with known non-EVM chain names because
             // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
-            if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
+            if (dapps_1.categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
                 const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase();
                 if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) {
                     continue;
@@ -227,16 +231,16 @@ export class DappsController extends EventEmitter {
             const prevSources = prevStoredDapp?.connectedSources ?? [];
             const updatedDapp = {
                 id,
-                name: formatDappName(dapp.name),
+                name: (0, helpers_1.formatDappName)(dapp.name),
                 description: dapp.description,
-                url: unifyDefiLlamaDappUrl(dapp.url),
+                url: (0, helpers_1.unifyDefiLlamaDappUrl)(dapp.url),
                 icon: dapp.logo,
-                category: CATEGORY_MAP[dapp.category] || dapp.category,
+                category: dapps_1.CATEGORY_MAP[dapp.category] || dapp.category,
                 tvl: dapp.tvl,
                 chainIds,
                 isConnected: prevSources.length > 0,
                 connectedSources: prevSources,
-                isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)),
+                isFeatured: dapps_1.featuredDapps.has(id) || dapps_1.featuredDapps.has((0, helpers_1.getDomainFromUrl)(dapp.url)),
                 isCustom: !!prevStoredDapp?.isCustom,
                 chainId: prevStoredDapp?.chainId || 1,
                 favorite: !!prevStoredDapp?.favorite,
@@ -246,31 +250,31 @@ export class DappsController extends EventEmitter {
                 grantedPermissionId: prevStoredDapp?.grantedPermissionId,
                 grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
             };
-            modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp) => {
+            (0, helpers_1.modifyDappPropsIfNeeded)(id, dappsMap, dapp, (modifiedDapp) => {
                 dappsMap.set(id, modifiedDapp);
             });
-            if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url))) {
+            if (!dappsMap.has(id) && !dappsMap.has((0, tldts_1.getDomain)(updatedDapp.url))) {
                 dappsMap.set(id, updatedDapp);
             }
         }
         // Add predefined
-        for (const pd of predefinedDapps) {
-            const id = getDappIdFromUrl(pd.url);
+        for (const pd of dapps_1.predefinedDapps) {
+            const id = (0, helpers_1.getDappIdFromUrl)(pd.url);
             const prevStoredDapp = prevDapps.get(id);
             if (!dappsMap.has(id)) {
                 const prevSources = prevStoredDapp?.connectedSources ?? [];
                 dappsMap.set(id, {
                     id,
-                    name: formatDappName(pd.name),
+                    name: (0, helpers_1.formatDappName)(pd.name),
                     description: pd.description,
                     url: pd.url,
                     icon: pd.icon,
-                    category: pd.category ? CATEGORY_MAP[pd.category] || pd.category : null,
+                    category: pd.category ? dapps_1.CATEGORY_MAP[pd.category] || pd.category : null,
                     tvl: null,
                     chainIds: pd.chainIds || [],
                     isConnected: prevSources.length > 0,
                     connectedSources: prevSources,
-                    isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(pd.url)),
+                    isFeatured: dapps_1.featuredDapps.has(id) || dapps_1.featuredDapps.has((0, helpers_1.getDomainFromUrl)(pd.url)),
                     isCustom: false,
                     chainId: prevStoredDapp?.chainId ?? 1,
                     favorite: prevStoredDapp?.favorite ?? false,
@@ -286,7 +290,7 @@ export class DappsController extends EventEmitter {
         // Add connected + custom
         for (const d of [...prevConnectedDapps, ...prevCustomDapps]) {
             if (!dappsMap.has(d.id)) {
-                const existingByDomain = dappsMap.get(getDomainFromUrl(d.url));
+                const existingByDomain = dappsMap.get((0, helpers_1.getDomainFromUrl)(d.url));
                 if (existingByDomain) {
                     d.name = existingByDomain.name;
                     d.description = existingByDomain.description;
@@ -301,7 +305,7 @@ export class DappsController extends EventEmitter {
             }
         }
         // Delete legacy IDs
-        for (const id of dappIdsToBeRemoved)
+        for (const id of dapps_1.dappIdsToBeRemoved)
             dappsMap.delete(id);
         const unverifiedDappsArray = Array.from(dappsMap.values());
         this.#dapps = dappsMap;
@@ -342,7 +346,7 @@ export class DappsController extends EventEmitter {
     }
     async #createDappSession(initProps) {
         await this.initialLoadPromise;
-        const dappSession = new Session(initProps);
+        const dappSession = new session_1.Session(initProps);
         this.dappSessions[dappSession.sessionId] = dappSession;
         this.emitUpdate();
         return dappSession;
@@ -350,8 +354,8 @@ export class DappsController extends EventEmitter {
     async getOrCreateDappSession({ windowId, tabId, url, wcTopic }) {
         if (!tabId || !url)
             throw new Error('Invalid props passed to getOrCreateDappSession');
-        const dappId = getDappIdFromUrl(new URL(url).origin);
-        const sessionId = getSessionId({ windowId, tabId, dappId });
+        const dappId = (0, helpers_1.getDappIdFromUrl)(new URL(url).origin);
+        const sessionId = (0, session_1.getSessionId)({ windowId, tabId, dappId });
         if (this.dappSessions[sessionId])
             return this.dappSessions[sessionId];
         return this.#createDappSession({ windowId, tabId, url, wcTopic });
@@ -446,11 +450,11 @@ export class DappsController extends EventEmitter {
                 connectedSources: existing.connectedSources ?? []
             };
         }
-        const existingByDomain = this.#dapps.get(getDomainFromUrl(dapp.url));
+        const existingByDomain = this.#dapps.get((0, helpers_1.getDomainFromUrl)(dapp.url));
         return {
             id: dapp.id,
             url: dapp.url,
-            name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
+            name: existingByDomain?.name || dapp.name || (0, helpers_1.getDappNameFromId)(dapp.id),
             chainId: network ? dapp.chainId : existingByDomain?.chainId || DEFAULT_CHAIN_ID,
             description: existingByDomain?.description || '',
             icon: existingByDomain?.icon || dapp.icon,
@@ -546,8 +550,8 @@ export class DappsController extends EventEmitter {
             const DEFAULT_CHAIN_ID = 1;
             await this.broadcastDappSessionEvent('chainChanged', {
                 chain: dapp.chainId
-                    ? networkChainIdToHex(dapp.chainId)
-                    : networkChainIdToHex(DEFAULT_CHAIN_ID),
+                    ? (0, networks_1.networkChainIdToHex)(dapp.chainId)
+                    : (0, networks_1.networkChainIdToHex)(DEFAULT_CHAIN_ID),
                 networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
             }, dapp.id);
         }
@@ -582,7 +586,7 @@ export class DappsController extends EventEmitter {
             this.removeDapp(id);
             return;
         }
-        const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url));
+        const existingByDomain = this.#dapps.get((0, helpers_1.getDomainFromUrl)(existing.url));
         if (!existing.isCustom) {
             dappPropsToUpdate.name = existing.name;
         }
@@ -673,7 +677,7 @@ export class DappsController extends EventEmitter {
     getDappByDomain(url) {
         if (!this.isReady)
             return;
-        return this.#dapps.get(getDomainFromUrl(url));
+        return this.#dapps.get((0, helpers_1.getDomainFromUrl)(url));
     }
     async setDappToConnectIfNeeded(currentRequest) {
         try {
@@ -768,7 +772,7 @@ export class DappsController extends EventEmitter {
         if (!validDappUrls.length)
             return null;
         const dappVerificationData = validDappUrls.map((url) => {
-            const id = getDappIdFromUrl(url);
+            const id = (0, helpers_1.getDappIdFromUrl)(url);
             const dapp = this.#dapps.get(id);
             return {
                 id,
@@ -797,7 +801,7 @@ export class DappsController extends EventEmitter {
         const loadingDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING');
         if (loadingDappNames.length) {
             return {
-                id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+                id: dapp_1.DAPP_VERIFICATION_BANNER_IDS.LOADING,
                 type: 'warning',
                 text: withOptionalDappNames("We're still verifying the app. Please wait, or make sure you trust it before signing requests.", loadingDappNames)
             };
@@ -806,7 +810,7 @@ export class DappsController extends EventEmitter {
         const failedToVerifyDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status);
         if (failedToVerifyDappNames.length) {
             return {
-                id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+                id: dapp_1.DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
                 type: 'warning',
                 text: withOptionalDappNames("We couldn't verify the app. Make sure you trust it before signing requests.", failedToVerifyDappNames)
             };
@@ -815,7 +819,7 @@ export class DappsController extends EventEmitter {
         const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED');
         if (blacklistedDappNames.length) {
             return {
-                id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+                id: dapp_1.DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
                 type: 'error',
                 text: withOptionalDappNames("This app didn't pass our safety check. Proceed at your own risk.", blacklistedDappNames)
             };
@@ -824,7 +828,7 @@ export class DappsController extends EventEmitter {
         const notInCatalogDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'VERIFIED' && !isDappInDefaultCatalog(dapp.id));
         if (notInCatalogDappNames.length) {
             return {
-                id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+                id: dapp_1.DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
                 type: 'warning',
                 text: withOptionalDappNames('App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.', notInCatalogDappNames)
             };
@@ -845,4 +849,5 @@ export class DappsController extends EventEmitter {
         };
     }
 }
+exports.DappsController = DappsController;
 //# sourceMappingURL=dapps.js.map

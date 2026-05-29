@@ -1,10 +1,14 @@
-import { Contract } from 'ethers';
-import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges';
-import { getProviderBatchMaxCount } from '../../libs/networks/networks';
-import { Portfolio } from '../../libs/portfolio';
-import { getRpcProvider } from '../../services/provider';
-import { getDebugTraceTransaction } from '../../utils/debugTransaction';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ProvidersController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const balanceChanges_1 = require("../../libs/accountOp/balanceChanges");
+const networks_1 = require("../../libs/networks/networks");
+const portfolio_1 = require("../../libs/portfolio");
+const provider_1 = require("../../services/provider");
+const debugTransaction_1 = require("../../utils/debugTransaction");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const STATUS_WRAPPED_METHODS = {
     toggleBatching: 'INITIAL'
 };
@@ -13,7 +17,7 @@ const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001';
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
  * Each network requires an initialized JsonRpcProvider, and the provider must be reinitialized whenever network.selectedRpcUrl changes.
  */
-export class ProvidersController extends EventEmitter {
+class ProvidersController extends eventEmitter_1.default {
     #storage;
     #getNetworks;
     #sendUiMessage;
@@ -97,7 +101,7 @@ export class ProvidersController extends EventEmitter {
             this.setProvider(network);
         }
         else if (rpcUrl) {
-            this.#providers[chainId.toString()] = getRpcProvider([rpcUrl], chainId, rpcUrl);
+            this.#providers[chainId.toString()] = (0, provider_1.getRpcProvider)([rpcUrl], chainId, rpcUrl);
         }
         this.emitUpdate();
     }
@@ -118,9 +122,9 @@ export class ProvidersController extends EventEmitter {
                 }
             }
             const batchMaxCount = this.isBatchingEnabled
-                ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
+                ? (0, networks_1.getProviderBatchMaxCount)(network, network.selectedRpcUrl)
                 : 1;
-            this.#providers[stringChainId] = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
+            this.#providers[stringChainId] = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
                 batchMaxCount,
                 batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
             });
@@ -155,9 +159,9 @@ export class ProvidersController extends EventEmitter {
     async useTempProvider({ rpcUrl, chainId }, callback) {
         const network = this.#getNetworks().find((n) => n.chainId === chainId);
         const batchMaxCount = this.isBatchingEnabled && network
-            ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
+            ? (0, networks_1.getProviderBatchMaxCount)(network, network.selectedRpcUrl)
             : 1;
-        const provider = getRpcProvider([rpcUrl], chainId, rpcUrl, {
+        const provider = (0, provider_1.getRpcProvider)([rpcUrl], chainId, rpcUrl, {
             batchMaxCount,
             batchMaxSize: network?.rpcNoStateOverride ? 24576 : undefined
         });
@@ -230,7 +234,7 @@ export class ProvidersController extends EventEmitter {
             });
         }
         const provider = this.providers[network.chainId.toString()];
-        const contract = new Contract(address, [abi], provider);
+        const contract = new ethers_1.Contract(address, [abi], provider);
         let error = undefined;
         if (typeof contract[method] !== 'function') {
             this.emitError({
@@ -274,19 +278,19 @@ export class ProvidersController extends EventEmitter {
             });
         }
         try {
-            const portfolio = new Portfolio(fetch, provider, network);
+            const portfolio = new portfolio_1.Portfolio(fetch, provider, network);
             // create a wrapper function so that we could pass it correctly
             // to the required type for getAccountOpBalanceChanges.
             // the final goal is just calling portfolio.getTokensByAddresses
             const getTokenBalancesOnBlock = (portfolioAccountId, _chainId, portfolioTokenAddrs, portfolioBlockTag, portfolioAccountAddr) => portfolio.getTokensByAddresses(portfolioAccountAddr || portfolioAccountId, portfolioTokenAddrs, { blockTag: portfolioBlockTag });
-            const result = await getAccountOpBalanceChanges({
+            const result = await (0, balanceChanges_1.getAccountOpBalanceChanges)({
                 accountAddr: accountAddr || accountId,
                 chainId,
                 tokenAddrs,
                 receiptBlockNumber: blockTag,
                 getTokenBalancesOnBlock,
                 receipts,
-                debugTraceTransaction: getDebugTraceTransaction(chainId, provider)
+                debugTraceTransaction: (0, debugTransaction_1.getDebugTraceTransaction)(chainId, provider)
             });
             return this.#sendUiMessage({
                 requestId,
@@ -304,7 +308,7 @@ export class ProvidersController extends EventEmitter {
     }
     async #executeBatchedFetch(network) {
         const allAddresses = Array.from(new Set(this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.data.map((i) => i.address))) || [];
-        const portfolio = new Portfolio(fetch, this.providers[network.chainId.toString()], network);
+        const portfolio = new portfolio_1.Portfolio(fetch, this.providers[network.chainId.toString()], network);
         const options = {
             disableAutoDiscovery: true,
             additionalErc20Hints: allAddresses,
@@ -372,4 +376,5 @@ export class ProvidersController extends EventEmitter {
         };
     }
 }
+exports.ProvidersController = ProvidersController;
 //# sourceMappingURL=providers.js.map

@@ -1,15 +1,20 @@
-import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy';
-import { EOA_SIMULATION_NONCE } from '../../consts/deployless';
-import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag';
-import { yieldToMain } from '../../utils/scheduler';
-import { getNotAmbireStateOverride, getShouldStateOverride } from '../../utils/simulationStateOverride';
-import { getAccountDeployParams } from '../account/account';
-import { callToTuple, toSingletonCall } from '../accountOp/accountOp';
-import { DeploylessMode } from '../deployless/deployless';
-import { decodeError } from '../errorDecoder';
-import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors';
-import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers';
-import { mapToken } from './helpers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDeploylessOpts = getDeploylessOpts;
+exports.getNFTs = getNFTs;
+exports.getTokens = getTokens;
+const deploy_1 = require("../../consts/deploy");
+const deployless_1 = require("../../consts/deployless");
+const getBlockTag_1 = require("../../utils/getBlockTag");
+const scheduler_1 = require("../../utils/scheduler");
+const simulationStateOverride_1 = require("../../utils/simulationStateOverride");
+const account_1 = require("../account/account");
+const accountOp_1 = require("../accountOp/accountOp");
+const deployless_2 = require("../deployless/deployless");
+const errorDecoder_1 = require("../errorDecoder");
+const errors_1 = require("../errorHumanizer/errors");
+const helpers_1 = require("../errorHumanizer/helpers");
+const helpers_2 = require("./helpers");
 class SimulationError extends Error {
     simulationErrorMsg;
     beforeNonce;
@@ -30,8 +35,8 @@ function handleSimulationError(errorData, beforeNonce, afterNonce, simulationOps
     if (errorData !== '0x') {
         const error = new Error(errorData);
         error.data = errorData;
-        const decodedError = decodeError(error);
-        const humanizedError = getHumanReadableErrorMessage(null, DEPLOYLESS_ERRORS, 'Transaction cannot be simulated because', decodedError, error);
+        const decodedError = (0, errorDecoder_1.decodeError)(error);
+        const humanizedError = (0, helpers_1.getHumanReadableErrorMessage)(null, errors_1.DEPLOYLESS_ERRORS, 'Transaction cannot be simulated because', decodedError, error);
         const fallbackMessage = `Transaction cannot be simulated because of an unknown error. Error code: ${decodedError.reason || errorData.slice(0, 10)}`;
         throw new SimulationError(humanizedError || fallbackMessage, beforeNonce, afterNonce);
     }
@@ -59,20 +64,20 @@ function handleSimulationError(errorData, beforeNonce, afterNonce, simulationOps
         throw new SimulationError('simulation error: Failed to increment the nonce to the final account op nonce', beforeNonce, afterNonce);
     }
 }
-export function getDeploylessOpts(accountAddr, network, opts) {
-    const shouldStateOverride = !!opts.simulation && getShouldStateOverride(network, opts.simulation.baseAccount);
+function getDeploylessOpts(accountAddr, network, opts) {
+    const shouldStateOverride = !!opts.simulation && (0, simulationStateOverride_1.getShouldStateOverride)(network, opts.simulation.baseAccount);
     return {
         blockTag: opts.blockTag,
-        from: DEPLOYLESS_SIMULATION_FROM,
-        mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-        stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr, network) : null
+        from: deploy_1.DEPLOYLESS_SIMULATION_FROM,
+        mode: shouldStateOverride ? deployless_2.DeploylessMode.StateOverride : deployless_2.DeploylessMode.Detect,
+        stateToOverride: shouldStateOverride ? (0, simulationStateOverride_1.getNotAmbireStateOverride)(accountAddr, network) : null
     };
 }
-export async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limits) {
+async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limits) {
     const deploylessOpts = getDeploylessOpts(accountAddr, network, {
         ...opts,
         blockTag: opts.blockTag === 'pending' || opts.blockTag === 'both'
-            ? getPendingBlockTagIfSupported(network)
+            ? (0, getBlockTag_1.getPendingBlockTagIfSupported)(network)
             : opts.blockTag
     });
     const mapNft = (token, address) => {
@@ -103,12 +108,12 @@ export async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs
     }
     const { accountOps, baseAccount, state } = opts.simulation;
     const account = baseAccount.getAccount();
-    const [factory, factoryCalldata] = getAccountDeployParams(account);
-    const shouldStateOverride = getShouldStateOverride(network, baseAccount);
+    const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
+    const shouldStateOverride = (0, simulationStateOverride_1.getShouldStateOverride)(network, baseAccount);
     const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
         // state overriden accounts start from a fake, specified nonce
-        nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-        calls: calls.map(toSingletonCall).map(callToTuple)
+        nonce: !shouldStateOverride ? nonce : BigInt(deployless_1.EOA_SIMULATION_NONCE) + BigInt(idx),
+        calls: calls.map(accountOp_1.toSingletonCall).map(accountOp_1.callToTuple)
     }));
     const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call('simulateAndGetAllNFTs', [
         accountAddr,
@@ -163,17 +168,17 @@ export async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs
         {}
     ];
 }
-export async function getTokens(network, deployless, opts, accountAddr, tokenAddrs, pageIndex) {
+async function getTokens(network, deployless, opts, accountAddr, tokenAddrs, pageIndex) {
     if (typeof pageIndex === 'number' && pageIndex > 0) {
         // Allow the main thread to process other tasks before continuing
         // as encode/decode operations (in deployless) are very CPU intensive
-        await yieldToMain();
+        await (0, scheduler_1.yieldToMain)();
     }
     const isFetchingBothBlocks = opts.blockTag === 'both';
     const deploylessOpts = getDeploylessOpts(accountAddr, network, {
         ...opts,
         blockTag: opts.blockTag === 'pending' || isFetchingBothBlocks
-            ? getPendingBlockTagIfSupported(network)
+            ? (0, getBlockTag_1.getPendingBlockTagIfSupported)(network)
             : opts.blockTag
     });
     const getMainResults = async () => {
@@ -182,13 +187,13 @@ export async function getTokens(network, deployless, opts, accountAddr, tokenAdd
             throw new Error('Base account is required for simulation');
         }
         const account = baseAccount.getAccount();
-        const shouldStateOverride = getShouldStateOverride(network, baseAccount);
+        const shouldStateOverride = (0, simulationStateOverride_1.getShouldStateOverride)(network, baseAccount);
         const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
             // state overriden accounts start from a fake, specified nonce
-            nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-            calls: calls.map(toSingletonCall).map(callToTuple)
+            nonce: !shouldStateOverride ? nonce : BigInt(deployless_1.EOA_SIMULATION_NONCE) + BigInt(idx),
+            calls: calls.map(accountOp_1.toSingletonCall).map(accountOp_1.callToTuple)
         }));
-        const [factory, factoryCalldata] = getAccountDeployParams(account);
+        const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
         return {
             simulationOps,
             result: await deployless.call('simulateAndGetBalances', [
@@ -206,7 +211,7 @@ export async function getTokens(network, deployless, opts, accountAddr, tokenAdd
         return [
             results.map((token, i) => [
                 token.error,
-                mapToken(token, network, tokenAddrs[i], opts, undefined, token.amount)
+                (0, helpers_2.mapToken)(token, network, tokenAddrs[i], opts, undefined, token.amount)
             ]),
             {
                 blockNumber
@@ -248,7 +253,7 @@ export async function getTokens(network, deployless, opts, accountAddr, tokenAdd
             return [
                 token.error,
                 {
-                    ...mapToken(token, network, tokenAddrs[i], opts, !!simulationAmount, token.amount),
+                    ...(0, helpers_2.mapToken)(token, network, tokenAddrs[i], opts, !!simulationAmount, token.amount),
                     simulationAmount,
                     amountPostSimulation
                 }

@@ -1,20 +1,24 @@
-import { getAddress, ZeroAddress } from 'ethers';
-import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
-import { STK_WALLET } from '../../consts/addresses';
-import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals';
-import { isBasicAccount } from '../../libs/account/account';
-import { getBaseAccount } from '../../libs/account/getBaseAccount';
-import { AccountOpStatus } from '../../libs/accountOp/types';
-import { enhancePortfolioTokensWithDefiPositions, getAccountNetworksWithPositions, getAllAssetsAsHints, getCanSkipUpdate, getCustomProviderPositions, getFormattedApiPositions, getHasNonceChangedSinceLastUpdate, getIsExternalApiDefiPositionsCallSuccessful, getNewDefiState, getShouldBypassServerSideCache } from '../../libs/defiPositions/defiPositions';
-import { getAccountKeysCount } from '../../libs/keys/keys';
-import { Portfolio } from '../../libs/portfolio';
-import batcher from '../../libs/portfolio/batcher';
-import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets';
-import { convertApiTokenDataToTokenDataCache, erc721CollectionToLearnedAssetKeys, formatExternalHintsAPIResponse, getFlags, getHintsError, getSpecialHints, getTotal, learnedErc721sToHints, mergeERC721s, validateERC20Token } from '../../libs/portfolio/helpers';
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio';
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import { isInternalChain } from '../../libs/selectedAccount/selectedAccount';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PortfolioController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
+const addresses_1 = require("../../consts/addresses");
+const intervals_1 = require("../../consts/intervals");
+const account_1 = require("../../libs/account/account");
+const getBaseAccount_1 = require("../../libs/account/getBaseAccount");
+const types_1 = require("../../libs/accountOp/types");
+const defiPositions_1 = require("../../libs/defiPositions/defiPositions");
+const keys_1 = require("../../libs/keys/keys");
+const portfolio_1 = require("../../libs/portfolio");
+const batcher_1 = tslib_1.__importDefault(require("../../libs/portfolio/batcher"));
+const getNetworksWithAssets_1 = tslib_1.__importDefault(require("../../libs/portfolio/getNetworksWithAssets"));
+const helpers_1 = require("../../libs/portfolio/helpers");
+const portfolio_2 = require("../../libs/portfolio/portfolio");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const selectedAccount_1 = require("../../libs/selectedAccount/selectedAccount");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const LEARNED_UNOWNED_LIMITS = {
     erc20s: 20,
     erc721s: 20
@@ -57,7 +61,7 @@ const EXTERNAL_API_HINTS_TTL = {
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
-export class PortfolioController extends EventEmitter {
+class PortfolioController extends eventEmitter_1.default {
     #state;
     // A queue to prevent race conditions when calling `updateSelectedAccount`.
     // All calls are queued by network and account.
@@ -124,7 +128,7 @@ export class PortfolioController extends EventEmitter {
         this.#portfolioLibs = new Map();
         this.#storage = storage;
         this.#fetch = fetch;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.#velcroUrl = velcroUrl;
         this.#providers = providers;
         this.#networks = networks;
@@ -133,9 +137,9 @@ export class PortfolioController extends EventEmitter {
         this.temporaryTokens = {};
         this.#banner = banner;
         this.#featureFlags = featureFlags;
-        this.#blacklistInterval = new RecurringTimeout(this.fetchBlacklist.bind(this), BLACKLIST_UPDATE_INTERVAL, this.emitError.bind(this));
+        this.#blacklistInterval = new recurringTimeout_1.RecurringTimeout(this.fetchBlacklist.bind(this), intervals_1.BLACKLIST_UPDATE_INTERVAL, this.emitError.bind(this));
         this.#blacklistInterval.start();
-        this.batchedPortfolioDiscovery = batcher(fetch, (queue) => {
+        this.batchedPortfolioDiscovery = (0, batcher_1.default)(fetch, (queue) => {
             const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))];
             const accountAddrs = [...new Set(queue.map((x) => x.data.accountAddr))];
             const pairs = baseCurrencies
@@ -151,7 +155,7 @@ export class PortfolioController extends EventEmitter {
                 const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr);
                 // As of v4.36.0, for metric purposes, pass the account keys count as an
                 // additional param for the batched velcro discovery requests.
-                const accountKeysCount = getAccountKeysCount({
+                const accountKeysCount = (0, keys_1.getAccountKeysCount)({
                     accountAddr,
                     keys: this.#keystore.keys,
                     accounts: this.#accounts.accounts
@@ -230,7 +234,7 @@ export class PortfolioController extends EventEmitter {
             for (const chainId of Object.keys(rawAddrs)) {
                 checksummedAddrs[chainId] = (rawAddrs[chainId] || []).reduce((acc, addr) => {
                     try {
-                        acc.push(getAddress(addr));
+                        acc.push((0, ethers_1.getAddress)(addr));
                     }
                     catch {
                         // skip malformed addresses
@@ -246,7 +250,7 @@ export class PortfolioController extends EventEmitter {
             };
             // Reset the retry interval to the default value after a successful fetch
             this.#blacklistInterval.updateTimeout({
-                timeout: BLACKLIST_UPDATE_INTERVAL
+                timeout: intervals_1.BLACKLIST_UPDATE_INTERVAL
             });
             await this.#storage.set('tokenBlacklist', {
                 blacklistAddrs: this.#blacklist.blacklistAddrs,
@@ -307,7 +311,7 @@ export class PortfolioController extends EventEmitter {
                     isLoading: false
                 };
                 if (storedBlacklist.updatedAt &&
-                    Date.now() - storedBlacklist.updatedAt > BLACKLIST_UPDATE_INTERVAL) {
+                    Date.now() - storedBlacklist.updatedAt > intervals_1.BLACKLIST_UPDATE_INTERVAL) {
                     // eslint-disable-next-line @typescript-eslint/no-floating-promises
                     this.fetchBlacklist();
                 }
@@ -397,7 +401,7 @@ export class PortfolioController extends EventEmitter {
     }
     async #updateNetworksWithAssets(accountId, accountState) {
         const storageStateByAccount = this.#networksWithAssetsByAccounts;
-        this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(accountId, accountState, storageStateByAccount, this.#providers.providers);
+        this.#networksWithAssetsByAccounts[accountId] = (0, getNetworksWithAssets_1.default)(accountId, accountState, storageStateByAccount, this.#providers.providers);
         await this.updateNetworksWithDefiPositions(accountId, accountState, this.#providers.providers);
         this.hasFundedHotAccount = this.#getHasFundedHotAccount();
         this.emitUpdate();
@@ -459,7 +463,7 @@ export class PortfolioController extends EventEmitter {
                 const { amountPostSimulation, postSimulation, simulationAmount, ...rest } = collection;
                 return rest;
             });
-            networkState.result.total = getTotal(networkState.result.tokens, networkState.result.defiPositions);
+            networkState.result.total = (0, helpers_1.getTotal)(networkState.result.tokens, networkState.result.defiPositions);
             delete networkState.accountOps;
             this.emitUpdate();
         };
@@ -532,7 +536,7 @@ export class PortfolioController extends EventEmitter {
             this.emitError({ level: 'silent', message, error: new Error(message) });
             return;
         }
-        const result = await validateERC20Token(token, accountId, provider, allNetworks
+        const result = await (0, helpers_1.validateERC20Token)(token, accountId, provider, allNetworks
             ? {
                 allNetworks: this.#networks.networks,
                 allProviders: this.#providers.providers,
@@ -565,7 +569,7 @@ export class PortfolioController extends EventEmitter {
                 const provider = providers[network.chainId.toString()];
                 if (!provider)
                     return null;
-                this.#portfolioLibs.set(key, new Portfolio(this.#fetch, provider, network, this.#velcroUrl));
+                this.#portfolioLibs.set(key, new portfolio_1.Portfolio(this.#fetch, provider, network, this.#velcroUrl));
             }
             catch (e) {
                 this.emitError({
@@ -712,8 +716,8 @@ export class PortfolioController extends EventEmitter {
             ...t,
             chainId: BigInt(t.chainId || 1),
             amount: BigInt(t.amount || 0),
-            symbol: t.address === STK_WALLET ? 'stkWALLET' : t.symbol,
-            flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address, t.name, t.symbol)
+            symbol: t.address === addresses_1.STK_WALLET ? 'stkWALLET' : t.symbol,
+            flags: (0, helpers_1.getFlags)(res.data.rewards, 'rewards', t.chainId, t.address, t.name, t.symbol)
         }));
         accountState.rewards = {
             isReady: true,
@@ -724,7 +728,7 @@ export class PortfolioController extends EventEmitter {
                 ...res.data.rewards,
                 updateStarted: start,
                 tokens: rewardsTokens,
-                total: getTotal(rewardsTokens, null)
+                total: (0, helpers_1.getTotal)(rewardsTokens, null)
             }
         };
         accountState.projectedRewards = {
@@ -742,7 +746,7 @@ export class PortfolioController extends EventEmitter {
             amount: BigInt(t.amount || 0),
             chainId: BigInt(t.chainId || 1),
             availableAmount: BigInt(t.availableAmount || 0),
-            flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol),
+            flags: (0, helpers_1.getFlags)(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol),
             marketDataIn: []
         }));
         accountState.gasTank = {
@@ -754,7 +758,7 @@ export class PortfolioController extends EventEmitter {
                 updateStarted: start,
                 tokens: [],
                 gasTankTokens,
-                total: getTotal(gasTankTokens, null)
+                total: (0, helpers_1.getTotal)(gasTankTokens, null)
             }
         };
         this.emitUpdate();
@@ -786,14 +790,14 @@ export class PortfolioController extends EventEmitter {
             !isManualUpdate &&
             Date.now() - externalApiHintsResponse.lastUpdate <
                 EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic'];
-        const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(defiState, this.#getNonceId(account, chainId));
-        const canSkipDefiUpdate = getCanSkipUpdate(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs);
+        const hasNonceChangedSinceLastUpdate = (0, defiPositions_1.getHasNonceChangedSinceLastUpdate)(defiState, this.#getNonceId(account, chainId));
+        const canSkipDefiUpdate = (0, defiPositions_1.getCanSkipUpdate)(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs);
         if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
             // Request can be skipped altogether
             return null;
         }
         let response = null;
-        const shouldForceUpdateDefi = getShouldBypassServerSideCache(defiState, !!isManualUpdate, hasKeys, this.defiSessionIds, hasNonceChangedSinceLastUpdate);
+        const shouldForceUpdateDefi = (0, defiPositions_1.getShouldBypassServerSideCache)(defiState, !!isManualUpdate, hasKeys, this.defiSessionIds, hasNonceChangedSinceLastUpdate);
         try {
             response = await this.batchedPortfolioDiscovery({
                 chainId,
@@ -817,7 +821,7 @@ export class PortfolioController extends EventEmitter {
             // is not expecting a defi update and it fails, it should not be reported.
             if (!canSkipDefiUpdate) {
                 const defiError = {
-                    name: PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError,
+                    name: portfolio_2.PORTFOLIO_LIB_ERROR_NAMES.DefiDiscoveryError,
                     message: error.message,
                     level: 'critical'
                 };
@@ -825,7 +829,7 @@ export class PortfolioController extends EventEmitter {
             }
             // An error is added only if there is no response
             if (!canSkipExternalApiHintsUpdate && !response) {
-                const hintsError = getHintsError(error.message, externalApiHintsResponse);
+                const hintsError = (0, helpers_1.getHintsError)(error.message, externalApiHintsResponse);
                 errors.push(hintsError);
             }
         }
@@ -844,7 +848,7 @@ export class PortfolioController extends EventEmitter {
                     continue;
                 networkTokenDataCache.set(key, [
                     Date.now(),
-                    convertApiTokenDataToTokenDataCache(priceData)
+                    (0, helpers_1.convertApiTokenDataToTokenDataCache)(priceData)
                 ]);
             }
             this.tokenDataCache[chainId.toString()] = networkTokenDataCache;
@@ -855,12 +859,12 @@ export class PortfolioController extends EventEmitter {
                 defi: response.defi && !('errorState' in response.defi)
                     ? {
                         updatedAt: response.defi.updatedAt,
-                        positions: getFormattedApiPositions(response.defi.positions),
+                        positions: (0, defiPositions_1.getFormattedApiPositions)(response.defi.positions),
                         isForceUpdate: shouldForceUpdateDefi
                     }
                     : null,
                 otherNetworksDefiCounts: response.otherNetworksDefiCounts,
-                hints: response ? formatExternalHintsAPIResponse(response) : null
+                hints: response ? (0, helpers_1.formatExternalHintsAPIResponse)(response) : null
             },
             discoveryTime,
             errors
@@ -915,13 +919,13 @@ export class PortfolioController extends EventEmitter {
                     disableAutoDiscovery: true,
                     blacklist: this.#blacklist
                 }),
-                getCustomProviderPositions(account.addr, portfolioLib.provider, network, this.#fetch, state.result?.defiPositions.positionsByProvider || [], discoveryData?.data?.defi?.positions || [], getIsExternalApiDefiPositionsCallSuccessful(discoveryData))
+                (0, defiPositions_1.getCustomProviderPositions)(account.addr, portfolioLib.provider, network, this.#fetch, state.result?.defiPositions.positionsByProvider || [], discoveryData?.data?.defi?.positions || [], (0, defiPositions_1.getIsExternalApiDefiPositionsCallSuccessful)(discoveryData))
             ]);
             const stkWalletToken = portfolioResult.tokens.find((t) => t.chainId === 1n &&
                 t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
                 !t.flags.rewardsType) ?? null;
-            const newDefiState = getNewDefiState(state.result, discoveryData, customPositionsResult.positionsByProvider, customPositionsResult.error || null, customPositionsResult.providerErrors, stkWalletToken, this.#getNonceId(account, network.chainId));
-            const combinedTokens = enhancePortfolioTokensWithDefiPositions(portfolioResult.tokens, newDefiState);
+            const newDefiState = (0, defiPositions_1.getNewDefiState)(state.result, discoveryData, customPositionsResult.positionsByProvider, customPositionsResult.error || null, customPositionsResult.providerErrors, stkWalletToken, this.#getNonceId(account, network.chainId));
+            const combinedTokens = (0, defiPositions_1.enhancePortfolioTokensWithDefiPositions)(portfolioResult.tokens, newDefiState);
             const combinedErrors = [...portfolioResult.errors, ...(discoveryData?.errors || [])];
             this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache;
             const hasError = combinedErrors.some((e) => e.level !== 'silent');
@@ -953,7 +957,7 @@ export class PortfolioController extends EventEmitter {
                         }
                         : (state.result?.lastExternalApiUpdateData ?? null),
                     tokens: combinedTokens,
-                    total: getTotal(combinedTokens, newDefiState),
+                    total: (0, helpers_1.getTotal)(combinedTokens, newDefiState),
                     defiPositions: newDefiState
                 }
             };
@@ -1016,7 +1020,7 @@ export class PortfolioController extends EventEmitter {
                 throw new Error(`Defi discovery failed. Error: ${'errorState' in defi
                     ? defi.errorState[0]?.message || 'Unknown error (2)'
                     : 'Unknown error'}`);
-            const positionsByProvider = getFormattedApiPositions(defi.positions);
+            const positionsByProvider = (0, defiPositions_1.getFormattedApiPositions)(defi.positions);
             accountState.defiApps = {
                 isReady: true,
                 isLoading: false,
@@ -1028,7 +1032,7 @@ export class PortfolioController extends EventEmitter {
                     },
                     updateStarted,
                     tokens: [],
-                    total: getTotal([], {
+                    total: (0, helpers_1.getTotal)([], {
                         positionsByProvider
                     })
                 },
@@ -1049,7 +1053,7 @@ export class PortfolioController extends EventEmitter {
         const providedKey = `${chainId}:${accountAddr}`;
         // Add the assets from the provided account first
         const learnedTokens = Object.keys(this.#learnedAssets.erc20s[providedKey] || {});
-        let learnedNfts = learnedErc721sToHints(Object.keys(this.#learnedAssets.erc721s[providedKey] || {}));
+        let learnedNfts = (0, helpers_1.learnedErc721sToHints)(Object.keys(this.#learnedAssets.erc721s[providedKey] || {}));
         // Add the assets from all other imported accounts
         const importedAccounts = this.#accounts.accounts.filter((acc) => {
             return this.#keystore.getAccountKeys(acc).length > 0 && acc.addr !== accountAddr;
@@ -1060,7 +1064,7 @@ export class PortfolioController extends EventEmitter {
             const nfts = Object.keys(this.#learnedAssets.erc721s[key] || {});
             // Don't dedupe here, it's already done in the portfolio library
             learnedTokens.push(...tokens);
-            learnedNfts = mergeERC721s([learnedNfts, learnedErc721sToHints(nfts)]);
+            learnedNfts = (0, helpers_1.mergeERC721s)([learnedNfts, (0, helpers_1.learnedErc721sToHints)(nfts)]);
         });
         return {
             learnedTokens,
@@ -1077,8 +1081,8 @@ export class PortfolioController extends EventEmitter {
         const isKeyNotMigrated = typeof this.#learnedAssets.erc20s[key] === 'undefined' ||
             typeof this.#learnedAssets.erc721s[key] === 'undefined';
         let learnedTokensHints = Object.keys(this.#learnedAssets.erc20s[key] || {});
-        let learnedNftsHints = mergeERC721s([
-            learnedErc721sToHints(Object.keys(this.#learnedAssets.erc721s[key] || {})),
+        let learnedNftsHints = (0, helpers_1.mergeERC721s)([
+            (0, helpers_1.learnedErc721sToHints)(Object.keys(this.#learnedAssets.erc721s[key] || {})),
             velcroHints?.erc721s || {}
         ]);
         // Add learned assets from all imported accounts on manual updates.
@@ -1092,7 +1096,7 @@ export class PortfolioController extends EventEmitter {
         }
         // Check if the user key exists in the new learned tokens structure
         // Fallback to the old structure if not
-        const { specialErc20Hints, specialErc721Hints } = getSpecialHints(chainId, this.customTokens, this.tokenPreferences, this.#toBeLearnedAssets);
+        const { specialErc20Hints, specialErc721Hints } = (0, helpers_1.getSpecialHints)(chainId, this.customTokens, this.tokenPreferences, this.#toBeLearnedAssets);
         // Add the tokens to toBeLearned, but only for this call if the key is not migrated.
         // After the portfolio update all tokens with balance > 0 will be learned.
         if (isKeyNotMigrated) {
@@ -1113,7 +1117,7 @@ export class PortfolioController extends EventEmitter {
                 specialErc721Hints.learn[collectionAddr] = nftIds;
             });
         }
-        const defiHints = getAllAssetsAsHints(this.#state[accountId]?.[chainId.toString()]?.result?.defiPositions);
+        const defiHints = (0, defiPositions_1.getAllAssetsAsHints)(this.#state[accountId]?.[chainId.toString()]?.result?.defiPositions);
         learnedTokensHints.push(...defiHints);
         return {
             specialErc20Hints,
@@ -1133,7 +1137,7 @@ export class PortfolioController extends EventEmitter {
         const network = this.#networks.allNetworks.find((net) => net.chainId === chainId);
         if (!network)
             return undefined;
-        const baseAcc = getBaseAccount(acc, networkState, network);
+        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(acc, networkState, network);
         return baseAcc.getNonceId();
     }
     /**
@@ -1205,7 +1209,7 @@ export class PortfolioController extends EventEmitter {
                     // We pass undefined, because setting the value to 0 would imply a manual update by the user.
                     const maxDataAgeMs = this.#getMaxDataAgeMs(accountId, network.chainId, !!currentAccountOps, paramsMaxDataAgeMs, paramsMaxDataAgeMsUnused);
                     const state = simulation?.states?.[network.chainId.toString()] || networkAccountState;
-                    const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null;
+                    const baseAcc = state ? (0, getBaseAccount_1.getBaseAccount)(selectedAccount, state, network) : null;
                     const [isSuccessful, discoveryResponse] = await this.updatePortfolioState(selectedAccount, network, portfolioLib, {
                         maxDataAgeMs,
                         isManualUpdate,
@@ -1356,7 +1360,7 @@ export class PortfolioController extends EventEmitter {
         const simulation = this.#state?.[accountId]?.[chainId.toString()]?.accountOps?.[0];
         if (!simulation)
             return;
-        simulation.status = AccountOpStatus.BroadcastedButNotConfirmed;
+        simulation.status = types_1.AccountOpStatus.BroadcastedButNotConfirmed;
         this.emitUpdate();
     }
     /**
@@ -1373,11 +1377,11 @@ export class PortfolioController extends EventEmitter {
         let networkToBeLearnedTokens = this.#toBeLearnedAssets.erc20s[chainIdString];
         const uniqueTokenAddresses = Array.from(new Set(tokenAddresses));
         const tokensToLearn = uniqueTokenAddresses.filter((address) => {
-            if (address === ZeroAddress)
+            if (address === ethers_1.ZeroAddress)
                 return false;
             let normalizedAddress;
             try {
-                normalizedAddress = getAddress(address);
+                normalizedAddress = (0, ethers_1.getAddress)(address);
             }
             catch (e) {
                 console.error('Error while normalizing token address', e);
@@ -1407,7 +1411,7 @@ export class PortfolioController extends EventEmitter {
             const formattedNftsData = [];
             nftsData.forEach(([address, ids]) => {
                 try {
-                    const checksummed = getAddress(address);
+                    const checksummed = (0, ethers_1.getAddress)(address);
                     formattedNftsData.push([checksummed, ids]);
                 }
                 catch (e) {
@@ -1437,7 +1441,7 @@ export class PortfolioController extends EventEmitter {
                     toBeLearnedAssets[collectionAddress] = [];
                     return;
                 }
-                const ids = erc721CollectionToLearnedAssetKeys([collectionAddress, tokenIds]);
+                const ids = (0, helpers_1.erc721CollectionToLearnedAssetKeys)([collectionAddress, tokenIds]);
                 ids.forEach((id) => {
                     const [, tokenIdString] = id.split(':');
                     if (!tokenIdString)
@@ -1507,7 +1511,7 @@ export class PortfolioController extends EventEmitter {
         const learnedTokens = this.#learnedAssets.erc20s[key];
         const now = Date.now();
         tokensWithBalance.forEach((address) => {
-            if (address === ZeroAddress)
+            if (address === ethers_1.ZeroAddress)
                 return;
             learnedTokens[address] = now;
             const toBeLearnedAddress = this.#toBeLearnedAssets.erc20s[chainId.toString()];
@@ -1554,7 +1558,7 @@ export class PortfolioController extends EventEmitter {
         const now = Date.now();
         const learnedNfts = this.#learnedAssets.erc721s[key];
         nftsData.forEach((collection) => {
-            const ids = erc721CollectionToLearnedAssetKeys(collection);
+            const ids = (0, helpers_1.erc721CollectionToLearnedAssetKeys)(collection);
             ids.forEach((id) => {
                 learnedNfts[id] = now;
             });
@@ -1591,7 +1595,7 @@ export class PortfolioController extends EventEmitter {
         return this.#state[accountAddr] || {};
     }
     getIsStateWithOutdatedNetworks(accountAddr) {
-        const stateNetworksCount = Object.keys(this.getAccountPortfolioState(accountAddr)).filter((key) => !isInternalChain(key)).length;
+        const stateNetworksCount = Object.keys(this.getAccountPortfolioState(accountAddr)).filter((key) => !(0, selectedAccount_1.isInternalChain)(key)).length;
         // Read from networks, and not allNetworks
         const networksCount = this.#networks.networks.length;
         return stateNetworksCount !== networksCount;
@@ -1621,7 +1625,7 @@ export class PortfolioController extends EventEmitter {
             });
             return;
         }
-        const noSimulation = !accountState || (isBasicAccount(account, accountState) && network.rpcNoStateOverride);
+        const noSimulation = !accountState || ((0, account_1.isBasicAccount)(account, accountState) && network.rpcNoStateOverride);
         const simulation = !noSimulation
             ? {
                 accountOps: { [network.chainId.toString()]: [op] },
@@ -1631,7 +1635,7 @@ export class PortfolioController extends EventEmitter {
         return this.updateSelectedAccount(op.accountAddr, [network], simulation);
     }
     async updateNetworksWithDefiPositions(accountId, accountState, providers) {
-        this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(accountId, accountState, this.#networksWithPositionsByAccounts, providers);
+        this.#networksWithPositionsByAccounts[accountId] = (0, defiPositions_1.getAccountNetworksWithPositions)(accountId, accountState, this.#networksWithPositionsByAccounts, providers);
         await this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts);
     }
     getNetworksWithDefiPositions(accountAddr) {
@@ -1652,4 +1656,5 @@ export class PortfolioController extends EventEmitter {
         };
     }
 }
+exports.PortfolioController = PortfolioController;
 //# sourceMappingURL=portfolio.js.map

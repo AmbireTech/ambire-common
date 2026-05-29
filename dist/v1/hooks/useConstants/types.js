@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 var AbiType;
 (function (AbiType) {
     AbiType["Constructor"] = "constructor";
@@ -46,5 +48,4 @@ var StateMutability;
     StateMutability["Pure"] = "pure";
     StateMutability["View"] = "view";
 })(StateMutability || (StateMutability = {}));
-export {};
 //# sourceMappingURL=types.js.map

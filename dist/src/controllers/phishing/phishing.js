@@ -1,13 +1,17 @@
-import { getDomain } from 'tldts';
-import { zeroAddress } from 'viem';
-import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
-import { PHISHING_ACTIVE_UPDATE_INTERVAL, PHISHING_FAILED_TO_GET_UPDATE_INTERVAL, PHISHING_INACTIVE_UPDATE_INTERVAL } from '../../consts/intervals';
-import { getDappIdFromUrl } from '../../libs/dapps/helpers';
-import { fetchWithTimeout } from '../../utils/fetch';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PhishingController = void 0;
+const tslib_1 = require("tslib");
+const tldts_1 = require("tldts");
+const viem_1 = require("viem");
+const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
+const intervals_1 = require("../../consts/intervals");
+const helpers_1 = require("../../libs/dapps/helpers");
+const fetch_1 = require("../../utils/fetch");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker';
 const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab']);
-export class PhishingController extends EventEmitter {
+class PhishingController extends eventEmitter_1.default {
     #fetch;
     #storage;
     #addressBook;
@@ -39,14 +43,14 @@ export class PhishingController extends EventEmitter {
         this.#storage = storage;
         this.#addressBook = addressBook;
         this.#ui = ui;
-        this.#updatePhishingInterval = new RecurringTimeout(async () => this.continuouslyUpdatePhishing(), PHISHING_INACTIVE_UPDATE_INTERVAL, this.emitError.bind(this));
+        this.#updatePhishingInterval = new recurringTimeout_1.RecurringTimeout(async () => this.continuouslyUpdatePhishing(), intervals_1.PHISHING_INACTIVE_UPDATE_INTERVAL, this.emitError.bind(this));
         this.#ui.uiEvent.on('addView', (view) => {
             const isActiveViewType = PHISHING_ACTIVE_VIEW_TYPES.has(view.type);
-            const isAlreadyUsingActiveUpdateInterval = this.#updatePhishingInterval.currentTimeout === PHISHING_ACTIVE_UPDATE_INTERVAL;
+            const isAlreadyUsingActiveUpdateInterval = this.#updatePhishingInterval.currentTimeout === intervals_1.PHISHING_ACTIVE_UPDATE_INTERVAL;
             const shouldSwitchToActiveUpdateInterval = isActiveViewType && !isAlreadyUsingActiveUpdateInterval;
             if (shouldSwitchToActiveUpdateInterval)
                 this.#updatePhishingInterval.restart({
-                    timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
+                    timeout: intervals_1.PHISHING_ACTIVE_UPDATE_INTERVAL,
                     runImmediately: true
                 });
         });
@@ -54,7 +58,7 @@ export class PhishingController extends EventEmitter {
             const hasAtLeastOneActiveViewOpen = this.#ui.views.some((view) => PHISHING_ACTIVE_VIEW_TYPES.has(view.type));
             const shouldSwitchToInactiveUpdateInterval = !hasAtLeastOneActiveViewOpen;
             if (shouldSwitchToInactiveUpdateInterval)
-                this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL });
+                this.#updatePhishingInterval.restart({ timeout: intervals_1.PHISHING_INACTIVE_UPDATE_INTERVAL });
         });
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
@@ -87,7 +91,7 @@ export class PhishingController extends EventEmitter {
         this.#continuouslyUpdatePhishingPromise = this.#continuouslyUpdatePhishing()
             .catch((err) => {
             this.updatePhishingInterval.updateTimeout({
-                timeout: PHISHING_FAILED_TO_GET_UPDATE_INTERVAL
+                timeout: intervals_1.PHISHING_FAILED_TO_GET_UPDATE_INTERVAL
             });
             throw err;
         })
@@ -115,7 +119,7 @@ export class PhishingController extends EventEmitter {
         // )
         // version=0 means no local snapshot yet -> fetch full data.
         // version>0 means we have a checkpoint -> fetch only the delta since that version.
-        const res = await fetchWithTimeout(this.#fetch, this.#version
+        const res = await (0, fetch_1.fetchWithTimeout)(this.#fetch, this.#version
             ? `${SCAMCHECKER_BASE_URL}/get_update?version=${this.#version}`
             : `${SCAMCHECKER_BASE_URL}/data`, {}, 60000);
         if (!res.ok || res.status !== 200) {
@@ -154,8 +158,8 @@ export class PhishingController extends EventEmitter {
             domains: [...this.#domains],
             addresses: [...this.#addresses]
         });
-        if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
-            this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL });
+        if (this.updatePhishingInterval.currentTimeout === intervals_1.PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
+            this.updatePhishingInterval.updateTimeout({ timeout: intervals_1.PHISHING_INACTIVE_UPDATE_INTERVAL });
         }
         // NOTE: used for debugging only
         // console.log(
@@ -168,7 +172,7 @@ export class PhishingController extends EventEmitter {
     async #fetchAndSetDomainsBlacklistedStatus(urls, callback) {
         if (!urls.length)
             return;
-        const dappsData = urls.map((url) => ({ dappId: getDappIdFromUrl(url), url }));
+        const dappsData = urls.map((url) => ({ dappId: (0, helpers_1.getDappIdFromUrl)(url), url }));
         if (process.env.IS_TESTING === 'true') {
             dappsData.forEach(({ dappId }) => {
                 this.#domainsBlacklistedStatus.set(dappId, this.#domainsBlacklistedStatus.get(dappId) || 'VERIFIED');
@@ -179,7 +183,7 @@ export class PhishingController extends EventEmitter {
         }
         dappsData.forEach(({ dappId }) => {
             const status = this.#domains.size
-                ? this.#domains.has(dappId) || this.#domains.has(getDomain(dappId))
+                ? this.#domains.has(dappId) || this.#domains.has((0, tldts_1.getDomain)(dappId))
                     ? 'BLACKLISTED'
                     : 'VERIFIED'
                 : undefined;
@@ -204,7 +208,7 @@ export class PhishingController extends EventEmitter {
         this.emitUpdate();
         if (!dappsToFetch.length)
             return; // there will be dappsToFetch only if this.#domains is still empty
-        const res = await fetchWithTimeout(this.#fetch, `${SCAMCHECKER_BASE_URL}/domains`, {
+        const res = await (0, fetch_1.fetchWithTimeout)(this.#fetch, `${SCAMCHECKER_BASE_URL}/domains`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ domains: dappsToFetch.map(({ dappId }) => dappId) })
@@ -253,8 +257,8 @@ export class PhishingController extends EventEmitter {
             this.#addressesBlacklistedStatus.set(addr, 'VERIFIED');
         });
         // always return verified for the zero address
-        if (addresses.includes(zeroAddress)) {
-            this.#addressesBlacklistedStatus.set(zeroAddress, 'VERIFIED');
+        if (addresses.includes(viem_1.zeroAddress)) {
+            this.#addressesBlacklistedStatus.set(viem_1.zeroAddress, 'VERIFIED');
         }
         if (process.env.IS_TESTING === 'true') {
             addresses.forEach((addr) => {
@@ -283,7 +287,7 @@ export class PhishingController extends EventEmitter {
         this.emitUpdate();
         if (!addressesToFetch.length)
             return; // there will be addressesToFetch only if this.#addresses is still empty
-        const res = await fetchWithTimeout(this.#fetch, `${SCAMCHECKER_BASE_URL}/addresses`, {
+        const res = await (0, fetch_1.fetchWithTimeout)(this.#fetch, `${SCAMCHECKER_BASE_URL}/addresses`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ addresses: addressesToFetch })
@@ -331,12 +335,12 @@ export class PhishingController extends EventEmitter {
         }
     }
     getDomainBlacklistedStatus(url) {
-        const dappId = getDappIdFromUrl(url);
+        const dappId = (0, helpers_1.getDappIdFromUrl)(url);
         if (!dappId)
             return undefined;
         if (!this.#domains.size)
             return undefined;
-        if (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId))) {
+        if (this.#domains.has(dappId) || this.#domains.has((0, tldts_1.getDomain)(dappId))) {
             return 'BLACKLISTED';
         }
         return 'VERIFIED';
@@ -349,4 +353,5 @@ export class PhishingController extends EventEmitter {
         };
     }
 }
+exports.PhishingController = PhishingController;
 //# sourceMappingURL=phishing.js.map

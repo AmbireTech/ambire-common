@@ -1,5 +1,16 @@
-import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers';
-import { SINGLETON } from '../../consts/deploy';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.areAccountOpsEqual = void 0;
+exports.toSingletonCall = toSingletonCall;
+exports.callToTuple = callToTuple;
+exports.canBroadcast = canBroadcast;
+exports.getSignableCalls = getSignableCalls;
+exports.getSignableHash = getSignableHash;
+exports.accountOpSignableHash = accountOpSignableHash;
+exports.haveCallsChanged = haveCallsChanged;
+exports.haveAccountOpsChanged = haveAccountOpsChanged;
+const ethers_1 = require("ethers");
+const deploy_1 = require("../../consts/deploy");
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or
@@ -9,7 +20,7 @@ import { SINGLETON } from '../../consts/deploy';
  * @param call
  * @returns Call
  */
-export function toSingletonCall(call) {
+function toSingletonCall(call) {
     if (call.to)
         return call;
     const singletonABI = [
@@ -24,17 +35,17 @@ export function toSingletonCall(call) {
             type: 'function'
         }
     ];
-    const singletonInterface = new Interface(singletonABI);
+    const singletonInterface = new ethers_1.Interface(singletonABI);
     return {
-        to: SINGLETON,
+        to: deploy_1.SINGLETON,
         value: call.value,
-        data: singletonInterface.encodeFunctionData('deploy', [call.data, toBeHex(0, 32)])
+        data: singletonInterface.encodeFunctionData('deploy', [call.data, (0, ethers_1.toBeHex)(0, 32)])
     };
 }
-export function callToTuple(call) {
+function callToTuple(call) {
     return [call.to, call.value.toString(), call.data];
 }
-export function canBroadcast(op, accountIsEOA) {
+function canBroadcast(op, accountIsEOA) {
     if (op.signingKeyAddr === null)
         throw new Error('missing signingKeyAddr');
     if (op.signature === null)
@@ -55,7 +66,7 @@ export function canBroadcast(op, accountIsEOA) {
     }
     return true;
 }
-export function getSignableCalls(op) {
+function getSignableCalls(op) {
     const callsToSign = op.calls.map(toSingletonCall).map(callToTuple);
     if (op.activatorCall)
         callsToSign.push(callToTuple(op.activatorCall));
@@ -63,9 +74,9 @@ export function getSignableCalls(op) {
         callsToSign.push(callToTuple(op.feeCall));
     return callsToSign;
 }
-export function getSignableHash(addr, chainId, nonce, calls) {
-    const abiCoder = new AbiCoder();
-    return getBytes(keccak256(abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [addr, chainId, nonce, calls])));
+function getSignableHash(addr, chainId, nonce, calls) {
+    const abiCoder = new ethers_1.AbiCoder();
+    return (0, ethers_1.getBytes)((0, ethers_1.keccak256)(abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [addr, chainId, nonce, calls])));
 }
 /**
  * This function returns the hash as a Uint8Array instead of string
@@ -92,10 +103,10 @@ export function getSignableHash(addr, chainId, nonce, calls) {
  * @param op AccountOp
  * @returns Uint8Array
  */
-export function accountOpSignableHash(op, chainId) {
+function accountOpSignableHash(op, chainId) {
     return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op));
 }
-export const areAccountOpsEqual = (ops1, ops2) => {
+const areAccountOpsEqual = (ops1, ops2) => {
     if (ops1.length !== ops2.length)
         return false;
     const ops2Ids = new Set(ops2.map((op) => op.id));
@@ -107,7 +118,8 @@ export const areAccountOpsEqual = (ops1, ops2) => {
     }
     return true;
 };
-export function haveCallsChanged(callsOne, callsTwo) {
+exports.areAccountOpsEqual = areAccountOpsEqual;
+function haveCallsChanged(callsOne, callsTwo) {
     const lengthDiff = callsOne.length !== callsTwo.length;
     if (lengthDiff)
         return true;
@@ -124,7 +136,7 @@ export function haveCallsChanged(callsOne, callsTwo) {
     }
     return false;
 }
-export function haveAccountOpsChanged(accountOpsOne, accountOpsTwo) {
+function haveAccountOpsChanged(accountOpsOne, accountOpsTwo) {
     const lengthDiff = accountOpsOne.length !== accountOpsTwo.length;
     if (lengthDiff)
         return true;

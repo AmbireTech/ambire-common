@@ -1,4 +1,7 @@
-export const compareHumanizerVisualizations = (_calls, _expectedVisualizations) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.compareVisualizations = exports.compareHumanizerVisualizations = void 0;
+const compareHumanizerVisualizations = (_calls, _expectedVisualizations) => {
     const calls = _calls.map((c) => ({
         ...c,
         fullVisualization: c.fullVisualization?.map((v) => ({ ...v, id: null }))
@@ -10,10 +13,12 @@ export const compareHumanizerVisualizations = (_calls, _expectedVisualizations) 
         expect(call.fullVisualization || []).toEqual(expectedVisualizations[i]);
     });
 };
-export const compareVisualizations = (v1, v2) => {
+exports.compareHumanizerVisualizations = compareHumanizerVisualizations;
+const compareVisualizations = (v1, v2) => {
     expect(v1.length).toBe(v2.length);
     v1.forEach((v, i) => {
         expect({ ...v2[i], id: null }).toMatchObject({ ...v, id: null });
     });
 };
+exports.compareVisualizations = compareVisualizations;
 //# sourceMappingURL=testHelpers.js.map

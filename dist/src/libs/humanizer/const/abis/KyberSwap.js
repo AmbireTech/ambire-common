@@ -1,4 +1,7 @@
-export const KyberSwap = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KyberSwap = void 0;
+exports.KyberSwap = [
     'function WETH() view returns (address)',
     'function isWhitelist(address) view returns (bool)',
     'function owner() view returns (address)',

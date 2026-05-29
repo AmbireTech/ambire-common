@@ -1,5 +1,9 @@
-export const DEFAULT_TIMEOUT_MESSAGE = 'timed out, race timer resolved first';
-export const DEFAULT_TIMEOUT_MS = 5000;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_TIMEOUT_MS = exports.DEFAULT_TIMEOUT_MESSAGE = void 0;
+exports.withTimeout = withTimeout;
+exports.DEFAULT_TIMEOUT_MESSAGE = 'timed out, race timer resolved first';
+exports.DEFAULT_TIMEOUT_MS = 5000;
 /**
  * Run an async task with a soft timeout using Promise.race. Notes:
  * - By default, this utility does not cancel the underlying task. If the timeout wins the race,
@@ -9,8 +13,8 @@ export const DEFAULT_TIMEOUT_MS = 5000;
  *   and on timeout the controller is aborted.
  * - Callers may ignore the signal if they don't support cancellation; behavior falls back to soft timeout.
  */
-export async function withTimeout(task, options) {
-    const { timeoutMs = DEFAULT_TIMEOUT_MS, message = DEFAULT_TIMEOUT_MESSAGE, useAbort = false } = options || {};
+async function withTimeout(task, options) {
+    const { timeoutMs = exports.DEFAULT_TIMEOUT_MS, message = exports.DEFAULT_TIMEOUT_MESSAGE, useAbort = false } = options || {};
     let timer;
     const controller = useAbort ? new AbortController() : null;
     try {

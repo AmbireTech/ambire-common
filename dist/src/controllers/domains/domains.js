@@ -1,15 +1,19 @@
-import { getAddress, isAddress } from 'ethers';
-import { getEnsAvatar, getIsNamoshiDomain, NAMOSHI_UNIVERSAL_RESOLVER, resolveENSDomain, reverseLookupEns } from '../../services/ensDomains';
-import { withTimeout } from '../../utils/with-timeout';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DomainsController = exports.PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = exports.PERSIST_DOMAIN_FOR_IN_MS = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const ensDomains_1 = require("../../services/ensDomains");
+const with_timeout_1 = require("../../utils/with-timeout");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // 15 minutes
-export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000;
-export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000; // 5 minutes
+exports.PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000;
+exports.PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000; // 5 minutes
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
-export class DomainsController extends EventEmitter {
+class DomainsController extends eventEmitter_1.default {
     #providers = {};
     #defaultNetworksMode = 'mainnet';
     /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
@@ -30,7 +34,7 @@ export class DomainsController extends EventEmitter {
             this.#defaultNetworksMode = defaultNetworksMode;
     }
     async batchReverseLookup(addresses) {
-        const filteredAddresses = addresses.filter((address) => isAddress(address));
+        const filteredAddresses = addresses.filter((address) => (0, ethers_1.isAddress)(address));
         await Promise.all(filteredAddresses.map((address) => this.reverseLookup(address, false)));
         this.emitUpdate();
     }
@@ -38,7 +42,7 @@ export class DomainsController extends EventEmitter {
      * Resolves an ENS domain and persists it to state only if resolution succeeds.
      */
     async resolveDomain({ domain }) {
-        const isNamoshiDomain = getIsNamoshiDomain(domain);
+        const isNamoshiDomain = (0, ensDomains_1.getIsNamoshiDomain)(domain);
         const providerChainId = isNamoshiDomain
             ? '4114'
             : this.#defaultNetworksMode === 'mainnet'
@@ -68,17 +72,17 @@ export class DomainsController extends EventEmitter {
             this.resolveDomainsStatus[domain] = undefined;
             return;
         }
-        await resolveENSDomain({
+        await (0, ensDomains_1.resolveENSDomain)({
             provider: provider,
             domain,
             options: isNamoshiDomain
-                ? { universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER }
+                ? { universalResolverAddress: ensDomains_1.NAMOSHI_UNIVERSAL_RESOLVER }
                 : undefined
         })
             .then(async ({ address, avatar }) => {
             if (address) {
                 this.domainToAddresses[domain] = {
-                    address: getAddress(address),
+                    address: (0, ethers_1.getAddress)(address),
                     type: isNamoshiDomain ? 'namoshi' : 'ens'
                 };
                 this.#saveResolvedDomain({
@@ -103,7 +107,7 @@ export class DomainsController extends EventEmitter {
      * Saves an already resolved ENS name for an address.
      */
     #saveResolvedDomain({ address, ensAvatar, domain, type }) {
-        const checksummedAddress = getAddress(address);
+        const checksummedAddress = (0, ethers_1.getAddress)(address);
         const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null };
         const existing = this.domains[checksummedAddress];
         const now = Date.now();
@@ -139,12 +143,12 @@ export class DomainsController extends EventEmitter {
             });
             return;
         }
-        const checksummedAddress = getAddress(address);
+        const checksummedAddress = (0, ethers_1.getAddress)(address);
         const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt;
         const hasExpired = hasLastUpdateFailed
             ? Date.now() - (this.domains[checksummedAddress]?.updateFailedAt ?? 0) >
-                PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
-            : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS;
+                exports.PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+            : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > exports.PERSIST_DOMAIN_FOR_IN_MS;
         if (!hasExpired || this.loadingAddresses.includes(checksummedAddress))
             return;
         this.loadingAddresses.push(checksummedAddress);
@@ -152,14 +156,14 @@ export class DomainsController extends EventEmitter {
         try {
             let ensAvatar;
             const [ens, namoshi] = await Promise.all([
-                withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider), {
+                (0, with_timeout_1.withTimeout)(() => (0, ensDomains_1.reverseLookupEns)(checksummedAddress, ethereumProvider), {
                     timeoutMs: 15000
                 }),
-                withTimeout(() => {
+                (0, with_timeout_1.withTimeout)(() => {
                     if (!citreaProvider)
                         return Promise.resolve(null);
-                    return reverseLookupEns(checksummedAddress, citreaProvider, {
-                        universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
+                    return (0, ensDomains_1.reverseLookupEns)(checksummedAddress, citreaProvider, {
+                        universalResolverAddress: ensDomains_1.NAMOSHI_UNIVERSAL_RESOLVER
                     }).catch((e) => {
                         const shortMessage = e?.cause?.shortMessage ?? e?.cause?.message ?? '';
                         // Ignore, the user simply doesn't have a namoshi domain
@@ -174,14 +178,14 @@ export class DomainsController extends EventEmitter {
             ]);
             if (ens) {
                 // We need the ens name to resolve the avatar
-                ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider), {
+                ensAvatar = await (0, with_timeout_1.withTimeout)(() => (0, ensDomains_1.getEnsAvatar)(ens, ethereumProvider), {
                     timeoutMs: 15000
                 });
                 this.domainToAddresses[ens] = { address: checksummedAddress, type: 'ens' };
             }
             else if (namoshi && citreaProvider) {
-                ensAvatar = await withTimeout(() => getEnsAvatar(namoshi, citreaProvider, {
-                    universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
+                ensAvatar = await (0, with_timeout_1.withTimeout)(() => (0, ensDomains_1.getEnsAvatar)(namoshi, citreaProvider, {
+                    universalResolverAddress: ensDomains_1.NAMOSHI_UNIVERSAL_RESOLVER
                 }), {
                     timeoutMs: 15000
                 });
@@ -223,4 +227,5 @@ export class DomainsController extends EventEmitter {
         };
     }
 }
+exports.DomainsController = DomainsController;
 //# sourceMappingURL=domains.js.map

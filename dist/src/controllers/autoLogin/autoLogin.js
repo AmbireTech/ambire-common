@@ -1,10 +1,14 @@
-import { isHexString, toUtf8String } from 'ethers';
-import { getDomain } from 'tldts';
-import { getAddress } from 'viem';
-import { SiweMessage } from '@signinwithethereum/siwe';
-import EventEmitter from '../eventEmitter/eventEmitter';
-import { SignMessageController } from '../signMessage/signMessage';
-export const STATUS_WRAPPED_METHODS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AutoLoginController = exports.AUTO_LOGIN_DURATION_OPTIONS = exports.STATUS_WRAPPED_METHODS = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const tldts_1 = require("tldts");
+const viem_1 = require("viem");
+const siwe_1 = require("@signinwithethereum/siwe");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+const signMessage_1 = require("../signMessage/signMessage");
+exports.STATUS_WRAPPED_METHODS = {
     revokePolicy: 'INITIAL',
     revokeAllPoliciesForDomain: 'INITIAL'
 };
@@ -21,7 +25,7 @@ const DEFAULT_AUTO_LOGIN_DURATION_OPTION = {
 // Implemented here to ensure consistency between the controller and the UI
 // Also, in the future when the duration setting becomes exposed to the UI we
 // will need to validate the input from the UI, so these will be useful
-export const AUTO_LOGIN_DURATION_OPTIONS = [
+exports.AUTO_LOGIN_DURATION_OPTIONS = [
     { label: '24 hours', value: 24 * 60 * 60 * 1000 },
     {
         label: '7 days',
@@ -41,7 +45,7 @@ export const AUTO_LOGIN_DURATION_OPTIONS = [
  * - ERC-4361: Sign-In with Ethereum (https://github.com/ethereum/ERCs/blob/aa5a30ab9b23c317c8a3206b70ee4ff7fbe8dc33/ERCS/erc-4361.md)
  * - ERC-8019: Auto-Login for SIWE (https://github.com/ethereum/ERCs/blob/aa5a30ab9b23c317c8a3206b70ee4ff7fbe8dc33/ERCS/erc-8019.md)
  */
-export class AutoLoginController extends EventEmitter {
+class AutoLoginController extends eventEmitter_1.default {
     #storage;
     settings = {
         enabled: true,
@@ -53,14 +57,14 @@ export class AutoLoginController extends EventEmitter {
     #networks;
     #keystore;
     initialLoadPromise;
-    statuses = STATUS_WRAPPED_METHODS;
+    statuses = exports.STATUS_WRAPPED_METHODS;
     constructor(storage, keystore, providers, networks, accounts, externalSignerControllers, invite, eventEmitterRegistry) {
         super(eventEmitterRegistry);
         this.#storage = storage;
         this.#accounts = accounts;
         this.#keystore = keystore;
         this.#networks = networks;
-        this.#signMessage = new SignMessageController(keystore, providers, networks, accounts, externalSignerControllers, invite);
+        this.#signMessage = new signMessage_1.SignMessageController(keystore, providers, networks, accounts, externalSignerControllers, invite);
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
         });
@@ -77,7 +81,7 @@ export class AutoLoginController extends EventEmitter {
             ...viemFormatParsedMessage,
             version: parsedSiweMessage.version, // hack to stop viem from whining
             // Always convert the address to a checksummed address because all checks later on assume that the address is checksummed.
-            address: getAddress(parsedSiweMessage.address),
+            address: (0, viem_1.getAddress)(parsedSiweMessage.address),
             ...(parsedSiweMessage.expirationTime
                 ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
                 : {}),
@@ -91,7 +95,7 @@ export class AutoLoginController extends EventEmitter {
             return null;
         let messageString;
         try {
-            messageString = message.startsWith('0x') ? toUtf8String(message) : message;
+            messageString = message.startsWith('0x') ? (0, ethers_1.toUtf8String)(message) : message;
             // Quick check to see if it looks like a SIWE message at all
             if (messageString.match(prefixRegex) === null)
                 return null;
@@ -101,10 +105,10 @@ export class AutoLoginController extends EventEmitter {
         }
         try {
             const requestHostname = new URL(requestOrigin).host;
-            const parsedSiweMessage = new SiweMessage(messageString);
+            const parsedSiweMessage = new siwe_1.SiweMessage(messageString);
             if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length)
                 return null;
-            if (getDomain(parsedSiweMessage.domain) !== getDomain(requestHostname))
+            if ((0, tldts_1.getDomain)(parsedSiweMessage.domain) !== (0, tldts_1.getDomain)(requestHostname))
                 return {
                     parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
                     status: 'domain-mismatch'
@@ -121,7 +125,7 @@ export class AutoLoginController extends EventEmitter {
                     parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
                     status: 'invalid'
                 };
-            if (!isHexString(parsedSiweMessage.address))
+            if (!(0, ethers_1.isHexString)(parsedSiweMessage.address))
                 return {
                     parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
                     status: 'invalid'
@@ -339,4 +343,5 @@ export class AutoLoginController extends EventEmitter {
         return [...accountPolicies, ...defaultPoliciesConverted];
     }
 }
+exports.AutoLoginController = AutoLoginController;
 //# sourceMappingURL=autoLogin.js.map

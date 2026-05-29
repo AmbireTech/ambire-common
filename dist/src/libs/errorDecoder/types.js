@@ -1,4 +1,7 @@
-export var ErrorType;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ErrorType = void 0;
+var ErrorType;
 (function (ErrorType) {
     /** Error due to network connectivity issues when making HTTP requests */
     ErrorType["ConnectivityError"] = "ConnectivityError";
@@ -24,5 +27,5 @@ export var ErrorType;
     ErrorType["UserRejectionError"] = "UserRejectionError";
     /** Error due to an inner call failure during estimation */
     ErrorType["InnerCallFailureError"] = "InnerCallFailureError";
-})(ErrorType || (ErrorType = {}));
+})(ErrorType || (exports.ErrorType = ErrorType = {}));
 //# sourceMappingURL=types.js.map

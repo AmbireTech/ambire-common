@@ -1,4 +1,7 @@
-export class ProviderError extends Error {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ProviderError = void 0;
+class ProviderError extends Error {
     isProviderInvictus;
     providerUrl;
     statusCode;
@@ -15,4 +18,5 @@ export class ProviderError extends Error {
         this.statusCode = statusCode;
     }
 }
+exports.ProviderError = ProviderError;
 //# sourceMappingURL=ProviderError.js.map

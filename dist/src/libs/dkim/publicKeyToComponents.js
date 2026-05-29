@@ -1,5 +1,8 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = publicKeyToComponents;
 const NodeRSA = require('node-rsa');
-export default function publicKeyToComponents(publicKey) {
+function publicKeyToComponents(publicKey) {
     const parsed = new NodeRSA(publicKey);
     const { e: exponent, n: modulus } = parsed.exportKey('components-public');
     return {

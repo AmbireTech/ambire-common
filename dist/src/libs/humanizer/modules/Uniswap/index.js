@@ -1,13 +1,16 @@
-import { getAddress, isAddress } from 'ethers';
-import { getAction } from '../../utils';
-import { uniUniversalRouter } from './uniUniversalRouter';
-import { uniV2Mapping } from './uniV2';
-import { uniV3Mapping } from './uniV3';
-const uniV3MappingObj = uniV3Mapping();
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.uniswapHumanizer = void 0;
+const ethers_1 = require("ethers");
+const utils_1 = require("../../utils");
+const uniUniversalRouter_1 = require("./uniUniversalRouter");
+const uniV2_1 = require("./uniV2");
+const uniV3_1 = require("./uniV3");
+const uniV3MappingObj = (0, uniV3_1.uniV3Mapping)();
 const fullUniswapHumanizerMapping = {
-    ...uniV2Mapping,
+    ...uniV2_1.uniV2Mapping,
     ...uniV3MappingObj,
-    ...uniUniversalRouter
+    ...uniUniversalRouter_1.uniUniversalRouter
 };
 // fetched from https://api.github.com/repos/Uniswap/universal-router/contents/deploy-addresses
 // and https://docs.uniswap.org/contracts/v3/reference/deployments/
@@ -71,10 +74,10 @@ const uniAddresses = [
     '0x8ac7bEE993bb44dAb564Ea4bc9EA67Bf9Eb5e743',
     '0x3315ef7cA28dB74aBADC6c44570efDF06b04B020'
 ];
-export const uniswapHumanizer = (accountOp, currentIrCalls) => {
+const uniswapHumanizer = (accountOp, currentIrCalls) => {
     const newCalls = [];
     currentIrCalls.forEach((call) => {
-        if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) {
+        if (!call.to || !(0, ethers_1.isAddress)(call.to) || !uniAddresses.includes((0, ethers_1.getAddress)(call.to))) {
             newCalls.push(call);
             return;
         }
@@ -85,8 +88,9 @@ export const uniswapHumanizer = (accountOp, currentIrCalls) => {
                 fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
             });
         else
-            newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] });
+            newCalls.push({ ...call, fullVisualization: [(0, utils_1.getAction)('Uniswap action')] });
     });
     return newCalls;
 };
+exports.uniswapHumanizer = uniswapHumanizer;
 //# sourceMappingURL=index.js.map

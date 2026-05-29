@@ -1,8 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers';
-import { Allowance } from '../../const/abis/Allowance';
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils';
-const iface = new Interface(Allowance);
+const ethers_1 = require("ethers");
+const Allowance_1 = require("../../const/abis/Allowance");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface(Allowance_1.Allowance);
 const getTimeString = (resetTimeMin) => {
     if (resetTimeMin === 1440n)
         return 'Daily';
@@ -19,42 +21,42 @@ const AllowanceModule = (accOp, calls) => {
         [iface.getFunction('setAllowance')?.selector]: (call) => {
             const { delegate, token, allowanceAmount, resetTimeMin, resetBaseMin } = iface.parseTransaction(call).args;
             const fullVisualization = [
-                getAction('Allow'),
-                getAddressVisualization(delegate),
-                getLabel('to spend'),
-                getToken(token, allowanceAmount),
-                getLabel(getTimeString(resetTimeMin))
+                (0, utils_1.getAction)('Allow'),
+                (0, utils_1.getAddressVisualization)(delegate),
+                (0, utils_1.getLabel)('to spend'),
+                (0, utils_1.getToken)(token, allowanceAmount),
+                (0, utils_1.getLabel)(getTimeString(resetTimeMin))
             ];
             return { ...call, fullVisualization };
         },
         [iface.getFunction('addDelegate')?.selector]: (call) => {
             const { delegate } = iface.parseTransaction(call).args;
-            const fullVisualization = [getAction('Add delegate'), getAddressVisualization(delegate)];
+            const fullVisualization = [(0, utils_1.getAction)('Add delegate'), (0, utils_1.getAddressVisualization)(delegate)];
             return { ...call, fullVisualization };
         },
         [iface.getFunction('removeDelegate')?.selector]: (call) => {
             const { delegate, removeAllowances } = iface.parseTransaction(call).args;
-            const fullVisualization = [getAction('Remove delegate'), getAddressVisualization(delegate)];
+            const fullVisualization = [(0, utils_1.getAction)('Remove delegate'), (0, utils_1.getAddressVisualization)(delegate)];
             if (removeAllowances)
-                fullVisualization.push(getLabel('and set allowance to 0'));
+                fullVisualization.push((0, utils_1.getLabel)('and set allowance to 0'));
             return { ...call, fullVisualization };
         },
         [iface.getFunction('deleteAllowance')?.selector]: (call) => {
             const { delegate, token } = iface.parseTransaction(call).args;
             const fullVisualization = [
-                getAction('Remove allowance for'),
-                getAddressVisualization(delegate),
-                getToken(token, 0n)
+                (0, utils_1.getAction)('Remove allowance for'),
+                (0, utils_1.getAddressVisualization)(delegate),
+                (0, utils_1.getToken)(token, 0n)
             ];
             return { ...call, fullVisualization };
         },
         [iface.getFunction('executeAllowanceTransfer')?.selector]: (call) => {
             const { safe, token, to, amount, paymentToken, payment, delegate, signature } = iface.parseTransaction(call).args;
             const fullVisualization = [
-                getAction('Execute allowance for'),
-                getAddressVisualization(delegate),
-                getLabel('for'),
-                getToken(token, amount)
+                (0, utils_1.getAction)('Execute allowance for'),
+                (0, utils_1.getAddressVisualization)(delegate),
+                (0, utils_1.getLabel)('for'),
+                (0, utils_1.getToken)(token, amount)
             ];
             return { ...call, fullVisualization };
         }
@@ -70,5 +72,5 @@ const AllowanceModule = (accOp, calls) => {
     });
     return newCalls;
 };
-export default AllowanceModule;
+exports.default = AllowanceModule;
 //# sourceMappingURL=index.js.map

@@ -1,5 +1,9 @@
-import EventEmitter from '../eventEmitter/eventEmitter';
-export class BannerController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BannerController = void 0;
+const tslib_1 = require("tslib");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+class BannerController extends eventEmitter_1.default {
     #banners = [];
     #dismissedBanners = [];
     #storage;
@@ -118,4 +122,5 @@ export class BannerController extends EventEmitter {
         };
     }
 }
+exports.BannerController = BannerController;
 //# sourceMappingURL=banner.js.map

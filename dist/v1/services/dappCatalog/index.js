@@ -1,8 +1,13 @@
-import { fetchCaught } from '../fetch';
-export const DEFAULT_DAPP_CATALOG_URL = 'https://dappcatalog.ambire.com/ambire-wallet-dapp-catalog.json';
-export async function getWalletDappCatalog(fetch, catalogUrl) {
-    const catalog = await fetchCaught(fetch, catalogUrl || DEFAULT_DAPP_CATALOG_URL);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_DAPP_CATALOG_URL = void 0;
+exports.getWalletDappCatalog = getWalletDappCatalog;
+const tslib_1 = require("tslib");
+const fetch_1 = require("../fetch");
+exports.DEFAULT_DAPP_CATALOG_URL = 'https://dappcatalog.ambire.com/ambire-wallet-dapp-catalog.json';
+async function getWalletDappCatalog(fetch, catalogUrl) {
+    const catalog = await (0, fetch_1.fetchCaught)(fetch, catalogUrl || exports.DEFAULT_DAPP_CATALOG_URL);
     return catalog.body || [];
 }
-export * from './types';
+tslib_1.__exportStar(require("./types"), exports);
 //# sourceMappingURL=index.js.map

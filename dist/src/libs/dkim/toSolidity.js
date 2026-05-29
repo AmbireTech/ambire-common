@@ -1,8 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = toSolidity;
 const algorithms = {
     RSASHA1: 0,
     RSASHA256: 1
 };
-export default function toSolidity(rawData) {
+function toSolidity(rawData) {
     return {
         ...rawData,
         algorithm: algorithms[rawData.algorithm.replace('-', '')],

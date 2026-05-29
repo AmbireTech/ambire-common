@@ -1,4 +1,8 @@
-import { v4 as uuidv4 } from 'uuid';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateUuid = void 0;
+const uuid_1 = require("uuid");
 /** Generates 36-character unique identifier */
-export const generateUuid = () => uuidv4();
+const generateUuid = () => (0, uuid_1.v4)();
+exports.generateUuid = generateUuid;
 //# sourceMappingURL=uuid.js.map

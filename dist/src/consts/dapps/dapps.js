@@ -1,4 +1,7 @@
-export const dappIdsToBeRemoved = new Set([
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CATEGORY_MAP = exports.dappsNotToFilterOutByDomain = exports.categoriesToExclude = exports.categoriesNotToFilterOut = exports.defiLlamaProtocolIdsToExclude = exports.predefinedDapps = exports.featuredDapps = exports.dappIdsToBeRemoved = void 0;
+exports.dappIdsToBeRemoved = new Set([
     'legends.ambire.com', // Remove legends from the list as it was replaced with rewards.ambire.com
     'yearn.finance', // Remove the legacy Yarn Finance URL from the list
     'getpass.civic.com', // Civic Pass got shut down
@@ -72,7 +75,7 @@ export const dappIdsToBeRemoved = new Set([
     'x.com',
     'twitter.com'
 ]);
-export const featuredDapps = new Set([
+exports.featuredDapps = new Set([
     'rewards.ambire.com',
     'snapshot.box/#/s:ambire.eth',
     'lido.fi',
@@ -81,7 +84,7 @@ export const featuredDapps = new Set([
     'app.barterswap.xyz'
 ]);
 // NOTE: The final dApp list sorting preserves the order of this list
-export const predefinedDapps = [
+exports.predefinedDapps = [
     {
         id: 'rewards.ambire.com',
         url: 'https://rewards.ambire.com',
@@ -402,12 +405,12 @@ export const predefinedDapps = [
         category: 'Dexes'
     }
 ];
-export const defiLlamaProtocolIdsToExclude = [
+exports.defiLlamaProtocolIdsToExclude = [
     '1624' // https://www.ambire.com
 ];
-export const categoriesNotToFilterOut = ['DEX Aggregator'];
-export const categoriesToExclude = ['CEX', 'Developer Tools'];
-export const dappsNotToFilterOutByDomain = [
+exports.categoriesNotToFilterOut = ['DEX Aggregator'];
+exports.categoriesToExclude = ['CEX', 'Developer Tools'];
+exports.dappsNotToFilterOutByDomain = [
     'snapshot.box',
     'bungee.exchange',
     'altitude.fi',
@@ -415,7 +418,7 @@ export const dappsNotToFilterOutByDomain = [
     'swap.defillama.com',
     'jumper.xyz'
 ];
-export const CATEGORY_MAP = {
+exports.CATEGORY_MAP = {
     'AI Agents': 'AI Agents',
     'Algo-Stables': 'Stablecoins',
     Analytics: 'Analytics',

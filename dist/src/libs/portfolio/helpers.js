@@ -1,12 +1,19 @@
-import { Contract, formatUnits, ZeroAddress } from 'ethers';
-import { getAddress } from 'viem';
-import IERC20 from '../../../contracts/compiled/IERC20.json';
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens';
-import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json';
-import { PINNED_TOKENS } from '../../consts/pinnedTokens';
-import { AssetType } from '../defiPositions/types';
-import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio';
-const knownAddresses = humanizerInfoRaw.knownAddresses || {};
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertApiTokenDataToTokenDataCache = exports.getHardcodedCitreaPrices = exports.getHintsError = exports.isNative = exports.isPortfolioGasTankResult = exports.tokenFilter = exports.learnedErc721sToHints = exports.erc721CollectionToLearnedAssetKeys = exports.getSpecialHints = exports.formatExternalHintsAPIResponse = exports.getAccountPortfolioTotal = exports.addHiddenTokenValueToTotal = exports.getTotal = exports.getTokenBalanceInUSD = exports.getTokenAmount = exports.validateERC20Token = exports.mapToken = exports.isSuspectedToken = exports.isSuspectedRegardsKnownAddresses = void 0;
+exports.overrideSymbol = overrideSymbol;
+exports.getFlags = getFlags;
+exports.mergeERC721s = mergeERC721s;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const viem_1 = require("viem");
+const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const gasTankFeeTokens_1 = tslib_1.__importDefault(require("../../consts/gasTankFeeTokens"));
+const humanizerInfo_json_1 = tslib_1.__importDefault(require("../../consts/humanizer/humanizerInfo.json"));
+const pinnedTokens_1 = require("../../consts/pinnedTokens");
+const types_1 = require("../defiPositions/types");
+const portfolio_1 = require("./portfolio");
+const knownAddresses = humanizerInfo_json_1.default.knownAddresses || {};
 const usdcEMapping = {
     '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
     '1285': '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
@@ -14,7 +21,7 @@ const usdcEMapping = {
     '137': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
     '10': '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
 };
-export function overrideSymbol(address, chainId, symbol) {
+function overrideSymbol(address, chainId, symbol) {
     // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
     if (usdcEMapping[chainId.toString()] &&
         usdcEMapping[chainId.toString()].toLowerCase() === address.toLowerCase()) {
@@ -35,13 +42,13 @@ const removeNonLatinChars = (str) => str
 // safe address normalizer
 const normalizeAddress = (addr) => {
     try {
-        return getAddress(addr);
+        return (0, viem_1.getAddress)(addr);
     }
     catch {
         return addr;
     }
 };
-export const isSuspectedRegardsKnownAddresses = (tokenAddr, tokenSymbol, chainId) => {
+const isSuspectedRegardsKnownAddresses = (tokenAddr, tokenSymbol, chainId) => {
     if (!knownAddresses || !tokenAddr || !tokenSymbol)
         return false;
     const normalizedAddr = normalizeAddress(tokenAddr);
@@ -63,7 +70,8 @@ export const isSuspectedRegardsKnownAddresses = (tokenAddr, tokenSymbol, chainId
         return normalizeAddress(known.address) !== normalizedAddr;
     });
 };
-export const isSuspectedToken = (address, symbol, chainId) => {
+exports.isSuspectedRegardsKnownAddresses = isSuspectedRegardsKnownAddresses;
+const isSuspectedToken = (address, symbol, chainId) => {
     const normalizedAddr = normalizeAddress(address);
     const numericChainId = Number(chainId);
     // 1) lookup known token by address
@@ -73,12 +81,13 @@ export const isSuspectedToken = (address, symbol, chainId) => {
         return null; // trusted
     }
     // 3) Same-symbol spoofing on same chain (different address)
-    if (isSuspectedRegardsKnownAddresses(address, symbol, chainId))
+    if ((0, exports.isSuspectedRegardsKnownAddresses)(address, symbol, chainId))
         return 'suspected';
     // 4) Not flagged
     return null;
 };
-export function getFlags(networkData, chainId, tokenChainId, address, name, symbol, hasSimulationAmount) {
+exports.isSuspectedToken = isSuspectedToken;
+function getFlags(networkData, chainId, tokenChainId, address, name, symbol, hasSimulationAmount) {
     const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId);
     const onGasTank = chainId === 'gasTank';
     let rewardsType = null;
@@ -86,16 +95,16 @@ export function getFlags(networkData, chainId, tokenChainId, address, name, symb
         rewardsType = 'wallet-rewards';
     if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
         rewardsType = 'wallet-vesting';
-    const foundFeeToken = gasTankFeeTokens.find((t) => t.address.toLowerCase() === address.toLowerCase() &&
+    const foundFeeToken = gasTankFeeTokens_1.default.find((t) => t.address.toLowerCase() === address.toLowerCase() &&
         (isRewardsOrGasTank ? t.chainId === tokenChainId : t.chainId.toString() === chainId));
     const canTopUpGasTank = !!foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType;
-    const isFeeToken = address === ZeroAddress ||
+    const isFeeToken = address === ethers_1.ZeroAddress ||
         // disable if not in gas tank
         (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
         chainId === 'gasTank';
     let suspectedType = null;
     if (hasSimulationAmount && !isRewardsOrGasTank) {
-        suspectedType = isSuspectedToken(address, symbol, BigInt(chainId));
+        suspectedType = (0, exports.isSuspectedToken)(address, symbol, BigInt(chainId));
     }
     return {
         onGasTank,
@@ -106,13 +115,13 @@ export function getFlags(networkData, chainId, tokenChainId, address, name, symb
         suspectedType
     };
 }
-export function mergeERC721s(sources) {
+function mergeERC721s(sources) {
     const result = {};
     // Get all unique addresses
     const addresses = new Set(sources.flatMap((source) => Object.keys(source)));
     addresses.forEach((address) => {
         try {
-            const checksummed = getAddress(address);
+            const checksummed = (0, viem_1.getAddress)(address);
             const hasEnumerableHint = sources.some((source) => source[address] && source[address].length === 0);
             if (hasEnumerableHint) {
                 result[checksummed] = [];
@@ -128,7 +137,7 @@ export function mergeERC721s(sources) {
     });
     return result;
 }
-export const mapToken = (token, network, address, opts, hasSimulationAmount, latestAmount) => {
+const mapToken = (token, network, address, opts, hasSimulationAmount, latestAmount) => {
     const { specialErc20Hints, blockTag } = opts;
     let symbol = 'Unknown';
     try {
@@ -176,6 +185,7 @@ export const mapToken = (token, network, address, opts, hasSimulationAmount, lat
         pendingAmount: tokenResult.amount
     };
 };
+exports.mapToken = mapToken;
 /**
  * Determines whether an error is related to network connectivity issues rather than validation failures.
  *
@@ -226,9 +236,9 @@ const limitConcurrency = async (items, asyncFn, limit = 5) => {
  * Optionally suggests alternative networks where the token is found if validation fails.
  *
  */
-export const validateERC20Token = async (token, accountId, provider, options) => {
+const validateERC20Token = async (token, accountId, provider, options) => {
     const { allNetworks, allProviders, enableNetworkDetection = false, maxNetworksToCheck = 10, concurrencyLimit = 3 } = options || {};
-    const erc20 = new Contract(token?.address, IERC20.abi, provider);
+    const erc20 = new ethers_1.Contract(token?.address, IERC20_json_1.default.abi, provider);
     let isValid = true;
     let hasNetworkError = false;
     let message = '';
@@ -294,7 +304,7 @@ export const validateERC20Token = async (token, accountId, provider, options) =>
                     if (!networkProvider)
                         return null;
                     // Use validateERC20Token without network detection to avoid circular dependency
-                    const validation = await validateERC20Token({ address: token.address, chainId: network.chainId }, accountId, networkProvider, { enableNetworkDetection: false });
+                    const validation = await (0, exports.validateERC20Token)({ address: token.address, chainId: network.chainId }, accountId, networkProvider, { enableNetworkDetection: false });
                     return validation.isValid ? network : null;
                 }
                 catch (error) {
@@ -323,21 +333,24 @@ export const validateERC20Token = async (token, accountId, provider, options) =>
         }
     };
 };
+exports.validateERC20Token = validateERC20Token;
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
-export const getTokenAmount = (token, beforeSimulation) => {
+const getTokenAmount = (token, beforeSimulation) => {
     if (beforeSimulation)
         return token.amount;
     return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount;
 };
-export const getTokenBalanceInUSD = (token) => {
-    const amount = getTokenAmount(token);
+exports.getTokenAmount = getTokenAmount;
+const getTokenBalanceInUSD = (token) => {
+    const amount = (0, exports.getTokenAmount)(token);
     const { decimals, priceIn } = token;
-    const balance = parseFloat(formatUnits(amount, decimals));
+    const balance = parseFloat((0, ethers_1.formatUnits)(amount, decimals));
     const price = priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price || 0;
     return balance * price;
 };
-export const getTotal = (t, defiState, opts) => {
+exports.getTokenBalanceInUSD = getTokenBalanceInUSD;
+const getTotal = (t, defiState, opts) => {
     const { includeHiddenTokens = false, beforeSimulation = false } = opts || {};
     const tokensTotal = t.reduce((cur, token) => {
         const localCur = cur; // Add index signature to the type of localCur
@@ -345,7 +358,7 @@ export const getTotal = (t, defiState, opts) => {
             return localCur;
         for (const x of token.priceIn) {
             const currentAmount = localCur[x.baseCurrency] || 0;
-            const tokenAmount = Number(getTokenAmount(token, beforeSimulation)) / 10 ** token.decimals;
+            const tokenAmount = Number((0, exports.getTokenAmount)(token, beforeSimulation)) / 10 ** token.decimals;
             const total = tokenAmount * x.price;
             // Prevents the whole balance of the portfolio becoming NaN if one token has invalid total
             if (typeof total !== 'number' || Number.isNaN(total)) {
@@ -364,7 +377,7 @@ export const getTotal = (t, defiState, opts) => {
         // thus we must exclude them from the defi total to avoid double counting
         const positionsToExclude = t
             .filter((token) => token.flags.defiPositionId &&
-            token.flags.defiTokenType === AssetType.Collateral &&
+            token.flags.defiTokenType === types_1.AssetType.Collateral &&
             // If the token doesn't have a price we must add the value from the position to the total
             token.priceIn.length > 0)
             .map((token) => token.flags.defiPositionId);
@@ -384,14 +397,16 @@ export const getTotal = (t, defiState, opts) => {
         return cur;
     }, {});
 };
-export const addHiddenTokenValueToTotal = (totalWithoutHiddenTokens, tokens) => {
+exports.getTotal = getTotal;
+const addHiddenTokenValueToTotal = (totalWithoutHiddenTokens, tokens) => {
     return tokens.reduce((cur, token) => {
         if (!token.flags.isHidden)
             return cur;
-        return cur + getTokenBalanceInUSD(token);
+        return cur + (0, exports.getTokenBalanceInUSD)(token);
     }, totalWithoutHiddenTokens);
 };
-export const getAccountPortfolioTotal = (accountPortfolio, excludeNetworks = [], excludeHiddenTokens = true) => {
+exports.addHiddenTokenValueToTotal = addHiddenTokenValueToTotal;
+const getAccountPortfolioTotal = (accountPortfolio, excludeNetworks = [], excludeHiddenTokens = true) => {
     if (!accountPortfolio)
         return 0;
     return Object.keys(accountPortfolio).reduce((acc, chainId) => {
@@ -401,15 +416,16 @@ export const getAccountPortfolioTotal = (accountPortfolio, excludeNetworks = [],
         const tokenList = networkData?.result?.tokens || [];
         let networkTotalAmountUSD = networkData?.result?.total.usd || 0;
         if (!excludeHiddenTokens) {
-            networkTotalAmountUSD = addHiddenTokenValueToTotal(networkTotalAmountUSD, tokenList);
+            networkTotalAmountUSD = (0, exports.addHiddenTokenValueToTotal)(networkTotalAmountUSD, tokenList);
         }
         return acc + networkTotalAmountUSD;
     }, 0);
 };
+exports.getAccountPortfolioTotal = getAccountPortfolioTotal;
 /**
  * Formats and strips the original velcro response
  */
-export const formatExternalHintsAPIResponse = (response) => {
+const formatExternalHintsAPIResponse = (response) => {
     if (!response)
         return null;
     const { erc20s, erc721s, lastUpdate, hasHints } = response;
@@ -432,7 +448,8 @@ export const formatExternalHintsAPIResponse = (response) => {
         hasHints
     };
 };
-export const getSpecialHints = (chainId, customTokens, tokenPreferences, toBeLearnedAssets) => {
+exports.formatExternalHintsAPIResponse = formatExternalHintsAPIResponse;
+const getSpecialHints = (chainId, customTokens, tokenPreferences, toBeLearnedAssets) => {
     const specialErc20Hints = {
         custom: [],
         hidden: [],
@@ -468,22 +485,24 @@ export const getSpecialHints = (chainId, customTokens, tokenPreferences, toBeLea
         specialErc721Hints
     };
 };
+exports.getSpecialHints = getSpecialHints;
 /**
  * Converts ERC721 hints to keys that can be used for:
  * - comparison of NFTs
  * - storage
  */
-export const erc721CollectionToLearnedAssetKeys = (collection) => {
+const erc721CollectionToLearnedAssetKeys = (collection) => {
     const [collectionAddress, tokenIds] = collection;
     if (!tokenIds.length)
         return [`${collectionAddress}:enumerable`];
     return tokenIds.map((id) => `${collectionAddress}:${id}`);
 };
+exports.erc721CollectionToLearnedAssetKeys = erc721CollectionToLearnedAssetKeys;
 /**
  * Converts `LearnedAssets` ERC721 hint keys to
  * `ERC721` hints. For more info, see `LearnedAssets`
  */
-export const learnedErc721sToHints = (keys) => {
+const learnedErc721sToHints = (keys) => {
     const hints = {};
     keys.forEach((key) => {
         const [collectionAddress, tokenId] = key.split(':');
@@ -508,7 +527,8 @@ export const learnedErc721sToHints = (keys) => {
     });
     return hints;
 };
-export const tokenFilter = (token, network, isToBeLearned, shouldIncludePinned, nativeToken) => {
+exports.learnedErc721sToHints = learnedErc721sToHints;
+const tokenFilter = (token, network, isToBeLearned, shouldIncludePinned, nativeToken) => {
     // Never add ERC20 tokens that represent the network's native token.
     // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
     // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
@@ -517,16 +537,16 @@ export const tokenFilter = (token, network, isToBeLearned, shouldIncludePinned, 
         (token.symbol === nativeToken.symbol ||
             network.oldNativeAssetSymbols?.includes(token.symbol)) &&
         token.amount === nativeToken.amount &&
-        token.address !== ZeroAddress;
+        token.address !== ethers_1.ZeroAddress;
     if (isERC20NativeRepresentation)
         return false;
     // always include tokens added as a preference
     if (token.flags.isHidden || token.flags.isCustom || isToBeLearned)
         return true;
     // always include > 0 amount and native token
-    if (token.amount > 0 || token.address === ZeroAddress)
+    if (token.amount > 0 || token.address === ethers_1.ZeroAddress)
         return true;
-    const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
+    const isPinned = !!pinnedTokens_1.PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.chainId === network.chainId && pinnedToken.address === token.address;
     });
     // if the amount is 0
@@ -534,14 +554,17 @@ export const tokenFilter = (token, network, isToBeLearned, shouldIncludePinned, 
     const pinnedRequested = isPinned && !!shouldIncludePinned;
     return pinnedRequested;
 };
-export const isPortfolioGasTankResult = (result) => {
+exports.tokenFilter = tokenFilter;
+const isPortfolioGasTankResult = (result) => {
     return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens);
 };
-export const isNative = (token) => token.address === ZeroAddress && !token.flags.onGasTank;
-export const getHintsError = (errorMessage, lastExternalApiHintsData) => {
+exports.isPortfolioGasTankResult = isPortfolioGasTankResult;
+const isNative = (token) => token.address === ethers_1.ZeroAddress && !token.flags.onGasTank;
+exports.isNative = isNative;
+const getHintsError = (errorMessage, lastExternalApiHintsData) => {
     if (!lastExternalApiHintsData) {
         return {
-            name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+            name: portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
             message: errorMessage,
             level: 'critical'
         };
@@ -551,13 +574,14 @@ export const getHintsError = (errorMessage, lastExternalApiHintsData) => {
     const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES;
     return {
         name: isLastUpdateTooOld
-            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+            ? portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+            : portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
         message: errorMessage,
         level: isLastUpdateTooOld ? 'critical' : 'silent'
     };
 };
-export const getHardcodedCitreaPrices = (address) => {
+exports.getHintsError = getHintsError;
+const getHardcodedCitreaPrices = (address) => {
     const stables = [
         '0x8D82c4E3c936C7B5724A382a9c5a4E6Eb7aB6d5D',
         '0xE045e6c36cF77FAA2CfB54466D71A3aEF7bbE839',
@@ -571,7 +595,8 @@ export const getHardcodedCitreaPrices = (address) => {
     }
     return null;
 };
-export const convertApiTokenDataToTokenDataCache = (tokenData) => {
+exports.getHardcodedCitreaPrices = getHardcodedCitreaPrices;
+const convertApiTokenDataToTokenDataCache = (tokenData) => {
     if (!tokenData) {
         return {
             priceIn: [],
@@ -603,4 +628,5 @@ export const convertApiTokenDataToTokenDataCache = (tokenData) => {
         }
     };
 };
+exports.convertApiTokenDataToTokenDataCache = convertApiTokenDataToTokenDataCache;
 //# sourceMappingURL=helpers.js.map

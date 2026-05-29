@@ -1,26 +1,28 @@
-import { Interface } from 'ethers';
-import { Pancake } from '../../const/abis/Pancake';
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils';
-const iface = new Interface(Pancake);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
+const Pancake_1 = require("../../const/abis/Pancake");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface(Pancake_1.Pancake);
 const PancakeModule = (accOp, calls) => {
     const matcher = {
         [iface.getFunction('approve(address token, address spender, uint160 amount, uint48 expiration)')
             ?.selector]: (call) => {
             const { token, spender, amount, expiration } = iface.parseTransaction(call).args;
-            const expirationHumanization = expiration > 0 ? getDeadline(expiration) : getLabel('now');
+            const expirationHumanization = expiration > 0 ? (0, utils_1.getDeadline)(expiration) : (0, utils_1.getLabel)('now');
             if (amount > 0)
                 return [
-                    getAction('Approve'),
-                    getAddressVisualization(spender),
-                    getLabel('to use'),
-                    getToken(token, amount),
+                    (0, utils_1.getAction)('Approve'),
+                    (0, utils_1.getAddressVisualization)(spender),
+                    (0, utils_1.getLabel)('to use'),
+                    (0, utils_1.getToken)(token, amount),
                     expirationHumanization
                 ];
             return [
-                getAction('Revoke approval'),
-                getToken(token, amount),
-                getLabel('for'),
-                getAddressVisualization(spender)
+                (0, utils_1.getAction)('Revoke approval'),
+                (0, utils_1.getToken)(token, amount),
+                (0, utils_1.getLabel)('for'),
+                (0, utils_1.getAddressVisualization)(spender)
             ];
         }
     };
@@ -32,5 +34,5 @@ const PancakeModule = (accOp, calls) => {
     });
     return newCalls;
 };
-export default PancakeModule;
+exports.default = PancakeModule;
 //# sourceMappingURL=index.js.map

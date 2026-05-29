@@ -1,16 +1,20 @@
-import { Contract, formatUnits, getAddress, Interface, MaxUint256, parseUnits, ZeroAddress } from 'ethers';
-import ERC20 from '../../../contracts/compiled/IERC20.json';
-import { MAX_UINT256 } from '../../consts/deploy';
-import { BRIDGE_STATUS_INTERVAL, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals';
-import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper';
-import { LIFI_EXPLORER_URL } from '../../services/lifi/consts';
-import { AMBIRE_WALLET_TOKEN_ON_ETHEREUM, FEE_PERCENT, JPYC_TOKEN, NULL_ADDRESS, SOCKET_EXPLORER_URL, ZERO_ADDRESS } from '../../services/socket/constants';
-import { SQUID_EXPLORER_URL } from '../../services/squid/constants';
-import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters';
-import { isBasicAccount } from '../account/account';
-import { AssetType } from '../defiPositions/types';
-import { getTokenBalanceInUSD } from '../portfolio/helpers';
-import { getSanitizedAmount } from '../transfer/amount';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.mapBannedToValidAddr = exports.lifiMapNativeToAddr = exports.isTxnBridge = exports.isNoFeeToken = exports.getSwapSponsorship = exports.getSwapAndBridgeRequestParams = exports.getSwapAndBridgeCalls = exports.getSlippage = exports.getLink = exports.getBannedToTokenList = exports.getActiveRoutesUpdateInterval = exports.getActiveRoutesLowestServiceTime = exports.getActiveRoutesForAccount = exports.convertNullAddressToZeroAddressIfNeeded = exports.addCustomTokensIfNeeded = exports.calculateAmountWarnings = exports.getIsNetworkSupported = exports.getIsBridgeRoute = exports.convertPortfolioTokenToSwapAndBridgeToToken = exports.getIsTokenEligibleForSwapAndBridge = exports.sortPortfolioTokenList = exports.sortTokenListResponse = exports.sortNativeTokenFirst = exports.attemptToSortTokensByMarketCap = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const deploy_1 = require("../../consts/deploy");
+const intervals_1 = require("../../consts/intervals");
+const helper_1 = require("../../controllers/signAccountOp/helper");
+const consts_1 = require("../../services/lifi/consts");
+const constants_1 = require("../../services/socket/constants");
+const constants_2 = require("../../services/squid/constants");
+const formatters_1 = require("../../utils/numbers/formatters");
+const account_1 = require("../account/account");
+const types_1 = require("../defiPositions/types");
+const helpers_1 = require("../portfolio/helpers");
+const amount_1 = require("../transfer/amount");
 /**
  * Maps banned (or outdated) token addresses to their "valid" replacements,
  * "valid" meaning Swap & Bridge gives more relevant results with these replacements.
@@ -40,7 +44,7 @@ const getBannedToValidAddresses = () => {
      *        MAKE SURE ADDRESSES ARE CHECKSUMMED
      ****************************************************** */
     const bannedCelo = '0x471EcE3750Da237f93B8E339c536989b8978a438';
-    const validCelo = ZeroAddress;
+    const validCelo = ethers_1.ZeroAddress;
     /** ****************************************************
      *        MAKE SURE ADDRESSES ARE CHECKSUMMED
      ****************************************************** */
@@ -82,6 +86,7 @@ const getBannedToTokenList = (chainId) => {
         return [];
     return Object.keys(list[chainId]);
 };
+exports.getBannedToTokenList = getBannedToTokenList;
 const sortTokensByPendingAndBalance = (a, b) => {
     // Pending tokens go on top
     const isAPending = typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount);
@@ -91,13 +96,13 @@ const sortTokensByPendingAndBalance = (a, b) => {
     if (!isAPending && isBPending)
         return 1;
     // Otherwise, higher balance comes first
-    const aBalanceUSD = getTokenBalanceInUSD(a);
-    const bBalanceUSD = getTokenBalanceInUSD(b);
+    const aBalanceUSD = (0, helpers_1.getTokenBalanceInUSD)(a);
+    const bBalanceUSD = (0, helpers_1.getTokenBalanceInUSD)(b);
     if (aBalanceUSD !== bBalanceUSD)
         return bBalanceUSD - aBalanceUSD;
     return 0;
 };
-export const attemptToSortTokensByMarketCap = async ({ fetch, chainId, tokens }) => {
+const attemptToSortTokensByMarketCap = async ({ fetch, chainId, tokens }) => {
     try {
         const tokenAddressesByMarketCapRes = await fetch(`https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`);
         if (tokenAddressesByMarketCapRes.status !== 200)
@@ -124,16 +129,18 @@ export const attemptToSortTokensByMarketCap = async ({ fetch, chainId, tokens })
         return tokens;
     }
 };
-export const sortNativeTokenFirst = (tokens) => {
+exports.attemptToSortTokensByMarketCap = attemptToSortTokensByMarketCap;
+const sortNativeTokenFirst = (tokens) => {
     return tokens.sort((a, b) => {
-        if (a.address === ZeroAddress)
+        if (a.address === ethers_1.ZeroAddress)
             return -1;
-        if (b.address === ZeroAddress)
+        if (b.address === ethers_1.ZeroAddress)
             return 1;
         return 0;
     });
 };
-export const sortTokenListResponse = (tokenListResponse, accountPortfolioTokenList) => {
+exports.sortNativeTokenFirst = sortNativeTokenFirst;
+const sortTokenListResponse = (tokenListResponse, accountPortfolioTokenList) => {
     return tokenListResponse.sort((a, b) => {
         const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address);
         const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address);
@@ -151,7 +158,8 @@ export const sortTokenListResponse = (tokenListResponse, accountPortfolioTokenLi
         return 0;
     });
 };
-export const sortPortfolioTokenList = (accountPortfolioTokenList) => {
+exports.sortTokenListResponse = sortTokenListResponse;
+const sortPortfolioTokenList = (accountPortfolioTokenList) => {
     return accountPortfolioTokenList.sort((a, b) => {
         const comparisonResult = sortTokensByPendingAndBalance(a, b);
         if (comparisonResult !== 0)
@@ -160,11 +168,12 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList) => {
         return (a.symbol || '').localeCompare(b.symbol || '');
     });
 };
+exports.sortPortfolioTokenList = sortPortfolioTokenList;
 /**
  * Determines if a token is eligible for swapping and bridging.
  * Not all tokens in the portfolio are eligible.
  */
-export const getIsTokenEligibleForSwapAndBridge = (token, requirePositiveBalance = true) => {
+const getIsTokenEligibleForSwapAndBridge = (token, requirePositiveBalance = true) => {
     const flagsRequirement = 
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
     // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
@@ -173,7 +182,7 @@ export const getIsTokenEligibleForSwapAndBridge = (token, requirePositiveBalance
         !token.flags.rewardsType &&
         // Borrow tokens (e.g. variableDebt tokens) are protocol accounting assets
         // and are not transferable/swappable by design.
-        token.flags.defiTokenType !== AssetType.Borrow;
+        token.flags.defiTokenType !== types_1.AssetType.Borrow;
     if (!requirePositiveBalance) {
         return flagsRequirement;
     }
@@ -185,7 +194,8 @@ export const getIsTokenEligibleForSwapAndBridge = (token, requirePositiveBalance
     const hasPositiveBalance = Number(amount) > 0;
     return flagsRequirement && hasPositiveBalance;
 };
-export const convertPortfolioTokenToSwapAndBridgeToToken = (portfolioToken, chainId) => {
+exports.getIsTokenEligibleForSwapAndBridge = getIsTokenEligibleForSwapAndBridge;
+const convertPortfolioTokenToSwapAndBridgeToToken = (portfolioToken, chainId) => {
     const { address, decimals, symbol } = portfolioToken;
     // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
     const name = symbol;
@@ -194,6 +204,7 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (portfolioToken, chai
     const icon = '';
     return { address, chainId, decimals, symbol, name, icon };
 };
+exports.convertPortfolioTokenToSwapAndBridgeToToken = convertPortfolioTokenToSwapAndBridgeToToken;
 /**
  * Return the lowest active route service time in MILLISECONDS
  */
@@ -202,7 +213,7 @@ const getActiveRoutesLowestServiceTime = (activeRoutes) => {
     activeRoutes.forEach((r) => {
         // for squid swaps, make the service time 10s
         if (r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId) {
-            serviceTimes.push(BRIDGE_STATUS_INTERVAL / 1000);
+            serviceTimes.push(intervals_1.BRIDGE_STATUS_INTERVAL / 1000);
             return;
         }
         r.route?.userTxs.forEach((tx) => {
@@ -213,9 +224,10 @@ const getActiveRoutesLowestServiceTime = (activeRoutes) => {
     });
     const time = serviceTimes.sort((a, b) => a - b)[0];
     if (!time)
-        return UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL;
+        return intervals_1.UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL;
     return time * 1000;
 };
+exports.getActiveRoutesLowestServiceTime = getActiveRoutesLowestServiceTime;
 const getActiveRoutesUpdateInterval = (minServiceTime) => {
     if (!minServiceTime)
         return 30000;
@@ -228,14 +240,15 @@ const getActiveRoutesUpdateInterval = (minServiceTime) => {
         return 60000;
     return 30000;
 };
+exports.getActiveRoutesUpdateInterval = getActiveRoutesUpdateInterval;
 // If you have approval that has not been spent (in some smart contracts), the transaction may revert
 const buildRevokeApprovalIfNeeded = async (userTx, account, state, provider) => {
     if (!userTx.approvalData)
         return;
-    const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider);
-    const requiredAmount = !isBasicAccount(account, state)
+    const erc20Contract = new ethers_1.Contract(userTx.approvalData.approvalTokenAddress, IERC20_json_1.default.abi, provider);
+    const requiredAmount = !(0, account_1.isBasicAccount)(account, state)
         ? BigInt(userTx.approvalData.minimumApprovalAmount)
-        : MaxUint256;
+        : ethers_1.MaxUint256;
     const approveCallData = erc20Contract.interface.encodeFunctionData('approve', [
         userTx.approvalData.allowanceTarget,
         requiredAmount
@@ -272,7 +285,7 @@ const shouldBuildApproval = async (userTx, account, provider) => {
             shouldBuild: false,
             allowance: 0n
         };
-    const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider);
+    const erc20Contract = new ethers_1.Contract(userTx.approvalData.approvalTokenAddress, IERC20_json_1.default.abi, provider);
     const allowanceCallData = erc20Contract.interface.encodeFunctionData('allowance', [
         account.addr,
         userTx.approvalData.allowanceTarget
@@ -302,13 +315,13 @@ const getSwapAndBridgeCalls = async (userTx, account, provider, state) => {
     const calls = [];
     const allowanceData = await shouldBuildApproval(userTx, account, provider);
     if (userTx.approvalData && allowanceData.shouldBuild) {
-        const erc20Interface = new Interface(ERC20.abi);
+        const erc20Interface = new ethers_1.Interface(IERC20_json_1.default.abi);
         // if the allowance is not 0 and not MAX but anything between,
         // check if we need to do a revoke first
         // USDT on Ethereum being one example for this
         if (allowanceData.allowance !== undefined &&
             allowanceData.allowance > 0n &&
-            allowanceData.allowance < MAX_UINT256) {
+            allowanceData.allowance < deploy_1.MAX_UINT256) {
             const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider);
             if (revokeApproval)
                 calls.push(revokeApproval);
@@ -333,6 +346,7 @@ const getSwapAndBridgeCalls = async (userTx, account, provider, state) => {
     });
     return calls;
 };
+exports.getSwapAndBridgeCalls = getSwapAndBridgeCalls;
 const getSwapAndBridgeRequestParams = async (userTx, chainId, account, provider, state, paymasterService, quote) => {
     return {
         calls: await getSwapAndBridgeCalls(userTx, account, provider, state),
@@ -347,23 +361,27 @@ const getSwapAndBridgeRequestParams = async (userTx, chainId, account, provider,
         }
     };
 };
-export const getIsBridgeRoute = (route) => {
+exports.getSwapAndBridgeRequestParams = getSwapAndBridgeRequestParams;
+const getIsBridgeRoute = (route) => {
     return route.providerId === 'squid' || route.fromChainId !== route.toChainId;
 };
+exports.getIsBridgeRoute = getIsBridgeRoute;
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
  * there are 16 networks supported, so user could have (many) custom networks that are not.
  */
-export const getIsNetworkSupported = (supportedChainIds, network) => {
+const getIsNetworkSupported = (supportedChainIds, network) => {
     // Assume supported if missing (and receive no results when attempting to use
     // a not-supported network) than the alternative - blocking the UI.
     if (!supportedChainIds.length || !network)
         return true;
     return supportedChainIds.includes(network.chainId);
 };
+exports.getIsNetworkSupported = getIsNetworkSupported;
 const getActiveRoutesForAccount = (accountAddress, activeRoutes) => {
-    return activeRoutes.filter((r) => getAddress(r.route?.sender || r.route?.userAddress || '') === accountAddress);
+    return activeRoutes.filter((r) => (0, ethers_1.getAddress)(r.route?.sender || r.route?.userAddress || '') === accountAddress);
 };
+exports.getActiveRoutesForAccount = getActiveRoutesForAccount;
 /**
  * Since v4.41.0 we request the shortlist from our service provider, which might
  * not include the Ambire $WALLET token. So adding it manually on the supported chains.
@@ -371,22 +389,22 @@ const getActiveRoutesForAccount = (accountAddress, activeRoutes) => {
 const addCustomTokensIfNeeded = ({ tokens, chainId }) => {
     const newTokens = [...tokens];
     if (chainId === 1) {
-        const shouldAddAmbireWalletToken = newTokens.every((t) => t.address !== AMBIRE_WALLET_TOKEN_ON_ETHEREUM.address);
+        const shouldAddAmbireWalletToken = newTokens.every((t) => t.address !== constants_1.AMBIRE_WALLET_TOKEN_ON_ETHEREUM.address);
         if (shouldAddAmbireWalletToken)
-            newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
-        const shouldAddJPYCToken = newTokens.every((t) => t.address !== JPYC_TOKEN.address);
+            newTokens.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
+        const shouldAddJPYCToken = newTokens.every((t) => t.address !== constants_1.JPYC_TOKEN.address);
         if (shouldAddJPYCToken)
-            newTokens.unshift({ ...JPYC_TOKEN, chainId: 1 });
+            newTokens.unshift({ ...constants_1.JPYC_TOKEN, chainId: 1 });
     }
     if (chainId === 137) {
-        const shouldAddJPYCToken = newTokens.every((t) => t.address !== JPYC_TOKEN.address);
+        const shouldAddJPYCToken = newTokens.every((t) => t.address !== constants_1.JPYC_TOKEN.address);
         if (shouldAddJPYCToken)
-            newTokens.unshift({ ...JPYC_TOKEN, chainId: 137 });
+            newTokens.unshift({ ...constants_1.JPYC_TOKEN, chainId: 137 });
     }
     if (chainId === 43114) {
-        const shouldAddJPYCToken = newTokens.every((t) => t.address !== JPYC_TOKEN.address);
+        const shouldAddJPYCToken = newTokens.every((t) => t.address !== constants_1.JPYC_TOKEN.address);
         if (shouldAddJPYCToken)
-            newTokens.unshift({ ...JPYC_TOKEN, chainId: 43114 });
+            newTokens.unshift({ ...constants_1.JPYC_TOKEN, chainId: 43114 });
     }
     if (chainId === 8453) {
         // Disabled (maybe temporarily) as of v2.94.0, because of the decision to remove
@@ -398,17 +416,19 @@ const addCustomTokensIfNeeded = ({ tokens, chainId }) => {
     }
     return newTokens;
 };
+exports.addCustomTokensIfNeeded = addCustomTokensIfNeeded;
 // the celo native token is at an address 0x471EcE3750Da237f93B8E339c536989b8978a438
 // and LiFi doesn't work if we pass address 0 for this. We map it only for
 // lifi to make the swap work in this case
 const lifiMapNativeToAddr = (chainId, tokenAddr) => {
-    if (tokenAddr !== ZeroAddress)
+    if (tokenAddr !== ethers_1.ZeroAddress)
         return tokenAddr;
     // celo chain
     if (chainId !== 42220)
         return tokenAddr;
     return '0x471EcE3750Da237f93B8E339c536989b8978a438';
 };
+exports.lifiMapNativeToAddr = lifiMapNativeToAddr;
 /**
  * Map the token address back to native when needed
  */
@@ -418,6 +438,7 @@ const mapBannedToValidAddr = (chainId, tokenAddr) => {
         return tokenAddr;
     return list[tokenAddr];
 };
+exports.mapBannedToValidAddr = mapBannedToValidAddr;
 const isNoFeeToken = (chainId, tokenAddr) => {
     /** ****************************************************
      *        MAKE SURE ADDRESSES ARE CHECKSUMMED
@@ -428,18 +449,20 @@ const isNoFeeToken = (chainId, tokenAddr) => {
     }
     return false;
 };
+exports.isNoFeeToken = isNoFeeToken;
 const getSlippage = (fromAsset, fromAmount, upperBoundary, delimeter) => {
     // make sure the slippage doesn't exceed 100$
     // we do so by having a base of 0.005
     // to have a slippage of 100$, we need a fromAmountInUsd of at least 20000$,
     // so each time the from amount makes a jump of 20000$, we lower
     // the slippage by half
-    const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount);
+    const fromAmountInUsd = (0, helper_1.getTokenUsdAmount)(fromAsset, fromAmount);
     return Number(fromAmountInUsd) < 400
         ? upperBoundary
         : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2);
 };
-export const calculateAmountWarnings = (selectedRoute, fromAmountInFiat, fromAmount, fromSelectedTokenDecimals) => {
+exports.getSlippage = getSlippage;
+const calculateAmountWarnings = (selectedRoute, fromAmountInFiat, fromAmount, fromSelectedTokenDecimals) => {
     if (!selectedRoute)
         return null;
     let inputValueInUsd = 0;
@@ -453,8 +476,8 @@ export const calculateAmountWarnings = (selectedRoute, fromAmountInFiat, fromAmo
     if (!inputValueInUsd)
         return null;
     try {
-        const sanitizedFromAmount = getSanitizedAmount(fromAmount, fromSelectedTokenDecimals);
-        const bigintFromAmount = parseUnits(sanitizedFromAmount, fromSelectedTokenDecimals);
+        const sanitizedFromAmount = (0, amount_1.getSanitizedAmount)(fromAmount, fromSelectedTokenDecimals);
+        const bigintFromAmount = (0, ethers_1.parseUnits)(sanitizedFromAmount, fromSelectedTokenDecimals);
         if (bigintFromAmount !== BigInt(selectedRoute.fromAmount))
             return null;
         // Can be negative if the output is higher
@@ -472,7 +495,7 @@ export const calculateAmountWarnings = (selectedRoute, fromAmountInFiat, fromAmo
         if (!txn)
             throw new Error('no userTxs in selectedRoute');
         const minAmountOutInWei = BigInt(txn.minAmountOut);
-        const minInUsd = safeTokenAmountAndNumberMultiplication(minAmountOutInWei, selectedRoute.toToken.decimals, Number(selectedRoute.toToken.priceUSD));
+        const minInUsd = (0, formatters_1.safeTokenAmountAndNumberMultiplication)(minAmountOutInWei, selectedRoute.toToken.decimals, Number(selectedRoute.toToken.priceUSD));
         const allowedSlippage = Number(inputValueInUsd) < 400
             ? 1.05
             : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01;
@@ -486,7 +509,7 @@ export const calculateAmountWarnings = (selectedRoute, fromAmountInFiat, fromAmo
                 type: 'slippageImpact',
                 possibleSlippage,
                 minInUsd: Number(minInUsd),
-                minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
+                minInToken: (0, ethers_1.formatUnits)(minAmountOutInWei, selectedRoute.toToken.decimals),
                 symbol: selectedRoute.toToken.symbol
             };
         }
@@ -496,18 +519,22 @@ export const calculateAmountWarnings = (selectedRoute, fromAmountInFiat, fromAmo
         return null;
     }
 };
+exports.calculateAmountWarnings = calculateAmountWarnings;
 const getLink = (route) => {
     const providerId = route.route ? route.route.providerId : route.serviceProviderId;
     if (providerId === 'socket')
-        return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`;
+        return `${constants_1.SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`;
     if (providerId === 'squid')
-        return `${SQUID_EXPLORER_URL}/${route.userTxHash}`;
-    return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`;
+        return `${constants_2.SQUID_EXPLORER_URL}/${route.userTxHash}`;
+    return `${consts_1.LIFI_EXPLORER_URL}/tx/${route.userTxHash}`;
 };
+exports.getLink = getLink;
 const isTxnBridge = (txn) => {
     return txn.fromAsset.chainId !== txn.toAsset.chainId;
 };
-const convertNullAddressToZeroAddressIfNeeded = (addr) => addr === NULL_ADDRESS ? ZERO_ADDRESS : addr;
+exports.isTxnBridge = isTxnBridge;
+const convertNullAddressToZeroAddressIfNeeded = (addr) => addr === constants_1.NULL_ADDRESS ? constants_1.ZERO_ADDRESS : addr;
+exports.convertNullAddressToZeroAddressIfNeeded = convertNullAddressToZeroAddressIfNeeded;
 /**
  * Get the swap sponsorship details.
  * We need the native price so we can later understand if the cost
@@ -526,10 +553,10 @@ const getSwapSponsorship = ({ hasConvinienceFee, nativePrice, fromAmountInUsd, f
         return undefined;
     return {
         nativePrice,
-        swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
+        swapFeeInUsd: (fromAmountInUsd * constants_1.FEE_PERCENT) / 100,
         fromTokenPriceInUsd,
         fromTokenDecimals
     };
 };
-export { addCustomTokensIfNeeded, convertNullAddressToZeroAddressIfNeeded, getActiveRoutesForAccount, getActiveRoutesLowestServiceTime, getActiveRoutesUpdateInterval, getBannedToTokenList, getLink, getSlippage, getSwapAndBridgeCalls, getSwapAndBridgeRequestParams, getSwapSponsorship, isNoFeeToken, isTxnBridge, lifiMapNativeToAddr, mapBannedToValidAddr };
+exports.getSwapSponsorship = getSwapSponsorship;
 //# sourceMappingURL=swapAndBridge.js.map

@@ -1,7 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Etherspot = void 0;
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ETHERSPOT } from '../../consts/bundlers';
-import { Bundler } from './bundler';
-export class Etherspot extends Bundler {
+const bundlers_1 = require("../../consts/bundlers");
+const bundler_1 = require("./bundler");
+class Etherspot extends bundler_1.Bundler {
     getUrl(network) {
         const API_KEY = process.env.REACT_APP_ETHERSPOT_API_KEY || '';
         if (!API_KEY) {
@@ -49,10 +52,11 @@ export class Etherspot extends Bundler {
         };
     }
     getName() {
-        return ETHERSPOT;
+        return bundlers_1.ETHERSPOT;
     }
     shouldReestimateBeforeBroadcast(network) {
         return false;
     }
 }
+exports.Etherspot = Etherspot;
 //# sourceMappingURL=etherspot.js.map

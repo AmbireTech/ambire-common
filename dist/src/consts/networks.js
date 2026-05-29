@@ -1,4 +1,7 @@
-import { BICONOMY, PIMLICO } from './bundlers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SCROLL_CHAIN_ID = exports.ARBITRUM_CHAIN_ID = exports.networks = void 0;
+const bundlers_1 = require("./bundlers");
 const networks = [
     {
         name: 'Ethereum',
@@ -37,8 +40,8 @@ const networks = [
             enabled: false,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -67,8 +70,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: BICONOMY,
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.BICONOMY,
             increasePreVerGas: 5
         },
         isSAEnabled: true,
@@ -132,8 +135,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -163,8 +166,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO,
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO,
             increasePreVerGas: 5
         },
         isSAEnabled: true,
@@ -224,8 +227,8 @@ const networks = [
             enabled: false,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -271,7 +274,7 @@ const networks = [
         wrappedAddr: '0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8'
     }
 ];
-export { networks };
-export const ARBITRUM_CHAIN_ID = 42161n;
-export const SCROLL_CHAIN_ID = 534352n;
+exports.networks = networks;
+exports.ARBITRUM_CHAIN_ID = 42161n;
+exports.SCROLL_CHAIN_ID = 534352n;
 //# sourceMappingURL=networks.js.map

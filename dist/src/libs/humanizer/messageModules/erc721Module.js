@@ -1,16 +1,19 @@
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.erc721Module = void 0;
+const utils_1 = require("../utils");
 const visualizePermit = (spender, tokenId, deadline, contract) => {
     const res = [
-        getAction('Permit use of'),
-        getToken(contract, tokenId),
-        getLabel('to'),
-        getAddressVisualization(spender)
+        (0, utils_1.getAction)('Permit use of'),
+        (0, utils_1.getToken)(contract, tokenId),
+        (0, utils_1.getLabel)('to'),
+        (0, utils_1.getAddressVisualization)(spender)
     ];
-    if (getDeadline(deadline))
-        res.push(getDeadline(deadline));
+    if ((0, utils_1.getDeadline)(deadline))
+        res.push((0, utils_1.getDeadline)(deadline));
     return res;
 };
-export const erc721Module = (message) => {
+const erc721Module = (message) => {
     if (message.content.kind !== 'typedMessage')
         return { fullVisualization: [] };
     const tm = message.content;
@@ -26,4 +29,5 @@ export const erc721Module = (message) => {
     }
     return { fullVisualization: [] };
 };
+exports.erc721Module = erc721Module;
 //# sourceMappingURL=erc721Module.js.map

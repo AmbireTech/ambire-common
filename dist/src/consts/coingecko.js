@@ -1,10 +1,16 @@
-import { ZeroAddress } from 'ethers';
-import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getCoinGeckoTokenUrl = void 0;
+exports.geckoIdMapper = geckoIdMapper;
+exports.geckoTokenAddressMapper = geckoTokenAddressMapper;
+exports.getCoinGeckoTokenApiUrl = getCoinGeckoTokenApiUrl;
+const ethers_1 = require("ethers");
+const addresses_1 = require("./addresses");
 const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/';
 const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/';
 // @TODO some form of a constants list
-export function geckoIdMapper(address, network) {
-    if (address === ZeroAddress)
+function geckoIdMapper(address, network) {
+    if (address === ethers_1.ZeroAddress)
         return network.nativeAssetId;
     // citrea wrapepd cbtc
     if (network.chainId === 4114n && address === '0x3100000000000000000000000000000000000006')
@@ -21,10 +27,10 @@ export function geckoIdMapper(address, network) {
  * Maps specific token addresses to alternative addresses if they are missing on
  * CoinGecko (so that they are aliased to existing tokens).
  */
-export function geckoTokenAddressMapper(address) {
+function geckoTokenAddressMapper(address) {
     // stkWALLET and xWALLET are missing on CoinGecko, so alias to WALLET token (which exists)
-    if ([STK_WALLET, WALLET_STAKING_ADDR].includes(address))
-        return WALLET_TOKEN;
+    if ([addresses_1.STK_WALLET, addresses_1.WALLET_STAKING_ADDR].includes(address))
+        return addresses_1.WALLET_TOKEN;
     return address;
 }
 /**
@@ -32,14 +38,15 @@ export function geckoTokenAddressMapper(address) {
  * Handles special cases where the CoinGecko API handles differently certain
  * tokens like the native tokens.
  */
-export function getCoinGeckoTokenApiUrl({ tokenAddr, geckoChainId, geckoNativeCoinId }) {
+function getCoinGeckoTokenApiUrl({ tokenAddr, geckoChainId, geckoNativeCoinId }) {
     // CoinGecko does not handle native assets (ETH, MATIC, BNB...) via the /contract endpoint.
     // Instead, native assets are identified by URL with the `nativeAssetId` directly.
-    if (tokenAddr === ZeroAddress)
+    if (tokenAddr === ethers_1.ZeroAddress)
         return `${COINGECKO_API_BASE_URL}${geckoNativeCoinId}`;
     const geckoTokenAddress = geckoTokenAddressMapper(tokenAddr);
     return `${COINGECKO_API_BASE_URL}${geckoChainId}/contract/${geckoTokenAddress}`;
 }
 /** Constructs the CoinGecko URL for a given token slug. */
-export const getCoinGeckoTokenUrl = (slug) => `${COINGECKO_BASE_URL}${slug}`;
+const getCoinGeckoTokenUrl = (slug) => `${COINGECKO_BASE_URL}${slug}`;
+exports.getCoinGeckoTokenUrl = getCoinGeckoTokenUrl;
 //# sourceMappingURL=coingecko.js.map

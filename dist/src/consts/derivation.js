@@ -1,15 +1,18 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET = exports.DERIVATION_OPTIONS = exports.BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE = exports.LEGACY_POPULAR_DERIVATION_TEMPLATE = exports.BIP44_LEDGER_DERIVATION_TEMPLATE = exports.BIP44_STANDARD_DERIVATION_TEMPLATE = void 0;
 /**
  * BIP44 as everyone implements it (MetaMask, Trezor, Lattice, EthersJS),
  * iterating over the `address_index` path out of the 5 levels in BIP44:
  *   m / purpose' / coin_type' / account' / change / address_index
  */
-export const BIP44_STANDARD_DERIVATION_TEMPLATE = "m/44'/60'/0'/0/<account>";
+exports.BIP44_STANDARD_DERIVATION_TEMPLATE = "m/44'/60'/0'/0/<account>";
 /**
  * BIP44 as Ledger (Live) currently implements it. They iterate over the
  * `account'` path out of the 5 levels in BIP44:
  *   m / purpose' / coin_type' / account' / change / address_index
  */
-export const BIP44_LEDGER_DERIVATION_TEMPLATE = "m/44'/60'/<account>'/0/0";
+exports.BIP44_LEDGER_DERIVATION_TEMPLATE = "m/44'/60'/<account>'/0/0";
 /**
  * Legacy (but popular) one, which is BIP44-like, but not BIP44 exactly and
  * there is no standard that describes it. Closely related to the BIP44
@@ -17,33 +20,33 @@ export const BIP44_LEDGER_DERIVATION_TEMPLATE = "m/44'/60'/<account>'/0/0";
  * distinguish between addresses (change addresses). Used previously by
  * Ledger and by other Ethereum wallets like MyEtherWallet (MEW) and MyCrypto.
  */
-export const LEGACY_POPULAR_DERIVATION_TEMPLATE = "m/44'/60'/0'/<account>";
+exports.LEGACY_POPULAR_DERIVATION_TEMPLATE = "m/44'/60'/0'/<account>";
 /**
  * BIP44 for Ethereum test networks (Sepolia, Holesky) as implemented by Trezor.
  * Same structure as the standard BIP44 path, but uses the testnet coin_type (1')
  * instead of Ethereum mainnet (60'):
  *   m / purpose' / coin_type' / account' / change / address_index
  */
-export const BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE = "m/44'/1'/0'/0/<account>";
-export const DERIVATION_OPTIONS = [
+exports.BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE = "m/44'/1'/0'/0/<account>";
+exports.DERIVATION_OPTIONS = [
     {
         label: 'BIP44',
-        value: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        value: exports.BIP44_STANDARD_DERIVATION_TEMPLATE,
         description: 'BIP44 Standard: HD path defined by the BIP44 protocol.'
     },
     {
         label: 'Ledger Live',
-        value: BIP44_LEDGER_DERIVATION_TEMPLATE,
+        value: exports.BIP44_LEDGER_DERIVATION_TEMPLATE,
         description: 'Ledger Live: Ledger official HD path.'
     },
     {
         label: 'Ledger Legacy',
-        value: LEGACY_POPULAR_DERIVATION_TEMPLATE,
+        value: exports.LEGACY_POPULAR_DERIVATION_TEMPLATE,
         description: 'Ledger Legacy: HD path used by MEW / MyCrypto.'
     },
     {
         label: 'Trezor Testnets',
-        value: BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE,
+        value: exports.BIP44_STANDARD_TESTNET_DERIVATION_TEMPLATE,
         description: "Trezor Testnets: BIP44 path using testnet coin type (1') for Ethereum test networks."
     }
 ];
@@ -52,5 +55,5 @@ export const DERIVATION_OPTIONS = [
  * address at index N + x, where N is this derivation offset (this constant),
  * and x is the given <account> index in the derivation (template) path.
  */
-export const SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET = 100000;
+exports.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET = 100000;
 //# sourceMappingURL=derivation.js.map

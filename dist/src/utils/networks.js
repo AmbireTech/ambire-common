@@ -1,9 +1,12 @@
-import { JsonRpcProvider } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.rollProviderUrlsAndFindWorking = exports.convertToAmbireNetworkFormat = exports.checkIsRpcUrlWorking = exports.mapRelayerNetworkConfigToAmbireNetwork = void 0;
+const ethers_1 = require("ethers");
 const hardcodedRpcUrls = {
     '11155111': 'https://eth-sepolia.public.blastapi.io'
 };
 const checkIsRpcUrlWorking = async (rpcUrl) => {
-    const provider = new JsonRpcProvider(rpcUrl);
+    const provider = new ethers_1.JsonRpcProvider(rpcUrl);
     try {
         await provider.getBlockNumber();
     }
@@ -14,6 +17,7 @@ const checkIsRpcUrlWorking = async (rpcUrl) => {
     provider.destroy();
     return true;
 };
+exports.checkIsRpcUrlWorking = checkIsRpcUrlWorking;
 const rollProviderUrlsAndFindWorking = async (rpcUrls, index) => {
     const isProviderWorking = await checkIsRpcUrlWorking(rpcUrls[index]);
     if (isProviderWorking) {
@@ -25,6 +29,7 @@ const rollProviderUrlsAndFindWorking = async (rpcUrls, index) => {
     }
     return null;
 };
+exports.rollProviderUrlsAndFindWorking = rollProviderUrlsAndFindWorking;
 const convertToAmbireNetworkFormat = async (network) => {
     const freeHttpRpcUrls = network.rpc.filter((rpcUrl) => {
         const isHttpOrHttps = rpcUrl.startsWith('http');
@@ -79,13 +84,14 @@ const convertToAmbireNetworkFormat = async (network) => {
         has7702: false
     };
 };
+exports.convertToAmbireNetworkFormat = convertToAmbireNetworkFormat;
 /**
  * Maps the configuration of a Relayer network to the Ambire network format.
  * Needed, because the structures does NOT fully match, some values need to be
  * transformed or parsed (number to bigint). And finally, because there are
  * default values that need to be set for the so called "predefined" networks.
  */
-export const mapRelayerNetworkConfigToAmbireNetwork = (chainId, relayerNetwork) => {
+const mapRelayerNetworkConfigToAmbireNetwork = (chainId, relayerNetwork) => {
     const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, predefinedConfigVersion, rpcUrls, iconUrls, platformId, has7702, disabledByDefault, rpcNoStateOverride } = relayerNetwork;
     const { native: { symbol: nativeAssetSymbol, name: nativeAssetName, coingeckoId: nativeAssetId, wrapped: { address: wrappedAddr }, oldNativeAssetSymbols }, smartAccounts, feeOptions: incomingFeeOptions } = relayerNetwork;
     const is7702Enabled = has7702 || false;
@@ -164,5 +170,5 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (chainId, relayerNetwork) 
         disabledByDefault
     };
 };
-export { checkIsRpcUrlWorking, convertToAmbireNetworkFormat, rollProviderUrlsAndFindWorking };
+exports.mapRelayerNetworkConfigToAmbireNetwork = mapRelayerNetworkConfigToAmbireNetwork;
 //# sourceMappingURL=networks.js.map

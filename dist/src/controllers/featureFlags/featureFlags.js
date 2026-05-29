@@ -1,19 +1,23 @@
-import { defaultFeatureFlags } from '../../consts/featureFlags';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FeatureFlagsController = void 0;
+const tslib_1 = require("tslib");
+const featureFlags_1 = require("../../consts/featureFlags");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 /**
  * Responsible for managing (enable/disable) feature flags within the app. The
  * long-term vision for this is to support dynamic management, currently it
  * enables or disables features only at runtime. Can be useful for feature
  * toggling, A/B testing, and gradual feature roll-outs.
  */
-export class FeatureFlagsController extends EventEmitter {
+class FeatureFlagsController extends eventEmitter_1.default {
     #flags;
     #storage;
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
     constructor(featureFlags, storage, eventEmitterRegistry) {
         super(eventEmitterRegistry);
-        this.#flags = { ...defaultFeatureFlags, ...(featureFlags || {}) };
+        this.#flags = { ...featureFlags_1.defaultFeatureFlags, ...(featureFlags || {}) };
         this.#storage = storage;
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
@@ -44,4 +48,5 @@ export class FeatureFlagsController extends EventEmitter {
         };
     }
 }
+exports.FeatureFlagsController = FeatureFlagsController;
 //# sourceMappingURL=featureFlags.js.map

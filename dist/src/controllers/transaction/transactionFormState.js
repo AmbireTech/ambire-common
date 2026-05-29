@@ -1,14 +1,18 @@
-import { formatUnits, isAddress } from 'ethers';
-import { FEE_COLLECTOR } from '../../consts/addresses';
-import { testnetNetworks } from '../../consts/testnetNetworks';
-import { getTokenAmount } from '../../libs/portfolio/helpers';
-import { addCustomTokensIfNeeded, convertPortfolioTokenToSwapAndBridgeToToken, getIsTokenEligibleForSwapAndBridge, isTxnBridge, sortPortfolioTokenList, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge';
-import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer';
-import { handleAmountConversion } from '../../libs/transaction/conversion';
-import { validateSendTransferAddress } from '../../services/validations';
-import wait from '../../utils/wait';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TransactionFormState = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const addresses_1 = require("../../consts/addresses");
+const testnetNetworks_1 = require("../../consts/testnetNetworks");
+const helpers_1 = require("../../libs/portfolio/helpers");
+const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
+const swapAndBridgeErrorHumanizer_1 = require("../../libs/swapAndBridge/swapAndBridgeErrorHumanizer");
+const conversion_1 = require("../../libs/transaction/conversion");
+const validations_1 = require("../../services/validations");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 // import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import EventEmitter from '../eventEmitter/eventEmitter';
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const DEFAULT_VALIDATION_FORM_MSGS = {
     amount: {
         severity: 'error',
@@ -29,7 +33,7 @@ const DEFAULT_ADDRESS_STATE = {
 const HARD_CODED_CURRENCY = 'usd';
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24; // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4; // 4 hours
-export class TransactionFormState extends EventEmitter {
+class TransactionFormState extends eventEmitter_1.default {
     dependencies;
     sessionIds = [];
     fromAmount = '';
@@ -86,7 +90,7 @@ export class TransactionFormState extends EventEmitter {
         this.#initialLoadPromise = this.#load().finally(() => {
             this.#initialLoadPromise = undefined;
         });
-        this.supportedChainIds = testnetNetworks.map((c) => BigInt(c.chainId));
+        this.supportedChainIds = testnetNetworks_1.testnetNetworks.map((c) => BigInt(c.chainId));
     }
     async update(params, updateProps) {
         const { fromAmount, fromAmountInFiat, fromAmountFieldMode, fromSelectedToken, toSelectedToken, toChainId, routePriority, addressState } = params;
@@ -183,7 +187,7 @@ export class TransactionFormState extends EventEmitter {
         // this.hasProceeded = false
     }
     checkIsRecipientAddressUnknown() {
-        if (!isAddress(this.recipientAddress)) {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
             this.isRecipientAddressUnknown = false;
             this.isRecipientAddressUnknownAgreed = false;
             this.emitUpdate();
@@ -191,12 +195,12 @@ export class TransactionFormState extends EventEmitter {
         }
         const isAddressInAddressBook = this.#addressBookContacts.some(({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase());
         this.isRecipientAddressUnknown =
-            !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase();
+            !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== addresses_1.FEE_COLLECTOR.toLowerCase();
         this.isRecipientAddressUnknownAgreed = false;
         this.emitUpdate();
     }
     #handleAmountConversion(fromAmount, fromAmountFormatted) {
-        const { tokenAmount, fiatAmount } = handleAmountConversion(fromAmount, fromAmountFormatted, this.fromSelectedToken, this.fromAmountFieldMode === 'fiat', HARD_CODED_CURRENCY);
+        const { tokenAmount, fiatAmount } = (0, conversion_1.handleAmountConversion)(fromAmount, fromAmountFormatted, this.fromSelectedToken, this.fromAmountFieldMode === 'fiat', HARD_CODED_CURRENCY);
         if (this.fromAmountFieldMode === 'fiat') {
             this.fromAmount = tokenAmount;
             this.fromAmountInFiat = fiatAmount;
@@ -214,7 +218,7 @@ export class TransactionFormState extends EventEmitter {
             this.#updateToTokenListThrottle.addressToSelect = addressToSelect;
             if (!this.#updateToTokenListThrottle.throttled) {
                 this.#updateToTokenListThrottle.throttled = true;
-                await wait(500 - timeSinceLastCall);
+                await (0, wait_1.default)(500 - timeSinceLastCall);
                 this.#updateToTokenListThrottle.throttled = false;
                 await this.updateToTokenList(this.#updateToTokenListThrottle.shouldReset, this.#updateToTokenListThrottle.addressToSelect);
             }
@@ -254,8 +258,8 @@ export class TransactionFormState extends EventEmitter {
             catch (error) {
                 // Display an error only if there is no cached data
                 if (!toTokenList.length) {
-                    toTokenList = addCustomTokensIfNeeded({ chainId: this.toChainId, tokens: toTokenList });
-                    const { message } = getHumanReadableSwapAndBridgeError(error);
+                    toTokenList = (0, swapAndBridge_1.addCustomTokensIfNeeded)({ chainId: this.toChainId, tokens: toTokenList });
+                    const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
                     this.addOrUpdateError({
                         id: 'to-token-list-fetch-failed',
                         title: 'Token list on the receiving network is temporarily unavailable.',
@@ -276,8 +280,8 @@ export class TransactionFormState extends EventEmitter {
         const additionalTokensFromPortfolio = this.portfolioTokenList
             .filter((t) => t.chainId === toTokenNetwork.chainId)
             .filter((token) => !toTokenList.some((t) => t.address === token.address))
-            .map((t) => convertPortfolioTokenToSwapAndBridgeToToken(t, Number(toTokenNetwork.chainId)));
-        this.#toTokenList = sortTokenListResponse([...toTokenList, ...additionalTokensFromPortfolio], this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId));
+            .map((t) => (0, swapAndBridge_1.convertPortfolioTokenToSwapAndBridgeToToken)(t, Number(toTokenNetwork.chainId)));
+        this.#toTokenList = (0, swapAndBridge_1.sortTokenListResponse)([...toTokenList, ...additionalTokensFromPortfolio], this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId));
         if (!this.toSelectedToken) {
             if (addressToSelect) {
                 const token = this.#toTokenList.find((t) => t.address === addressToSelect);
@@ -338,7 +342,7 @@ export class TransactionFormState extends EventEmitter {
             // Try catch just in case because of formatUnits
             try {
                 if (this.quote && this.quote.selectedRoute?.fromAmount) {
-                    fromAmount = formatUnits(this.quote.selectedRoute.toAmount, this.quote.selectedRoute.toToken.decimals);
+                    fromAmount = (0, ethers_1.formatUnits)(this.quote.selectedRoute.toAmount, this.quote.selectedRoute.toToken.decimals);
                 }
             }
             catch (error) {
@@ -441,8 +445,8 @@ export class TransactionFormState extends EventEmitter {
         this.#emitUpdateIfNeeded();
     }
     async updatePortfolioTokenList(nextPortfolioTokenList) {
-        const tokens = nextPortfolioTokenList.filter((token) => getIsTokenEligibleForSwapAndBridge(token));
-        this.portfolioTokenList = sortPortfolioTokenList(
+        const tokens = nextPortfolioTokenList.filter((token) => (0, swapAndBridge_1.getIsTokenEligibleForSwapAndBridge)(token));
+        this.portfolioTokenList = (0, swapAndBridge_1.sortPortfolioTokenList)(
         // Filtering out hidden tokens here means: 1) They won't be displayed in
         // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
         // added to the "Receive" token list as additional tokens from portfolio,
@@ -509,7 +513,7 @@ export class TransactionFormState extends EventEmitter {
                 // when the transaction is mined
                 const activeRouteRoute = currentActiveRoutes[activeRouteIndex].route;
                 if (activeRouteRoute) {
-                    activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.filter((tx) => !isTxnBridge(tx)).length;
+                    activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.filter((tx) => !(0, swapAndBridge_1.isTxnBridge)(tx)).length;
                 }
             }
             this.activeRoutes = currentActiveRoutes;
@@ -541,7 +545,7 @@ export class TransactionFormState extends EventEmitter {
         this.#emitUpdateIfNeeded();
     }
     #onRecipientAddressChange() {
-        if (!isAddress(this.recipientAddress)) {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
             this.isRecipientAddressUnknown = false;
             this.isRecipientAddressUnknownAgreed = false;
             this.isRecipientHumanizerKnownTokenOrSmartContract = false;
@@ -607,7 +611,7 @@ export class TransactionFormState extends EventEmitter {
     // on every balance (pending or anything) change.
     #getFromSelectedTokenInPortfolio = () => this.portfolioTokenList.find((t) => t.address === this.fromSelectedToken?.address &&
         t.chainId === this.fromSelectedToken?.chainId &&
-        getIsTokenEligibleForSwapAndBridge(t));
+        (0, swapAndBridge_1.getIsTokenEligibleForSwapAndBridge)(t));
     get #toTokenListKey() {
         if (this.fromChainId === null || this.toChainId === null)
             return null;
@@ -621,7 +625,7 @@ export class TransactionFormState extends EventEmitter {
             return DEFAULT_VALIDATION_FORM_MSGS;
         const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS;
         if (this.#humanizerInfo && this.#selectedAccountData) {
-            validationFormMsgsNew.recipientAddress = validateSendTransferAddress(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, !!this.addressState.resolvedAddress, this.addressState.isDomainResolving, this.dependencies.networks.networks, this.dependencies.accounts.accountStates, this.dependencies.accounts.accounts.find((a) => a.addr === this.recipientAddress), this.toChainId ? BigInt(this.toChainId) : undefined);
+            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, !!this.addressState.resolvedAddress, this.addressState.isDomainResolving, this.dependencies.networks.networks, this.dependencies.accounts.accountStates, this.dependencies.accounts.accounts.find((a) => a.addr === this.recipientAddress), this.toChainId ? BigInt(this.toChainId) : undefined);
         }
         return validationFormMsgsNew;
     }
@@ -632,9 +636,9 @@ export class TransactionFormState extends EventEmitter {
     }
     get maxFromAmount() {
         const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken;
-        if (!tokenRef || getTokenAmount(tokenRef) === 0n || typeof tokenRef.decimals !== 'number')
+        if (!tokenRef || (0, helpers_1.getTokenAmount)(tokenRef) === 0n || typeof tokenRef.decimals !== 'number')
             return '0';
-        return formatUnits(getTokenAmount(tokenRef), tokenRef.decimals);
+        return (0, ethers_1.formatUnits)((0, helpers_1.getTokenAmount)(tokenRef), tokenRef.decimals);
     }
     get isFormEmpty() {
         return (!this.fromChainId ||
@@ -669,4 +673,5 @@ export class TransactionFormState extends EventEmitter {
         };
     }
 }
+exports.TransactionFormState = TransactionFormState;
 //# sourceMappingURL=transactionFormState.js.map

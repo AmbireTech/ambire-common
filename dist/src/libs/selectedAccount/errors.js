@@ -1,7 +1,10 @@
-import { DeFiPositionsError } from '../defiPositions/types';
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getNetworksWithDeFiPositionsErrorErrors = exports.getNetworksWithErrors = exports.addPortfolioError = exports.addRPCError = void 0;
+const types_1 = require("../defiPositions/types");
+const portfolio_1 = require("../portfolio/portfolio");
 const TEN_MINUTES = 10 * 60 * 1000;
-export const addRPCError = (errors, chainId, networks) => {
+const addRPCError = (errors, chainId, networks) => {
     const newErrors = [...errors];
     const network = networks.find((n) => n.chainId.toString() === chainId);
     if (!network)
@@ -46,7 +49,8 @@ export const addRPCError = (errors, chainId, networks) => {
     }
     return newErrors;
 };
-export const addPortfolioError = (errors, networkName, newError) => {
+exports.addRPCError = addRPCError;
+const addPortfolioError = (errors, networkName, newError) => {
     const newErrors = [...errors];
     const existingError = newErrors.find((error) => error.id === newError);
     if (existingError) {
@@ -76,17 +80,17 @@ export const addPortfolioError = (errors, networkName, newError) => {
                 text = 'Account balance and visible assets may be inaccurate.';
                 type = 'warning';
                 break;
-            case PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError:
+            case portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError:
                 title = 'Failed to retrieve prices';
                 text = 'Account balance and asset prices may be inaccurate.';
                 type = 'warning';
                 break;
-            case PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError:
+            case portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError:
                 title = 'Automatic asset discovery is temporarily unavailable';
                 text =
                     'Your funds are safe, but your portfolio will be inaccurate. You can add assets manually or wait for the issue to be resolved.';
                 break;
-            case PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError:
+            case portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError:
                 title = 'Automatic asset discovery is temporarily unavailable';
                 text =
                     'New assets may not be visible in your portfolio. You can add assets manually or wait for the issue to be resolved.';
@@ -108,6 +112,7 @@ export const addPortfolioError = (errors, networkName, newError) => {
     }
     return newErrors;
 };
+exports.addPortfolioError = addPortfolioError;
 const getNetworkName = (networks, chainId) => {
     let networkName = networks.find((n) => n.chainId.toString() === chainId)?.name;
     if (chainId === 'gasTank')
@@ -126,7 +131,7 @@ const getNetworkName = (networks, chainId) => {
  * - Critical portfolio error on any network - displayed after 10 mins of stale portfolio state
  * - Non-critical portfolio error on any network - displayed after 10 mins of stale portfolio state
  */
-export const getNetworksWithErrors = ({ networks, selectedAccountPortfolioState, providers, accountState, shouldShowPartialResult, isAllReady, networksWithAssets }) => {
+const getNetworksWithErrors = ({ networks, selectedAccountPortfolioState, providers, accountState, shouldShowPartialResult, isAllReady, networksWithAssets }) => {
     let errors = [];
     const areAllProvidersDown = Object.values(providers).every((provider) => provider?.isWorking === false);
     if (!Object.keys(selectedAccountPortfolioState).length || areAllProvidersDown)
@@ -151,13 +156,13 @@ export const getNetworksWithErrors = ({ networks, selectedAccountPortfolioState,
             // The portfolio has been loading for longer than X seconds. The networks
             // that are still loading are the slow ones, so we add a warning for them.
             if (shouldShowPartialResult)
-                errors = addPortfolioError(errors, networkName, 'loading-too-long');
+                errors = (0, exports.addPortfolioError)(errors, networkName, 'loading-too-long');
             return;
         }
         // Add portfolio non-critical errors if the portfolio and RPC are working
         if (!criticalPortfolioError && isRpcWorking) {
             portfolioForNetwork?.errors.forEach((err) => {
-                errors = addPortfolioError(errors, networkName, err.name);
+                errors = (0, exports.addPortfolioError)(errors, networkName, err.name);
             });
             return;
         }
@@ -183,17 +188,18 @@ export const getNetworksWithErrors = ({ networks, selectedAccountPortfolioState,
             if (networksWithAssets?.[chainId] === false)
                 return;
             // Add an RPC error if the RPC is not working
-            errors = addRPCError(errors, chainId, networks);
+            errors = (0, exports.addRPCError)(errors, chainId, networks);
             return;
         }
         if (criticalPortfolioError) {
             // Add portfolio critical banner
-            errors = addPortfolioError(errors, networkName, 'portfolio-critical');
+            errors = (0, exports.addPortfolioError)(errors, networkName, 'portfolio-critical');
         }
     });
     return errors;
 };
-export const getNetworksWithDeFiPositionsErrorErrors = ({ networks, portfolioState, providers, networksWithPositions }) => {
+exports.getNetworksWithErrors = getNetworksWithErrors;
+const getNetworksWithDeFiPositionsErrorErrors = ({ networks, portfolioState, providers, networksWithPositions }) => {
     const networkNamesWithUnknownCriticalError = [];
     const networkNamesWithAssetPriceCriticalError = [];
     const providersWithErrors = {};
@@ -221,10 +227,10 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({ networks, portfolioSta
             (rpcProvider && typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking))
             return;
         if (defiState.error) {
-            if (defiState.error === DeFiPositionsError.AssetPriceError) {
+            if (defiState.error === types_1.DeFiPositionsError.AssetPriceError) {
                 networkNamesWithAssetPriceCriticalError.push(network.name);
             }
-            else if (defiState.error === DeFiPositionsError.CriticalError) {
+            else if (defiState.error === types_1.DeFiPositionsError.CriticalError) {
                 networkNamesWithUnknownCriticalError.push(network.name);
             }
         }
@@ -273,4 +279,5 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({ networks, portfolioSta
     }
     return errors;
 };
+exports.getNetworksWithDeFiPositionsErrorErrors = getNetworksWithDeFiPositionsErrorErrors;
 //# sourceMappingURL=errors.js.map

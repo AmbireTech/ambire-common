@@ -1,9 +1,13 @@
-import { ZeroAddress } from 'ethers';
-import { networks } from '../../../../consts/networks';
-import { getLabel, getRecipientText } from '../../utils';
-const WRAPPED_NATIVE_TOKEN_ADDRESSES = new Set(networks.map((network) => network.wrappedAddr?.toLowerCase()).filter(Boolean));
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.uniReduce = exports.joinWithAndLabel = exports.getUniRecipientText = void 0;
+exports.parsePath = parsePath;
+const ethers_1 = require("ethers");
+const networks_1 = require("../../../../consts/networks");
+const utils_1 = require("../../utils");
+const WRAPPED_NATIVE_TOKEN_ADDRESSES = new Set(networks_1.networks.map((network) => network.wrappedAddr?.toLowerCase()).filter(Boolean));
 const UNISWAP_FEE_RECIPIENT_ADDRESSES = new Set(['0x000000fee13a103a10d593b9ae06b3e05f2e7e1c']);
-export function parsePath(pathBytes) {
+function parsePath(pathBytes) {
     // some decodePacked fun
     // can we do this with Ethers AbiCoder? probably not
     const path = [];
@@ -13,13 +17,15 @@ export function parsePath(pathBytes) {
     }
     return path;
 }
-export const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', ZeroAddress].includes(recAddr)
+const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', ethers_1.ZeroAddress].includes(recAddr)
     ? []
-    : getRecipientText(accAddr, recAddr);
-export const joinWithAndLabel = (humanizations) => humanizations
+    : (0, utils_1.getRecipientText)(accAddr, recAddr);
+exports.getUniRecipientText = getUniRecipientText;
+const joinWithAndLabel = (humanizations) => humanizations
     .filter((h) => h.length)
-    .reduce((acc, arr) => [...acc, ...arr, getLabel('and')], [])
+    .reduce((acc, arr) => [...acc, ...arr, (0, utils_1.getLabel)('and')], [])
     .slice(0, -1);
+exports.joinWithAndLabel = joinWithAndLabel;
 const isSwap = (call) => !!call &&
     call.length >= 4 &&
     !!call[1]?.type &&
@@ -61,7 +67,7 @@ const getSendRecipient = (call) => {
     const recipient = call.find((item) => item.type === 'address');
     return recipient?.address?.toLowerCase();
 };
-export const uniReduce = (_calls) => {
+const uniReduce = (_calls) => {
     const calls = _calls;
     const originalCallsLength = calls.length;
     for (let i = 0; i < calls.length; i++) {
@@ -76,7 +82,7 @@ export const uniReduce = (_calls) => {
                 isWrap(callJ) &&
                 WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase()) &&
                 (callJ[1].value === callI[1].value || callI[1].value === 0n)) {
-                callI[1].address = ZeroAddress;
+                callI[1].address = ethers_1.ZeroAddress;
                 calls.splice(j, 1);
             }
             // looks for unwrap after the swap
@@ -86,7 +92,7 @@ export const uniReduce = (_calls) => {
                 isSwap(callI) &&
                 isUnwrap(callJ) &&
                 (callJ[1].value === callI[3].value || callI[3].value === 0n)) {
-                callI[3].address = ZeroAddress;
+                callI[3].address = ethers_1.ZeroAddress;
                 if (callI[3].value === 0n && callJ[1].value)
                     callI[3].value = callJ[1].value;
                 calls.splice(j, 1);
@@ -111,12 +117,12 @@ export const uniReduce = (_calls) => {
                 isSwap(callJ) &&
                 callI[3].address === callJ[3].address &&
                 getDeadlineValue(callI) === getDeadlineValue(callJ) &&
-                ((callI[1].address === ZeroAddress &&
+                ((callI[1].address === ethers_1.ZeroAddress &&
                     WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callJ[1].address?.toLowerCase())) ||
-                    (callJ[1].address === ZeroAddress &&
+                    (callJ[1].address === ethers_1.ZeroAddress &&
                         WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase())))) {
-                if (callI[1].address !== ZeroAddress) {
-                    callI[1].address = ZeroAddress;
+                if (callI[1].address !== ethers_1.ZeroAddress) {
+                    callI[1].address = ethers_1.ZeroAddress;
                 }
                 calls.splice(j, 1);
             }
@@ -198,6 +204,7 @@ export const uniReduce = (_calls) => {
             }
         }
     }
-    return originalCallsLength === calls.length ? joinWithAndLabel(calls) : uniReduce(calls);
+    return originalCallsLength === calls.length ? (0, exports.joinWithAndLabel)(calls) : (0, exports.uniReduce)(calls);
 };
+exports.uniReduce = uniReduce;
 //# sourceMappingURL=utils.js.map

@@ -1,4 +1,7 @@
-export const SocketViaAcross = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SocketViaAcross = void 0;
+exports.SocketViaAcross = [
     // 'constructor(address _spokePool, address _wethAddress, address _socketGateway, address _socketDeployFactory)',
     'error OnlySocketGatewayOwner()',
     'event NativeBridgeFee(uint256 fee)',

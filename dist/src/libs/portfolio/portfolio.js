@@ -1,17 +1,21 @@
-import { ZeroAddress } from 'ethers';
-import { getAddress } from 'viem';
-import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json';
-import NFTGetter from '../../../contracts/compiled/NFTGetter.json';
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens';
-import { PINNED_TOKENS } from '../../consts/pinnedTokens';
-import { fromDescriptor } from '../deployless/deployless';
-import batcher from './batcher';
-import { STATIC_BLACKLIST } from './blacklist';
-import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko';
-import { getNFTs, getTokens } from './getOnchainBalances';
-import { convertApiTokenDataToTokenDataCache, formatExternalHintsAPIResponse, getHardcodedCitreaPrices, mergeERC721s, tokenFilter } from './helpers';
-import { flattenResults, paginate } from './pagination';
-export const LIMITS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Portfolio = exports.getEmptyHints = exports.PORTFOLIO_LIB_ERROR_NAMES = exports.LIMITS = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const viem_1 = require("viem");
+const BalanceGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/BalanceGetter.json"));
+const NFTGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/NFTGetter.json"));
+const gasTankFeeTokens_1 = tslib_1.__importDefault(require("../../consts/gasTankFeeTokens"));
+const pinnedTokens_1 = require("../../consts/pinnedTokens");
+const deployless_1 = require("../deployless/deployless");
+const batcher_1 = tslib_1.__importDefault(require("./batcher"));
+const blacklist_1 = require("./blacklist");
+const gecko_1 = require("./gecko");
+const getOnchainBalances_1 = require("./getOnchainBalances");
+const helpers_1 = require("./helpers");
+const pagination_1 = require("./pagination");
+exports.LIMITS = {
     // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
     // proxy mode input is limited to 24kb
     deploylessProxyMode: {
@@ -31,7 +35,7 @@ export const LIMITS = {
     }
 };
 // @TODO: Move this somewhere else
-export const PORTFOLIO_LIB_ERROR_NAMES = {
+exports.PORTFOLIO_LIB_ERROR_NAMES = {
     /** External hints API (Velcro) request failed but fallback is sufficient */
     NonCriticalApiHintsError: 'NonCriticalApiHintsError',
     /** External API (Velcro) hints are older than X minutes */
@@ -43,11 +47,12 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
     /** Defi discovery failed */
     DefiDiscoveryError: 'DefiDiscoveryError'
 };
-export const getEmptyHints = () => ({
+const getEmptyHints = () => ({
     erc20s: [],
     erc721s: {},
     externalApi: undefined
 });
+exports.getEmptyHints = getEmptyHints;
 const defaultOptions = {
     baseCurrency: 'usd',
     blockTag: 'latest',
@@ -55,7 +60,7 @@ const defaultOptions = {
     fetchPinned: true,
     tokenDataRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 };
-export class Portfolio {
+class Portfolio {
     network;
     provider;
     batchedVelcroDiscovery;
@@ -67,7 +72,7 @@ export class Portfolio {
             this.batchedVelcroDiscovery = customBatcher;
         }
         else {
-            this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
+            this.batchedVelcroDiscovery = (0, batcher_1.default)(fetch, (queue) => {
                 const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))];
                 return baseCurrencies.map((baseCurrency) => {
                     const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency);
@@ -86,7 +91,7 @@ export class Portfolio {
                 dedupeByKeys: ['chainId', 'accountAddr']
             });
         }
-        this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
+        this.batchedGecko = (0, batcher_1.default)(fetch, gecko_1.geckoRequestBatcher, {
             timeoutSettings: {
                 timeoutAfter: 3000,
                 timeoutErrorMessage: `Cena request timed out on ${network.name}`
@@ -94,8 +99,8 @@ export class Portfolio {
         });
         this.provider = provider;
         this.network = network;
-        this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride);
-        this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride);
+        this.deploylessTokens = (0, deployless_1.fromDescriptor)(provider, BalanceGetter_json_1.default, !network.rpcNoStateOverride);
+        this.deploylessNfts = (0, deployless_1.fromDescriptor)(provider, NFTGetter_json_1.default, !network.rpcNoStateOverride);
     }
     /**
      * Fetch the hints from the external API (Velcro).
@@ -107,7 +112,7 @@ export class Portfolio {
      */
     async externalHintsAPIDiscovery(options) {
         const { disableAutoDiscovery = false, chainId, accountAddr, baseCurrency } = options || {};
-        let hints = getEmptyHints();
+        let hints = (0, exports.getEmptyHints)();
         try {
             // Fetch the latest hints from the external API (Velcro)
             if (!disableAutoDiscovery) {
@@ -117,7 +122,7 @@ export class Portfolio {
                     baseCurrency
                 });
                 if (hintsFromExternalAPI) {
-                    const formatted = formatExternalHintsAPIResponse(hintsFromExternalAPI);
+                    const formatted = (0, helpers_1.formatExternalHintsAPIResponse)(hintsFromExternalAPI);
                     if (formatted) {
                         hints = formatted;
                         // Attach the property as the hints are coming from the external API
@@ -138,7 +143,7 @@ export class Portfolio {
             return {
                 hints,
                 error: {
-                    name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+                    name: exports.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
                     message: error?.message || 'Unknown error',
                     level: 'warning'
                 }
@@ -168,11 +173,11 @@ export class Portfolio {
             ...hints.erc20s,
             ...Object.values(specialErc20Hints || {}).flat(),
             ...(additionalErc20Hints || []),
-            ...(fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
+            ...(fetchPinned ? pinnedTokens_1.PINNED_TOKENS.map((x) => x.address) : []),
             // add the fee tokens
-            ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
+            ...gasTankFeeTokens_1.default.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
         ];
-        hints.erc721s = mergeERC721s([
+        hints.erc721s = (0, helpers_1.mergeERC721s)([
             additionalErc721Hints || {},
             hints.erc721s,
             ...Object.values(specialErc721Hints || {})
@@ -182,7 +187,7 @@ export class Portfolio {
             try {
                 // getAddress may throw an error. This will break the portfolio
                 // if the error isn't caught
-                return getAddress(address);
+                return (0, viem_1.getAddress)(address);
             }
             catch {
                 return null;
@@ -191,17 +196,17 @@ export class Portfolio {
             .filter(Boolean);
         // Merge static and dynamic blacklisted addresses for this chain
         const chainIdStr = this.network.chainId.toString();
-        const staticBlacklistedAddrs = STATIC_BLACKLIST.blacklistAddrs[chainIdStr] || [];
+        const staticBlacklistedAddrs = blacklist_1.STATIC_BLACKLIST.blacklistAddrs[chainIdStr] || [];
         const dynamicBlacklistedAddrs = blacklist?.blacklistAddrs[chainIdStr] || [];
         const allBlacklistedAddrs = new Set([...staticBlacklistedAddrs, ...dynamicBlacklistedAddrs]);
         const filteredChecksummedHints = preventTokenBlacklisting
             ? checksummedErc20Hints
             : checksummedErc20Hints.filter((addr) => !allBlacklistedAddrs.has(addr));
         // Remove duplicates and always add ZeroAddress
-        hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))];
+        hints.erc20s = [...new Set(filteredChecksummedHints.concat(ethers_1.ZeroAddress))];
         const tokenDataCache = paramsTokenDataCache || new Map();
         for (const addr in hints.externalApi?.prices || {}) {
-            const tokenDataHint = convertApiTokenDataToTokenDataCache(hints.externalApi?.prices[addr] || null);
+            const tokenDataHint = (0, helpers_1.convertApiTokenDataToTokenDataCache)(hints.externalApi?.prices[addr] || null);
             if (!tokenDataHint)
                 continue;
             tokenDataCache.set(addr, [start, tokenDataHint]);
@@ -209,12 +214,12 @@ export class Portfolio {
         const discoveryDone = Date.now();
         // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
         const limits = this.deploylessTokens.isLimitedAt24kbData
-            ? LIMITS.deploylessProxyMode
-            : LIMITS.deploylessStateOverrideMode;
+            ? exports.LIMITS.deploylessProxyMode
+            : exports.LIMITS.deploylessStateOverrideMode;
         const collectionsHints = Object.entries(hints.erc721s);
         const [tokensWithErr, collectionsWithErr] = await Promise.all([
-            flattenResults(paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map((page, index) => getTokens(this.network, this.deploylessTokens, { simulation, blockTag, specialErc20Hints }, accountAddr, page, index))),
-            flattenResults(paginate(collectionsHints, limits.erc721).map((page) => getNFTs(this.network, this.deploylessNfts, { simulation, blockTag }, accountAddr, page, limits)))
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map((page, index) => (0, getOnchainBalances_1.getTokens)(this.network, this.deploylessTokens, { simulation, blockTag, specialErc20Hints }, accountAddr, page, index))),
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(collectionsHints, limits.erc721).map((page) => (0, getOnchainBalances_1.getNFTs)(this.network, this.deploylessNfts, { simulation, blockTag }, accountAddr, page, limits)))
         ]);
         const [tokensWithErrResult, metaData] = tokensWithErr;
         const { blockNumber, beforeNonce, afterNonce } = metaData;
@@ -223,7 +228,7 @@ export class Portfolio {
         const getTokenDataFromCache = (address, _tokenDataRecency = tokenDataRecency) => {
             // hardcode citrea prices
             if (this.network.chainId === 4114n) {
-                const citreaTokenPrice = getHardcodedCitreaPrices(address);
+                const citreaTokenPrice = (0, helpers_1.getHardcodedCitreaPrices)(address);
                 if (citreaTokenPrice)
                     return {
                         marketDataIn: [],
@@ -242,10 +247,10 @@ export class Portfolio {
             const isStale = start - timestamp > _tokenDataRecency;
             return isStale ? null : entry;
         };
-        const nativeToken = tokensWithErrResult.find(([, result]) => result.address === ZeroAddress)?.[1];
+        const nativeToken = tokensWithErrResult.find(([, result]) => result.address === ethers_1.ZeroAddress)?.[1];
         const isValidToken = (error, token) => error === '0x' && !!token.symbol;
         const allBlacklistedSymbols = [
-            ...STATIC_BLACKLIST.blacklistBySymbols,
+            ...blacklist_1.STATIC_BLACKLIST.blacklistBySymbols,
             ...(blacklist?.blacklistBySymbols || [])
         ].map((p) => p.toLowerCase());
         const tokensWithoutPrices = tokensWithErrResult
@@ -267,7 +272,7 @@ export class Portfolio {
             // the humanizer, simulation and etc. work even if the account doesn't have amount
             // on either block (latest/pending)
             const isToBeLearned = specialErc20Hints.learn.includes(_tokensWithErrResult[1].address);
-            return tokenFilter(_tokensWithErrResult[1], this.network, isToBeLearned, !!fetchPinned, nativeToken);
+            return (0, helpers_1.tokenFilter)(_tokensWithErrResult[1], this.network, isToBeLearned, !!fetchPinned, nativeToken);
         })
             .map(([, result]) => {
             if (result.amount &&
@@ -324,9 +329,9 @@ export class Portfolio {
                     network: this.network,
                     baseCurrency,
                     // this is what to look for in the coingecko response object
-                    responseIdentifier: geckoResponseIdentifier(token.address, this.network)
+                    responseIdentifier: (0, gecko_1.geckoResponseIdentifier)(token.address, this.network)
                 });
-                const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData);
+                const formattedTokenData = (0, helpers_1.convertApiTokenDataToTokenDataCache)(tokenData);
                 if (formattedTokenData &&
                     formattedTokenData.priceIn &&
                     formattedTokenData.priceIn.length > 0) {
@@ -349,11 +354,11 @@ export class Portfolio {
                 if (
                 // Avoid duplicate errors, because this.bachedGecko is called for each token and if
                 // there is an error it will most likely be the same for all tokens
-                !errors.find((x) => x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage) &&
+                !errors.find((x) => x.name === exports.PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage) &&
                     // Don't display an error if there is a cached price
                     !hasPrice) {
                     errors.push({
-                        name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+                        name: exports.PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
                         message: errorMessage,
                         level: 'warning'
                     });
@@ -377,9 +382,9 @@ export class Portfolio {
             tokens: tokensWithPrices,
             feeTokens: tokensWithPrices.filter((t) => {
                 // return the native token
-                if (t.address === ZeroAddress && t.chainId === this.network.chainId)
+                if (t.address === ethers_1.ZeroAddress && t.chainId === this.network.chainId)
                     return true;
-                return gasTankFeeTokens.find((gasTankT) => gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+                return gasTankFeeTokens_1.default.find((gasTankT) => gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
                     gasTankT.chainId === t.chainId);
             }),
             beforeNonce,
@@ -399,9 +404,9 @@ export class Portfolio {
         if (!uniqueTokenAddrs.length)
             return [];
         const limits = this.deploylessTokens.isLimitedAt24kbData
-            ? LIMITS.deploylessProxyMode
-            : LIMITS.deploylessStateOverrideMode;
-        const [tokensWithErrResult] = await flattenResults(paginate(uniqueTokenAddrs, limits.erc20).map((page, index) => getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)));
+            ? exports.LIMITS.deploylessProxyMode
+            : exports.LIMITS.deploylessStateOverrideMode;
+        const [tokensWithErrResult] = await (0, pagination_1.flattenResults)((0, pagination_1.paginate)(uniqueTokenAddrs, limits.erc20).map((page, index) => (0, getOnchainBalances_1.getTokens)(this.network, this.deploylessTokens, opts, accountAddr, page, index)));
         return tokensWithErrResult.map(([error, token]) => [
             error,
             {
@@ -412,4 +417,5 @@ export class Portfolio {
         ]);
     }
 }
+exports.Portfolio = Portfolio;
 //# sourceMappingURL=portfolio.js.map

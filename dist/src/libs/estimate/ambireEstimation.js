@@ -1,79 +1,85 @@
-import { ZeroAddress } from 'ethers';
-import Estimation from '../../../contracts/compiled/Estimation.json';
-import { FEE_COLLECTOR } from '../../consts/addresses';
-import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE, SCROLL_ORACLE } from '../../consts/deploy';
-import { EOA_SIMULATION_NONCE } from '../../consts/deployless';
-import { SCROLL_CHAIN_ID } from '../../consts/networks';
-import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag';
-import { getNotAmbireStateOverride, getShouldStateOverride } from '../../utils/simulationStateOverride';
-import { getAccountDeployParams } from '../account/account';
-import { toSingletonCall } from '../accountOp/accountOp';
-import { DeploylessMode, fromDescriptor } from '../deployless/deployless';
-import { InnerCallFailureError } from '../errorDecoder/customErrors';
-import { getHumanReadableEstimationError } from '../errorHumanizer';
-import { getProbableCallData } from '../gasPrice/gasPrice';
-import { isNative } from '../portfolio/helpers';
-import { getActivatorCall } from '../userOperation/userOperation';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getInnerCallFailure = getInnerCallFailure;
+exports.getNonceDiscrepancyFailure = getNonceDiscrepancyFailure;
+exports.ambireEstimateGas = ambireEstimateGas;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const Estimation_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Estimation.json"));
+const addresses_1 = require("../../consts/addresses");
+const deploy_1 = require("../../consts/deploy");
+const deployless_1 = require("../../consts/deployless");
+const networks_1 = require("../../consts/networks");
+const getBlockTag_1 = require("../../utils/getBlockTag");
+const simulationStateOverride_1 = require("../../utils/simulationStateOverride");
+const account_1 = require("../account/account");
+const accountOp_1 = require("../accountOp/accountOp");
+const deployless_2 = require("../deployless/deployless");
+const customErrors_1 = require("../errorDecoder/customErrors");
+const errorHumanizer_1 = require("../errorHumanizer");
+const gasPrice_1 = require("../gasPrice/gasPrice");
+const helpers_1 = require("../portfolio/helpers");
+const userOperation_1 = require("../userOperation/userOperation");
 function getOracleAddr(network) {
-    if (network.chainId === SCROLL_CHAIN_ID) {
-        return SCROLL_ORACLE;
+    if (network.chainId === networks_1.SCROLL_CHAIN_ID) {
+        return deploy_1.SCROLL_ORACLE;
     }
     if (network.isOptimistic) {
-        return OPTIMISTIC_ORACLE;
+        return deploy_1.OPTIMISTIC_ORACLE;
     }
-    return ZeroAddress;
+    return ethers_1.ZeroAddress;
 }
-export function getInnerCallFailure(estimationOp, calls, network, portfolioNativeValue) {
+function getInnerCallFailure(estimationOp, calls, network, portfolioNativeValue) {
     if (estimationOp.success)
         return null;
-    return getHumanReadableEstimationError(new InnerCallFailureError(estimationOp.err, calls, network, portfolioNativeValue));
+    return (0, errorHumanizer_1.getHumanReadableEstimationError)(new customErrors_1.InnerCallFailureError(estimationOp.err, calls, network, portfolioNativeValue));
 }
 // the outcomeNonce should always be equal to the nonce in accountOp + 1
 // that's an indication of transaction success
-export function getNonceDiscrepancyFailure(estimationNonce, outcomeNonce) {
+function getNonceDiscrepancyFailure(estimationNonce, outcomeNonce) {
     if (estimationNonce + 1n === BigInt(outcomeNonce))
         return null;
     return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
         cause: 'NONCE_FAILURE'
     });
 }
-export async function ambireEstimateGas(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck) {
+async function ambireEstimateGas(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck) {
     const account = baseAcc.getAccount();
-    const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride);
+    const deploylessEstimator = (0, deployless_2.fromDescriptor)(provider, Estimation_json_1.default, !network.rpcNoStateOverride);
     // only the activator call is added here as there are cases where it's needed
-    const calls = [...op.calls.map(toSingletonCall)];
+    const calls = [...op.calls.map(accountOp_1.toSingletonCall)];
     if (baseAcc.shouldIncludeActivatorCall()) {
-        calls.push(getActivatorCall(op.accountAddr));
+        calls.push((0, userOperation_1.getActivatorCall)(op.accountAddr));
     }
-    const shouldStateOverride = getShouldStateOverride(network, baseAcc);
+    const shouldStateOverride = (0, simulationStateOverride_1.getShouldStateOverride)(network, baseAcc);
     const checkInnerCallsArgs = [
         account.addr,
-        ...getAccountDeployParams(account),
+        ...(0, account_1.getAccountDeployParams)(account),
         [account.addr, op.nonce || 1, calls, '0x'],
-        getProbableCallData(op, accountState, baseAcc.shouldIncludeActivatorCall()),
+        (0, gasPrice_1.getProbableCallData)(op, accountState, baseAcc.shouldIncludeActivatorCall()),
         shouldStateOverride ? [account.addr] : account.associatedKeys,
         feeTokens.map((feeToken) => feeToken.address),
-        FEE_COLLECTOR,
+        addresses_1.FEE_COLLECTOR,
         nativeToCheck,
         getOracleAddr(network)
     ];
     const ambireEstimation = await deploylessEstimator
         .call('estimate', checkInnerCallsArgs, {
-        from: DEPLOYLESS_SIMULATION_FROM,
-        blockTag: getPendingBlockTagIfSupported(network),
-        mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-        stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(account.addr, network) : null
+        from: deploy_1.DEPLOYLESS_SIMULATION_FROM,
+        blockTag: (0, getBlockTag_1.getPendingBlockTagIfSupported)(network),
+        mode: shouldStateOverride ? deployless_2.DeploylessMode.StateOverride : deployless_2.DeploylessMode.Detect,
+        stateToOverride: shouldStateOverride ? (0, simulationStateOverride_1.getNotAmbireStateOverride)(account.addr, network) : null
     })
-        .catch(getHumanReadableEstimationError);
+        .catch(errorHumanizer_1.getHumanReadableEstimationError);
     if (ambireEstimation instanceof Error)
         return ambireEstimation;
     const { deployment, op: accountOp, nonce: outcomeNonce, feeTokenOutcomes, nativeAssetBalances, l1GasEstimation } = ambireEstimation;
-    const ambireEstimationError = getInnerCallFailure(accountOp, calls, network, feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount);
+    const ambireEstimationError = getInnerCallFailure(accountOp, calls, network, feeTokens.find((token) => token.address === ethers_1.ZeroAddress && !token.flags.onGasTank)?.amount);
     if (ambireEstimationError)
         return ambireEstimationError;
     // if there's a nonce discrepancy, it means the portfolio simulation
     // will fail so we need to update the account state and the portfolio
-    const opNonce = shouldStateOverride ? BigInt(EOA_SIMULATION_NONCE) : op.nonce;
+    const opNonce = shouldStateOverride ? BigInt(deployless_1.EOA_SIMULATION_NONCE) : op.nonce;
     const nonceError = getNonceDiscrepancyFailure(opNonce, outcomeNonce);
     const flags = {};
     flags.hasInitialGasLimitFailed = accountOp.initialGasLimitFailed;
@@ -98,12 +104,12 @@ export async function ambireEstimateGas(baseAcc, accountState, op, network, prov
         // currently owns as send all of native and paying in native
         // is impossible
         if (!token.flags.onGasTank &&
-            token.address === ZeroAddress &&
+            token.address === ethers_1.ZeroAddress &&
             !baseAcc.canUseReceivingNativeForFee(token.amount) &&
             feeTokenOutcomes[key].amount > token.amount)
             availableAmount = token.amount;
         // we make the native amount 0 as we always want to show it for better UX
-        if (isNative(token) && !baseAcc.canBroadcastByItself()) {
+        if ((0, helpers_1.isNative)(token) && !baseAcc.canBroadcastByItself()) {
             availableAmount = 0;
         }
         return {
@@ -119,14 +125,14 @@ export async function ambireEstimateGas(baseAcc, accountState, op, network, prov
             // broadcasts will always consume at least 4035.
             // setting it to 5000n just be sure
             gasUsed: token.flags.onGasTank ? 5000n : feeTokenOutcomes[key].gasUsed,
-            addedNative: token.address === ZeroAddress
+            addedNative: token.address === ethers_1.ZeroAddress
                 ? l1GasEstimation.feeWithNativePayment
                 : l1GasEstimation.feeWithTransferPayment,
             token
         };
     });
     // this is for EOAs paying for SA in native
-    const nativeToken = feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank);
+    const nativeToken = feeTokens.find((token) => token.address === ethers_1.ZeroAddress && !token.flags.onGasTank);
     const nativeTokenOptions = nativeAssetBalances.map((balance, key) => ({
         paidBy: nativeToCheck[key],
         availableAmount: balance,

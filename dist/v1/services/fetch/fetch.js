@@ -1,4 +1,9 @@
-export async function fetchPost(_fetch, url, body) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.fetchPost = fetchPost;
+exports.fetchGet = fetchGet;
+exports.fetchCaught = fetchCaught;
+async function fetchPost(_fetch, url, body) {
     const r = await _fetch(url, {
         headers: { 'content-type': 'application/json' },
         method: 'POST',
@@ -6,7 +11,7 @@ export async function fetchPost(_fetch, url, body) {
     });
     return r.json();
 }
-export async function fetchGet(_fetch, url) {
+async function fetchGet(_fetch, url) {
     const response = await _fetch(url, {
         method: 'GET',
         headers: {
@@ -17,7 +22,7 @@ export async function fetchGet(_fetch, url) {
         throw new Error('Failed to fetch');
     return response.json();
 }
-export async function fetchCaught(_fetch, url, params) {
+async function fetchCaught(_fetch, url, params) {
     let resp;
     try {
         resp = await _fetch(url, params);

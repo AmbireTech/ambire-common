@@ -1,1 +1,1 @@
-{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../v1/services/fetch/index.ts"],"names":[],"mappings":"AAAA,cAAc,SAAS,CAAA","sourcesContent":["export * from './fetch'\n"]}
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../v1/services/fetch/index.ts"],"names":[],"mappings":";;;AAAA,kDAAuB","sourcesContent":["export * from './fetch'\n"]}

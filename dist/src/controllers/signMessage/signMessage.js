@@ -1,16 +1,20 @@
-import { toUtf8String } from 'ethers';
-import EmittableError from '../../classes/EmittableError';
-import ExternalSignerError from '../../classes/ExternalSignerError';
-import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp';
-import { SignMessageStatus } from '../../interfaces/signMessage';
-import { addMessage, addMessageSignature, getImportedSignersThatHaveNotSigned, sortSigs } from '../../libs/safe/safe';
-import { getAppFormatted, getEIP712Signature, getPlainTextSignature, getVerifyMessageSignature, verifyMessage } from '../../libs/signMessage/signMessage';
-import hexStringToUint8Array from '../../utils/hexStringToUint8Array';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SignMessageController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const ExternalSignerError_1 = tslib_1.__importDefault(require("../../classes/ExternalSignerError"));
+const dapp_1 = require("../../interfaces/dapp");
+const signMessage_1 = require("../../interfaces/signMessage");
+const safe_1 = require("../../libs/safe/safe");
+const signMessage_2 = require("../../libs/signMessage/signMessage");
+const hexStringToUint8Array_1 = tslib_1.__importDefault(require("../../utils/hexStringToUint8Array"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const STATUS_WRAPPED_METHODS = {
     sign: 'INITIAL'
 };
-export class SignMessageController extends EventEmitter {
+class SignMessageController extends eventEmitter_1.default {
     #keystore;
     #providers;
     networks;
@@ -47,7 +51,7 @@ export class SignMessageController extends EventEmitter {
         this.#accounts = accounts;
         this.#invite = invite;
         this.#dapps = dapps;
-        this.status = SignMessageStatus.Initial;
+        this.status = signMessage_1.SignMessageStatus.Initial;
     }
     async init({ dapp, messageToSign, signed, hash, signatures }) {
         // In the unlikely case that the signMessage controller was already
@@ -79,9 +83,9 @@ export class SignMessageController extends EventEmitter {
                 throw new Error(`Account details missing. Please try again`);
             }
             if (this.#account.safeCreation) {
-                const notSigned = getImportedSignersThatHaveNotSigned(this.signed, accountState.importedAccountKeys.map((k) => k.addr));
+                const notSigned = (0, safe_1.getImportedSignersThatHaveNotSigned)(this.signed, accountState.importedAccountKeys.map((k) => k.addr));
                 if (this.signed.length && notSigned.length === 0)
-                    this.status = SignMessageStatus.Partial;
+                    this.status = signMessage_1.SignMessageStatus.Partial;
                 this.hash = hash;
             }
             else {
@@ -117,7 +121,7 @@ export class SignMessageController extends EventEmitter {
         this.signed = [];
         this.signers = undefined;
         this.signer = undefined;
-        this.status = SignMessageStatus.Initial;
+        this.status = signMessage_1.SignMessageStatus.Initial;
         this.emitUpdate();
     }
     update({ isAutoLoginEnabledByUser, autoLoginDuration }) {
@@ -154,14 +158,14 @@ export class SignMessageController extends EventEmitter {
         if (!this.network || !this.#account)
             return;
         // send only to Safe Global if it doesn't already exists and if the threshold is not met
-        await addMessage(this.network.chainId, this.#account.addr, message, sig).catch((e) => {
+        await (0, safe_1.addMessage)(this.network.chainId, this.#account.addr, message, sig).catch((e) => {
             console.log('failed to send message to Safe Global: ', e);
         });
     }
     async addSigToSafeGlobal(sig, hash) {
         if (!this.network)
             return;
-        await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+        await (0, safe_1.addMessageSignature)(this.network.chainId, hash, sig).catch((e) => {
             console.log('failed to send message to Safe Global: ', e);
         });
     }
@@ -210,14 +214,14 @@ export class SignMessageController extends EventEmitter {
             try {
                 if (this.messageToSign.content.kind === 'message' ||
                     this.messageToSign.content.kind === 'siwe') {
-                    const signed = await getPlainTextSignature(this.messageToSign.content.message, this.network, this.#account, accountState, this.signer, this.#invite.isOG);
+                    const signed = await (0, signMessage_2.getPlainTextSignature)(this.messageToSign.content.message, this.network, this.#account, accountState, this.signer, this.#invite.isOG);
                     this.signatures.push(signed.signature);
                     this.signed.push(signerKey.addr);
                     if (accountState.threshold > 1) {
                         if (!!this.#account.safeCreation && signed.hash) {
                             this.hash = signed.hash;
                             if (this.signed.length === 1) {
-                                await this.addMsgToSafeGlobal(signed.signature, toUtf8String(this.messageToSign.content.message));
+                                await this.addMsgToSafeGlobal(signed.signature, (0, ethers_1.toUtf8String)(this.messageToSign.content.message));
                             }
                             else {
                                 await this.addSigToSafeGlobal(signed.signature, signed.hash);
@@ -230,13 +234,13 @@ export class SignMessageController extends EventEmitter {
                     signature =
                         this.signatures.length === 1 || !signed.hash
                             ? this.signatures[0]
-                            : sortSigs(this.signatures, signed.hash);
+                            : (0, safe_1.sortSigs)(this.signatures, signed.hash);
                 }
                 if (this.messageToSign.content.kind === 'typedMessage') {
                     if (this.#account.creation && this.messageToSign.content.primaryType === 'Permit') {
                         throw new Error('It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.');
                     }
-                    const signed = await getEIP712Signature(this.messageToSign.content, this.#account, accountState, this.signer, this.network, this.#invite.isOG);
+                    const signed = await (0, signMessage_2.getEIP712Signature)(this.messageToSign.content, this.#account, accountState, this.signer, this.network, this.#invite.isOG);
                     this.signatures.push(signed.signature);
                     this.signed.push(signerKey.addr);
                     if (accountState.threshold > 1) {
@@ -255,16 +259,16 @@ export class SignMessageController extends EventEmitter {
                     signature =
                         this.signatures.length === 1 || !signed.hash
                             ? this.signatures[0]
-                            : sortSigs(this.signatures, signed.hash);
+                            : (0, safe_1.sortSigs)(this.signatures, signed.hash);
                 }
                 if (this.messageToSign.content.kind === 'authorization-7702') {
                     // TODO: Deprecated. Sync with the latest sign7702 method changes if used
                     // signature = this.signer.sign7702(this.messageToSign.content.message)
-                    throw new ExternalSignerError('Signing EIP-7702 authorization via this flow is not implemented', { sendCrashReport: true });
+                    throw new ExternalSignerError_1.default('Signing EIP-7702 authorization via this flow is not implemented', { sendCrashReport: true });
                 }
             }
             catch (error) {
-                throw new ExternalSignerError(error?.message ||
+                throw new ExternalSignerError_1.default(error?.message ||
                     'Something went wrong while signing the message. Please try again later or contact support if the problem persists.', {
                     sendCrashReport: error?.sendCrashReport
                 });
@@ -281,10 +285,10 @@ export class SignMessageController extends EventEmitter {
                     // the signer is always the account even if the actual
                     // signature is from a key that has privs to the account
                     signer: this.messageToSign.accountAddr,
-                    signature: getVerifyMessageSignature(signature, this.#account, accountState),
+                    signature: (0, signMessage_2.getVerifyMessageSignature)(signature, this.#account, accountState),
                     ...(this.messageToSign.content.kind === 'message' ||
                         this.messageToSign.content.kind === 'siwe'
-                        ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
+                        ? { message: (0, hexStringToUint8Array_1.default)(this.messageToSign.content.message) }
                         : this.messageToSign.content.kind === 'typedMessage'
                             ? {
                                 typedData: {
@@ -298,7 +302,7 @@ export class SignMessageController extends EventEmitter {
                                 authorization: this.messageToSign.content.message
                             })
                 };
-                const isValidSignature = await verifyMessage(verifyMessageParams);
+                const isValidSignature = await (0, signMessage_2.verifyMessage)(verifyMessageParams);
                 if (!this.#isSigningOperationValidAfterAsyncOperation())
                     return;
                 if (!isValidSignature) {
@@ -309,20 +313,20 @@ export class SignMessageController extends EventEmitter {
                 ...this.messageToSign,
                 timestamp: new Date().getTime(),
                 // todo: configure
-                signature: getAppFormatted(signature, this.#account, accountState),
+                signature: (0, signMessage_2.getAppFormatted)(signature, this.#account, accountState),
                 dapp: this.dapp
             };
             // update the status to Partial if signing has not concluded
             this.status =
                 this.signed.length >= accountState.threshold
-                    ? SignMessageStatus.Done
-                    : SignMessageStatus.Partial;
+                    ? signMessage_1.SignMessageStatus.Done
+                    : signMessage_1.SignMessageStatus.Partial;
             return this.signedMessage;
         }
         catch (e) {
             const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`);
             const message = e?.message || 'Something went wrong while signing the message. Please try again.';
-            return Promise.reject(new EmittableError({
+            return Promise.reject(new EmittableError_1.default({
                 level: 'major',
                 message,
                 error,
@@ -355,17 +359,17 @@ export class SignMessageController extends EventEmitter {
     static #throwNotInitialized() {
         const message = 'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.';
         const error = new Error('signMessage: controller not initialized');
-        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+        return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
     }
     static #throwMissingMessage() {
         const message = 'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.';
         const error = new Error('signMessage: missing message to sign');
-        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+        return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
     }
     static #throwMissingSigningKey() {
         const message = 'Please select a signer.';
         const error = new Error('signMessage: missing selected signer');
-        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+        return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
     }
     #getDappVerificationBanner() {
         if (!this.#dapps || !this.dapp?.url)
@@ -378,7 +382,7 @@ export class SignMessageController extends EventEmitter {
         if (!banner)
             return null;
         // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.
-        if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG)
+        if (banner.id === dapp_1.DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG)
             return null;
         return banner;
     }
@@ -396,4 +400,5 @@ export class SignMessageController extends EventEmitter {
         };
     }
 }
+exports.SignMessageController = SignMessageController;
 //# sourceMappingURL=signMessage.js.map

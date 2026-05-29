@@ -1,12 +1,22 @@
-import { toBeHex } from 'ethers';
-import { isAmbireV1LinkedAccount } from '@/libs/account/account';
-import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy';
-import { networks as predefinedNetworks } from '../../consts/networks';
-import { Bundler } from '../../services/bundlers/bundler';
-import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks';
-import { getSASupport } from '../deployless/simulateDeployCall';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSupportedNetworks = exports.getAccountNotSupportedReason = exports.getAccountNetworks = exports.networkChainIdToHex = exports.getNetworksUpdatedWithRelayerNetworks = exports.getNetworksWithFailedRPC = exports.relayerAdditionalNetworks = void 0;
+exports.is4337Enabled = is4337Enabled;
+exports.getProviderBatchMaxCount = getProviderBatchMaxCount;
+exports.getNetworkInfo = getNetworkInfo;
+exports.getFeaturesByNetworkProperties = getFeaturesByNetworkProperties;
+exports.getFeatures = getFeatures;
+exports.hasRelayerSupport = hasRelayerSupport;
+exports.getValidNetworks = getValidNetworks;
+const ethers_1 = require("ethers");
+const account_1 = require("@/libs/account/account");
+const deploy_1 = require("../../consts/deploy");
+const networks_1 = require("../../consts/networks");
+const bundler_1 = require("../../services/bundlers/bundler");
+const networks_2 = require("../../utils/networks");
+const simulateDeployCall_1 = require("../deployless/simulateDeployCall");
 // bnb, gnosis, fantom, metis
-export const relayerAdditionalNetworks = [
+exports.relayerAdditionalNetworks = [
     {
         chainId: 56n,
         name: 'binance-smart-chain'
@@ -29,7 +39,7 @@ export const relayerAdditionalNetworks = [
 // we check if the network is predefinedNetwork and we
 // have specifically disabled 4337
 // finally, we fallback to the bundler support
-export function is4337Enabled(hasBundlerSupport, network) {
+function is4337Enabled(hasBundlerSupport, network) {
     if (!hasBundlerSupport)
         return false;
     // if we have set it specifically
@@ -38,11 +48,12 @@ export function is4337Enabled(hasBundlerSupport, network) {
     // this will be true in this case
     return hasBundlerSupport;
 }
-export const getNetworksWithFailedRPC = ({ providers }) => {
+const getNetworksWithFailedRPC = ({ providers }) => {
     return Object.keys(providers).filter((chainId) => providers[chainId] &&
         typeof providers[chainId].isWorking === 'boolean' &&
         !providers[chainId].isWorking);
 };
+exports.getNetworksWithFailedRPC = getNetworksWithFailedRPC;
 async function retryRequest(init, counter = 0) {
     if (counter >= 2) {
         throw new Error('flagged');
@@ -54,7 +65,7 @@ async function retryRequest(init, counter = 0) {
     });
     return result;
 }
-export function getProviderBatchMaxCount(network, rpcUrl) {
+function getProviderBatchMaxCount(network, rpcUrl) {
     const hasUserChangedRpc = !!network.suggestedRpcUrl && network.suggestedRpcUrl !== rpcUrl;
     // if the user hasn't changed the RPC the relayer has returned for this network
     // and there's a set suggestedRpcBatchCount, return it
@@ -86,7 +97,7 @@ export function getProviderBatchMaxCount(network, rpcUrl) {
  * - Determines if the network supports ERC-4337 and Account Abstraction.
  * - Fetches additional metadata from external sources (e.g., CoinGecko).
  */
-export async function getNetworkInfo(fetch, chainId, provider, callback, network) {
+async function getNetworkInfo(fetch, chainId, provider, callback, network) {
     let networkInfo = {
         chainId,
         isSAEnabled: 'LOADING',
@@ -117,10 +128,10 @@ export async function getNetworkInfo(fetch, chainId, provider, callback, network
         Promise.all([
             (async () => {
                 const responses = await Promise.all([
-                    retryRequest(() => provider.getCode(SINGLETON)),
-                    retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
-                    retryRequest(() => getSASupport(provider)),
-                    Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
+                    retryRequest(() => provider.getCode(deploy_1.SINGLETON)),
+                    retryRequest(() => provider.getCode(deploy_1.AMBIRE_ACCOUNT_FACTORY)),
+                    retryRequest(() => (0, simulateDeployCall_1.getSASupport)(provider)),
+                    bundler_1.Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
                     // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
                 ]).catch((e) => raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }]));
                 const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses;
@@ -148,7 +159,7 @@ export async function getNetworkInfo(fetch, chainId, provider, callback, network
                 callback(networkInfo);
             })(),
             (async () => {
-                const oracleCode = await retryRequest(() => provider.getCode(OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
+                const oracleCode = await retryRequest(() => provider.getCode(deploy_1.OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
                 const isOptimistic = oracleCode !== '0x';
                 networkInfo = { ...networkInfo, isOptimistic };
                 callback(networkInfo);
@@ -194,7 +205,7 @@ export async function getNetworkInfo(fetch, chainId, provider, callback, network
  * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
  */
 // call this if you have the network props already calculated
-export function getFeaturesByNetworkProperties(networkInfo, network) {
+function getFeaturesByNetworkProperties(networkInfo, network) {
     const features = [
         {
             id: 'saSupport',
@@ -303,11 +314,11 @@ export function getFeaturesByNetworkProperties(networkInfo, network) {
 }
 // call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
-export function getFeatures(networkInfo, network) {
+function getFeatures(networkInfo, network) {
     return getFeaturesByNetworkProperties(networkInfo, network);
 }
-export function hasRelayerSupport(network) {
-    return (network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId));
+function hasRelayerSupport(network) {
+    return (network.hasRelayer || !!exports.relayerAdditionalNetworks.find((net) => net.chainId === network.chainId));
 }
 /**
  * Validates a single network object against some of the Network interface requirements.
@@ -337,7 +348,7 @@ function sanityCheckImportantNetworkProperties(network) {
  * Validates networks coming from the storage, filtering out the invalid ones.
  * This prevents crashes when networks have missing or invalid mandatory properties.
  */
-export function getValidNetworks(networksInStorage) {
+function getValidNetworks(networksInStorage) {
     const validNetworks = {};
     Object.values(networksInStorage).forEach((network) => {
         const hadValidChainId = typeof network?.chainId === 'bigint';
@@ -349,7 +360,7 @@ export function getValidNetworks(networksInStorage) {
         }
         else if (hadValidChainId) {
             // Attempt to replace broken network with predefined version, if available
-            const predefinedNetwork = predefinedNetworks.find((n) => n.chainId === network.chainId);
+            const predefinedNetwork = networks_1.networks.find((n) => n.chainId === network.chainId);
             if (predefinedNetwork)
                 validNetworks[network.chainId.toString()] = predefinedNetwork;
             else {
@@ -365,18 +376,18 @@ export function getValidNetworks(networksInStorage) {
  * with the relayer network. If no network is found in the storage, it adds the relayer network as a new one.
  * Even if the predefinedConfigVersion is the same or lower, some properties of the stored network should be updated.
  */
-export const getNetworksUpdatedWithRelayerNetworks = (currentNetworks, relayerNetworks) => {
+const getNetworksUpdatedWithRelayerNetworks = (currentNetworks, relayerNetworks) => {
     const networks = structuredClone(currentNetworks);
     // New networks and networks with updated RPC providers
     const updatedNetworkChainIds = [];
     Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId);
-        const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network);
+        const relayerNetwork = (0, networks_2.mapRelayerNetworkConfigToAmbireNetwork)(chainId, network);
         const currentNetwork = networks[chainId.toString()];
         if (!currentNetwork) {
             updatedNetworkChainIds.push(relayerNetwork.chainId);
             networks[chainId.toString()] = {
-                ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
+                ...(networks_1.networks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
                 ...relayerNetwork,
                 disabled: !!relayerNetwork.disabledByDefault
             };
@@ -418,7 +429,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (currentNetworks, relayerNe
     // Step 3: Ensure predefined networks are marked correctly and handle special cases
     let predefinedChainIds = Object.keys(relayerNetworks);
     if (!predefinedChainIds.length) {
-        predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString());
+        predefinedChainIds = networks_1.networks.map((network) => network.chainId.toString());
     }
     Object.keys(networks).forEach((chainId) => {
         if (!networks[chainId])
@@ -440,17 +451,19 @@ export const getNetworksUpdatedWithRelayerNetworks = (currentNetworks, relayerNe
         updatedNetworkChainIds
     };
 };
-export const networkChainIdToHex = (chainId) => {
+exports.getNetworksUpdatedWithRelayerNetworks = getNetworksUpdatedWithRelayerNetworks;
+const networkChainIdToHex = (chainId) => {
     try {
         // Remove leading zero in hex representation
         // to match the format expected by dApps (e.g., "0xa" instead of "0x0a")
-        return toBeHex(chainId).replace(/^0x0/, '0x');
+        return (0, ethers_1.toBeHex)(chainId).replace(/^0x0/, '0x');
     }
     catch (error) {
         return `0x${chainId.toString(16)}`;
     }
 };
-export const getAccountNetworks = (networks, accountStates, acc) => {
+exports.networkChainIdToHex = networkChainIdToHex;
+const getAccountNetworks = (networks, accountStates, acc) => {
     if (!acc)
         return [];
     // NOT a [Gnosis] Safe account
@@ -459,7 +472,7 @@ export const getAccountNetworks = (networks, accountStates, acc) => {
         if (!acc.creation)
             return networks;
         // v1 SA
-        if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+        if ((0, account_1.isAmbireV1LinkedAccount)(acc.creation.factoryAddr)) {
             // v1s don't work without the relayer
             return networks.filter((network) => !!network.hasRelayer);
         }
@@ -475,13 +488,14 @@ export const getAccountNetworks = (networks, accountStates, acc) => {
         return networkAccState.isDeployed;
     });
 };
-export const getAccountNotSupportedReason = (acc) => {
+exports.getAccountNetworks = getAccountNetworks;
+const getAccountNotSupportedReason = (acc) => {
     if (!acc?.addr)
         return '';
     if (!acc.safeCreation) {
         if (!acc.creation)
             return ''; // EOA
-        if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+        if ((0, account_1.isAmbireV1LinkedAccount)(acc.creation.factoryAddr)) {
             return 'Ambire v1 accounts are not supported on this network';
         }
         // v2
@@ -490,7 +504,8 @@ export const getAccountNotSupportedReason = (acc) => {
     // safe
     return 'Safe account is not activated on this network';
 };
-export const getSupportedNetworks = (networks, accountStates, acc, additionalCheck) => {
+exports.getAccountNotSupportedReason = getAccountNotSupportedReason;
+const getSupportedNetworks = (networks, accountStates, acc, additionalCheck) => {
     if (!acc)
         return [];
     let checkedNetworks = networks;
@@ -512,7 +527,7 @@ export const getSupportedNetworks = (networks, accountStates, acc, additionalChe
         if (!acc.creation)
             return checkedNetworks;
         // v1 SA
-        if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+        if ((0, account_1.isAmbireV1LinkedAccount)(acc.creation.factoryAddr)) {
             // v1s don't work without the relayer
             return checkedNetworks.map((n) => {
                 if (!!n.hasRelayer)
@@ -548,4 +563,5 @@ export const getSupportedNetworks = (networks, accountStates, acc, additionalChe
         };
     });
 };
+exports.getSupportedNetworks = getSupportedNetworks;
 //# sourceMappingURL=networks.js.map

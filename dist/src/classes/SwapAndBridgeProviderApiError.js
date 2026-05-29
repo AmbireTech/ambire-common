@@ -1,4 +1,6 @@
-export default class SwapAndBridgeProviderApiError extends Error {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+class SwapAndBridgeProviderApiError extends Error {
     shortMessage;
     constructor(message, shortMessage) {
         super();
@@ -7,4 +9,5 @@ export default class SwapAndBridgeProviderApiError extends Error {
         this.shortMessage = shortMessage;
     }
 }
+exports.default = SwapAndBridgeProviderApiError;
 //# sourceMappingURL=SwapAndBridgeProviderApiError.js.map

@@ -1,59 +1,82 @@
-import { getAddress, isAddress, isHex, zeroAddress } from 'viem';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.eToNative = exports.uintToAddress = exports.EMPTY_HUMANIZER_META = exports.randomId = void 0;
+exports.isHexCall = isHexCall;
+exports.getWarning = getWarning;
+exports.getLabel = getLabel;
+exports.getAction = getAction;
+exports.getImage = getImage;
+exports.getBreak = getBreak;
+exports.getAddressVisualization = getAddressVisualization;
+exports.getToken = getToken;
+exports.getTokenWithChain = getTokenWithChain;
+exports.getChain = getChain;
+exports.getText = getText;
+exports.getOnBehalfOf = getOnBehalfOf;
+exports.getRecipientText = getRecipientText;
+exports.getDeadlineText = getDeadlineText;
+exports.getDeadline = getDeadline;
+exports.getLink = getLink;
+exports.getWrapping = getWrapping;
+exports.getUnwrapping = getUnwrapping;
+exports.getKnownName = getKnownName;
+const viem_1 = require("viem");
 /** Type guard that narrows an IrCall to one with a valid hex data field. */
-export function isHexCall(call) {
-    return isHex(call.data);
+function isHexCall(call) {
+    return (0, viem_1.isHex)(call.data);
 }
-export function getWarning(content, code, blocking) {
+function getWarning(content, code, blocking) {
     return { content, blocking, code };
 }
-export const randomId = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-export function getLabel(content, isBold) {
-    return { type: 'label', content: content.toString(), id: randomId(), isBold };
+const randomId = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+exports.randomId = randomId;
+function getLabel(content, isBold) {
+    return { type: 'label', content: content.toString(), id: (0, exports.randomId)(), isBold };
 }
-export function getAction(content, options) {
-    return { type: 'action', content, id: randomId(), warning: options?.warning };
+function getAction(content, options) {
+    return { type: 'action', content, id: (0, exports.randomId)(), warning: options?.warning };
 }
-export function getImage(content) {
-    return { type: 'image', content, id: randomId() };
+function getImage(content) {
+    return { type: 'image', content, id: (0, exports.randomId)() };
 }
-export function getBreak() {
-    return { type: 'break', id: randomId() };
+function getBreak() {
+    return { type: 'break', id: (0, exports.randomId)() };
 }
-export function getAddressVisualization(_address) {
+function getAddressVisualization(_address) {
     const address = _address.toLowerCase();
-    return { type: 'address', address, id: randomId() };
+    return { type: 'address', address, id: (0, exports.randomId)() };
 }
-export function getToken(_address, amount, chainId) {
+function getToken(_address, amount, chainId) {
     const address = _address.toLowerCase();
     return {
         type: 'token',
         address,
         value: BigInt(amount),
-        id: randomId(),
+        id: (0, exports.randomId)(),
         chainId
     };
 }
-export function getTokenWithChain(address, amount, chainId) {
+function getTokenWithChain(address, amount, chainId) {
     return getToken(address, amount, chainId);
 }
-export function getChain(chainId) {
-    return { type: 'chain', id: randomId(), chainId };
+function getChain(chainId) {
+    return { type: 'chain', id: (0, exports.randomId)(), chainId };
 }
-export function getText(text) {
-    return { type: 'text', content: text, id: randomId() };
+function getText(text) {
+    return { type: 'text', content: text, id: (0, exports.randomId)() };
 }
-export function getOnBehalfOf(onBehalfOf, sender) {
+function getOnBehalfOf(onBehalfOf, sender) {
     return onBehalfOf.toLowerCase() !== sender.toLowerCase()
         ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
         : [];
 }
 // @TODO on some humanization of uniswap there is recipient 0x000...000
-export function getRecipientText(from, recipient) {
+function getRecipientText(from, recipient) {
     return from.toLowerCase() === recipient.toLowerCase()
         ? []
         : [getLabel('and send it to'), getAddressVisualization(recipient)];
 }
-export function getDeadlineText(deadline) {
+function getDeadlineText(deadline) {
     const minute = 60000n;
     const diff = BigInt(deadline) - BigInt(Date.now());
     if (diff < 0 && diff > -minute * 2n)
@@ -73,30 +96,32 @@ export function getDeadlineText(deadline) {
         return 'Invalid expiration date';
     return `valid until ${deadlineDate.toLocaleString()}`;
 }
-export function getDeadline(deadlineSecs) {
+function getDeadline(deadlineSecs) {
     const deadline = BigInt(deadlineSecs) * 1000n;
     return {
         type: 'deadline',
         value: deadline,
-        id: randomId()
+        id: (0, exports.randomId)()
     };
 }
-export function getLink(url, content) {
-    return { type: 'link', url, content, id: randomId() };
+function getLink(url, content) {
+    return { type: 'link', url, content, id: (0, exports.randomId)() };
 }
-export function getWrapping(address, amount) {
+function getWrapping(address, amount) {
     return [getAction('Wrap'), getToken(address, amount)];
 }
-export function getUnwrapping(address, amount) {
+function getUnwrapping(address, amount) {
     return [getAction('Unwrap'), getToken(address, amount)];
 }
 // @TODO cant this be used in the <Address component>
-export function getKnownName(humanizerMeta, address) {
-    if (!isAddress(address))
+function getKnownName(humanizerMeta, address) {
+    if (!(0, viem_1.isAddress)(address))
         return;
-    return humanizerMeta?.knownAddresses?.[getAddress(address)]?.name;
+    return humanizerMeta?.knownAddresses?.[(0, viem_1.getAddress)(address)]?.name;
 }
-export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} };
-export const uintToAddress = (uint) => `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`;
-export const eToNative = (address) => address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? zeroAddress : address;
+exports.EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} };
+const uintToAddress = (uint) => `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`;
+exports.uintToAddress = uintToAddress;
+const eToNative = (address) => address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? viem_1.zeroAddress : address;
+exports.eToNative = eToNative;
 //# sourceMappingURL=utils.js.map

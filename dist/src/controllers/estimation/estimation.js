@@ -1,18 +1,22 @@
-import ErrorHumanizerError from '../../classes/ErrorHumanizerError';
-import { isSmartAccount } from '../../libs/account/account';
-import { getBaseAccount } from '../../libs/account/getBaseAccount';
-import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate';
-import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers';
-import { getIsViewOnly } from '../../utils/accounts';
-import EventEmitter from '../eventEmitter/eventEmitter';
-import { EstimationStatus } from './types';
-export class EstimationController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EstimationController = void 0;
+const tslib_1 = require("tslib");
+const ErrorHumanizerError_1 = tslib_1.__importDefault(require("../../classes/ErrorHumanizerError"));
+const account_1 = require("../../libs/account/account");
+const getBaseAccount_1 = require("../../libs/account/getBaseAccount");
+const estimate_1 = require("../../libs/estimate/estimate");
+const helpers_1 = require("../../libs/portfolio/helpers");
+const accounts_1 = require("../../utils/accounts");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+const types_1 = require("./types");
+class EstimationController extends eventEmitter_1.default {
     #keystore;
     #accounts;
     #networks;
     #provider;
     #portfolio;
-    status = EstimationStatus.Initial;
+    status = types_1.EstimationStatus.Initial;
     estimation = null;
     error = null;
     /**
@@ -49,19 +53,19 @@ export class EstimationController extends EventEmitter {
                 : [], op);
     }
     async estimate(op) {
-        this.status = EstimationStatus.Loading;
+        this.status = types_1.EstimationStatus.Loading;
         this.emitUpdate();
         const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr);
         const network = this.#networks.networks.find((net) => net.chainId === op.chainId);
         const accountState = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.chainId);
         if (!accountState) {
             this.error = new Error('During the preparation step, required transaction information was found missing (account state). Please try again later or contact support.');
-            this.status = EstimationStatus.Error;
+            this.status = types_1.EstimationStatus.Error;
             this.hasEstimated = true;
             this.emitUpdate();
             return;
         }
-        const baseAcc = getBaseAccount(account, accountState, network);
+        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(account, accountState, network);
         // Take the fee tokens from two places: the user's tokens and his gasTank
         // The gasTank tokens participate on each network as they belong everywhere
         // NOTE: at some point we should check all the "?" signs below and if
@@ -79,7 +83,7 @@ export class EstimationController extends EventEmitter {
                     ?.feeTokens ?? [];
         }
         const gasTankResult = this.#portfolio.getAccountPortfolioState(op.accountAddr)?.gasTank?.result;
-        const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
+        const gasTankFeeTokens = (0, helpers_1.isPortfolioGasTankResult)(gasTankResult)
             ? gasTankResult.gasTankTokens
             : [];
         const feeTokens = [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || [];
@@ -96,9 +100,9 @@ export class EstimationController extends EventEmitter {
         // should not be present as the user cannot pay the fee with them (no key)
         const nativeToCheck = baseAcc.canBroadcastByOtherEOA()
             ? this.#accounts.accounts
-                .filter((acc) => !isSmartAccount(acc) &&
+                .filter((acc) => !(0, account_1.isSmartAccount)(acc) &&
                 (acc.addr === op.accountAddr ||
-                    !getIsViewOnly(this.#keystore.keys, acc.associatedKeys)))
+                    !(0, accounts_1.getIsViewOnly)(this.#keystore.keys, acc.associatedKeys)))
                 // internal keys first
                 .sort((a, b) => {
                 const aKeyInternal = this.#keystore.keys.find((k) => k.type === 'internal' && k.addr === a.addr);
@@ -112,7 +116,7 @@ export class EstimationController extends EventEmitter {
                 .map((acc) => acc.addr)
             : [];
         this.lastAccountOpId = op.id;
-        const estimation = await getEstimation(baseAcc, accountState, op, network, this.#provider, feeTokens, nativeToCheck, this.#bundlerSwitcher, (this.#activity.broadcastedButNotConfirmed[account.addr] || []).find((accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation)).catch((e) => {
+        const estimation = await (0, estimate_1.getEstimation)(baseAcc, accountState, op, network, this.#provider, feeTokens, nativeToCheck, this.#bundlerSwitcher, (this.#activity.broadcastedButNotConfirmed[account.addr] || []).find((accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation)).catch((e) => {
             console.error(e);
             return e;
         });
@@ -128,9 +132,9 @@ export class EstimationController extends EventEmitter {
         }
         const isSuccess = !(estimation instanceof Error) && !estimation.criticalError;
         if (isSuccess) {
-            this.estimation = getEstimationSummary(estimation);
+            this.estimation = (0, estimate_1.getEstimationSummary)(estimation);
             this.error = null;
-            this.status = EstimationStatus.Success;
+            this.status = types_1.EstimationStatus.Success;
             this.estimationRetryError = null;
             this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op);
             this.#notFatalBundlerError =
@@ -141,7 +145,7 @@ export class EstimationController extends EventEmitter {
         else {
             this.estimation = null;
             this.error = estimation instanceof Error ? estimation : estimation.criticalError;
-            this.status = EstimationStatus.Error;
+            this.status = types_1.EstimationStatus.Error;
             this.availableFeeOptions = [];
         }
         // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
@@ -166,11 +170,11 @@ export class EstimationController extends EventEmitter {
      * has it estimated at least once without a failure
      */
     isLoadingOrFailed() {
-        return this.status === EstimationStatus.Loading || this.error instanceof Error;
+        return this.status === types_1.EstimationStatus.Loading || this.error instanceof Error;
     }
     calculateWarnings() {
         const warnings = [];
-        if (this.estimationRetryError && this.status === EstimationStatus.Success) {
+        if (this.estimationRetryError && this.status === types_1.EstimationStatus.Success) {
             warnings.push({
                 id: 'estimation-retry',
                 title: this.estimationRetryError.message,
@@ -208,7 +212,7 @@ export class EstimationController extends EventEmitter {
             return [];
         if (this.error) {
             let code = '';
-            if (this.error instanceof ErrorHumanizerError && this.error.isFallbackMessage) {
+            if (this.error instanceof ErrorHumanizerError_1.default && this.error.isFallbackMessage) {
                 code =
                     typeof this.error.cause === 'string' && !!this.error.cause
                         ? this.error.cause
@@ -222,4 +226,5 @@ export class EstimationController extends EventEmitter {
         return errors;
     }
 }
+exports.EstimationController = EstimationController;
 //# sourceMappingURL=estimation.js.map

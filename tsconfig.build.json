@@ -7,6 +7,7 @@
       "@test/*": ["../test/*"]
     },
     "outDir": "./dist",
+    "module": "commonjs",
     "noEmit": false,
     "noEmitOnError": false,
     "noEmitHelpers": true,

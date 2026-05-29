@@ -1,35 +1,41 @@
-import { getAddress, Interface, keccak256, toQuantity, toUtf8Bytes } from 'ethers';
-import { privSlot } from '@/libs/proxyDeploy/deploy';
-import { getShouldStateOverride } from '@/utils/simulationStateOverride';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json';
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
-import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json';
-import NFTGetter from '../../../contracts/compiled/NFTGetter.json';
-import { ProviderError } from '../../classes/ProviderError';
-import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy';
-import { EOA_SIMULATION_NONCE } from '../../consts/deployless';
-import { getRpcProvider } from '../../services/provider';
-import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account';
-import { callToTuple, getSignableCalls } from '../accountOp/accountOp';
-import { DeploylessMode, fromDescriptor } from '../deployless/deployless';
-import { getDeploylessOpts } from '../portfolio/getOnchainBalances';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getStateOverride = getStateOverride;
+exports.getFunctionParams = getFunctionParams;
+exports.debugTraceCall = debugTraceCall;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const deploy_1 = require("@/libs/proxyDeploy/deploy");
+const simulationStateOverride_1 = require("@/utils/simulationStateOverride");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const AmbireAccount7702_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount7702.json"));
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+const BalanceGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/BalanceGetter.json"));
+const NFTGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/NFTGetter.json"));
+const ProviderError_1 = require("../../classes/ProviderError");
+const deploy_2 = require("../../consts/deploy");
+const deployless_1 = require("../../consts/deployless");
+const provider_1 = require("../../services/provider");
+const account_1 = require("../account/account");
+const accountOp_1 = require("../accountOp/accountOp");
+const deployless_2 = require("../deployless/deployless");
+const getOnchainBalances_1 = require("../portfolio/getOnchainBalances");
 const NFT_COLLECTION_LIMIT = 100;
-export function getStateOverride(account, op, accountState) {
+function getStateOverride(account, op, accountState) {
     // if the account is a Safe,
     // add an additional state override that gives privileges to the assKey;
     // also, we changed privs storage slot to ambire.smart.contracts.storage
     // so privs no longer override slot number 0
     const stateDiff = !!account.safeCreation
         ? {
-            [privSlot(keccak256(toUtf8Bytes('ambire.smart.contracts.storage')), 'uint256', account.associatedKeys[0], 'bytes32')]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+            [(0, deploy_1.privSlot)((0, ethers_1.keccak256)((0, ethers_1.toUtf8Bytes)('ambire.smart.contracts.storage')), 'uint256', account.associatedKeys[0], 'bytes32')]: '0x0000000000000000000000000000000000000000000000000000000000000002'
         }
         : undefined;
     // add stateOverride when using a Safe as well
-    const stateOverride = !!account.safeCreation || (op.calls.length > 1 && isBasicAccount(account, accountState))
+    const stateOverride = !!account.safeCreation || (op.calls.length > 1 && (0, account_1.isBasicAccount)(account, accountState))
         ? {
             [account.addr]: {
-                code: AmbireAccount7702.binRuntime,
+                code: AmbireAccount7702_json_1.default.binRuntime,
                 stateDiff
             }
         }
@@ -39,70 +45,70 @@ export function getStateOverride(account, op, accountState) {
 // if using EOA, use the first and only call of the account op
 // if it's SA, make the data execute or deployAndExecute,
 // set the spoof+addr and pass all the calls
-export function getFunctionParams(account, op, accountState) {
-    if (isBasicAccount(account, accountState) && op.calls.length === 1) {
+function getFunctionParams(account, op, accountState) {
+    if ((0, account_1.isBasicAccount)(account, accountState) && op.calls.length === 1) {
         const call = op.calls[0];
         return {
             to: call.to,
-            value: toQuantity(call.value.toString()),
+            value: (0, ethers_1.toQuantity)(call.value.toString()),
             data: call.data,
             from: op.accountAddr
         };
     }
-    if (isBasicAccount(account, accountState)) {
-        const saAbi = new Interface(AmbireAccount.abi);
-        const callData = saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)]);
+    if ((0, account_1.isBasicAccount)(account, accountState)) {
+        const saAbi = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
+        const callData = saAbi.encodeFunctionData('execute', [(0, accountOp_1.getSignableCalls)(op), (0, account_1.getSpoof)(account)]);
         return {
             to: account.addr,
             value: 0,
             data: callData,
-            from: DEPLOYLESS_SIMULATION_FROM
+            from: deploy_2.DEPLOYLESS_SIMULATION_FROM
         };
     }
     if (!!account.safeCreation && !accountState.isDeployed)
         return null;
-    const saAbi = new Interface(AmbireAccount.abi);
-    const factoryAbi = new Interface(AmbireFactory.abi);
+    const saAbi = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
+    const factoryAbi = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
     const callData = accountState.isDeployed
-        ? saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
+        ? saAbi.encodeFunctionData('execute', [(0, accountOp_1.getSignableCalls)(op), (0, account_1.getSpoof)(account)])
         : factoryAbi.encodeFunctionData('deployAndExecute', [
             account.creation.bytecode,
             account.creation.salt,
-            getSignableCalls(op),
-            getSpoof(account)
+            (0, accountOp_1.getSignableCalls)(op),
+            (0, account_1.getSpoof)(account)
         ]);
     return {
-        from: DEPLOYLESS_SIMULATION_FROM,
+        from: deploy_2.DEPLOYLESS_SIMULATION_FROM,
         to: accountState.isDeployed ? account.addr : account.creation.factoryAddr,
         value: 0,
         data: callData
     };
 }
-export async function debugTraceCall(baseAcc, op, network, accountState, overrideData) {
+async function debugTraceCall(baseAcc, op, network, accountState, overrideData) {
     const account = baseAcc.getAccount();
     const opts = {
         blockTag: 'latest',
-        from: DEPLOYLESS_SIMULATION_FROM,
-        mode: DeploylessMode.ProxyContract,
-        isEOA: isBasicAccount(account, accountState),
+        from: deploy_2.DEPLOYLESS_SIMULATION_FROM,
+        mode: deployless_2.DeploylessMode.ProxyContract,
+        isEOA: (0, account_1.isBasicAccount)(account, accountState),
         simulation: {
             accountOps: [op],
             baseAccount: baseAcc,
             state: accountState
         }
     };
-    const deploylessOpts = getDeploylessOpts(account.addr, network, opts);
-    const [factory, factoryCalldata] = getAccountDeployParams(account);
+    const deploylessOpts = (0, getOnchainBalances_1.getDeploylessOpts)(account.addr, network, opts);
+    const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
     const simulationOps = [
         [
-            !isBasicAccount(account, accountState) ? op.nonce : BigInt(EOA_SIMULATION_NONCE),
-            op.calls.map(callToTuple)
+            !(0, account_1.isBasicAccount)(account, accountState) ? op.nonce : BigInt(deployless_1.EOA_SIMULATION_NONCE),
+            op.calls.map(accountOp_1.callToTuple)
         ]
     ];
     // initialize a new provider for debug trace call to avoid batching it
     // as sometimes debug_traceCall gets handled really slowly from the RPCs
     // and that affects wallet performance
-    const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl);
+    const provider = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl);
     const params = getFunctionParams(account, op, accountState);
     if (!params)
         return { tokens: [], nfts: [] };
@@ -110,7 +116,7 @@ export async function debugTraceCall(baseAcc, op, network, accountState, overrid
         .send('debug_traceCall', [
         {
             to: params.to,
-            value: toQuantity(params.value.toString()),
+            value: (0, ethers_1.toQuantity)(params.value.toString()),
             data: params.data,
             from: params.from
         },
@@ -142,7 +148,7 @@ export async function debugTraceCall(baseAcc, op, network, accountState, overrid
             enableMemory: false,
             enableReturnData: true,
             disableStorage: true,
-            stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
+            stateOverrides: (0, simulationStateOverride_1.getShouldStateOverride)(network, opts.simulation.baseAccount)
                 ? {
                     // TODO: if it's an EOA, add the EOA state override data
                     [params.from]: {
@@ -154,10 +160,10 @@ export async function debugTraceCall(baseAcc, op, network, accountState, overrid
         }
     ])
         .catch((e) => {
-        throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
+        throw new ProviderError_1.ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
     });
     const foundTokens = [
-        ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
+        ...new Set(results.filter((i) => i?.erc === 20).map((i) => (0, ethers_1.getAddress)(i.address)))
     ];
     const foundNftTransfersObject = results
         .filter((i) => i?.erc === 721)
@@ -167,10 +173,10 @@ export async function debugTraceCall(baseAcc, op, network, accountState, overrid
         res[i.address].add(i.tokenId);
         return res;
     }, {});
-    const foundNftTransfers = Object.entries(foundNftTransfersObject).map(([address, id]) => [getAddress(address), Array.from(id).map((i) => BigInt(i))]);
+    const foundNftTransfers = Object.entries(foundNftTransfersObject).map(([address, id]) => [(0, ethers_1.getAddress)(address), Array.from(id).map((i) => BigInt(i))]);
     // we set the 3rd param to "true" as we don't need state override
-    const deploylessTokens = fromDescriptor(provider, BalanceGetter, true);
-    const deploylessNfts = fromDescriptor(provider, NFTGetter, true);
+    const deploylessTokens = (0, deployless_2.fromDescriptor)(provider, BalanceGetter_json_1.default, true);
+    const deploylessNfts = (0, deployless_2.fromDescriptor)(provider, NFTGetter_json_1.default, true);
     const getNftsPromise = deploylessNfts.call('simulateAndGetAllNFTs', [
         op.accountAddr,
         account.associatedKeys,

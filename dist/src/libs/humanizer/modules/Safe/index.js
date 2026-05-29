@@ -1,17 +1,21 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSafeHumanization = exports.getDelegateCallWarning = void 0;
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers';
-import { allowedMulticallContracts } from '../../../../consts/safe';
-import { SafeV2 } from '../../const/abis/Safe';
-import { getAction, getAddressVisualization, getBreak, getLabel, getToken, getWarning } from '../../utils';
-const iface = new Interface(SafeV2);
-export const getDelegateCallWarning = (operation, to) => {
+const ethers_1 = require("ethers");
+const safe_1 = require("../../../../consts/safe");
+const Safe_1 = require("../../const/abis/Safe");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface(Safe_1.SafeV2);
+const getDelegateCallWarning = (operation, to) => {
     const warnings = [];
     if (operation === 1n &&
-        (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to))))
-        warnings.push(getWarning('You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution', 'SAFE{WALLET}_DELEGATE_CALL'));
+        (!to || !(0, ethers_1.isAddress)(to) || !safe_1.allowedMulticallContracts.includes((0, ethers_1.getAddress)(to))))
+        warnings.push((0, utils_1.getWarning)('You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution', 'SAFE{WALLET}_DELEGATE_CALL'));
     return warnings;
 };
-export const getSafeHumanization = (safeAddr, to, value, data) => {
+exports.getDelegateCallWarning = getDelegateCallWarning;
+const getSafeHumanization = (safeAddr, to, value, data) => {
     if (!data)
         return;
     const fullVisualization = [];
@@ -21,7 +25,7 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
         to.toLowerCase() === safeAddr.toLowerCase() &&
         value?.toString() === '0' &&
         data === '0x') {
-        fullVisualization.push(...[getAction('Reject currently queued transaction')]);
+        fullVisualization.push(...[(0, utils_1.getAction)('Reject currently queued transaction')]);
         return {
             visuals: fullVisualization
         };
@@ -33,12 +37,12 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
         const newOwner = decoded[0];
         const newThreshold = decoded[1];
         fullVisualization.push(...[
-            getAction('Add owner'),
-            getAddressVisualization(newOwner),
-            getAction('and set threshold to'),
-            getLabel(newThreshold)
+            (0, utils_1.getAction)('Add owner'),
+            (0, utils_1.getAddressVisualization)(newOwner),
+            (0, utils_1.getAction)('and set threshold to'),
+            (0, utils_1.getLabel)(newThreshold)
         ]);
-        warnings.push(getWarning(`Owner & threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
+        warnings.push((0, utils_1.getWarning)(`Owner & threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
         return {
             visuals: fullVisualization,
             warnings
@@ -48,8 +52,8 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
     if (selector === changeThreshold) {
         const decoded = iface.decodeFunctionData('changeThreshold', data);
         const newThreshold = decoded[0];
-        fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)]);
-        warnings.push(getWarning(`Threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
+        fullVisualization.push(...[(0, utils_1.getAction)('Set threshold to'), (0, utils_1.getLabel)(newThreshold)]);
+        warnings.push((0, utils_1.getWarning)(`Threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
         return {
             visuals: fullVisualization,
             warnings
@@ -61,12 +65,12 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
         const removedOwner = decoded[1];
         const newThreshold = decoded[2];
         fullVisualization.push(...[
-            getAction('Remove owner'),
-            getAddressVisualization(removedOwner),
-            getAction('and set threshold to'),
-            getLabel(newThreshold)
+            (0, utils_1.getAction)('Remove owner'),
+            (0, utils_1.getAddressVisualization)(removedOwner),
+            (0, utils_1.getAction)('and set threshold to'),
+            (0, utils_1.getLabel)(newThreshold)
         ]);
-        warnings.push(getWarning(`Owner & threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
+        warnings.push((0, utils_1.getWarning)(`Owner & threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
         return {
             visuals: fullVisualization,
             warnings
@@ -78,13 +82,13 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
         const removedOwner = decoded[1];
         const newOwner = decoded[2];
         fullVisualization.push(...[
-            getAction('Remove owner'),
-            getAddressVisualization(removedOwner),
-            getBreak(),
-            getAction('Set new owner'),
-            getAddressVisualization(newOwner)
+            (0, utils_1.getAction)('Remove owner'),
+            (0, utils_1.getAddressVisualization)(removedOwner),
+            (0, utils_1.getBreak)(),
+            (0, utils_1.getAction)('Set new owner'),
+            (0, utils_1.getAddressVisualization)(newOwner)
         ]);
-        warnings.push(getWarning(`Owner configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
+        warnings.push((0, utils_1.getWarning)(`Owner configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE'));
         return {
             visuals: fullVisualization,
             warnings
@@ -94,8 +98,8 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
     if (selector === enableModule) {
         const decoded = iface.decodeFunctionData('enableModule', data);
         const module = decoded[0];
-        fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)]);
-        warnings.push(getWarning(`Modules can execute transactions if conditions are met`, 'SAFE{WALLET}_CONFIG_CHANGE'));
+        fullVisualization.push(...[(0, utils_1.getAction)('Enable module:'), (0, utils_1.getAddressVisualization)(module)]);
+        warnings.push((0, utils_1.getWarning)(`Modules can execute transactions if conditions are met`, 'SAFE{WALLET}_CONFIG_CHANGE'));
         return {
             visuals: fullVisualization,
             warnings
@@ -105,7 +109,7 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
     if (selector === disableModule) {
         const decoded = iface.decodeFunctionData('disableModule', data);
         const module = decoded[1];
-        fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)]);
+        fullVisualization.push(...[(0, utils_1.getAction)('Disable module:'), (0, utils_1.getAddressVisualization)(module)]);
         return {
             visuals: fullVisualization
         };
@@ -114,13 +118,14 @@ export const getSafeHumanization = (safeAddr, to, value, data) => {
     if (selector === setGuard) {
         const decoded = iface.decodeFunctionData('setGuard', data);
         const guard = decoded[0];
-        fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)]);
+        fullVisualization.push(...[(0, utils_1.getAction)('Set guard:'), (0, utils_1.getAddressVisualization)(guard)]);
         return {
             visuals: fullVisualization
         };
     }
     return undefined;
 };
+exports.getSafeHumanization = getSafeHumanization;
 const SafeModule = (accOp, calls) => {
     const matcher = {
         [iface.getFunction('function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)')?.selector]: (call) => {
@@ -129,31 +134,31 @@ const SafeModule = (accOp, calls) => {
             if (call.value)
                 return;
             const { to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, signatures } = iface.parseTransaction(call).args;
-            const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, value, data);
+            const safeSpecificHumanization = (0, exports.getSafeHumanization)(accOp.accountAddr, to, value, data);
             const fullVisualization = [
-                getAction('Execute a Safe{WALLET} transaction'),
-                getLabel('from'),
-                getAddressVisualization(call.to),
-                getLabel('to'),
-                getAddressVisualization(to)
+                (0, utils_1.getAction)('Execute a Safe{WALLET} transaction'),
+                (0, utils_1.getLabel)('from'),
+                (0, utils_1.getAddressVisualization)(call.to),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(to)
             ];
             if (value)
-                fullVisualization.push(...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, value)]);
+                fullVisualization.push(...[(0, utils_1.getLabel)('and'), (0, utils_1.getAction)('Send'), (0, utils_1.getToken)(ethers_1.ZeroAddress, value)]);
             const warnings = [];
             if (safeSpecificHumanization) {
                 if (safeSpecificHumanization.visuals)
-                    fullVisualization.push(getBreak(), ...safeSpecificHumanization.visuals);
+                    fullVisualization.push((0, utils_1.getBreak)(), ...safeSpecificHumanization.visuals);
                 if (safeSpecificHumanization.warnings)
                     warnings.push(...safeSpecificHumanization.warnings);
             }
-            const delegateCallWarnings = getDelegateCallWarning(operation, to);
+            const delegateCallWarnings = (0, exports.getDelegateCallWarning)(operation, to);
             if (delegateCallWarnings.length)
                 warnings.push(...delegateCallWarnings);
             return { ...call, fullVisualization, warnings };
         }
     };
     const newCalls = calls.map((call) => {
-        const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, call.to, call.value, call.data);
+        const safeSpecificHumanization = (0, exports.getSafeHumanization)(accOp.accountAddr, call.to, call.value, call.data);
         if (safeSpecificHumanization) {
             return {
                 ...call,
@@ -170,7 +175,7 @@ const SafeModule = (accOp, calls) => {
         return newCall;
     });
     if (accOp.safeTx) {
-        const warningInSafeTx = getDelegateCallWarning(BigInt(accOp.safeTx.operation), accOp.safeTx.to);
+        const warningInSafeTx = (0, exports.getDelegateCallWarning)(BigInt(accOp.safeTx.operation), accOp.safeTx.to);
         if (warningInSafeTx.length && newCalls.length) {
             const firstCall = newCalls[0];
             const firstCallWarnings = firstCall.warnings || [];
@@ -180,5 +185,5 @@ const SafeModule = (accOp, calls) => {
     }
     return newCalls;
 };
-export default SafeModule;
+exports.default = SafeModule;
 //# sourceMappingURL=index.js.map

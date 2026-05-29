@@ -1,32 +1,47 @@
-import { Interface, isAddress, toBeHex, ZeroAddress } from 'ethers';
-import { getAvailableBunlders, getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler';
-import wait from '../../utils/wait';
-import { AccountOpStatus } from './types';
-export function isIdentifiedByTxn(identifiedBy) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isIdentifiedByTxn = isIdentifiedByTxn;
+exports.isIdentifiedByUserOpHash = isIdentifiedByUserOpHash;
+exports.isIdentifiedByRelayer = isIdentifiedByRelayer;
+exports.isIdentifiedByMultipleTxn = isIdentifiedByMultipleTxn;
+exports.getDappIdentifier = getDappIdentifier;
+exports.getMultipleBroadcastUnconfirmedCallOrLast = getMultipleBroadcastUnconfirmedCallOrLast;
+exports.fetchFrontRanTxnId = fetchFrontRanTxnId;
+exports.hasTimePassedSinceBroadcast = hasTimePassedSinceBroadcast;
+exports.fetchTxnId = fetchTxnId;
+exports.updateOpStatus = updateOpStatus;
+exports.getAccountOpRecipients = getAccountOpRecipients;
+exports.checkIsRecipientOfAccountOp = checkIsRecipientOfAccountOp;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const getBundler_1 = require("../../services/bundlers/getBundler");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const types_1 = require("./types");
+function isIdentifiedByTxn(identifiedBy) {
     return identifiedBy && identifiedBy.type === 'Transaction';
 }
-export function isIdentifiedByUserOpHash(identifiedBy) {
+function isIdentifiedByUserOpHash(identifiedBy) {
     return identifiedBy && identifiedBy.type === 'UserOperation';
 }
-export function isIdentifiedByRelayer(identifiedBy) {
+function isIdentifiedByRelayer(identifiedBy) {
     return identifiedBy && identifiedBy.type === 'Relayer';
 }
-export function isIdentifiedByMultipleTxn(identifiedBy) {
+function isIdentifiedByMultipleTxn(identifiedBy) {
     return identifiedBy && identifiedBy.type === 'MultipleTxns';
 }
-export function getDappIdentifier(op) {
+function getDappIdentifier(op) {
     let hash = `${op.identifiedBy.type}:${op.identifiedBy.identifier}`;
     if (op.identifiedBy?.bundler)
         hash = `${hash}:${op.identifiedBy.bundler}`;
     return hash;
 }
-export function getMultipleBroadcastUnconfirmedCallOrLast(op) {
+function getMultipleBroadcastUnconfirmedCallOrLast(op) {
     let lastWithTxId;
     let callIndex = 0;
     // get the first BroadcastedButNotConfirmed call if any
     for (let i = 0; i < op.calls.length; i++) {
         const currentCall = op.calls[i];
-        if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
+        if (currentCall.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed)
             return { call: currentCall, callIndex: i };
         lastWithTxId = currentCall;
         callIndex = i;
@@ -34,27 +49,27 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op) {
     // if no BroadcastedButNotConfirmed, get the last one
     return { call: lastWithTxId, callIndex };
 }
-export async function fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter = 0) {
+async function fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter = 0) {
     // try to find the probably front ran txn id 5 times and if it can't,
     // return the already found one. It could've really failed
     if (counter >= 5)
         return foundTxnId;
     const userOpHash = identifiedBy.identifier;
-    const bundler = getDefaultBundler(network); // rely on pimlico for front running
+    const bundler = (0, getBundler_1.getDefaultBundler)(network); // rely on pimlico for front running
     const bundlerResult = await bundler.getReceipt(userOpHash, network);
     if (!bundlerResult.receipt ||
         bundlerResult.receipt.transactionHash.toLowerCase() === foundTxnId.toLowerCase()) {
-        await wait(2000);
+        await (0, wait_1.default)(2000);
         return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1);
     }
     return bundlerResult.receipt.transactionHash;
 }
-export function hasTimePassedSinceBroadcast(op, mins) {
+function hasTimePassedSinceBroadcast(op, mins) {
     const accountOpDate = new Date(op.timestamp);
     accountOpDate.setMinutes(accountOpDate.getMinutes() + mins);
     return accountOpDate < new Date();
 }
-export async function fetchTxnId(identifiedBy, network, callRelayer, op) {
+async function fetchTxnId(identifiedBy, network, callRelayer, op) {
     if (isIdentifiedByTxn(identifiedBy))
         return {
             status: 'success',
@@ -77,8 +92,8 @@ export async function fetchTxnId(identifiedBy, network, callRelayer, op) {
     if (isIdentifiedByUserOpHash(identifiedBy)) {
         const userOpHash = identifiedBy.identifier;
         const bundler = identifiedBy.bundler
-            ? getBundlerByName(identifiedBy.bundler)
-            : getDefaultBundler(network);
+            ? (0, getBundler_1.getBundlerByName)(identifiedBy.bundler)
+            : (0, getBundler_1.getDefaultBundler)(network);
         // leave a 10s window to fetch the status from the broadcasting bundler
         let timeoutId;
         const bundlerStatus = await Promise.race([
@@ -101,8 +116,8 @@ export async function fetchTxnId(identifiedBy, network, callRelayer, op) {
             // if that's the case, make the user wait a bit longer, but then query
             // all bundlers for the user op receipt to make sure it's really not mined
             if (bundlerResult.status === 'rejected')
-                await wait(10000);
-            const bundlers = getAvailableBunlders(network);
+                await (0, wait_1.default)(10000);
+            const bundlers = (0, getBundler_1.getAvailableBunlders)(network);
             const bundlerResults = await Promise.all(bundlers.map((b) => {
                 let innerTimeoutId;
                 const result = Promise.race([
@@ -176,7 +191,7 @@ export async function fetchTxnId(identifiedBy, network, callRelayer, op) {
         txnId: response.data.txId
     };
 }
-export function updateOpStatus(
+function updateOpStatus(
 // IMPORTANT: pass a reference to this.#accountsOps[accAddr][chainId][index]
 // so we could mutate it from inside this method
 opReference, status, receipt) {
@@ -186,15 +201,15 @@ opReference, status, receipt) {
         // if there's a receipt, add the fee
         if (receipt) {
             opReference.calls[callIndex].fee = {
-                inToken: ZeroAddress,
+                inToken: ethers_1.ZeroAddress,
                 amount: receipt.fee
             };
             opReference.calls[callIndex].blockHash = receipt.blockHash;
             opReference.calls[callIndex].blockNumber = receipt.blockNumber;
             opReference.calls[callIndex].blockHash = receipt.blockHash;
-            opReference.calls[callIndex].gasUsed = toBeHex(receipt.gasUsed);
+            opReference.calls[callIndex].gasUsed = (0, ethers_1.toBeHex)(receipt.gasUsed);
         }
-        const left = !!opReference.calls.find((c) => c.status === AccountOpStatus.BroadcastedButNotConfirmed);
+        const left = !!opReference.calls.find((c) => c.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
         if (!left) {
             opReference.status = status;
             return opReference;
@@ -206,18 +221,18 @@ opReference, status, receipt) {
     opReference.status = status;
     return opReference;
 }
-const transferIface = new Interface(['function transfer(address,uint256)']);
+const transferIface = new ethers_1.Interface(['function transfer(address,uint256)']);
 /**
  * Returns all addresses that the SubmittedAccountOp has calls sent to.
  *
  * @param whitelist Optional list of addresses to filter the results.
  */
-export function getAccountOpRecipients(op, whitelist) {
+function getAccountOpRecipients(op, whitelist) {
     const sentTo = new Set();
     const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase());
     op.calls.forEach((call) => {
         // 1) Direct call.to match
-        if (call.to && isAddress(call.to)) {
+        if (call.to && (0, ethers_1.isAddress)(call.to)) {
             if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
                 sentTo.add(call.to);
             }
@@ -231,7 +246,7 @@ export function getAccountOpRecipients(op, whitelist) {
             try {
                 const decoded = transferIface.decodeFunctionData('transfer', data);
                 const recipient = decoded[0];
-                if (isAddress(recipient)) {
+                if ((0, ethers_1.isAddress)(recipient)) {
                     if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase()))
                         return;
                     sentTo.add(recipient);
@@ -249,7 +264,7 @@ export function getAccountOpRecipients(op, whitelist) {
  *
  * @returns the timestamp of the operation if found, otherwise null.
  */
-export function checkIsRecipientOfAccountOp(op, to) {
+function checkIsRecipientOfAccountOp(op, to) {
     const hasSentTo = getAccountOpRecipients(op, [to]).length > 0;
     if (!hasSentTo)
         return null;

@@ -1,20 +1,25 @@
-import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_GRID_PLUS, EIP_7702_METAMASK } from '../../consts/deploy';
-export function getContractImplementation(chainId, accountKeys) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getContractImplementation = getContractImplementation;
+exports.has7702 = has7702;
+exports.getDelegatorName = getDelegatorName;
+const deploy_1 = require("../../consts/deploy");
+function getContractImplementation(chainId, accountKeys) {
     if (accountKeys.find((key) => key.type === 'lattice')) {
-        return EIP_7702_GRID_PLUS;
+        return deploy_1.EIP_7702_GRID_PLUS;
     }
-    return EIP_7702_AMBIRE_ACCOUNT;
+    return deploy_1.EIP_7702_AMBIRE_ACCOUNT;
 }
-export function has7702(net) {
+function has7702(net) {
     return net.has7702;
 }
-export function getDelegatorName(contract) {
+function getDelegatorName(contract) {
     switch (contract.toLowerCase()) {
-        case EIP_7702_AMBIRE_ACCOUNT.toLowerCase():
+        case deploy_1.EIP_7702_AMBIRE_ACCOUNT.toLowerCase():
             return 'Ambire';
-        case EIP_7702_GRID_PLUS.toLowerCase():
+        case deploy_1.EIP_7702_GRID_PLUS.toLowerCase():
             return 'Ambire';
-        case EIP_7702_METAMASK.toLowerCase():
+        case deploy_1.EIP_7702_METAMASK.toLowerCase():
             return 'Metamask';
         default:
             return '';

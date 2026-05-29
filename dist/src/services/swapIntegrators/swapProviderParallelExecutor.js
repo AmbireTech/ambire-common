@@ -1,6 +1,10 @@
-import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError';
-import wait, { waitWithAbort } from '../../utils/wait';
-export class SwapProviderParallelExecutor {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SwapProviderParallelExecutor = void 0;
+const tslib_1 = require("tslib");
+const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
+const wait_1 = tslib_1.__importStar(require("../../utils/wait"));
+class SwapProviderParallelExecutor {
     id = 'parallel';
     name = 'Parallel';
     isHealthy = null;
@@ -46,12 +50,12 @@ export class SwapProviderParallelExecutor {
             return res;
         });
         if (!supportedProviders.length) {
-            throw new SwapAndBridgeProviderApiError(`The requested network(s) are not supported by any available service provider. Chain IDs: ${uniqueChainIds.join(', ')}`);
+            throw new SwapAndBridgeProviderApiError_1.default(`The requested network(s) are not supported by any available service provider. Chain IDs: ${uniqueChainIds.join(', ')}`);
         }
         const tasks = supportedProviders.map((provider) => fetchMethod(provider)
             .then((result) => ({ provider, result }))
             .catch((err) => ({ provider, result: err })));
-        const waitPromise = waitWithAbort(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE);
+        const waitPromise = (0, wait_1.waitWithAbort)(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE);
         const absoluteTimeout = waitPromise.promise.then(() => {
             throw new Error('Our service providers are temporarily unavailable or your internet connection is too slow.');
         });
@@ -79,7 +83,7 @@ export class SwapProviderParallelExecutor {
         const secondResult = (await Promise.race([
             // Promise.any can't be called with an empty array
             remainingTasks.length ? Promise.any(remainingTasks) : Promise.resolve(),
-            wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
+            (0, wait_1.default)(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
         ]));
         if (secondResult) {
             if ('provider' in secondResult && 'result' in secondResult) {
@@ -91,7 +95,7 @@ export class SwapProviderParallelExecutor {
             return valid.flat();
         const errors = results.map((r) => r.result).filter((r) => r instanceof Error);
         if (!errors.length) {
-            throw new SwapAndBridgeProviderApiError('Our service providers are currently unavailable. Please try again later.');
+            throw new SwapAndBridgeProviderApiError_1.default('Our service providers are currently unavailable. Please try again later.');
         }
         // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
         const baseMessage = errors[0].message || 'Unknown error';
@@ -117,7 +121,7 @@ export class SwapProviderParallelExecutor {
             const combinedDetails = technicalDetails.join('> and <');
             combinedMessage = combinedMessage.replace(/<[^>]+>/, `<${combinedDetails}>`);
         }
-        throw new SwapAndBridgeProviderApiError(combinedMessage);
+        throw new SwapAndBridgeProviderApiError_1.default(combinedMessage);
     }
     async #routeTo(providerId, method, ...args) {
         const provider = this.#providers.find((p) => p.id === providerId);
@@ -180,4 +184,5 @@ export class SwapProviderParallelExecutor {
         });
     }
 }
+exports.SwapProviderParallelExecutor = SwapProviderParallelExecutor;
 //# sourceMappingURL=swapProviderParallelExecutor.js.map

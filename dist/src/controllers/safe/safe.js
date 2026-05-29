@@ -1,13 +1,17 @@
-import { toBeHex } from 'ethers';
-import SafeApiKit from '@safe-global/api-kit';
-import { FETCH_SAFE_TXNS } from '../../consts/intervals';
-import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe';
-import { fetchAllPending, fetchExecutedTransactions, getMessage } from '../../libs/safe/safe';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const STATUS_WRAPPED_METHODS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SafeController = exports.STATUS_WRAPPED_METHODS = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const api_kit_1 = tslib_1.__importDefault(require("@safe-global/api-kit"));
+const intervals_1 = require("../../consts/intervals");
+const safe_1 = require("../../consts/safe");
+const safe_2 = require("../../libs/safe/safe");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.STATUS_WRAPPED_METHODS = {
     findSafe: 'INITIAL'
 };
-export class SafeController extends EventEmitter {
+class SafeController extends eventEmitter_1.default {
     #storage;
     #networks;
     #accounts;
@@ -19,7 +23,7 @@ export class SafeController extends EventEmitter {
     #automaticallyResolvedSafeTxns = [];
     #rejectedSafeTxns = [];
     initialLoadPromise;
-    statuses = STATUS_WRAPPED_METHODS;
+    statuses = exports.STATUS_WRAPPED_METHODS;
     importError;
     safeInfo;
     constructor({ eventEmitterRegistry, networks, providers, storage, accounts }) {
@@ -48,7 +52,7 @@ export class SafeController extends EventEmitter {
         this.importError = undefined;
         this.safeInfo = undefined;
         // search enabled networks that are Safe supported
-        const safeNetworks = this.#networks.networks.filter((n) => SAFE_NETWORKS.includes(Number(n.chainId)) &&
+        const safeNetworks = this.#networks.networks.filter((n) => safe_1.SAFE_NETWORKS.includes(Number(n.chainId)) &&
             !!this.#providers.providers[n.chainId.toString()] // just in case
         );
         // check where the account is deployed
@@ -63,7 +67,7 @@ export class SafeController extends EventEmitter {
             };
             return;
         }
-        const apiKit = new SafeApiKit({
+        const apiKit = new api_kit_1.default({
             chainId: deployedOn.chainId,
             apiKey: process.env.SAFE_API_KEY
         });
@@ -87,10 +91,10 @@ export class SafeController extends EventEmitter {
             factoryAddr: safeCreationInfo.factoryAddress,
             singleton: safeCreationInfo.singleton,
             saltNonce: safeCreationInfo.saltNonce
-                ? toBeHex(BigInt(safeCreationInfo.saltNonce), 32)
-                : toBeHex(0, 32),
+                ? (0, ethers_1.toBeHex)(BigInt(safeCreationInfo.saltNonce), 32)
+                : (0, ethers_1.toBeHex)(0, 32),
             setupData,
-            requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
+            requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safe_1.safeNullOwner
         };
     }
     async findSafe(safeAddr) {
@@ -129,20 +133,20 @@ export class SafeController extends EventEmitter {
     shouldSkipFetchPending(safeAddr) {
         return (!!this.#updatedAt &&
             this.#updatedAt.addr === safeAddr &&
-            Date.now() - this.#updatedAt.time < FETCH_SAFE_TXNS);
+            Date.now() - this.#updatedAt.time < intervals_1.FETCH_SAFE_TXNS);
     }
     async fetchPending(safeAddr, networks) {
         this.#updatedAt = {
             time: Date.now(),
             addr: safeAddr
         };
-        const pending = await fetchAllPending(networks, safeAddr);
+        const pending = await (0, safe_2.fetchAllPending)(networks, safeAddr);
         if (!pending)
             return null;
         return this.#filterOutHidden(pending, safeAddr);
     }
     async fetchExecuted(txns) {
-        return fetchExecutedTransactions(txns);
+        return (0, safe_2.fetchExecutedTransactions)(txns);
     }
     async rejectTxnId(safeTxnIds) {
         this.#rejectedSafeTxns = [...this.#rejectedSafeTxns, ...safeTxnIds];
@@ -172,7 +176,7 @@ export class SafeController extends EventEmitter {
         const messages = [];
         for (let i = 0; i < data.length; i++) {
             const entry = data[i];
-            const msg = await getMessage(entry).catch((e) => e);
+            const msg = await (0, safe_2.getMessage)(entry).catch((e) => e);
             if (!msg || msg instanceof Error)
                 continue;
             messages.push(msg);
@@ -186,4 +190,5 @@ export class SafeController extends EventEmitter {
         };
     }
 }
+exports.SafeController = SafeController;
 //# sourceMappingURL=safe.js.map

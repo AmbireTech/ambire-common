@@ -1,15 +1,20 @@
-import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiUniswapV3Positions.json';
-import { fromDescriptor } from '../../deployless/deployless';
-import { UNISWAP_V3 } from '../defiAddresses';
-import { getProviderId } from '../helpers';
-import { AssetType } from '../types';
-import { uniV3DataToPortfolioPosition } from './helpers/univ3Math';
-export async function getUniV3Positions(userAddr, provider, network) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getUniV3Positions = getUniV3Positions;
+exports.getDebankEnhancedUniV3Positions = getDebankEnhancedUniV3Positions;
+const tslib_1 = require("tslib");
+const DeFiUniswapV3Positions_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiUniswapV3Positions.json"));
+const deployless_1 = require("../../deployless/deployless");
+const defiAddresses_1 = require("../defiAddresses");
+const helpers_1 = require("../helpers");
+const types_1 = require("../types");
+const univ3Math_1 = require("./helpers/univ3Math");
+async function getUniV3Positions(userAddr, provider, network) {
     const { chainId } = network;
-    if (chainId && !UNISWAP_V3[chainId.toString()])
+    if (chainId && !defiAddresses_1.UNISWAP_V3[chainId.toString()])
         return null;
-    const { nonfungiblePositionManagerAddr, factoryAddr } = UNISWAP_V3[chainId.toString()];
-    const deploylessDeFiPositionsGetter = fromDescriptor(provider, DeFiPositionsDeploylessCode, network.rpcNoStateOverride // Why?
+    const { nonfungiblePositionManagerAddr, factoryAddr } = defiAddresses_1.UNISWAP_V3[chainId.toString()];
+    const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiUniswapV3Positions_json_1.default, network.rpcNoStateOverride // Why?
     );
     const result = await deploylessDeFiPositionsGetter.call('getUniV3Position', [
         userAddr,
@@ -52,7 +57,7 @@ export async function getUniV3Positions(userAddr, provider, network) {
     }));
     const positions = data
         .map((pos) => {
-        const tokenAmounts = uniV3DataToPortfolioPosition(pos.positionInfo.liquidity, pos.poolSlot0.sqrtPriceX96, pos.positionInfo.tickLower, pos.positionInfo.tickUpper);
+        const tokenAmounts = (0, univ3Math_1.uniV3DataToPortfolioPosition)(pos.positionInfo.liquidity, pos.poolSlot0.sqrtPriceX96, pos.positionInfo.tickLower, pos.positionInfo.tickUpper);
         return {
             id: pos.positionId.toString(),
             additionalData: {
@@ -69,7 +74,7 @@ export async function getUniV3Positions(userAddr, provider, network) {
                     name: pos.token0Name,
                     decimals: Number(pos.token0Decimals),
                     amount: BigInt(tokenAmounts.amount0),
-                    type: AssetType.Liquidity
+                    type: types_1.AssetType.Liquidity
                 },
                 {
                     address: pos.positionInfo.token1,
@@ -77,7 +82,7 @@ export async function getUniV3Positions(userAddr, provider, network) {
                     name: pos.token1Name,
                     decimals: Number(pos.token1Decimals),
                     amount: BigInt(tokenAmounts.amount1),
-                    type: AssetType.Liquidity
+                    type: types_1.AssetType.Liquidity
                 }
             ]
         };
@@ -95,8 +100,8 @@ export async function getUniV3Positions(userAddr, provider, network) {
         positions
     };
 }
-export async function getDebankEnhancedUniV3Positions(addr, provider, network, previousPositions, debankNetworkPositionsByProvider, isDebankCallSuccessful) {
-    const previousMixedUniV3 = previousPositions.find((p) => getProviderId(p.providerName) === getProviderId('Uniswap V3') && p.source === 'mixed');
+async function getDebankEnhancedUniV3Positions(addr, provider, network, previousPositions, debankNetworkPositionsByProvider, isDebankCallSuccessful) {
+    const previousMixedUniV3 = previousPositions.find((p) => (0, helpers_1.getProviderId)(p.providerName) === (0, helpers_1.getProviderId)('Uniswap V3') && p.source === 'mixed');
     // If the call to debank wasn't successful, and we have a previous mixed UniV3 position, return it
     // This is done to avoid losing the mixed data in case of Debank being down
     // At the same time, we want to fetch the custom position if there is no previous mixed data
@@ -106,7 +111,7 @@ export async function getDebankEnhancedUniV3Positions(addr, provider, network, p
     const uniPosition = await getUniV3Positions(addr, provider, network);
     if (!uniPosition)
         return null;
-    const uniPositionFromDebank = debankNetworkPositionsByProvider?.find((p) => getProviderId(p.providerName) === getProviderId(uniPosition.providerName));
+    const uniPositionFromDebank = debankNetworkPositionsByProvider?.find((p) => (0, helpers_1.getProviderId)(p.providerName) === (0, helpers_1.getProviderId)(uniPosition.providerName));
     // If we can't find a matching UniV3 position from Debank, return the custom one
     if (!uniPositionFromDebank)
         return uniPosition;

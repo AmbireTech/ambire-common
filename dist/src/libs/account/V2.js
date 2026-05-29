@@ -1,19 +1,23 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.V2 = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface, ZeroAddress } from 'ethers';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy';
-import { getSignableCalls } from '../accountOp/accountOp';
-import { BROADCAST_OPTIONS } from '../broadcast/broadcast';
-import { getBroadcastGas } from '../gasPrice/gasPrice';
-import { isNative } from '../portfolio/helpers';
-import { privSlot } from '../proxyDeploy/deploy';
-import { getSpoof } from './account';
-import { BaseAccount } from './BaseAccount';
-import { isTransferredTokenFeeOption } from './feeOptions';
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+const deploy_1 = require("../../consts/deploy");
+const accountOp_1 = require("../accountOp/accountOp");
+const broadcast_1 = require("../broadcast/broadcast");
+const gasPrice_1 = require("../gasPrice/gasPrice");
+const helpers_1 = require("../portfolio/helpers");
+const deploy_2 = require("../proxyDeploy/deploy");
+const account_1 = require("./account");
+const BaseAccount_1 = require("./BaseAccount");
+const feeOptions_1 = require("./feeOptions");
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
-export class V2 extends BaseAccount {
+class V2 extends BaseAccount_1.BaseAccount {
     // we're state overriding the estimation to make it think
     // the account is deployed and it has the entry point as a signer
     //
@@ -36,17 +40,17 @@ export class V2 extends BaseAccount {
         const hasPaymaster = estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable();
         return feePaymentOptions.filter((opt) => 
         // always show account native, even if not enough
-        (isNative(opt.token) && opt.paidBy === this.account.addr) ||
+        ((0, helpers_1.isNative)(opt.token) && opt.paidBy === this.account.addr) ||
             // show EOA native only if it has amount to pay the fee
-            (isNative(opt.token) && opt.availableAmount > 0n) ||
-            ((opt.availableAmount > 0n || isTransferredTokenFeeOption(opt, op)) &&
+            ((0, helpers_1.isNative)(opt.token) && opt.availableAmount > 0n) ||
+            ((opt.availableAmount > 0n || (0, feeOptions_1.isTransferredTokenFeeOption)(opt, op)) &&
                 (this.network.hasRelayer || hasPaymaster)));
     }
     getGasUsed(estimation, options) {
         const isError = estimation instanceof Error;
         if (isError || !estimation.ambireEstimation)
             return 0n;
-        const ambireBroaddcastGas = getBroadcastGas(this, options.op);
+        const ambireBroaddcastGas = (0, gasPrice_1.getBroadcastGas)(this, options.op);
         const ambireGas = ambireBroaddcastGas + estimation.ambireEstimation.gasUsed;
         // are we transitioning to 4337?
         if (this.#isTransitioningTo4337())
@@ -65,13 +69,13 @@ export class V2 extends BaseAccount {
     }
     getBroadcastOption(feeOption, options) {
         if (feeOption.paidBy !== this.getAccount().addr)
-            return BROADCAST_OPTIONS.byOtherEOA;
+            return broadcast_1.BROADCAST_OPTIONS.byOtherEOA;
         // keep the relayer only for the transition transaction
         // when the account is deployed but it doesn't have the entry point
         // as a signer
         if (this.#isTransitioningTo4337())
-            return BROADCAST_OPTIONS.byRelayer;
-        return BROADCAST_OPTIONS.byBundler;
+            return broadcast_1.BROADCAST_OPTIONS.byRelayer;
+        return broadcast_1.BROADCAST_OPTIONS.byBundler;
     }
     shouldIncludeActivatorCall(paidBy) {
         // if the account is not deployed and we're paying with an EOA,
@@ -87,17 +91,17 @@ export class V2 extends BaseAccount {
     }
     getBroadcastCalldata(accountOp) {
         if (this.accountState.isDeployed) {
-            const ambireAccount = new Interface(AmbireAccount.abi);
+            const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
             return ambireAccount.encodeFunctionData('executeBySender', [
-                getSignableCalls(accountOp)
+                (0, accountOp_1.getSignableCalls)(accountOp)
             ]);
         }
-        const ambireFactory = new Interface(AmbireFactory.abi);
+        const ambireFactory = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
         return ambireFactory.encodeFunctionData('deployAndExecute', [
             this.account.creation.bytecode,
             this.account.creation.salt,
-            getSignableCalls(accountOp),
-            getSpoof(this.account)
+            (0, accountOp_1.getSignableCalls)(accountOp),
+            (0, account_1.getSpoof)(this.account)
         ]);
     }
     getBundlerStateOverride(userOp) {
@@ -105,9 +109,9 @@ export class V2 extends BaseAccount {
             return undefined;
         return {
             [this.account.addr]: {
-                code: AmbireAccount.binRuntime,
+                code: AmbireAccount_json_1.default.binRuntime,
                 stateDiff: {
-                    [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
+                    [(0, deploy_2.privSlot)(0, 'uint256', deploy_1.ERC_4337_ENTRYPOINT, 'uint256')]: deploy_1.ENTRY_POINT_MARKER
                 }
             }
         };
@@ -115,7 +119,7 @@ export class V2 extends BaseAccount {
     // we need to authorize the entry point as a signer if we're deploying
     // the account via 4337
     shouldSignDeployAuth(broadcastOption) {
-        return broadcastOption === BROADCAST_OPTIONS.byBundler && !this.accountState.isDeployed;
+        return broadcastOption === broadcast_1.BROADCAST_OPTIONS.byBundler && !this.accountState.isDeployed;
     }
     isSponsorable() {
         return this.network.chainId === 100n;
@@ -140,11 +144,12 @@ export class V2 extends BaseAccount {
         return true;
     }
     canSetCustomGasPrices(feeOption) {
-        return (feeOption.token.address === ZeroAddress &&
+        return (feeOption.token.address === ethers_1.ZeroAddress &&
             feeOption.paidBy.toLowerCase() !== this.account.addr.toLowerCase());
     }
     canSetCustomGas(feeOption) {
         return this.canSetCustomGasPrices(feeOption);
     }
 }
+exports.V2 = V2;
 //# sourceMappingURL=V2.js.map

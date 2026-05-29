@@ -1,4 +1,7 @@
-export const dappRequestMethodToRequestKind = (method) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.sumTopUps = exports.buildSwitchAccountUserRequest = exports.getCallsUserRequestsByNetwork = exports.messageOnNewRequest = exports.isSignRequest = exports.dappRequestMethodToRequestKind = void 0;
+const dappRequestMethodToRequestKind = (method) => {
     if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method))
         return 'calls';
     if ([
@@ -13,12 +16,14 @@ export const dappRequestMethodToRequestKind = (method) => {
     // method to camelCase
     return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase());
 };
-export const isSignRequest = (kind) => kind === 'calls' ||
+exports.dappRequestMethodToRequestKind = dappRequestMethodToRequestKind;
+const isSignRequest = (kind) => kind === 'calls' ||
     kind === 'message' ||
     kind === 'typedMessage' ||
     kind === 'siwe' ||
     kind === 'authorization-7702';
-export const messageOnNewRequest = (request, addType) => {
+exports.isSignRequest = isSignRequest;
+const messageOnNewRequest = (request, addType) => {
     let requestType = '';
     if (request.kind === 'calls')
         requestType = 'Sign Transaction';
@@ -43,7 +48,8 @@ export const messageOnNewRequest = (request, addType) => {
     }
     return null;
 };
-export const getCallsUserRequestsByNetwork = (accountAddr, userRequests) => {
+exports.messageOnNewRequest = messageOnNewRequest;
+const getCallsUserRequestsByNetwork = (accountAddr, userRequests) => {
     const callsUserRequests = userRequests.filter((r) => r.kind === 'calls').filter((req) => req.signAccountOp.accountOp.accountAddr === accountAddr);
     const requestsByNetwork = callsUserRequests.reduce((acc, req) => {
         const { chainId } = req.signAccountOp.accountOp;
@@ -54,7 +60,8 @@ export const getCallsUserRequestsByNetwork = (accountAddr, userRequests) => {
     }, {});
     return requestsByNetwork;
 };
-export const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccountAddr, dappPromises }) => {
+exports.getCallsUserRequestsByNetwork = getCallsUserRequestsByNetwork;
+const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccountAddr, dappPromises }) => {
     return {
         id: new Date().getTime(),
         kind: 'switchAccount',
@@ -66,11 +73,13 @@ export const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccount
         dappPromises
     };
 };
-export const sumTopUps = (userRequests) => {
+exports.buildSwitchAccountUserRequest = buildSwitchAccountUserRequest;
+const sumTopUps = (userRequests) => {
     return (userRequests
         .filter((req) => req.kind === 'calls')
         .filter((req) => req.signAccountOp.accountOp?.meta?.topUpAmount)
         .map((req) => req.signAccountOp.accountOp.meta.topUpAmount)
         .reduce((a, b) => a + b, 0n) ?? undefined);
 };
+exports.sumTopUps = sumTopUps;
 //# sourceMappingURL=requests.js.map

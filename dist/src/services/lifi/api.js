@@ -1,13 +1,17 @@
-import { CITREA_CHAIN_ID } from '@/services/squid/constants';
-import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError';
-import { addCustomTokensIfNeeded, attemptToSortTokensByMarketCap, convertPortfolioTokenToSwapAndBridgeToToken, getSlippage, isNoFeeToken, lifiMapNativeToAddr, sortNativeTokenFirst } from '../../libs/swapAndBridge/swapAndBridge';
-import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants';
-import { getHumanReadableErrorMessage } from './helpers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LiFiAPI = void 0;
+const tslib_1 = require("tslib");
+const constants_1 = require("@/services/squid/constants");
+const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
+const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
+const constants_2 = require("../socket/constants");
+const helpers_1 = require("./helpers");
 const normalizeLiFiTokenToSwapAndBridgeToToken = (token, toChainId) => {
     const { name, address, decimals, symbol, logoURI: icon } = token;
     return {
         name,
-        address: lifiMapNativeToAddr(toChainId, address),
+        address: (0, swapAndBridge_1.lifiMapNativeToAddr)(toChainId, address),
         decimals,
         symbol,
         icon,
@@ -115,11 +119,11 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (parentStep, routeId) => {
         typeof parentStep.transactionRequest.data !== 'string' ||
         typeof parentStep.transactionRequest.to !== 'string' ||
         typeof parentStep.transactionRequest.value !== 'string') {
-        throw new SwapAndBridgeProviderApiError('Unable to start the route. Error details: <missing transaction request data>');
+        throw new SwapAndBridgeProviderApiError_1.default('Unable to start the route. Error details: <missing transaction request data>');
     }
     return {
         activeRouteId: routeId,
-        approvalData: parentStep.action.fromToken.address === ZERO_ADDRESS
+        approvalData: parentStep.action.fromToken.address === constants_2.ZERO_ADDRESS
             ? null // No approval needed fo native tokens
             : {
                 allowanceTarget: parentStep.estimate.approvalAddress,
@@ -134,7 +138,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (parentStep, routeId) => {
         txData: parentStep.transactionRequest.data
     };
 };
-export class LiFiAPI {
+class LiFiAPI {
     id = 'lifi';
     name = 'LiFi';
     #fetch;
@@ -192,7 +196,7 @@ export class LiFiAPI {
     }
     /** disable explicitly citrea for lifi */
     areChainsSupported({ fromChainId, toChainId }) {
-        return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID;
+        return fromChainId !== constants_1.CITREA_CHAIN_ID && toChainId !== constants_1.CITREA_CHAIN_ID;
     }
     /**
      * Processes LiFi API responses and throws custom errors for various failures
@@ -208,7 +212,7 @@ export class LiFiAPI {
                 fetchPromise,
                 new Promise((_, reject) => {
                     timeoutPromise = setTimeout(() => {
-                        reject(new SwapAndBridgeProviderApiError('Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'));
+                        reject(new SwapAndBridgeProviderApiError_1.default('Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'));
                     }, this.#requestTimeoutMs);
                 })
             ]);
@@ -217,17 +221,17 @@ export class LiFiAPI {
         }
         catch (e) {
             // Rethrow the same error if it's already humanized
-            if (e instanceof SwapAndBridgeProviderApiError)
+            if (e instanceof SwapAndBridgeProviderApiError_1.default)
                 throw e;
             const message = e?.message || 'no message';
             const status = e?.status ? `, status: <${e.status}>` : '';
             const error = `${errorPrefix} Our service provider LiFi could not be reached: <${message}>${status}`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         if (response.status === 429) {
             this.activateApiKey();
             const error = 'Our service provider LiFi received too many requests, temporarily preventing your request from being processed.';
-            throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.');
+            throw new SwapAndBridgeProviderApiError_1.default(error, 'Rate limit reached, try again later.');
         }
         let responseBody;
         try {
@@ -235,12 +239,12 @@ export class LiFiAPI {
         }
         catch (e) {
             const error = 'Our service provider LiFi is temporarily unavailable.';
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         if (!response.ok) {
-            const humanizedMessage = getHumanReadableErrorMessage(errorPrefix, responseBody);
+            const humanizedMessage = (0, helpers_1.getHumanReadableErrorMessage)(errorPrefix, responseBody);
             if (humanizedMessage) {
-                throw new SwapAndBridgeProviderApiError(humanizedMessage);
+                throw new SwapAndBridgeProviderApiError_1.default(humanizedMessage);
             }
             const upstreamMessage = responseBody?.message;
             const upstreamCode = responseBody?.code;
@@ -250,7 +254,7 @@ export class LiFiAPI {
                 ? `${upstreamMessage} Reference: ${upstreamCode}`
                 : upstreamMessage || JSON.stringify(responseBody).slice(0, 250); // up to about 5 lines of toast
             const error = `${errorPrefix} Our service provider LiFi responded: <${fallbackMessage}>`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         return responseBody;
     }
@@ -275,13 +279,13 @@ export class LiFiAPI {
             errorPrefix: 'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
         });
         const tokens = (response.tokens[toChainId] || []).map((t) => normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId));
-        const sortedTokens = await attemptToSortTokensByMarketCap({
+        const sortedTokens = await (0, swapAndBridge_1.attemptToSortTokensByMarketCap)({
             fetch: this.#fetch,
             chainId: toChainId,
             tokens
         });
-        const withCustomTokens = addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedTokens });
-        return sortNativeTokenFirst(withCustomTokens);
+        const withCustomTokens = (0, swapAndBridge_1.addCustomTokensIfNeeded)({ chainId: toChainId, tokens: sortedTokens });
+        return (0, swapAndBridge_1.sortNativeTokenFirst)(withCustomTokens);
     }
     async getToken({ address: token, chainId }) {
         const params = new URLSearchParams({
@@ -299,19 +303,19 @@ export class LiFiAPI {
     }
     async quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }) {
         if (!fromAsset)
-            throw new SwapAndBridgeProviderApiError('Quote requested, but missing required params. Error details: <from token details are missing>');
+            throw new SwapAndBridgeProviderApiError_1.default('Quote requested, but missing required params. Error details: <from token details are missing>');
         if (!toAsset)
-            throw new SwapAndBridgeProviderApiError('Quote requested, but missing required params. Error details: <to token details are missing>');
+            throw new SwapAndBridgeProviderApiError_1.default('Quote requested, but missing required params. Error details: <to token details are missing>');
         const body = {
             fromChainId: fromChainId.toString(),
             fromAmount: fromAmount.toString(),
-            fromTokenAddress: lifiMapNativeToAddr(fromChainId, fromTokenAddress),
+            fromTokenAddress: (0, swapAndBridge_1.lifiMapNativeToAddr)(fromChainId, fromTokenAddress),
             toChainId: toChainId.toString(),
-            toTokenAddress: lifiMapNativeToAddr(toChainId, toTokenAddress),
+            toTokenAddress: (0, swapAndBridge_1.lifiMapNativeToAddr)(toChainId, toTokenAddress),
             fromAddress: userAddress,
             toAddress: userAddress,
             options: {
-                slippage: getSlippage(fromAsset, fromAmount, '0.01', 0.005),
+                slippage: (0, swapAndBridge_1.getSlippage)(fromAsset, fromAmount, '0.01', 0.005),
                 maxPriceImpact: '0.50',
                 order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
                 integrator: 'ambire-extension-prod',
@@ -319,7 +323,7 @@ export class LiFiAPI {
                 allowDestinationCall: 'false',
                 allowSwitchChain: 'false',
                 // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-                fee: (FEE_PERCENT / 100).toString(),
+                fee: (constants_2.FEE_PERCENT / 100).toString(),
                 // How this works:
                 // When this strategy is applied, we give all tool 900ms (minWaitTimeMs) to return a result.
                 // If we received 5 or more (startingExpectedResults) results during this time we return those and don’t wait for other tools.
@@ -346,7 +350,7 @@ export class LiFiAPI {
                 }
             }
         };
-        const shouldRemoveConvenienceFee = isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress);
+        const shouldRemoveConvenienceFee = isWrapOrUnwrap || (0, swapAndBridge_1.isNoFeeToken)(fromChainId, fromTokenAddress);
         if (shouldRemoveConvenienceFee)
             delete body.options.fee;
         const url = `${this.#baseUrl}/advanced/routes`;
@@ -359,7 +363,7 @@ export class LiFiAPI {
             errorPrefix: 'Unable to fetch the quote.'
         });
         return {
-            fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
+            fromAsset: (0, swapAndBridge_1.convertPortfolioTokenToSwapAndBridgeToToken)(fromAsset, fromChainId),
             fromChainId,
             toAsset,
             toChainId,
@@ -411,7 +415,7 @@ export class LiFiAPI {
             // when the bridge has failed and the user has received back his tokens
             REFUNDED: 'refunded'
         };
-        if (response instanceof SwapAndBridgeProviderApiError) {
+        if (response instanceof SwapAndBridgeProviderApiError_1.default) {
             return { status: statuses.PENDING };
         }
         const receivingTxnId = 'receiving' in response && 'txHash' in response.receiving ? response.receiving.txHash : null;
@@ -424,4 +428,5 @@ export class LiFiAPI {
         };
     }
 }
+exports.LiFiAPI = LiFiAPI;
 //# sourceMappingURL=api.js.map

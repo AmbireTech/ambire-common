@@ -1,6 +1,9 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EventEmitterRegistryController = void 0;
 // The EventEmitterRegistry controller maintains a map of all controllers
 // for which onUpdate and onError listeners are registered to propagate FE state updates
-export class EventEmitterRegistryController {
+class EventEmitterRegistryController {
     #map = new Map();
     #onUpdate;
     constructor(onUpdate) {
@@ -41,4 +44,5 @@ export class EventEmitterRegistryController {
         };
     }
 }
+exports.EventEmitterRegistryController = EventEmitterRegistryController;
 //# sourceMappingURL=eventEmitterRegistry.js.map

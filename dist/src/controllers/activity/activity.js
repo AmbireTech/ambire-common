@@ -1,15 +1,19 @@
-import { toBeHex, ZeroAddress } from 'ethers';
-import { getAddressPoisoningMatchCounts, pickBetterPoisoningMatch } from '@/libs/transfer/address-poisoning';
-import { getAccountOpBalanceChanges, getBalanceChangeTokenAddresses } from '../../libs/accountOp/balanceChanges';
-import { fetchFrontRanTxnId, fetchTxnId, getAccountOpRecipients, hasTimePassedSinceBroadcast, isIdentifiedByMultipleTxn, isIdentifiedByRelayer, isIdentifiedByUserOpHash, updateOpStatus } from '../../libs/accountOp/submittedAccountOp';
-import { AccountOpStatus } from '../../libs/accountOp/types';
-import { getTransferLogTokens } from '../../libs/logsParser/parseLogs';
-import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist';
-import { ScamFilter } from '../../libs/scamFilter';
-import { parseLogs } from '../../libs/userOperation/userOperation';
-import { getDebugTraceTransaction } from '../../utils/debugTransaction';
-import wait from '../../utils/wait';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ActivityController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const address_poisoning_1 = require("@/libs/transfer/address-poisoning");
+const balanceChanges_1 = require("../../libs/accountOp/balanceChanges");
+const submittedAccountOp_1 = require("../../libs/accountOp/submittedAccountOp");
+const types_1 = require("../../libs/accountOp/types");
+const parseLogs_1 = require("../../libs/logsParser/parseLogs");
+const blacklist_1 = require("../../libs/portfolio/blacklist");
+const scamFilter_1 = require("../../libs/scamFilter");
+const userOperation_1 = require("../../libs/userOperation/userOperation");
+const debugTransaction_1 = require("../../utils/debugTransaction");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // We are limiting items array to include no more than 1000 records,
 // as we trim out the oldest ones (in the beginning of the items array).
 // We do this to maintain optimal storage and performance.
@@ -43,8 +47,8 @@ const internalAccountOpHasTxnId = (accountOp, txnId) => {
     return getInternalAccountOpTxnIds(accountOp).some((internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId);
 };
 const externalAccountOpHasTxnId = (accountOp, txnId) => normalizeTxnId(accountOp.txnId) === normalizeTxnId(txnId);
-const isAccountOpFinalized = (accountOp) => accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
-    accountOp.status !== AccountOpStatus.Pending;
+const isAccountOpFinalized = (accountOp) => accountOp.status !== types_1.AccountOpStatus.BroadcastedButNotConfirmed &&
+    accountOp.status !== types_1.AccountOpStatus.Pending;
 /**
  * Fix address checksum problems as sometimes addresses are left out
  * only because they are not saved properly checksummed
@@ -61,17 +65,17 @@ const getBalanceChangeWindowFromReceipts = (accountOp, receipts) => {
         return null;
     return {
         receiptBlockNumber: lastReceipt.blockNumber,
-        prevBlockNumber: isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+        prevBlockNumber: (0, submittedAccountOp_1.isIdentifiedByMultipleTxn)(accountOp.identifiedBy)
             ? getPreviousBlockNumber(firstReceipt.blockNumber)
             : undefined
     };
 };
 const getBalanceChangeTokenAddrsFromReceipts = async (accountOp, receipts) => {
-    const foundTokens = filterStaticBlacklistedAddrs((await Promise.all(receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr)))).flat(), accountOp.chainId);
-    return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId);
+    const foundTokens = (0, blacklist_1.filterStaticBlacklistedAddrs)((await Promise.all(receipts.map((receipt) => (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountOp.accountAddr)))).flat(), accountOp.chainId);
+    return (0, balanceChanges_1.getBalanceChangeTokenAddresses)(foundTokens, accountOp.chainId);
 };
 const getAccountOpReceipts = async (accountOp, provider) => {
-    const txIds = isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+    const txIds = (0, submittedAccountOp_1.isIdentifiedByMultipleTxn)(accountOp.identifiedBy)
         ? accountOp.calls.map((call) => call.txnId).filter((txnId) => !!txnId)
         : accountOp.txnId
             ? [accountOp.txnId]
@@ -107,7 +111,7 @@ const getAccountOpReceipts = async (accountOp, provider) => {
  * 💡 For performance, items per account and network are limited to 1000.
  * Older items are trimmed, keeping the most recent ones.
  */
-export class ActivityController extends EventEmitter {
+class ActivityController extends eventEmitter_1.default {
     #storage;
     #fetch;
     #initialLoadPromise;
@@ -173,10 +177,10 @@ export class ActivityController extends EventEmitter {
         const normalizedToAddress = toAddress.toLowerCase();
         let bestPoisoningMatch = null;
         const updatePoisoningMatch = (address, lastInteractedAt = null) => {
-            const matchCounts = getAddressPoisoningMatchCounts(toAddress, address);
+            const matchCounts = (0, address_poisoning_1.getAddressPoisoningMatchCounts)(toAddress, address);
             if (!matchCounts)
                 return;
-            bestPoisoningMatch = pickBetterPoisoningMatch(bestPoisoningMatch, {
+            bestPoisoningMatch = (0, address_poisoning_1.pickBetterPoisoningMatch)(bestPoisoningMatch, {
                 matchedAddress: address,
                 matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
                 matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
@@ -195,7 +199,7 @@ export class ActivityController extends EventEmitter {
                 if (!networkAccountOpsOfAccount)
                     return;
                 networkAccountOpsOfAccount.forEach((op) => {
-                    const recipients = getAccountOpRecipients(op);
+                    const recipients = (0, submittedAccountOp_1.getAccountOpRecipients)(op);
                     const hasSentToRecipient = recipients.some((recipient) => {
                         if (recipient.toLowerCase() === normalizedToAddress)
                             return true;
@@ -271,7 +275,7 @@ export class ActivityController extends EventEmitter {
         // no need to console.log anything in the catch statement here
         // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
         const opsWithNoBalanceChanges = result.items.filter((op) => internalAccountOps.has(op) &&
-            op.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+            op.status !== types_1.AccountOpStatus.BroadcastedButNotConfirmed &&
             op.balanceChanges === undefined);
         if (opsWithNoBalanceChanges.length)
             this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null);
@@ -444,10 +448,10 @@ export class ActivityController extends EventEmitter {
             provider.getTransaction(txnId).catch(() => null),
             provider.getBlock(receipt.blockNumber).catch(() => null)
         ]);
-        const accountOpStatus = receipt.status === 0 ? AccountOpStatus.Failure : AccountOpStatus.Success;
+        const accountOpStatus = receipt.status === 0 ? types_1.AccountOpStatus.Failure : types_1.AccountOpStatus.Success;
         const call = {
             id: callId || `external-${txnId}`,
-            to: transaction?.to || receipt.to || ZeroAddress,
+            to: transaction?.to || receipt.to || ethers_1.ZeroAddress,
             value: transaction?.value || 0n,
             data: transaction?.data || '0x',
             txnId: txnId,
@@ -475,21 +479,21 @@ export class ActivityController extends EventEmitter {
             }
         };
         try {
-            const foundTokens = filterStaticBlacklistedAddrs(await getTransferLogTokens(receipt.logs, accountAddr), chainId);
+            const foundTokens = (0, blacklist_1.filterStaticBlacklistedAddrs)(await (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountAddr), chainId);
             if (shouldLearnTokens) {
-                const scamFilter = new ScamFilter({ fetch: this.#fetch, network });
+                const scamFilter = new scamFilter_1.ScamFilter({ fetch: this.#fetch, network });
                 const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens);
                 this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId);
             }
-            const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens);
-            submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
+            const tokenAddrs = (0, balanceChanges_1.getBalanceChangeTokenAddresses)(foundTokens);
+            submittedAccountOpLike.balanceChanges = await (0, balanceChanges_1.getAccountOpBalanceChanges)({
                 accountAddr,
                 chainId,
                 tokenAddrs,
                 receiptBlockNumber: receipt.blockNumber,
                 getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
                 receipts: [receipt],
-                debugTraceTransaction: getDebugTraceTransaction(network.chainId, this.#providers.providers[network.chainId.toString()])
+                debugTraceTransaction: (0, debugTransaction_1.getDebugTraceTransaction)(network.chainId, this.#providers.providers[network.chainId.toString()])
             });
         }
         catch (error) {
@@ -559,7 +563,7 @@ export class ActivityController extends EventEmitter {
         return this.#backfillAccountOpBalanceChangesPromises[taskId];
     }
     async #prepareAndRunBalanceChangesTask(accountOp) {
-        const hasReceipt = accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure;
+        const hasReceipt = accountOp.status === types_1.AccountOpStatus.Success || accountOp.status === types_1.AccountOpStatus.Failure;
         if (!hasReceipt || !accountOp.txnId) {
             // if the status is a status without a receipt, finish balance changes
             await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, []);
@@ -654,8 +658,8 @@ export class ActivityController extends EventEmitter {
             if (!allOps || !allOps.length)
                 return;
             const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : [];
-            const opsToUpdate = recentOps.filter((op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed);
-            const confirmedOps = allOps.filter((op) => op.status === AccountOpStatus.Success || op.status === AccountOpStatus.Failure);
+            const opsToUpdate = recentOps.filter((op) => op.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
+            const confirmedOps = allOps.filter((op) => op.status === types_1.AccountOpStatus.Success || op.status === types_1.AccountOpStatus.Failure);
             return Promise.all(opsToUpdate.map(async (accountOp) => {
                 shouldEmitUpdate = true;
                 let firstReceiptBlockNumber;
@@ -667,8 +671,8 @@ export class ActivityController extends EventEmitter {
                     newestOpTimestamp = accountOp.timestamp;
                 }
                 const declareStuckIfFiveMinsPassed = async (op) => {
-                    if (hasTimePassedSinceBroadcast(op, 5)) {
-                        const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck);
+                    if ((0, submittedAccountOp_1.hasTimePassedSinceBroadcast)(op, 5)) {
+                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.BroadcastButStuck);
                         if (updatedOpIfAny) {
                             updatedAccountsOps.push(updatedOpIfAny);
                             const acc = this.#accounts.accounts.find((a) => a.addr === op.accountAddr);
@@ -683,16 +687,16 @@ export class ActivityController extends EventEmitter {
                     typeof accountOp.eoaNonce !== 'undefined' &&
                     confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce);
                 if (hasConfirmedOpWithSameEoaNonce) {
-                    const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.UnknownButPastNonce);
+                    const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.UnknownButPastNonce);
                     if (updatedOpIfAny)
                         updatedAccountsOps.push(updatedOpIfAny);
                     return;
                 }
                 const txIds = [];
                 if (accountOp.identifiedBy.type !== 'MultipleTxns') {
-                    const fetchTxnIdResult = await fetchTxnId(accountOp.identifiedBy, network, this.#callRelayer, accountOp);
+                    const fetchTxnIdResult = await (0, submittedAccountOp_1.fetchTxnId)(accountOp.identifiedBy, network, this.#callRelayer, accountOp);
                     if (fetchTxnIdResult.status === 'rejected') {
-                        const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected);
+                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.Rejected);
                         if (updatedOpIfAny)
                             updatedAccountsOps.push(updatedOpIfAny);
                         return;
@@ -724,9 +728,9 @@ export class ActivityController extends EventEmitter {
                             // could've been front ran. We need to make sure we find the
                             // transaction that has succeeded
                             if (!receipt.status &&
-                                isIdentifiedByUserOpHash(accountOp.identifiedBy) &&
+                                (0, submittedAccountOp_1.isIdentifiedByUserOpHash)(accountOp.identifiedBy) &&
                                 txnId) {
-                                const frontRanTxnId = await fetchFrontRanTxnId(accountOp.identifiedBy, txnId, network);
+                                const frontRanTxnId = await (0, submittedAccountOp_1.fetchFrontRanTxnId)(accountOp.identifiedBy, txnId, network);
                                 accountOp.txnId = frontRanTxnId;
                                 receipt = await provider.getTransactionReceipt(frontRanTxnId);
                                 if (!receipt)
@@ -745,20 +749,20 @@ export class ActivityController extends EventEmitter {
                             });
                             // if this is an user op, we have to check the logs
                             let isSuccess;
-                            if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                                const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier);
+                            if ((0, submittedAccountOp_1.isIdentifiedByUserOpHash)(accountOp.identifiedBy)) {
+                                const userOpEventLog = (0, userOperation_1.parseLogs)(receipt.logs, accountOp.identifiedBy.identifier);
                                 if (userOpEventLog)
                                     isSuccess = userOpEventLog.success;
                             }
                             // if it's not an userOp or it is, but isSuccess was not found
                             if (isSuccess === undefined)
                                 isSuccess = !!receipt.status;
-                            const updatedOpIfAny = updateOpStatus(accountOp, isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure, receipt);
+                            const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, isSuccess ? types_1.AccountOpStatus.Success : types_1.AccountOpStatus.Failure, receipt);
                             if (updatedOpIfAny)
                                 updatedAccountsOps.push(updatedOpIfAny);
                             if (updatedOpIfAny &&
-                                (updatedOpIfAny.status === AccountOpStatus.Success ||
-                                    updatedOpIfAny.status === AccountOpStatus.Failure)) {
+                                (updatedOpIfAny.status === types_1.AccountOpStatus.Success ||
+                                    updatedOpIfAny.status === types_1.AccountOpStatus.Failure)) {
                                 shouldScheduleBalanceChangesTask = true;
                             }
                             if (accountOp.isSingletonDeploy && receipt.status) {
@@ -774,16 +778,16 @@ export class ActivityController extends EventEmitter {
                                 }
                             }
                             const foundTokens = isSuccess
-                                ? filterStaticBlacklistedAddrs(await getTransferLogTokens(receipt.logs, accountOp.accountAddr), accountOp.chainId)
+                                ? (0, blacklist_1.filterStaticBlacklistedAddrs)(await (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountOp.accountAddr), accountOp.chainId)
                                 : [];
                             if (foundTokens.length)
                                 this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId);
                             foundTokens.forEach((tokenAddr) => foundTokensForBalanceChanges.add(tokenAddr));
                             accountOp.blockNumber = receipt.blockNumber;
                             accountOp.blockHash = receipt.blockHash;
-                            accountOp.gasUsed = toBeHex(receipt.gasUsed);
+                            accountOp.gasUsed = (0, ethers_1.toBeHex)(receipt.gasUsed);
                             // Add accounts that are recipients of the AccountOp
-                            const accountOpRecipients = getAccountOpRecipients(accountOp, this.#accounts.accounts.map((a) => a.addr));
+                            const accountOpRecipients = (0, submittedAccountOp_1.getAccountOpRecipients)(accountOp, this.#accounts.accounts.map((a) => a.addr));
                             accountOpRecipients.forEach((accAddr) => {
                                 if (!portfoliosToUpdate[accAddr])
                                     portfoliosToUpdate[accAddr] = [];
@@ -813,9 +817,9 @@ export class ActivityController extends EventEmitter {
                     balanceChangesTasks.push({
                         accountOp,
                         network,
-                        tokenAddrs: getBalanceChangeTokenAddresses(Array.from(foundTokensForBalanceChanges), accountOp.chainId),
+                        tokenAddrs: (0, balanceChanges_1.getBalanceChangeTokenAddresses)(Array.from(foundTokensForBalanceChanges), accountOp.chainId),
                         receiptBlockNumber: lastReceiptBlockNumber,
-                        prevBlockNumber: isIdentifiedByMultipleTxn(accountOp.identifiedBy) &&
+                        prevBlockNumber: (0, submittedAccountOp_1.isIdentifiedByMultipleTxn)(accountOp.identifiedBy) &&
                             typeof firstReceiptBlockNumber !== 'undefined'
                             ? getPreviousBlockNumber(firstReceiptBlockNumber)
                             : undefined,
@@ -849,7 +853,7 @@ export class ActivityController extends EventEmitter {
             if (accountOp.chainId !== network.chainId) {
                 throw new Error(`Cannot update balance changes for ${accountOp.identifiedBy.identifier}: network mismatch`);
             }
-            const balanceChanges = await getAccountOpBalanceChanges({
+            const balanceChanges = await (0, balanceChanges_1.getAccountOpBalanceChanges)({
                 accountAddr: accountOp.accountAddr,
                 chainId: accountOp.chainId,
                 tokenAddrs,
@@ -857,7 +861,7 @@ export class ActivityController extends EventEmitter {
                 getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
                 prevBlockNumber,
                 receipts,
-                debugTraceTransaction: getDebugTraceTransaction(network.chainId, this.#providers.providers[network.chainId.toString()])
+                debugTraceTransaction: (0, debugTransaction_1.getDebugTraceTransaction)(network.chainId, this.#providers.providers[network.chainId.toString()])
             });
             await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, balanceChanges);
             return balanceChanges;
@@ -896,7 +900,7 @@ export class ActivityController extends EventEmitter {
                 return [acc.addr, []];
             const ops = Object.values(accOps)
                 .flat()
-                .filter((op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed);
+                .filter((op) => op.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
             return [acc.addr, ops];
         }));
     }
@@ -918,16 +922,16 @@ export class ActivityController extends EventEmitter {
         // shouldn't happen
         if (!activityAccountOp)
             return undefined;
-        if (!isIdentifiedByUserOpHash(activityAccountOp.identifiedBy) &&
-            !isIdentifiedByRelayer(activityAccountOp.identifiedBy))
+        if (!(0, submittedAccountOp_1.isIdentifiedByUserOpHash)(activityAccountOp.identifiedBy) &&
+            !(0, submittedAccountOp_1.isIdentifiedByRelayer)(activityAccountOp.identifiedBy))
             return activityAccountOp.txnId;
         // @frontrunning
-        if (activityAccountOp.status === AccountOpStatus.Pending ||
-            activityAccountOp.status === AccountOpStatus.BroadcastedButNotConfirmed) {
+        if (activityAccountOp.status === types_1.AccountOpStatus.Pending ||
+            activityAccountOp.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed) {
             // if the receipt cannot be confirmed after a lot of retries, continue on
             if (counter >= 30)
                 return activityAccountOp.txnId;
-            await wait(2000);
+            await (0, wait_1.default)(2000);
             return this.getConfirmedTxId(submittedAccountOp, counter + 1);
         }
         return activityAccountOp.txnId;
@@ -963,8 +967,8 @@ export class ActivityController extends EventEmitter {
                 .flat()
                 .sort((a, b) => b.timestamp - a.timestamp)
                 .slice(0, 10);
-            const pendingOps = latestOps.filter((op) => op.status === AccountOpStatus.Pending ||
-                op.status === AccountOpStatus.BroadcastedButNotConfirmed);
+            const pendingOps = latestOps.filter((op) => op.status === types_1.AccountOpStatus.Pending ||
+                op.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
             if (pendingOps.length) {
                 let opsDataForNextUpdate = mapToMetaData(pendingOps);
                 if (pendingBanner) {
@@ -1002,7 +1006,7 @@ export class ActivityController extends EventEmitter {
                     meta.chainId === op.chainId &&
                     meta.timestamp === op.timestamp))
                 : [];
-            const failedOps = pendingOpsWithUpdatedStatus.filter((op) => op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected);
+            const failedOps = pendingOpsWithUpdatedStatus.filter((op) => op.status === types_1.AccountOpStatus.Failure || op.status === types_1.AccountOpStatus.Rejected);
             if (failedOps.length) {
                 const shouldMarkSeen = Object.keys(this.accountsOps).some((k) => k.startsWith('dashboard'));
                 activityBanners.push({
@@ -1051,4 +1055,5 @@ export class ActivityController extends EventEmitter {
         };
     }
 }
+exports.ActivityController = ActivityController;
 //# sourceMappingURL=activity.js.map

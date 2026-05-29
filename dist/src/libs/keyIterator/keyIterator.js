@@ -1,28 +1,33 @@
-import { HDNodeWallet, Mnemonic, Wallet } from 'ethers';
-import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation';
-import { getHdPathFromTemplate } from '../../utils/hdPath';
-import { isDerivedForSmartAccountKeyOnly } from '../account/account';
-import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys';
-export function isValidPrivateKey(value) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KeyIterator = exports.getPrivateKeyFromSeed = void 0;
+exports.isValidPrivateKey = isValidPrivateKey;
+const ethers_1 = require("ethers");
+const derivation_1 = require("../../consts/derivation");
+const hdPath_1 = require("../../utils/hdPath");
+const account_1 = require("../account/account");
+const keys_1 = require("../keys/keys");
+function isValidPrivateKey(value) {
     try {
-        return !!new Wallet(value);
+        return !!new ethers_1.Wallet(value);
     }
     catch {
         return false;
     }
 }
-export const getPrivateKeyFromSeed = (seed, seedPassphrase, keyIndex, hdPathTemplate) => {
-    const mnemonic = Mnemonic.fromPhrase(seed, seedPassphrase);
-    const wallet = HDNodeWallet.fromMnemonic(mnemonic, getHdPathFromTemplate(hdPathTemplate, keyIndex));
+const getPrivateKeyFromSeed = (seed, seedPassphrase, keyIndex, hdPathTemplate) => {
+    const mnemonic = ethers_1.Mnemonic.fromPhrase(seed, seedPassphrase);
+    const wallet = ethers_1.HDNodeWallet.fromMnemonic(mnemonic, (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, keyIndex));
     if (wallet) {
         return wallet.privateKey;
     }
     throw new Error('Getting the private key from the seed phrase failed.');
 };
+exports.getPrivateKeyFromSeed = getPrivateKeyFromSeed;
 /**
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
-export class KeyIterator {
+class KeyIterator {
     type = 'internal';
     subType;
     #privateKey = null;
@@ -37,7 +42,7 @@ export class KeyIterator {
             this.subType = 'private-key';
             return;
         }
-        if (Mnemonic.isValidMnemonic(_privKeyOrSeed)) {
+        if (ethers_1.Mnemonic.isValidMnemonic(_privKeyOrSeed)) {
             this.#seedPhrase = _privKeyOrSeed;
             this.subType = 'seed';
             if (_seedPassphrase) {
@@ -52,8 +57,8 @@ export class KeyIterator {
             return this.#cachedBaseWallet;
         if (this.subType !== 'seed' || !this.#seedPhrase)
             return null;
-        const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase);
-        this.#cachedBaseWallet = HDNodeWallet.fromMnemonic(mnemonic, 'm');
+        const mnemonic = ethers_1.Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase);
+        this.#cachedBaseWallet = ethers_1.HDNodeWallet.fromMnemonic(mnemonic, 'm');
         return this.#cachedBaseWallet;
     }
     async getEncryptedSeed(encryptor) {
@@ -72,9 +77,9 @@ export class KeyIterator {
                 // Before v4.31.0, private keys for accounts used as smart account keys
                 // were derived. That's no longer the case. Importing private keys
                 // does not generate smart accounts anymore.
-                const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
+                const shouldDerive = from >= derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
                 if (!shouldDerive)
-                    keys.push(new Wallet(this.#privateKey).address);
+                    keys.push(new ethers_1.Wallet(this.#privateKey).address);
             }
             if (this.#seedPhrase && baseWallet) {
                 for (let i = from; i <= to; i++) {
@@ -82,7 +87,7 @@ export class KeyIterator {
                     if (i > from && i % 2 === 0) {
                         await new Promise((resolve) => setTimeout(resolve, 0));
                     }
-                    const path = getHdPathFromTemplate(hdPathTemplate, i);
+                    const path = (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, i);
                     const wallet = baseWallet.derivePath(path);
                     keys.push(wallet.address);
                 }
@@ -108,16 +113,16 @@ export class KeyIterator {
                         console.error('keyIterator: no seed phrase provided');
                         return [];
                     }
-                    const path = getHdPathFromTemplate(hdPathTemplate, index);
+                    const path = (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, index);
                     const privateKey = baseWallet.derivePath(path).privateKey;
                     return [
                         {
-                            addr: new Wallet(privateKey).address,
+                            addr: new ethers_1.Wallet(privateKey).address,
                             type: 'internal',
-                            label: getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
-                                getDefaultKeyLabel(keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)), i),
+                            label: (0, keys_1.getExistingKeyLabel)(keystoreKeys, acc.account.addr, this.type) ||
+                                (0, keys_1.getDefaultKeyLabel)(keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)), i),
                             privateKey,
-                            dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+                            dedicatedToOneSA: (0, account_1.isDerivedForSmartAccountKeyOnly)(index),
                             meta: {
                                 createdAt: new Date().getTime()
                             }
@@ -133,7 +138,7 @@ export class KeyIterator {
                 // Before v4.31.0, private keys for accounts used as smart account keys
                 // were derived. That's no longer the case. Importing private keys
                 // does not generate smart accounts anymore.
-                const isPrivateKeyThatShouldBeDerived = isValidPrivateKey(this.#privateKey) && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
+                const isPrivateKeyThatShouldBeDerived = isValidPrivateKey(this.#privateKey) && index >= derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
                 if (isPrivateKeyThatShouldBeDerived) {
                     // Should never happen
                     console.error('keyIterator: since v4.31.0, private keys should not be derived and importing them does not retrieve a smart account');
@@ -141,10 +146,10 @@ export class KeyIterator {
                 }
                 return [
                     {
-                        addr: new Wallet(this.#privateKey).address,
+                        addr: new ethers_1.Wallet(this.#privateKey).address,
                         type: 'internal',
-                        label: getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
-                            getDefaultKeyLabel(keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)), 0),
+                        label: (0, keys_1.getExistingKeyLabel)(keystoreKeys, acc.account.addr, this.type) ||
+                            (0, keys_1.getDefaultKeyLabel)(keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)), 0),
                         privateKey: this.#privateKey,
                         dedicatedToOneSA: false,
                         meta: {
@@ -160,11 +165,12 @@ export class KeyIterator {
             return false;
         const baseWallet = this.#getBaseWallet();
         if (baseWallet) {
-            const otherMnemonic = Mnemonic.fromPhrase(seedPhraseToCompareWith);
+            const otherMnemonic = ethers_1.Mnemonic.fromPhrase(seedPhraseToCompareWith);
             return baseWallet.mnemonic?.phrase === otherMnemonic.phrase;
         }
-        return (Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase).phrase ===
-            Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase);
+        return (ethers_1.Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase).phrase ===
+            ethers_1.Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase);
     }
 }
+exports.KeyIterator = KeyIterator;
 //# sourceMappingURL=keyIterator.js.map

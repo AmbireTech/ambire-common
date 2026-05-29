@@ -1,7 +1,9 @@
-import { Interface } from 'ethers';
-import { Guild } from '../../const/abis/Guild';
-import { getAction, getLabel } from '../../utils';
-const iface = new Interface(Guild);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
+const Guild_1 = require("../../const/abis/Guild");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface(Guild_1.Guild);
 const GuildModule = (accOp, calls) => {
     const matcher = {
         [iface.getFunction('claim((address receiver, uint8 guildAction, uint256 userId, uint256 guildId, string guildName, uint256 createdAt) pinData, address adminTreasury, uint256 adminFee, uint256 signedAt, string cid, bytes signature)')?.selector]: (call) => {
@@ -20,7 +22,7 @@ const GuildModule = (accOp, calls) => {
             // signature
              } = iface.parseTransaction(call).args;
             // if (receiver === accOp.accountAddr)
-            return [getAction('Claim Guild badge'), getLabel('for'), getLabel(guildName, true)];
+            return [(0, utils_1.getAction)('Claim Guild badge'), (0, utils_1.getLabel)('for'), (0, utils_1.getLabel)(guildName, true)];
         }
     };
     const newCalls = calls.map((call) => {
@@ -30,5 +32,5 @@ const GuildModule = (accOp, calls) => {
     });
     return newCalls;
 };
-export default GuildModule;
+exports.default = GuildModule;
 //# sourceMappingURL=index.js.map
