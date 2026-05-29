@@ -1,8 +1,6 @@
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import { RPCProvider } from '../../../interfaces/provider'
-import { Message } from '../../../interfaces/userRequest'
-import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 
 export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>
@@ -79,17 +77,6 @@ export type Erc7730Eip712IndexEntry = {
 export type Erc7730Eip712Index = Record<string, Record<string, Erc7730Eip712IndexEntry[]>>
 
 export type Erc7730TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
-
-export type FetchErc7730DescriptorForCall = (
-  call: Call,
-  chainId: AccountOp['chainId'],
-  options?: Erc7730RegistryOptions
-) => Promise<Erc7730ResolvedDescriptor | null>
-
-export type FetchErc7730DescriptorForMessage = (
-  message: Message,
-  options?: Erc7730RegistryOptions
-) => Promise<Erc7730ResolvedDescriptor | null>
 
 export type CacheEntry<T> = {
   value: T
