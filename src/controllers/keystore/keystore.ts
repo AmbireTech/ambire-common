@@ -1,6 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable new-cap */
-/* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
 import {
   decryptWithPrivateKey,
@@ -708,7 +705,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
       .map(({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
-        // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
         // Set up the cipher

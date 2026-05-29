@@ -1,4 +1,3 @@
-/* eslint-disable new-cap */
 import {
   concat,
   encodeRlp,
@@ -90,7 +89,6 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return transactionRes
   }
 
-  // eslint-disable-next-line class-methods-use-this
   sign7702: KeystoreSignerInterface['sign7702'] = async ({ chainId, contract, nonce }) => {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 

@@ -28,7 +28,6 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[
 
     if (isAddress(call.to) && getAddress(call.to) === UNWRAP_CONTRACT_ADDR) {
       if (call.data.startsWith(unwrapIface.getFunction('requestWithdrawals')!.selector)) {
-        // eslint-disable-next-line @typescript-eslint/naming-convention
         const { _amounts, _owner } = unwrapIface.parseTransaction(call)!.args
         const amount = _amounts.reduce((acc: bigint, cur: bigint) => acc + cur, 0n)
         const fullVisualization = [getAction('Request withdraw'), getToken(ST_ETH_ADDRESS, amount)]
@@ -44,7 +43,7 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[
         return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
       }
       if (call.data.startsWith(unwrapIface.getFunction('claimWithdrawalsTo')!.selector)) {
-        // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unused-vars
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { _requestIds, _hints, _recipient } = unwrapIface.parseTransaction(call)!.args
         const fullVisualization = [getAction('Claim withdrawal')]
         if (_recipient.toLowerCase() !== accOp.accountAddr.toLowerCase())

@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { Interface, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'

@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { describe, expect, test } from '@jest/globals'
 
 import { networks as predefinedNetworks } from '../../consts/networks'

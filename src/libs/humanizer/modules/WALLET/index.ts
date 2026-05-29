@@ -19,7 +19,7 @@ const WALLET_SUPPLY_CONTROLLER_MAPPING = WALLETSupplyControllerMapping()
 const STAKING_POOLS = StakingPools()
 
 const stkWalletIface = new Interface(StkWallet)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
     supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,

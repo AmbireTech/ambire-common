@@ -265,11 +265,9 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
         try {
           const isCustomAppChain = !p.chainId
           if (pos.additionalData.name === 'Deposit') {
-            // eslint-disable-next-line no-param-reassign
             pos.additionalData.name = 'Deposit pool'
 
             if (pos.additionalData.pool?.id) {
-              // eslint-disable-next-line no-param-reassign
               pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
             }
           }

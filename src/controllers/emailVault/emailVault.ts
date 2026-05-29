@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
 
 import { Banner } from '../../interfaces/banner'

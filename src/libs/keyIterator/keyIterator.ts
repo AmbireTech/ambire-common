@@ -1,4 +1,3 @@
-/* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
 import {
@@ -110,7 +109,6 @@ export class KeyIterator implements KeyIteratorInterface {
 
     const baseWallet = this.#getBaseWallet()
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const { from, to } of fromToArr) {
       if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
         throw new Error('keyIterator: invalid or missing arguments')
@@ -124,11 +122,9 @@ export class KeyIterator implements KeyIteratorInterface {
       }
 
       if (this.#seedPhrase && baseWallet) {
-        // eslint-disable-next-line no-await-in-loop
         for (let i = from; i <= to; i++) {
           // Yield to the event loop every 2 derivations to keep UI responsive
           if (i > from && i % 2 === 0) {
-            // eslint-disable-next-line no-await-in-loop
             await new Promise((resolve) => setTimeout(resolve, 0))
           }
           const path = getHdPathFromTemplate(hdPathTemplate, i)

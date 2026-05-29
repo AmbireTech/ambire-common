@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 /*
  * a singleton for recording failed paymaster requests
  */

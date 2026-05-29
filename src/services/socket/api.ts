@@ -83,7 +83,6 @@ export class SocketAPI implements SwapProvider {
     }
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     // deprecated mechanism
     return true
