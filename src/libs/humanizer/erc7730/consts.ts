@@ -6,7 +6,7 @@ export const ERC7730_DESCRIPTOR_PATH = '/v2/erc7730/fetch-descriptor'
 export const ERC7730_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 // people don't change their singleton on a whim
-export const SAFE_SINGLETOn_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000 // 14 days
+export const SAFE_SINGLETON_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000 // 14 days
 
 // the max time we wait to visualize erc-7730 before going to the fallback
 export const ERC7730_DESCRIPTOR_WAIT_MS = 4000

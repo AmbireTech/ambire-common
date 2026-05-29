@@ -304,7 +304,7 @@ export class SignMessageController
     if (!this.messageToSign) return
 
     if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
-      const currentHumanizationId = this.createHumanizationId()
+      const currentHumanizationId = this.#startHumanization()
       this.#setFallbackHumanization(currentHumanizationId)
       return
     }

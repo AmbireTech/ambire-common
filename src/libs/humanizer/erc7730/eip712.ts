@@ -2,9 +2,29 @@ import { keccak256, toUtf8Bytes } from 'ethers'
 
 import { Erc7730TypedDataTypes } from './types'
 
-const ARRAY_SUFFIX_REGEX = /\[[^\]]*\]/g
+const getBaseType = (type: string) => {
+  let baseType = ''
+  let index = 0
 
-const getBaseType = (type: string) => type.replace(ARRAY_SUFFIX_REGEX, '')
+  while (index < type.length) {
+    const char = type[index]
+    if (char !== '[') {
+      baseType += char
+      index += 1
+      continue
+    }
+
+    const closingBracketIndex = type.indexOf(']', index + 1)
+    if (closingBracketIndex === -1) {
+      baseType += type.slice(index)
+      break
+    }
+
+    index = closingBracketIndex + 1
+  }
+
+  return baseType
+}
 
 const encodeTypeFragment = (typeName: string, types: Erc7730TypedDataTypes): string => {
   const fields = types[typeName]

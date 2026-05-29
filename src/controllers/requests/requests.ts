@@ -1277,7 +1277,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           domain: typedData.domain
         })
       } catch (e) {
-        console.log(e)
+        console.error(e)
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 

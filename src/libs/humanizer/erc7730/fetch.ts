@@ -34,7 +34,9 @@ export const fetchRelayerResource = async <T>(
   )
   const payload = getRelayerPayload<T>(response, path)
 
-  validate(payload, path)
+  if (!validate(payload, path)) {
+    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+  }
 
   return payload
 }
@@ -54,7 +56,9 @@ export const postRelayerResource = async <T>(
   )
   const payload = getRelayerPayload<T>(response, path)
 
-  validate(payload, path)
+  if (!validate(payload, path)) {
+    throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
+  }
 
   return payload
 }

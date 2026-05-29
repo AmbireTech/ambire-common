@@ -3,6 +3,7 @@ import {
   FunctionFragment,
   Interface,
   isAddress,
+  isHexString,
   MaxUint256,
   ParamType,
   ZeroAddress
@@ -12,7 +13,6 @@ import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { decodeMultiSend } from '../../safe/safe'
 import {
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
@@ -46,6 +46,7 @@ import {
   Erc7730TypedDataTypes,
   Erc7730VisibleRule
 } from './types'
+import { getSafeTxCallsFromMessage, isPlainObject, parseIntegerLiteral } from './utils'
 
 type DescriptorFormatMatch = {
   formatKey: string
@@ -69,11 +70,8 @@ type VisibilityResult = {
 const MAX_INTERPOLATED_VALUE_LENGTH = 80
 const MAX_NESTED_CALLDATA_DEPTH = 4
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
 const isMapReference = (value: unknown): value is Erc7730MapReference =>
-  isRecord(value) && typeof value.map === 'string' && typeof value.keyPath === 'string'
+  isPlainObject(value) && typeof value.map === 'string' && typeof value.keyPath === 'string'
 
 const toBigIntOrNull = (value: unknown): bigint | null => {
   if (typeof value === 'bigint') return value
@@ -120,37 +118,45 @@ const getVisibility = (rule: Erc7730VisibleRule | undefined, value: unknown): Vi
   return { visible: true, valid: true }
 }
 
-const getPathSegments = (path: string): string[] =>
-  path.replace(/^\./, '').split('.').filter(Boolean)
+const getPathSegments = (path: string): string[] => {
+  const normalizedPath = path.startsWith('.') ? path.slice(1) : path
+
+  return normalizedPath.split('.').filter(Boolean)
+}
 
 const normalizeSegmentIndex = (index: number, length: number): number =>
   index < 0 ? length + index : index
 
 const readBracketSegment = (source: unknown, segment: string): unknown => {
-  const indexMatch = segment.match(/^\[(-?\d+)\]$/)
-  if (indexMatch) {
-    const index = Number(indexMatch[1])
-    if (!Array.isArray(source) || !Number.isInteger(index)) return undefined
+  if (!segment.startsWith('[') || !segment.endsWith(']')) return undefined
+
+  const bracketContent = segment.slice(1, -1)
+  const separatorIndex = bracketContent.indexOf(':')
+
+  if (separatorIndex === -1) {
+    const index = parseIntegerLiteral(bracketContent)
+    if (!Array.isArray(source) || index === null) return undefined
 
     return source[normalizeSegmentIndex(index, source.length)]
   }
 
-  const sliceMatch = segment.match(/^\[(-?\d*)?:(-?\d*)?\]$/)
-  if (sliceMatch) {
+  if (separatorIndex === bracketContent.lastIndexOf(':')) {
     if (typeof source !== 'string') return undefined
 
     const hex = source.startsWith('0x') ? source.slice(2) : source
     if (hex.length % 2 !== 0) return undefined
 
+    const startText = bracketContent.slice(0, separatorIndex)
+    const endText = bracketContent.slice(separatorIndex + 1)
     const byteLength = hex.length / 2
     const start =
-      sliceMatch[1] === undefined || sliceMatch[1] === ''
+      startText === ''
         ? 0
-        : normalizeSegmentIndex(Number(sliceMatch[1]), byteLength)
+        : normalizeSegmentIndex(parseIntegerLiteral(startText) ?? NaN, byteLength)
     const end =
-      sliceMatch[2] === undefined || sliceMatch[2] === ''
+      endText === ''
         ? byteLength
-        : normalizeSegmentIndex(Number(sliceMatch[2]), byteLength)
+        : normalizeSegmentIndex(parseIntegerLiteral(endText) ?? NaN, byteLength)
 
     if (
       !Number.isInteger(start) ||
@@ -180,7 +186,7 @@ const readPath = (source: unknown, path: string): unknown => {
 
     if (segment.endsWith('[]')) {
       const key = segment.slice(0, -2)
-      const value = isRecord(currentValue) ? currentValue[key] : undefined
+      const value = isPlainObject(currentValue) ? currentValue[key] : undefined
       return Array.isArray(value) ? value : undefined
     }
 
@@ -188,10 +194,10 @@ const readPath = (source: unknown, path: string): unknown => {
       const index = Number(segment)
       if (Number.isInteger(index)) return currentValue[index]
 
-      return currentValue.map((item) => (isRecord(item) ? item[segment] : undefined))
+      return currentValue.map((item) => (isPlainObject(item) ? item[segment] : undefined))
     }
 
-    return isRecord(currentValue) ? currentValue[segment] : undefined
+    return isPlainObject(currentValue) ? currentValue[segment] : undefined
   }, source)
 }
 
@@ -218,7 +224,7 @@ const resolveMapReference = (
   const map = resolvePath(reference.map, context, base)
   const key = resolvePath(reference.keyPath, context, base)
 
-  if (!isRecord(map) || key === undefined || key === null) return undefined
+  if (!isPlainObject(map) || key === undefined || key === null) return undefined
 
   return map[String(key)]
 }
@@ -334,7 +340,7 @@ const getCalldataFormatMatch = (
         values: decodedArgsToObject(decodedArgs, fragment.inputs)
       }
     } catch {
-      return null
+      continue
     }
   }
 
@@ -393,7 +399,7 @@ const isNoExpirationValue = (value: bigint): boolean => {
   if (value === MaxUint256) return true
 
   const hexValue = value.toString(16)
-  return hexValue.length >= 8 && /^f+$/i.test(hexValue)
+  return hexValue.length >= 8 && [...hexValue].every((char) => char.toLowerCase() === 'f')
 }
 
 const formatDuration = (value: unknown): string => {
@@ -510,9 +516,9 @@ const getEnumValue = (
   if (typeof enumRef !== 'string') return null
 
   const enumDefinition = resolvePath(enumRef, context, context.root)
-  if (!isRecord(enumDefinition)) return null
+  if (!isPlainObject(enumDefinition)) return null
 
-  const values = isRecord(enumDefinition.values) ? enumDefinition.values : enumDefinition
+  const values = isPlainObject(enumDefinition.values) ? enumDefinition.values : enumDefinition
   const enumValue = values[valueToText(value)]
 
   return typeof enumValue === 'string' ? enumValue : null
@@ -723,7 +729,7 @@ const resolveFieldReference = (field: Erc7730Field, context: FormatContext): Erc
   if (!field.$ref) return field
 
   const referencedField = resolvePath(field.$ref, context, context.root)
-  if (!isRecord(referencedField)) return field
+  if (!isPlainObject(referencedField)) return field
 
   return {
     ...(referencedField as Erc7730Field),
@@ -793,18 +799,33 @@ const interpolateIntent = (
   context: FormatContext,
   base: unknown
 ): string | null => {
-  let didFail = false
-  const interpolated = template.replace(/\{([^}]+)\}/g, (_, path: string) => {
-    const value = resolvePath(path.trim(), context, base)
-    if (value === undefined) {
-      didFail = true
-      return ''
+  let interpolated = ''
+  let currentIndex = 0
+
+  while (currentIndex < template.length) {
+    const openingBraceIndex = template.indexOf('{', currentIndex)
+    if (openingBraceIndex === -1) {
+      interpolated += template.slice(currentIndex)
+      break
     }
 
-    return valueToText(value)
-  })
+    const closingBraceIndex = template.indexOf('}', openingBraceIndex + 1)
+    if (closingBraceIndex === -1) {
+      interpolated += template.slice(currentIndex)
+      break
+    }
 
-  return didFail ? null : interpolated
+    interpolated += template.slice(currentIndex, openingBraceIndex)
+
+    const path = template.slice(openingBraceIndex + 1, closingBraceIndex)
+    const value = resolvePath(path.trim(), context, base)
+    if (value === undefined) return null
+
+    interpolated += valueToText(value)
+    currentIndex = closingBraceIndex + 1
+  }
+
+  return interpolated
 }
 
 const formatToVisualizations = (
@@ -829,7 +850,7 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
   const { to, value, data, operation } = message.content.message
   if (toBigIntOrNull(operation ?? 0) !== 0n) return null
   if (typeof to !== 'string' || !isAddress(to)) return null
-  if (typeof data !== 'string' || !data.startsWith('0x')) return null
+  if (typeof data !== 'string' || !isHexString(data)) return null
 
   const bigintValue = toBigIntOrNull(value ?? 0)
   if (bigintValue === null) return null
@@ -841,50 +862,6 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
   }
 }
 
-const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
-  if (message.content.kind !== 'typedMessage') return null
-  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
-
-  const { to, value, data, operation } = message.content.message
-  if (typeof to !== 'string' || !isAddress(to)) return null
-  if (typeof data !== 'string' || !data.startsWith('0x')) return null
-
-  const bigintValue = toBigIntOrNull(value ?? 0)
-  const bigintOperation = toBigIntOrNull(operation ?? 0)
-  if (bigintValue === null || bigintOperation === null) return null
-
-  if (bigintOperation === 0n) {
-    return [
-      {
-        to,
-        data,
-        value: bigintValue
-      }
-    ]
-  }
-
-  if (bigintOperation !== 1n) return null
-
-  try {
-    const decoded = multiSendInterface.decodeFunctionData(
-      'multiSend',
-      getAbiBytesCalldataWithPadding(data)
-    )
-    const transactionsHex = decoded[0]
-    if (typeof transactionsHex !== 'string') return null
-
-    const transactions = decodeMultiSend(transactionsHex)
-
-    return transactions.map((transaction) => ({
-      to: transaction.to,
-      data: transaction.data,
-      value: transaction.value
-    }))
-  } catch {
-    return null
-  }
-}
-
 const getKnownFunctionName = (call: Call): string | null => {
   const selector = call.data?.slice(0, 10).toLowerCase()
   if (!selector) return null
@@ -892,7 +869,13 @@ const getKnownFunctionName = (call: Call): string | null => {
   const matchingFragment = Object.values((humanizerInfo as HumanizerMeta).abis)
     .map((abi) => abi[selector])
     .find((fragment) => fragment?.type === 'function')
-  const functionName = matchingFragment?.signature.match(/^function\s+([^(]+)/)?.[1]
+  const signaturePrefix = 'function '
+  const functionSignature = matchingFragment?.signature.startsWith(signaturePrefix)
+    ? matchingFragment.signature.slice(signaturePrefix.length)
+    : undefined
+  const functionNameEnd = functionSignature?.indexOf('(') ?? -1
+  const functionName =
+    functionNameEnd >= 0 ? functionSignature?.slice(0, functionNameEnd).trim() : null
 
   return functionName || null
 }

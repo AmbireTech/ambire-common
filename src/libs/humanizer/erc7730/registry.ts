@@ -11,7 +11,7 @@ import {
   PERMIT2_ADDRESS,
   PERMIT2_APPROVE_SELECTOR,
   SAFE_PROXY_SINGLETON_SLOT,
-  SAFE_SINGLETOn_CACHE_TTL_MS,
+  SAFE_SINGLETON_CACHE_TTL_MS,
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
@@ -37,6 +37,7 @@ import {
   Erc7730TypedDataTypes,
   SafeSingletonProvider
 } from './types'
+import { getSafeTxCallsFromMessage, isHexOfLength, isPlainObject } from './utils'
 
 let relayerCalldataIndexCache: CacheEntry<Erc7730CalldataIndex> | null = null
 let relayerCalldataIndexPromise: Promise<Erc7730CalldataIndex> | null = null
@@ -64,12 +65,21 @@ export const clearErc7730RegistryCache = () => {
 
 const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
+const isDecimalString = (value: string) =>
+  !!value && [...value].every((char) => char >= '0' && char <= '9')
 
-const isRegistryKey = (key: string): boolean => /^eip155:\d+:0x[a-fA-F0-9]{40}$/.test(key)
+const isRegistryKey = (key: string): boolean => {
+  const parts = key.split(':')
 
-const isHexHash = (value: string): boolean => /^0x[a-fA-F0-9]{64}$/.test(value)
+  return (
+    parts.length === 3 &&
+    parts[0] === 'eip155' &&
+    isDecimalString(parts[1]!) &&
+    isHexOfLength(parts[2]!, 40)
+  )
+}
+
+const isHexHash = (value: string): boolean => isHexOfLength(value, 64)
 
 const throwInvalidRelayerResource = (path: string): never => {
   throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
@@ -315,10 +325,7 @@ const fetchCachedIndex = async <T>({
 
   if (promise) return promise
 
-  const nextPromise = withTimeout(() => fetchRelayerResource<T>(path, callRelayer, validate), {
-    timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
-    message: `Timed out fetching ERC-7730 relayer index: ${path}`
-  })
+  const nextPromise = fetchRelayerResource<T>(path, callRelayer, validate)
     .then((index) => {
       setCache(createCacheEntry(index))
       return index
@@ -347,7 +354,11 @@ const normalizeRelayerPath = (pathOrUrl: string): string => {
 }
 
 const getIncludePath = (includePath: string, parentPath: string): string => {
-  if (includePath.startsWith('/') || /^https?:\/\//.test(includePath)) {
+  if (
+    includePath.startsWith('/') ||
+    includePath.startsWith('http://') ||
+    includePath.startsWith('https://')
+  ) {
     return normalizeRelayerPath(includePath)
   }
 
@@ -512,47 +523,6 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
   }
 }
 
-const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
-  if (message.content.kind !== 'typedMessage') return null
-  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
-
-  const { to, value, data, operation } = message.content.message
-  if (typeof to !== 'string' || !isAddress(to)) return null
-  if (typeof data !== 'string' || !isHexString(data)) return null
-
-  try {
-    const bigintValue = BigInt((value ?? 0) as string | number | bigint)
-    const bigintOperation = BigInt((operation ?? 0) as string | number | bigint)
-
-    if (bigintOperation === 0n) {
-      return [
-        {
-          to,
-          data,
-          value: bigintValue
-        }
-      ]
-    }
-
-    if (bigintOperation !== 1n) return null
-
-    const multiSendDecoded = multiSendInterface.decodeFunctionData(
-      'multiSend',
-      getAbiBytesCalldataWithPadding(data)
-    )
-    const transactionsHex = multiSendDecoded[0]
-    if (typeof transactionsHex !== 'string') return null
-
-    return decodeMultiSend(transactionsHex).map((transaction) => ({
-      to: transaction.to,
-      data: transaction.data,
-      value: transaction.value
-    }))
-  } catch {
-    return null
-  }
-}
-
 const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
   if (!call.data || !isHexString(call.data)) return null
 
@@ -596,7 +566,7 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
 }
 
 const getAddressFromStorageSlot = (slotValue: string): string | null => {
-  if (!isHexString(slotValue) || slotValue.length < 40) return null
+  if (!isHexString(slotValue) || slotValue.length < 42) return null
 
   const address = getAddress(`0x${slotValue.slice(-40)}`)
   return address.toLowerCase() === ZeroAddress ? null : address
@@ -614,7 +584,7 @@ const getSafeSingletonFromProxy = async (
 
   const cacheKey = getSafeSingletonCacheKey(chainId, safeAddress)
   const cachedSingleton = safeSingletonCache.get(cacheKey)
-  if (cachedSingleton && Date.now() - cachedSingleton.fetchedAt < SAFE_SINGLETOn_CACHE_TTL_MS)
+  if (cachedSingleton && Date.now() - cachedSingleton.fetchedAt < SAFE_SINGLETON_CACHE_TTL_MS)
     return cachedSingleton.value
 
   const pendingSingleton = safeSingletonPromises.get(cacheKey)
