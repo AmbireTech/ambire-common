@@ -1277,6 +1277,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
+      const domainChainId = BigInt(typedData.domain.chainId || 0)
+      if (domainChainId !== 0n && domainChainId !== network.chainId)
+        throw ethErrors.rpc.invalidRequest(
+          `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
+        )
+      typedData.domain.chainId = network.chainId
+
       if (
         msgAddress === this.#selectedAccount.account.addr &&
         (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
@@ -1295,7 +1302,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             primaryType: typedData.primaryType
           },
           accountAddr: msgAddress,
-          chainId: network.chainId
+          chainId: typedData.domain.chainId
         },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
