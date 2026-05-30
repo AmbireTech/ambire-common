@@ -13,7 +13,6 @@ import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
-
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
@@ -44,7 +43,6 @@ import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
-
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { Account, IAccountsController } from '@/interfaces/account'
@@ -789,7 +787,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.selectedAccount.setAccount(accountToSelect)
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
-    this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
