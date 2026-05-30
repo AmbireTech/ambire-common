@@ -3,10 +3,10 @@ import { Transaction, TypedDataField } from 'ethers'
 import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
+
 import { GasFeePayment } from '../libs/accountOp/accountOp'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
+
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
@@ -15,7 +15,7 @@ import { Hex } from './hex'
 import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
+
 import { TypedMessageUserRequest } from './userRequest'
 
 export type IKeystoreController = ControllerInterface<

@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax */
 import { v4 as uuidv4 } from 'uuid'
 
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -83,16 +82,15 @@ export default class EventEmitter {
     await wait(1)
 
     // Passing `true` to the cb will bypass React batching
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const i of this.#callbacksWithId) i.cb(true)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#callbacks) cb(true)
   }
 
   protected emitUpdate() {
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb()
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#callbacks) cb()
   }
 
@@ -123,9 +121,8 @@ export default class EventEmitter {
    *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
    */
   protected propagateUpdate(forceEmit?: boolean) {
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb(forceEmit)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#callbacks) cb(forceEmit)
   }
 
@@ -137,9 +134,8 @@ export default class EventEmitter {
       this.#errors
     )
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#errorCallbacksWithId) i.cb(error)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
@@ -171,7 +167,7 @@ export default class EventEmitter {
     ) {
       this.emitError({
         level: errorLevel,
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        message: `Please wait for the completion of the previous action before initiating another one, ${callName}`,
         error: new Error(
           'Another function is already being handled by withStatus refrain from invoking a second function.'
         )

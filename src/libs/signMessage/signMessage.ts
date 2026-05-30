@@ -1,4 +1,3 @@
-/* eslint-disable no-param-reassign */
 import {
   AbiCoder,
   concat,
@@ -17,6 +16,7 @@ import {
   TypedDataDomain
 } from 'ethers'
 
+import { CallTuple } from '@/libs/accountOp/types'
 import { verifyMessage as signatureValidatorVerifyMessage } from '@ambire/signature-validator'
 import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
@@ -241,7 +241,7 @@ export const getTypedData = (
  */
 export const get7702UserOpTypedData = (
   chainId: bigint,
-  txns: [string, string, string][],
+  txns: CallTuple[],
   packedUserOp: PackedUserOperation,
   userOpHash: string
 ): TypedMessageUserRequest['meta']['params'] => {
@@ -404,7 +404,6 @@ export async function verifyMessage({
       } else {
         // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
         finalDigest = hexlify(
-          // @ts-ignore
           TypedDataUtils.eip712Hash(
             adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
             SignTypedDataVersion.V4

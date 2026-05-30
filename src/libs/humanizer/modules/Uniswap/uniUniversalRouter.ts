@@ -1,9 +1,18 @@
-import { AbiCoder, Interface, ZeroAddress } from 'ethers'
+import {
+  decodeAbiParameters,
+  decodeFunctionData,
+  parseAbi,
+  parseAbiParameters,
+  toFunctionSelector,
+  zeroAddress,
+  type AbiParameter,
+  type Hex
+} from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { UniswapUniversalRouter } from '../../const/abis'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import {
+  HexIrCall,
   getAction,
   getAddressVisualization,
   getDeadline,
@@ -14,13 +23,12 @@ import {
 import { COMMANDS, COMMANDS_DESCRIPTIONS, V4_ACTION_CODES, V4_ACTION_DESCRIPTORS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath, uniReduce } from './utils'
+import { AbiCoder } from 'ethers'
 
 const coder = new AbiCoder()
-
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
   const decodedInput = coder.decode(types, input)
-
   const params: any = {}
   inputsDetails.forEach((item: any, index: number) => {
     params[item.name] = decodedInput[index]
@@ -45,7 +53,7 @@ function parseCommands(commands: string): string[] | null {
 
 function parseV4Actions(
   actions: string,
-  totalParams: string[],
+  totalParams: Hex[],
   accountAddr: string
 ): HumanizerVisualization[] {
   const parsedActions = parseCommands(actions)
@@ -68,31 +76,23 @@ function parseV4Actions(
       const [tokenIn, path, amountIn, amountOut] = swap
       const lastToken = path[path.length - 1][0]
 
-      // we add them so we can use them as token hints later on in the simulation
-      const hiddenTokens = path.map((p: any): HumanizerVisualization[] => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const [intermediateCurrency, fee, tickSpacing, hooks, hookData] = p
-        return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
-      })
-      parsed.push(
-        [getAction('Swap'), getToken(tokenIn, 0n), getLabel('for'), getToken(lastToken, 0n)],
-        ...hiddenTokens
-      )
+      parsed.push([
+        getAction('Swap'),
+        getToken(tokenIn, 0n),
+        getLabel('for'),
+        getToken(lastToken, 0n)
+      ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
       const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT, param)
       const [tokenOut, path, amountOut, amountIn] = swap
       const firstToken = path[0][0]
 
-      // we add them so we can use them as token hints later on in the simulation
-      const hiddenTokens = path.map((p: any): HumanizerVisualization[] => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const [intermediateCurrency, fee, tickSpacing, hooks, hookData] = p
-        return [getToken(intermediateCurrency, 0n, true), getToken(hooks, 0n, true)]
-      })
-      parsed.push(
-        [getAction('Swap'), getToken(firstToken, 0n), getLabel('for'), getToken(tokenOut, 0n)],
-        ...hiddenTokens
-      )
+      parsed.push([
+        getAction('Swap'),
+        getToken(firstToken, 0n),
+        getLabel('for'),
+        getToken(tokenOut, 0n)
+      ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
       const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE, param)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -104,9 +104,7 @@ function parseV4Actions(
         getAction('Swap'),
         getToken(currency0, 0n),
         getLabel('for'),
-        getToken(currency1, 0n),
-        // used for hint in token discovery
-        getToken(hooks, 0n, true)
+        getToken(currency1, 0n)
       ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE) {
       const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT_SINGLE, param)
@@ -119,9 +117,7 @@ function parseV4Actions(
         getAction('Swap'),
         getToken(currency0, 0n),
         getLabel('for'),
-        getToken(currency1, 0n),
-        // used for hint in token discovery
-        getToken(hooks, 0n, true)
+        getToken(currency1, 0n)
       ])
     } else if (action === V4_ACTION_CODES.TAKE) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
@@ -130,20 +126,6 @@ function parseV4Actions(
         ['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)
       )
         parsed.push([getAction('Take'), getToken(args.currency, args.amount)])
-      // for hints
-      else {
-        const matchingSwap = [...parsed]
-          .reverse()
-          .find(
-            (humanization) =>
-              humanization[0]?.content?.includes('Swap') &&
-              humanization[3]?.type === 'token' &&
-              humanization[3].address === args.currency.toLowerCase()
-          )
-
-        if (matchingSwap) matchingSwap.push(getToken(args.currency, 0n, true))
-        else parsed.push([getToken(args.currency, 0n, true)])
-      }
     } else if (action === V4_ACTION_CODES.TAKE_ALL) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
@@ -154,15 +136,15 @@ function parseV4Actions(
   return uniReduce(parsed)
 }
 
-const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
+const executeWithDeadlineAbi = parseAbi([
+  'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable'
+])
+
 export const uniUniversalRouter: HumanizerUniMatcher = {
-  [`${
-    ifaceUniversalRouter.getFunction(
-      'execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)'
-    )?.selector
-  }`]: (accountOp: AccountOp, call: IrCall) => {
+  [toFunctionSelector(executeWithDeadlineAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
     if (!call.to) throw Error('Humanizer: should not be inside the uniswap module when !call.to')
-    const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
+    const { args } = decodeFunctionData({ abi: executeWithDeadlineAbi, data: call.data })
+    const [commands, inputs, deadline] = args
     const parsedCommands = parseCommands(commands)
     const parsed: HumanizerVisualization[][] = []
 
@@ -309,7 +291,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
           } else if (command === COMMANDS.WRAP_ETH) {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
             const params = extractParams(inputsDetails, inputs[index])
-            params.amountMin && parsed.push(getWrapping(ZeroAddress, params.amountMin))
+            params.amountMin && parsed.push(getWrapping(zeroAddress, params.amountMin))
           } else if (command === COMMANDS.UNWRAP_WETH) {
             const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
             const params = extractParams(inputsDetails, inputs[index])
@@ -317,7 +299,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
             params.amountMin &&
               parsed.push([
                 getAction('Unwrap'),
-                getToken(ZeroAddress, 0n),
+                getToken(zeroAddress, 0n),
                 ...getUniRecipientText(accountOp.accountAddr, params.recipient)
               ])
           } else if (command === COMMANDS.V4_SWAP) {

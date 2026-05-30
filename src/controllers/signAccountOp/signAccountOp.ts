@@ -1,8 +1,5 @@
-/* eslint-disable no-continue */
-/* eslint-disable no-restricted-syntax */
 /* eslint-disable @typescript-eslint/brace-style */
-/* eslint-disable no-await-in-loop */
-/* eslint-disable class-methods-use-this */
+
 import {
   AbiCoder,
   formatEther,
@@ -47,8 +44,8 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
-import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Price } from '../../interfaces/assets'
+import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import {
@@ -105,7 +102,6 @@ import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
-import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -118,6 +114,13 @@ import {
   sortSigs
 } from '../../libs/safe/safe'
 import {
+  get7702AuthorizationSigningRequest,
+  getEIP712SigningRequest,
+  getExecuteSigningRequest,
+  getRawTransactionSigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
+import {
   adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
@@ -128,13 +131,7 @@ import {
   wrapStandard,
   wrapUnprotected
 } from '../../libs/signMessage/signMessage'
-import {
-  get7702AuthorizationSigningRequest,
-  getEIP712SigningRequest,
-  getExecuteSigningRequest,
-  getRawTransactionSigningRequest,
-  getSigningRequestDisplayData
-} from '../../libs/signingRequest/signingRequest'
+import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { UserOperation } from '../../libs/userOperation/types'
@@ -1068,9 +1065,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // The signing might fail, tell the user why but allow the user to retry signing,
-    // @ts-ignore fix TODO: type mismatch
+    // @ts-expect-error fix TODO: type mismatch
     if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
-      // @ts-ignore typescript complains, but the error being present gets checked above
+      // @ts-expect-error typescript complains, but the error being present gets checked above
       errors.push(this.status.error)
     }
 
@@ -1080,11 +1077,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (!this.feeTokenResult?.priceIn.length) {
           errors.push({
             title: `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
-          })
-        } else {
-          errors.push({
-            title:
-              'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
           })
         }
       }
@@ -1146,30 +1138,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
-
-    // if 7702 EOA that is not ambire
-    // and another delegation is there, show the warning
-    const broadcastOption = this.selectedOption
-      ? this.baseAccount.getBroadcastOption(this.selectedOption, {
-          op: this.accountOp,
-          isSponsored: this.isSponsored
-        })
-      : null
-    if (
-      'is7702' in this.baseAccount &&
-      this.baseAccount.is7702 &&
-      this.delegatedContract &&
-      this.delegatedContract !== ZeroAddress &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
-      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
-      (broadcastOption === BROADCAST_OPTIONS.byBundler ||
-        broadcastOption === BROADCAST_OPTIONS.delegation) &&
-      WARNINGS.delegationDetected
-    ) {
-      warnings.push(WARNINGS.delegationDetected)
-    }
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -1654,7 +1622,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
 
     // Show the "not in catalog" banner only for Permit2 interactions to reduce noise on lower-risk actions.
-    if (!containsPermit2 && dappVerificationBanner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) {
+    if (
+      !containsPermit2 &&
+      dappVerificationBanner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG
+    ) {
       return null
     }
 
@@ -1907,7 +1878,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.accountOp,
           this.#network,
           state,
-          !this.#network.rpcNoStateOverride,
           stateOverride
         )
         erc20s = tokens
@@ -2276,7 +2246,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.#keystore.getAccountKeys(feePayer)
   }
 
-  // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
   }
@@ -2441,7 +2410,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (counter === 0) {
           await this.#accounts
             .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-            // eslint-disable-next-line no-console
+
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
         }
@@ -2546,7 +2515,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
         .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-        // eslint-disable-next-line no-console
+
         .catch((e) => console.error(e))
     }
 
@@ -3155,9 +3124,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
             rawTxn: signedTxn
           }).catch((e: any) => {
-            // eslint-disable-next-line no-console
             console.log('failed to record EOA txn to relayer', accountOp.chainId)
-            // eslint-disable-next-line no-console
+
             console.log(e)
           })
         }
@@ -3174,7 +3142,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
         }
       } catch (error: any) {
-        // eslint-disable-next-line no-console
         console.error('Error broadcasting', error)
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
@@ -3450,7 +3417,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (!this.hasCustomGasPrices) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {

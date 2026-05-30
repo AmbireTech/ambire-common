@@ -3,6 +3,7 @@ import { formatUnits, isAddress } from 'ethers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { testnetNetworks } from '../../consts/testnetNetworks'
 import { Account } from '../../interfaces/account'
+import { Contacts } from '../../interfaces/addressBook'
 import { ExtendedAddressState } from '../../interfaces/interop'
 import { Network } from '../../interfaces/network'
 import {
@@ -29,7 +30,6 @@ import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swa
 import { handleAmountConversion } from '../../libs/transaction/conversion'
 import { validateSendTransferAddress } from '../../services/validations'
 import wait from '../../utils/wait'
-import { Contacts } from '../addressBook/addressBook'
 // import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { ControllersTransactionDependencies } from './dependencies'
@@ -584,7 +584,6 @@ export class TransactionFormState extends EventEmitter {
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
         if (r.routeStatus !== 'failed') {
-          // eslint-disable-next-line no-param-reassign
           delete r.error
         }
       })
@@ -594,7 +593,6 @@ export class TransactionFormState extends EventEmitter {
 
         // update the activeRoute.route prop for the new session
         this.activeRoutes.forEach((r) => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateActiveRoute(r.activeRouteId, undefined, true)
         })
       }
@@ -672,7 +670,7 @@ export class TransactionFormState extends EventEmitter {
         ;(async () => {
           let route = currentActiveRoute.route
           if (this.dependencies.serviceProviderAPI.id === 'socket') {
-            // @ts-ignore TODO: types mismatch by a bit, align types better
+            // @ts-expect-error TODO: types mismatch by a bit, align types better
             route = await this.dependencies.serviceProviderAPI.getActiveRoute(activeRouteId)
           }
           this.updateActiveRoute(activeRouteId, { route })

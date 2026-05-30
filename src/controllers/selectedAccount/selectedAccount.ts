@@ -1,4 +1,3 @@
-/* eslint-disable no-underscore-dangle */
 import { formatEther, getAddress, isAddress } from 'ethers'
 
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
@@ -99,7 +98,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#autoLogin = autoLogin
     this.#banner = banner
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -110,7 +108,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
       this.#storage.get('selectedAccount', null),
-      this.#storage.get('selectedAccountDismissedBannerIds', [])
+      this.#storage.get('selectedAccountDismissedBannerIds', {})
     ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null

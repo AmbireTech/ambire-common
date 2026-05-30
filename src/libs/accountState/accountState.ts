@@ -1,4 +1,3 @@
-/* eslint-disable no-underscore-dangle */
 import { concat } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'

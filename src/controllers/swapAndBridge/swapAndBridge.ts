@@ -1,6 +1,5 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
-/* eslint-disable no-await-in-loop */
 import { getAccountNetworks } from '@/libs/networks/networks'
 
 import EmittableError from '../../classes/EmittableError'
@@ -31,6 +30,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapProvider
@@ -354,7 +354,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#onBroadcastFailed = onBroadcastFailed
     this.#ui = ui
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
@@ -712,7 +711,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
         if (r.routeStatus !== 'failed') {
-          // eslint-disable-next-line no-param-reassign
           delete r.error
         }
       })
@@ -722,7 +720,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         // update the activeRoute.route prop for the new session
         this.activeRoutes.forEach((r) => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateActiveRoute(r.activeRouteId, undefined, true)
         })
       }
@@ -730,7 +727,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
     this.#serviceProviderAPI.updateHealth()
     await this.updatePortfolioTokenList(structuredClone(this.#selectedAccount.portfolio.tokens), {
       preselectedToken: preselectedFromToken,
@@ -931,13 +928,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
-          // Don't update the selected token programmatically if the user
-          // has selected it manually
-          if (!this.toSelectedToken) {
-            // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
-            this.toChainId = Number(network.chainId)
-            shouldUpdateToTokenList = true
-          }
+          shouldUpdateToTokenList = true
         }
       }
 
@@ -1112,7 +1103,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         {
           fromSelectedToken: nextFromSelectedToken,
           toSelectedTokenAddr: preselectedToToken?.address,
-          toChainId: preselectedToToken?.chainId,
+          toChainId:
+            preselectedToToken?.chainId ??
+            (preselectedToken ? nextFromSelectedToken?.chainId : undefined),
           fromAmount
         },
         {
@@ -1855,10 +1848,64 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
+  async recordBridgeActivity(
+    txnId: string,
+    activeRoute: SwapAndBridgeActiveRoute,
+    status: 'completed' | 'refunded'
+  ) {
+    await this.#initialLoadPromise
+
+    // when the status is completed, we expect the funds to land on the
+    // destination chain => we use toChainId;
+    // when it's refunded, we expect the source chain => fromChainId
+    const chainId =
+      status === 'completed' ? activeRoute.route?.toChainId : activeRoute.route?.fromChainId
+    if (!chainId) {
+      const message = 'recordBridgeActivity: no chainId found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!provider) {
+      const message = 'recordBridgeActivity: no provider found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const receipt = await provider.getTransactionReceipt(txnId)
+    if (!receipt) {
+      const message = `recordBridgeActivity: no receipt found for txnId: ${txnId}`
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    await this.#activity.addExternalAccountOp({
+      accountAddr: activeRoute.sender,
+      chainId: BigInt(chainId),
+      txnId,
+      receipt,
+      callId: `${activeRoute.activeRouteId}-external`
+    })
+  }
+
   async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
+      let routeStatusResult: SwapAndBridgeRouteStatusResult = { status: null }
 
       if (!activeRoute.userTxHash || activeRoute.routeStatus === 'completed') return
 
@@ -1878,7 +1925,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // should never happen
         if (!activeRoute.route) throw new Error('Route data is missing.')
 
-        status = await this.#serviceProviderAPI.getRouteStatus({
+        routeStatusResult = await this.#serviceProviderAPI.getRouteStatus({
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
@@ -1887,6 +1934,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           requestId: (activeRoute.route.rawRoute as any)?.requestId,
           routeId: activeRoute.route.routeId
         })
+        status = routeStatusResult.status
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
         this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
@@ -1905,6 +1953,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.updateActiveRoute(activeRoute.activeRouteId, {
           error: undefined
         })
+      }
+
+      if (
+        routeStatusResult.txnId &&
+        (status === 'completed' || status === 'refunded') &&
+        activeRoute.route?.fromChainId !== activeRoute.route?.toChainId
+      ) {
+        // we shouldn't be awaiting this as it's OK to have it at a later stage
+        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute, status).catch(console.error)
       }
 
       if (status === 'completed') {

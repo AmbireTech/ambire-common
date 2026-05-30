@@ -4,6 +4,7 @@ export interface FeatureFlags {
   withContinuousUpdatesController: boolean
   testnetMode: boolean
   tokenAndDefiAutoDiscovery: boolean
+  apiForFunctionSelectors: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -11,5 +12,6 @@ export const defaultFeatureFlags: FeatureFlags = {
   withEmailVaultController: true,
   withContinuousUpdatesController: true,
   testnetMode: false,
-  tokenAndDefiAutoDiscovery: true
+  tokenAndDefiAutoDiscovery: true,
+  apiForFunctionSelectors: true
 }

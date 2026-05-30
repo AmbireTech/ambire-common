@@ -82,7 +82,7 @@ export class EstimationController extends EventEmitter {
 
     return baseAcc.getAvailableFeeOptions(
       estimation,
-      // eslint-disable-next-line no-nested-ternary
+
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
@@ -215,7 +215,9 @@ export class EstimationController extends EventEmitter {
       this.estimationRetryError = null
       this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
       this.#notFatalBundlerError =
-        estimation.bundler instanceof Error ? estimation.bundler : undefined
+        estimation.bundler instanceof Error
+          ? new Error(estimation.bundler.message, { cause: '4337_ESTIMATION' })
+          : undefined
     } else {
       this.estimation = null
       this.error = estimation instanceof Error ? estimation : estimation.criticalError
@@ -232,7 +234,7 @@ export class EstimationController extends EventEmitter {
       // continue on error here as the flags are more like app helpers
       this.#accounts
         .updateAccountState(op.accountAddr, 'pending', [op.chainId])
-        // eslint-disable-next-line no-console
+
         .catch((e) => console.error(e))
     }
 
@@ -268,8 +270,8 @@ export class EstimationController extends EventEmitter {
     if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
       warnings.push({
         id: 'bundler-failure',
-        title:
-          'You can proceed safely, but fee payment options are limited due to temporary provider issues'
+        title: 'Fee options are temporarily limited',
+        text: 'Use the "Retry" button to try again, or pay the fee with the native token"'
       })
     }
 

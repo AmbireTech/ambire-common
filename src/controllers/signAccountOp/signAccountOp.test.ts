@@ -3,18 +3,27 @@
 import { AbiCoder, getAddress, hexlify, parseEther, toBeHex, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import {
+  blacklistedDapp,
+  customDapp,
+  failedDapp,
+  getDappRequestData,
+  getDappVerificationTestDapps,
+  loadingDapp
+} from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
@@ -31,6 +40,7 @@ import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
 } from '../../libs/signMessage/signMessage'
+import { PERMIT2_ADDRESS_LOWERCASED } from '../../libs/simulation/detectPermit2Interaction'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
@@ -42,6 +52,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { DappsController } from '../dapps/dapps'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
@@ -361,12 +372,19 @@ const init = async (
   signer: any,
   estimationOrMock: FullEstimationSummary,
   gasPricesOrMock: GasSpeeds,
-  updateWholePortfolio?: boolean
+  updateWholePortfolio?: boolean,
+  options?: {
+    dapps?: Dapp[]
+  }
 ) => {
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
   await storageCtrl.set('selectedAccount', account.addr)
+  if (options?.dapps) {
+    await storageCtrl.set('dappsV2', options.dapps)
+    await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+  }
   const keystore = new KeystoreController(
     'default',
     storageCtrl,
@@ -465,12 +483,25 @@ const init = async (
     bannerCtrl,
     featureFlagsCtrl
   )
+  const continuouslyUpdatePhishingSpy = options?.dapps
+    ? jest
+        .spyOn(PhishingController.prototype, 'continuouslyUpdatePhishing')
+        .mockImplementation(async () => {
+          await wait(1)
+        })
+    : undefined
   const phishing = new PhishingController({
     fetch,
     storage: storageCtrl,
     addressBook: addressBookCtrl,
     ui: uiCtrl
   })
+  if (options?.dapps) {
+    await phishing.initialLoadPromise
+    await phishing.updatePhishingInterval.promise
+    phishing.updatePhishingInterval.stop()
+    continuouslyUpdatePhishingSpy?.mockRestore()
+  }
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
@@ -566,6 +597,25 @@ const init = async (
     onUpdate: () => () => {},
     getDappVerificationBanner: () => null
   }
+  let dapps: IDappsController = dappsControllerMock as any
+  if (options?.dapps) {
+    const fetchAndUpdateSpy = jest
+      .spyOn(DappsController.prototype, 'fetchAndUpdateDapps')
+      .mockImplementation(async () => {
+        await wait(1)
+      })
+    const realDappsController = new DappsController({
+      appVersion: '1.0.0',
+      fetch,
+      storage: storageCtrl,
+      networks: networksCtrl,
+      phishing,
+      ui: uiCtrl
+    })
+    await realDappsController.initialLoadPromise
+    fetchAndUpdateSpy.mockRestore()
+    dapps = realDappsController
+  }
   const controller = new SignAccountOpTesterController({
     accounts: accountsCtrl,
     networks: networksCtrl,
@@ -575,13 +625,13 @@ const init = async (
     account,
     network,
     activity,
-    dapps: dappsControllerMock as any,
+    dapps,
     provider,
     phishing,
     fromRequestId: 1,
     accountOp: op,
     shouldSimulate: false,
-    // @ts-ignore
+    // @ts-expect-error
     onBroadcastSuccess: () => {},
     estimateController: estimationController,
     gasPriceController
@@ -592,6 +642,89 @@ const init = async (
   })
 
   return { controller }
+}
+
+const initDappVerificationBannerTest = async (
+  dapp: Dapp,
+  { isPermit2 = false }: { isPermit2?: boolean } = {}
+) => {
+  const accountOp = createEOAAccountOp(eoaAccount)
+  ;(accountOp.op.calls as any) = [
+    {
+      to: isPermit2 ? PERMIT2_ADDRESS_LOWERCASED : '0x0000000000000000000000000000000000000000',
+      value: BigInt(1),
+      data: '0x',
+      dapp: getDappRequestData(dapp)
+    }
+  ]
+
+  const feePaymentOptions = [
+    {
+      paidBy: eoaAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 0n,
+      addedNative: 5000n,
+      token: {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: parseEther('1'),
+        symbol: 'ETH',
+        name: 'Ether',
+        chainId: 1n,
+        decimals: 18,
+        priceIn: [],
+        marketDataIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true
+        }
+      }
+    }
+  ]
+
+  return init(
+    eoaAccount,
+    accountOp,
+    eoaSigner,
+    {
+      providerEstimation: {
+        gasUsed: 10000n,
+        feePaymentOptions
+      },
+      ambireEstimation: {
+        deploymentGas: 0n,
+        gasUsed: 10000n,
+        feePaymentOptions,
+        ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+        flags: {}
+      },
+      flags: {},
+      updatedAt: Date.now()
+    },
+    {
+      slow: {
+        maxFeePerGas: toBeHex(200n) as Hex,
+        maxPriorityFeePerGas: toBeHex(100n) as Hex
+      },
+      medium: {
+        maxFeePerGas: toBeHex(400n) as Hex,
+        maxPriorityFeePerGas: toBeHex(200n) as Hex
+      },
+      fast: {
+        maxFeePerGas: toBeHex(600n) as Hex,
+        maxPriorityFeePerGas: toBeHex(300n) as Hex
+      },
+      ape: {
+        maxFeePerGas: toBeHex(800n) as Hex,
+        maxPriorityFeePerGas: toBeHex(400n) as Hex
+      }
+    },
+    false,
+    {
+      dapps: getDappVerificationTestDapps()
+    }
+  )
 }
 
 describe('SignAccountOp Controller ', () => {
@@ -787,7 +920,7 @@ describe('SignAccountOp Controller ', () => {
       new Promise((resolve) => {
         const unsub = controller.estimation.onUpdate(() => {
           if (controller.estimation.status !== EstimationStatus.Loading) {
-            // @ts-ignore
+            // @ts-expect-error
             expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
             resolve(true)
             unsub()
@@ -1454,7 +1587,7 @@ describe('Negative cases', () => {
       },
       true
     )
-    // @ts-ignore
+    // @ts-expect-error
     controller.update({
       hasNewEstimation: true,
       feeToken: gasTankToken,
@@ -2163,4 +2296,60 @@ test('Signing [V1 with EOA payment]: working case', async () => {
 
   // If signing is successful, we expect controller's status to be done
   expect(controller.status).toEqual({ type: 'done' })
+})
+
+describe('dapp verification banners', () => {
+  test('should return loading banners', async () => {
+    const { controller } = await initDappVerificationBannerTest(loadingDapp)
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+        type: 'warning',
+        text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: Loading Dapp"
+      }
+    ])
+  })
+
+  test('should return failed verification banners', async () => {
+    const { controller } = await initDappVerificationBannerTest(failedDapp)
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+        type: 'warning',
+        text: "We couldn't verify the app. Make sure you trust it before signing requests: Failed Dapp"
+      }
+    ])
+  })
+
+  test('should return blacklisted banners', async () => {
+    const { controller } = await initDappVerificationBannerTest(blacklistedDapp)
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+        type: 'error',
+        text: "This app didn't pass our safety check. Proceed at your own risk: Blacklisted Dapp"
+      }
+    ])
+  })
+
+  test('should hide not-in-catalog banners for non-Permit2 interactions', async () => {
+    const { controller } = await initDappVerificationBannerTest(customDapp)
+
+    expect(controller.banners).toEqual([])
+  })
+
+  test('should show not-in-catalog banners for Permit2 interactions', async () => {
+    const { controller } = await initDappVerificationBannerTest(customDapp, { isPermit2: true })
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+        type: 'warning',
+        text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
+      }
+    ])
+  })
 })

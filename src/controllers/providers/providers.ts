@@ -1,6 +1,5 @@
 import { Contract } from 'ethers'
 
-/* eslint-disable no-underscore-dangle */
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
@@ -10,6 +9,7 @@ import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -115,7 +115,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       }
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -433,10 +432,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         receiptBlockNumber: blockTag,
         getTokenBalancesOnBlock,
         receipts,
-        debugTraceTransaction: (txnHash) =>
-          chainId === 999n
-            ? provider.send('debug_traceTransaction', [txnHash, { tracer: 'callTracer' }])
-            : Promise.resolve(null)
+        debugTraceTransaction: getDebugTraceTransaction(chainId, provider)
       })
 
       return this.#sendUiMessage({

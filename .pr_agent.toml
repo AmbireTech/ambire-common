@@ -1,6 +1,9 @@
 [config]
 response_language = "en"
 
+# Fallback to Sonnet in case Kimi is unavailable.
+fallback_models=["openrouter/anthropic/claude-sonnet-4.6"]
+
 # ─────────────────────────────────────────────
 # Token & Cost Guardrails
 # ─────────────────────────────────────────────
@@ -71,6 +74,12 @@ Prioritize issues such as:
 - Missing comments or documentation for complex logic
 - Unhandled exceptions and edge cases
 - Swallowed errors and edge case return statements that should at least log an error
+- Concurrent modifications to state that may result in race conditions
+- Unhandled degradations when interacting with external services and APIs
+- Decimal precision handling and bigint conversions
+- Unhandled pending operations (e.g., submitting twice, not awaiting async calls, etc.)
+- Partial updates that leave the state inconsistent
+- Improper cleanup of subscriptions, timers, and event listeners
 
 Be constructive, concise, and actionable. Keep feedback grounded in the actual changes rather than using a fixed checklist.
 """
@@ -96,3 +105,4 @@ require_ticket_analysis_review = true
 # Keep the review header but suppress noisy help text.
 enable_intro_text = true
 enable_help_text = false
+enable_ai_metadata = true

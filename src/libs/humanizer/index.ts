@@ -16,6 +16,7 @@ import {
   snapshotModule,
   zealyMessageModule
 } from './messageModules'
+import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -105,7 +106,8 @@ const humanizerTMModules = [
   zealyMessageModule,
   safeMessageModule,
   eip7702AuthorizationModule,
-  snapshotModule
+  snapshotModule,
+  fallbackShortPlaintext
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {
@@ -128,10 +130,10 @@ const humanizeMessage = (_message: Message): IrMessage => {
 
   try {
     // runs all modules and takes the first non empty array
-    const { fullVisualization, warnings } =
+    const { fullVisualization, warnings, canHideDropdownArrow } =
       humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
 
-    return { ...message, fullVisualization, warnings }
+    return { ...message, fullVisualization, warnings, canHideDropdownArrow }
   } catch (error) {
     console.error(error)
     return message

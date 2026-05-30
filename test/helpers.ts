@@ -131,19 +131,13 @@ function produceMemoryStore(): Storage {
   }
 
   return {
-    get: (key?: string, defaultValue?: any): any => {
-      if (!key) {
-        return Object.fromEntries(
-          Object.entries(Object.fromEntries(storage)).map(([k, value]) => [k, formatValue(value)])
-        )
-      }
-
+    get: (async (key: string, defaultValue?: any): Promise<any> => {
       const serialized = storage.get(key)
 
       if (!serialized) return defaultValue
 
       return formatValue(serialized, defaultValue)
-    },
+    }) as Storage['get'],
     set: (key, value) => {
       storage.set(key, typeof value === 'string' ? value : stringify(value))
       return Promise.resolve(null)

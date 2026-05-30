@@ -1,4 +1,4 @@
-import { toBeHex, TransactionReceipt } from 'ethers'
+import { toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import {
@@ -34,11 +34,15 @@ import {
   isIdentifiedByUserOpHash,
   PortfoliosToUpdate,
   SubmittedAccountOp,
+  SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
+import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InternalSignedMessages, SignedMessage } from './types'
@@ -56,7 +60,22 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
+interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
+
+type AddExternalAccountOpParams = {
+  accountAddr: string
+  chainId: bigint
+  txnId: string
+  receipt: TransactionReceipt
+  callId?: Call['id']
+  shouldLearnTokens?: boolean
+}
+
+type AccountOpBalanceChangesBackfillReference = Pick<
+  SubmittedAccountOp,
+  'identifiedBy' | 'accountAddr' | 'chainId'
+>
+
 interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
@@ -68,6 +87,10 @@ export interface Filters {
 export interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
+}
+
+export interface ExternalAccountOps {
+  [account: string]: { [network: string]: SubmittedAccountOpLike[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -92,6 +115,52 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
 
 const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
 
+const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
+
+/**
+ * Take all txnIds from the account op
+ * - normal case: accountOp.txnId
+ * - MultipleTxns case: each call.txnId
+ */
+const getInternalAccountOpTxnIds = (accountOp: SubmittedAccountOp) => {
+  return [accountOp.txnId, ...accountOp.calls.map((call) => call.txnId)].filter(
+    (txnId): txnId is string => !!txnId
+  )
+}
+
+const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string) => {
+  const normalizedTxnId = normalizeTxnId(txnId)
+
+  return getInternalAccountOpTxnIds(accountOp).some(
+    (internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId
+  )
+}
+
+const externalAccountOpHasTxnId = (accountOp: SubmittedAccountOpLike, txnId: string) =>
+  normalizeTxnId(accountOp.txnId) === normalizeTxnId(txnId)
+
+const isAccountOpFinalized = (accountOp: SubmittedAccountOp) =>
+  accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+  accountOp.status !== AccountOpStatus.Pending
+
+/**
+ * Fix address checksum problems as sometimes addresses are left out
+ * only because they are not saved properly checksummed
+ */
+const getAccountOpsAccountKey = <T>(
+  accountOps: { [account: string]: { [network: string]: T[] } },
+  accountAddr: string
+) => Object.keys(accountOps).find((key) => key.toLowerCase() === accountAddr.toLowerCase())
+
+const getAccountOpsForAccountAndChain = <T>(
+  accountOps: { [account: string]: { [network: string]: T[] } },
+  accountAddr: string,
+  chainIdString: string
+) => {
+  const accountKey = getAccountOpsAccountKey(accountOps, accountAddr)
+  return accountKey ? accountOps[accountKey]?.[chainIdString] || [] : []
+}
+
 const getBalanceChangeWindowFromReceipts = (
   accountOp: SubmittedAccountOp,
   receipts: TransactionReceipt[]
@@ -113,13 +182,16 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
   accountOp: SubmittedAccountOp,
   receipts: TransactionReceipt[]
 ) => {
-  const foundTokens = (
-    await Promise.all(
-      receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
-    )
-  ).flat()
+  const foundTokens = filterStaticBlacklistedAddrs(
+    (
+      await Promise.all(
+        receipts.map((receipt) => getTransferLogTokens(receipt.logs, accountOp.accountAddr))
+      )
+    ).flat(),
+    accountOp.chainId
+  )
 
-  return getBalanceChangeTokenAddresses(foundTokens)
+  return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
 }
 
 const getAccountOpReceipts = async (
@@ -180,6 +252,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #accountsOps: InternalAccountsOps = {}
 
+  #externalAccountOps: ExternalAccountOps = {}
+
   accountsOps: {
     [sessionId: string]: {
       result: AccountsOps
@@ -230,6 +304,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     [key: string]: Promise<void> | undefined
   } = {}
 
+  #addExternalAccountOpQueue: Promise<void> = Promise.resolve()
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -262,12 +338,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
-    const [accountsOps, signedMessages] = await Promise.all([
+    const [accountsOps, externalAccountOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
+      this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {})
     ])
 
     this.#accountsOps = accountsOps
+    this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
 
     this.emitUpdate()
@@ -362,29 +440,52 @@ export class ActivityController extends EventEmitter implements IActivityControl
     pagination: Pagination = { fromPage: 0, itemsPerPage: 10 }
   ) {
     await this.#initialLoadPromise
+    this.#externalAccountOps = await this.#storage.get(
+      'externalAccountOps',
+      this.#externalAccountOps
+    )
 
     const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
-    const accountOpsEntriesOnEnabledNetworks = Object.entries(
-      this.#accountsOps[filters.account] || {}
+    const internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
+    const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
+    const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
+      internalAccountOpsByChain
     ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
-    let filteredItems: SubmittedAccountOp[]
+    const internalAccountOps = new Set(
+      internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+    )
+    const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
+      .map(
+        (chainId) =>
+          [
+            chainId,
+            [
+              ...(internalAccountOpsByChain[chainId] || []),
+              ...(externalAccountOpsByChain[chainId] || [])
+            ]
+          ] as const
+      )
+      .filter(([, accountOps]) => accountOps.length)
+    let filteredItems: SubmittedAccountOpLike[]
 
     if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
-      filteredItems =
-        accountOpsEntriesOnEnabledNetworks.find(
+      filteredItems = [
+        ...(accountOpsEntriesOnEnabledNetworks.find(
           ([chainId]) => chainId === String(filters.chainId)
-        )?.[1] || []
+        )?.[1] || [])
+      ]
     } else {
       filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
-      // By default, #accountsOps are grouped by network and sorted in descending order.
-      // However, when the network filter is omitted, #accountsOps from different networks are mixed,
-      // requiring additional sorting to ensure they are also in descending order.
-      filteredItems.sort((a, b) => b.timestamp - a.timestamp)
     }
+
+    // By default, account ops are grouped by network and sorted in descending order.
+    // However, when internal and external ops are mixed, they need a final sort even
+    // when a network filter is present.
+    filteredItems.sort((a, b) => b.timestamp - a.timestamp)
 
     // for benzin fetching
     if (filters.identifiedBy) {
-      filteredItems.filter(
+      filteredItems = filteredItems.filter(
         (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
       )
     }
@@ -400,8 +501,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // no need to console.log anything in the catch statement here
     // as error handling is handled in backfillAccountOpBalanceChangesAndPersist.
     const opsWithNoBalanceChanges = result.items.filter(
-      (op: SubmittedAccountOp) =>
-        op.status !== AccountOpStatus.BroadcastedButNotConfirmed && op.balanceChanges === undefined
+      (op): op is SubmittedAccountOp =>
+        internalAccountOps.has(op as SubmittedAccountOp) &&
+        op.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+        op.balanceChanges === undefined
     )
     if (opsWithNoBalanceChanges.length)
       this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
@@ -463,6 +566,49 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#storage.set('accountsOps', this.#accountsOps)
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
+  }
+
+  /**
+   * We could have this case:
+   * 1. We have a BroadcastedButNotConfirmed account op with an accountOp.txnId that's not the final, confirmed txnId
+   * 2. While we have this pending account op, getLogs() finds the confirmed transactions. Its txnId differs from the BroadcastedButNotConfirmed accountOp, so it gets added successfully, skipping the duplication guard
+   * 3. The BroadcastedButNotConfirmed loop completes, changes the accountOp.txnId to the real one, but it's too late as the externalAccountOp has already been added.
+   * That's why we're running back and cleaning up already added externalAccountOps with the same txnId
+   */
+  async #removeExternalAccountOpsMatchingInternalOps(accountOps: SubmittedAccountOp[]) {
+    let hasRemovedExternalAccountOps = false
+
+    accountOps.filter(isAccountOpFinalized).forEach((accountOp) => {
+      const externalAccountOpsAccountKey = getAccountOpsAccountKey(
+        this.#externalAccountOps,
+        accountOp.accountAddr
+      )
+      if (!externalAccountOpsAccountKey) return
+
+      const chainIdString = accountOp.chainId.toString()
+      const externalAccountOps =
+        this.#externalAccountOps[externalAccountOpsAccountKey]?.[chainIdString]
+      if (!externalAccountOps?.length) return
+
+      const internalTxnIds = new Set(
+        getInternalAccountOpTxnIds(accountOp).map((txnId) => normalizeTxnId(txnId))
+      )
+      if (!internalTxnIds.size) return
+
+      const filteredExternalAccountOps = externalAccountOps.filter((externalAccountOp) => {
+        const externalTxnId = normalizeTxnId(externalAccountOp.txnId)
+        return !externalTxnId || !internalTxnIds.has(externalTxnId)
+      })
+
+      if (filteredExternalAccountOps.length === externalAccountOps.length) return
+
+      this.#externalAccountOps[externalAccountOpsAccountKey]![chainIdString] =
+        filteredExternalAccountOps
+      hasRemovedExternalAccountOps = true
+    })
+
+    if (hasRemovedExternalAccountOps)
+      await this.#storage.set('externalAccountOps', this.#externalAccountOps)
   }
 
   async filterSignedMessages(
@@ -540,6 +686,157 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  async addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams) {
+    const task = this.#addExternalAccountOpQueue
+      .catch(() => undefined) // errors handled inside
+      .then(() =>
+        this.#addExternalAccountOp({
+          accountAddr,
+          chainId,
+          txnId,
+          receipt,
+          callId,
+          shouldLearnTokens
+        })
+      )
+
+    // errors handled inside
+    this.#addExternalAccountOpQueue = task.catch(() => undefined)
+
+    return task
+  }
+
+  async #addExternalAccountOp({
+    accountAddr,
+    chainId,
+    txnId,
+    receipt,
+    callId,
+    shouldLearnTokens = false
+  }: AddExternalAccountOpParams): Promise<void> {
+    await this.#initialLoadPromise
+
+    // a duplication guard
+    const chainIdString = chainId.toString()
+    const hasExistingAccountOpWithTxnId = () => {
+      const internalAccountOps = getAccountOpsForAccountAndChain(
+        this.#accountsOps,
+        accountAddr,
+        chainIdString
+      )
+      const existingExternalAccountOps = getAccountOpsForAccountAndChain(
+        this.#externalAccountOps,
+        accountAddr,
+        chainIdString
+      )
+
+      return (
+        internalAccountOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
+        existingExternalAccountOps.some((accountOp) => externalAccountOpHasTxnId(accountOp, txnId))
+      )
+    }
+
+    if (hasExistingAccountOpWithTxnId()) return
+
+    const network = this.#networks.networks.find((n) => n.chainId === chainId)
+    const provider = this.#providers.providers[chainIdString]
+    if (!network || !provider) {
+      this.emitError({
+        level: 'silent',
+        message: `Network/provider not found for chainId: ${chainId}`,
+        error: new Error(`Network/provider not found for chainId: ${chainId}`)
+      })
+      return
+    }
+
+    const [transaction, block] = await Promise.all([
+      provider.getTransaction(txnId).catch(() => null),
+      provider.getBlock(receipt.blockNumber).catch(() => null)
+    ])
+
+    const accountOpStatus = receipt.status === 0 ? AccountOpStatus.Failure : AccountOpStatus.Success
+    const call: Call = {
+      id: callId || `external-${txnId}`,
+      to: transaction?.to || receipt.to || ZeroAddress,
+      value: transaction?.value || 0n,
+      data: transaction?.data || '0x',
+      txnId: txnId as NonNullable<Call['txnId']>,
+      status: accountOpStatus,
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString()
+    }
+
+    const submittedAccountOpLike: SubmittedAccountOpLike = {
+      id: `external-${txnId}`,
+      accountAddr,
+      chainId,
+      calls: [call],
+      gasFeePayment: null,
+      txnId,
+      status: accountOpStatus,
+      activitySource: 'external',
+      blockNumber: receipt.blockNumber,
+      blockHash: receipt.blockHash,
+      gasUsed: receipt.gasUsed.toString(),
+      timestamp: block?.timestamp ? block.timestamp * 1000 : Date.now(),
+      identifiedBy: {
+        type: 'Transaction',
+        identifier: txnId
+      }
+    }
+
+    try {
+      const foundTokens = filterStaticBlacklistedAddrs(
+        await getTransferLogTokens(receipt.logs, accountAddr),
+        chainId
+      )
+      if (shouldLearnTokens) {
+        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
+        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
+      }
+      const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
+
+      submittedAccountOpLike.balanceChanges = await getAccountOpBalanceChanges({
+        accountAddr,
+        chainId,
+        tokenAddrs,
+        receiptBlockNumber: receipt.blockNumber,
+        getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
+        receipts: [receipt as TransactionReceipt],
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
+      })
+    } catch (error) {
+      submittedAccountOpLike.balanceChanges = undefined
+    }
+
+    if (hasExistingAccountOpWithTxnId()) return
+
+    if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
+    if (!this.#externalAccountOps[accountAddr]![chainIdString]) {
+      this.#externalAccountOps[accountAddr]![chainIdString] = []
+    }
+
+    const externalAccountOps = this.#externalAccountOps[accountAddr]![chainIdString]!
+    externalAccountOps.unshift(submittedAccountOpLike)
+    trim(externalAccountOps)
+
+    await this.#storage.set('externalAccountOps', this.#externalAccountOps)
+    await this.syncFilteredAccountsOps()
+    this.emitUpdate()
+  }
+
   async setAccountOpBalanceChanges(
     identifiedBy: AccountOpIdentifiedBy,
     accountAddr: string,
@@ -583,7 +880,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * We have this separation in order to persist to storage only after the
    * end of an operation
    */
-  async backfillAccountOpBalanceChanges(accountOp: SubmittedAccountOp) {
+  async backfillAccountOpBalanceChanges(accountOp: AccountOpBalanceChangesBackfillReference) {
     await this.#initialLoadPromise
 
     // take the latest #accountOp, not a stale one from the UI
@@ -876,7 +1173,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               }
 
               const txnId = fetchTxnIdResult.txnId as string
-              // eslint-disable-next-line no-param-reassign
+
               accountOp.txnId = txnId
               txIds.push(txnId)
             } else {
@@ -906,15 +1203,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     isIdentifiedByUserOpHash(accountOp.identifiedBy) &&
                     txnId
                   ) {
-                    // eslint-disable-next-line no-await-in-loop
                     const frontRanTxnId = await fetchFrontRanTxnId(
                       accountOp.identifiedBy,
                       txnId,
                       network
                     )
-                    // eslint-disable-next-line no-param-reassign
+
                     accountOp.txnId = frontRanTxnId
-                    // eslint-disable-next-line no-await-in-loop
+
                     receipt = await provider.getTransactionReceipt(frontRanTxnId)
                     if (!receipt) return
                   }
@@ -959,7 +1255,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   }
 
                   if (accountOp.isSingletonDeploy && receipt.status) {
-                    // eslint-disable-next-line no-await-in-loop
                     await this.#onContractsDeployed(network)
                   }
 
@@ -976,19 +1271,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   }
 
                   const foundTokens = isSuccess
-                    ? await getTransferLogTokens(receipt.logs, accountOp.accountAddr)
+                    ? filterStaticBlacklistedAddrs(
+                        await getTransferLogTokens(receipt.logs, accountOp.accountAddr),
+                        accountOp.chainId
+                      )
                     : []
                   if (foundTokens.length)
                     this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
                   foundTokens.forEach((tokenAddr) => foundTokensForBalanceChanges.add(tokenAddr))
 
-                  // eslint-disable-next-line no-param-reassign
                   accountOp.blockNumber = receipt.blockNumber
 
-                  // eslint-disable-next-line no-param-reassign
                   accountOp.blockHash = receipt.blockHash
 
-                  // eslint-disable-next-line no-param-reassign
                   accountOp.gasUsed = toBeHex(receipt.gasUsed)
 
                   // Add accounts that are recipients of the AccountOp
@@ -1006,15 +1301,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // update the chain if a receipt has been received as otherwise, we're
                   // left hanging with a pending portfolio balance
                   chainsToUpdate.add(network.chainId)
-                  // eslint-disable-next-line no-continue
+
                   continue
                 }
 
                 // if there's no receipt, confirm there's a txn
                 // if there's no txn and 15 minutes have passed, declare it a failure
-                // eslint-disable-next-line no-await-in-loop
+
                 const txn = txnId ? await provider.getTransaction(txnId) : null
-                // eslint-disable-next-line no-continue
+
                 if (txn) continue
                 await declareStuckIfFiveMinsPassed(accountOp)
               }
@@ -1033,7 +1328,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 accountOp,
                 network,
                 tokenAddrs: getBalanceChangeTokenAddresses(
-                  Array.from(foundTokensForBalanceChanges)
+                  Array.from(foundTokensForBalanceChanges),
+                  accountOp.chainId
                 ),
                 receiptBlockNumber: lastReceiptBlockNumber,
                 prevBlockNumber:
@@ -1052,6 +1348,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // if there are balanceChangesTasks, shouldEmitUpdate will be true
     // so they will get saved
     if (shouldEmitUpdate) {
+      // remove duplicates if encountered during a race condition
+      await this.#removeExternalAccountOpsMatchingInternalOps(updatedAccountsOps)
       await this.persistAccountsOps()
     }
 
@@ -1094,13 +1392,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
         getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
         prevBlockNumber,
         receipts,
-        debugTraceTransaction: (txnHash) =>
-          network.chainId === 999n
-            ? this.#providers.providers[network.chainId.toString()]!.send(
-                'debug_traceTransaction',
-                [txnHash, { tracer: 'callTracer' }]
-              )
-            : Promise.resolve(null)
+        debugTraceTransaction: getDebugTraceTransaction(
+          network.chainId,
+          this.#providers.providers[network.chainId.toString()]
+        )
       })
 
       await this.setAccountOpBalanceChanges(
@@ -1211,8 +1506,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       // if the receipt cannot be confirmed after a lot of retries, continue on
       if (counter >= 30) return activityAccountOp.txnId
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      await wait(1000)
+      await wait(2000)
       return this.getConfirmedTxId(submittedAccountOp, counter + 1)
     }
 
@@ -1246,14 +1540,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
         timestamp: op.timestamp
       }))
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const acc of this.#accounts.accounts) {
       const addr = acc.addr
       const accountOps = this.#accountsOps[addr]
 
       if (!accountOps) {
         this.#bannersByAccount.set(addr, [])
-        // eslint-disable-next-line no-continue
+
         continue
       }
 

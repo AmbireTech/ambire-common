@@ -151,7 +151,7 @@ describe('Debug tracecall detection for transactions', () => {
     }
 
     const baseAccount = getBaseAccount(account, state, network)
-    const res = await debugTraceCall(baseAccount, accountOp, network, state, true, overrideData)
+    const res = await debugTraceCall(baseAccount, accountOp, network, state, overrideData)
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0]![0]).toBe(NFT_ADDRESS)

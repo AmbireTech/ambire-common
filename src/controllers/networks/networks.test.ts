@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { describe, expect, test } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'

@@ -7,10 +7,32 @@ import { BalanceChange } from './submittedAccountOp'
 import type { BalanceChangesReceipt, DebugTraceTransaction } from './hyperEvmBalanceChanges'
 export type { BalanceChangesReceipt, BalanceChangeTransferLog } from './hyperEvmBalanceChanges'
 
-export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =>
-  Array.from(
+const ABSTRACT_CHAIN_ID = 2741n
+const ABSTRACT_NATIVE_TOKEN_ADDRESS = '0x000000000000000000000000000000000000800A'
+
+/**
+ * The ETH token on abstract is represented on an address
+ * that isn't a standard ERC-20 but it emits such a transfer log,
+ * causing our balance changes to break. We're fixing that here by
+ * omiting it
+ */
+const filterAbstractNativeTokenAlias = (tokenAddrs: string[], chainId?: bigint) => {
+  if (chainId !== ABSTRACT_CHAIN_ID) return tokenAddrs
+
+  return tokenAddrs.filter(
+    (tokenAddr) => tokenAddr.toLowerCase() !== ABSTRACT_NATIVE_TOKEN_ADDRESS.toLowerCase()
+  )
+}
+
+export const getBalanceChangeTokenAddresses = (
+  tokenAddrs: string[],
+  chainId?: bigint
+): string[] => {
+  const tokenAddrsToNormalize = filterAbstractNativeTokenAlias(tokenAddrs, chainId)
+
+  return Array.from(
     new Set(
-      [ZeroAddress, ...tokenAddrs].map((tokenAddr) => {
+      [ZeroAddress, ...tokenAddrsToNormalize].map((tokenAddr) => {
         try {
           return getAddress(tokenAddr)
         } catch (e) {
@@ -19,6 +41,7 @@ export const getBalanceChangeTokenAddresses = (tokenAddrs: string[]): string[] =
       })
     )
   ).filter((addr) => addr !== null)
+}
 
 const isUsableTokenResult = (error: TokenError | null | undefined, token?: TokenResult | null) =>
   !!token && error === '0x' && !!token.symbol
@@ -126,23 +149,36 @@ export const getAccountOpBalanceChanges = async ({
       debugTraceTransaction
     })
   }
+  const balanceChangeTokenAddrs = filterAbstractNativeTokenAlias(tokenAddrs, chainId)
   const previousBlockNumber = prevBlockNumber
     ? prevBlockNumber
     : receiptBlockNumber > 0
       ? receiptBlockNumber - 1
       : 0
   const [currentBlockTokens, previousBlockTokens] = await Promise.all([
-    getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, receiptBlockNumber, accountAddr),
-    getTokenBalancesOnBlock(accountAddr, chainId, tokenAddrs, previousBlockNumber, accountAddr)
+    getTokenBalancesOnBlock(
+      accountAddr,
+      chainId,
+      balanceChangeTokenAddrs,
+      receiptBlockNumber,
+      accountAddr
+    ),
+    getTokenBalancesOnBlock(
+      accountAddr,
+      chainId,
+      balanceChangeTokenAddrs,
+      previousBlockNumber,
+      accountAddr
+    )
   ])
 
   // The receipt block snapshot must include every token, otherwise we could
   // falsely record a full-balance outflow. On the previous block, native is
   // still required, but missing ERC-20s are allowed as 0 -> current balance.
-  assertTokenBalanceSnapshot(currentBlockTokens, tokenAddrs, receiptBlockNumber)
+  assertTokenBalanceSnapshot(currentBlockTokens, balanceChangeTokenAddrs, receiptBlockNumber)
   assertTokenBalanceSnapshot(
     previousBlockTokens,
-    tokenAddrs.filter(isNativeTokenAddress),
+    balanceChangeTokenAddrs.filter(isNativeTokenAddress),
     previousBlockNumber
   )
 

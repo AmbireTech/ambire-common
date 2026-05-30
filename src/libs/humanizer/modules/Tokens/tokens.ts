@@ -1,126 +1,148 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { ERC20, ERC721 } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getToken,
+  isHexCall
+} from '../../utils'
 
-const ERC721_INTERFACE = new Interface(ERC721)
-const ERC20_INTERFACE = new Interface(ERC20)
+// Narrowed ABIs — defined once at module level, used for typed decoding
+const erc721ApproveAbi = parseAbi(['function approve(address to, uint256 tokenId)'])
+const erc721SetApprovalForAllAbi = parseAbi([
+  'function setApprovalForAll(address operator, bool approved)'
+])
+const erc721SafeTransferFromAbi = parseAbi([
+  'function safeTransferFrom(address from, address to, uint256 tokenId)'
+])
+const erc721TransferFromAbi = parseAbi([
+  'function transferFrom(address from, address to, uint256 tokenId)'
+])
 
-// @TODO merge this with the  erc20 humanizer module as sometimes
-// we see no difference between the two
+const erc20ApproveAbi = parseAbi([
+  'function approve(address _spender, uint256 _value) returns (bool)'
+])
+const erc20TransferAbi = parseAbi(['function transfer(address _to, uint256 _value) returns (bool)'])
+const erc20TransferFromAbi = parseAbi([
+  'function transferFrom(address _from, address _to, uint256 _value) returns (bool)'
+])
+const erc20IncreaseAllowanceAbi = parseAbi([
+  'function increaseAllowance(address spender, uint256 addedValue) returns (bool)'
+])
+const erc20DecreaseAllowanceAbi = parseAbi([
+  'function decreaseAllowance(address spender, uint256 subtractedValue) returns (bool)'
+])
+
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[]
 ) => {
-  const nftTransferVisualization = (call: IrCall) => {
+  const nftTransferVisualization = (
+    call: HexIrCall,
+    abi: typeof erc721SafeTransferFromAbi | typeof erc721TransferFromAbi
+  ) => {
     if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-    const args = ERC721_INTERFACE.parseTransaction(call)?.args.toArray() || []
-    return args[0] === accountOp.accountAddr
-      ? [
-          getAction('Send'),
-          getToken(call.to, args[2]),
-          getLabel('to'),
-          getAddressVisualization(args[1])
-        ]
+    const { args } = decodeFunctionData({ abi, data: call.data })
+    const [from, to, tokenId] = args
+    return from === accountOp.accountAddr
+      ? [getAction('Send'), getToken(call.to, tokenId), getLabel('to'), getAddressVisualization(to)]
       : [
           getAction('Transfer'),
-          getToken(call.to, args[2]),
+          getToken(call.to, tokenId),
           getLabel('from'),
-          getAddressVisualization(args[0]),
+          getAddressVisualization(from),
           getLabel('to'),
-          getAddressVisualization(args[1])
+          getAddressVisualization(to)
         ]
   }
-  const matcher = {
-    [ERC721_INTERFACE.getFunction('approve')?.selector!]: (call: IrCall) => {
+
+  const matcher: Record<string, (call: HexIrCall) => any> = {
+    [toFunctionSelector(erc721ApproveAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const args = ERC721_INTERFACE.parseTransaction(call)?.args.toArray() || []
-      return args[0] === ZeroAddress
-        ? [getAction('Revoke approval'), getLabel('for'), getToken(call.to, args[1])]
+      const { args } = decodeFunctionData({ abi: erc721ApproveAbi, data: call.data })
+      const [to, tokenId] = args
+      return to === zeroAddress
+        ? [getAction('Revoke approval'), getLabel('for'), getToken(call.to, tokenId)]
         : [
             getAction('Grant approval'),
             getLabel('for'),
-            getToken(call.to, args[1]),
+            getToken(call.to, tokenId),
             getLabel('to'),
-            getAddressVisualization(args[0])
+            getAddressVisualization(to)
           ]
     },
-    [ERC721_INTERFACE.getFunction('setApprovalForAll')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(erc721SetApprovalForAllAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const args = ERC721_INTERFACE.parseTransaction(call)?.args.toArray() || []
-      return args[1]
+      const { args } = decodeFunctionData({
+        abi: erc721SetApprovalForAllAbi,
+        data: call.data
+      })
+      const [operator, approved] = args
+      return approved
         ? [
             getAction('Grant approval', { warning: true }),
             getLabel('for all NFTs of'),
             getAddressVisualization(call.to),
             getLabel('to'),
-            getAddressVisualization(args[0])
+            getAddressVisualization(operator)
           ]
         : [
             getAction('Revoke approval'),
             getLabel('for all nfts from'),
             getAddressVisualization(call.to),
             getLabel('for'),
-            getAddressVisualization(args[0])
+            getAddressVisualization(operator)
           ]
     },
-    // not in tests
-    [ERC721_INTERFACE.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])
-      ?.selector!]: nftTransferVisualization,
-    // [`${
-    //   ERC721_INTERFACE.getFunction('safeTransferFrom', ['address', 'address', 'uint256', 'bytes'])
-    //     ?.selector
-    // }`]: nftTransferVisualization,
-    [ERC721_INTERFACE.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector!]:
-      nftTransferVisualization
+    [toFunctionSelector(erc721SafeTransferFromAbi[0])]: (call) =>
+      nftTransferVisualization(call, erc721SafeTransferFromAbi),
+    [toFunctionSelector(erc721TransferFromAbi[0])]: (call) =>
+      nftTransferVisualization(call, erc721TransferFromAbi)
   }
 
-  const newCalls = currentIrCalls.map((call) => {
+  return currentIrCalls.map((call) => {
     if (!call.to) return call
-    // could do additional check if it is actually NFT contract
+    if (!isHexCall(call)) return call
     const selector = call.data.substring(0, 10)
-    return matcher[selector]
-      ? {
-          ...call,
-          fullVisualization: matcher[selector](call)
-        }
-      : call
+    return matcher[selector] ? { ...call, fullVisualization: matcher[selector](call) } : call
   })
-  return newCalls
 }
 
 export const genericErc20Humanizer = (
   { accountAddr }: { accountAddr: string },
   currentIrCalls: IrCall[]
 ): IrCall[] => {
-  const matcher = {
-    [ERC20_INTERFACE.getFunction('approve')?.selector!]: (call: IrCall) => {
+  const matcher: Record<string, (call: HexIrCall) => any> = {
+    [toFunctionSelector(erc20ApproveAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const args = ERC20_INTERFACE.parseTransaction(call)?.args.toArray() || []
-      return args[1] !== BigInt(0)
+      const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data: call.data })
+      const [spender, value] = args
+      return value !== 0n
         ? [
             getAction('Grant approval'),
             getLabel('for'),
-            getToken(call.to, args[1]),
+            getToken(call.to, value),
             getLabel('to'),
-            getAddressVisualization(args[0])
+            getAddressVisualization(spender)
           ]
         : [
             getAction('Revoke approval'),
-            getToken(call.to, args[1]),
+            getToken(call.to, value),
             getLabel('for'),
-            getAddressVisualization(args[0])
+            getAddressVisualization(spender)
           ]
     },
-    [ERC20_INTERFACE.getFunction('increaseAllowance')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(erc20IncreaseAllowanceAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { spender, addedValue } = ERC20_INTERFACE.decodeFunctionData(
-        'increaseAllowance',
-        call.data
-      )
-
+      const { args } = decodeFunctionData({
+        abi: erc20IncreaseAllowanceAbi,
+        data: call.data
+      })
+      const [spender, addedValue] = args
       return [
         getAction('Increase allowance'),
         getLabel('of'),
@@ -129,14 +151,13 @@ export const genericErc20Humanizer = (
         getToken(call.to, addedValue)
       ]
     },
-
-    [ERC20_INTERFACE.getFunction('decreaseAllowance')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(erc20DecreaseAllowanceAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { spender, subtractedValue } = ERC20_INTERFACE.decodeFunctionData(
-        'decreaseAllowance',
-        call.data
-      )
-
+      const { args } = decodeFunctionData({
+        abi: erc20DecreaseAllowanceAbi,
+        data: call.data
+      })
+      const [spender, subtractedValue] = args
       return [
         getAction('Decrease allowance'),
         getLabel('of'),
@@ -145,55 +166,50 @@ export const genericErc20Humanizer = (
         getToken(call.to, subtractedValue)
       ]
     },
-    [ERC20_INTERFACE.getFunction('transfer')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(erc20TransferAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-
-      const args = ERC20_INTERFACE.parseTransaction(call)?.args.toArray() || []
+      const { args } = decodeFunctionData({ abi: erc20TransferAbi, data: call.data })
+      const [to, value] = args
       return [
         getAction('Send'),
-        getToken(call.to, args[1]),
+        getToken(call.to, value),
         getLabel('to'),
-        getAddressVisualization(args[0])
+        getAddressVisualization(to)
       ]
     },
-    [ERC20_INTERFACE.getFunction('transferFrom')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(erc20TransferFromAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const args = ERC20_INTERFACE.parseTransaction(call)?.args.toArray() || []
-      if (args[0] === accountAddr) {
+      const { args } = decodeFunctionData({ abi: erc20TransferFromAbi, data: call.data })
+      const [from, to, value] = args
+      if (from === accountAddr)
         return [
           getAction('Transfer'),
-          getToken(call.to, args[2]),
+          getToken(call.to, value),
           getLabel('to'),
-          getAddressVisualization(args[1])
+          getAddressVisualization(to)
         ]
-      }
-      if (args[1] === accountAddr) {
+      if (to === accountAddr)
         return [
           getAction('Take'),
-          getToken(call.to, args[2]),
+          getToken(call.to, value),
           getLabel('from'),
-          getAddressVisualization(args[0])
+          getAddressVisualization(from)
         ]
-      }
       return [
         getAction('Move'),
-        getToken(call.to, args[2]),
+        getToken(call.to, value),
         getLabel('from'),
-        getAddressVisualization(args[0]),
+        getAddressVisualization(from),
         getLabel('to'),
-        getAddressVisualization(args[1])
+        getAddressVisualization(to)
       ]
     }
   }
-  const newCalls = currentIrCalls.map((call) => {
-    const sigHash = call.data.substring(0, 10)
+
+  return currentIrCalls.map((call) => {
     if (!call.to) return call
-    return matcher[sigHash]
-      ? {
-          ...call,
-          fullVisualization: matcher[sigHash](call)
-        }
-      : call
+    if (!isHexCall(call)) return call
+    const sigHash = call.data.substring(0, 10)
+    return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](call) } : call
   })
-  return newCalls
 }

@@ -3,7 +3,7 @@ import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
-  SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -273,7 +273,7 @@ export class SwapProviderParallelExecutor {
     providerId: string
     requestId?: string
     routeId?: string
-  }): Promise<SwapAndBridgeRouteStatus> {
+  }): Promise<SwapAndBridgeRouteStatusResult> {
     return this.#routeTo(providerId, 'getRouteStatus', {
       txHash,
       fromChainId,

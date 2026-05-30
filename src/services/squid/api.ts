@@ -12,6 +12,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
@@ -37,6 +38,9 @@ const normalizeOutgoingSquidTokenAddress = (address: string) =>
 
 const isTransientSquidStatusNotFound = (response: SquidErrorResponse) =>
   response.statusCode === 404 || response.type === 'NotFoundError'
+
+const getTxnIdFromTransactionUrl = (transactionUrl?: string) =>
+  transactionUrl?.match(/0x[a-fA-F0-9]{64}/)?.[0] || null
 
 const normalizeIncomingSquidTokenAddress = (address: string) =>
   address.toLowerCase() === SQUID_NATIVE_TOKEN_ADDRESS.toLowerCase()
@@ -184,7 +188,6 @@ export class SquidAPI implements SwapProvider {
     if (integratorId) this.#headers['x-integrator-id'] = integratorId
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     return true
   }
@@ -410,7 +413,6 @@ export class SquidAPI implements SwapProvider {
     }
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
     const rawRoute = route.rawRoute as SquidRoute
     const transactionRequest = rawRoute.transactionRequest
@@ -454,7 +456,7 @@ export class SquidAPI implements SwapProvider {
     toChainId: number
     requestId?: string
     routeId?: string
-  }): Promise<SwapAndBridgeRouteStatus> {
+  }): Promise<SwapAndBridgeRouteStatusResult> {
     this.#ensureIntegratorId()
 
     const params = new URLSearchParams({
@@ -475,7 +477,7 @@ export class SquidAPI implements SwapProvider {
     })
 
     if (isTransientSquidStatusNotFound(response as SquidErrorResponse)) {
-      return null
+      return { status: null }
     }
 
     const statusResponse = response as SquidStatusResponse
@@ -489,6 +491,9 @@ export class SquidAPI implements SwapProvider {
     if (status === 'success' || status === 'partial_success') routeStatus = 'completed'
     if (status === 'refund') routeStatus = 'refunded'
 
-    return routeStatus
+    return {
+      status: routeStatus,
+      txnId: getTxnIdFromTransactionUrl(statusResponse.toChain?.transactionUrl)
+    }
   }
 }

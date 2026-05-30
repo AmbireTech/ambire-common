@@ -6,25 +6,50 @@ export type IDappsController = ControllerInterface<
   InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
 >
 
-export interface Dapp {
+export interface PredefinedDapp {
   id: string
   name: string
   description: string
   url: string
   icon: string | null
+}
+
+export type ConnectionSource = 'injected' | 'wc'
+
+export interface ExtraDappInfo {
+  /**
+   * The chainId of the app when connected
+   */
+  chainId: number
   category: string | null
   tvl: number | null
   twitter: string | null
   geckoId: string | null
   chainIds: number[]
+  /**
+   * Derived from `connectedSources.length > 0`. Kept on the serialized output for back-compat
+   * with UI code that reads `dapp.isConnected`. Not persisted as the source of truth — the
+   * source of truth is `connectedSources`.
+   */
   isConnected: boolean
+  /**
+   * Active connection channels for this dapp. On web/extension this is always either
+   * `[]` or `['injected']`. On mobile it may contain `'injected'`, `'wc'`, or both.
+   */
+  connectedSources: ConnectionSource[]
   isFeatured: boolean
   isCustom: boolean
-  chainId: number
   favorite: boolean
   blacklisted: BlacklistedStatus
   grantedPermissionId?: string
   grantedPermissionAt?: number
+}
+
+export type Dapp = PredefinedDapp & Partial<ExtraDappInfo>
+
+export interface RecentDappEntry {
+  id: string
+  openedAt: number
 }
 
 export interface DefiLlamaProtocol {
