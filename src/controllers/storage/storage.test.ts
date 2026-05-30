@@ -56,6 +56,8 @@ describe('StorageController', () => {
 
     test('seeds connectedSources from legacy isConnected and persists', async () => {
       const memStorage: Storage = produceMemoryStore()
+      // Mark the earlier dapps migration as done so it doesn't wipe the dappsV2 we set up here.
+      await memStorage.set('passedMigrations', ['migrateLegacyDappsToDappsV2'])
       await memStorage.set('dappsV2', [legacyConnected, legacyDisconnected])
 
       // Constructing the controller kicks off #loadMigrations; get() awaits it implicitly.
@@ -73,6 +75,7 @@ describe('StorageController', () => {
 
     test('is a no-op for dapps that already have a consistent connectedSources', async () => {
       const memStorage: Storage = produceMemoryStore()
+      await memStorage.set('passedMigrations', ['migrateLegacyDappsToDappsV2'])
       // isConnected: true is consistent with connectedSources: ['wc'] (length > 0), so untouched.
       const alreadyMigrated = { ...legacyConnected, connectedSources: ['wc'] }
       await memStorage.set('dappsV2', [alreadyMigrated])
@@ -88,6 +91,7 @@ describe('StorageController', () => {
     // checks (which read connectedSources) force a reconnect on every request.
     test('reconciles a drifted record where isConnected disagrees with connectedSources', async () => {
       const memStorage: Storage = produceMemoryStore()
+      await memStorage.set('passedMigrations', ['migrateLegacyDappsToDappsV2'])
       const drifted = { ...legacyConnected, isConnected: true, connectedSources: [] }
       await memStorage.set('dappsV2', [drifted])
 
@@ -101,6 +105,7 @@ describe('StorageController', () => {
 
     test('passedMigrations guard prevents the migration from running twice', async () => {
       const memStorage: Storage = produceMemoryStore()
+      await memStorage.set('passedMigrations', ['migrateLegacyDappsToDappsV2'])
       await memStorage.set('dappsV2', [legacyConnected])
 
       // First boot: migration runs and seeds connectedSources.
