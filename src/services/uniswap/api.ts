@@ -31,6 +31,7 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
   FEE_PERCENT,
@@ -41,6 +42,11 @@ import {
 } from './constants'
 
 const erc20Interface = new Interface(ERC20.abi)
+
+const isAcrossBridgeQuote = (quote: UniswapQuote) =>
+  quote.exclusiveRelayer !== undefined &&
+  quote.exclusivityDeadline !== undefined &&
+  quote.fillDeadline !== undefined
 
 const normalizeAddress = (address: string) =>
   address.toLowerCase() === ZeroAddress.toLowerCase() ? ZeroAddress : getAddress(address)
@@ -191,7 +197,9 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
     fromAmount,
     toAmount,
     currentUserTxIndex: 0,
-    ...(fromChainId === toChainId ? { usedDexName: 'Uniswap' } : { usedBridgeNames: ['uniswap'] }),
+    ...(fromChainId === toChainId
+      ? { usedDexName: 'Uniswap' }
+      : { usedBridgeNames: [isAcrossBridgeQuote(quote) ? 'across' : 'uniswap'] }),
     userTxs: [userTx],
     steps: [step],
     inputValueInUsd,
@@ -233,6 +241,8 @@ export class UniswapAPI implements SwapProvider {
 
   #fetch: Fetch
 
+  #acrossAPI: AcrossAPI
+
   #headers: RequestInitWithCustomHeaders['headers']
 
   #requestTimeoutMs = 15000
@@ -243,6 +253,7 @@ export class UniswapAPI implements SwapProvider {
 
   constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
+    this.#acrossAPI = new AcrossAPI({ fetch })
     this.#headers = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
@@ -574,16 +585,15 @@ export class UniswapAPI implements SwapProvider {
     txHash,
     fromChainId,
     toChainId,
-    requestId,
-    routeId
+    bridge
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
-    requestId?: string
-    routeId?: string
+    bridge?: string
   }): Promise<SwapAndBridgeRouteStatusResult> {
     if (fromChainId === toChainId) return { status: 'completed', txnId: txHash }
+    if (bridge === 'across') return this.#acrossAPI.getRouteStatus({ txHash })
 
     this.#ensureApiKey()
 

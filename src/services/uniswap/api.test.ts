@@ -110,6 +110,61 @@ describe('UniswapAPI', () => {
     expect(quote.routes[0]!.steps[0]!.minAmountOut).toBe('994000')
   })
 
+  it('tags Across bridge quotes so status polling uses the Across API', async () => {
+    const fetch = jest.fn(async () =>
+      makeResponse({
+        requestId: 'request-id',
+        routing: 'BRIDGE',
+        quote: {
+          chainId: 1,
+          destinationChainId: 8453,
+          input: { amount: '1000000', token: tokenIn },
+          output: { amount: '999000', token: tokenIn, recipient: userAddress },
+          swapper: userAddress,
+          tradeType: 'EXACT_INPUT',
+          quoteId: 'quote-id',
+          exclusiveRelayer: '0x1111111111111111111111111111111111111111',
+          exclusivityDeadline: 100,
+          fillDeadline: 200
+        }
+      })
+    )
+    const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+    const quote = await uniswapApi.quote({
+      fromAsset: {
+        address: tokenIn,
+        amount: 1000000n,
+        chainId: 1n,
+        decimals: 6,
+        flags: { canTopUpGasTank: false, isFeeToken: false, onGasTank: false, rewardsType: null },
+        marketDataIn: [],
+        name: 'USDC',
+        priceIn: [{ baseCurrency: 'usd', price: 1 }],
+        symbol: 'USDC'
+      } as any,
+      fromChainId: 1,
+      fromTokenAddress: tokenIn,
+      toAsset: {
+        address: tokenIn,
+        chainId: 8453,
+        decimals: 6,
+        name: 'USDC',
+        symbol: 'USDC'
+      },
+      toChainId: 8453,
+      toTokenAddress: tokenIn,
+      fromAmount: 1000000n,
+      userAddress,
+      sort: 'output',
+      isWrapOrUnwrap: false,
+      accountNativeBalance: 1n,
+      nativeSymbol: 'ETH'
+    })
+
+    expect(quote.routes[0]!.usedBridgeNames).toEqual(['across'])
+  })
+
   it('builds swap calldata and parses the approval spender', async () => {
     const spender = '0x1111111111111111111111111111111111111111'
     const fetch = (jest.fn() as any)
@@ -223,5 +278,50 @@ describe('UniswapAPI', () => {
 
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(tx.approvalData).toBe(null)
+  })
+
+  describe('getRouteStatus', () => {
+    const txHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    const fillTxnRef = '0x2222222222222222222222222222222222222222222222222222222222222222'
+
+    it('returns the source transaction id for same-chain swaps', async () => {
+      const fetch = jest.fn()
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      await expect(
+        uniswapApi.getRouteStatus({ txHash, fromChainId: 1, toChainId: 1 })
+      ).resolves.toEqual({ status: 'completed', txnId: txHash })
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('delegates Across bridge status checks to the Across API', async () => {
+      const fetch = jest.fn(async () => makeResponse({ status: 'filled', fillTxnRef }))
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      await expect(
+        uniswapApi.getRouteStatus({ txHash, fromChainId: 1, toChainId: 8453, bridge: 'across' })
+      ).resolves.toEqual({ status: 'completed', txnId: fillTxnRef })
+      expect(fetch).toHaveBeenCalledWith(
+        `https://app.across.to/api/deposit/status?depositTxnRef=${txHash}`
+      )
+    })
+
+    it('uses the Uniswap status API for non-Across bridges', async () => {
+      const fetch = jest.fn(async () =>
+        makeResponse({
+          requestId: 'request-id',
+          swaps: [{ swapType: 'BRIDGE', status: 'SUCCESS', txHash: fillTxnRef }]
+        })
+      )
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      await expect(
+        uniswapApi.getRouteStatus({ txHash, fromChainId: 1, toChainId: 8453 })
+      ).resolves.toEqual({ status: 'completed', txnId: fillTxnRef })
+      expect(fetch).toHaveBeenCalledWith(
+        `https://trade-api.gateway.uniswap.org/v1/swaps?txHashes=${txHash}&chainId=1`,
+        { headers: expect.any(Object) }
+      )
+    })
   })
 })

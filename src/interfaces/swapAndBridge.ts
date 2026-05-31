@@ -120,6 +120,9 @@ export interface UniswapQuote {
   slippage?: number
   routeString?: string
   estimatedFillTimeMs?: number
+  exclusiveRelayer?: string
+  exclusivityDeadline?: number
+  fillDeadline?: number
   aggregatedOutputs?: {
     amount: string
     token: string
