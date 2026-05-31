@@ -703,7 +703,8 @@ const getSwapSponsorship = ({
   fromAmountInUsd,
   feeTokenPriceInUsd,
   feeTokenDecimals,
-  providerId
+  providerId,
+  isBridge
 }: {
   hasConvinienceFee: boolean
   nativePrice: number | undefined
@@ -711,6 +712,7 @@ const getSwapSponsorship = ({
   feeTokenPriceInUsd: number | undefined
   feeTokenDecimals: number | undefined
   providerId: string | undefined
+  isBridge: boolean
 }):
   | {
       nativePrice: number
@@ -725,7 +727,8 @@ const getSwapSponsorship = ({
     !fromAmountInUsd ||
     !feeTokenPriceInUsd ||
     !feeTokenDecimals ||
-    providerId === 'squid'
+    providerId === 'squid' ||
+    (providerId === 'uniswap' && isBridge)
   )
     return undefined
   return {

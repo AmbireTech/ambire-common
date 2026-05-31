@@ -2515,7 +2515,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmountInUsd: Number(this.fromAmountInFiat),
       feeTokenPriceInUsd: feeToken.feeTokenPriceInUsd,
       feeTokenDecimals: feeToken.decimals,
-      providerId: this.quote?.selectedRoute?.providerId
+      providerId: this.quote?.selectedRoute?.providerId,
+      isBridge
     })
 
     if (this.#signAccountOpController) {
