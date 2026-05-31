@@ -10,7 +10,7 @@ import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
-  SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
@@ -571,13 +571,17 @@ export class UniswapAPI implements SwapProvider {
   async getRouteStatus({
     txHash,
     fromChainId,
-    toChainId
+    toChainId,
+    requestId,
+    routeId
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
-  }): Promise<SwapAndBridgeRouteStatus> {
-    if (fromChainId === toChainId) return 'completed'
+    requestId?: string
+    routeId?: string
+  }): Promise<SwapAndBridgeRouteStatusResult> {
+    if (fromChainId === toChainId) return { status: 'completed', txnId: txHash }
 
     this.#ensureApiKey()
 
@@ -594,9 +598,10 @@ export class UniswapAPI implements SwapProvider {
     })
 
     const status = response.swaps[0]?.status
-    if (status === 'SUCCESS') return 'completed'
-    if (status === 'FAILED' || status === 'EXPIRED') return 'refunded'
+    const txnId = response.swaps[0]?.txHash || null
+    if (status === 'SUCCESS') return { status: 'completed', txnId }
+    if (status === 'FAILED' || status === 'EXPIRED') return { status: 'refunded', txnId }
 
-    return null
+    return { status: null }
   }
 }

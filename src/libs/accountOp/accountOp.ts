@@ -97,8 +97,8 @@ export interface AccountOp {
     swapSponsorship?: {
       swapFeeInUsd: number
       nativePrice: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
     speedUp?: {
       enabled: boolean

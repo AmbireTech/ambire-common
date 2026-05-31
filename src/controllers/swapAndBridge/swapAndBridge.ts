@@ -53,6 +53,7 @@ import {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
@@ -2462,15 +2463,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
-    // get the price from the portfolio;
-    // if not present there, try to calculate it from the quote
-    let fromTokenPriceInUsd = this.fromSelectedToken.priceIn.find(
-      (p) => p.baseCurrency === 'usd'
-    )?.price
-    if (!fromTokenPriceInUsd && this.quote?.selectedRoute?.inputValueInUsd && this.fromAmount) {
-      fromTokenPriceInUsd = this.quote.selectedRoute.inputValueInUsd / Number(this.fromAmount)
-    }
-
+    const feeToken = getFeeTokenForSponsorship(this.fromSelectedToken, this.quote, this.fromAmount)
     const isBridge = this.quote?.selectedRoute
       ? getIsBridgeRoute(this.quote.selectedRoute)
       : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
@@ -2484,8 +2477,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
-      fromTokenPriceInUsd,
-      fromTokenDecimals: this.quote?.fromAsset.decimals,
+      feeTokenPriceInUsd: feeToken.feeTokenPriceInUsd,
+      feeTokenDecimals: feeToken.decimals,
       providerId: this.quote?.selectedRoute?.providerId
     })
 
