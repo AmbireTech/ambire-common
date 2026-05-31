@@ -339,7 +339,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
     const provider = this.providers[network.chainId.toString()]
     const contract = new Contract(address, [abi], provider)
-    let error: any = undefined
 
     if (typeof contract[method] !== 'function') {
       this.emitError({
@@ -354,14 +353,23 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         error: `${method.toString()} is not a valid Contract method`
       })
     }
-    const result = await (contract[method] as Function).apply(contract, args)
 
-    this.#sendUiMessage({
-      requestId,
-      ok: !!result,
-      res: result ?? undefined,
-      error: error?.message ?? undefined
-    })
+    try {
+      const result = await (contract[method] as Function).apply(contract, args)
+
+      this.#sendUiMessage({
+        requestId,
+        ok: true,
+        res: result ?? undefined
+      })
+    } catch (error: any) {
+      this.emitError({ error, message: error.message, level: 'silent' })
+      this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: error.message
+      })
+    }
   }
 
   /**
