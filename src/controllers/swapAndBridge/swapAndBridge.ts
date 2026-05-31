@@ -119,6 +119,122 @@ const STATUS_WRAPPED_METHODS = {
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
+export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute) => {
+  const isBridge = r1.fromChainId !== r1.toChainId
+
+  // the amount threshold in %. If below, we check the time as
+  // the deciding sort factor
+  const threshold = 1.2
+
+  const sortByTime = () => {
+    const aTime = Number(r1.serviceTime)
+    const bTime = Number(r2.serviceTime)
+    if (aTime === bTime) return 0
+    if (aTime > bTime) return 1
+    return -1
+  }
+
+  const sortByPerformance = () => {
+    // if it's a bridge, prioritize across and relay as we find
+    // across and relay the best bridges out where with a close
+    // to 100% success rate and an approximate bridge time of 30s
+    if (isBridge) {
+      const aHasAcross = r1.usedBridgeNames?.includes('across')
+      const bHasAcross = r2.usedBridgeNames?.includes('across')
+      if (aHasAcross && !bHasAcross) return -1
+      if (bHasAcross && !aHasAcross) return 1
+
+      const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
+      const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
+      if (aHasRelay && !bHasRelay) return -1
+      if (bHasRelay && !aHasRelay) return 1
+    } else {
+      // if it's a swap, deprioritize the bungee auto route as it's an intent
+      // engine. And intent engines are bad UX
+      const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
+      const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
+      if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
+      if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
+    }
+
+    const aOutputValueAfterGasInUsd = r1.outputValueAfterGasInUsd
+    const bOutputValueAfterGasInUsd = r2.outputValueAfterGasInUsd
+    if (
+      aOutputValueAfterGasInUsd !== undefined &&
+      bOutputValueAfterGasInUsd !== undefined &&
+      Number.isFinite(aOutputValueAfterGasInUsd) &&
+      Number.isFinite(bOutputValueAfterGasInUsd)
+    ) {
+      if (aOutputValueAfterGasInUsd === bOutputValueAfterGasInUsd) {
+        if (!isBridge) return 0
+        return sortByTime()
+      }
+
+      const higherOutputValueAfterGasInUsd = Math.max(
+        aOutputValueAfterGasInUsd,
+        bOutputValueAfterGasInUsd
+      )
+      const lowerOutputValueAfterGasInUsd = Math.min(
+        aOutputValueAfterGasInUsd,
+        bOutputValueAfterGasInUsd
+      )
+      const outputComparison = aOutputValueAfterGasInUsd > bOutputValueAfterGasInUsd ? -1 : 1
+
+      // if it's not a bridge, just return the higher output route
+      if (!isBridge || higherOutputValueAfterGasInUsd <= 0) return outputComparison
+
+      const percentage =
+        ((higherOutputValueAfterGasInUsd - lowerOutputValueAfterGasInUsd) /
+          higherOutputValueAfterGasInUsd) *
+        100
+      if (percentage < threshold) return sortByTime()
+      return outputComparison
+    }
+
+    const a = BigInt(r1.toAmount)
+    const b = BigInt(r2.toAmount)
+
+    // if value is the same, check time if bridge
+    if (a === b) {
+      if (!isBridge) return 0
+      return sortByTime()
+    }
+
+    const aUsd = Number(r1.outputValueInUsd ?? 0)
+    const bUsd = Number(r2.outputValueInUsd ?? 0)
+    if (a > b) {
+      // if it's not a bridge, just return the higher output route
+      if (!isBridge) return -1
+
+      // if the bigint amount says a > b but the usd amount says
+      // the opposite, we're stuck, so just return a as the winner
+      if (bUsd > aUsd || aUsd === 0) return -1
+
+      const percentage = ((aUsd - bUsd) / aUsd) * 100
+      if (percentage < threshold) return sortByTime()
+      return -1
+    }
+
+    // if it's not a bridge, just return the higher output route
+    if (!isBridge) return 1
+
+    // if the bigint amount says b > a but the usd amount says
+    // the opposite, we're stuck, so just return b as the winner
+    if (aUsd > bUsd || bUsd === 0) return 1
+    const percentage = ((bUsd - aUsd) / bUsd) * 100
+    if (percentage < threshold) return sortByTime()
+    return 1
+  }
+
+  // move the routes with service fee to the bottom
+  const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
+  const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
+  if (r1ServiceFee && !r2ServiceFee) return 1
+  if (r2ServiceFee && !r1ServiceFee) return -1
+
+  return sortByPerformance()
+}
+
 type SignAccountOpControllerMethods = {
   [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
     ? K
@@ -1631,87 +1747,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort((r1, r2) => {
-            const isBridge = r1.fromChainId !== r1.toChainId
-
-            // the amount threshold in %. If below, we check the time as
-            // the deciding sort factor
-            const threshold = 1.2
-
-            const sortByTime = () => {
-              const aTime = Number(r1.serviceTime)
-              const bTime = Number(r2.serviceTime)
-              if (aTime === bTime) return 0
-              if (aTime > bTime) return 1
-              return -1
-            }
-
-            const sortByPerformance = () => {
-              // if it's a bridge, prioritize across and relay as we find
-              // across and relay the best bridges out where with a close
-              // to 100% success rate and an approximate bridge time of 30s
-              if (isBridge) {
-                const aHasAcross = r1.usedBridgeNames?.includes('across')
-                const bHasAcross = r2.usedBridgeNames?.includes('across')
-                if (aHasAcross && !bHasAcross) return -1
-                if (bHasAcross && !aHasAcross) return 1
-
-                const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
-                const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
-                if (aHasRelay && !bHasRelay) return -1
-                if (bHasRelay && !aHasRelay) return 1
-              } else {
-                // if it's a swap, deprioritize the bungee auto route as it's an intent
-                // engine. And intent engines are bad UX
-                const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
-                const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
-                if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
-                if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
-              }
-
-              const a = BigInt(r1.toAmount)
-              const b = BigInt(r2.toAmount)
-
-              // if value is the same, check time if bridge
-              if (a === b) {
-                if (!isBridge) return 0
-                return sortByTime()
-              }
-
-              const aUsd = Number(r1.outputValueInUsd ?? 0)
-              const bUsd = Number(r2.outputValueInUsd ?? 0)
-              if (a > b) {
-                // if it's not a bridge, just return the higher output route
-                if (!isBridge) return -1
-
-                // if the bigint amount says a > b but the usd amount says
-                // the opposite, we're stuck, so just return a as the winner
-                if (bUsd > aUsd || aUsd === 0) return -1
-
-                const percentage = ((aUsd - bUsd) / aUsd) * 100
-                if (percentage < threshold) return sortByTime()
-                return -1
-              }
-
-              // if it's not a bridge, just return the higher output route
-              if (!isBridge) return 1
-
-              // if the bigint amount says b > a but the usd amount says
-              // the opposite, we're stuck, so just return b as the winner
-              if (aUsd > bUsd || bUsd === 0) return 1
-              const percentage = ((bUsd - aUsd) / bUsd) * 100
-              if (percentage < threshold) return sortByTime()
-              return 1
-            }
-
-            // move the routes with service fee to the bottom
-            const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
-            const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
-            if (r1ServiceFee && !r2ServiceFee) return 1
-            if (r2ServiceFee && !r1ServiceFee) return -1
-
-            return sortByPerformance()
-          })
+          .sort(sortSwapAndBridgeRoutes)
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined

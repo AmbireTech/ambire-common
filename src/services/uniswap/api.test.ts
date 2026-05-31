@@ -45,6 +45,7 @@ describe('UniswapAPI', () => {
           swapper: userAddress,
           tradeType: 'EXACT_INPUT',
           quoteId: 'quote-id',
+          gasFeeUSD: '0.1',
           slippage: 0.5,
           aggregatedOutputs: [
             {
@@ -103,6 +104,7 @@ describe('UniswapAPI', () => {
     expect(quote.routes[0]!.routeId).toBe('quote-id')
     expect(quote.routes[0]!.inputValueInUsd).toBe(1)
     expect(quote.routes[0]!.outputValueInUsd).toBe(0.999)
+    expect(quote.routes[0]!.outputValueAfterGasInUsd).toBe(0.899)
     expect(quote.routes[0]!.toAmount).toBe('999000')
     expect((quote.routes[0]!.toToken as any).priceUSD).toBe('1')
     expect(quote.routes[0]!.steps[0]!.minAmountOut).toBe('994000')

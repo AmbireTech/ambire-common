@@ -184,6 +184,7 @@ export interface SwapAndBridgeRoute {
   steps: SwapAndBridgeStep[]
   inputValueInUsd: number
   outputValueInUsd: number
+  outputValueAfterGasInUsd?: number
   serviceTime: number
   rawRoute: SocketAPIRoute | LiFiRoute | SquidRoute | UniswapQuoteResponse
   toToken: LiFiToken
@@ -585,6 +586,9 @@ export interface SquidRoute {
       amountUsd?: string
       included?: boolean
       token?: SquidToken
+    }[]
+    gasCosts?: {
+      amountUSD?: string
     }[]
     fromAmount?: string
     fromAmountUSD?: string

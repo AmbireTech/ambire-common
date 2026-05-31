@@ -196,6 +196,8 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
     steps: [step],
     inputValueInUsd,
     outputValueInUsd,
+    outputValueAfterGasInUsd:
+      quote.gasFeeUSD === undefined ? undefined : outputValueInUsd - Number(quote.gasFeeUSD),
     serviceTime,
     rawRoute: response,
     sender: userAddress,
