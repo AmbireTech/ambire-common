@@ -10,19 +10,3 @@ export const AMBIRE_FEE_TAKER_ADDRESS = '0x942f9CE5D9a33a82F88D233AEb3292E680230
 export const FEE_PERCENT = 0.5
 
 export const SWAP_COMPATIBLE_ROUTINGS = ['CLASSIC', 'BRIDGE', 'WRAP', 'UNWRAP']
-
-export const STABLE_TOKEN_SYMBOLS = new Set([
-  'BUSD',
-  'DAI',
-  'FRAX',
-  'GHO',
-  'LUSD',
-  'PYUSD',
-  'USDC',
-  'USDC.E',
-  'USDD',
-  'USDE',
-  'USDS',
-  'USDT',
-  'USD0'
-])

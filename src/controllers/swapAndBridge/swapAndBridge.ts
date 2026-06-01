@@ -50,6 +50,7 @@ import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
@@ -73,6 +74,7 @@ import {
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
+import { withTimeout } from '../../utils/with-timeout'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -100,6 +102,7 @@ const NETWORK_MISMATCH_MESSAGE =
 
 // For performance reasons, limit the max number of tokens in the to token list
 const TO_TOKEN_LIST_LIMIT = 100
+const TO_TOKEN_PRICE_TIMEOUT_MS = 4000
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
@@ -157,6 +160,11 @@ export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridg
       if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
     }
 
+    // outputValueAfterGas is just as it name suggest: the value
+    // each provider returns after the gas calculations have been made.
+    // Uniswap is very efficient at this althouhg the rates might be slightly
+    // worse. But slightly worse rates are better than paying a massive
+    // transaction fee for the swap. That's why we're applying this sort
     const aOutputValueAfterGasInUsd = r1.outputValueAfterGasInUsd
     const bOutputValueAfterGasInUsd = r2.outputValueAfterGasInUsd
     if (
@@ -1711,23 +1719,49 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       try {
         const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
         const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
+        const toSelectedToken = this.toSelectedToken
+        const selectedAccountAddress = this.#selectedAccount.account.addr
+        const toTokenPricePromise = withTimeout(
+          () =>
+            this.#portfolio.getTokenPrice(
+              selectedAccountAddress,
+              BigInt(this.toChainId!),
+              toSelectedToken.address
+            ),
+          {
+            timeoutMs: TO_TOKEN_PRICE_TIMEOUT_MS,
+            message: `Fetching the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId} timed out.`
+          }
+        ).catch((error: any) => {
+          this.emitError({
+            error,
+            level: 'silent',
+            message: `Unable to fetch the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId}.`
+          })
 
-        const quoteResult = await this.#serviceProviderAPI.quote({
-          fromAsset: this.fromSelectedToken,
-          fromChainId: this.fromChainId!,
-          fromTokenAddress: this.fromSelectedToken.address,
-          toAsset: this.toSelectedToken,
-          toChainId: this.toChainId!,
-          toTokenAddress: this.toSelectedToken.address,
-          fromAmount: bigintFromAmount,
-          userAddress: this.#selectedAccount.account.addr,
-          sort: this.routePriority,
-          isWrapOrUnwrap,
-          accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
-          nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+          return null
         })
+
+        const [toTokenPriceUSD, quoteResult] = await Promise.all([
+          toTokenPricePromise,
+          this.#serviceProviderAPI.quote({
+            fromAsset: this.fromSelectedToken,
+            fromChainId: this.fromChainId!,
+            fromTokenAddress: this.fromSelectedToken.address,
+            toAsset: toSelectedToken,
+            toChainId: this.toChainId!,
+            toTokenAddress: toSelectedToken.address,
+            fromAmount: bigintFromAmount,
+            userAddress: selectedAccountAddress,
+            sort: this.routePriority,
+            isWrapOrUnwrap,
+            accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
+            nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+          })
+        ])
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .map((route) => enrichRouteWithOutputUsdPrice(route, toTokenPriceUSD))
           .filter((route) => {
             const hasNoRouteId = !route.routeId
 

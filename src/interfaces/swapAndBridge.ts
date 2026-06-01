@@ -31,6 +31,7 @@ export interface SwapAndBridgeToToken {
   address: string
   icon?: string
   decimals: number
+  priceUSD?: string
 }
 
 export interface SocketAPIQuote {

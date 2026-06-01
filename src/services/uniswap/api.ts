@@ -35,7 +35,6 @@ import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
   FEE_PERCENT,
-  STABLE_TOKEN_SYMBOLS,
   SWAP_COMPATIBLE_ROUTINGS,
   UNISWAP_API_BASE_URL,
   UNISWAP_SUPPORTED_CHAIN_IDS
@@ -78,15 +77,13 @@ const getUserOutputAmount = (quote: UniswapQuote, userAddress: string) => {
 }
 
 const getUsdPriceFromAsset = (asset: SwapAndBridgeToToken) => {
-  const priceUSD = Number((asset as any).priceUSD || 0)
+  const priceUSD = Number(asset.priceUSD || 0)
   if (priceUSD > 0) return priceUSD
 
   const priceInUsd = (asset as any).priceIn?.find?.(
     (price: { baseCurrency?: string }) => price.baseCurrency === 'usd'
   )?.price
   if (Number(priceInUsd) > 0) return Number(priceInUsd)
-
-  if (STABLE_TOKEN_SYMBOLS.has(asset.symbol.toUpperCase())) return 1
 
   return 0
 }

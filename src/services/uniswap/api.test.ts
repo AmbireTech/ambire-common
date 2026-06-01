@@ -81,6 +81,7 @@ describe('UniswapAPI', () => {
         chainId: 1,
         decimals: 6,
         name: 'Tether USD',
+        priceUSD: '0.99785',
         symbol: 'USDT'
       },
       toChainId: 1,
@@ -103,10 +104,10 @@ describe('UniswapAPI', () => {
     expect(quote.routes[0]!.providerId).toBe('uniswap')
     expect(quote.routes[0]!.routeId).toBe('quote-id')
     expect(quote.routes[0]!.inputValueInUsd).toBe(1)
-    expect(quote.routes[0]!.outputValueInUsd).toBe(0.999)
-    expect(quote.routes[0]!.outputValueAfterGasInUsd).toBe(0.899)
+    expect(quote.routes[0]!.outputValueInUsd).toBe(0.99685215)
+    expect(quote.routes[0]!.outputValueAfterGasInUsd).toBeCloseTo(0.89685215)
     expect(quote.routes[0]!.toAmount).toBe('999000')
-    expect((quote.routes[0]!.toToken as any).priceUSD).toBe('1')
+    expect((quote.routes[0]!.toToken as any).priceUSD).toBe('0.99785')
     expect(quote.routes[0]!.steps[0]!.minAmountOut).toBe('994000')
   })
 
