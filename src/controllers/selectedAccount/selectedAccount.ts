@@ -1,5 +1,7 @@
 import { formatEther, getAddress, isAddress } from 'ethers'
 
+import { AccountState } from '@/libs/portfolio/interfaces'
+
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -21,6 +23,7 @@ import {
   getDefiPositionsOnDisabledNetworksForTheSelectedAccount
 } from '../../libs/banners/banners'
 import { AssetType } from '../../libs/defiPositions/types'
+import { cloneDeep } from '../../libs/richJson/richJson'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
@@ -223,9 +226,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account) return
 
-    const portfolioAccountState = structuredClone(
+    // Use cloneDeep instead of structuredClone because the portfolio state can
+    // contain Error instances (criticalError/errors on a NetworkState). The
+    // WebView's JS engine on mobile cannot structuredClone Error objects and
+    // throws "Unable to deserialize data.", which surfaced as an opaque
+    // "Script error." in the Global handler. cloneDeep handles Error and BigInt.
+    const portfolioAccountState = cloneDeep(
       this.#portfolio.getAccountPortfolioState(this.account.addr)
-    )
+    ) as AccountState
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
