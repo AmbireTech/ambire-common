@@ -62,6 +62,13 @@ const createLegacySeedPayload = (seed: string, key: Uint8Array, iv: Uint8Array) 
 const createLegacyTextPayload = (text: string, key: Uint8Array, iv: Uint8Array) =>
   createAesCtrCiphertextFromBytes(new TextEncoder().encode(text), key, iv)
 
+// Flips a single byte of a hex string so we can simulate a corrupted/tampered payload.
+const tamperHexByte = (hex: string, index: number): string => {
+  const bytes = getBytes(hex)
+  bytes[index] = bytes[index]! ^ 0xff
+  return hexlify(bytes)
+}
+
 describe('Keystore lib', () => {
   describe('getBytesForSecret', () => {
     test('normalizes equivalent unicode strings to the same bytes', () => {
@@ -186,6 +193,53 @@ describe('Keystore lib', () => {
           iv: '0x00'
         })
       ).rejects.toThrow()
+    })
+
+    test('rejects a payload with a tampered ciphertext (GCM authentication fails)', async () => {
+      const encrypted = await encryptWithKey(key, getBytes(TEST_PRIVATE_KEY))
+      const tampered = { ...encrypted, ciphertext: tamperHexByte(encrypted.ciphertext, 0) }
+
+      await expect(decryptWithKey(key, tampered)).rejects.toThrow()
+    })
+
+    test('rejects a payload with a tampered authentication tag', async () => {
+      const encrypted = await encryptWithKey(key, getBytes(TEST_PRIVATE_KEY))
+      // The 128-bit auth tag is appended to the ciphertext, so the last byte is part of the tag.
+      const lastByteIndex = getBytes(encrypted.ciphertext).length - 1
+      const tampered = { ...encrypted, ciphertext: tamperHexByte(encrypted.ciphertext, lastByteIndex) }
+
+      await expect(decryptWithKey(key, tampered)).rejects.toThrow()
+    })
+
+    test('rejects a payload with a tampered iv', async () => {
+      const encrypted = await encryptWithKey(key, getBytes(TEST_PRIVATE_KEY))
+      const tampered = { ...encrypted, iv: tamperHexByte(encrypted.iv, 0) }
+
+      await expect(decryptWithKey(key, tampered)).rejects.toThrow()
+    })
+
+    test('rejects decryption with the wrong key', async () => {
+      const encrypted = await encryptWithKey(key, getBytes(TEST_PRIVATE_KEY))
+      const wrongKey = await crypto.subtle.importKey(
+        'raw',
+        crypto.getRandomValues(new Uint8Array(32)),
+        { name: CIPHER },
+        true,
+        ['encrypt', 'decrypt']
+      )
+
+      await expect(decryptWithKey(wrongKey, encrypted)).rejects.toThrow()
+    })
+
+    test('uses a unique random iv (and produces different ciphertext) for each encryption', async () => {
+      const plaintext = getBytes(TEST_PRIVATE_KEY)
+      const first = await encryptWithKey(key, plaintext)
+      const second = await encryptWithKey(key, plaintext)
+
+      expect(first.iv).not.toBe(second.iv)
+      expect(first.ciphertext).not.toBe(second.ciphertext)
+      // 12-byte (96-bit) IV is the recommended size for AES-GCM
+      expect(getBytes(first.iv).length).toBe(12)
     })
   })
 
@@ -413,6 +467,107 @@ describe('Keystore lib', () => {
       expect(result.failedMigrations.seedIds).toEqual(['seed-3'])
       expect(result.migratedKeys[1]).toBe(storedKeys[1])
       expect(result.migratedSeeds[1]!.seed).toMatchObject({ cipherType: CIPHER })
+      // seed-4 migrated successfully, so the batch did migrate something
+      expect(result.hasMigrated).toBe(true)
+    })
+
+    test('reports hasMigrated true when at least one payload is re-encrypted', async () => {
+      const mainKey = await createMainKey()
+      const storedKeys = [
+        {
+          addr: PRIMARY_INTERNAL_ADDR,
+          type: 'internal' as const,
+          label: 'Internal',
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() },
+          privKey: createLegacyPrivateKeyPayload(TEST_MAIN_KEY_OLD.key, TEST_MAIN_KEY_OLD.iv)
+        }
+      ]
+
+      const result = await migrateStoredPayloadsToGCM(mainKey, storedKeys as any, [])
+
+      expect(result.hasMigrated).toBe(true)
+    })
+
+    test('reports hasMigrated false when every payload is already migrated', async () => {
+      const mainKey = await createMainKey()
+      const alreadyMigratedKey = {
+        addr: PRIMARY_INTERNAL_ADDR,
+        type: 'internal' as const,
+        label: 'Internal',
+        dedicatedToOneSA: false,
+        meta: { createdAt: Date.now() },
+        privKey: { cipherType: CIPHER, ciphertext: '0x1234', iv: '0x5678' }
+      }
+      const alreadyMigratedSeed = {
+        id: 'seed-1',
+        label: 'Recovery',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        seed: { cipherType: CIPHER, ciphertext: '0x1234', iv: '0x5678' }
+      }
+
+      const result = await migrateStoredPayloadsToGCM(
+        mainKey,
+        [alreadyMigratedKey as any],
+        [alreadyMigratedSeed as any]
+      )
+
+      expect(result.hasMigrated).toBe(false)
+    })
+
+    test('reports hasMigrated false when there is nothing to migrate (only external keys)', async () => {
+      const mainKey = await createMainKey()
+      const externalKey = {
+        addr: EXTERNAL_ADDR,
+        type: 'ledger' as const,
+        label: 'External',
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: Date.now(),
+          deviceId: '1',
+          deviceModel: 'ledger',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 0
+        },
+        privKey: null
+      }
+
+      const result = await migrateStoredPayloadsToGCM(mainKey, [externalKey as any], [])
+
+      expect(result.hasMigrated).toBe(false)
+      expect(result.failedMigrations).toEqual({ keyAddrs: [], seedIds: [] })
+    })
+
+    test('reports hasMigrated false when every migration fails', async () => {
+      const mainKey = await createMainKey()
+      const invalidKey = {
+        addr: SECONDARY_INTERNAL_ADDR,
+        type: 'internal' as const,
+        label: 'Broken Internal',
+        dedicatedToOneSA: false,
+        meta: { createdAt: Date.now() },
+        privKey: createAesCtrCiphertextFromBytes(
+          new Uint8Array([0x01, 0x02, 0x03]),
+          TEST_MAIN_KEY_OLD.key,
+          TEST_MAIN_KEY_OLD.iv
+        )
+      }
+      const invalidSeed = {
+        id: 'seed-broken',
+        label: 'Broken Recovery',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        seed: createLegacyTextPayload('not a mnemonic', TEST_MAIN_KEY_OLD.key, TEST_MAIN_KEY_OLD.iv)
+      }
+
+      const result = await migrateStoredPayloadsToGCM(
+        mainKey,
+        [invalidKey as any],
+        [invalidSeed as any]
+      )
+
+      expect(result.hasMigrated).toBe(false)
+      expect(result.failedMigrations.keyAddrs).toEqual([SECONDARY_INTERNAL_ADDR])
+      expect(result.failedMigrations.seedIds).toEqual(['seed-broken'])
     })
   })
 })
