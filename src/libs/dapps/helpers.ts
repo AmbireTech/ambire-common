@@ -1,7 +1,7 @@
 import { getDomain } from 'tldts'
 
 import { predefinedDapps } from '../../consts/dapps/dapps'
-import { Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
+import { ConnectionSource, Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url: string): string => {
   if (!url || url === 'internal') return 'internal'
@@ -113,6 +113,17 @@ function unifyDefiLlamaDappUrl(url: string) {
   }
 }
 
+// Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of
+// truth and `isConnected` is always derived from it. Records written before per-source support
+// (or by a code path that updated only one of the two fields) can drift; this collapses them back.
+function normalizeDappConnection(dapp: Dapp): Dapp {
+  const connectedSources = Array.isArray(dapp.connectedSources)
+    ? dapp.connectedSources
+    : ((dapp.isConnected ? ['injected'] : []) as ConnectionSource[])
+
+  return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 }
+}
+
 export {
   getDappIdFromUrl,
   getDomainFromUrl,
@@ -120,5 +131,6 @@ export {
   sortDapps,
   modifyDappPropsIfNeeded,
   getDappNameFromId,
-  unifyDefiLlamaDappUrl
+  unifyDefiLlamaDappUrl,
+  normalizeDappConnection
 }

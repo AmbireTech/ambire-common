@@ -1,9 +1,9 @@
-import { Interface, MaxUint256 } from 'ethers'
+import { decodeFunctionData, maxUint256, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { AaveV3Pool } from '../../const/abis'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization } from '../../interfaces'
 import {
+  HexIrCall,
   getAction,
   getAddressVisualization,
   getDeadline,
@@ -112,16 +112,31 @@ const AAVE_TOKENS_BY_INDEX: { [chainId: string]: string[] } = {
     '0x2416092f143378750bb29b79ed961ab195cceea5'
   ]
 }
-export const aaveV3Pool = (): { [key: string]: Function } => {
-  const iface = new Interface(AaveV3Pool)
+
+const supplyAbi = parseAbi([
+  'function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)'
+])
+const flashLoanSimpleAbi = parseAbi([
+  'function flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)'
+])
+const repayWithATokensAbi = parseAbi(['function repayWithATokens(bytes32 args) returns (uint256)'])
+const repayWithPermitAbi = parseAbi([
+  'function repayWithPermit(bytes32 args, bytes32 r, bytes32 s) returns (uint256)'
+])
+const supplyWithPermitAbi = parseAbi([
+  'function supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)'
+])
+const withdrawBytes32Abi = parseAbi(['function withdraw(bytes32 args) returns (uint256)'])
+
+export const aaveV3Pool = (): {
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+} => {
   return {
-    [iface.getFunction(
-      'supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [toFunctionSelector(supplyAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { asset, amount, onBehalfOf, referralCode } = iface.parseTransaction(call)!.args
+      const { args } = decodeFunctionData({ abi: supplyAbi, data: call.data })
+      const [asset, amount, onBehalfOf] = args
       return [
         getAction('Deposit'),
         getToken(asset, amount),
@@ -130,12 +145,9 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [iface.getFunction(
-      'flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { receiverAddress, asset, amount, params, referralCode } =
-        iface.parseTransaction(call)!.args
+    [toFunctionSelector(flashLoanSimpleAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+      const { args } = decodeFunctionData({ abi: flashLoanSimpleAbi, data: call.data })
+      const [receiverAddress, asset, amount] = args
 
       return [
         getAction('Execute Flash Loan'),
@@ -144,34 +156,21 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
         getAddressVisualization(receiverAddress)
       ]
     },
-    [iface.getFunction('repayWithATokens(bytes32 args)')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
+    [toFunctionSelector(repayWithATokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { args } = iface.parseTransaction(call)!.args
       return [getAction('Repay with token A'), getLabel('to'), getAddressVisualization(call.to)]
     },
-    [iface.getFunction('repayWithPermit(bytes32 args, bytes32 r, bytes32 s)')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
+    [toFunctionSelector(repayWithPermitAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { args } = iface.parseTransaction(call)!.args
       return [getAction('Repay with permit'), getLabel('to'), getAddressVisualization(call.to)]
     },
-    [iface.getFunction(
-      'supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [toFunctionSelector(supplyWithPermitAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { asset, amount, onBehalfOf, referralCode, deadline, permitV, permitR, bytes32 } =
-        iface.parseTransaction(call)!.args
+      const { args } = decodeFunctionData({ abi: supplyWithPermitAbi, data: call.data })
+      const [asset, amount, onBehalfOf, , deadline] = args
       return [
         getAction('Supply'),
         getToken(asset, amount),
@@ -183,28 +182,31 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
         getDeadline(deadline)
       ]
     },
-    [iface.getFunction('withdraw(bytes32 args)')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
+    [toFunctionSelector(withdrawBytes32Abi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
       // @TODO  do some hecks for network OR
-      const { args } = iface.parseTransaction(call)!.args
-      const amountAsString = args.slice(30, 62)
-      const tokenIndex = Number(`0x${args.slice(62)}`)
-      if (!AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()])
+      const { args } = decodeFunctionData({ abi: withdrawBytes32Abi, data: call.data })
+      const [packedArgs] = args
+      const amountAsString = packedArgs.slice(30, 62)
+      const tokenIndex = Number(`0x${packedArgs.slice(62)}`)
+      const tokensByIndex = AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()]
+      if (!tokensByIndex)
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
-      if (tokenIndex >= AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()].length)
+      if (tokenIndex >= tokensByIndex.length)
+        return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
+
+      const token = tokensByIndex[tokenIndex]
+      if (!token)
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
       // stores amount inn uint128 instead of uint256, but max value is treated as max value
-      const amount = amountAsString === 'f'.repeat(32) ? MaxUint256 : BigInt(`0x${amountAsString}`)
+      const amount = amountAsString === 'f'.repeat(32) ? maxUint256 : BigInt(`0x${amountAsString}`)
 
       return [
         getAction('Withdraw'),
-        getToken(AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()][tokenIndex], amount),
+        getToken(token, amount),
         getLabel('from'),
         getAddressVisualization(call.to)
       ]

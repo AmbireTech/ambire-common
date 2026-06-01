@@ -1,27 +1,29 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { ModuleProxyFactory } from '../../const/abis/ModuleProxyFactory'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization } from '../../utils'
+import { HexIrCall, getAction, getAddressVisualization, isHexCall } from '../../utils'
 
-const iface = new Interface(ModuleProxyFactory)
+const deployModuleAbi = parseAbi([
+  'function deployModule(address masterCopy, bytes memory initializer, uint256 saltNonce)'
+])
 
 const ModuleProxyFactoryModule: HumanizerCallModule = (
   accOp: AccountOp,
   calls: IrCall[]
 ): IrCall[] => {
-  const matcher = {
-    [iface.getFunction('deployModule')?.selector!]: (call: IrCall): IrCall | undefined => {
-      const { masterCopy } = iface.parseTransaction(call)!.args
+  const matcher: Record<string, (call: HexIrCall) => IrCall | undefined> = {
+    [toFunctionSelector(deployModuleAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: deployModuleAbi, data: call.data })
+      const [masterCopy] = args
       const fullVisualization = [getAction('Deploy module'), getAddressVisualization(masterCopy)]
       return { ...call, fullVisualization }
     }
   }
   const newCalls = calls.map((call) => {
+    if (call.fullVisualization || !isHexCall(call)) return call
     const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !match) return call
+    if (!match) return call
     const newCall = match(call)
     if (!newCall) return call
     return newCall

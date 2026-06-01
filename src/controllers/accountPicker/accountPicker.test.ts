@@ -1,7 +1,5 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { Wallet } from 'ethers'
 
-/* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'

@@ -35,6 +35,8 @@ Note: This package does not include compiled JS and TS output in the repository.
 - NEVER modify git config or run destructive git operations
 - NEVER commit unless explicitly requested by user
 - NEVER stage changes unless explicitly requested by user
+- Avoid TypeScript casts when possible. Prefer narrowing with if statements, discriminated unions, assertion functions, and type guards. Cast only at trusted boundaries, and keep it local
+- Avoid regex for parsing strings or business logic. Prefer explicit parsing, small helper functions, existing parsers or available library functions.
 
 ## Tests:
 - ALWAYS write test cases that cover positive, negative, edge cases and security implications of the code you change or add.

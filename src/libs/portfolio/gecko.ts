@@ -13,13 +13,12 @@ export function geckoResponseIdentifier(tokenAddr: string, network: Network): st
 export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
   const segments: { [key: string]: any[] } = {}
 
-  // eslint-disable-next-line no-restricted-syntax
   for (const queueItem of queue) {
     const geckoId = geckoIdMapper(queueItem.data.address, queueItem.data.network)
     // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
     // since it would return nothing.
     // This can happen when adding a custom network that doesn't have a CoinGecko platform ID.
-    // eslint-disable-next-line no-continue
+
     if (!geckoId && !queueItem.data.network.platformId) continue
 
     let segmentId: string = queueItem.data.baseCurrency

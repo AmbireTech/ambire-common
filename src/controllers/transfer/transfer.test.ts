@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { ZeroAddress, formatUnits } from 'ethers'
 
 import { expect } from '@jest/globals'
@@ -151,7 +148,7 @@ describe('Transfer Controller', () => {
     })
 
     expect(transferController.amount).toBe(
-      formatUnits(nativeToken.amount - feeAmount, nativeToken.decimals)
+      formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
     )
   })
   test('should set validation form messages', async () => {

@@ -91,9 +91,6 @@ export type Action = (
       actionName: 'reload-selected-account'
     }
   | {
-      actionName: 'dismiss-email-vault'
-    }
-  | {
       actionName: 'dismiss-7702-banner'
       meta: { accountAddr: string }
     }

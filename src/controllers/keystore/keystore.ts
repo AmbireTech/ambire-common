@@ -1,6 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable new-cap */
-/* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
 import {
   decryptWithPrivateKey,
@@ -1087,11 +1084,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       const decryptedBytes = await decryptWithKey(this.#mainKey, storedKey.privKey)
       const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
 
-      // @ts-ignore TODO: Figure out the correct type definition
+      // @ts-expect-error TODO: Figure out the correct type definition
       return new SignerInitializer(key, decryptedPrivateKey)
     }
 
-    // @ts-ignore TODO: Figure out the correct type definition
+    // @ts-expect-error TODO: Figure out the correct type definition
     return new SignerInitializer(key)
   }
 

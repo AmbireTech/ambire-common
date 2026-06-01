@@ -1,8 +1,5 @@
-/* eslint-disable no-continue */
-/* eslint-disable no-restricted-syntax */
 /* eslint-disable @typescript-eslint/brace-style */
-/* eslint-disable no-await-in-loop */
-/* eslint-disable class-methods-use-this */
+
 import {
   AbiCoder,
   formatEther,
@@ -1068,9 +1065,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // The signing might fail, tell the user why but allow the user to retry signing,
-    // @ts-ignore fix TODO: type mismatch
+    // @ts-expect-error fix TODO: type mismatch
     if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
-      // @ts-ignore typescript complains, but the error being present gets checked above
+      // @ts-expect-error typescript complains, but the error being present gets checked above
       errors.push(this.status.error)
     }
 
@@ -1141,30 +1138,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
-
-    // if 7702 EOA that is not ambire
-    // and another delegation is there, show the warning
-    const broadcastOption = this.selectedOption
-      ? this.baseAccount.getBroadcastOption(this.selectedOption, {
-          op: this.accountOp,
-          isSponsored: this.isSponsored
-        })
-      : null
-    if (
-      'is7702' in this.baseAccount &&
-      this.baseAccount.is7702 &&
-      this.delegatedContract &&
-      this.delegatedContract !== ZeroAddress &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
-      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
-      (broadcastOption === BROADCAST_OPTIONS.byBundler ||
-        broadcastOption === BROADCAST_OPTIONS.delegation) &&
-      WARNINGS.delegationDetected
-    ) {
-      warnings.push(WARNINGS.delegationDetected)
-    }
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -2273,7 +2246,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.#keystore.getAccountKeys(feePayer)
   }
 
-  // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
   }
@@ -2438,7 +2410,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (counter === 0) {
           await this.#accounts
             .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-            // eslint-disable-next-line no-console
+
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
         }
@@ -2543,7 +2515,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
         .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-        // eslint-disable-next-line no-console
+
         .catch((e) => console.error(e))
     }
 
@@ -3152,9 +3124,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
             rawTxn: signedTxn
           }).catch((e: any) => {
-            // eslint-disable-next-line no-console
             console.log('failed to record EOA txn to relayer', accountOp.chainId)
-            // eslint-disable-next-line no-console
+
             console.log(e)
           })
         }
@@ -3171,7 +3142,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
         }
       } catch (error: any) {
-        // eslint-disable-next-line no-console
         console.error('Error broadcasting', error)
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
@@ -3447,7 +3417,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (!this.hasCustomGasPrices) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {

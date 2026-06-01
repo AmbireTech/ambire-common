@@ -89,7 +89,7 @@ describe('EventEmitter', () => {
     emitter.onError(mockErrorCallback)
 
     // Verify they work before destroy
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitUpdate()
     expect(mockCallback).toHaveBeenCalledTimes(1)
 
@@ -97,9 +97,9 @@ describe('EventEmitter', () => {
     emitter.destroy()
 
     // Try to emit again
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitError({ level: 'minor', message: 'test', error: new Error() })
 
     // Should not have been called again
@@ -135,7 +135,7 @@ describe('EventEmitter', () => {
       // The callback can still be executed, proving the old controller is kept alive
       const mockCallback = jest.fn()
       oldController.onError(mockCallback, 'test')
-      // @ts-ignore
+      // @ts-expect-error
       oldController.emitError({
         level: 'minor',
         message: 'test error',

@@ -446,7 +446,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           // signature is from a key that has privs to the account
           signer: this.messageToSign.accountAddr,
           signature: getVerifyMessageSignature(signature, this.#account, accountState),
-          // eslint-disable-next-line no-nested-ternary
+
           ...(this.messageToSign.content.kind === 'message' ||
           this.messageToSign.content.kind === 'siwe'
             ? { message: hexStringToUint8Array(this.messageToSign.content.message) }

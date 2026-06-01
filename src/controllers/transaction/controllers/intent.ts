@@ -95,7 +95,6 @@ export class IntentController extends EventEmitter {
   // return hasRelevantChanges
   // }
 
-  // eslint-disable-next-line class-methods-use-this
   // public async getQuotes(inputs: any, options?: any) {
   //   // await this.dependencies.interopSDK.getQuotes()
   //   return new Promise((resolve) => {

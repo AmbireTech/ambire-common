@@ -1,7 +1,5 @@
-/* eslint-disable no-await-in-loop */
-
 import { suppressConsole } from '../../../test/helpers/console'
-/* eslint-disable prettier/prettier */
+
 import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -195,7 +193,7 @@ describe('ContinuousUpdatesController intervals', () => {
     jest
       .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
       .mockReturnValue(Object.fromEntries(mainCtrl.accounts.accounts.map((a) => [a.addr, []])))
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
@@ -256,27 +254,27 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
 
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
