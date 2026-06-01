@@ -67,7 +67,7 @@ export const encryptWithKey = async (
   const encrypted = await crypto.subtle.encrypt(
     { name: CIPHER, iv, tagLength: 128 },
     key,
-    Buffer.from(data)
+    new Uint8Array(data)
   )
   const encryptedBytes = new Uint8Array(encrypted)
   return {
