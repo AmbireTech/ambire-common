@@ -210,12 +210,12 @@ export class KeyIterator implements KeyIteratorInterface {
     })
   }
 
-  isSeedMatching(
-    seedPhraseToCompareWith: string,
-    passphraseToCompareWith?: string | null
-  ): boolean {
+  isSeedMatching(seedPhraseToCompareWith: string, passphraseToCompareWith: string | null): boolean {
     if (!this.#seedPhrase) return false
-    if (!!passphraseToCompareWith && passphraseToCompareWith !== this.#seedPassphrase) {
+    if (
+      passphraseToCompareWith !== undefined &&
+      (passphraseToCompareWith ?? '') !== (this.#seedPassphrase ?? '')
+    ) {
       return false
     }
 

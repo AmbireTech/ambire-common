@@ -254,7 +254,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
 
     const { scryptParams, aesEncrypted } = secretEntry
-    if (aesEncrypted.cipherType !== CIPHER && aesEncrypted.cipherType !== CIPHER_OLD) {
+    if (
+      aesEncrypted.cipherType !== CIPHER &&
+      aesEncrypted.cipherType !== CIPHER_OLD &&
+      aesEncrypted.cipherType !== undefined
+    ) {
       throw new EmittableError({
         message:
           'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
@@ -1240,7 +1244,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   isKeyIteratorInitializedWithTempSeed(keyIterator?: KeyIterator | null) {
     if (!this.#tempSeed || !keyIterator || keyIterator.subType !== 'seed') return false
 
-    return !!keyIterator.isSeedMatching && keyIterator.isSeedMatching(this.#tempSeed.seed)
+    return (
+      !!keyIterator.isSeedMatching &&
+      keyIterator.isSeedMatching(this.#tempSeed.seed, this.#tempSeed.seedPassphrase ?? null)
+    )
   }
 
   async getKeystoreSeed(keyIterator?: KeyIterator | null): Promise<StoredKeystoreSeed | null> {
@@ -1249,7 +1256,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     for (const storedSeed of this.#keystoreSeeds) {
       const decryptedStoredSeed = await this.getSavedSeed(storedSeed.id)
 
-      if (!keyIterator.isSeedMatching(decryptedStoredSeed.seed, decryptedStoredSeed.seedPassphrase))
+      if (
+        !keyIterator.isSeedMatching(
+          decryptedStoredSeed.seed,
+          decryptedStoredSeed.seedPassphrase ?? null
+        )
+      )
         continue
 
       return storedSeed

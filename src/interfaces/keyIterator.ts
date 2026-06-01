@@ -36,7 +36,7 @@ export interface KeyIterator {
     }
   }[]
   /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
-  isSeedMatching?: (seedToCompareWith: string, passphraseToCompareWith?: string | null) => boolean
+  isSeedMatching?: (seedToCompareWith: string, passphraseToCompareWith: string | null) => boolean
   // QR-specific optional fields
   parsedAccount?: ParsedQrAccount
 }
