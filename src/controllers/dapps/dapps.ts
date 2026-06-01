@@ -31,7 +31,6 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
-
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
@@ -42,11 +41,11 @@ import {
   getDappNameFromId,
   getDomainFromUrl,
   modifyDappPropsIfNeeded,
+  normalizeDappConnection,
   sortDapps,
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
-
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -243,7 +242,9 @@ export class DappsController extends EventEmitter implements IDappsController {
       this.#storage.get('dappsV2', predefinedDapps),
       this.#storage.get('recentDapps', [] as RecentDappEntry[])
     ])
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
+    // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
+    // can't show a dapp as connected in the UI while permission checks force a reconnect.
+    this.#dapps = new Map(storedDapps.map((d) => [d.id, normalizeDappConnection(d)]))
     this.#recentDapps = storedRecentDapps
 
     void this.fetchAndUpdateDapps()
