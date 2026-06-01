@@ -251,6 +251,45 @@ const mockOldAesStorageWithBiometrics = async (storageCtrl: StorageController) =
   await storageCtrl.set('keystoreKeys', mockKeys)
 }
 
+// Builds an already-migrated (AES-GCM) secret entry for the given legacy main key. Used to simulate
+// keystores where the secret was migrated to GCM but a previous run left the stored keys/seeds on AES-CTR.
+const createGcmSecretEntry = async (
+  id: string,
+  secret: string,
+  mainKey: { key: Uint8Array; iv: Uint8Array }
+) => {
+  const entropyGenerator = new EntropyGenerator()
+  const salt = entropyGenerator.generateRandomBytes(32, id)
+  const scryptAdapter = new ScryptAdapter('browser-webkit')
+  const secretKey = await scryptAdapter.scrypt(getBytesForSecret(secret), salt, SCRYPT_PARAMS)
+
+  const gcmMainKey = await crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(getBytes(concat([mainKey.key, mainKey.iv]))),
+    { name: CIPHER },
+    true,
+    ['encrypt', 'decrypt']
+  )
+
+  const aesEncrypted = await keystoreLib.encryptMainKeyWithSecret(
+    gcmMainKey,
+    secretKey as Uint8Array<ArrayBuffer>
+  )
+
+  return {
+    id,
+    scryptParams: { ...SCRYPT_PARAMS, salt: hexlify(salt) },
+    aesEncrypted
+  }
+}
+
+// Flips the first byte of a GCM payload's ciphertext to simulate tampering/corruption at rest.
+const tamperGcmCiphertext = (payload: any) => {
+  const bytes = getBytes(payload.ciphertext)
+  bytes[0] = bytes[0]! ^ 0xff
+  return { ...payload, ciphertext: hexlify(bytes) }
+}
+
 const keystoreSigners = { internal: KeystoreSigner, ledger: LedgerSigner }
 
 const prepareTest = async (
@@ -805,6 +844,151 @@ describe('CTR to GCM migration', () => {
     expect(valid).toBe(true)
 
     encryptMainKeyWithSecretSpy.mockRestore()
+    restore()
+  })
+  it('should not unlock a migrated keystore with the wrong password (GCM path)', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl, storageCtrl } = await prepareTest()
+
+    // First unlock migrates the secret to GCM
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    const secretsAfter = await storageCtrl.get('keystoreSecrets', [])
+    expect(secretsAfter[0]!.aesEncrypted.cipherType).toBe(CIPHER)
+
+    keystoreCtrl.lock()
+    expect(keystoreCtrl.isUnlocked).toBe(false)
+
+    // A wrong password now goes through the GCM unlock path and must be rejected
+    await keystoreCtrl.unlockWithSecret('password', 'definitelyWrongPass')
+
+    expect(keystoreCtrl.isUnlocked).toBe(false)
+    expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+
+    // The correct password still works afterwards (and clears the error)
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.errorMessage).toBe('')
+
+    restore()
+  })
+  it('should finish migrating stored keys/seeds on the GCM path if a previous run left them on AES-CTR', async () => {
+    // Simulate an interrupted/partially-failed migration: the secret was already migrated to GCM,
+    // but the stored keys and seeds are still on AES-CTR. Because the secret is GCM, unlocking takes
+    // the GCM path - which must still complete the payload migration instead of leaving them on CTR.
+    const { keystoreCtrl, storageCtrl } = await prepareTest(async (storageCtrl) => {
+      const fixture = await createMockOldAesStorageFixture()
+      const gcmSecret = await createGcmSecretEntry('password', MOCK_MIGRATION_PASS, fixture.mainKey)
+
+      await storageCtrl.set('keystoreSecrets', [gcmSecret])
+      await storageCtrl.set('keystoreSeeds', fixture.mockSeeds)
+      await storageCtrl.set('keystoreKeys', fixture.mockKeys)
+    }, true)
+
+    const secretsBefore = await storageCtrl.get('keystoreSecrets', [])
+    const seedsBefore = await storageCtrl.get('keystoreSeeds', [])
+    const keysBefore = await storageCtrl.get('keystoreKeys', [])
+    // GCM
+    expect(secretsBefore[0]!.aesEncrypted.cipherType).toBe(CIPHER)
+    // Rest not migrated
+    expect(typeof seedsBefore[0]?.seed).toBe('string')
+    expect(keysBefore.some(({ privKey }) => typeof privKey === 'string')).toBe(true)
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+
+    // The payloads must now be migrated to GCM
+    const seedsAfter = await storageCtrl.get('keystoreSeeds', [])
+    const keysAfter = await storageCtrl.get('keystoreKeys', [])
+    expect(seedsAfter.every(({ seed }) => typeof seed !== 'string')).toBe(true)
+    expect(keysAfter.every(({ privKey }) => privKey === null || typeof privKey !== 'string')).toBe(
+      true
+    )
+
+    // And they must decrypt correctly
+    const rawSeed = (await keystoreCtrl.getSavedSeed('seed-12-word')).seed
+    expect(rawSeed).toBe(MOCK_12_WORD_SEED)
+
+    const internalKeyJson = await keystoreCtrl.exportKeyWithPasscode(
+      MOCK_INTERNAL_KEY.addr,
+      MOCK_INTERNAL_KEY.type,
+      'tempPass'
+    )
+    const wallet = await Wallet.fromEncryptedJson(JSON.parse(internalKeyJson), 'tempPass')
+    expect(wallet.address).toBe(MOCK_INTERNAL_KEY.addr)
+  })
+  it('should not rewrite stored keys/seeds on unlock when everything is already migrated', async () => {
+    const { keystoreCtrl, storageCtrl } = await prepareTest()
+
+    // First unlock performs the full migration
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    keystoreCtrl.lock()
+
+    const setSpy = jest.spyOn(storageCtrl, 'set')
+
+    // Second unlock: everything is already GCM, so there must be no payload re-write
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+
+    const payloadWrites = setSpy.mock.calls.filter(
+      ([key]) => key === 'keystoreKeys' || key === 'keystoreSeeds'
+    )
+    expect(payloadWrites).toHaveLength(0)
+
+    setSpy.mockRestore()
+  })
+  it('should reject reading a seed whose stored GCM ciphertext was tampered with', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl, storageCtrl, uiCtrl } = await prepareTest()
+
+    // Migrate everything to GCM, then lock
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    keystoreCtrl.lock()
+
+    // Tamper with the stored (GCM) seed ciphertext at rest
+    const seeds = await storageCtrl.get('keystoreSeeds', [])
+    const tamperedSeeds = seeds.map((s) =>
+      s.id === 'seed-12-word' ? { ...s, seed: tamperGcmCiphertext(s.seed) } : s
+    )
+    await storageCtrl.set('keystoreSeeds', tamperedSeeds)
+
+    // Create a new controller instance so the data is loaded from storage
+    const tamperedCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await tamperedCtrl.initialLoadPromise
+    await tamperedCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    expect(tamperedCtrl.isUnlocked).toBe(true)
+
+    // GCM authentication must reject the tampered seed
+    await expect(tamperedCtrl.getSavedSeed('seed-12-word')).rejects.toThrow()
+    // An untouched seed must still be readable
+    expect((await tamperedCtrl.getSavedSeed('seed-24-word')).seed).toBe(MOCK_24_WORD_SEED)
+
+    restore()
+  })
+  it('should reject signing with a key whose stored GCM ciphertext was tampered with', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl, storageCtrl, uiCtrl } = await prepareTest()
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    keystoreCtrl.lock()
+
+    // Tamper with the stored (GCM) private key ciphertext at rest
+    const keys = await storageCtrl.get('keystoreKeys', [])
+    const tamperedKeys = keys.map((k) =>
+      k.addr === MOCK_INTERNAL_KEY.addr && k.privKey
+        ? { ...k, privKey: tamperGcmCiphertext(k.privKey) }
+        : k
+    )
+    await storageCtrl.set('keystoreKeys', tamperedKeys)
+
+    const tamperedCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await tamperedCtrl.initialLoadPromise
+    await tamperedCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+    expect(tamperedCtrl.isUnlocked).toBe(true)
+
+    await expect(
+      tamperedCtrl.getSigner(MOCK_INTERNAL_KEY.addr, MOCK_INTERNAL_KEY.type)
+    ).rejects.toThrow()
+
     restore()
   })
 })
