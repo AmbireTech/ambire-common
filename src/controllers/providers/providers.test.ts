@@ -47,6 +47,21 @@ describe('ProvidersController', () => {
     expect(sendUiMessage).toHaveBeenCalledWith({ requestId, ok: true, res: false })
   })
 
+  test('callContractAndSendResToUi sends successful truthy contract results to the UI', async () => {
+    const abi = 'function name() view returns(string)'
+    const iface = new Interface([abi])
+    const { providersController, sendUiMessage } = await getProvidersController(
+      jest.fn(async () => iface.encodeFunctionResult('name', ['Wrapped Ether']))
+    )
+
+    await providersController.callContractAndSendResToUi(
+      { chainId, address, abi, method: 'name', args: [] },
+      requestId
+    )
+
+    expect(sendUiMessage).toHaveBeenCalledWith({ requestId, ok: true, res: 'Wrapped Ether' })
+  })
+
   test('callContractAndSendResToUi sends rejected contract reads to the UI', async () => {
     const { providersController, sendUiMessage } = await getProvidersController(
       jest.fn(async () => {
