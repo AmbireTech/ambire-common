@@ -21,6 +21,68 @@ import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
+const ERC721_TRANSFER_TOPIC = keccak256(toUtf8Bytes('Transfer(address,address,uint256)'))
+
+interface CallTracerLog {
+  address: string
+  topics?: string[]
+}
+
+interface CallTracerFrame {
+  to?: string
+  calls?: CallTracerFrame[]
+  logs?: CallTracerLog[]
+}
+
+export function parseCallTracerResult(result: CallTracerFrame | undefined): {
+  tokens: string[]
+  nfts: [string, bigint[]][]
+} {
+  const tokenAddresses = new Set<string>()
+  const nftTokenIdsByAddress = new Map<string, Set<bigint>>()
+
+  const addTokenAddress = (address: string | undefined) => {
+    if (!address) return
+
+    tokenAddresses.add(getAddress(address))
+  }
+
+  const addNftTransfer = (log: CallTracerLog) => {
+    if (
+      log.topics?.length !== 4 ||
+      log.topics[0]?.toLowerCase() !== ERC721_TRANSFER_TOPIC.toLowerCase()
+    )
+      return
+
+    const address = getAddress(log.address)
+    const tokenId = BigInt(log.topics[3]!)
+    const tokenIds = nftTokenIdsByAddress.get(address) || new Set<bigint>()
+
+    tokenIds.add(tokenId)
+    nftTokenIdsByAddress.set(address, tokenIds)
+  }
+
+  const collectFrameAssets = (frame: CallTracerFrame | undefined) => {
+    if (!frame) return
+
+    addTokenAddress(frame.to)
+    frame.logs?.forEach((log) => {
+      addTokenAddress(log.address)
+      addNftTransfer(log)
+    })
+    frame.calls?.forEach(collectFrameAssets)
+  }
+
+  collectFrameAssets(result)
+
+  return {
+    tokens: Array.from(tokenAddresses),
+    nfts: Array.from(nftTokenIdsByAddress.entries()).map(([address, tokenIds]) => [
+      address,
+      Array.from(tokenIds)
+    ])
+  }
+}
 
 export function getStateOverride(
   account: Account,
@@ -142,72 +204,42 @@ export async function debugTraceCall(
   const params = getFunctionParams(account, op, accountState)
   if (!params) return { tokens: [], nfts: [] }
 
-  const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
-    await provider
-      .send('debug_traceCall', [
-        {
-          to: params.to,
-          value: toQuantity(params.value.toString()),
-          data: params.data,
-          from: params.from
+  const trace: CallTracerFrame = await provider
+    .send('debug_traceCall', [
+      {
+        to: params.to,
+        value: toQuantity(params.value.toString()),
+        data: params.data,
+        from: params.from
+      },
+      'latest',
+      {
+        // we're replacing the custom tracer with the built-in callTracer
+        // because it has broader RPC support. The trade off is that the
+        // data we're pulling from the RPC is a bit bigger compared to the
+        // custom tracer. But at least it works broadly as networks like Base
+        // that use geth only don't support custom tracers, resulting in
+        // bad discovery
+        tracer: 'callTracer',
+        tracerConfig: {
+          withLog: true
         },
-        'latest',
-        {
-          tracer: `{
-          discovered: [],
-          fault: function (log) {},
-          step: function (log) {
-            const found = this.discovered.map(ob => ob.address)
-            if (log.contract && log.contract.getAddress() && found.indexOf(toHex(log.contract.getAddress())) === -1) {
-              this.discovered.push({
-                erc: 20,
-                address: toHex(log.contract.getAddress())
-              })
+        stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
+          ? {
+              [params.from]: {
+                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+              },
+              ...overrideData
             }
-            if (log.op.toString() === 'LOG4') {
-              this.discovered.push({
-                erc: 721,
-                address: toHex(log.contract.getAddress()),
-                tokenId: '0x' + log.stack.peek(5).toString(16)
-              })
-            }
-          },
-          result: function () {
-            return this.discovered
-          }
-        }`,
+          : {}
+      }
+    ])
+    .catch((e) => {
+      // eslint-disable-next-line no-underscore-dangle
+      throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
+    })
 
-          enableMemory: false,
-          enableReturnData: true,
-          disableStorage: true,
-          stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
-            ? {
-                // TODO: if it's an EOA, add the EOA state override data
-                [params.from]: {
-                  balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                },
-                ...overrideData
-              }
-            : {}
-        }
-      ])
-      .catch((e) => {
-        throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
-      })
-
-  const foundTokens = [
-    ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
-  ]
-  const foundNftTransfersObject = results
-    .filter((i) => i?.erc === 721)
-    .reduce((res: { [address: string]: Set<bigint> }, i: any) => {
-      if (!res[i?.address]) res[i?.address] = new Set()
-      res[i.address]!.add(i.tokenId)
-      return res
-    }, {})
-  const foundNftTransfers: [string, bigint[]][] = Object.entries(foundNftTransfersObject).map(
-    ([address, id]) => [getAddress(address), Array.from(id).map((i) => BigInt(i))]
-  )
+  const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace)
 
   // we set the 3rd param to "true" as we don't need state override
   const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
