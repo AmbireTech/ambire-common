@@ -235,8 +235,12 @@ export const migrateStoredPayloadsToGCM = async (
   migratedKeys: StoredKey[]
   migratedSeeds: StoredKeystoreSeed[]
   failedMigrations: { keyAddrs: string[]; seedIds: string[] }
+  // Indicates whether at least one key or seed was actually re-encrypted to AES-GCM,
+  // so the caller can skip persisting when there was nothing to migrate.
+  hasMigrated: boolean
 }> => {
   const failedMigrations: { keyAddrs: string[]; seedIds: string[] } = { keyAddrs: [], seedIds: [] }
+  let hasMigrated = false
 
   const migratedKeys: StoredKey[] = await Promise.all(
     storedKeys.map(async (storedKey) => {
@@ -256,9 +260,13 @@ export const migrateStoredPayloadsToGCM = async (
           )
         }
 
+        const migratedPrivKey = await encryptWithKey(mainKey, getBytes(decryptedKey))
+        // Flip the flag after the async operation to ensure it doesn't fail
+        hasMigrated = true
+
         return {
           ...storedKey,
-          privKey: await encryptWithKey(mainKey, getBytes(decryptedKey))
+          privKey: migratedPrivKey
         }
       } catch (e: any) {
         console.error(`Failed to migrate key with addr ${storedKey.addr} to AES-GCM encryption:`, e)
@@ -285,13 +293,17 @@ export const migrateStoredPayloadsToGCM = async (
         // Convert to entropy bytes, which is the raw form of the seed phrase without the mnemonic encoding
         const entropy = extractEntropyFromSeed(decryptedSeedString)
 
-        return {
+        const migratedSeed = {
           ...storedSeed,
           seed: await encryptWithKey(mainKey, entropy),
           seedPassphrase: decryptedSeedPassphrase
             ? await encryptWithKey(mainKey, decryptedSeedPassphrase)
             : null
         }
+        // Flip the flag after the async operations to ensure they don't fail
+        hasMigrated = true
+
+        return migratedSeed
       } catch (e: any) {
         console.error(`Failed to migrate seed with id ${storedSeed.id} to AES-GCM encryption:`, e)
         failedMigrations.seedIds.push(storedSeed.id)
@@ -303,6 +315,7 @@ export const migrateStoredPayloadsToGCM = async (
   return {
     migratedKeys,
     migratedSeeds,
-    failedMigrations
+    failedMigrations,
+    hasMigrated
   }
 }

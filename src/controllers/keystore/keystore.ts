@@ -290,11 +290,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         ['encrypt', 'decrypt']
       )
 
-      // 3. Migrate the secret and all stored seeds/pks to use GCM
+      // 3. Migrate the secret and all stored seeds/pks to use GCM, then persist everything
+      // together once both migrations have completed.
       try {
-        await this.#migrateSecretToGCM(secretEntry.id, secretKey)
+        const migratedSecrets = await this.#migrateSecretToGCM(secretEntry.id, secretKey)
+        const { migratedKeys, migratedSeeds, hasMigrated } =
+          await this.#migrateStoredPayloadsToGCMIfNeeded()
 
-        await this.#migrateStoredPayloadsToGCMIfNeeded()
+        await this.#persistMigratedKeystoreData({
+          secrets: migratedSecrets,
+          keys: hasMigrated ? migratedKeys : undefined,
+          seeds: hasMigrated ? migratedSeeds : undefined
+        })
       } catch (e) {
         this.emitError({
           message: 'Keystore migration to GCM failed.',
@@ -304,6 +311,24 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       }
     } else {
       await this.#unlockWithSecretGCM(secretKey, secretEntry)
+
+      // The secret is already on GCM, but stored keys/seeds may still be on AES-CTR if a previous
+      // migration was interrupted or partially failed. Retry here so the migration eventually
+      // completes; it's a no-op when there is nothing left to migrate.
+      try {
+        const { migratedKeys, migratedSeeds, hasMigrated } =
+          await this.#migrateStoredPayloadsToGCMIfNeeded()
+
+        if (hasMigrated) {
+          await this.#persistMigratedKeystoreData({ keys: migratedKeys, seeds: migratedSeeds })
+        }
+      } catch (e) {
+        this.emitError({
+          message: 'Keystore migration to GCM failed.',
+          level: 'silent',
+          error: e instanceof Error ? e : new Error('keystore: GCM migration failed')
+        })
+      }
     }
   }
 
@@ -421,8 +446,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * At this point we have already validated that the provided secret is correct and we have the main key
    * decrypted in memory, so we just need to re-encrypt it with GCM using the secret
    */
-  async #migrateSecretToGCM(secretId: string, secretKey: Uint8Array<ArrayBuffer>) {
-    const migratedSecrets = await Promise.all(
+  async #migrateSecretToGCM(
+    secretId: string,
+    secretKey: Uint8Array<ArrayBuffer>
+  ): Promise<MainKeyEncryptedWithSecret[]> {
+    return Promise.all(
       this.#keystoreSecrets.map(async (secret) => {
         if (secret.id !== secretId) return secret
 
@@ -434,22 +462,23 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         }
       })
     )
-
-    await this.#storage.set('keystoreSecrets', migratedSecrets)
-    this.#keystoreSecrets = migratedSecrets
   }
 
   /**
-   * Migrates all AES-CTR encrypted payloads (main key, stored keys and seeds) to AES-GCM encryption.
+   * Re-encrypts all AES-CTR stored keys and seeds to AES-GCM. It does not persist anything itself,
+   * so the caller can persist the result together with the migrated secret in a single step.
+   * `hasMigrated` indicates whether anything was actually re-encrypted, so the caller can skip
+   * persisting (and avoid pointless storage writes) when there was nothing left to migrate.
    */
-  async #migrateStoredPayloadsToGCMIfNeeded() {
+  async #migrateStoredPayloadsToGCMIfNeeded(): Promise<{
+    migratedKeys: StoredKey[]
+    migratedSeeds: StoredKeystoreSeed[]
+    hasMigrated: boolean
+  }> {
     if (!this.#mainKey) throw new Error('keystore: needs to be unlocked')
 
-    const { migratedKeys, migratedSeeds, failedMigrations } = await migrateStoredPayloadsToGCM(
-      this.#mainKey,
-      this.#keystoreKeys,
-      this.#keystoreSeeds
-    )
+    const { migratedKeys, migratedSeeds, failedMigrations, hasMigrated } =
+      await migrateStoredPayloadsToGCM(this.#mainKey, this.#keystoreKeys, this.#keystoreSeeds)
 
     if (failedMigrations.keyAddrs.length || failedMigrations.seedIds.length) {
       this.emitError({
@@ -461,11 +490,36 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
     }
 
-    await this.#storage.set('keystoreKeys', migratedKeys)
-    await this.#storage.set('keystoreSeeds', migratedSeeds)
+    return { migratedKeys, migratedSeeds, hasMigrated }
+  }
 
-    this.#keystoreKeys = migratedKeys
-    this.#keystoreSeeds = migratedSeeds
+  /**
+   * Persists the migrated keystore data and updates the in-memory state in one place.
+   * Only the provided slices are written, so callers persist exactly what they migrated.
+   */
+  async #persistMigratedKeystoreData({
+    secrets,
+    keys,
+    seeds
+  }: {
+    secrets?: MainKeyEncryptedWithSecret[]
+    keys?: StoredKey[]
+    seeds?: StoredKeystoreSeed[]
+  }) {
+    if (secrets) {
+      await this.#storage.set('keystoreSecrets', secrets)
+      this.#keystoreSecrets = secrets
+    }
+
+    if (keys) {
+      await this.#storage.set('keystoreKeys', keys)
+      this.#keystoreKeys = keys
+    }
+
+    if (seeds) {
+      await this.#storage.set('keystoreSeeds', seeds)
+      this.#keystoreSeeds = seeds
+    }
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
@@ -653,7 +707,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     if (!Mnemonic.isValidMnemonic(seed)) {
       throw new EmittableError({
-        message: 'You are trying to store an invalid seed phrase.',
+        message:
+          'The provided seed phrase is invalid. Try again with a valid seed or contact support if you think this is a mistake.',
         level: 'expected',
         error: new Error('keystore: trying to add an invalid seed phrase')
       })
