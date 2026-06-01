@@ -1,13 +1,13 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
-import { ConnectionSource, Dapp } from '../../interfaces/dapp'
+import { Dapp } from '../../interfaces/dapp'
 import { EmailVaultData } from '../../interfaces/emailVault'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
-import { getDappNameFromId } from '../../libs/dapps/helpers'
+import { getDappNameFromId, normalizeDappConnection } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
@@ -650,13 +650,11 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes(MIGRATION_KEY)) return
 
-    const needsMigration = dapps.some((d: Dapp) => !Array.isArray(d.connectedSources))
+    const hasConnectionDrift = (d: Dapp) =>
+      !Array.isArray(d.connectedSources) || !!d.isConnected !== d.connectedSources.length > 0
+    const needsMigration = dapps.some(hasConnectionDrift)
     if (needsMigration) {
-      const migratedDapps = dapps.map((d: Dapp) =>
-        Array.isArray(d.connectedSources)
-          ? d
-          : { ...d, connectedSources: d.isConnected ? (['injected'] as ConnectionSource[]) : [] }
-      )
+      const migratedDapps = dapps.map(normalizeDappConnection)
       await this.#storage.set('dappsV2', migratedDapps)
     }
 
