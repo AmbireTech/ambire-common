@@ -355,7 +355,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
 
     try {
-      const result = await (contract[method] as Function).apply(contract, args)
+      const result = await contract[method](...args)
 
       this.#sendUiMessage({
         requestId,
