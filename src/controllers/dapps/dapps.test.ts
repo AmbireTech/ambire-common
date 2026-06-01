@@ -612,6 +612,61 @@ describe('DappsController', () => {
       expect(controller.hasPermission('sources-dapp.com', 'injected')).toBe(false)
     })
 
+    // BUG: a stored dapp whose isConnected and connectedSources had drifted (isConnected: true
+    // but connectedSources: []) used to load verbatim — the Explore "Connected" section (which
+    // reads isConnected) showed it as connected, while hasPermission (which reads
+    // connectedSources) returned false, forcing a reconnect on every request. #load now
+    // normalizes to the invariant on read so the two can't disagree.
+    test('normalizes a drifted stored dapp on load (connectedSources is source of truth)', async () => {
+      const drifted = makeDapp({
+        id: 'drifted-dapp.com',
+        name: 'Drifted Dapp',
+        url: 'https://drifted-dapp.com',
+        isCustom: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      // Force the divergence: connected flag on, but no active sources.
+      drifted.isConnected = true
+      drifted.connectedSources = []
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, drifted])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const stored = controller.getDapp('drifted-dapp.com')!
+      expect(stored.connectedSources).toEqual([])
+      expect(stored.isConnected).toBe(false)
+      expect(controller.hasPermission('drifted-dapp.com')).toBe(false)
+    })
+
+    // The inverse drift: a legacy record that never got connectedSources but had isConnected: true
+    // must keep its connection (seeded as injected) rather than silently disconnecting.
+    test('seeds connectedSources from a legacy isConnected flag on load', async () => {
+      const legacy = makeDapp({
+        id: 'legacy-dapp.com',
+        name: 'Legacy Dapp',
+        url: 'https://legacy-dapp.com',
+        isCustom: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      legacy.isConnected = true
+      // Pre-per-source shape: connectedSources is absent entirely.
+      delete (legacy as Partial<Dapp>).connectedSources
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, legacy])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const stored = controller.getDapp('legacy-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+      expect(controller.hasPermission('legacy-dapp.com', 'injected')).toBe(true)
+    })
+
     test('disconnectDappSource removes only the targeted source', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', predefinedDapps)
