@@ -858,16 +858,57 @@ describe('CTR to GCM migration', () => {
     keystoreCtrl.lock()
     expect(keystoreCtrl.isUnlocked).toBe(false)
 
-    // A wrong password now goes through the GCM unlock path and must be rejected
+    // A wrong password now goes through the GCM unlock path. It must be classified as an incorrect
+    // password
+    const emittedErrors: { level: string; message: string }[] = []
+    keystoreCtrl.onError((e) => emittedErrors.push(e))
+
     await keystoreCtrl.unlockWithSecret('password', 'definitelyWrongPass')
 
     expect(keystoreCtrl.isUnlocked).toBe(false)
     expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+    expect(
+      emittedErrors.some(
+        (e) => e.level === 'silent' && e.message === 'Incorrect password. Please try again.'
+      )
+    ).toBe(true)
 
     // The correct password still works afterwards (and clears the error)
     await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
     expect(keystoreCtrl.isUnlocked).toBe(true)
     expect(keystoreCtrl.errorMessage).toBe('')
+
+    restore()
+  })
+  it('should surface an unexpected GCM unlock error instead of masking it as a wrong password', async () => {
+    const { restore } = suppressConsole()
+    const { keystoreCtrl } = await prepareTest(async (storageCtrl) => {
+      const salt = new EntropyGenerator().generateRandomBytes(32, 'password')
+
+      await storageCtrl.set('keystoreSecrets', [
+        {
+          id: 'password',
+          scryptParams: { ...SCRYPT_PARAMS, salt: hexlify(salt) },
+          // Invalid data
+          aesEncrypted: { cipherType: CIPHER, ciphertext: '0xabcd', iv: '0xZZ' } as any
+        }
+      ])
+      await storageCtrl.set('keystoreSeeds', [])
+      await storageCtrl.set('keystoreKeys', [])
+    }, true)
+
+    const emittedErrors: { level: string; message: string }[] = []
+    keystoreCtrl.onError((e) => emittedErrors.push(e))
+
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(false)
+    // The failure must not be masked as a wrong password...
+    expect(keystoreCtrl.errorMessage).not.toBe('Incorrect password. Please try again.')
+    expect(emittedErrors.some((e) => e.level === 'major')).toBe(true)
+    expect(emittedErrors.every((e) => e.message !== 'Incorrect password. Please try again.')).toBe(
+      true
+    )
 
     restore()
   })

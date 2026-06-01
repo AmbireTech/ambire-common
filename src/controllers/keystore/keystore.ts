@@ -381,17 +381,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       throw new Error('keystore: invalid gcm secret cipher type')
     }
 
-    try {
-      const keyFromSecret = await crypto.subtle.importKey(
-        'raw',
-        // use 256 bits (first 32 bytes)
-        secretKey.slice(0, 32),
-        { name: CIPHER },
-        false,
-        ['encrypt', 'decrypt']
-      )
+    const keyFromSecret = await crypto.subtle.importKey(
+      'raw',
+      // use 256 bits (first 32 bytes)
+      secretKey.slice(0, 32),
+      { name: CIPHER },
+      false,
+      ['encrypt', 'decrypt']
+    )
 
-      const decrypted = await crypto.subtle.decrypt(
+    let decrypted: ArrayBuffer
+    try {
+      decrypted = await crypto.subtle.decrypt(
         {
           name: CIPHER,
           iv: new Uint8Array(getBytes(secretEntry.aesEncrypted.iv)),
@@ -400,28 +401,39 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         keyFromSecret,
         new Uint8Array(getBytes(secretEntry.aesEncrypted.ciphertext))
       )
+    } catch (error: any) {
+      // Either wrong password or corrupted/tampered ciphertext
+      if (error?.name === 'OperationError') {
+        this.errorMessage = 'Incorrect password. Please try again.'
+        this.emitUpdate()
 
-      this.#mainKey = await crypto.subtle.importKey(
-        'raw',
-        decrypted.slice(0, 32),
-        { name: CIPHER },
-        true,
-        ['encrypt', 'decrypt']
-      )
+        throw new EmittableError({
+          level: 'silent',
+          message: this.errorMessage,
+          error: new Error(this.errorMessage),
+          sendCrashReport: false
+        })
+      }
 
-      this.errorMessage = ''
-    } catch {
-      this.errorMessage = 'Incorrect password. Please try again.'
-      this.emitUpdate()
-
-      const error = new Error(this.errorMessage)
+      // Anything else is unexpected so we should report to Sentry
       throw new EmittableError({
-        level: 'silent',
-        message: this.errorMessage,
-        error,
-        sendCrashReport: false
+        level: 'major',
+        message:
+          'Something went wrong when trying to unlock. Please try again or contact support if the problem persists.',
+        error:
+          error instanceof Error ? error : new Error('keystore: unexpected error during GCM unlock')
       })
     }
+
+    this.#mainKey = await crypto.subtle.importKey(
+      'raw',
+      decrypted.slice(0, 32),
+      { name: CIPHER },
+      true,
+      ['encrypt', 'decrypt']
+    )
+
+    this.errorMessage = ''
   }
 
   async #findStoredSeed(seed: string, seedPassphrase?: string | null) {
