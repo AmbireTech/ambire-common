@@ -57,7 +57,6 @@ export const reconstructSeedFromEntropy = (
 
 /**
  * Encrypts data using Web Crypto AES-GCM.
- * Returns the ciphertext and authentication tag as separate byte arrays.
  */
 export const encryptWithKey = async (
   key: CryptoKey,
