@@ -271,12 +271,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       // 1. Retrieve the main key using the old encryption method
       const mainKeyOld = this.#unlockWithSecretOld(secretKey, secretEntry)
 
-      // Derive the new main key from the old one
-      // We cannot generate a new key, because the user may have more than one secret
-      // so if we migrate another one later, we need to be able to derive the same main key again.
+      // Rebuild the new main key from the old one.
+      // `mainKeyOld` is the previous 128-bit key (16 bytes), while the new encryption scheme
+      // needs a 256-bit main key (32 bytes).
+      // We cannot generate a new random key here, because the user may have more than one secret
+      // and we need to be able to recreate the same main key again if another secret is migrated later.
       //
-      // Another option would be to generate a new random main key, encrypt it with the old main key and store it
-      // until all secrets are migrated
+      // We simply concatenate `mainKeyOld.key` and `mainKeyOld.iv` (16 bytes each, 32 bytes total).
       this.#mainKey = await crypto.subtle.importKey(
         'raw',
         new Uint8Array(getBytes(concat([mainKeyOld.key, mainKeyOld.iv]))),
