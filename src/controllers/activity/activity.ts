@@ -1024,6 +1024,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       receipts?: BalanceChangesReceipt[]
     }>
   ) {
+    if (balanceChangesTasks.length === 0) return
+
     await Promise.all(
       balanceChangesTasks.map(
         ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
