@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'

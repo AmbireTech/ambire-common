@@ -1,14 +1,136 @@
-import { Interface } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { stringify } from '../../../richJson/richJson'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  isHexCall
+} from '../../utils'
 
-const iface = new Interface([
-  'function fulfillBasicOrder_efficient_6GL6yc(tuple(address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, tuple(uint256 amount, address recipient)[] additionalRecipients, bytes signature) args) payable returns (bool fulfilled)',
-  'function fulfillBasicOrder(tuple(address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, tuple(uint256 amount, address recipient)[] additionalRecipients, bytes signature) args) payable returns (bool fulfilled)',
-  'function fulfillAvailableAdvancedOrders(((address offerer, address zone, (uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount)[] offer, (uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount, address recipient)[] consideration, uint8 orderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 conduitKey, uint256 totalOriginalConsiderationItems) parameters, uint120 numerator, uint120 denominator, bytes signature, bytes extraData)[], (uint256 orderIndex, uint8 side, uint256 index, uint256 identifier, bytes32[] criteriaProof)[], (uint256 orderIndex, uint256 itemIndex)[][], (uint256 orderIndex, uint256 itemIndex)[][], bytes32 fulfillerConduitKey, address recipient, uint256 maximumFulfilled) payable returns (bool[], ((uint8 itemType, address token, uint256 identifier, uint256 amount, address recipient) item, address offerer, bytes32 conduitKey)[])',
+const fulfillBasicOrderEfficientAbi = parseAbi([
+  'function fulfillBasicOrder_efficient_6GL6yc((address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, (uint256 amount, address recipient)[] additionalRecipients, bytes signature) args) payable returns (bool fulfilled)'
+] as const)
+const fulfillBasicOrderAbi = parseAbi([
+  'function fulfillBasicOrder((address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, (uint256 amount, address recipient)[] additionalRecipients, bytes signature) args) payable returns (bool fulfilled)'
+])
+
+// using the abi as json here because otherwise viem is not able to determine the type of the first param
+const fulfillAvailableAdvancedOrdersAbi = [
+  {
+    name: 'fulfillAvailableAdvancedOrders',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'advancedOrders',
+        type: 'tuple[]',
+        components: [
+          {
+            name: 'parameters',
+            type: 'tuple',
+            components: [
+              { name: 'offerer', type: 'address' },
+              { name: 'zone', type: 'address' },
+              {
+                name: 'offer',
+                type: 'tuple[]',
+                components: [
+                  { name: 'itemType', type: 'uint8' },
+                  { name: 'token', type: 'address' },
+                  { name: 'identifierOrCriteria', type: 'uint256' },
+                  { name: 'startAmount', type: 'uint256' },
+                  { name: 'endAmount', type: 'uint256' }
+                ]
+              },
+              {
+                name: 'consideration',
+                type: 'tuple[]',
+                components: [
+                  { name: 'itemType', type: 'uint8' },
+                  { name: 'token', type: 'address' },
+                  { name: 'identifierOrCriteria', type: 'uint256' },
+                  { name: 'startAmount', type: 'uint256' },
+                  { name: 'endAmount', type: 'uint256' },
+                  { name: 'recipient', type: 'address' }
+                ]
+              },
+              { name: 'orderType', type: 'uint8' },
+              { name: 'startTime', type: 'uint256' },
+              { name: 'endTime', type: 'uint256' },
+              { name: 'zoneHash', type: 'bytes32' },
+              { name: 'salt', type: 'uint256' },
+              { name: 'conduitKey', type: 'bytes32' },
+              { name: 'totalOriginalConsiderationItems', type: 'uint256' }
+            ]
+          },
+          { name: 'numerator', type: 'uint120' },
+          { name: 'denominator', type: 'uint120' },
+          { name: 'signature', type: 'bytes' },
+          { name: 'extraData', type: 'bytes' }
+        ]
+      },
+      {
+        name: 'criteriaResolvers',
+        type: 'tuple[]',
+        components: [
+          { name: 'orderIndex', type: 'uint256' },
+          { name: 'side', type: 'uint8' },
+          { name: 'index', type: 'uint256' },
+          { name: 'identifier', type: 'uint256' },
+          { name: 'criteriaProof', type: 'bytes32[]' }
+        ]
+      },
+      {
+        name: 'offerFulfillments',
+        type: 'tuple[][]',
+        components: [
+          { name: 'orderIndex', type: 'uint256' },
+          { name: 'itemIndex', type: 'uint256' }
+        ]
+      },
+      {
+        name: 'considerationFulfillments',
+        type: 'tuple[][]',
+        components: [
+          { name: 'orderIndex', type: 'uint256' },
+          { name: 'itemIndex', type: 'uint256' }
+        ]
+      },
+      { name: 'fulfillerConduitKey', type: 'bytes32' },
+      { name: 'recipient', type: 'address' },
+      { name: 'maximumFulfilled', type: 'uint256' }
+    ],
+    outputs: [
+      { name: 'availableOrders', type: 'bool[]' },
+      {
+        name: 'executions',
+        type: 'tuple[]',
+        components: [
+          {
+            name: 'item',
+            type: 'tuple',
+            components: [
+              { name: 'itemType', type: 'uint8' },
+              { name: 'token', type: 'address' },
+              { name: 'identifier', type: 'uint256' },
+              { name: 'amount', type: 'uint256' },
+              { name: 'recipient', type: 'address' }
+            ]
+          },
+          { name: 'offerer', type: 'address' },
+          { name: 'conduitKey', type: 'bytes32' }
+        ]
+      }
+    ]
+  }
+] as const
+
+const fulfillAdvancedOrderAbi = parseAbi([
   'function fulfillAdvancedOrder(((address offerer, address zone, (uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount)[] offer, (uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount, address recipient)[] consideration, uint8 orderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 conduitKey, uint256 totalOriginalConsiderationItems) parameters, uint120 numerator, uint120 denominator, bytes signature, bytes extraData), (uint256 orderIndex, uint8 side, uint256 index, uint256 identifier, bytes32[] criteriaProof)[], bytes32 fulfillerConduitKey, address recipient) payable returns (bool fulfilled)'
 ])
 
@@ -20,38 +142,10 @@ interface Order {
 const parsePrice = (price: bigint, numerator: bigint, denumerator: bigint): bigint =>
   BigInt((price * numerator) / denumerator)
 const parseOrder = (order: any): Order => {
-  const [
-    params,
-    num,
-    denum
-    // data2, data3
-  ] = order
-  const [
-    ,
-    ,
-    // currentOwner
-    // zone
-    offers,
-    consideration,
-    ,
-    ,
-    // orderType
-    // startTime
-    endTime
-    // zoneHash,
-    // salt,
-    // conduitKey
-    // totalOriginalConsiderationItems
-  ] = params
+  const { parameters: params, numerator: num, denominator: denum } = order
+  const { offer: offers, consideration, endTime } = params
   const items = offers.map((o: any): Order['items'][0] => {
-    const [
-      ,
-      // type
-      address,
-      id,
-      fromAmount,
-      endAmount
-    ] = o
+    const { token: address, identifierOrCriteria: id, startAmount: fromAmount, endAmount } = o
     return {
       address,
       id,
@@ -62,17 +156,10 @@ const parseOrder = (order: any): Order => {
   const payment: Order['payment'][0][] = []
   const tokenPayments: { [addr: string]: bigint } = {}
   consideration.forEach((o: any) => {
-    const [
-      type,
-      token,
-      tokenId,
-      ,
-      // fromAmount
-      endAmount
-    ] = o
-    if (type === 0n || type === 1n)
+    const { itemType: type, token, identifierOrCriteria: tokenId, endAmount } = o
+    if (Number(type) === 0 || Number(type) === 1)
       tokenPayments[token] = (tokenPayments[token] || 0n) + parsePrice(endAmount, num, denum)
-    if (type === 2n || type === 3n)
+    if (Number(type) === 2 || Number(type) === 3)
       payment.push({ address: token as string, amountOrId: BigInt(tokenId) })
   })
   Object.entries(tokenPayments).forEach(([address, amountOrId]) => {
@@ -82,7 +169,7 @@ const parseOrder = (order: any): Order => {
 }
 
 const dedupe1155Orders = (orders: Order[]): any[] => {
-  if (orders.length <= 30) return orders
+  if (!orders[0] || orders.length <= 30) return orders
   const uniqueOrders = [...new Set(orders.map((o) => stringify(o)))]
   if (uniqueOrders.length > 1) return orders
   if (orders[0].items.length > 1) return orders
@@ -90,6 +177,8 @@ const dedupe1155Orders = (orders: Order[]): any[] => {
   // if (uniqueOrders.items.length > 1) return orders
   const correctNumberOfOrders = BigInt(orders.length - 30)
   const finalOrder = orders[0]
+  if (!finalOrder.items[0]) return orders
+  if (!finalOrder.payment[0]) return orders
   finalOrder.items[0].endAmount *= correctNumberOfOrders
   finalOrder.items[0].fromAmount *= correctNumberOfOrders
   finalOrder.payment[0].amountOrId *= correctNumberOfOrders
@@ -113,80 +202,46 @@ const humanizerOrder = ({ items, payment, end }: Order) => {
 
 export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   return irCalls.map((call: IrCall) => {
-    if (!call.to) return call
+    if (!call.to || !isHexCall(call)) return call
     if (
       [
-        iface.getFunction('fulfillBasicOrder_efficient_6GL6yc')!.selector,
-        iface.getFunction('fulfillBasicOrder')!.selector
-      ].includes(call.data.slice(0, 10))
+        toFunctionSelector(fulfillBasicOrderEfficientAbi[0]),
+        toFunctionSelector(fulfillBasicOrderAbi[0])
+      ].some((sel) => call.data.startsWith(sel))
     ) {
-      let orders
-      if (call.data.slice(0, 10) === iface.getFunction('fulfillBasicOrder')!.selector)
-        orders = iface.decodeFunctionData('fulfillBasicOrder', call.data)
-      else orders = iface.decodeFunctionData('fulfillBasicOrder_efficient_6GL6yc', call.data)
+      let argsParam: any
+      if (call.data.startsWith(toFunctionSelector(fulfillBasicOrderAbi[0]))) {
+        const { args } = decodeFunctionData({ abi: fulfillBasicOrderAbi, data: call.data })
+        argsParam = args[0]
+      } else {
+        const { args } = decodeFunctionData({
+          abi: fulfillBasicOrderEfficientAbi,
+          data: call.data
+        })
+        argsParam = args[0]
+      }
 
-      const data = orders.map((i) => {
-        const [
-          considerationToken,
-          considerationIdentifier,
-          considerationAmount,
-          ,
-          ,
-          // offerer,
-          // zone,
-          offerToken,
-          offerIdentifier,
-          ,
-          ,
-          // offerAmount,
-          // basicOrderType,
-          startTime,
-          endTime
-          // zoneHash,
-          // salt,
-          // offererConduitKey,
-          // fulfillerConduitKey,
-          // totalOriginalAdditionalRecipients,
-          // additionalRecipients,
-          // signature
-        ] = i
+      const { considerationToken, considerationAmount, offerToken, offerIdentifier, endTime } =
+        argsParam
 
-        return {
-          considerationToken,
-          considerationIdentifier,
-          considerationAmount,
-          // offerer,
-          // zone,
-          offerToken,
-          offerIdentifier,
-          // offerAmount,
-          // basicOrderType,
-          startTime,
-          endTime
-          // zoneHash,
-          // salt,
-          // offererConduitKey,
-          // fulfillerConduitKey,
-          // totalOriginalAdditionalRecipients,
-          // additionalRecipients,
-          // signature
-        }
-      })
-      if (data.length !== 1) return call
       return {
         ...call,
         fullVisualization: [
           getAction('Buy'),
-          getToken(data[0].offerToken, data[0].offerIdentifier),
+          getToken(offerToken, offerIdentifier),
           getLabel('for'),
-          getToken(data[0].considerationToken, data[0].considerationAmount),
-          getDeadline(data[0].endTime)
+          getToken(considerationToken, considerationAmount),
+          getDeadline(endTime)
         ]
       }
     }
 
-    if (call.data.startsWith(iface.getFunction('fulfillAvailableAdvancedOrders')!.selector)) {
-      const [orders] = iface.decodeFunctionData('fulfillAvailableAdvancedOrders', call.data)
+    if (call.data.startsWith(toFunctionSelector(fulfillAvailableAdvancedOrdersAbi[0]))) {
+      const { args } = decodeFunctionData({
+        abi: fulfillAvailableAdvancedOrdersAbi,
+        data: call.data
+      })
+      const [orders] = args
 
       let totalOrders: Order[] = orders.map((o: any) => parseOrder(o))
       // opensea allows batch buy of 30 items at most
@@ -207,8 +262,12 @@ export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, irCalls
       const fullVisualization = totalOrders.map(humanizerOrder).flat()
       return { ...call, fullVisualization }
     }
-    if (call.data.startsWith(iface.getFunction('fulfillAdvancedOrder')!.selector)) {
-      const [order] = iface.decodeFunctionData('fulfillAdvancedOrder', call.data)
+    if (call.data.startsWith(toFunctionSelector(fulfillAdvancedOrderAbi[0]))) {
+      const { args } = decodeFunctionData({
+        abi: fulfillAdvancedOrderAbi,
+        data: call.data
+      })
+      const [order] = args
       const parsedOrder: Order = parseOrder(order)
       const fullVisualization = humanizerOrder(parsedOrder)
       return { ...call, fullVisualization }

@@ -1,8 +1,7 @@
-/* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, hexlify, isAddress, TypedDataDomain, TypedDataField } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
-import { isHex } from 'viem'
+import { hashTypedData, isHex } from 'viem'
 
 import { EIP712TypedData } from '@safe-global/types-kit'
 
@@ -380,7 +379,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     let hasTxInProgressErrorShown = false
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
       const { kind, meta, dappPromises } = req
 
@@ -705,11 +703,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         })
       }
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const r of this.userRequests) {
         if (r.kind === 'walletAddEthereumChain') {
           const chainId = r.meta.params[0].chainId
-          // eslint-disable-next-line no-continue
+
           if (!chainId) continue
 
           const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
@@ -720,6 +717,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const userRequestsToRejectOnWindowClose = this.userRequests.filter(
         (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
       )
+
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
@@ -785,10 +783,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const activeRouteIdsToRemove = [...paramActiveRouteIds]
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const callId of callIds) {
       const request = findRequestByCall((c) => c.id === callId)
-      // eslint-disable-next-line no-continue
+
       if (!request) continue
 
       const call = request.signAccountOp.accountOp.calls.find((c) => c.id === callId)
@@ -802,20 +799,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           activeRouteIdsToRemove.push(call.activeRouteId)
         }
 
-        // eslint-disable-next-line no-continue
         continue
       }
 
-      // eslint-disable-next-line no-continue
       if (!call) continue
 
       await rejectAndCleanup(request, [call.id])
     }
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const activeRouteId of activeRouteIdsToRemove) {
       const request = findRequestByCall((c) => c.activeRouteId === activeRouteId)
-      // eslint-disable-next-line no-continue
+
       if (!request) continue
 
       const callIdsToRemove = request.signAccountOp.accountOp.calls
@@ -823,7 +817,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         .map((c) => c.id)
         .filter(Boolean) as string[]
 
-      // eslint-disable-next-line no-continue
       if (callIdsToRemove.length === 0) continue
 
       await rejectAndCleanup(request, callIdsToRemove)
@@ -1256,6 +1249,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       try {
         typedData = parse(typedData)
       } catch (error) {
+        console.error('Failed to parse typed data', error)
         throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
       }
 
@@ -1268,6 +1262,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.methodNotSupported(
           'Invalid typedData format - only typedData v4 is supported'
         )
+      }
+
+      if (!typedData.types[typedData.primaryType])
+        throw ethErrors.rpc.invalidParams(
+          'The primary data type is missing from the provided types'
+        )
+      try {
+        // we ignore the result because we only care if the func will fail
+        hashTypedData({
+          types: typedData.types,
+          primaryType: typedData.primaryType,
+          message: typedData.message,
+          domain: typedData.domain
+        })
+      } catch (e) {
+        console.log(e)
+        throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
       if (

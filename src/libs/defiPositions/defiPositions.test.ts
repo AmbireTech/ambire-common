@@ -1,6 +1,5 @@
 import { ZeroAddress } from 'ethers'
 
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import { describe, expect, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
@@ -380,9 +379,9 @@ describe('Defi positions helper and portfolio functions', () => {
       const { restore } = suppressConsole()
       const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
 
-      // @ts-ignore
+      // @ts-expect-error
       delete clonedDebankUniV3[0]!.source
-      // @ts-ignore
+      // @ts-expect-error
       delete clonedDebankUniV3[0]!.positions[0]!.additionalData
 
       const firstPositionId = clonedDebankUniV3[0]!.positions[0]!.id
@@ -407,7 +406,7 @@ describe('Defi positions helper and portfolio functions', () => {
     it('Asset amounts are converted to BigInt', () => {
       const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
 
-      // @ts-ignore
+      // @ts-expect-error
       clonedDebankUniV3[0]!.positions[0]!.assets[0]!.amount = 1234567890
 
       const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)

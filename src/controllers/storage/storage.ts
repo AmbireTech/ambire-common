@@ -3,12 +3,11 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Dapp } from '../../interfaces/dapp'
 import { EmailVaultData } from '../../interfaces/emailVault'
-/* eslint-disable no-restricted-syntax */
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
-import { getDappNameFromId } from '../../libs/dapps/helpers'
+import { getDappNameFromId, normalizeDappConnection } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
@@ -39,7 +38,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     super(eventEmitterRegistry)
 
     this.#storage = storage
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
     this.#storageMigrationsPromise = this.#loadMigrations()
   }
 
@@ -65,6 +64,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeLegacyPhishingDetectionV2() // As of version 5.34.0
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
+      await this.#migrateDappsAddConnectionSources() // As of v6.11.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -135,7 +135,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
         accounts.map((a: any) => {
           return {
             ...a,
-            // @ts-ignore
+            // @ts-expect-error expected to warn, because "accountPreferences" are now legacy (now missing)
             preferences: this.#storage.accountPreferences[a.addr] || {
               label: DEFAULT_ACCOUNT_LABEL,
               pfp: a.addr
@@ -364,6 +364,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
             const chainId = networkIdToChainId[networkId]
             return [
               chainId,
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               ops.map(({ networkId, ...rest }: any) => ({
                 ...rest,
                 chainId // Migrate networkId inside SubmittedAccountOp
@@ -385,6 +386,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     )
 
     const migratedNetworks = Object.fromEntries(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
     )
 
@@ -508,9 +510,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     let page = 1
     while (page <= 10) {
-      // eslint-disable-next-line no-await-in-loop
       await accountPicker.setPage({ page })
-      // eslint-disable-next-line no-await-in-loop
+
       await accountPicker.findAndSetLinkedAccountsPromise
 
       const matchingAddresses = accountPicker.allKeysOnPage.filter((k) =>
@@ -582,13 +583,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
 
-    // @ts-ignore-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
     const shouldCleanupUsedOnNetworks = accounts.some((a) => 'usedOnNetworks' in a)
     if (shouldCleanupUsedOnNetworks) {
       await this.#storage.set(
         'accounts',
         accounts.map((acc) =>
           // destructure and re-build to remove the `usedOnNetworks` property
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           'usedOnNetworks' in acc ? (({ usedOnNetworks, ...rest }) => ({ ...rest }))(acc) : acc
         )
       )
@@ -636,6 +637,30 @@ export class StorageController extends EventEmitter implements IStorageControlle
     ])
   }
 
+  // Per-source dapp connections (`connectedSources`) replaced the single `isConnected` flag.
+  // Seed the new field from the legacy flag so existing connections survive the upgrade.
+  // All legacy connections were injected (WC sessions live in the WalletKit SDK and are
+  // re-added on restore via RESTORE_WC_SESSIONS), so this is correct on both web and mobile.
+  async #migrateDappsAddConnectionSources() {
+    const MIGRATION_KEY = 'migrateDappsAddConnectionSources'
+    const [passedMigrations, dapps] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('dappsV2', [] as Dapp[])
+    ])
+
+    if (passedMigrations.includes(MIGRATION_KEY)) return
+
+    const hasConnectionDrift = (d: Dapp) =>
+      !Array.isArray(d.connectedSources) || !!d.isConnected !== d.connectedSources.length > 0
+    const needsMigration = dapps.some(hasConnectionDrift)
+    if (needsMigration) {
+      const migratedDapps = dapps.map(normalizeDappConnection)
+      await this.#storage.set('dappsV2', migratedDapps)
+    }
+
+    await this.#storage.set('passedMigrations', [...new Set([...passedMigrations, MIGRATION_KEY])])
+  }
+
   /**
    * As of version 5.30.0, the "newlyAdded" is no longer part of the account
    * interface and moreover - even before this v - it was no longer used anywhere.
@@ -654,6 +679,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
         'accounts',
         accounts.map((acc) =>
           // destructure and re-build to remove the `newlyCreated` property
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           'newlyCreated' in acc ? (({ newlyCreated, ...rest }) => ({ ...rest }))(acc) : acc
         )
       )
@@ -732,6 +758,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
                         // IIFE executes inline, destructuring with rest operator -
                         // extracts 'value' and collects all other properties into 'rest' object.
                         // This removes 'value' from the secret.
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         const { value, ...rest } = secret
                         return rest
                       })()

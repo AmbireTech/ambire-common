@@ -1,5 +1,5 @@
 /* eslint-disable no-continue */
-import { ZeroAddress } from 'ethers'
+import { zeroAddress } from 'viem'
 
 import { networks } from '../../../../consts/networks'
 import { HumanizerVisualization } from '../../interfaces'
@@ -22,7 +22,7 @@ export function parsePath(pathBytes: any) {
 }
 
 export const getUniRecipientText = (accAddr: string, recAddr: string): HumanizerVisualization[] =>
-  ['0x0000000000000000000000000000000000000001', ZeroAddress].includes(recAddr)
+  ['0x0000000000000000000000000000000000000001', zeroAddress].includes(recAddr)
     ? []
     : getRecipientText(accAddr, recAddr)
 
@@ -119,7 +119,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase()) &&
         (callJ[1].value === callI[1].value || callI[1].value === 0n)
       ) {
-        callI[1].address = ZeroAddress
+        callI[1].address = zeroAddress
         calls.splice(j, 1)
       }
       // looks for unwrap after the swap
@@ -131,7 +131,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isUnwrap(callJ) &&
         (callJ[1].value === callI[3].value || callI[3].value === 0n)
       ) {
-        callI[3].address = ZeroAddress
+        callI[3].address = zeroAddress
         if (callI[3].value === 0n && callJ[1].value) callI[3].value = callJ[1].value
         calls.splice(j, 1)
       }
@@ -159,13 +159,13 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isSwap(callJ) &&
         callI[3].address === callJ[3].address &&
         getDeadlineValue(callI) === getDeadlineValue(callJ) &&
-        ((callI[1].address === ZeroAddress &&
+        ((callI[1].address === zeroAddress &&
           WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callJ[1].address?.toLowerCase())) ||
-          (callJ[1].address === ZeroAddress &&
+          (callJ[1].address === zeroAddress &&
             WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase())))
       ) {
-        if (callI[1].address !== ZeroAddress) {
-          callI[1].address = ZeroAddress
+        if (callI[1].address !== zeroAddress) {
+          callI[1].address = zeroAddress
         }
         calls.splice(j, 1)
       }
@@ -179,7 +179,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         callI[3].address === callJ[1].address
       ) {
         callI[3].value = callJ[3].value!
-        callI[3].address! = callJ[3]?.address!
+        callI[3].address = callJ[3].address
 
         calls.splice(j, 1)
       }

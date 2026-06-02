@@ -25,6 +25,8 @@ export interface PredefinedDapp {
   icon: string | null
 }
 
+export type ConnectionSource = 'injected' | 'wc'
+
 export interface ExtraDappInfo {
   /**
    * The chainId of the app when connected
@@ -35,7 +37,17 @@ export interface ExtraDappInfo {
   twitter: string | null
   geckoId: string | null
   chainIds: number[]
+  /**
+   * Derived from `connectedSources.length > 0`. Kept on the serialized output for back-compat
+   * with UI code that reads `dapp.isConnected`. Not persisted as the source of truth — the
+   * source of truth is `connectedSources`.
+   */
   isConnected: boolean
+  /**
+   * Active connection channels for this dapp. On web/extension this is always either
+   * `[]` or `['injected']`. On mobile it may contain `'injected'`, `'wc'`, or both.
+   */
+  connectedSources: ConnectionSource[]
   isFeatured: boolean
   isCustom: boolean
   favorite: boolean
@@ -46,6 +58,11 @@ export interface ExtraDappInfo {
 }
 
 export type Dapp = PredefinedDapp & Partial<ExtraDappInfo>
+
+export interface RecentDappEntry {
+  id: string
+  openedAt: number
+}
 
 export interface DefiLlamaProtocol {
   id: string

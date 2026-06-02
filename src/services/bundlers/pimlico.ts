@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-
 import { RPCProvider } from '@/interfaces/provider'
 import { getRpcProvider } from '@/services/provider'
 

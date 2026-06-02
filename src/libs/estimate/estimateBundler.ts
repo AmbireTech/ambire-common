@@ -1,7 +1,3 @@
-/* eslint-disable no-await-in-loop */
-/* eslint-disable no-continue */
-/* eslint-disable no-constant-condition */
-
 import { Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -46,7 +42,6 @@ export async function fetchBundlerGasPrice(
       )
     })
   ]).catch(() => {
-    // eslint-disable-next-line no-console
     console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed`)
     return Error('Failed to fetch bundler gas prices')
   })
@@ -89,7 +84,7 @@ async function estimate(
     } catch (error) {
       // we just can't decode the error because it's too custom
       // so it's better to continue forward with the original one
-      // eslint-disable-next-line no-console
+
       console.error(error)
     }
 
@@ -119,7 +114,6 @@ async function estimate(
       )
     })
   ]).catch(() => {
-    // eslint-disable-next-line no-console
     console.error(`estimation for ${bundler.getName()} failed, switching and retrying`)
     return new Error('Failed to fetch the bundler estimation', { cause: '4337_ESTIMATION' })
   })

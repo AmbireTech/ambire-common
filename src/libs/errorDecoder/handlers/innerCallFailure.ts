@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { InnerCallFailureError } from '../customErrors'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 

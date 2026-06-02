@@ -1,7 +1,4 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
 
 import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
 
@@ -68,7 +65,6 @@ class InternalSigner {
 class LedgerSigner {
   key
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   constructor(_key: Key) {
     this.key = _key
   }
@@ -187,7 +183,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(privKey).address,
         label: 'Key 1',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -197,7 +193,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(privKey).address,
         label: 'Key 2',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -214,7 +210,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -225,7 +221,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -276,7 +272,7 @@ describe('KeystoreController', () => {
       // test key 1
       {
         addr: publicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 1',
         meta: {
@@ -290,7 +286,7 @@ describe('KeystoreController', () => {
       // test key 2 with the same id (public address) as test key 1'
       {
         addr: publicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 2',
         meta: {
@@ -308,7 +304,7 @@ describe('KeystoreController', () => {
       // test key 3
       {
         addr: anotherAddressNotAddedYet,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 3',
         meta: {
@@ -322,7 +318,7 @@ describe('KeystoreController', () => {
       // test key 4 with the same private key as key 3',
       {
         addr: anotherAddressNotAddedYet,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 4',
         meta: {
@@ -351,7 +347,7 @@ describe('KeystoreController', () => {
     const externalKeysToAddWithDuplicateOnes: ExternalKey[] = [
       {
         addr: keyPublicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 1',
         meta: {
@@ -364,7 +360,7 @@ describe('KeystoreController', () => {
       },
       {
         addr: keyPublicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 2',
         meta: {
@@ -377,7 +373,7 @@ describe('KeystoreController', () => {
       },
       {
         addr: keyPublicAddress,
-        type: 'ledger' as 'ledger',
+        type: 'ledger' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 3',
         meta: {

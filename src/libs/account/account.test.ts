@@ -1,6 +1,5 @@
 import { ethers, ZeroAddress } from 'ethers'
 
-/* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'

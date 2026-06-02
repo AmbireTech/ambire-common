@@ -632,7 +632,7 @@ const init = async (
     fromRequestId: 1,
     accountOp: op,
     shouldSimulate: false,
-    // @ts-ignore
+    // @ts-expect-error
     onBroadcastSuccess: () => {},
     estimateController: estimationController,
     gasPriceController
@@ -921,7 +921,7 @@ describe('SignAccountOp Controller ', () => {
       new Promise((resolve) => {
         const unsub = controller.estimation.onUpdate(() => {
           if (controller.estimation.status !== EstimationStatus.Loading) {
-            // @ts-ignore
+            // @ts-expect-error
             expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
             resolve(true)
             unsub()
@@ -1588,7 +1588,7 @@ describe('Negative cases', () => {
       },
       true
     )
-    // @ts-ignore
+    // @ts-expect-error
     controller.update({
       hasNewEstimation: true,
       feeToken: gasTankToken,
