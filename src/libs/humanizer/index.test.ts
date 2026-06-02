@@ -857,12 +857,7 @@ describe('ERC-7730 descriptors', () => {
           data: aaveInterface.encodeFunctionData('multicall', [
             [
               aaveInterface.encodeFunctionData('setUserEMode', [10]),
-              aaveInterface.encodeFunctionData('supply', [
-                cbBtc,
-                2838n,
-                accountOp.accountAddr,
-                0
-              ])
+              aaveInterface.encodeFunctionData('supply', [cbBtc, 2838n, accountOp.accountAddr, 0])
             ]
           ])
         }
@@ -975,11 +970,7 @@ describe('ERC-7730 descriptors', () => {
     const irCalls = humanizeAccountOp(eModeAccountOp)
 
     compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Disable efficiency mode'),
-        getLabel('Category'),
-        getText('None')
-      ],
+      [getAction('Disable efficiency mode'), getLabel('Category'), getText('None')],
       [
         getAction('Enable ETH-correlated efficiency mode'),
         getLabel('Category'),
@@ -1223,7 +1214,7 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Revoke approval', [
         {
-          label: 'Revoking:',
+          label: 'Spender',
           value: [getAddressVisualization(spender)]
         },
         {
