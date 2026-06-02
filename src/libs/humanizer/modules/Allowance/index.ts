@@ -3,11 +3,11 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
-  HexIrCall,
   getAction,
   getAddressVisualization,
   getLabel,
   getToken,
+  HexIrCall,
   isHexCall
 } from '../../utils'
 
@@ -23,12 +23,23 @@ const removeDelegateAbi = parseAbi([
   'function removeDelegate(address delegate, bool removeAllowances)'
 ])
 
-const getTimeString = (resetTimeMin: bigint): string => {
+export const getAllowanceResetText = (resetTimeMin: bigint): string => {
+  if (resetTimeMin === 0n) return 'No reset'
   if (resetTimeMin === 1440n) return 'Daily'
   if (resetTimeMin === 10080n) return 'Weekly'
   if (resetTimeMin === 20160n) return 'Biweekly'
   if (resetTimeMin === 43200n) return 'Monthly'
   return `Every ${resetTimeMin.toString()} minutes`
+}
+
+export const getSetAllowanceResetText = (call: IrCall): string | null => {
+  if (!isHexCall(call)) return null
+  if (call.data.slice(0, 10) !== toFunctionSelector(setAllowanceAbi[0])) return null
+
+  const { args } = decodeFunctionData({ abi: setAllowanceAbi, data: call.data })
+  const [, , , resetTimeMin] = args
+
+  return getAllowanceResetText(BigInt(resetTimeMin))
 }
 
 const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
@@ -42,7 +53,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
         getAddressVisualization(delegate),
         getLabel('to spend'),
         getToken(token, allowanceAmount),
-        getLabel(getTimeString(BigInt(resetTimeMin)))
+        getLabel(getAllowanceResetText(BigInt(resetTimeMin)))
       ]
 
       return { ...call, fullVisualization }

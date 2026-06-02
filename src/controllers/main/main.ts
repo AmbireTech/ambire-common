@@ -99,7 +99,7 @@ import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
-import { relayerCall } from '@/libs/relayerCall/relayerCall'
+import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
@@ -120,7 +120,7 @@ export class MainController extends EventEmitter implements IMainController {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  callRelayer: Function
+  callRelayer: BindedRelayerCall
 
   isReady: boolean = false
 
@@ -434,6 +434,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       ui: this.ui
     })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -442,10 +443,10 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.invite,
       eventEmitterRegistry,
-      this.dapps
+      this.dapps,
+      this.callRelayer
     )
 
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.storage,
       this.fetch,
