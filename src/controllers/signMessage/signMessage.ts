@@ -36,9 +36,15 @@ import {
   sortSigs
 } from '../../libs/safe/safe'
 import {
+  getEIP712SigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
+import {
   getAppFormatted,
+  getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
+  getSafeMessageTypedData,
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
@@ -88,6 +94,8 @@ export class SignMessageController
   humanizedMessage?: IrMessage
 
   isHumanizing = false
+
+  safeEip712Data: unknown | null = null
 
   signedMessage: SignedMessage | null = null
 
@@ -196,6 +204,7 @@ export class SignMessageController
       }
 
       if (this.#account.safeCreation) {
+        this.#updateSafeEip712Data()
         const notSigned = getImportedSignersThatHaveNotSigned(
           this.signed,
           accountState.importedAccountKeys.map((k) => k.addr)
@@ -236,6 +245,7 @@ export class SignMessageController
     this.messageToSign = null
     this.humanizedMessage = undefined
     this.isHumanizing = false
+    this.safeEip712Data = null
     this.signedMessage = null
     this.#account = undefined
     this.network = undefined
@@ -244,6 +254,36 @@ export class SignMessageController
     this.signer = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
+  }
+
+  #updateSafeEip712Data() {
+    if (!this.#account?.safeCreation || !this.messageToSign || !this.network) {
+      this.safeEip712Data = null
+      return
+    }
+
+    const { content } = this.messageToSign
+
+    try {
+      const message = content.kind === 'typedMessage' ? content : content.message
+      const typedData = getSafeMessageTypedData(
+        message,
+        this.network.chainId,
+        this.#account.addr as Hex
+      )
+      const safeMessageHash = getEIP712Hash(typedData)
+
+      this.safeEip712Data = getSigningRequestDisplayData(
+        getEIP712SigningRequest({ ...typedData, safeMessageHash })
+      )
+    } catch (error) {
+      this.safeEip712Data = null
+      this.emitError({
+        message: 'Error calculating Safe EIP-712 data',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
   }
 
   #startHumanization() {

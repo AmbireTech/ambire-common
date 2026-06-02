@@ -496,17 +496,10 @@ export async function getPlainTextSignature(
 
   if (!!account.safeCreation) {
     // Safe always signs a typed data, even if plain sig
-    const typedData = getSafeTypedDataForIsValidSignature(
-      network.chainId,
-      account.addr as Hex,
-      hashMessage(getBytes(messageHex))
-    )
+    const typedData = getSafeMessageTypedData(messageHex, network.chainId, account.addr as Hex)
     return {
       signature: (await signer.signTypedData(typedData)) as Hex,
-      hash: `0x${TypedDataUtils.eip712Hash(
-        adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
-        SignTypedDataVersion.V4
-      ).toString('hex')}`
+      hash: getEIP712Hash(typedData)
     }
   }
 
@@ -574,20 +567,10 @@ export async function getEIP712Signature(
 
   if (!!account.safeCreation) {
     // Safe wraps the EIP-712 message in it's own EIP-712
-    const typedData = getSafeTypedDataForIsValidSignature(
-      network.chainId,
-      account.addr as Hex,
-      `0x${TypedDataUtils.eip712Hash(
-        adaptTypedMessageForMetaMaskSigUtil({ ...message }),
-        SignTypedDataVersion.V4
-      ).toString('hex')}`
-    )
+    const typedData = getSafeMessageTypedData(message, network.chainId, account.addr as Hex)
     return {
       signature: (await signer.signTypedData(typedData)) as Hex,
-      hash: `0x${TypedDataUtils.eip712Hash(
-        adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
-        SignTypedDataVersion.V4
-      ).toString('hex')}`
+      hash: getEIP712Hash(typedData)
     }
   }
 
@@ -856,3 +839,22 @@ export const getSafeTypedDataForIsValidSignature = (
     primaryType: 'SafeMessage'
   }
 }
+
+export const getEIP712Hash = (typedData: TypedMessageUserRequest['meta']['params']): Hex =>
+  `0x${TypedDataUtils.eip712Hash(
+    adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+    SignTypedDataVersion.V4
+  ).toString('hex')}`
+
+export const getSafeMessageTypedData = (
+  message:
+    | PlainTextMessageUserRequest['meta']['params']['message']
+    | TypedMessageUserRequest['meta']['params'],
+  chainId: bigint,
+  safeAddr: Hex
+): TypedMessageUserRequest['meta']['params'] =>
+  getSafeTypedDataForIsValidSignature(
+    chainId,
+    safeAddr,
+    typeof message === 'string' ? hashMessage(getBytes(message)) : getEIP712Hash(message)
+  )

@@ -148,6 +148,48 @@ describe('SignMessageController', () => {
     expect(signMessageController.signer).toBeUndefined()
   })
 
+  test('should expose Safe EIP-712 data when initializing a Safe message', async () => {
+    const safeAccount: Account = {
+      ...account,
+      safeCreation: {
+        factoryAddr: account.addr as Hex,
+        singleton: account.addr as Hex,
+        saltNonce: '0x00',
+        setupData: '0x',
+        version: '1.4.1'
+      }
+    }
+    const safeAccountsCtrl = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [safeAccount],
+      getOrFetchAccountOnChainState: jest.fn().mockResolvedValue({
+        importedAccountKeys: []
+      })
+    } as unknown as IAccountsController
+    const safeSignMessageController = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      safeAccountsCtrl,
+      {},
+      inviteCtrl
+    )
+
+    await safeSignMessageController.init({
+      messageToSign: { ...messageToSign, accountAddr: safeAccount.addr }
+    })
+
+    expect(safeSignMessageController.safeEip712Data).toMatchObject({
+      primaryType: 'SafeMessage',
+      safeMessageHash: expect.stringMatching(/^0x/),
+      domainHash: expect.stringMatching(/^0x/),
+      messageHash: expect.stringMatching(/^0x/)
+    })
+
+    safeSignMessageController.reset()
+    expect(safeSignMessageController.safeEip712Data).toBeNull()
+  })
+
   test('should not initialize with an invalid message kind', async () => {
     const invalidMessageToSign: Message = {
       id: 1,
