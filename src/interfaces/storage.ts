@@ -32,6 +32,11 @@ export type StorageProps = {
   isSetupComplete: boolean
   onboardingState: object
   termsState: object
+  themeType: string
+  avatarType: string
+  logLevel: string
+  crashAnalyticsEnabledV2: boolean
+  autoLockTime: number
   // Activity
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
