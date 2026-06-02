@@ -227,6 +227,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/12645/standard/aave-token-round.png?1720472354'
   },
   {
+    chainId: 1n,
+    address: '0x39b8B6385416f4cA36a20319F70D28621895279D',
+    symbol: 'eure',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
+  },
+  {
     address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
     symbol: 'steth',
     chainId: 1n,
@@ -371,6 +378,13 @@ export default [
     chainId: 137n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+  },
+  {
+    chainId: 137n,
+    address: '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d',
+    symbol: 'eure',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
   },
   {
     address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
@@ -825,6 +839,13 @@ export default [
     chainId: 42161n,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+  },
+  {
+    address: '0x0c06cCF38114ddfc35e07427B9424adcca9F44F8',
+    symbol: 'eure',
+    chainId: 42161n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
   },
   {
     address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',

@@ -136,12 +136,11 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         : undefined
     })
       .then(async ({ address, avatar }) => {
-        this.domainToAddresses[domain] = {
-          address: address ? getAddress(address) : undefined,
-          type: isNamoshiDomain ? 'namoshi' : 'ens'
-        }
-
         if (address) {
+          this.domainToAddresses[domain] = {
+            address: getAddress(address),
+            type: isNamoshiDomain ? 'namoshi' : 'ens'
+          }
           this.#saveResolvedDomain({
             address,
             ensAvatar: avatar,

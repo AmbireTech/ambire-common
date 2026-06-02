@@ -1,3 +1,5 @@
+import { CallTuple } from '@/libs/accountOp/types'
+
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -49,7 +51,7 @@ function handleSimulationError(
   errorData: string,
   beforeNonce: bigint,
   afterNonce: bigint,
-  simulationOps: { nonce: bigint | null; calls: [string, string, string][] }[]
+  simulationOps: { nonce: bigint | null; calls: CallTuple[] }[]
 ) {
   if (errorData !== '0x') {
     const error = new Error(errorData)

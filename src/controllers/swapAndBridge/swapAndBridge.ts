@@ -932,13 +932,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
-          // Don't update the selected token programmatically if the user
-          // has selected it manually
-          if (!this.toSelectedToken) {
-            // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
-            this.toChainId = Number(network.chainId)
-            shouldUpdateToTokenList = true
-          }
+          shouldUpdateToTokenList = true
         }
       }
 
@@ -1113,7 +1107,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         {
           fromSelectedToken: nextFromSelectedToken,
           toSelectedTokenAddr: preselectedToToken?.address,
-          toChainId: preselectedToToken?.chainId,
+          toChainId:
+            preselectedToToken?.chainId ??
+            (preselectedToken ? nextFromSelectedToken?.chainId : undefined),
           fromAmount
         },
         {

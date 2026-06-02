@@ -181,14 +181,22 @@ export async function createAccessListCall(
       ? getSafeAccessListCallParams(baseAcc, op, accountState)
       : getFunctionParams(account, op, accountState)
 
-  if (!params) return []
+  if (!params || !params.to || typeof params.to !== 'string') return []
 
   // Initialize a new provider for eth_createAccessList
   // Using separate provider to avoid batching issues that can impact performance
   const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)
 
   try {
-    const response = await sendCreateAccessList(provider, params, network)
+    const response = await sendCreateAccessList(
+      provider,
+      {
+        ...params,
+        // There is an `if` above
+        to: params.to as string
+      },
+      network
+    )
 
     const returned = parseAccessList((response as CreateAccessListResponse).accessList)
 
