@@ -553,6 +553,77 @@ describe('SignMessageController', () => {
 
     getSignerSpy.mockRestore() // cleans up the spy
   })
+
+  test('should expose hardware wallet EIP-712 data while signing a typed message', async () => {
+    const signingKeyAddr = account.addr
+    const dummySignature =
+      '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
+    const typedMessageToSign: Message = {
+      fromRequestId: 3,
+      accountAddr: account.addr,
+      chainId: 1n,
+      signature: null,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          chainId: 1,
+          verifyingContract: account.addr
+        },
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          Message: [{ name: 'contents', type: 'string' }]
+        },
+        primaryType: 'Message',
+        message: {
+          contents: 'Sign me'
+        }
+      }
+    }
+    let resolveSignature!: (signature: string) => void
+    let notifySigningStarted!: () => void
+    const signingStarted = new Promise<void>((resolve) => {
+      notifySigningStarted = resolve
+    })
+    const mockSigner = {
+      signTypedData: jest.fn().mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveSignature = resolve
+            notifySigningStarted()
+          })
+      ),
+      key: { addr: signingKeyAddr, type: 'internal', dedicatedToOneSA: true, meta: {} }
+    }
+
+    // @ts-expect-error spy on the getSigner method and mock its implementation
+    const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
+
+    await signMessageController.init({ messageToSign: typedMessageToSign })
+    signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
+
+    const signPromise = signMessageController.sign()
+    await signingStarted
+
+    expect(signMessageController.hardwareWalletSigningRequest).toMatchObject({
+      type: 'eip-712',
+      data: {
+        primaryType: 'Message',
+        domainHash: expect.stringMatching(/^0x/),
+        messageHash: expect.stringMatching(/^0x/)
+      }
+    })
+
+    resolveSignature(dummySignature)
+    await signPromise
+
+    expect(signMessageController.hardwareWalletSigningRequest).toBeNull()
+
+    getSignerSpy.mockRestore()
+  })
+
   test('removeAccountData', async () => {
     await signMessageController.init({ messageToSign })
     expect(signMessageController.isInitialized).toBeTruthy()
