@@ -48,6 +48,7 @@ const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
 const safeSingletonCache = new Map<string, CacheEntry<string>>()
 const safeSingletonPromises = new Map<string, Promise<string | null>>()
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
+const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 
 /**
  * A helper function to use in the tests only
@@ -212,17 +213,21 @@ const validateDescriptor = (payload: unknown, path: string): payload is Erc7730D
   return true
 }
 
-const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
-  path: 'built-in/erc20-approve',
+const getErc20ApproveDescriptor = (
+  path: string,
+  intent: string,
+  spenderLabel: string
+): Erc7730ResolvedDescriptor => ({
+  path,
   descriptor: {
     display: {
       formats: {
         'approve(address _spender, uint256 _value)': {
-          intent: 'Approve',
+          intent,
           fields: [
             {
               path: '#._spender',
-              label: 'Spender',
+              label: spenderLabel,
               format: 'addressName',
               visible: 'always'
             },
@@ -238,7 +243,19 @@ const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
       }
     }
   }
-}
+})
+
+const ERC20_APPROVE_DESCRIPTOR = getErc20ApproveDescriptor(
+  'built-in/erc20-approve',
+  'Approve',
+  'Spender'
+)
+
+const ERC20_REVOKE_APPROVAL_DESCRIPTOR = getErc20ApproveDescriptor(
+  'built-in/erc20-revoke-approval',
+  'Revoke approval',
+  'Spender'
+)
 
 const ERC20_TRANSFER_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   path: 'built-in/erc20-transfer',
@@ -501,7 +518,15 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
 
   const selector = call.data.slice(0, 10).toLowerCase()
 
-  if (selector === ERC20_APPROVE_SELECTOR) return ERC20_APPROVE_DESCRIPTOR
+  if (selector === ERC20_APPROVE_SELECTOR) {
+    try {
+      const [, value] = erc20ApproveInterface.decodeFunctionData('approve', call.data)
+
+      return value === 0n ? ERC20_REVOKE_APPROVAL_DESCRIPTOR : ERC20_APPROVE_DESCRIPTOR
+    } catch {
+      return ERC20_APPROVE_DESCRIPTOR
+    }
+  }
   if (selector === ERC20_TRANSFER_SELECTOR) return ERC20_TRANSFER_DESCRIPTOR
   if (
     call.to &&
