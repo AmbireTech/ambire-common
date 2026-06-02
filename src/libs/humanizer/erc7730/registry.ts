@@ -16,6 +16,7 @@ import {
 } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
+import { FEE_COLLECTOR } from '../../../consts/addresses'
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { withTimeout } from '../../../utils/with-timeout'
@@ -49,6 +50,7 @@ const safeSingletonCache = new Map<string, CacheEntry<string>>()
 const safeSingletonPromises = new Map<string, Promise<string | null>>()
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
 const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
+const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
 
 /**
  * A helper function to use in the tests only
@@ -513,6 +515,18 @@ const getEip712Index = async (callRelayer: BindedRelayerCall): Promise<Erc7730Ei
 const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
   `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
 
+const isErc20TransferToFeeCollector = (call: Call): boolean => {
+  if (!call.data || call.data.slice(0, 10).toLowerCase() !== ERC20_TRANSFER_SELECTOR) return false
+
+  try {
+    const [to] = erc20TransferInterface.decodeFunctionData('transfer', call.data)
+
+    return typeof to === 'string' && to.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | null => {
   if (!call.data || !isHexString(call.data)) return null
 
@@ -799,6 +813,7 @@ export const fetchErc7730DescriptorForCall = async (
   options?: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
+  if (isErc20TransferToFeeCollector(call)) return null
 
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
   if (!options?.callRelayer) return builtInDescriptor
