@@ -567,7 +567,7 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
 }
 
 const getAddressFromStorageSlot = (slotValue: string): string | null => {
-  if (!isHexString(slotValue) || slotValue.length < 42) return null
+  if (!isHexString(slotValue) || slotValue.length !== 66) return null
 
   const address = getAddress(`0x${slotValue.slice(-40)}`)
   return address.toLowerCase() === ZeroAddress ? null : address
