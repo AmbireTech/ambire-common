@@ -16,6 +16,7 @@ import {
 } from '@/libs/humanizer/erc7730/consts'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
+import { FEE_COLLECTOR } from '../../../consts/addresses'
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { withTimeout } from '../../../utils/with-timeout'
@@ -48,6 +49,8 @@ const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
 const safeSingletonCache = new Map<string, CacheEntry<string>>()
 const safeSingletonPromises = new Map<string, Promise<string | null>>()
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
+const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
+const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
 
 /**
  * A helper function to use in the tests only
@@ -81,14 +84,14 @@ const isRegistryKey = (key: string): boolean => {
 
 const isHexHash = (value: string): boolean => isHexOfLength(value, 64)
 
-const throwInvalidRelayerResource = (path: string): never => {
+function throwInvalidRelayerResource(path: string): never {
   throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
 }
 
 const validateCalldataIndex = (payload: unknown, path: string): payload is Erc7730CalldataIndex => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
-  const index = payload as Record<string, unknown>
+  const index = payload
 
   Object.entries(index).forEach(([key, value]) => {
     if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRelayerResource(path)
@@ -103,7 +106,7 @@ const validateEip712IndexEntry = (
 ): entry is Erc7730Eip712IndexEntry => {
   if (!isPlainObject(entry)) throwInvalidRelayerResource(path)
 
-  const indexEntry = entry as Record<string, unknown>
+  const indexEntry = entry
   if (typeof indexEntry.path !== 'string') throwInvalidRelayerResource(path)
 
   const { encodeTypeHashes } = indexEntry
@@ -121,21 +124,21 @@ const validateEip712IndexEntry = (
 const validateEip712Index = (payload: unknown, path: string): payload is Erc7730Eip712Index => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
-  const index = payload as Record<string, unknown>
+  const index = payload
 
   Object.entries(index).forEach(([registryKey, primaryTypes]) => {
     if (!isRegistryKey(registryKey) || !isPlainObject(primaryTypes)) {
       throwInvalidRelayerResource(path)
     }
 
-    const primaryTypesIndex = primaryTypes as Record<string, unknown>
+    const primaryTypesIndex = primaryTypes
 
     Object.entries(primaryTypesIndex).forEach(([primaryType, entries]) => {
       if (typeof primaryType !== 'string' || !Array.isArray(entries)) {
         throwInvalidRelayerResource(path)
       }
 
-      const indexEntries = entries as unknown[]
+      const indexEntries = entries
       indexEntries.forEach((entry) => validateEip712IndexEntry(entry, path))
     })
   })
@@ -146,7 +149,7 @@ const validateEip712Index = (payload: unknown, path: string): payload is Erc7730
 const validateDescriptorField = (field: unknown, path: string): field is Erc7730Field => {
   if (!isPlainObject(field)) throwInvalidRelayerResource(path)
 
-  const descriptorField = field as Record<string, unknown>
+  const descriptorField = field
 
   if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
     throwInvalidRelayerResource(path)
@@ -160,7 +163,7 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
   if (fields !== undefined) {
     if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
 
-    const nestedFields = fields as unknown[]
+    const nestedFields = fields
     nestedFields.forEach((nestedField) => validateDescriptorField(nestedField, path))
   }
 
@@ -170,7 +173,7 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
 const validateDescriptor = (payload: unknown, path: string): payload is Erc7730Descriptor => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
-  const descriptor = payload as Record<string, unknown>
+  const descriptor = payload
   const { includes } = descriptor
 
   if (
@@ -186,17 +189,17 @@ const validateDescriptor = (payload: unknown, path: string): payload is Erc7730D
   if (display === undefined) return true
   if (!isPlainObject(display)) throwInvalidRelayerResource(path)
 
-  const { formats, definitions } = display as Record<string, unknown>
+  const { formats, definitions } = display
   if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRelayerResource(path)
   if (formats === undefined) return true
   if (!isPlainObject(formats)) throwInvalidRelayerResource(path)
 
-  const descriptorFormats = formats as Record<string, unknown>
+  const descriptorFormats = formats
 
   Object.values(descriptorFormats).forEach((format: unknown) => {
     if (!isPlainObject(format)) throwInvalidRelayerResource(path)
 
-    const descriptorFormat = format as Record<string, unknown>
+    const descriptorFormat = format
     if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
       throwInvalidRelayerResource(path)
     }
@@ -205,24 +208,28 @@ const validateDescriptor = (payload: unknown, path: string): payload is Erc7730D
     if (fields === undefined) return
     if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
 
-    const descriptorFields = fields as unknown[]
+    const descriptorFields = fields
     descriptorFields.forEach((field) => validateDescriptorField(field, path))
   })
 
   return true
 }
 
-const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
-  path: 'built-in/erc20-approve',
+const getErc20ApproveDescriptor = (
+  path: string,
+  intent: string,
+  spenderLabel: string
+): Erc7730ResolvedDescriptor => ({
+  path,
   descriptor: {
     display: {
       formats: {
         'approve(address _spender, uint256 _value)': {
-          intent: 'Approve',
+          intent,
           fields: [
             {
               path: '#._spender',
-              label: 'Spender',
+              label: spenderLabel,
               format: 'addressName',
               visible: 'always'
             },
@@ -238,7 +245,19 @@ const ERC20_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
       }
     }
   }
-}
+})
+
+const ERC20_APPROVE_DESCRIPTOR = getErc20ApproveDescriptor(
+  'built-in/erc20-approve',
+  'Approve',
+  'Spender'
+)
+
+const ERC20_REVOKE_APPROVAL_DESCRIPTOR = getErc20ApproveDescriptor(
+  'built-in/erc20-revoke-approval',
+  'Revoke approval',
+  'Spender'
+)
 
 const ERC20_TRANSFER_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   path: 'built-in/erc20-transfer',
@@ -496,12 +515,32 @@ const getEip712Index = async (callRelayer: BindedRelayerCall): Promise<Erc7730Ei
 const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
   `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
 
+const isErc20TransferToFeeCollector = (call: Call): boolean => {
+  if (!call.data || call.data.slice(0, 10).toLowerCase() !== ERC20_TRANSFER_SELECTOR) return false
+
+  try {
+    const [to] = erc20TransferInterface.decodeFunctionData('transfer', call.data)
+
+    return typeof to === 'string' && to.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | null => {
   if (!call.data || !isHexString(call.data)) return null
 
   const selector = call.data.slice(0, 10).toLowerCase()
 
-  if (selector === ERC20_APPROVE_SELECTOR) return ERC20_APPROVE_DESCRIPTOR
+  if (selector === ERC20_APPROVE_SELECTOR) {
+    try {
+      const [, value] = erc20ApproveInterface.decodeFunctionData('approve', call.data)
+
+      return value === 0n ? ERC20_REVOKE_APPROVAL_DESCRIPTOR : ERC20_APPROVE_DESCRIPTOR
+    } catch {
+      return ERC20_APPROVE_DESCRIPTOR
+    }
+  }
   if (selector === ERC20_TRANSFER_SELECTOR) return ERC20_TRANSFER_DESCRIPTOR
   if (
     call.to &&
@@ -518,7 +557,7 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
   if (message.content.kind !== 'typedMessage') return null
 
   try {
-    return BigInt((message.content.domain.chainId ?? message.chainId) as string | number | bigint)
+    return BigInt(message.content.domain.chainId ?? message.chainId)
   } catch {
     return null
   }
@@ -567,7 +606,7 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
 }
 
 const getAddressFromStorageSlot = (slotValue: string): string | null => {
-  if (!isHexString(slotValue) || slotValue.length < 42) return null
+  if (!isHexString(slotValue) || slotValue.length !== 66) return null
 
   const address = getAddress(`0x${slotValue.slice(-40)}`)
   return address.toLowerCase() === ZeroAddress ? null : address
@@ -697,18 +736,11 @@ const addSafeTxCallDescriptor = async (
           : options
       )
 
-      return safeTxCallDescriptor ? ([index, safeTxCallDescriptor] as const) : null
+      return safeTxCallDescriptor ? [index, safeTxCallDescriptor] : null
     })
   )
 
-  const descriptorsByIndex = safeTxCallDescriptors.reduce<
-    Record<number, Erc7730ResolvedDescriptor>
-  >((acc, entry) => {
-    if (!entry) return acc
-
-    acc[entry[0]] = entry[1]
-    return acc
-  }, {})
+  const descriptorsByIndex = Object.fromEntries(safeTxCallDescriptors.filter((x) => !!x))
 
   if (!Object.keys(descriptorsByIndex).length) return descriptor
 
@@ -746,23 +778,14 @@ const fetchSafeExecTransactionDescriptor = async (
         chainId,
         getNestedSafeCallOptions(call.to!, safeTxCall, options)
       )
-      return descriptor ? ([index, descriptor] as const) : null
+      return descriptor ? [index, descriptor] : null
     })
   )
-
   return {
     ...safeDescriptor,
     safeTxCalls,
     safeTxTransactionsOnly: true,
-    safeTxCallDescriptors: safeTxCallDescriptors.reduce<Record<number, Erc7730ResolvedDescriptor>>(
-      (acc, entry) => {
-        if (!entry) return acc
-
-        acc[entry[0]] = entry[1]
-        return acc
-      },
-      {}
-    )
+    safeTxCallDescriptors: Object.fromEntries(safeTxCallDescriptors.filter((x) => !!x))
   }
 }
 
@@ -790,6 +813,7 @@ export const fetchErc7730DescriptorForCall = async (
   options?: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   if (!call.to || !isAddress(call.to)) return null
+  if (isErc20TransferToFeeCollector(call)) return null
 
   const builtInDescriptor = getBuiltInDescriptorForCall(call)
   if (!options?.callRelayer) return builtInDescriptor
@@ -831,16 +855,10 @@ export const fetchErc7730DescriptorsForAccountOp = async (
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
       const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
-      return descriptor ? ([index, descriptor] as const) : null
+      return descriptor ? [index, descriptor] : null
     })
   )
-
-  return resolvedDescriptors.reduce<Record<number, Erc7730ResolvedDescriptor>>((acc, entry) => {
-    if (!entry) return acc
-
-    acc[entry[0]] = entry[1]
-    return acc
-  }, {})
+  return Object.fromEntries(resolvedDescriptors.filter((x) => !!x))
 }
 
 export const fetchErc7730DescriptorForMessage = async (
@@ -854,7 +872,7 @@ export const fetchErc7730DescriptorForMessage = async (
   const chainId = getTypedMessageChainId(message)
   if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
   const primaryType = String(message.content.primaryType)
-  const types = message.content.types as Erc7730TypedDataTypes
+  const types = message.content.types
 
   try {
     const index = await getEip712Index(callRelayer)

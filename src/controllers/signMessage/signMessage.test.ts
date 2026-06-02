@@ -87,6 +87,48 @@ const messageToSign: Message = {
   signature: null
 }
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+
+  return { promise, resolve }
+}
+
+const createPermitTypedMessage = (): Message => ({
+  fromRequestId: 2,
+  accountAddr: account.addr,
+  chainId: 1n,
+  signature: null,
+  content: {
+    kind: 'typedMessage',
+    domain: {
+      name: 'USD Coin',
+      chainId: 1,
+      verifyingContract: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+      version: '2'
+    },
+    types: {
+      Permit: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' }
+      ]
+    },
+    primaryType: 'Permit',
+    message: {
+      owner: account.addr,
+      spender: '0x0000000000000000000000000000000000000000',
+      value: '133700',
+      nonce: '0',
+      deadline: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+    }
+  }
+})
+
 const dapp = {
   name: 'Test Dapp',
   icon: 'https://test-dapp.com/icon.png',
@@ -226,38 +268,8 @@ describe('SignMessageController', () => {
   test('fetches ERC-7730 EIP-712 descriptors through the relayer', async () => {
     const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
     const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
-    const typedMessageToSign: Message = {
-      fromRequestId: 2,
-      accountAddr: account.addr,
-      chainId: 1n,
-      signature: null,
-      content: {
-        kind: 'typedMessage',
-        domain: {
-          name: 'USD Coin',
-          chainId: 1,
-          verifyingContract: usdc,
-          version: '2'
-        },
-        types: {
-          Permit: [
-            { name: 'owner', type: 'address' },
-            { name: 'spender', type: 'address' },
-            { name: 'value', type: 'uint256' },
-            { name: 'nonce', type: 'uint256' },
-            { name: 'deadline', type: 'uint256' }
-          ]
-        },
-        primaryType: 'Permit',
-        message: {
-          owner: account.addr,
-          spender: '0x0000000000000000000000000000000000000000',
-          value: '133700',
-          nonce: '0',
-          deadline: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-        }
-      }
-    }
+    const typedMessageToSign = createPermitTypedMessage()
+    const descriptorResponse = createDeferred<any>()
     const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
       if (path === '/v2/erc7730/eip-712') {
         expect(method).toBe('GET')
@@ -277,31 +289,114 @@ describe('SignMessageController', () => {
         expect(method).toBe('POST')
         expect(body).toEqual({ descriptorPath: `/${registryPath}` })
 
+        return descriptorResponse.promise
+      }
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+
+    signMessageController = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      {},
+      inviteCtrl,
+      undefined,
+      dappsCtrl,
+      callRelayer
+    )
+
+    await signMessageController.init({ messageToSign: typedMessageToSign })
+
+    expect(signMessageController.isHumanizing).toBe(true)
+    expect(signMessageController.humanizedMessage).toBeUndefined()
+
+    descriptorResponse.resolve({
+      success: true,
+      display: {
+        formats: {
+          'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
+            intent: 'Authorize spending of tokens',
+            fields: [
+              {
+                path: 'spender',
+                label: 'Spender',
+                format: 'addressName',
+                visible: 'always'
+              },
+              {
+                path: 'value',
+                label: 'Max spending amount',
+                format: 'tokenAmount',
+                params: { tokenPath: '@.to' },
+                visible: 'always'
+              }
+            ]
+          }
+        }
+      }
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(signMessageController.isHumanizing).toBe(false)
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/eip-712',
+      'GET',
+      undefined,
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/fetch-descriptor',
+      'POST',
+      {
+        descriptorPath: `/${registryPath}`
+      },
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
+    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Authorize spending of tokens',
+      rows: [
+        {
+          label: 'Spender',
+          value: [{ type: 'address', address: '0x0000000000000000000000000000000000000000' }]
+        },
+        {
+          label: 'Max spending amount',
+          value: [{ type: 'token', address: usdc, value: 133700n, chainId: 1n }]
+        }
+      ]
+    })
+
+    callRelayer.mockClear()
+    signMessageController.reset()
+    await signMessageController.init({ messageToSign: typedMessageToSign })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(callRelayer).not.toHaveBeenCalled()
+    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Authorize spending of tokens'
+    })
+  })
+
+  test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
+    const typedMessageToSign = createPermitTypedMessage()
+    const callRelayer = jest.fn(async (path: string, method?: string) => {
+      if (path === '/v2/erc7730/eip-712') {
+        expect(method).toBe('GET')
+
         return {
           success: true,
-          display: {
-            formats: {
-              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
-                {
-                  intent: 'Authorize spending of tokens',
-                  fields: [
-                    {
-                      path: 'spender',
-                      label: 'Spender',
-                      format: 'addressName',
-                      visible: 'always'
-                    },
-                    {
-                      path: 'value',
-                      label: 'Max spending amount',
-                      format: 'tokenAmount',
-                      params: { tokenPath: '@.to' },
-                      visible: 'always'
-                    }
-                  ]
-                }
-            }
-          }
+          data: {},
+          errorState: []
         }
       }
 
@@ -325,26 +420,11 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/eip-712',
-      'GET',
-      undefined,
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
+    expect(signMessageController.isHumanizing).toBe(false)
+    expect(signMessageController.humanizedMessage).toBeDefined()
+    expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
     )
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/fetch-descriptor',
-      'POST',
-      {
-        descriptorPath: `/${registryPath}`
-      },
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
-    )
-    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
-      type: 'erc7730',
-      title: 'Authorize spending of tokens'
-    })
   })
 
   test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {

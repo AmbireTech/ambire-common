@@ -857,12 +857,7 @@ describe('ERC-7730 descriptors', () => {
           data: aaveInterface.encodeFunctionData('multicall', [
             [
               aaveInterface.encodeFunctionData('setUserEMode', [10]),
-              aaveInterface.encodeFunctionData('supply', [
-                cbBtc,
-                2838n,
-                accountOp.accountAddr,
-                0
-              ])
+              aaveInterface.encodeFunctionData('supply', [cbBtc, 2838n, accountOp.accountAddr, 0])
             ]
           ])
         }
@@ -975,11 +970,7 @@ describe('ERC-7730 descriptors', () => {
     const irCalls = humanizeAccountOp(eModeAccountOp)
 
     compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Disable efficiency mode'),
-        getLabel('Category'),
-        getText('None')
-      ],
+      [getAction('Disable efficiency mode'), getLabel('Category'), getText('None')],
       [
         getAction('Enable ETH-correlated efficiency mode'),
         getLabel('Category'),
@@ -1200,6 +1191,38 @@ describe('ERC-7730 descriptors', () => {
       type: 'action',
       content: 'Swap'
     })
+  })
+
+  test('uses revoke wording for standard ERC-7730 ERC-20 approvals with a zero amount', async () => {
+    const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+    const revokeApprovalAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: usdt,
+          value: 0n,
+          data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokeApprovalAccountOp)
+    const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe('built-in/erc20-revoke-approval')
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Revoke approval', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization(spender)]
+        },
+        {
+          label: 'Amount',
+          value: [getToken(usdt, 0n, 1n)]
+        }
+      ])
+    ])
   })
 
   test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {
