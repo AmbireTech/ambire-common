@@ -81,14 +81,14 @@ const isRegistryKey = (key: string): boolean => {
 
 const isHexHash = (value: string): boolean => isHexOfLength(value, 64)
 
-const throwInvalidRelayerResource = (path: string): never => {
+function throwInvalidRelayerResource(path: string): never {
   throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
 }
 
 const validateCalldataIndex = (payload: unknown, path: string): payload is Erc7730CalldataIndex => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
-  const index = payload as Record<string, unknown>
+  const index = payload
 
   Object.entries(index).forEach(([key, value]) => {
     if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRelayerResource(path)
@@ -103,7 +103,7 @@ const validateEip712IndexEntry = (
 ): entry is Erc7730Eip712IndexEntry => {
   if (!isPlainObject(entry)) throwInvalidRelayerResource(path)
 
-  const indexEntry = entry as Record<string, unknown>
+  const indexEntry = entry
   if (typeof indexEntry.path !== 'string') throwInvalidRelayerResource(path)
 
   const { encodeTypeHashes } = indexEntry
@@ -121,21 +121,21 @@ const validateEip712IndexEntry = (
 const validateEip712Index = (payload: unknown, path: string): payload is Erc7730Eip712Index => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
-  const index = payload as Record<string, unknown>
+  const index = payload
 
   Object.entries(index).forEach(([registryKey, primaryTypes]) => {
     if (!isRegistryKey(registryKey) || !isPlainObject(primaryTypes)) {
       throwInvalidRelayerResource(path)
     }
 
-    const primaryTypesIndex = primaryTypes as Record<string, unknown>
+    const primaryTypesIndex = primaryTypes
 
     Object.entries(primaryTypesIndex).forEach(([primaryType, entries]) => {
       if (typeof primaryType !== 'string' || !Array.isArray(entries)) {
         throwInvalidRelayerResource(path)
       }
 
-      const indexEntries = entries as unknown[]
+      const indexEntries = entries
       indexEntries.forEach((entry) => validateEip712IndexEntry(entry, path))
     })
   })
@@ -146,7 +146,7 @@ const validateEip712Index = (payload: unknown, path: string): payload is Erc7730
 const validateDescriptorField = (field: unknown, path: string): field is Erc7730Field => {
   if (!isPlainObject(field)) throwInvalidRelayerResource(path)
 
-  const descriptorField = field as Record<string, unknown>
+  const descriptorField = field
 
   if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
     throwInvalidRelayerResource(path)
@@ -160,7 +160,7 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
   if (fields !== undefined) {
     if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
 
-    const nestedFields = fields as unknown[]
+    const nestedFields = fields
     nestedFields.forEach((nestedField) => validateDescriptorField(nestedField, path))
   }
 
@@ -170,7 +170,7 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
 const validateDescriptor = (payload: unknown, path: string): payload is Erc7730Descriptor => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
-  const descriptor = payload as Record<string, unknown>
+  const descriptor = payload
   const { includes } = descriptor
 
   if (
@@ -186,17 +186,17 @@ const validateDescriptor = (payload: unknown, path: string): payload is Erc7730D
   if (display === undefined) return true
   if (!isPlainObject(display)) throwInvalidRelayerResource(path)
 
-  const { formats, definitions } = display as Record<string, unknown>
+  const { formats, definitions } = display
   if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRelayerResource(path)
   if (formats === undefined) return true
   if (!isPlainObject(formats)) throwInvalidRelayerResource(path)
 
-  const descriptorFormats = formats as Record<string, unknown>
+  const descriptorFormats = formats
 
   Object.values(descriptorFormats).forEach((format: unknown) => {
     if (!isPlainObject(format)) throwInvalidRelayerResource(path)
 
-    const descriptorFormat = format as Record<string, unknown>
+    const descriptorFormat = format
     if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
       throwInvalidRelayerResource(path)
     }
@@ -205,7 +205,7 @@ const validateDescriptor = (payload: unknown, path: string): payload is Erc7730D
     if (fields === undefined) return
     if (!Array.isArray(fields)) throwInvalidRelayerResource(path)
 
-    const descriptorFields = fields as unknown[]
+    const descriptorFields = fields
     descriptorFields.forEach((field) => validateDescriptorField(field, path))
   })
 
@@ -518,7 +518,7 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
   if (message.content.kind !== 'typedMessage') return null
 
   try {
-    return BigInt((message.content.domain.chainId ?? message.chainId) as string | number | bigint)
+    return BigInt(message.content.domain.chainId ?? message.chainId)
   } catch {
     return null
   }
@@ -567,7 +567,7 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
 }
 
 const getAddressFromStorageSlot = (slotValue: string): string | null => {
-  if (!isHexString(slotValue) || slotValue.length < 42) return null
+  if (!isHexString(slotValue) || slotValue.length !== 66) return null
 
   const address = getAddress(`0x${slotValue.slice(-40)}`)
   return address.toLowerCase() === ZeroAddress ? null : address
@@ -697,18 +697,11 @@ const addSafeTxCallDescriptor = async (
           : options
       )
 
-      return safeTxCallDescriptor ? ([index, safeTxCallDescriptor] as const) : null
+      return safeTxCallDescriptor ? [index, safeTxCallDescriptor] : null
     })
   )
 
-  const descriptorsByIndex = safeTxCallDescriptors.reduce<
-    Record<number, Erc7730ResolvedDescriptor>
-  >((acc, entry) => {
-    if (!entry) return acc
-
-    acc[entry[0]] = entry[1]
-    return acc
-  }, {})
+  const descriptorsByIndex = Object.fromEntries(safeTxCallDescriptors.filter((x) => !!x))
 
   if (!Object.keys(descriptorsByIndex).length) return descriptor
 
@@ -746,23 +739,14 @@ const fetchSafeExecTransactionDescriptor = async (
         chainId,
         getNestedSafeCallOptions(call.to!, safeTxCall, options)
       )
-      return descriptor ? ([index, descriptor] as const) : null
+      return descriptor ? [index, descriptor] : null
     })
   )
-
   return {
     ...safeDescriptor,
     safeTxCalls,
     safeTxTransactionsOnly: true,
-    safeTxCallDescriptors: safeTxCallDescriptors.reduce<Record<number, Erc7730ResolvedDescriptor>>(
-      (acc, entry) => {
-        if (!entry) return acc
-
-        acc[entry[0]] = entry[1]
-        return acc
-      },
-      {}
-    )
+    safeTxCallDescriptors: Object.fromEntries(safeTxCallDescriptors.filter((x) => !!x))
   }
 }
 
@@ -831,16 +815,10 @@ export const fetchErc7730DescriptorsForAccountOp = async (
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
       const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
-      return descriptor ? ([index, descriptor] as const) : null
+      return descriptor ? [index, descriptor] : null
     })
   )
-
-  return resolvedDescriptors.reduce<Record<number, Erc7730ResolvedDescriptor>>((acc, entry) => {
-    if (!entry) return acc
-
-    acc[entry[0]] = entry[1]
-    return acc
-  }, {})
+  return Object.fromEntries(resolvedDescriptors.filter((x) => !!x))
 }
 
 export const fetchErc7730DescriptorForMessage = async (
@@ -854,7 +832,7 @@ export const fetchErc7730DescriptorForMessage = async (
   const chainId = getTypedMessageChainId(message)
   if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
   const primaryType = String(message.content.primaryType)
-  const types = message.content.types as Erc7730TypedDataTypes
+  const types = message.content.types
 
   try {
     const index = await getEip712Index(callRelayer)
