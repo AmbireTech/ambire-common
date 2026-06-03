@@ -14,7 +14,6 @@ import {
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -24,7 +23,6 @@ import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -79,6 +77,7 @@ import {
   PortfolioControllerState,
   PortfolioLibGetResult,
   PreviousHintsStorage,
+  ScheduledUpdates,
   TemporaryTokens,
   ToBeLearnedAssets,
   TokenBlacklist,
@@ -170,7 +169,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #velcroUrl: string
 
-  protected batchedPortfolioDiscovery: Function
+  protected batchedPortfolioDiscovery: ReturnType<typeof batcher>
 
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
@@ -236,6 +235,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #blacklistInterval: IRecurringTimeout
 
+  /** See {@link ScheduledUpdates} */
+  #scheduledUpdates: ScheduledUpdates = {}
+
+  /**
+   * Runs every 20 seconds and checks if there are any scheduled updates to run. If there are, it runs them and removes them from the schedule.
+   */
+  #scheduledUpdatesRunnerInterval: IRecurringTimeout
+
   constructor(
     storage: IStorageController,
     fetch: Fetch,
@@ -270,6 +277,45 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       BLACKLIST_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
+    this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(async () => {
+      if (Object.keys(this.#scheduledUpdates).length === 0) return
+
+      const updatesToRun = { ...this.#scheduledUpdates }
+
+      await Promise.all(
+        Object.entries(updatesToRun).map(async ([accountId, updates]) => {
+          const updatesOlderThanThreshold = updates.filter(
+            (update) => Date.now() - update.scheduledAt >= 60 * 1000
+          )
+
+          if (updatesOlderThanThreshold.length === 0) return
+
+          const networksToUpdate = updatesOlderThanThreshold.map((update) => update.chainId)
+
+          // Remove the updates from the schedule so a second run doesn't pick them up while they are being processed
+          this.#scheduledUpdates[accountId] = updates.filter(
+            (update) => !networksToUpdate.includes(update.chainId)
+          )
+
+          if (this.#scheduledUpdates[accountId].length === 0) {
+            delete this.#scheduledUpdates[accountId]
+          }
+
+          await this.updateSelectedAccount(
+            accountId,
+            this.#networks.networks.filter((n) => networksToUpdate.includes(n.chainId)),
+            undefined,
+            {
+              bypassServerSideCache: updatesOlderThanThreshold.some(
+                (update) => update.bypassServerSideCache
+              )
+            }
+          )
+        })
+      )
+    }, 20 * 1000)
+
+    this.#scheduledUpdatesRunnerInterval.start()
     this.#blacklistInterval.start()
     this.batchedPortfolioDiscovery = batcher(
       fetch,
@@ -690,6 +736,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
 
       networkState.result.tokens = networkState.result.tokens.map((token) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { amountPostSimulation, simulationAmount, ...rest } = token
 
         return rest
@@ -697,6 +744,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       networkState.result.collections = (networkState.result.collections || []).map(
         (collection) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { amountPostSimulation, postSimulation, simulationAmount, ...rest } = collection
 
           return rest
@@ -734,6 +782,32 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Ensure the method waits for the entire queue to resolve
     await this.#queue[accountAddr][chainId.toString()]
+  }
+
+  #scheduleUpdate({
+    accountId,
+    chainId,
+    bypassServerSideCache
+  }: {
+    accountId: AccountId
+    chainId: bigint
+    bypassServerSideCache: true
+  }) {
+    const existing = this.#scheduledUpdates[accountId] || []
+    const networkAlreadyScheduledForAccount = existing.find((update) => update.chainId === chainId)
+
+    if (networkAlreadyScheduledForAccount) {
+      networkAlreadyScheduledForAccount.bypassServerSideCache =
+        networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
+      // Debounce: start the 60s window from the most recent transaction, not the first
+      networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+      return
+    }
+
+    this.#scheduledUpdates[accountId] = [
+      ...(this.#scheduledUpdates[accountId] || []),
+      { chainId, bypassServerSideCache, scheduledAt: Date.now() }
+    ]
   }
 
   /**
@@ -778,6 +852,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         return
       }
 
+      // The update below doesn't bypass the server cache; schedule a cache-busting
+      // update for after the server has had time to index the confirmed transaction.
+      // See ScheduledUpdates for the full rationale.
+      this.#scheduleUpdate({ accountId: accountAddr, chainId, bypassServerSideCache: true })
       networksToUpdate.push(networkData)
       accountAddrToUpdate = accountAddr
     })
@@ -1117,6 +1195,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       hasHints: boolean
     } | null
     defiMaxDataAgeMs: number
+    bypassServerSideCache?: boolean
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
     const discoveryStart = Date.now()
@@ -1130,7 +1209,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       defiMaxDataAgeMs,
       hasKeys,
       externalApiHintsResponse,
-      isManualUpdate
+      isManualUpdate,
+      bypassServerSideCache
     } = opts
 
     const defiState = this.#state[account.addr]?.[chainId.toString()]?.result?.defiPositions
@@ -1156,14 +1236,23 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       return null
     }
 
-    let response: ExternalPortfolioDiscoveryResponse | null = null
-    const shouldForceUpdateDefi = getShouldBypassServerSideCache(
-      defiState,
-      !!isManualUpdate,
-      hasKeys,
-      this.defiSessionIds,
-      hasNonceChangedSinceLastUpdate
+    // Used by getShouldBypassServerSideCache to avoid spending the server-side bypass budget
+    // before the scheduled update fires (the server has a per-account cooldown)
+    const hasScheduledUpdate = !!this.#scheduledUpdates[account.addr]?.find(
+      (update) => update.chainId === chainId && update.bypassServerSideCache
     )
+
+    let response: ExternalPortfolioDiscoveryResponse | null = null
+    const shouldForceUpdateDefi =
+      bypassServerSideCache ||
+      getShouldBypassServerSideCache(
+        defiState,
+        !!isManualUpdate,
+        hasKeys,
+        this.defiSessionIds,
+        hasNonceChangedSinceLastUpdate,
+        hasScheduledUpdate
+      )
 
     try {
       response = await this.batchedPortfolioDiscovery({
@@ -1265,9 +1354,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       hasKeys: boolean
       maxDataAgeMs?: number
       isManualUpdate?: boolean
+      bypassServerSideCache?: boolean
     }
   ): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]> {
-    const { maxDataAgeMs, isManualUpdate, defiMaxDataAgeMs } = portfolioProps
+    const { maxDataAgeMs, isManualUpdate, defiMaxDataAgeMs, bypassServerSideCache } = portfolioProps
     const accountState = this.#state[account.addr]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
@@ -1312,6 +1402,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         baseCurrency: 'usd',
         externalApiHintsResponse: hintsResponse || null,
         isManualUpdate,
+        bypassServerSideCache,
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
@@ -1713,6 +1804,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       defiMaxDataAgeMs?: number
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
+      bypassServerSideCache?: boolean
     }
   ) {
     const {
@@ -1721,7 +1813,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       // Set to 6 hours by default. That is because we are making a lot of
       // portfolio updates, most of which shouldn't update the defi positions.
       defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
-      isManualUpdate
+      isManualUpdate,
+      bypassServerSideCache
     } = opts || {}
     await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1782,6 +1875,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             {
               maxDataAgeMs,
               isManualUpdate,
+              bypassServerSideCache,
               blockTag: 'both',
               defiMaxDataAgeMs,
               ...(accountOpsToSimulate &&
