@@ -2,6 +2,12 @@ import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { parse, stringify } from '../richJson/richJson'
+import {
+  Erc7730CallDescriptors,
+  Erc7730ResolvedDescriptor,
+  humanizeCallWithErc7730,
+  humanizeMessageWithErc7730
+} from './erc7730'
 import { HumanizerCallModule, HumanizerMeta, IrCall, IrMessage } from './interfaces'
 import {
   eip7702AuthorizationModule,
@@ -110,7 +116,15 @@ const humanizerTMModules = [
   fallbackShortPlaintext
 ]
 
-const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {
+type HumanizeAccountOpOptions = {
+  erc7730Descriptors?: Erc7730CallDescriptors
+}
+
+type HumanizeMessageOptions = {
+  erc7730Descriptor?: Erc7730ResolvedDescriptor
+}
+
+const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
 
   let currentCalls: IrCall[] = accountOp.calls
@@ -122,13 +136,43 @@ const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
     }
   })
+
+  if (options?.erc7730Descriptors) {
+    currentCalls = currentCalls.map((call, index) => {
+      const resolvedDescriptor = options.erc7730Descriptors?.[index]
+      if (!resolvedDescriptor) return call
+
+      try {
+        const originalCall = accountOp.calls[index]
+        if (!originalCall) return call
+
+        return (
+          humanizeCallWithErc7730(
+            originalCall,
+            accountOp.chainId,
+            accountOp.accountAddr,
+            resolvedDescriptor
+          ) || call
+        )
+      } catch (error) {
+        console.error(error)
+        return call
+      }
+    })
+  }
+
   return currentCalls
 }
 
-const humanizeMessage = (_message: Message): IrMessage => {
+const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): IrMessage => {
   const message = parse(stringify(_message))
 
   try {
+    if (options?.erc7730Descriptor) {
+      const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
+      if (erc7730Message) return erc7730Message
+    }
+
     // runs all modules and takes the first non empty array
     const { fullVisualization, warnings, canHideDropdownArrow } =
       humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
@@ -141,3 +185,5 @@ const humanizeMessage = (_message: Message): IrMessage => {
 }
 
 export { humanizeAccountOp, humanizeMessage }
+export * from './erc7730'
+export type { HumanizeAccountOpOptions, HumanizeMessageOptions }

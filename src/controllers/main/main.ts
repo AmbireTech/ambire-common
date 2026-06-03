@@ -13,7 +13,6 @@ import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
-
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
@@ -44,7 +43,6 @@ import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
-
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { Account, IAccountsController } from '@/interfaces/account'
@@ -99,7 +97,7 @@ import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
-import { relayerCall } from '@/libs/relayerCall/relayerCall'
+import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
@@ -120,7 +118,7 @@ export class MainController extends EventEmitter implements IMainController {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  callRelayer: Function
+  callRelayer: BindedRelayerCall
 
   isReady: boolean = false
 
@@ -434,6 +432,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       ui: this.ui
     })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -442,10 +441,10 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.invite,
       eventEmitterRegistry,
-      this.dapps
+      this.dapps,
+      this.callRelayer
     )
 
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.storage,
       this.fetch,
@@ -789,7 +788,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.selectedAccount.setAccount(accountToSelect)
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
-    this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })

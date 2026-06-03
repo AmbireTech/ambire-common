@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
+import { ethers, Wallet } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
+import { InternalSigner, LedgerSigner } from '@test/keystore'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -11,90 +12,12 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
-import { Hex } from '../../interfaces/hex'
-import {
-  ExternalKey,
-  IKeystoreController,
-  InternalKey,
-  Key,
-  KeystoreSignerInterface
-} from '../../interfaces/keystore'
-import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
+import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
+import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { KeystoreController } from './keystore'
-
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
-
-class LedgerSigner {
-  key
-
-  constructor(_key: Key) {
-    this.key = _key
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
 
 const uiManager = mockUiManager().uiManager
 
@@ -495,6 +418,16 @@ describe('KeystoreController', () => {
     expect(keystore.seeds.length).toBe(1)
     expect(keystore.seeds[0]!.label).toBe('New Label')
     expect(keystore.seeds[0]!.hdPathTemplate).toBe(LEGACY_POPULAR_DERIVATION_TEMPLATE)
+  })
+  it('getKeystoreSeed works', async () => {
+    const keyIterator = new KeyIterator(process.env.SEED)
+
+    const keystoreSeed = await keystore.getKeystoreSeed(keyIterator)
+
+    expect(keystoreSeed).toBeDefined()
+    expect(keystoreSeed?.seedPassphrase).toBeNull()
+    expect(keystoreSeed?.seed).toBeDefined()
+    expect(typeof keystoreSeed?.seed).toBe('object')
   })
 })
 

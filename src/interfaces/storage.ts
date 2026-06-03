@@ -18,7 +18,7 @@ import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
 import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
 import { Dapp, RecentDappEntry } from './dapp'
-import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
+import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
@@ -49,7 +49,7 @@ export type StorageProps = {
   keystoreSecrets: MainKeyEncryptedWithSecret[]
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
-  keystoreSeeds: KeystoreSeed[]
+  keystoreSeeds: StoredKeystoreSeed[]
   // Dapps
   dappsV2: Dapp[]
   dapps: Dapp[]

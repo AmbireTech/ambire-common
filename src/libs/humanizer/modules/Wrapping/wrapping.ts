@@ -17,7 +17,7 @@ const withdrawAbi = parseAbi(['function withdraw(uint256 wad)'])
 export const wrappingModule: HumanizerCallModule = (
   _: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta
+  humanizerMeta?: HumanizerMeta
 ) => {
   const newCalls = irCalls.map((call: IrCall) => {
     if (!call.to || !isAddress(call.to)) return call

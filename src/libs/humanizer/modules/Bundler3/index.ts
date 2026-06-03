@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { decodeFunctionData, isHex, parseAbi, toFunctionSelector } from 'viem'
+import { decodeFunctionData, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
@@ -14,9 +14,20 @@ import {
   getBreak,
   getLabel,
   getToken,
-  getWarning,
   isHexCall
 } from '../../utils'
+import {
+  erc4626DepositAbi,
+  erc4626MintAbi,
+  erc4626RedeemAbi,
+  erc4626WithdrawAbi,
+  getWarnings,
+  morphoBorrowAbi,
+  morphoFlashLoanAbi,
+  morphoRepayAbi,
+  morphoSupplyCollateralAbi,
+  morphoWithdrawCollateralAbi
+} from './generalAdapter'
 
 const multicallAbi = [
   {
@@ -40,34 +51,6 @@ const multicallAbi = [
     stateMutability: 'payable'
   }
 ] as const
-const morphoSupplyCollateralAbi = parseAbi([
-  'function morphoSupplyCollateral((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, address onBehalf, bytes data)'
-])
-const morphoBorrowAbi = parseAbi([
-  'function morphoBorrow((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, uint256 minSharePriceE27, address receiver)'
-])
-const morphoRepayAbi = parseAbi([
-  'function morphoRepay((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, uint256 maxSharePriceE27, address onBehalf, bytes data)'
-])
-const morphoWithdrawCollateralAbi = parseAbi([
-  'function morphoWithdrawCollateral((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, address receiver)'
-])
-const morphoFlashLoanAbi = parseAbi([
-  'function morphoFlashLoan(address token, uint256 assets, bytes data)'
-])
-const erc4626MintAbi = parseAbi([
-  'function erc4626Mint(address vault, uint256 shares, uint256 maxSharePriceE27, address receiver)'
-])
-const erc4626DepositAbi = parseAbi([
-  'function erc4626Deposit(address vault, uint256 assets, uint256 maxSharePriceE27, address receiver)'
-])
-const erc4626WithdrawAbi = parseAbi([
-  'function erc4626Withdraw(address vault, uint256 assets, uint256 minSharePriceE27, address receiver, address owner)'
-])
-const erc4626RedeemAbi = parseAbi([
-  'function erc4626Redeem(address vault, uint256 shares, uint256 minSharePriceE27, address receiver, address owner)'
-])
-
 interface BundleCall {
   to: string
   data: `0x${string}`
@@ -76,17 +59,6 @@ interface BundleCall {
   callbackHash: string
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
-}
-
-const getWarnings = (accAddr: string, onBehalf: string): HumanizerWarning[] => {
-  return onBehalf.toLowerCase() !== accAddr.toLowerCase()
-    ? [
-        getWarning(
-          `Differnt action address detected! Owner is ${accAddr}, while action address is ${onBehalf}`,
-          'Morpho_diff_addr'
-        )
-      ]
-    : []
 }
 
 const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) => {

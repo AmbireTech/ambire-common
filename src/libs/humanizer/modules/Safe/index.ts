@@ -17,13 +17,13 @@ import {
   IrCall
 } from '../../interfaces'
 import {
-  HexIrCall,
   getAction,
   getAddressVisualization,
   getBreak,
   getLabel,
   getToken,
   getWarning,
+  HexIrCall,
   isHexCall
 } from '../../utils'
 
@@ -101,7 +101,7 @@ export const getSafeHumanization = (
         getAction('Add owner'),
         getAddressVisualization(newOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
@@ -134,7 +134,7 @@ export const getSafeHumanization = (
         getAction('Remove owner'),
         getAddressVisualization(removedOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
