@@ -277,43 +277,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       BLACKLIST_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
-    this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(async () => {
-      if (Object.keys(this.#scheduledUpdates).length === 0) return
-
-      const updatesToRun = structuredClone(this.#scheduledUpdates)
-
-      await Promise.all(
-        Object.entries(updatesToRun).map(async ([accountId, updates]) => {
-          const updatesOlderThanThreshold = updates.filter(
-            (update) => Date.now() - update.scheduledAt >= 60 * 1000
-          )
-
-          if (updatesOlderThanThreshold.length === 0) return
-
-          const networksToUpdate = updatesOlderThanThreshold.map((update) => update.chainId)
-
-          // Remove the updates from the schedule so a second run doesn't pick them up while they are being processed
-          this.#scheduledUpdates[accountId] = updates.filter(
-            (update) => !networksToUpdate.includes(update.chainId)
-          )
-
-          if (this.#scheduledUpdates[accountId].length === 0) {
-            delete this.#scheduledUpdates[accountId]
-          }
-
-          await this.updateSelectedAccount(
-            accountId,
-            this.#networks.networks.filter((n) => networksToUpdate.includes(n.chainId)),
-            undefined,
-            {
-              bypassServerSideCache: updatesOlderThanThreshold.some(
-                (update) => update.bypassServerSideCache
-              )
-            }
-          )
-        })
-      )
-    }, 20 * 1000)
+    this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(
+      this.#runScheduledUpdates.bind(this),
+      20 * 1000,
+      this.emitError.bind(this)
+    )
 
     this.#scheduledUpdatesRunnerInterval.start()
     this.#blacklistInterval.start()
@@ -782,6 +750,44 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Ensure the method waits for the entire queue to resolve
     await this.#queue[accountAddr][chainId.toString()]
+  }
+
+  async #runScheduledUpdates() {
+    if (Object.keys(this.#scheduledUpdates).length === 0) return
+
+    const updatesToRun = structuredClone(this.#scheduledUpdates)
+
+    await Promise.all(
+      Object.entries(updatesToRun).map(async ([accountId, updates]) => {
+        const updatesOlderThanThreshold = updates.filter(
+          (update) => Date.now() - update.scheduledAt >= 60 * 1000
+        )
+
+        if (updatesOlderThanThreshold.length === 0) return
+
+        const networksToUpdate = updatesOlderThanThreshold.map((update) => update.chainId)
+
+        // Remove the updates from the schedule so a second run doesn't pick them up while they are being processed
+        this.#scheduledUpdates[accountId] = updates.filter(
+          (update) => !networksToUpdate.includes(update.chainId)
+        )
+
+        if (this.#scheduledUpdates[accountId].length === 0) {
+          delete this.#scheduledUpdates[accountId]
+        }
+
+        await this.updateSelectedAccount(
+          accountId,
+          this.#networks.networks.filter((n) => networksToUpdate.includes(n.chainId)),
+          undefined,
+          {
+            bypassServerSideCache: updatesOlderThanThreshold.some(
+              (update) => update.bypassServerSideCache
+            )
+          }
+        )
+      })
+    )
   }
 
   #scheduleUpdate({
