@@ -5,7 +5,7 @@ import {
   getSwapEstimatedLossUsd,
   isExtremeSwapLoss,
   normalizeConfirmationPhraseInput
-} from '../../consts/safeguards/extremeSwapLoss'
+} from './extremeSwapLoss'
 
 describe('extremeSwapLoss safeguards', () => {
   test('should use the worse of quote and slippage losses', () => {

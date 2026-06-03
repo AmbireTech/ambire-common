@@ -11,11 +11,7 @@ import {
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
 import {
-  getSwapEstimatedLossUsd,
-  getSwapQuoteLossUsd,
-  getSwapSlippageLossUsd,
   HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
-  isExtremeSwapLoss,
   SLIPPAGE_MIN_QUOTE_DIFF_USD
 } from '../../consts/safeguards/extremeSwapLoss'
 import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
@@ -54,6 +50,12 @@ import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import {
+  getSwapEstimatedLossUsd,
+  getSwapQuoteLossUsd,
+  getSwapSlippageLossUsd,
+  isExtremeSwapLoss
+} from '../safeguards/extremeSwapLoss'
 import { getSanitizedAmount } from '../transfer/amount'
 
 /**

@@ -4,14 +4,16 @@ import { getFeeSpeedIdentifier } from '../../controllers/signAccountOp/helper'
 import { FeeSpeed } from '../../controllers/signAccountOp/signAccountOp'
 import {
   EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD,
-  EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD,
-  getExtremeGasFeeThresholdUsd,
-  isExtremeGasFee
+  EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD
 } from '../../consts/safeguards/extremeGasFee'
 import { FeePaymentOption } from '../estimate/interfaces'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 
-import { getExtremeGasFeeWarningState } from './extremeGasFee'
+import {
+  getExtremeGasFeeThresholdUsd,
+  getExtremeGasFeeWarningState,
+  isExtremeGasFee
+} from './extremeGasFee'
 
 const ACCOUNT_ADDR = '0x0000000000000000000000000000000000000001'
 

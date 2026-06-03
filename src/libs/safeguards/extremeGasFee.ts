@@ -1,14 +1,26 @@
+import {
+  EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD,
+  EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD
+} from '../../consts/safeguards/extremeGasFee'
 import { getFeeSpeedIdentifier } from '../../controllers/signAccountOp/helper'
 import { FeeSpeed } from '../../controllers/signAccountOp/signAccountOp'
-import {
-  getExtremeGasFeeThresholdUsd,
-  isExtremeGasFee
-} from '../../consts/safeguards/extremeGasFee'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 
 export type ExtremeGasFeeWarningState = {
   feeUsd: number
   thresholdUsd: number
+}
+
+export function getExtremeGasFeeThresholdUsd(chainId: bigint): number {
+  return chainId === 1n
+    ? EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD
+    : EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD
+}
+
+export function isExtremeGasFee(feeUsd: number, chainId: bigint): boolean {
+  if (!Number.isFinite(feeUsd) || feeUsd <= 0) return false
+
+  return feeUsd > getExtremeGasFeeThresholdUsd(chainId)
 }
 
 export function getExtremeGasFeeWarningState(
