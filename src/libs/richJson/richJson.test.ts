@@ -53,6 +53,24 @@ describe('bigintJson', () => {
     expect(parsedError.error.name).toBe(error.name)
   })
 
+  it('parses all-string data without the reviver (fast path) identically', async () => {
+    const phishingLike = {
+      version: 12,
+      updatedAt: 1700000000000,
+      domains: ['evil.example', 'scam.example', 'Error-lookalike.example'],
+      addresses: ['0xdeadbeef', '0x000000000000000000000000000000000000dEaD']
+    }
+    expect(parse(stringify(phishingLike))).toEqual(phishingLike)
+  })
+
+  it('still revives bigint/error when markers are present', async () => {
+    const mixed = { amount: 5n, note: 'plain', err: new Error('boom') }
+    const parsed = parse(stringify(mixed))
+    expect(parsed.amount).toBe(5n)
+    expect(parsed.note).toBe('plain')
+    expect(parsed.err.message).toBe('boom')
+  })
+
   it('has not a performance overhead', async () => {
     // We are creating a relatively large data object to test performance.
     // In a real-world scenario, the data would be much smaller.
