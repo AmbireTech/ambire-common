@@ -280,7 +280,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(async () => {
       if (Object.keys(this.#scheduledUpdates).length === 0) return
 
-      const updatesToRun = { ...this.#scheduledUpdates }
+      const updatesToRun = structuredClone(this.#scheduledUpdates)
 
       await Promise.all(
         Object.entries(updatesToRun).map(async ([accountId, updates]) => {
@@ -1225,11 +1225,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#getNonceId(account, chainId)
     )
 
-    const canSkipDefiUpdate = getCanSkipUpdate(
-      defiState,
-      hasNonceChangedSinceLastUpdate,
-      defiMaxDataAgeMs
-    )
+    const canSkipDefiUpdate =
+      !bypassServerSideCache &&
+      getCanSkipUpdate(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs)
 
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
       // Request can be skipped altogether

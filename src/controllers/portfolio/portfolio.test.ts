@@ -1140,6 +1140,57 @@ describe('Portfolio Controller ', () => {
         restore()
       }
     })
+
+    test('The scheduled cache-busting update reaches discovery with forceUpdateDefi=true', async () => {
+      const { restore } = suppressConsole()
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const { discoverySpy } = mockFetchLayer(controller)
+
+        discoverySpy.mockResolvedValue({
+          networkId: '1',
+          chainId: 1,
+          accountAddr: account.addr,
+          erc20s: [],
+          erc721s: {},
+          hasHints: true,
+          prices: {},
+          defi: { positions: [], updatedAt: Date.now() }
+        })
+
+        await controller.updateSelectedAccount(account.addr, [ethereum], {
+          accountOps: accountOp,
+          states: accountStates[account.addr]!
+        })
+
+        // Spy WITHOUT replacing the implementation, so the runner's real updateSelectedAccount runs.
+        const updateSpy = jest.spyOn(controller, 'updateSelectedAccount')
+
+        await controller.discardSimulation(accountOp['1']!)
+
+        // Only inspect discovery calls produced by the scheduled runner.
+        discoverySpy.mockClear()
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+
+        const bypassCalls = updateSpy.mock.calls.filter(
+          (call: any[]) => call[3]?.bypassServerSideCache === true
+        )
+        expect(bypassCalls).toHaveLength(1)
+
+        // It actually force the defi discovery (bypass the server-side cache).
+        const forcedDiscovery = discoverySpy.mock.calls.some(
+          (call: any[]) => call[0]?.forceUpdateDefi === true
+        )
+        expect(forcedDiscovery).toBe(true)
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
+    })
   })
 
   describe('Pinned tokens', () => {
