@@ -1,7 +1,5 @@
 import { formatEther, getAddress, isAddress } from 'ethers'
 
-import { AccountState } from '@/libs/portfolio/interfaces'
-
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -23,7 +21,6 @@ import {
   getDefiPositionsOnDisabledNetworksForTheSelectedAccount
 } from '../../libs/banners/banners'
 import { AssetType } from '../../libs/defiPositions/types'
-import { cloneDeep } from '../../libs/richJson/richJson'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
