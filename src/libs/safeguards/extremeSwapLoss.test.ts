@@ -24,7 +24,7 @@ describe('extremeSwapLoss safeguards', () => {
     )
   })
 
-  test('should normalize confirmation phrase input', () => {
-    expect(normalizeConfirmationPhraseInput('  hello   world  ')).toBe('hello world')
+  test('should trim surrounding whitespace from confirmation phrase input', () => {
+    expect(normalizeConfirmationPhraseInput('  hello world  ')).toBe('hello world')
   })
 })

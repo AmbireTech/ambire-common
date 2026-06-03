@@ -30,5 +30,5 @@ export function getExtremeSwapConfirmationPhrase(estimatedLossUsd: number): stri
 }
 
 export function normalizeConfirmationPhraseInput(phrase: string): string {
-  return phrase.trim().replace(/\s+/g, ' ')
+  return phrase.trim()
 }
