@@ -887,6 +887,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
+      // Update the last selected account
+      if (
+        accountPreferences?.accounts.includes(newAccount) &&
+        accountPreferences.selectedAccount !== newAccount
+      ) {
+        accountPreferences.selectedAccount = newAccount
+      }
+
+      // Broadcast to dapps that the selected account has changed
       const accounts = getAccountsForDapp(accountPreferences, newAccount)
 
       await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
