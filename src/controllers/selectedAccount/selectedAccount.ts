@@ -223,9 +223,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account) return
 
-    const portfolioAccountState = structuredClone(
-      this.#portfolio.getAccountPortfolioState(this.account.addr)
-    )
+    const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,

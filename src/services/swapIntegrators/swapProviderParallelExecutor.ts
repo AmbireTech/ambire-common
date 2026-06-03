@@ -11,6 +11,8 @@ import {
 } from '../../interfaces/swapAndBridge'
 import wait, { waitWithAbort } from '../../utils/wait'
 
+const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
+
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
 
@@ -20,11 +22,17 @@ export class SwapProviderParallelExecutor {
 
   #providers: SwapProvider[]
 
+  #getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+
   // Added for compatibility with the type
   supportedChains: SwapProvider['supportedChains'] = []
 
-  constructor(providers: SwapProvider[]) {
+  constructor(
+    providers: SwapProvider[],
+    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+  ) {
     this.#providers = providers
+    this.#getFallbackSupportedChains = getFallbackSupportedChains
   }
 
   /**
@@ -184,15 +192,40 @@ export class SwapProviderParallelExecutor {
     return (provider[method] as any)(...args)
   }
 
+  async #getSupportedChainsWithTimeout(
+    provider: SwapProvider
+  ): Promise<SwapAndBridgeSupportedChain[] | Error> {
+    const waitPromise = waitWithAbort(GET_SUPPORTED_CHAINS_TIMEOUT)
+
+    try {
+      return await Promise.race([
+        provider.getSupportedChains().catch((e) => e),
+        waitPromise.promise.then(() => new Error('Get supported chains timeout'))
+      ])
+    } finally {
+      if (waitPromise.abort) waitPromise.abort()
+    }
+  }
+
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const chainIds = await this.#fetchFromAll<SwapAndBridgeSupportedChain[]>(
-      (provider: SwapProvider) => provider.getSupportedChains().catch((e) => e)
+    const promises = this.#providers.map((provider: SwapProvider) =>
+      this.#getSupportedChainsWithTimeout(provider)
     )
+    const fetchResults = await Promise.all(promises)
+    const chainIds = fetchResults
+      .filter((r): r is SwapAndBridgeSupportedChain[] => !(r instanceof Error))
+      .flat()
 
     // filter duplicates
-    return [
+    const uniqueChainIds = [
       ...new Map(chainIds.map((item: SwapAndBridgeSupportedChain) => [item.chainId, item])).values()
     ]
+
+    if (uniqueChainIds.length < 10 && this.#getFallbackSupportedChains) {
+      return this.#getFallbackSupportedChains()
+    }
+
+    return uniqueChainIds
   }
 
   async getToTokenList({

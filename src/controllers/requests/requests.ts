@@ -3,6 +3,7 @@ import { getAddress, getBigInt, hexlify, isAddress, TypedDataDomain, TypedDataFi
 import { v4 as uuidv4 } from 'uuid'
 import { hashTypedData, isHex } from 'viem'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
@@ -105,7 +106,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #relayerUrl: string
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #portfolio: IPortfolioController
 
@@ -228,7 +229,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
@@ -1277,7 +1278,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           domain: typedData.domain
         })
       } catch (e) {
-        console.log(e)
+        console.error(e)
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 

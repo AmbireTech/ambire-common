@@ -12,12 +12,53 @@ const lifiApi = new LiFiAPI({ fetch, apiKey: '' })
 const swapProviderParallelExecutor = new SwapProviderParallelExecutor([socketApi, lifiApi])
 
 describe('Swap Provider Parallel execution', () => {
+  const createProvider = (getSupportedChains: SwapProvider['getSupportedChains']) =>
+    ({
+      id: 'test-provider',
+      name: 'Test Provider',
+      isHealthy: null,
+      supportedChains: null,
+      updateHealth: jest.fn(),
+      resetHealth: jest.fn(),
+      getSupportedChains,
+      getToTokenList: jest.fn(),
+      getToken: jest.fn(),
+      startRoute: jest.fn(),
+      quote: jest.fn(),
+      getRouteStatus: jest.fn()
+    } as unknown as SwapProvider)
+
   it('Fetch chains successfully and make sure there are no duplicates', async () => {
     const chainIds = await swapProviderParallelExecutor.getSupportedChains()
     const ids = chainIds.map((item) => item.chainId)
     const uniqueIds = new Set(ids)
     expect(uniqueIds.size).toBe(ids.length)
   })
+
+  it('Falls back to active networks when supported chains are fewer than 10', async () => {
+    const provider = createProvider(async () => [{ chainId: 1 }])
+    const fallbackSupportedChains = [{ chainId: 1 }, { chainId: 10 }, { chainId: 137 }]
+    const executor = new SwapProviderParallelExecutor([provider], () => fallbackSupportedChains)
+
+    await expect(executor.getSupportedChains()).resolves.toEqual(fallbackSupportedChains)
+  })
+
+  it('Times out supported chains requests after 10 seconds', async () => {
+    jest.useFakeTimers()
+
+    try {
+      const provider = createProvider(() => new Promise(() => {}))
+      const fallbackSupportedChains = [{ chainId: 1 }]
+      const executor = new SwapProviderParallelExecutor([provider], () => fallbackSupportedChains)
+      const supportedChainsPromise = executor.getSupportedChains()
+
+      await jest.advanceTimersByTimeAsync(10000)
+      await expect(supportedChainsPromise).resolves.toEqual(fallbackSupportedChains)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   it('Fetch to token list successfully and make sure there are no duplicate tokens', async () => {
     const toTokenList = await swapProviderParallelExecutor.getToTokenList({
       fromChainId: 10,

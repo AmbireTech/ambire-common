@@ -396,7 +396,7 @@ export async function fetchAllPending(
   return results
 }
 
-function decodeMultiSend(transactionsHex: string) {
+export function decodeMultiSend(transactionsHex: string) {
   const bytes = getBytes(transactionsHex)
   let i = 0
   const results = []

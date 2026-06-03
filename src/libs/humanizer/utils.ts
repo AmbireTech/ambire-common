@@ -1,6 +1,12 @@
-import { getAddress, isAddress, isHex, zeroAddress, type Hex } from 'viem'
+import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
+import {
+  HumanizerErc7730Row,
+  HumanizerMeta,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
 
 export type HexIrCall = IrCall & { data: Hex }
 
@@ -68,8 +74,37 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getText(text: string): HumanizerVisualization {
-  return { type: 'text', content: text, id: randomId() }
+export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
+  return { type: 'text', content: text, id: randomId(), mlMi }
+}
+
+export function getErc7730Visualization(
+  title: string | undefined,
+  rows: HumanizerErc7730Row[],
+  dapp?: IrCall['dapp']
+): HumanizerVisualization {
+  return { type: 'erc7730', title, dapp, rows, id: randomId() }
+}
+
+export function flattenHumanizerVisualizations(
+  visualizations: HumanizerVisualization[] = []
+): HumanizerVisualization[] {
+  return visualizations.flatMap((visualization) => {
+    if (visualization.type !== 'erc7730') return [visualization]
+
+    return [
+      visualization,
+      ...flattenHumanizerVisualizations(visualization.rows.flatMap((row) => row.value))
+    ]
+  })
+}
+
+export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
+  return !!humanization?.some((call) =>
+    flattenHumanizerVisualizations(call.fullVisualization).some(
+      (visualization) => visualization.type === 'erc7730'
+    )
+  )
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {

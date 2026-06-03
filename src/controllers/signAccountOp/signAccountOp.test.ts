@@ -1,6 +1,14 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, getAddress, hexlify, parseEther, toBeHex, verifyMessage } from 'ethers'
+import {
+  AbiCoder,
+  getAddress,
+  hexlify,
+  Interface,
+  parseEther,
+  toBeHex,
+  verifyMessage
+} from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -33,9 +41,10 @@ import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { clearErc7730RegistryCache } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
+import { BindedRelayerCall, relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
@@ -73,6 +82,15 @@ import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
+
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+
+  return { promise, resolve }
+}
 
 const createEOAAccountOp = (account: Account) => {
   const to = '0x0000000000000000000000000000000000000000'
@@ -375,6 +393,7 @@ const init = async (
   updateWholePortfolio?: boolean,
   options?: {
     dapps?: Dapp[]
+    callRelayer?: BindedRelayerCall
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -553,7 +572,7 @@ const init = async (
     network
   )
 
-  const callRelayer = relayerCall.bind({ url: '', fetch })
+  const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
   const safe = new SafeController({
     networks: networksCtrl,
     providers: providersCtrl,
@@ -618,6 +637,7 @@ const init = async (
     dapps = realDappsController
   }
   const controller = new SignAccountOpTesterController({
+    callRelayer: options?.callRelayer as BindedRelayerCall,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
@@ -647,10 +667,14 @@ const init = async (
 
 const initDappVerificationBannerTest = async (
   dapp: Dapp,
-  { isPermit2 = false }: { isPermit2?: boolean } = {}
+  {
+    isPermit2 = false,
+    calls,
+    callRelayer
+  }: { isPermit2?: boolean; calls?: AccountOp['calls']; callRelayer?: BindedRelayerCall } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
-  ;(accountOp.op.calls as any) = [
+  ;(accountOp.op.calls as any) = calls || [
     {
       to: isPermit2 ? PERMIT2_ADDRESS_LOWERCASED : '0x0000000000000000000000000000000000000000',
       value: BigInt(1),
@@ -723,7 +747,8 @@ const initDappVerificationBannerTest = async (
     },
     false,
     {
-      dapps: getDappVerificationTestDapps()
+      dapps: getDappVerificationTestDapps(),
+      callRelayer
     }
   )
 }
@@ -2297,6 +2322,159 @@ test('Signing [V1 with EOA payment]: working case', async () => {
 
   // If signing is successful, we expect controller's status to be done
   expect(controller.status).toEqual({ type: 'done' })
+})
+
+describe('ERC-7730 humanization', () => {
+  test('shows loading, uses ERC-7730 data, caches it and fetches a shared batch descriptor once', async () => {
+    clearErc7730RegistryCache()
+
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const spender = '0x2222222222222222222222222222222222222222'
+    const registryPath = 'registry/test/approve.json'
+    const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
+    const calls = Array.from({ length: 10 }, (_, index) => ({
+      to: tokenAddress,
+      value: 0n,
+      data: approveInterface.encodeFunctionData('approve', [spender, BigInt(index + 1)])
+    }))
+    const descriptorResponse = createDeferred<any>()
+    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${tokenAddress}`]: registryPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+
+        return descriptorResponse.promise
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    })
+    const { controller } = await initDappVerificationBannerTest(customDapp, {
+      calls,
+      callRelayer
+    })
+
+    try {
+      expect(controller.isHumanizing).toBe(true)
+      expect(controller.humanization).toEqual([])
+
+      descriptorResponse.resolve({
+        success: true,
+        display: {
+          formats: {
+            'approve(address _spender, uint256 _value)': {
+              intent: 'Approve with ERC-7730',
+              fields: [
+                {
+                  path: '#._spender',
+                  label: 'Spender',
+                  format: 'addressName',
+                  visible: 'always'
+                },
+                {
+                  path: '#._value',
+                  label: 'Amount',
+                  format: 'tokenAmount',
+                  params: { tokenPath: '@.to' },
+                  visible: 'always'
+                }
+              ]
+            }
+          }
+        }
+      })
+      await wait(0)
+
+      expect(controller.isHumanizing).toBe(false)
+      expect(
+        callRelayer.mock.calls.filter(([path]) => path === '/v2/erc7730/account-op')
+      ).toHaveLength(1)
+      expect(
+        callRelayer.mock.calls.filter(([path]) => path === '/v2/erc7730/fetch-descriptor')
+      ).toHaveLength(1)
+      expect(controller.humanization).toHaveLength(10)
+      controller.humanization.forEach((humanizedCall, index) => {
+        expect(humanizedCall.fullVisualization?.[0]).toMatchObject({
+          type: 'erc7730',
+          title: 'Approve with ERC-7730',
+          rows: [
+            {
+              label: 'Spender',
+              value: [{ type: 'address', address: spender }]
+            },
+            {
+              label: 'Amount',
+              value: [
+                { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
+              ]
+            }
+          ]
+        })
+      })
+
+      callRelayer.mockClear()
+      controller.humanize()
+      await wait(0)
+
+      expect(callRelayer).not.toHaveBeenCalled()
+      expect(controller.humanization[0]?.fullVisualization?.[0]).toMatchObject({
+        type: 'erc7730',
+        title: 'Approve with ERC-7730'
+      })
+    } finally {
+      controller.destroy()
+    }
+  })
+
+  test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
+    clearErc7730RegistryCache()
+
+    const callRelayer = jest.fn(async (path: string, method?: string) => {
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {},
+          errorState: []
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    })
+    const { controller } = await initDappVerificationBannerTest(customDapp, {
+      calls: [{ value: 1n, data: '0x' }],
+      callRelayer
+    })
+
+    try {
+      await wait(0)
+
+      expect(controller.isHumanizing).toBe(false)
+      expect(controller.humanization).toHaveLength(1)
+      expect(controller.humanization[0]).toMatchObject({
+        value: 1n,
+        data: '0x'
+      })
+      expect(callRelayer).not.toHaveBeenCalled()
+      expect(controller.humanization[0]?.fullVisualization).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
+      )
+    } finally {
+      controller.destroy()
+    }
+  })
 })
 
 describe('dapp verification banners', () => {
