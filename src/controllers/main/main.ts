@@ -484,7 +484,10 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       phishing: this.phishing,
       dapps: this.dapps,
-      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
+      swapProvider: new SwapProviderParallelExecutor(
+        [LiFiProvider, SocketProvider, SquidProvider],
+        () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
+      ),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
