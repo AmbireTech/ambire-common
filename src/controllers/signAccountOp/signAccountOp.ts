@@ -320,6 +320,8 @@ export class SignAccountOpController
 
   hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
+  safeEip712Data: unknown | null = null
+
   // We track the status of token discovery logic (main.traceCall)
   // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
   // The latest/pending portfolio balance is essential for calculating balance differences.
@@ -452,6 +454,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#updateSafeEip712Data()
     this.#setSpeedUpGasPrices()
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
@@ -544,6 +547,47 @@ export class SignAccountOpController
       ...this.#accountOp,
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
+    }
+    this.#updateSafeEip712Data()
+  }
+
+  #getSafeSigningData(accountState: AccountOnchainState) {
+    const safeTxn = getSafeTxn(this.accountOp, accountState)
+    const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
+    const safeTxnHash = getSafeTxnHash(typedData)
+
+    return {
+      safeTxn,
+      typedData,
+      safeTxnHash,
+      signingRequest: getEIP712SigningRequest({ ...typedData, safeTxHash: safeTxnHash })
+    }
+  }
+
+  #updateSafeEip712Data() {
+    if (!this.account.safeCreation) {
+      this.safeEip712Data = null
+      return
+    }
+
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (!accountState) {
+      this.safeEip712Data = null
+      return
+    }
+
+    try {
+      this.safeEip712Data = getSigningRequestDisplayData(
+        this.#getSafeSigningData(accountState).signingRequest
+      )
+    } catch (error) {
+      this.safeEip712Data = null
+      this.emitError({
+        message: 'Error calculating Safe EIP-712 data',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
     }
   }
 
@@ -2736,11 +2780,10 @@ export class SignAccountOpController
         if (safeSigner.init)
           safeSigner.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
 
-        const safeTxn = getSafeTxn(this.accountOp, accountState)
-        const typedData = (this.baseAccount as Safe).getTxnTypedData(safeTxn)
-        const safeTxnHash = getSafeTxnHash(typedData)
+        const { safeTxn, typedData, safeTxnHash, signingRequest } =
+          this.#getSafeSigningData(accountState)
         const signature = (await this.#withHardwareWalletSigningRequest(
-          getEIP712SigningRequest({ ...typedData, safeTxHash: safeTxnHash }),
+          signingRequest,
           () => safeSigner.signTypedData(typedData)
         )) as Hex
         nowSignedSigs.push(signature)
@@ -3696,7 +3739,8 @@ export class SignAccountOpController
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed,
-      hardwareWalletSigningRequest: this.hardwareWalletSigningRequest
+      hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
+      safeEip712Data: this.safeEip712Data
     }
   }
 }

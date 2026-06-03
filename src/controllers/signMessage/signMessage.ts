@@ -22,6 +22,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import {
   ISignMessageController,
   SignMessageStatus,
@@ -36,9 +37,15 @@ import {
   sortSigs
 } from '../../libs/safe/safe'
 import {
+  getEIP712SigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
+import {
   getAppFormatted,
+  getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
+  getSafeMessageTypedData,
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
@@ -88,6 +95,10 @@ export class SignMessageController
   humanizedMessage?: IrMessage
 
   isHumanizing = false
+
+  safeEip712Data: unknown | null = null
+
+  hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
   signedMessage: SignedMessage | null = null
 
@@ -196,6 +207,7 @@ export class SignMessageController
       }
 
       if (this.#account.safeCreation) {
+        this.#updateSafeEip712Data()
         const notSigned = getImportedSignersThatHaveNotSigned(
           this.signed,
           accountState.importedAccountKeys.map((k) => k.addr)
@@ -236,6 +248,8 @@ export class SignMessageController
     this.messageToSign = null
     this.humanizedMessage = undefined
     this.isHumanizing = false
+    this.safeEip712Data = null
+    this.hardwareWalletSigningRequest = null
     this.signedMessage = null
     this.#account = undefined
     this.network = undefined
@@ -244,6 +258,68 @@ export class SignMessageController
     this.signer = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
+  }
+
+  #updateSafeEip712Data() {
+    if (!this.#account?.safeCreation || !this.messageToSign || !this.network) {
+      this.safeEip712Data = null
+      return
+    }
+
+    const { content } = this.messageToSign
+
+    try {
+      const message = content.kind === 'typedMessage' ? content : content.message
+      const typedData = getSafeMessageTypedData(
+        message,
+        this.network.chainId,
+        this.#account.addr as Hex
+      )
+      const safeMessageHash = getEIP712Hash(typedData)
+
+      this.safeEip712Data = getSigningRequestDisplayData(
+        getEIP712SigningRequest({ ...typedData, safeMessageHash })
+      )
+    } catch (error) {
+      this.safeEip712Data = null
+      this.emitError({
+        message: 'Error calculating Safe EIP-712 data',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
+  #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
+    let serializedRequestData: unknown = null
+
+    try {
+      if (request) serializedRequestData = getSigningRequestDisplayData(request)
+    } catch {
+      serializedRequestData = null
+    }
+
+    this.hardwareWalletSigningRequest =
+      request && serializedRequestData !== null
+        ? {
+            ...request,
+            data: serializedRequestData
+          }
+        : null
+    this.emitUpdate()
+  }
+
+  async #withHardwareWalletSigningRequest<T>(
+    request: HardwareWalletSigningRequest,
+    sign: () => Promise<T>
+  ) {
+    this.#setHardwareWalletSigningRequest(request)
+
+    try {
+      return await sign()
+    } finally {
+      this.#setHardwareWalletSigningRequest(null)
+    }
   }
 
   #startHumanization() {
@@ -428,7 +504,8 @@ export class SignMessageController
             this.#account,
             accountState,
             this.signer,
-            this.#invite.isOG
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -469,7 +546,8 @@ export class SignMessageController
             accountState,
             this.signer,
             this.network,
-            this.#invite.isOG
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -609,6 +687,7 @@ export class SignMessageController
    */
   cancelSignReq() {
     this.statuses.sign = 'INITIAL'
+    this.hardwareWalletSigningRequest = null
     this.emitUpdate()
   }
 
