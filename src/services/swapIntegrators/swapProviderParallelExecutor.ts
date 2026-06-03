@@ -185,9 +185,26 @@ export class SwapProviderParallelExecutor {
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const chainIds = await this.#fetchFromAll<SwapAndBridgeSupportedChain[]>(
-      (provider: SwapProvider) => provider.getSupportedChains().catch((e) => e)
+    const results = await Promise.all(
+      this.#providers.map((provider) =>
+        provider
+          .getSupportedChains()
+          .catch((e) => (e instanceof Error ? e : new Error(String(e))))
+      )
     )
+
+    const errors = results.filter((result): result is Error => result instanceof Error)
+    if (errors.length) {
+      const details = errors.map((error) => error.message).join('> and <')
+
+      throw new SwapAndBridgeProviderApiError(
+        `Unable to retrieve the complete list of supported Swap & Bridge chains from our service providers. Error details: <${details}>`
+      )
+    }
+
+    const chainIds = results
+      .filter((result): result is SwapAndBridgeSupportedChain[] => !(result instanceof Error))
+      .flat()
 
     // filter duplicates
     return [

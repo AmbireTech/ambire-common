@@ -18,6 +18,44 @@ describe('Swap Provider Parallel execution', () => {
     const uniqueIds = new Set(ids)
     expect(uniqueIds.size).toBe(ids.length)
   })
+  it('Does not return a partial supported chains list when a provider fails', async () => {
+    const successfulProvider = {
+      id: 'successful',
+      name: 'Successful',
+      isHealthy: null,
+      supportedChains: null,
+      updateHealth: jest.fn(),
+      resetHealth: jest.fn(),
+      getSupportedChains: jest.fn().mockResolvedValue([{ chainId: 1 }]),
+      getToTokenList: jest.fn(),
+      getToken: jest.fn(),
+      startRoute: jest.fn(),
+      quote: jest.fn(),
+      getRouteStatus: jest.fn()
+    } as unknown as SwapProvider
+    const failingProvider = {
+      id: 'failing',
+      name: 'Failing',
+      isHealthy: null,
+      supportedChains: null,
+      updateHealth: jest.fn(),
+      resetHealth: jest.fn(),
+      getSupportedChains: jest.fn().mockRejectedValue(new Error('provider down')),
+      getToTokenList: jest.fn(),
+      getToken: jest.fn(),
+      startRoute: jest.fn(),
+      quote: jest.fn(),
+      getRouteStatus: jest.fn()
+    } as unknown as SwapProvider
+
+    const executor = new SwapProviderParallelExecutor([successfulProvider, failingProvider])
+
+    await expect(executor.getSupportedChains()).rejects.toThrow(
+      'Unable to retrieve the complete list of supported Swap & Bridge chains'
+    )
+    expect(successfulProvider.getSupportedChains).toHaveBeenCalled()
+    expect(failingProvider.getSupportedChains).toHaveBeenCalled()
+  })
   it('Fetch to token list successfully and make sure there are no duplicate tokens', async () => {
     const toTokenList = await swapProviderParallelExecutor.getToTokenList({
       fromChainId: 10,
