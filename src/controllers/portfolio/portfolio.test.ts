@@ -832,8 +832,8 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Scheduled updates', () => {
-    // Minimal portfolio lib result so the real updatePortfolioState can populate
-    // #state without hitting the network (we drive the runner with fake timers).
+    // A minimal portfolio lib result, so updatePortfolioState can fill the state without
+    // hitting the network.
     const makePortfolioLibResult = (): any => ({
       updateStarted: Date.now(),
       discoveryTime: 0,
@@ -852,11 +852,11 @@ describe('Portfolio Controller ', () => {
       afterNonce: 0n
     })
 
-    // Stub the network seam so updateSelectedAccount completes deterministically and
-    // leaves #state[addr][chainId].result + .accountOps populated for discardSimulation.
+    // Mock the network calls so updateSelectedAccount fills the state (result + accountOps)
+    // without real requests, which discardSimulation needs.
     const mockFetchLayer = (controller: PortfolioController) => {
       const discoverySpy: any = jest
-        // @ts-expect-error test batchedPortfolioDiscovery is assigned via batcher, not declared as a method
+        // @ts-expect-error test
         .spyOn(controller, 'batchedPortfolioDiscovery')
       discoverySpy.mockResolvedValue(null)
       jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(makePortfolioLibResult())
@@ -867,7 +867,7 @@ describe('Portfolio Controller ', () => {
       return { discoverySpy }
     }
 
-    // Calls carrying { bypassServerSideCache: true } in opts are the scheduled (runner) updates.
+    // The runner's scheduled updates are the calls that pass bypassServerSideCache in opts.
     const getBypassUpdates = (spy: any) =>
       spy.mock.calls.filter((call: any[]) => call[3]?.bypassServerSideCache === true)
 
@@ -880,7 +880,7 @@ describe('Portfolio Controller ', () => {
         const { controller } = await prepareTest({ awaitInitialLoad: false })
         mockFetchLayer(controller)
 
-        // Populate simulated state (real updatePortfolioState, mocked network).
+        // Set up the simulated state.
         await controller.updateSelectedAccount(account.addr, [ethereum], {
           accountOps: accountOp,
           states: accountStates[account.addr]!
@@ -894,15 +894,14 @@ describe('Portfolio Controller ', () => {
           .spyOn(controller, 'updateSelectedAccount')
           .mockResolvedValue(undefined)
 
-        // Confirms the tx: removes the simulation and schedules a cache-busting update.
+        // Confirm the tx, which schedules the cache-busting update.
         await controller.discardSimulation(accountOp['1']!)
 
-        // Two runner ticks (20s, 40s) — still younger than the 60s threshold.
+        // The runner ticks at 20s and 40s, but the update is younger than 60s so nothing fires.
         await jest.advanceTimersByTimeAsync(40 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(0)
 
-        // Third tick (60s) — now old enough; the bypass update fires exactly once,
-        // for the right account and the single scheduled network.
+        // At 60s it's old enough, so the bypass update fires for the account and network.
         await jest.advanceTimersByTimeAsync(20 * 1000)
         const bypassUpdates = getBypassUpdates(updateSpy)
         expect(bypassUpdates).toHaveLength(1)
@@ -937,7 +936,7 @@ describe('Portfolio Controller ', () => {
         await jest.advanceTimersByTimeAsync(60 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
 
-        // Several more runner ticks — the entry was removed, so it must not fire again.
+        // The entry was removed, so later ticks don't fire it again.
         await jest.advanceTimersByTimeAsync(120 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
       } finally {
@@ -963,20 +962,20 @@ describe('Portfolio Controller ', () => {
           .spyOn(controller, 'updateSelectedAccount')
           .mockResolvedValue(undefined)
 
-        // First confirmation schedules at T0. (updateSelectedAccount is mocked, so the
-        // stored accountOps remain in #state and a second discard can re-schedule.)
+        // First confirmation schedules the update. updateSelectedAccount is mocked, so the
+        // accountOps stay in the state and a second discard can re-schedule.
         await controller.discardSimulation(accountOp['1']!)
 
-        // Advance to T40, then a second confirmation re-schedules (resets scheduledAt to T40).
+        // After 40s a second confirmation re-schedules and resets the timer.
         await jest.advanceTimersByTimeAsync(40 * 1000)
         await controller.discardSimulation(accountOp['1']!)
 
-        // T80: 80s after the first confirmation (would have fired at T60 without debounce),
-        // but only 40s after the second — must NOT have fired yet.
+        // 80s after the first confirmation it would have fired already, but it's only 40s after
+        // the second one, so nothing fires yet.
         await jest.advanceTimersByTimeAsync(40 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(0)
 
-        // T100: 60s after the second confirmation — fires exactly once.
+        // 60s after the second confirmation it finally fires.
         await jest.advanceTimersByTimeAsync(20 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
       } finally {
@@ -1003,11 +1002,10 @@ describe('Portfolio Controller ', () => {
           .mockResolvedValue(undefined)
 
         await controller.discardSimulation(accountOp['1']!)
-        // discardSimulation triggers a single immediate (non-bypass) update.
+        // discardSimulation does one immediate (non-bypass) update.
         const callsAfterDiscard = updateSpy.mock.calls.length
 
-        // Younger than the 60s threshold: the runner must skip entirely (no extra calls,
-        // guarding the `updatesOlderThanThreshold.length === 0 => return` branch).
+        // The update is younger than 60s, so the runner shouldn't call updateSelectedAccount.
         await jest.advanceTimersByTimeAsync(40 * 1000)
         expect(updateSpy.mock.calls.length).toBe(callsAfterDiscard)
         expect(getBypassUpdates(updateSpy)).toHaveLength(0)
@@ -1036,20 +1034,19 @@ describe('Portfolio Controller ', () => {
           .spyOn(controller, 'updateSelectedAccount')
           .mockResolvedValue(undefined)
 
-        // Ethereum confirmation at T0.
+        // Ethereum confirms first, Polygon 30s later.
         await controller.discardSimulation(ethereumOp['1']!)
-        // Polygon confirmation 30s later.
         await jest.advanceTimersByTimeAsync(30 * 1000)
         await controller.discardSimulation(polygonOp['137']!)
 
-        // T60: only Ethereum (scheduled at T0) is due.
+        // At 60s only Ethereum is due.
         await jest.advanceTimersByTimeAsync(30 * 1000)
         let bypassUpdates = getBypassUpdates(updateSpy)
         expect(bypassUpdates).toHaveLength(1)
         expect(bypassUpdates[0][1].map((n: Network) => n.chainId)).toEqual([1n])
 
-        // Polygon (scheduled at T30) is due at T90; the first runner tick at or after that
-        // is T100, so advance there. Ethereum has already been processed and removed.
+        // Polygon was scheduled 30s later, so it becomes due around 90s and fires on the 100s
+        // tick. Ethereum has already fired.
         await jest.advanceTimersByTimeAsync(40 * 1000)
         bypassUpdates = getBypassUpdates(updateSpy)
         expect(bypassUpdates).toHaveLength(2)
@@ -1073,9 +1070,8 @@ describe('Portfolio Controller ', () => {
           states: accountStates[account.addr]!
         })
 
-        // Make the scheduled (bypass) update hang so it is still in flight while more
-        // runner ticks would occur. The entry is removed synchronously before the await,
-        // so it must not be picked up a second time.
+        // Make the scheduled update hang so it's still running on the next ticks. The entry is
+        // removed before the await, so it shouldn't be picked up again.
         let resolveSlowUpdate: () => void = () => {}
         const slowUpdate = new Promise<void>((resolve) => {
           resolveSlowUpdate = () => resolve()
@@ -1088,15 +1084,15 @@ describe('Portfolio Controller ', () => {
 
         await controller.discardSimulation(accountOp['1']!)
 
-        // Fires the scheduled update; it now hangs (the runner awaits it).
+        // This fires the scheduled update, which now hangs.
         await jest.advanceTimersByTimeAsync(60 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
 
-        // Time passes while the update is in flight — no second invocation.
+        // While it's still running, it isn't called again.
         await jest.advanceTimersByTimeAsync(60 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
 
-        // After it resolves, subsequent ticks find an empty schedule — still no re-run.
+        // Once it resolves the schedule is empty, so it still doesn't run again.
         resolveSlowUpdate()
         await jest.advanceTimersByTimeAsync(40 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
@@ -1105,7 +1101,14 @@ describe('Portfolio Controller ', () => {
       }
     })
 
-    test('a pending scheduled update suppresses the server-side bypass on an automatic update', async () => {
+    // The forceUpdateDefi flags from the network discovery calls. The defi-apps calls don't set
+    // the flag, so we skip them.
+    const getForceFlags = (discoverySpy: any): boolean[] =>
+      discoverySpy.mock.calls
+        .map((call: any[]) => call[0].forceUpdateDefi)
+        .filter((flag: unknown) => flag !== undefined)
+
+    test('a pending scheduled update suppresses the server-side bypass on the post-confirmation update', async () => {
       const { restore } = suppressConsole()
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
@@ -1113,29 +1116,52 @@ describe('Portfolio Controller ', () => {
       try {
         const { controller } = await prepareTest()
         const { discoverySpy } = mockFetchLayer(controller)
-        // Force the discovery call so we can inspect the forceUpdateDefi argument.
-        jest.spyOn(defiPositionsLib, 'getCanSkipUpdate').mockReturnValue(false)
+        // After a tx the nonce changes, so the defi update can't be skipped and discovery runs.
+        jest.spyOn(defiPositionsLib, 'getHasNonceChangedSinceLastUpdate').mockReturnValue(true)
 
         await controller.updateSelectedAccount(account.addr, [ethereum], {
           accountOps: accountOp,
           states: accountStates[account.addr]!
         })
 
-        // Confirm the tx -> a cache-busting update is scheduled for ~60s later.
+        // discardSimulation schedules the cache-busting update and then runs the immediate one.
+        // With a scheduled update pending, the immediate one shouldn't force the bypass even
+        // though the nonce changed.
+        discoverySpy.mockClear()
         await controller.discardSimulation(accountOp['1']!)
 
-        // An automatic (non-manual) update in the meantime must NOT burn the server-side
-        // bypass budget, since the scheduled update will refresh the cache soon.
+        const forceFlags = getForceFlags(discoverySpy)
+        expect(forceFlags.length).toBeGreaterThan(0)
+        forceFlags.forEach((flag: boolean) => expect(flag).toBe(false))
+      } finally {
+        restore()
+      }
+    })
+
+    test('without a pending scheduled update, a nonce change does force the server-side bypass (control)', async () => {
+      const { restore } = suppressConsole()
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      try {
+        const { controller } = await prepareTest()
+        const { discoverySpy } = mockFetchLayer(controller)
+        jest.spyOn(defiPositionsLib, 'getHasNonceChangedSinceLastUpdate').mockReturnValue(true)
+
+        // Set up the defi state without scheduling anything.
+        await controller.updateSelectedAccount(account.addr, [ethereum], {
+          accountOps: accountOp,
+          states: accountStates[account.addr]!
+        })
+
+        // With no scheduled update pending, a nonce change forces the bypass. This is the
+        // counterpart to the previous test.
         discoverySpy.mockClear()
         await controller.updateSelectedAccount(account.addr, [ethereum])
 
-        // batchedPortfolioDiscovery is also called for defi-apps (which omit forceUpdateDefi),
-        // so look only at calls that set the flag — none of them may force the bypass.
-        const forceFlags = discoverySpy.mock.calls
-          .map((call: any[]) => call[0].forceUpdateDefi)
-          .filter((flag: unknown) => flag !== undefined)
+        const forceFlags = getForceFlags(discoverySpy)
         expect(forceFlags.length).toBeGreaterThan(0)
-        forceFlags.forEach((flag: boolean) => expect(flag).toBe(false))
+        expect(forceFlags.some((flag: boolean) => flag === true)).toBe(true)
       } finally {
         restore()
       }
@@ -1167,12 +1193,12 @@ describe('Portfolio Controller ', () => {
           states: accountStates[account.addr]!
         })
 
-        // Spy WITHOUT replacing the implementation, so the runner's real updateSelectedAccount runs.
+        // Spy without mocking the implementation, so the runner runs the real updateSelectedAccount.
         const updateSpy = jest.spyOn(controller, 'updateSelectedAccount')
 
         await controller.discardSimulation(accountOp['1']!)
 
-        // Only inspect discovery calls produced by the scheduled runner.
+        // Only look at the discovery calls from the scheduled runner.
         discoverySpy.mockClear()
         await jest.advanceTimersByTimeAsync(60 * 1000)
 
@@ -1181,7 +1207,7 @@ describe('Portfolio Controller ', () => {
         )
         expect(bypassCalls).toHaveLength(1)
 
-        // It actually force the defi discovery (bypass the server-side cache).
+        // And it actually forces the defi discovery.
         const forcedDiscovery = discoverySpy.mock.calls.some(
           (call: any[]) => call[0]?.forceUpdateDefi === true
         )
@@ -1189,6 +1215,152 @@ describe('Portfolio Controller ', () => {
       } finally {
         jest.useRealTimers()
         restore()
+      }
+    })
+
+    test('scheduled updates are tracked per account and fire independently', async () => {
+      const accountOp = await getAccountOp()
+      const account2Op = await getAccountOp()
+      // Point the second op at account2. The network is mocked, so only the accountAddr matters.
+      account2Op['1']![0]!.accountAddr = account2.addr
+      const accountStates = await getAccountsInfo([account, account2])
+
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        mockFetchLayer(controller)
+
+        await controller.updateSelectedAccount(account.addr, [ethereum], {
+          accountOps: accountOp,
+          states: accountStates[account.addr]!
+        })
+        await controller.updateSelectedAccount(account2.addr, [ethereum], {
+          accountOps: account2Op,
+          states: accountStates[account2.addr]!
+        })
+
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        // account confirms first, account2 30s later.
+        await controller.discardSimulation(accountOp['1']!)
+        await jest.advanceTimersByTimeAsync(30 * 1000)
+        await controller.discardSimulation(account2Op['1']!)
+
+        // At 60s only account is due.
+        await jest.advanceTimersByTimeAsync(30 * 1000)
+        let bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(1)
+        expect(bypassUpdates[0][0]).toBe(account.addr)
+
+        // account2 was scheduled 30s later, so it becomes due around 90s and fires on the 100s
+        // tick. account has already fired.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(2)
+        expect(bypassUpdates[1][0]).toBe(account2.addr)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a failing scheduled update does not crash the runner or block other accounts', async () => {
+      const { restore } = suppressConsole()
+      const accountOp = await getAccountOp()
+      const account2Op = await getAccountOp()
+      account2Op['1']![0]!.accountAddr = account2.addr
+      const accountStates = await getAccountsInfo([account, account2])
+
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        mockFetchLayer(controller)
+
+        await controller.updateSelectedAccount(account.addr, [ethereum], {
+          accountOps: accountOp,
+          states: accountStates[account.addr]!
+        })
+        await controller.updateSelectedAccount(account2.addr, [ethereum], {
+          accountOps: account2Op,
+          states: accountStates[account2.addr]!
+        })
+
+        // The scheduled update for account fails, account2 succeeds.
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) => {
+            if (args[3]?.bypassServerSideCache && args[0] === account.addr)
+              return Promise.reject(new Error('RPC down'))
+            return Promise.resolve(undefined)
+          })
+
+        await controller.discardSimulation(accountOp['1']!)
+        await controller.discardSimulation(account2Op['1']!)
+
+        // Both are due at 60s. account2 should still run even though account's update fails, and
+        // the runner shouldn't throw.
+        await expect(jest.advanceTimersByTimeAsync(60 * 1000)).resolves.not.toThrow()
+
+        const bypassUpdates = getBypassUpdates(updateSpy)
+        const accounts = bypassUpdates.map((call: any[]) => call[0])
+        expect(accounts).toContain(account.addr)
+        expect(accounts).toContain(account2.addr)
+
+        // There's no retry. The failed entry was already removed, so account isn't run again.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        const accountsAfter = getBypassUpdates(updateSpy).map((call: any[]) => call[0])
+        expect(accountsAfter.filter((addr: string) => addr === account.addr)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
+    })
+
+    test('a confirmation arriving while a scheduled update is in flight is not lost', async () => {
+      const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
+
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        mockFetchLayer(controller)
+
+        await controller.updateSelectedAccount(account.addr, [ethereum], {
+          accountOps: accountOp,
+          states: accountStates[account.addr]!
+        })
+
+        // Make the scheduled update hang so a new confirmation can come in while it's running.
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        // First confirmation schedules the update.
+        await controller.discardSimulation(accountOp['1']!)
+
+        // At 60s the runner fires the first update, which hangs.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // A new confirmation comes in while the first update is still running. The old entry was
+        // already removed, so this adds a fresh one.
+        await controller.discardSimulation(accountOp['1']!)
+
+        // Let the hanging update finish, then advance to the new entry's deadline.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+
+        // The new confirmation wasn't lost, so a second update fired.
+        expect(getBypassUpdates(updateSpy)).toHaveLength(2)
+      } finally {
+        jest.useRealTimers()
       }
     })
   })
