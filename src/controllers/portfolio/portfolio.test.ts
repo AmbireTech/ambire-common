@@ -5,7 +5,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest } from '@jest/globals'
 
 import { getNonce } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
@@ -832,6 +832,7 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Scheduled updates', () => {
+    suppressConsoleBeforeEach()
     // A minimal portfolio lib result, so updatePortfolioState can fill the state without
     // hitting the network.
     const makePortfolioLibResult = (): any => ({
@@ -1101,8 +1102,8 @@ describe('Portfolio Controller ', () => {
       }
     })
 
-    // The forceUpdateDefi flags from the network discovery calls. The defi-apps calls don't set
-    // the flag, so we skip them.
+    // The forceUpdateDefi flags from the batchedPortfolioDiscovery calls. Only the per-network
+    // discovery sets the flag; the defi-apps (customAppChain) call doesn't, so it's filtered out.
     const getForceFlags = (discoverySpy: any): boolean[] =>
       discoverySpy.mock.calls
         .map((call: any[]) => call[0].forceUpdateDefi)
@@ -1212,6 +1213,13 @@ describe('Portfolio Controller ', () => {
           (call: any[]) => call[0]?.forceUpdateDefi === true
         )
         expect(forcedDiscovery).toBe(true)
+
+        // The defi-apps (customAppChain) positions are refreshed too, not skipped. In the real
+        // batcher this call is merged with the network one, so it inherits update=true.
+        const updatedDefiApps = discoverySpy.mock.calls.some(
+          (call: any[]) => call[0]?.chainId === 'customAppChain'
+        )
+        expect(updatedDefiApps).toBe(true)
       } finally {
         jest.useRealTimers()
         restore()

@@ -1541,6 +1541,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       hasKeys: boolean
       maxDataAgeMs?: number
       isManualUpdate?: boolean
+      bypassServerSideCache?: boolean
     }
   ) {
     if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return
@@ -1548,10 +1549,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const defiMaxDataAgeMs = portfolioProps.isManualUpdate ? 0 : portfolioProps.defiMaxDataAgeMs
     const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})
 
-    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
-      accountState['defiApps'],
-      defiMaxDataAgeMs
-    )
+    const canSkipUpdate =
+      !portfolioProps.bypassServerSideCache &&
+      PortfolioController.#getCanSkipUpdate(accountState['defiApps'], defiMaxDataAgeMs)
 
     if (canSkipUpdate) return
 
@@ -1565,6 +1565,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         chainId: 'customAppChain',
         accountAddr: account.addr,
         baseCurrency: 'usd'
+        // forceUpdateDefi is not needed here as defi apps are updated together with at least one network
+        // thus if that network requires a forced update, defi apps will be updated as well (due to the batcher)
+        // The only thing we have to keep in mind is that the update MUST not be skipped if we wish to batch them
       })
 
       const defi = response.defi
@@ -1957,7 +1960,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         maxDataAgeMs: paramsMaxDataAgeMs,
         defiMaxDataAgeMs: defiMaxDataAgeMs,
         isManualUpdate,
-        hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
+        hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0,
+        bypassServerSideCache
       })
     ])
 
