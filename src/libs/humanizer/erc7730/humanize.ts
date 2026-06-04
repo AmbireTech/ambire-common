@@ -34,7 +34,8 @@ import {
   getChain,
   getErc7730Visualization,
   getText,
-  getToken
+  getToken,
+  uintToAddress
 } from '../utils'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
@@ -70,6 +71,7 @@ type VisibilityResult = {
 
 const MAX_INTERPOLATED_VALUE_LENGTH = 80
 const MAX_NESTED_CALLDATA_DEPTH = 4
+const ABI_WORD_HEX_LENGTH = 64
 
 const isMapReference = (value: unknown): value is Erc7730MapReference =>
   isPlainObject(value) && typeof value.map === 'string' && typeof value.keyPath === 'string'
@@ -128,6 +130,15 @@ const getPathSegments = (path: string): string[] => {
 const normalizeSegmentIndex = (index: number, length: number): number =>
   index < 0 ? length + index : index
 
+const bigintToAbiWordHex = (value: bigint): string | null => {
+  if (value < 0n) return null
+
+  const hex = value.toString(16)
+  if (hex.length > ABI_WORD_HEX_LENGTH) return null
+
+  return hex.padStart(ABI_WORD_HEX_LENGTH, '0')
+}
+
 const readBracketSegment = (source: unknown, segment: string): unknown => {
   if (!segment.startsWith('[') || !segment.endsWith(']')) return undefined
 
@@ -142,9 +153,17 @@ const readBracketSegment = (source: unknown, segment: string): unknown => {
   }
 
   if (separatorIndex === bracketContent.lastIndexOf(':')) {
-    if (typeof source !== 'string') return undefined
+    const hex =
+      typeof source === 'string'
+        ? source.startsWith('0x')
+          ? source.slice(2)
+          : source
+        : typeof source === 'bigint'
+          ? bigintToAbiWordHex(source)
+          : null
 
-    const hex = source.startsWith('0x') ? source.slice(2) : source
+    if (hex === null) return undefined
+
     if (hex.length % 2 !== 0) return undefined
 
     const startText = bracketContent.slice(0, separatorIndex)
@@ -482,6 +501,15 @@ const getTokenAddressFromField = (
   const tokenAddress = tokenPath ?? tokenParam
 
   if (hasTokenSource && isNativeTokenReference(tokenAddress)) return ZeroAddress
+  if (typeof tokenAddress === 'bigint') {
+    const uintAddress = uintToAddress(tokenAddress)
+
+    return nativeAddresses.some(
+      (address) => eToNative(address).toLowerCase() === eToNative(uintAddress).toLowerCase()
+    )
+      ? ZeroAddress
+      : eToNative(uintAddress)
+  }
   if (typeof tokenAddress !== 'string' || !isAddress(tokenAddress)) return null
 
   return nativeAddresses.some(
@@ -520,7 +548,9 @@ const getEnumValue = (
   if (!isPlainObject(enumDefinition)) return null
 
   const values = isPlainObject(enumDefinition.values) ? enumDefinition.values : enumDefinition
-  const enumValue = values[valueToText(value)]
+  const enumKey =
+    typeof value === 'string' && isHexString(value) ? toBigIntOrNull(value)?.toString() : undefined
+  const enumValue = values[enumKey || valueToText(value)]
 
   return typeof enumValue === 'string' ? enumValue : null
 }
@@ -532,6 +562,8 @@ const formatFieldValue = (
   base: unknown
 ): HumanizerVisualization[] => {
   if (field.format === 'addressName' || field.format === 'interoperableAddressName') {
+    if (typeof value === 'bigint') return [getAddressVisualization(uintToAddress(value))]
+
     return typeof value === 'string' && isAddress(value)
       ? [getAddressVisualization(value)]
       : [getText(valueToText(value))]
@@ -872,6 +904,76 @@ const formatToVisualizations = (
   if (!rows) return null
 
   return [getErc7730Visualization(intent, rows, dapp)]
+}
+
+const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
+  !!descriptorPath?.includes('registry/1inch/') && formatKey.startsWith('fillOrder(')
+
+const getUintAddressValue = (value: unknown): string | null => {
+  if (typeof value === 'bigint') return uintToAddress(value)
+  if (typeof value === 'string' && isAddress(value)) return value
+
+  return null
+}
+
+const getOneInchFillOrderSwapVisualization = (
+  match: DescriptorFormatMatch,
+  context: FormatContext,
+  fullVisualization: HumanizerVisualization[],
+  dapp?: Call['dapp']
+): HumanizerVisualization[] | null => {
+  if (!isOneInchFillOrderFormat(match.formatKey, context.descriptorPath)) return fullVisualization
+
+  const order = match.values.order
+  if (!isPlainObject(order)) return fullVisualization
+
+  const maker = getUintAddressValue(order.maker)
+  const makerAsset = getUintAddressValue(order.makerAsset)
+  const takerAsset = getUintAddressValue(order.takerAsset)
+  const makingAmount = toBigIntOrNull(order.makingAmount)
+  const takingAmount = toBigIntOrNull(order.takingAmount)
+
+  if (!maker || !makerAsset || !takerAsset || makingAmount === null || takingAmount === null) {
+    return fullVisualization
+  }
+
+  const metadata = context.root['@']
+  const accountAddr = isPlainObject(metadata) ? metadata.accountAddr : undefined
+  const isMakerAccount =
+    typeof accountAddr === 'string' && maker.toLowerCase() === accountAddr.toLowerCase()
+  const outgoingToken = isMakerAccount ? makerAsset : takerAsset
+  const outgoingAmount = isMakerAccount ? makingAmount : toBigIntOrNull(match.values.amount)
+  const incomingToken = isMakerAccount ? takerAsset : makerAsset
+  const incomingAmount = isMakerAccount ? takingAmount : makingAmount
+
+  if (outgoingAmount === null) return fullVisualization
+
+  const oneInchVisualization = fullVisualization.find(
+    (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
+      visualization.type === 'erc7730'
+  )
+  const additionalRows =
+    oneInchVisualization?.rows.filter(
+      (row) => !row.value.some((value) => value.type === 'token')
+    ) || []
+
+  return [
+    getErc7730Visualization(
+      oneInchVisualization?.title || 'Fill order',
+      [
+        {
+          label: 'Amount to Send',
+          value: [getToken(outgoingToken, outgoingAmount, context.chainId)]
+        },
+        {
+          label: 'Minimum to Receive',
+          value: [getToken(incomingToken, incomingAmount, context.chainId)]
+        },
+        ...additionalRows
+      ],
+      dapp
+    )
+  ]
 }
 
 const getSafeTxCallFromMessage = (message: Message): Call | null => {
@@ -1282,11 +1384,14 @@ export const humanizeCallWithErc7730 = (
     nestedCalldataDepth
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
+  const normalizedVisualization = fullVisualization
+    ? getOneInchFillOrderSwapVisualization(match, context, fullVisualization, call.dapp)
+    : null
 
-  return fullVisualization?.length
+  return normalizedVisualization?.length
     ? {
         ...call,
-        fullVisualization,
+        fullVisualization: normalizedVisualization,
         warnings: dedupeWarnings(getSafeCallWarnings(call, accountAddr))
       }
     : null

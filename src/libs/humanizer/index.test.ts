@@ -621,6 +621,121 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
+  test('resolves uint byte slices and uint-encoded token addresses', async () => {
+    const maker = '0x4446adc0b8136ffc55ddb7a488ba5509ace2a5ef'
+    const oneInchAccountOp = {
+      ...accountOp,
+      accountAddr: maker,
+      chainId: 8453n,
+      calls: [
+        {
+          to: '0x111111125421cA6dc452d289314280a0f8842A65',
+          value: 0n,
+          data: '0x9fda64bd000000000000000000000000000000000000000053dc0eddc512ea796b81a63b0000000000000000000000004446adc0b8136ffc55ddb7a488ba5509ace2a5ef0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000042000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000ca300000000000000000000000000000000000000000000000000042025afe2dc9a0000000000000000000000000000ae9d1b006a213db339b4b62d38e514a03b78971de43fda13dd255b976f1a611cc28cfcd418db951a07e107a85a0aa534ef8cf175f9598b8fdfd328af71786a6fe537d7e29938372c7b39e9fc0109c7029de300000000000000000000000000000000000000000000000000042025afe2dc9a6000000000000000000000000000000000000000000000000000000000000000ab0003904a82836d'
+        }
+      ]
+    }
+    const makerAsset = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const takerAsset = '0x4200000000000000000000000000000000000006'
+
+    const irCalls = humanizeAccountOp(oneInchAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/1inch/calldata-AggregationRouterV6.json',
+          descriptor: {
+            metadata: {
+              enums: {
+                takerTraits: {
+                  '96': 'Unwrap'
+                }
+              }
+            },
+            display: {
+              definitions: {
+                makingAmount: {
+                  label: 'Order purchasing amt',
+                  format: 'tokenAmount',
+                  params: {}
+                },
+                takingAmount: {
+                  label: 'Order selling amount',
+                  format: 'tokenAmount',
+                  params: {}
+                },
+                fillAmount: {
+                  label: 'Amount to sell',
+                  format: 'tokenAmount',
+                  params: {}
+                },
+                takerTraits: {
+                  label: 'Additional action',
+                  format: 'enum',
+                  params: {
+                    $ref: '$.metadata.enums.takerTraits'
+                  }
+                }
+              },
+              formats: {
+                'fillOrder((uint256 salt, uint256 maker, uint256 receiver, uint256 makerAsset, uint256 takerAsset, uint256 makingAmount, uint256 takingAmount, uint256 makerTraits) order, bytes32 r, bytes32 vs, uint256 amount, uint256 takerTraits)':
+                  {
+                    intent: 'Fill order',
+                    fields: [
+                      {
+                        path: 'order.takingAmount',
+                        $ref: '$.display.definitions.takingAmount',
+                        params: {
+                          tokenPath: 'order.takerAsset'
+                        },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'order.makingAmount',
+                        $ref: '$.display.definitions.makingAmount',
+                        params: {
+                          tokenPath: 'order.makerAsset'
+                        },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'amount',
+                        $ref: '$.display.definitions.fillAmount',
+                        params: {
+                          tokenPath: 'order.takerAsset'
+                        },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'takerTraits.[:1]',
+                        $ref: '$.display.definitions.takerTraits'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Fill order', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(makerAsset, 3235n, 8453n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(takerAsset, 1161246143601818n, 8453n)]
+          },
+          {
+            label: 'Additional action',
+            value: [getText('Unwrap')]
+          }
+        ])
+      ]
+    ])
+  })
   test('treats missing token references in tokenAmount descriptors as native token', async () => {
     const uniswapRouter = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
     const tokenIn = transactions.erc20[1]!.to
