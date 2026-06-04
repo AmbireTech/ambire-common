@@ -1,6 +1,7 @@
 import {
   formatUnits,
   FunctionFragment,
+  getAddress,
   Interface,
   isAddress,
   isHexString,
@@ -894,6 +895,41 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
   }
 }
 
+const getSafeTxRejectTitle = (message: Message): string | null => {
+  if (message.content.kind !== 'typedMessage') return null
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+
+  const { to, value, data, operation, nonce } = message.content.message
+  const { verifyingContract } = message.content.domain
+  if (nonce === undefined) return null
+  if (typeof to !== 'string' || !isAddress(to)) return null
+  if (typeof verifyingContract !== 'string' || !isAddress(verifyingContract)) return null
+  if (getAddress(to) !== getAddress(verifyingContract)) return null
+  if (toBigIntOrNull(operation ?? 0) !== 0n) return null
+  if (toBigIntOrNull(value ?? 0) !== 0n) return null
+  if (typeof data !== 'string' || data.toLowerCase() !== '0x') return null
+
+  return `Reject Safe transaction with nonce ${valueToText(nonce)}`
+}
+
+const replaceErc7730Title = (
+  fullVisualization: HumanizerVisualization[] | null,
+  title: string | null
+): HumanizerVisualization[] | null => {
+  if (!title) return fullVisualization
+
+  return (
+    fullVisualization?.map((visualization) =>
+      visualization.type === 'erc7730'
+        ? {
+            ...visualization,
+            title
+          }
+        : visualization
+    ) || null
+  )
+}
+
 const getKnownFunctionName = (call: Call): string | null => {
   const selector = call.data?.slice(0, 10).toLowerCase()
   if (!selector) return null
@@ -1324,11 +1360,12 @@ export const humanizeMessageWithErc7730 = (
     fullVisualization && message.content.primaryType === SAFE_TX_PRIMARY_TYPE
       ? replaceSafeTxTransactionRow(fullVisualization, message, chainId, resolvedDescriptor)
       : fullVisualization
+  const titledVisualization = replaceErc7730Title(safeTxVisualization, getSafeTxRejectTitle(message))
 
-  return safeTxVisualization?.length
+  return titledVisualization?.length
     ? {
         ...message,
-        fullVisualization: safeTxVisualization,
+        fullVisualization: titledVisualization,
         warnings: getSafeTxMessageWarnings(message),
         canHideDropdownArrow: true
       }

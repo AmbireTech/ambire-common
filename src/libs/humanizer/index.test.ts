@@ -1956,6 +1956,87 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('humanizes a SafeTx reject message title with its nonce', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeProxy,
+          chainId: 8453
+        },
+        message: {
+          to: safeProxy,
+          value: '0',
+          data: '0x',
+          operation: 0,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 85,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irMessage.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Reject Safe transaction with nonce 85'
+    })
+  })
+
   test('humanizes a SafeTx owner change with the Safe singleton descriptor fallback', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
