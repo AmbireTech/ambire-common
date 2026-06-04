@@ -20,9 +20,8 @@ jobs:
       pull-requests: write
       # This MUST be read!
       contents: read
-    uses: ./.github/workflows/pr-agent-review.yml
+    uses: ./.github/workflows/pr-agent.yml
     with:
-      review_name: General review
       model: openrouter/moonshotai/kimi-k2.6
       fallback_models: '["openrouter/anthropic/claude-sonnet-4.6"]'
       extra_instructions: |
