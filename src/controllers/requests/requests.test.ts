@@ -738,5 +738,45 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(1)
       expect(controller.userRequests[0]!.kind).toBe('typedMessage')
     })
+
+    test('rejects when domain.chainId does not match the current network chainId', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, chainId: 999 }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The domain chainId (999) does not match the current network chainId (1)'
+      )
+    })
+
+    test('replaces domain.chainId with current network chainId when domain.chainId is 0', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, chainId: 0 }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      expect(controller.userRequests.length).toBe(1)
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.domain.chainId).toBe(1n)
+    })
+
+    test('accepts typed data with no domain.chainId regardless of current network', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          EIP712Domain: VALID_TYPED_DATA.types.EIP712Domain.filter((f) => f.name !== 'chainId')
+        },
+        domain: { name: VALID_TYPED_DATA.domain.name, version: VALID_TYPED_DATA.domain.version }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      expect(controller.userRequests.length).toBe(1)
+      const req = controller.userRequests[0]! as any
+      expect(req.kind).toBe('typedMessage')
+      expect(req.meta.params.domain.chainId).toBe(1n)
+    })
   })
 })
