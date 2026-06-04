@@ -1,6 +1,6 @@
 # Shared PR-Agent settings for both workflows
 # Per-workflow settings (model, fallback_models, extra_instructions) live in the
-# workflow callers (e.g. .github/workflows/pr-review.yml).
+# workflow callers (e.g. .github/workflows/general-review.yml).
 
 [config]
 response_language = "en"
