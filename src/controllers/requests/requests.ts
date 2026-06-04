@@ -1261,6 +1261,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
       }
 
+      const domainChainId = BigInt(typedData.domain.chainId || 0)
+      if (domainChainId !== 0n && domainChainId !== network.chainId)
+        throw ethErrors.rpc.invalidRequest(
+          `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
+        )
+      typedData.domain.chainId = network.chainId
+
       if (!typedData.types[typedData.primaryType])
         throw ethErrors.rpc.invalidParams(
           'The primary data type is missing from the provided types'
@@ -1296,7 +1303,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             primaryType: typedData.primaryType
           },
           accountAddr: msgAddress,
-          chainId: network.chainId
+          chainId: typedData.domain.chainId
         },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
