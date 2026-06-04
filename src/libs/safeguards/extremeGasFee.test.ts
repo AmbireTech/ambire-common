@@ -1,21 +1,23 @@
 import { describe, expect, test } from '@jest/globals'
 
-import { getFeeSpeedIdentifier } from '../../controllers/signAccountOp/helper'
-import { FeeSpeed } from '../../controllers/signAccountOp/signAccountOp'
 import {
   EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD,
-  EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD
+  EXTREME_GAS_FEE_THRESHOLD_MAINNET_GWEI
 } from '../../consts/safeguards/extremeGasFee'
+import { getFeeSpeedIdentifier } from '../../controllers/signAccountOp/helper'
+import { FeeSpeed } from '../../controllers/signAccountOp/signAccountOp'
 import { FeePaymentOption } from '../estimate/interfaces'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 
 import {
-  getExtremeGasFeeThresholdUsd,
   getExtremeGasFeeWarningState,
-  isExtremeGasFee
+  isExtremeGasFeeUsd,
+  isExtremeMainnetGasPrice,
+  weiToGwei
 } from './extremeGasFee'
 
 const ACCOUNT_ADDR = '0x0000000000000000000000000000000000000001'
+const GWEI = 10n ** 9n
 
 const createSelectedOption = (): FeePaymentOption =>
   ({
@@ -27,7 +29,13 @@ const createSelectedOption = (): FeePaymentOption =>
     }
   }) as FeePaymentOption
 
-const createSignAccountOpState = (amountUsd: string): ISignAccountOpController => {
+const createSignAccountOpState = ({
+  amountUsd = '0',
+  gasPrice = 0n
+}: {
+  amountUsd?: string
+  gasPrice?: bigint
+}): ISignAccountOpController => {
   const selectedOption = createSelectedOption()
   const identifier = getFeeSpeedIdentifier(selectedOption, ACCOUNT_ADDR)
 
@@ -36,47 +44,83 @@ const createSignAccountOpState = (amountUsd: string): ISignAccountOpController =
     selectedFeeSpeed: FeeSpeed.Fast,
     accountOp: { accountAddr: ACCOUNT_ADDR },
     feeSpeeds: {
-      [identifier]: [{ type: FeeSpeed.Fast, amountUsd }]
+      [identifier]: [{ type: FeeSpeed.Fast, amountUsd, gasPrice }]
     }
   } as ISignAccountOpController
 }
 
-describe('extremeGasFee consts', () => {
-  test('should use mainnet threshold for chain id 1', () => {
-    expect(getExtremeGasFeeThresholdUsd(1n)).toBe(EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD)
-    expect(isExtremeGasFee(100, 1n)).toBe(false)
-    expect(isExtremeGasFee(100.01, 1n)).toBe(true)
+describe('extremeGasFee helpers', () => {
+  test('should convert wei to gwei', () => {
+    expect(weiToGwei(20n * GWEI)).toBe(20)
+    expect(weiToGwei(0n)).toBe(0)
   })
 
-  test('should use default threshold for non-mainnet chains', () => {
-    expect(getExtremeGasFeeThresholdUsd(137n)).toBe(EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD)
-    expect(isExtremeGasFee(10, 137n)).toBe(false)
-    expect(isExtremeGasFee(10.01, 137n)).toBe(true)
+  test('should flag mainnet gas prices above the gwei threshold', () => {
+    expect(isExtremeMainnetGasPrice(20n * GWEI)).toBe(false)
+    expect(isExtremeMainnetGasPrice(20n * GWEI + 1n)).toBe(true)
+    expect(isExtremeMainnetGasPrice(0n)).toBe(false)
+    expect(isExtremeMainnetGasPrice(-1n)).toBe(false)
   })
 
-  test('should not flag invalid or non-positive fee amounts', () => {
-    expect(isExtremeGasFee(0, 1n)).toBe(false)
-    expect(isExtremeGasFee(-1, 1n)).toBe(false)
-    expect(isExtremeGasFee(Number.NaN, 1n)).toBe(false)
+  test('should flag non-mainnet fees above the usd threshold', () => {
+    expect(isExtremeGasFeeUsd(EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD)).toBe(false)
+    expect(isExtremeGasFeeUsd(EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD + 0.01)).toBe(true)
+    expect(isExtremeGasFeeUsd(0)).toBe(false)
+    expect(isExtremeGasFeeUsd(-1)).toBe(false)
+    expect(isExtremeGasFeeUsd(Number.NaN)).toBe(false)
   })
 })
 
-describe('getExtremeGasFeeWarningState', () => {
-  test('should return null when sign state or chain id is missing', () => {
-    expect(getExtremeGasFeeWarningState(null, 1n)).toBeNull()
-    expect(getExtremeGasFeeWarningState(createSignAccountOpState('150'), undefined)).toBeNull()
-  })
-
-  test('should return warning state when fee exceeds threshold', () => {
-    const result = getExtremeGasFeeWarningState(createSignAccountOpState('150'), 1n)
+describe('getExtremeGasFeeWarningState on Ethereum', () => {
+  test('should return a gwei warning when the gas price exceeds the threshold', () => {
+    const result = getExtremeGasFeeWarningState(
+      createSignAccountOpState({ amountUsd: '5', gasPrice: 25n * GWEI }),
+      1n
+    )
 
     expect(result).toEqual({
-      feeUsd: 150,
-      thresholdUsd: EXTREME_GAS_FEE_THRESHOLD_MAINNET_USD
+      type: 'gwei',
+      gasPriceGwei: 25,
+      thresholdGwei: EXTREME_GAS_FEE_THRESHOLD_MAINNET_GWEI
     })
   })
 
-  test('should return null when fee is below threshold', () => {
-    expect(getExtremeGasFeeWarningState(createSignAccountOpState('50'), 1n)).toBeNull()
+  test('should return null when the gas price is within the threshold', () => {
+    expect(
+      getExtremeGasFeeWarningState(
+        createSignAccountOpState({ amountUsd: '500', gasPrice: 15n * GWEI }),
+        1n
+      )
+    ).toBeNull()
+  })
+})
+
+describe('getExtremeGasFeeWarningState on other networks', () => {
+  test('should return a usd warning when the fee exceeds the threshold', () => {
+    const result = getExtremeGasFeeWarningState(
+      createSignAccountOpState({ amountUsd: '50', gasPrice: 1n * GWEI }),
+      137n
+    )
+
+    expect(result).toEqual({
+      type: 'usd',
+      feeUsd: 50,
+      thresholdUsd: EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD
+    })
+  })
+
+  test('should return null when the fee is below the threshold', () => {
+    expect(
+      getExtremeGasFeeWarningState(createSignAccountOpState({ amountUsd: '5' }), 137n)
+    ).toBeNull()
+  })
+})
+
+describe('getExtremeGasFeeWarningState guards', () => {
+  test('should return null when sign state or chain id is missing', () => {
+    expect(getExtremeGasFeeWarningState(null, 1n)).toBeNull()
+    expect(
+      getExtremeGasFeeWarningState(createSignAccountOpState({ gasPrice: 50n * GWEI }), undefined)
+    ).toBeNull()
   })
 })
