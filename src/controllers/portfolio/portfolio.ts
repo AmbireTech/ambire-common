@@ -988,7 +988,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           ? [
               {
                 actionName: 'survey',
-                meta: { surveyId: banner.surveyId, requirements: banner.require || {} }
+                meta: { surveyId: banner.surveyId }
               }
             ]
           : banner.url
@@ -1012,7 +1012,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         type: banner.type || 'updates',
         meta: {
           startTime: startTimeNumber,
-          endTime: endTimeNumber
+          endTime: endTimeNumber,
+          requirements: banner.require
         },
         ...(banner.text && { text: banner.text }),
         ...(banner.title && { title: banner.title }),
