@@ -790,7 +790,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     )
   }
 
-  #scheduleUpdate({
+  /**
+   * Used to schedule portfolio updates for a specific account and network. Atm it's only used to
+   * update the portfolio after an interval from the last transaction, so we are sure that potential changes
+   * to defi positions have been indexed by our discovery API
+   */
+  scheduleUpdate({
     accountId,
     chainId,
     bypassServerSideCache
@@ -858,10 +863,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         return
       }
 
-      // The update below doesn't bypass the server cache; schedule a cache-busting
-      // update for after the server has had time to index the confirmed transaction.
-      // See ScheduledUpdates for the full rationale.
-      this.#scheduleUpdate({ accountId: accountAddr, chainId, bypassServerSideCache: true })
       networksToUpdate.push(networkData)
       accountAddrToUpdate = accountAddr
     })
