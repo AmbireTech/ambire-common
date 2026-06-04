@@ -451,10 +451,10 @@ describe('DappsController', () => {
         .mockResolvedValue(undefined)
 
       controller.updateDapp(dappId, {
-        accountPreferences: { enabled: true, selectedAccount: ADDR_2, accounts: [ADDR_1, ADDR_2] }
+        accountPreferences: { enabled: true, selectedAccount: ADDR_1, accounts: [ADDR_2, ADDR_1] }
       })
-      // ADDR_2 must be first because it's the selected account
-      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2, ADDR_1], dappId, true)
+      // ADDR_2 must be first because it's the selected account in the selectedAccount controller
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_1, ADDR_2], dappId, true)
 
       broadcastSpy.mockRestore()
     })
@@ -597,7 +597,7 @@ describe('DappsController', () => {
     test('respects account scoping: broadcasts when new account is in the list, skips when not', async () => {
       const dappInListId = 'dapp-in-list.com'
       const dappNotInListId = 'dapp-not-in-list.com'
-      const { controller } = await prepareWithDapps([
+      const { controller, mainCtrl } = await prepareWithDapps([
         makeDapp({
           id: dappInListId,
           name: 'Dapp In List',
@@ -630,16 +630,17 @@ describe('DappsController', () => {
         .mockResolvedValue(undefined)
 
       // ADDR_2 is in dappInList's accounts but not in dappNotInList's
-      await controller.onSelectedAccountChange(ADDR_2)
+      await mainCtrl.selectAccount(ADDR_2)
 
       expect(broadcastSpy).toHaveBeenCalledWith(
         'accountsChanged',
-        [ADDR_1, ADDR_2],
+        [ADDR_2, ADDR_1],
         dappInListId,
         true
       )
       expect(broadcastSpy).toHaveBeenCalledWith(
         'accountsChanged',
+        // ADDR_1 because it's the last selected account
         [ADDR_1, ADDR_3],
         dappNotInListId,
         true
