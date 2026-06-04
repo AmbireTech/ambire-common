@@ -293,6 +293,9 @@ export class MainController extends EventEmitter implements IMainController {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {
           await this.#selectAccount(defaultSelectedAccount.addr)
+          if (this.selectedAccount.account?.addr === defaultSelectedAccount.addr) {
+            await this.#emitPostSelectAccountUiSync(defaultSelectedAccount.addr)
+          }
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers),
@@ -760,6 +763,26 @@ export class MainController extends EventEmitter implements IMainController {
     await this.initialLoadPromise
 
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
+    // Run after `withStatus` so `selectAccount` is INITIAL again before heavy `forceEmitUpdate`
+    // calls (large wallet + many accounts can block the UI for a long time otherwise).
+    if (this.selectedAccount.account?.addr === toAccountAddr) {
+      await this.#emitPostSelectAccountUiSync(toAccountAddr)
+    }
+  }
+
+  /**
+   * Pushes controller state to the UI after the selected account has switched.
+   * Kept outside `#selectAccount` / `withStatus` so list rows are not stuck disabled until this finishes.
+   */
+  async #emitPostSelectAccountUiSync(toAccountAddr: string) {
+    await Promise.all([
+      this.activity.forceEmitUpdate(),
+      this.requests.forceEmitUpdate(),
+      this.addressBook.forceEmitUpdate(),
+      this.swapAndBridge.forceEmitUpdate(),
+      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
+      this.forceEmitUpdate()
+    ])
   }
 
   async #selectAccount(toAccountAddr: string | null) {
@@ -804,16 +827,6 @@ export class MainController extends EventEmitter implements IMainController {
       maxDataAgeMs: 5 * 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
-
-    // forceEmitUpdate to update the getters in the FE state of the ctrls
-    await Promise.all([
-      this.activity.forceEmitUpdate(),
-      this.requests.forceEmitUpdate(),
-      this.addressBook.forceEmitUpdate(),
-      this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
-      this.forceEmitUpdate()
-    ])
   }
 
   async #onAccountPickerSuccess() {
@@ -1452,7 +1465,11 @@ export class MainController extends EventEmitter implements IMainController {
       this.signMessage.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
+        const nextAddr = this.accounts.accounts[0]?.addr ?? null
+        await this.#selectAccount(nextAddr)
+        if (nextAddr && this.selectedAccount.account?.addr === nextAddr) {
+          await this.#emitPostSelectAccountUiSync(nextAddr)
+        }
       }
 
       this.emitUpdate()
