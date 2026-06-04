@@ -1,8 +1,9 @@
+# Shared PR-Agent settings for both workflows
+# Per-workflow settings (model, fallback_models, extra_instructions) live in the
+# workflow callers (e.g. .github/workflows/pr-review.yml).
+
 [config]
 response_language = "en"
-
-# Fallback to Sonnet in case Kimi is unavailable.
-fallback_models=["openrouter/anthropic/claude-sonnet-4.6"]
 
 # ─────────────────────────────────────────────
 # Token & Cost Guardrails
@@ -11,11 +12,14 @@ fallback_models=["openrouter/anthropic/claude-sonnet-4.6"]
 # The models support 256k+; we clamp to 256k
 # to prevent runaway costs while leaving room for deep reviews.
 custom_model_max_tokens = 256000
+# Global prompt-token cap applied on top of the model's capability
+# (effective budget = min(max_model_tokens, custom_model_max_tokens)).
+# Default is 32000, which silently clipped large diffs; align it with
+# custom_model_max_tokens so the full context window is usable.
+max_model_tokens = 256000
 
 # Increase timeout from default 120s → 300s (5 min).
-# Security reviews with large diffs on heavy models need headroom.
 ai_timeout = 300
-
 # If a diff is too large, clip it rather than skipping entirely.
 large_patch_policy = "clip"
 
@@ -28,7 +32,6 @@ glob = [
     "**/*.lock",
     "**/package-lock.json",
     "**/yarn.lock",
-
     # Build artifacts & deps
     "artifacts/**",
     "cache/**",
@@ -36,71 +39,44 @@ glob = [
     "node_modules/**",
     "dist/**",
     "patches/**",
-
     # Minified assets
     "**/*.min.js",
     "**/*.min.css",
-
     # Logs
     "*.log",
-
     # Tests
     "**/*.test.ts",
     "**/*.spec.ts",
     "**/*.test.js",
     "**/*.spec.js",
-
     # Generated / declaration files
     "**/*.d.ts",
-
     # CI/CD
     "**/.github/**",
 ]
 
 # ─────────────────────────────────────────────
-# General Review Settings (/review)
+# Review Settings shared by /review and /security-review
 # ─────────────────────────────────────────────
 [pr_reviewer]
-extra_instructions = """
-You are reviewing changes in a security-sensitive Web3 browser extension wallet.
-
-Focus on the diff in front of you and assess it for correctness, security, reliability, and maintainability.
-
-Prioritize issues such as:
-- Requests without error handling and timeouts
-- Inefficient algorithms or data structures
-- Inconsistent naming conventions or formatting
-- Unnecessary complexity or duplication
-- Missing comments or documentation for complex logic
-- Unhandled exceptions and edge cases
-- Swallowed errors and edge case return statements that should at least log an error
-- Concurrent modifications to state that may result in race conditions
-- Unhandled degradations when interacting with external services and APIs
-- Decimal precision handling and bigint conversions
-- Unhandled pending operations (e.g., submitting twice, not awaiting async calls, etc.)
-- Partial updates that leave the state inconsistent
-- Improper cleanup of subscriptions, timers, and event listeners
-
-Be constructive, concise, and actionable. Keep feedback grounded in the actual changes rather than using a fixed checklist.
-"""
-
-# UX: update the same comment on re-run instead of posting a new one.
-persistent_comment = true
-
-# Post a final "Review completed" message so devs know the agent is done.
+# Post a NEW review comment on every run instead of editing the previous one.
+persistent_comment = false
 final_update_message = true
 
 # Publish even when there are no major findings (avoids silent failures).
 publish_output_no_suggestions = true
 
-# Enable built-in security sub-section even in general reviews (defense in depth).
+# Enable built-in security sub-section even in general reviews.
 require_security_review = true
 
 # Also scan for missing tests, TODOs, and ticket references.
 require_tests_review = true
 require_todo_scan = true
 require_estimate_effort_to_review = true
-require_ticket_analysis_review = true
+
+# The repo has no issues
+require_ticket_analysis_review = false
+extract_issue_from_branch = false
 
 # Keep the review header but suppress noisy help text.
 enable_intro_text = true

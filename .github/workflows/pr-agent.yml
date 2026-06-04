@@ -1,0 +1,60 @@
+# Reusable PR review workflow
+#
+# It allows us to reuse the CLI logic, which in turn allows us to have a custom /security-review
+# command. Triggers are not customizable through the action
+
+name: PR Agent Review (reusable)
+
+on:
+  workflow_call:
+    # These are the "params" of the workflow
+    inputs:
+      review_name:
+        description: Human-readable name used in failure comments (e.g. "General review")
+        type: string
+        default: PR review
+      model:
+        description: Primary model
+        type: string
+        required: true
+      fallback_models:
+        description: 'Fallback models as a TOML/JSON list string, e.g. ["openrouter/..."]'
+        type: string
+        default: '[]'
+      extra_instructions:
+        description: Reviewer extra_instructions for this review type
+        type: string
+        default: ""
+    secrets:
+      OPENROUTER_KEY:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pr-agent
+        # IT MUST be pinned to a commit and NOT a tag as tags are mutable and have been used in hacks
+        run: pip install --quiet "git+https://github.com/The-PR-Agent/pr-agent@sha256:ffe1f89a4dafc7d8e88b9cf010a3233e30b49f43"
+
+      # Note: PR Agent can swallow errors on many levels
+      # There is a way to take a snapshot of the last comment id before the workflow
+      # and check if there is a new comment after it's done. Not implemented as it sounds too
+      # hackish, but we should keep it in mind
+      - name: Run review
+        env:
+          GITHUB__USER_TOKEN: ${{ github.token }}
+          GITHUB__DEPLOYMENT_TYPE: user
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          CONFIG__GIT_PROVIDER: github
+          CONFIG__MODEL: ${{ inputs.model }}
+          CONFIG__FALLBACK_MODELS: ${{ inputs.fallback_models }}
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ inputs.extra_instructions }}
+        run: python -m pr_agent.cli --pr_url "${{ steps.pre.outputs.pr_url }}" review
