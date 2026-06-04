@@ -23,12 +23,6 @@ export function isExtremeSwapLoss(estimatedLossUsd: number): boolean {
   return estimatedLossUsd > EXTREME_SWAP_LOSS_THRESHOLD_USD
 }
 
-export function getExtremeSwapConfirmationPhrase(estimatedLossUsd: number): string {
-  const lossRounded = Math.floor(estimatedLossUsd)
-
-  return `I understand I will lose over ${lossRounded} dollars on this trade`
-}
-
 export function normalizeConfirmationPhraseInput(phrase: string): string {
   return phrase.trim()
 }
