@@ -1225,6 +1225,50 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('uses revoke wording for standard ERC-7730 Permit2 approvals with a zero amount', async () => {
+    const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+    const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+    const universalRouter = '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7'
+    const permit2ApproveInterface = new ethers.Interface([
+      'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+    ])
+    const revokePermitAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: permit2,
+          value: 0n,
+          data: permit2ApproveInterface.encodeFunctionData('approve', [
+            baseCbBtc,
+            universalRouter,
+            0n,
+            0x6a2c1c44n
+          ])
+        }
+      ]
+    }
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokePermitAccountOp)
+    const irCalls = humanizeAccountOp(revokePermitAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe('built-in/permit2-revoke-approval')
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Revoke approval',
+      rows: [
+        {
+          label: 'Spender',
+          value: [expect.objectContaining({ address: universalRouter.toLowerCase() })]
+        },
+        {
+          label: 'Amount',
+          value: [expect.objectContaining({ address: baseCbBtc.toLowerCase(), value: 0n })]
+        },
+        { label: 'Approval expires' }
+      ]
+    })
+  })
+
   test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {
     const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
     const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
