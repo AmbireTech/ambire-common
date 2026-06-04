@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-
 import { BUNDLER } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { BaseAccount } from '../../libs/account/BaseAccount'

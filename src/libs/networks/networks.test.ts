@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
 import { describe, expect, test } from '@jest/globals'
 
 import { networks as predefinedNetworks } from '../../consts/networks'
@@ -116,6 +113,7 @@ describe('Networks lib', () => {
       const relayerNetworksClone = structuredClone(MOCK_RELAYER_NETWORKS)
       relayerNetworksClone['1'].rpcUrls = ['https://new-rpc-url.com']
       relayerNetworksClone['1'].iconUrls = ['https://new-icon-url.com']
+      relayerNetworksClone['1']!.refreshInterval = 1000
       // This property shouldn't be updated as predefinedConfigVersion is the same
       relayerNetworksClone['1'].feeOptions.is1559 = false
 
@@ -132,6 +130,7 @@ describe('Networks lib', () => {
       ])
       // Icon urls are replaced
       expect(result2['1'].iconUrls).toEqual(['https://new-icon-url.com'])
+      expect(result2['1']!.refreshInterval).toBe(1000)
       expect(result2['1'].predefined).toBe(true)
       // Fee options are not updated as predefinedConfigVersion is the same
       expect(result2['1'].feeOptions.is1559).toBe(true)
@@ -226,6 +225,19 @@ describe('Networks lib', () => {
     })
     it('networksObj reference should not be modified', () => {
       expect(NEVER_MUTATE_NETWORKS_OBJ).toEqual(networksObj)
+    })
+    ;[0, -1, Number.POSITIVE_INFINITY].forEach((refreshInterval) => {
+      it(`Invalid refreshInterval values should not be added to networks: ${refreshInterval}`, () => {
+        const relayerNetworksClone = structuredClone(MOCK_RELAYER_NETWORKS)
+        relayerNetworksClone['1']!.refreshInterval = refreshInterval
+
+        const { mergedNetworks: result } = getNetworksUpdatedWithRelayerNetworks(
+          networksObj,
+          relayerNetworksClone
+        )
+
+        expect(result['1']!.refreshInterval).toBeUndefined()
+      })
     })
   })
 })

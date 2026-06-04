@@ -1,6 +1,5 @@
 import { Wallet } from 'ethers'
 
-/* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -36,7 +35,7 @@ describe('KeyIterator', () => {
     try {
       new KeyIterator(`${process.env.SEED}invalid-seed-phrase`)
     } catch (e) {
-      // @ts-ignore
+      // @ts-expect-error
       expect(e.message).toBe('keyIterator: invalid argument provided to constructor')
     }
   })
@@ -64,10 +63,10 @@ describe('KeyIterator', () => {
     expect.assertions(1)
     try {
       const keyIteratorWithPrivKey = new KeyIterator(privKey150)
-      // @ts-ignore
+      // @ts-expect-error
       await keyIteratorWithPrivKey.retrieve([{ from: 0 }])
     } catch (e) {
-      // @ts-ignore
+      // @ts-expect-error
       expect(e.message).toBe('keyIterator: invalid or missing arguments')
     }
   })

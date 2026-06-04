@@ -1,6 +1,6 @@
 import { networks } from '../../consts/networks'
 import { Network } from '../../interfaces/network'
-/* eslint-disable no-param-reassign */
+
 import { RPCProvider } from '../../interfaces/provider'
 import {
   SelectedAccountPortfolio,
@@ -19,15 +19,18 @@ const mockNetworks = structuredClone(networks) as Network[]
 mockNetworks.find((n) => n.chainId === 137n)!.rpcUrls = ['rpc-1', 'rpc-2']
 mockNetworks.find((n) => n.chainId === 42161n)!.rpcUrls = ['rpc-1', 'rpc-2']
 
-const mockProviders = mockNetworks.reduce((acc, network) => {
-  acc[network.chainId.toString()] = getRpcProvider(
-    network.rpcUrls,
-    network.chainId,
-    network.selectedRpcUrl
-  )
-  acc[network.chainId.toString()]!.isWorking = true
-  return acc
-}, {} as Record<string, RPCProvider>)
+const mockProviders = mockNetworks.reduce(
+  (acc, network) => {
+    acc[network.chainId.toString()] = getRpcProvider(
+      network.rpcUrls,
+      network.chainId,
+      network.selectedRpcUrl
+    )
+    acc[network.chainId.toString()]!.isWorking = true
+    return acc
+  },
+  {} as Record<string, RPCProvider>
+)
 
 const mockAccountState = mockNetworks.reduce((acc, network) => {
   acc[network.chainId.toString()] = {
@@ -52,29 +55,32 @@ const getMockSelectedAccountPortfolio = (params?: {
     criticalErrorChainIds
   } = params || {}
 
-  return networks.reduce((acc, network) => {
-    acc[network.chainId.toString()] = {
-      isLoading: !!loadingChainIds?.includes(network.chainId),
-      isReady: !!notReadyChainIds?.includes(network.chainId),
-      lastSuccessfulUpdate: !freshDataChainIds?.includes(network.chainId)
-        ? Date.now() - 60 * 60 * 1000
-        : Date.now() - 5 * 60 * 1000,
-      result: {} as any,
-      criticalError: criticalErrorChainIds?.includes(network.chainId)
-        ? new Error('Critical portfolio error')
-        : undefined,
-      errors: nonCriticalErrorChainIds?.includes(network.chainId)
-        ? [
-            {
-              message: "Some message, doesn't matter",
-              name: 'PriceFetchError',
-              level: 'warning'
-            }
-          ]
-        : []
-    }
-    return acc
-  }, {} as SelectedAccountPortfolio['portfolioState'])
+  return networks.reduce(
+    (acc, network) => {
+      acc[network.chainId.toString()] = {
+        isLoading: !!loadingChainIds?.includes(network.chainId),
+        isReady: !!notReadyChainIds?.includes(network.chainId),
+        lastSuccessfulUpdate: !freshDataChainIds?.includes(network.chainId)
+          ? Date.now() - 60 * 60 * 1000
+          : Date.now() - 5 * 60 * 1000,
+        result: {} as any,
+        criticalError: criticalErrorChainIds?.includes(network.chainId)
+          ? new Error('Critical portfolio error')
+          : undefined,
+        errors: nonCriticalErrorChainIds?.includes(network.chainId)
+          ? [
+              {
+                message: "Some message, doesn't matter",
+                name: 'PriceFetchError',
+                level: 'warning'
+              }
+            ]
+          : []
+      }
+      return acc
+    },
+    {} as SelectedAccountPortfolio['portfolioState']
+  )
 }
 
 describe('selectedAccount errors', () => {

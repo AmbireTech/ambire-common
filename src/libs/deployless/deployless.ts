@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import assert from 'assert'
 import {
   AbiCoder,
@@ -92,7 +91,6 @@ export class Deployless {
     this.abi = abi
 
     if (provider && provider instanceof JsonRpcProvider) {
-      // eslint-disable-next-line no-underscore-dangle
       this.providerUrl = provider._getConnection().url
       this.isProviderInvictus = this.providerUrl?.includes('invictus')
     }
@@ -109,7 +107,6 @@ export class Deployless {
     const isJsonRpcProvider =
       this.provider &&
       typeof (this.provider as JsonRpcProvider).send === 'function' &&
-      // eslint-disable-next-line no-underscore-dangle
       typeof (this.provider as JsonRpcProvider)._send === 'function'
 
     if (!isJsonRpcProvider) {

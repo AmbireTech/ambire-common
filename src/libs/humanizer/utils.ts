@@ -1,6 +1,19 @@
-import { getAddress, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
+import {
+  HumanizerErc7730Row,
+  HumanizerMeta,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
+
+export type HexIrCall = IrCall & { data: Hex }
+
+/** Type guard that narrows an IrCall to one with a valid hex data field. */
+export function isHexCall(call: IrCall): call is HexIrCall {
+  return isHex(call.data)
+}
 
 export function getWarning(
   content: string,
@@ -11,8 +24,11 @@ export function getWarning(
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
-export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
-  return { type: 'label', content, id: randomId(), isBold }
+export function getLabel(
+  content: string | bigint | number,
+  isBold?: boolean
+): HumanizerVisualization {
+  return { type: 'label', content: content.toString(), id: randomId(), isBold }
 }
 export function getAction(
   content: string,
@@ -58,8 +74,37 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getText(text: string): HumanizerVisualization {
-  return { type: 'text', content: text, id: randomId() }
+export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
+  return { type: 'text', content: text, id: randomId(), mlMi }
+}
+
+export function getErc7730Visualization(
+  title: string | undefined,
+  rows: HumanizerErc7730Row[],
+  dapp?: IrCall['dapp']
+): HumanizerVisualization {
+  return { type: 'erc7730', title, dapp, rows, id: randomId() }
+}
+
+export function flattenHumanizerVisualizations(
+  visualizations: HumanizerVisualization[] = []
+): HumanizerVisualization[] {
+  return visualizations.flatMap((visualization) => {
+    if (visualization.type !== 'erc7730') return [visualization]
+
+    return [
+      visualization,
+      ...flattenHumanizerVisualizations(visualization.rows.flatMap((row) => row.value))
+    ]
+  })
+}
+
+export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
+  return !!humanization?.some((call) =>
+    flattenHumanizerVisualizations(call.fullVisualization).some(
+      (visualization) => visualization.type === 'erc7730'
+    )
+  )
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -126,4 +171,4 @@ export const uintToAddress = (uint: bigint): string =>
   `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
 
 export const eToNative = (address: string): string =>
-  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? zeroAddress : address

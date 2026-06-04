@@ -3,10 +3,8 @@ import { Transaction, TypedDataField } from 'ethers'
 import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
 import { GasFeePayment } from '../libs/accountOp/accountOp'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
@@ -15,7 +13,6 @@ import { Hex } from './hex'
 import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
 import { TypedMessageUserRequest } from './userRequest'
 
 export type IKeystoreController = ControllerInterface<
@@ -112,23 +109,33 @@ export type ScryptParams = {
   dkLen: number
 }
 
-export type AESEncrypted = {
-  cipherType: string
+export type AESEncryptedOld = {
+  cipherType?: 'aes-128-ctr'
   ciphertext: string
   iv: string
   mac: string
 }
 
+export type AESGCMEncrypted = {
+  cipherType: 'AES-GCM'
+  ciphertext: string
+  iv: string
+}
+
+export type KeystoreEncryptedPayload = string | AESGCMEncrypted
+
 export type MainKeyEncryptedWithSecret = {
   id: string
   scryptParams: ScryptParams
-  aesEncrypted: AESEncrypted
+  aesEncrypted: AESEncryptedOld | AESGCMEncrypted
 }
 
-export type MainKey = {
+export type MainKeyOld = {
   key: Uint8Array
   iv: Uint8Array
 }
+
+export type MainKey = CryptoKey
 
 export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
@@ -171,11 +178,27 @@ export type ExternalKey = {
   }
 }
 
-export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
+export type StoredKey =
+  | (InternalKey & { privKey: KeystoreEncryptedPayload })
+  | (ExternalKey & { privKey: null })
 
 export type KeystoreSeed = {
   id: string
   label: string
+  seed: string
+  seedPassphrase?: string | null
+  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+}
+
+export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
+  /**
+   * We store the seed entropy (not the seed phrase string) as an encrypted payload
+   */
+  seed: KeystoreEncryptedPayload
+  seedPassphrase?: KeystoreEncryptedPayload | null
+}
+
+export type KeystoreTempSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE

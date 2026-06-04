@@ -1,5 +1,17 @@
+const FEE_RESERVE_OVERHEAD_BPS = 2000n
+const BPS = 10000n
+
+const getFeeWithReserveOverhead = (fee: bigint): bigint => {
+  if (fee === 0n) return 0n
+
+  // here we do BPS - 1n for ceiling division, i.e. to round up 3.6 to 4
+  return (fee * (BPS + FEE_RESERVE_OVERHEAD_BPS) + BPS - 1n) / BPS
+}
+
 const getAmountAfterFeeReserve = (amount: bigint, fee: bigint): bigint => {
-  return amount > fee ? amount - fee : 0n
+  const feeWithOverhead = getFeeWithReserveOverhead(fee)
+
+  return amount > feeWithOverhead ? amount - feeWithOverhead : 0n
 }
 
 const getAmountAfterFeeSync = ({

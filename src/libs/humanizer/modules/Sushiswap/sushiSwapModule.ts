@@ -1,24 +1,28 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { RouteProcessor } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getLabel, getRecipientText, getToken } from '../../utils'
+import {
+  HexIrCall,
+  eToNative,
+  getAction,
+  getLabel,
+  getRecipientText,
+  getToken,
+  isHexCall
+} from '../../utils'
 
-const routeProcessorIface = new Interface(RouteProcessor)
+const processRouteAbi = parseAbi([
+  'function processRoute(address tokenIn, uint256 amountIn, address tokenOut, uint256 amountOutMin, address to, bytes route) payable returns (uint256 amountOut)'
+])
+
 export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
-    [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (
-      _accountOp: AccountOp,
-      call: IrCall
-    ): IrCall => {
-      const params = routeProcessorIface.parseTransaction(call)!.args
-      let { tokenIn, tokenOut /* route */ } = params
-      const { amountIn, amountOutMin, to } = params
-      if (tokenIn.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
-        tokenIn = ZeroAddress
-      if (tokenOut.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
-        tokenOut = ZeroAddress
+    [toFunctionSelector(processRouteAbi[0])]: (call: HexIrCall): IrCall => {
+      const { args } = decodeFunctionData({ abi: processRouteAbi, data: call.data })
+      const [tokenInRaw, amountIn, tokenOutRaw, amountOutMin, to] = args
+      const tokenIn = eToNative(tokenInRaw)
+      const tokenOut = eToNative(tokenOutRaw)
 
       return {
         ...call,
@@ -33,10 +37,10 @@ export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCal
     }
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
-    if (matcher[call.data.slice(0, 10)]) {
-      return matcher[call.data.slice(0, 10)](accountOp, call)
-    }
-    return call
+    if (!isHexCall(call)) return call
+    const match = matcher[call.data.slice(0, 10)]
+    if (!match) return call
+    return match(call)
   })
   return newCalls
 }

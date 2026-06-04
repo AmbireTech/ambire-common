@@ -45,7 +45,6 @@ const prepareTest = async (
 }
 
 const generateSiweMessage = (
-  // eslint-disable-next-line default-param-last
   overrides: Partial<CreateSiweMessageParameters> = {},
   modifyFunc?: (message: string) => string
 ) => {
