@@ -1,7 +1,6 @@
 import {
   formatUnits,
   FunctionFragment,
-  getAddress,
   Interface,
   isAddress,
   isHexString,
@@ -15,17 +14,17 @@ import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import {
+  HumanizerCallModule,
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
-  HumanizerCallModule,
   HumanizerMeta,
   HumanizerVisualization,
   HumanizerWarning,
   IrCall,
   IrMessage
 } from '../interfaces'
-import AllowanceModule, { getSetAllowanceResetText } from '../modules/Allowance'
 import { aaveHumanizer } from '../modules/Aave'
+import AllowanceModule, { getSetAllowanceResetText } from '../modules/Allowance'
 import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
@@ -37,7 +36,6 @@ import {
   getText,
   getToken
 } from '../utils'
-import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
@@ -671,7 +669,7 @@ const getCalldataRows = (
   const amountValues = resolveCalldataParam(field, context, base, 'amountPath', 'amount')
   const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
   const nestedRowLabel =
-    field.label?.trim().toLowerCase() === 'call' ? '' : field.label ?? field.path ?? ''
+    field.label?.trim().toLowerCase() === 'call' ? '' : (field.label ?? field.path ?? '')
 
   return values.reduce<HumanizerErc7730Row[] | null>((acc, calldata, index) => {
     if (!acc) return null
@@ -895,41 +893,6 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
   }
 }
 
-const getSafeTxRejectTitle = (message: Message): string | null => {
-  if (message.content.kind !== 'typedMessage') return null
-  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
-
-  const { to, value, data, operation, nonce } = message.content.message
-  const { verifyingContract } = message.content.domain
-  if (nonce === undefined) return null
-  if (typeof to !== 'string' || !isAddress(to)) return null
-  if (typeof verifyingContract !== 'string' || !isAddress(verifyingContract)) return null
-  if (getAddress(to) !== getAddress(verifyingContract)) return null
-  if (toBigIntOrNull(operation ?? 0) !== 0n) return null
-  if (toBigIntOrNull(value ?? 0) !== 0n) return null
-  if (typeof data !== 'string' || data.toLowerCase() !== '0x') return null
-
-  return `Reject Safe transaction with nonce ${valueToText(nonce)}`
-}
-
-const replaceErc7730Title = (
-  fullVisualization: HumanizerVisualization[] | null,
-  title: string | null
-): HumanizerVisualization[] | null => {
-  if (!title) return fullVisualization
-
-  return (
-    fullVisualization?.map((visualization) =>
-      visualization.type === 'erc7730'
-        ? {
-            ...visualization,
-            title
-          }
-        : visualization
-    ) || null
-  )
-}
-
 const getKnownFunctionName = (call: Call): string | null => {
   const selector = call.data?.slice(0, 10).toLowerCase()
   if (!selector) return null
@@ -1041,14 +1004,12 @@ const getSafeCallFallbackVisualization = (
         ? { ...visualization, content: String(visualization.content) }
         : visualization
     )
-  const rows: HumanizerErc7730Row[] = value.length
-    ? [
-        {
-          label: action.content,
-          value
-        }
-      ]
-    : []
+  const rows: HumanizerErc7730Row[] = [
+    {
+      label: action.content,
+      value: value.length || !call.to ? value : [getAddressVisualization(call.to)]
+    }
+  ]
   if (!rows.length) return null
 
   const visualization = getErc7730Visualization(action.content, rows)
@@ -1360,12 +1321,11 @@ export const humanizeMessageWithErc7730 = (
     fullVisualization && message.content.primaryType === SAFE_TX_PRIMARY_TYPE
       ? replaceSafeTxTransactionRow(fullVisualization, message, chainId, resolvedDescriptor)
       : fullVisualization
-  const titledVisualization = replaceErc7730Title(safeTxVisualization, getSafeTxRejectTitle(message))
 
-  return titledVisualization?.length
+  return safeTxVisualization?.length
     ? {
         ...message,
-        fullVisualization: titledVisualization,
+        fullVisualization: safeTxVisualization,
         warnings: getSafeTxMessageWarnings(message),
         canHideDropdownArrow: true
       }
