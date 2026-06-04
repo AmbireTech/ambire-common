@@ -11,6 +11,7 @@ import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 
 import {
   getExtremeGasFeeWarningState,
+  getPerOperationFeeUsd,
   isExtremeGasFeeUsd,
   isExtremeMainnetGasPrice,
   weiToGwei
@@ -31,10 +32,12 @@ const createSelectedOption = (): FeePaymentOption =>
 
 const createSignAccountOpState = ({
   amountUsd = '0',
-  gasPrice = 0n
+  gasPrice = 0n,
+  callsCount = 1
 }: {
   amountUsd?: string
   gasPrice?: bigint
+  callsCount?: number
 }): ISignAccountOpController => {
   const selectedOption = createSelectedOption()
   const identifier = getFeeSpeedIdentifier(selectedOption, ACCOUNT_ADDR)
@@ -42,7 +45,10 @@ const createSignAccountOpState = ({
   return {
     selectedOption,
     selectedFeeSpeed: FeeSpeed.Fast,
-    accountOp: { accountAddr: ACCOUNT_ADDR },
+    accountOp: {
+      accountAddr: ACCOUNT_ADDR,
+      calls: Array.from({ length: callsCount }, () => ({}))
+    },
     feeSpeeds: {
       [identifier]: [{ type: FeeSpeed.Fast, amountUsd, gasPrice }]
     }
@@ -68,6 +74,16 @@ describe('extremeGasFee helpers', () => {
     expect(isExtremeGasFeeUsd(0)).toBe(false)
     expect(isExtremeGasFeeUsd(-1)).toBe(false)
     expect(isExtremeGasFeeUsd(Number.NaN)).toBe(false)
+  })
+
+  test('should compute the per-operation fee from a batch', () => {
+    expect(getPerOperationFeeUsd(60, 5)).toBe(12)
+    expect(getPerOperationFeeUsd(50, 1)).toBe(50)
+  })
+
+  test('should treat a missing or empty batch as a single operation', () => {
+    expect(getPerOperationFeeUsd(50, 0)).toBe(50)
+    expect(getPerOperationFeeUsd(50, -3)).toBe(50)
   })
 })
 
@@ -113,6 +129,28 @@ describe('getExtremeGasFeeWarningState on other networks', () => {
     expect(
       getExtremeGasFeeWarningState(createSignAccountOpState({ amountUsd: '5' }), 137n)
     ).toBeNull()
+  })
+
+  test('should not flag a large batch whose per-operation fee is within the threshold', () => {
+    expect(
+      getExtremeGasFeeWarningState(
+        createSignAccountOpState({ amountUsd: '50', callsCount: 5 }),
+        137n
+      )
+    ).toBeNull()
+  })
+
+  test('should flag a batch whose per-operation fee exceeds the threshold', () => {
+    const result = getExtremeGasFeeWarningState(
+      createSignAccountOpState({ amountUsd: '60', callsCount: 5 }),
+      137n
+    )
+
+    expect(result).toEqual({
+      type: 'usd',
+      feeUsd: 60,
+      thresholdUsd: EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD
+    })
   })
 })
 

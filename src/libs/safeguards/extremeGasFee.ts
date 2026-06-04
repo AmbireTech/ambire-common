@@ -32,6 +32,16 @@ export function isExtremeGasFeeUsd(feeUsd: number): boolean {
   return feeUsd > EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD
 }
 
+// Ambire batches multiple calls into a single AccountOp, so the total fee
+// scales with the number of operations. Comparing the per-operation cost (not
+// the total) to the threshold avoids false positives on legitimately large
+// batches while still flagging a single operation that is unusually expensive.
+export function getPerOperationFeeUsd(feeUsd: number, callsCount: number): number {
+  const operationsCount = Math.max(1, callsCount)
+
+  return feeUsd / operationsCount
+}
+
 export function getExtremeGasFeeWarningState(
   signAccountOpState: ISignAccountOpController | null,
   networkChainId: bigint | undefined
@@ -62,7 +72,9 @@ export function getExtremeGasFeeWarningState(
   if (!selectedFeeSpeed.amountUsd) return null
 
   const feeUsd = Number(selectedFeeSpeed.amountUsd)
-  if (!isExtremeGasFeeUsd(feeUsd)) return null
+  const callsCount = signAccountOpState.accountOp.calls?.length ?? 0
+  const perOperationFeeUsd = getPerOperationFeeUsd(feeUsd, callsCount)
+  if (!isExtremeGasFeeUsd(perOperationFeeUsd)) return null
 
   return {
     type: 'usd',
