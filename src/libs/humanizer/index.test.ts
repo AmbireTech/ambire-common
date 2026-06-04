@@ -1586,7 +1586,7 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Reject Safe transaction',
+      title: 'Execute a Safe{Wallet} Transaction',
       rows: [
         {
           value: [
@@ -2030,7 +2030,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('humanizes a SafeTx reject message title with its nonce', async () => {
+  test('humanizes a SafeTx reject message with ERC-7730', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeTxMessage = {
       fromRequestId: 1,
@@ -2107,7 +2107,7 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irMessage.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Reject Safe transaction with nonce 85'
+      title: 'Safe'
     })
   })
 
