@@ -626,9 +626,10 @@ export const calculateAmountWarnings = (
     if (bigintFromAmount !== BigInt(selectedRoute.fromAmount)) return null
 
     // Can be negative if the output is higher
-    // (possible during arbitrage swaps)
+    // (possible during arbitrage swaps). We must NOT bail out here: even when
+    // the quote difference is favorable, a very low minAmountOut can still
+    // expose the user to dangerous slippage, which is checked further below.
     const difference = inputValueInUsd - outputValueInUsd
-    if (difference <= 0) return null
 
     const percentageDiff = (difference / inputValueInUsd) * 100
 
