@@ -29,6 +29,9 @@ on:
       OPENROUTER_KEY:
         required: true
 
+env:
+  PR_AGENT_IMAGE: pragent/pr-agent@sha256:9e9b48cf83d94aedbb251aa7e03a630450afe642eb517156e1ddde7cef2d76ff # 0.36.0
+
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -36,25 +39,29 @@ jobs:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install pr-agent
-        # IT MUST be pinned to a commit and NOT a tag as tags are mutable and have been used in hacks
-        run: pip install --quiet "git+https://github.com/The-PR-Agent/pr-agent@sha256:ffe1f89a4dafc7d8e88b9cf010a3233e30b49f43"
-
       # Note: PR Agent can swallow errors on many levels
       # There is a way to take a snapshot of the last comment id before the workflow
       # and check if there is a new comment after it's done. Not implemented as it sounds too
       # hackish, but we should keep it in mind
       - name: Run review
+        id: pragent
         env:
+          PR_URL: ${{ steps.pre.outputs.pr_url }}
           GITHUB__USER_TOKEN: ${{ github.token }}
-          GITHUB__DEPLOYMENT_TYPE: user
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
-          CONFIG__GIT_PROVIDER: github
           CONFIG__MODEL: ${{ inputs.model }}
           CONFIG__FALLBACK_MODELS: ${{ inputs.fallback_models }}
           PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ inputs.extra_instructions }}
-        run: python -m pr_agent.cli --pr_url "${{ steps.pre.outputs.pr_url }}" review
+        run: |
+          docker run --rm \
+            --read-only --tmpfs /tmp \
+            --cap-drop=ALL --security-opt no-new-privileges \
+            -e GITHUB__USER_TOKEN \
+            -e GITHUB__DEPLOYMENT_TYPE=user \
+            -e OPENROUTER__KEY \
+            -e CONFIG__GIT_PROVIDER=github \
+            -e CONFIG__MODEL \
+            -e CONFIG__FALLBACK_MODELS \
+            -e PR_REVIEWER__EXTRA_INSTRUCTIONS \
+            "$PR_AGENT_IMAGE" \
+            --pr_url "$PR_URL" review
