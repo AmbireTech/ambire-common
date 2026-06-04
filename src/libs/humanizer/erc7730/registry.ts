@@ -51,6 +51,9 @@ const safeSingletonPromises = new Map<string, Promise<string | null>>()
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
 const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
+const permit2ApproveInterface = new Interface([
+  'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+])
 const ABI_WORD_HEX_LENGTH = 64
 const CALLDATA_SELECTOR_HEX_LENGTH = 10
 const EXEC_TRANSACTION_STATIC_WORDS = 10
@@ -291,13 +294,13 @@ const ERC20_TRANSFER_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   }
 }
 
-const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
-  path: 'built-in/permit2-approve',
+const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730ResolvedDescriptor => ({
+  path,
   descriptor: {
     display: {
       formats: {
         'approve(address token, address spender, uint160 amount, uint48 expiration)': {
-          intent: 'Approve',
+          intent,
           fields: [
             {
               path: '#.spender',
@@ -324,7 +327,14 @@ const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
       }
     }
   }
-}
+})
+
+const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor('built-in/permit2-approve', 'Approve')
+
+const PERMIT2_REVOKE_APPROVAL_DESCRIPTOR = getPermit2ApproveDescriptor(
+  'built-in/permit2-revoke-approval',
+  'Revoke approval'
+)
 
 const fetchCachedIndex = async <T>({
   path,
@@ -550,7 +560,13 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
     call.to.toLowerCase() === PERMIT2_ADDRESS &&
     selector === PERMIT2_APPROVE_SELECTOR
   ) {
-    return PERMIT2_APPROVE_DESCRIPTOR
+    try {
+      const [, , amount] = permit2ApproveInterface.decodeFunctionData('approve', call.data)
+
+      return amount === 0n ? PERMIT2_REVOKE_APPROVAL_DESCRIPTOR : PERMIT2_APPROVE_DESCRIPTOR
+    } catch {
+      return PERMIT2_APPROVE_DESCRIPTOR
+    }
   }
 
   return null
