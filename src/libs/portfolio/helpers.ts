@@ -569,6 +569,12 @@ export const getTotal = (
     )
   }
 
+  // In case the user doesn't have any tokens or the function is calculating for the custom
+  // network `defiApps` that doesn't have any tokens
+  if (!Object.keys(tokensTotal).length && Object.keys(defiTotal).length > 0) {
+    return defiTotal
+  }
+
   return Object.keys(tokensTotal).reduce((cur, key) => {
     cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0)
 

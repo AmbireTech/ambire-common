@@ -19,7 +19,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
-import { DeFiPositionsError } from '../../libs/defiPositions/types'
+import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
 import {
   erc721CollectionToLearnedAssetKeys,
   learnedErc721sToHints
@@ -2065,6 +2065,85 @@ describe('Portfolio Controller ', () => {
       expect(result2.defiPositions.error).toBe(DeFiPositionsError.CriticalError)
       expect(state2!.errors.length).toBeGreaterThan(0)
       restore()
+    })
+
+    it("Uniswap V3 shouldn't lose its API enhancement (e.g. rewards) when the discovery call is skipped", async () => {
+      const { controller } = await prepareTest()
+
+      // A formatted discovery response carrying a Debank Uniswap V3 entry. It's mocked rather than
+      // relying on the live API, since Debank's coverage of a given account varies over time.
+      const discoveryWithDebankUniV3 = {
+        data: {
+          defi: {
+            updatedAt: Date.now(),
+            isForceUpdate: false,
+            positions: [
+              {
+                providerName: 'Uniswap V3',
+                chainId: 1n,
+                source: 'debank' as const,
+                iconUrl: '',
+                siteUrl: 'https://app.uniswap.org',
+                type: 'common' as const,
+                positions: [
+                  {
+                    id: 'debank-uni-v3-eth',
+                    assets: [
+                      {
+                        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+                        symbol: 'WETH',
+                        name: 'Wrapped Ether',
+                        decimals: 18,
+                        amount: 1000000000000000000n,
+                        priceIn: { price: 3000, baseCurrency: 'usd' },
+                        value: 3000,
+                        type: AssetType.Liquidity,
+                        iconUrl: ''
+                      }
+                    ],
+                    additionalData: { positionIndex: 'debank-uni-v3-eth', name: 'Liquidity Pool' }
+                  }
+                ],
+                positionInUSD: 3000
+              }
+            ]
+          },
+          hints: null,
+          otherNetworksDefiCounts: {}
+        },
+        discoveryTime: 1,
+        errors: []
+      }
+
+      // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+      const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+      // First update: the custom (deployless) position is enhanced with the Debank entry (source: 'mixed')
+      discoverySpy.mockResolvedValueOnce(discoveryWithDebankUniV3)
+      // Second update: a skipped discovery returns null. This is a routine occurrence (the data is
+      // still fresh) and is NOT a failure.
+      discoverySpy.mockResolvedValueOnce(null)
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const firstResult = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+      const uniBeforeSkip = firstResult?.defiPositions.positionsByProvider.find(
+        (p) => getProviderId(p.providerName) === 'uniswap v3'
+      )
+
+      // Check before updating again to ensure it's mixed
+      expect(uniBeforeSkip?.source).toBe('mixed')
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+
+      const secondResult = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+      const uniAfterSkip = secondResult?.defiPositions.positionsByProvider.find(
+        (p) => getProviderId(p.providerName) === 'uniswap v3'
+      )
+
+      // MUST BE MIXED!!!!!
+      expect(uniAfterSkip?.source).toBe('mixed')
     })
 
     describe('Defi apps', () => {

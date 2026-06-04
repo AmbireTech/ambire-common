@@ -621,6 +621,121 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
+  test('resolves uint byte slices and uint-encoded token addresses', async () => {
+    const maker = '0x4446adc0b8136ffc55ddb7a488ba5509ace2a5ef'
+    const oneInchAccountOp = {
+      ...accountOp,
+      accountAddr: maker,
+      chainId: 8453n,
+      calls: [
+        {
+          to: '0x111111125421cA6dc452d289314280a0f8842A65',
+          value: 0n,
+          data: '0x9fda64bd000000000000000000000000000000000000000053dc0eddc512ea796b81a63b0000000000000000000000004446adc0b8136ffc55ddb7a488ba5509ace2a5ef0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000042000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000ca300000000000000000000000000000000000000000000000000042025afe2dc9a0000000000000000000000000000ae9d1b006a213db339b4b62d38e514a03b78971de43fda13dd255b976f1a611cc28cfcd418db951a07e107a85a0aa534ef8cf175f9598b8fdfd328af71786a6fe537d7e29938372c7b39e9fc0109c7029de300000000000000000000000000000000000000000000000000042025afe2dc9a6000000000000000000000000000000000000000000000000000000000000000ab0003904a82836d'
+        }
+      ]
+    }
+    const makerAsset = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const takerAsset = '0x4200000000000000000000000000000000000006'
+
+    const irCalls = humanizeAccountOp(oneInchAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/1inch/calldata-AggregationRouterV6.json',
+          descriptor: {
+            metadata: {
+              enums: {
+                takerTraits: {
+                  '96': 'Unwrap'
+                }
+              }
+            },
+            display: {
+              definitions: {
+                makingAmount: {
+                  label: 'Order purchasing amt',
+                  format: 'tokenAmount',
+                  params: {}
+                },
+                takingAmount: {
+                  label: 'Order selling amount',
+                  format: 'tokenAmount',
+                  params: {}
+                },
+                fillAmount: {
+                  label: 'Amount to sell',
+                  format: 'tokenAmount',
+                  params: {}
+                },
+                takerTraits: {
+                  label: 'Additional action',
+                  format: 'enum',
+                  params: {
+                    $ref: '$.metadata.enums.takerTraits'
+                  }
+                }
+              },
+              formats: {
+                'fillOrder((uint256 salt, uint256 maker, uint256 receiver, uint256 makerAsset, uint256 takerAsset, uint256 makingAmount, uint256 takingAmount, uint256 makerTraits) order, bytes32 r, bytes32 vs, uint256 amount, uint256 takerTraits)':
+                  {
+                    intent: 'Fill order',
+                    fields: [
+                      {
+                        path: 'order.takingAmount',
+                        $ref: '$.display.definitions.takingAmount',
+                        params: {
+                          tokenPath: 'order.takerAsset'
+                        },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'order.makingAmount',
+                        $ref: '$.display.definitions.makingAmount',
+                        params: {
+                          tokenPath: 'order.makerAsset'
+                        },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'amount',
+                        $ref: '$.display.definitions.fillAmount',
+                        params: {
+                          tokenPath: 'order.takerAsset'
+                        },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'takerTraits.[:1]',
+                        $ref: '$.display.definitions.takerTraits'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Fill order', [
+          {
+            label: 'Amount to Send',
+            value: [getToken(makerAsset, 3235n, 8453n)]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(takerAsset, 1161246143601818n, 8453n)]
+          },
+          {
+            label: 'Additional action',
+            value: [getText('Unwrap')]
+          }
+        ])
+      ]
+    ])
+  })
   test('treats missing token references in tokenAmount descriptors as native token', async () => {
     const uniswapRouter = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
     const tokenIn = transactions.erc20[1]!.to
@@ -1225,6 +1340,50 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('uses revoke wording for standard ERC-7730 Permit2 approvals with a zero amount', async () => {
+    const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+    const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+    const universalRouter = '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7'
+    const permit2ApproveInterface = new ethers.Interface([
+      'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+    ])
+    const revokePermitAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: permit2,
+          value: 0n,
+          data: permit2ApproveInterface.encodeFunctionData('approve', [
+            baseCbBtc,
+            universalRouter,
+            0n,
+            0x6a2c1c44n
+          ])
+        }
+      ]
+    }
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokePermitAccountOp)
+    const irCalls = humanizeAccountOp(revokePermitAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe('built-in/permit2-revoke-approval')
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Revoke approval',
+      rows: [
+        {
+          label: 'Spender',
+          value: [expect.objectContaining({ address: universalRouter.toLowerCase() })]
+        },
+        {
+          label: 'Amount',
+          value: [expect.objectContaining({ address: baseCbBtc.toLowerCase(), value: 0n })]
+        },
+        { label: 'Approval expires' }
+      ]
+    })
+  })
+
   test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {
     const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
     const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
@@ -1524,6 +1683,80 @@ describe('ERC-7730 descriptors', () => {
         }
       ])
     ])
+  })
+
+  test('humanizes a Safe execTransaction reject call with ERC-7730', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: '0x6a761202000000000000000000000000714fd3db837e72bd49b8eda02b8f4d53dfdde5ce000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000829829d2364ba9c5fc4e5dae8915dc34bcfe2c6f3198d5d616cc3163362339f1c729972967c47cb4a0fc74a996e3e431628e43e6838c821a7c933dff90a31656771c000000000000000000000000E691cDAbc7dC1CD2138e21F75caF0bd048696133000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+    const provider = {
+      getStorage: jest.fn(async (address: string) => {
+        expect(address.toLowerCase()).toBe(safeProxy)
+
+        return ethers.zeroPadValue(safeSingleton, 32)
+      })
+    }
+    const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${safeSingleton}`]: descriptorPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${descriptorPath}` })
+
+        return {
+          success: true,
+          display: {
+            formats: {}
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+      callRelayer,
+      provider: provider as any
+    })
+    const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(provider.getStorage).toHaveBeenCalledTimes(1)
+    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Execute a Safe{Wallet} Transaction',
+      rows: [
+        {
+          value: [
+            expect.objectContaining({
+              type: 'erc7730',
+              title: 'Reject currently queued transaction'
+            })
+          ]
+        }
+      ]
+    })
   })
 
   test('fetches the EIP-712 descriptor index through the relayer', async () => {
@@ -1954,6 +2187,87 @@ describe('ERC-7730 descriptors', () => {
         }
       ])
     ])
+  })
+
+  test('humanizes a SafeTx reject message with ERC-7730', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeProxy,
+          chainId: 8453
+        },
+        message: {
+          to: safeProxy,
+          value: '0',
+          data: '0x',
+          operation: 0,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 85,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irMessage.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Safe'
+    })
   })
 
   test('humanizes a SafeTx owner change with the Safe singleton descriptor fallback', async () => {

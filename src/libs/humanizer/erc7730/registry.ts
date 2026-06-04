@@ -51,6 +51,12 @@ const safeSingletonPromises = new Map<string, Promise<string | null>>()
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
 const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
+const permit2ApproveInterface = new Interface([
+  'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+])
+const ABI_WORD_HEX_LENGTH = 64
+const CALLDATA_SELECTOR_HEX_LENGTH = 10
+const EXEC_TRANSACTION_STATIC_WORDS = 10
 
 /**
  * A helper function to use in the tests only
@@ -288,13 +294,13 @@ const ERC20_TRANSFER_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   }
 }
 
-const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
-  path: 'built-in/permit2-approve',
+const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730ResolvedDescriptor => ({
+  path,
   descriptor: {
     display: {
       formats: {
         'approve(address token, address spender, uint160 amount, uint48 expiration)': {
-          intent: 'Approve',
+          intent,
           fields: [
             {
               path: '#.spender',
@@ -321,7 +327,14 @@ const PERMIT2_APPROVE_DESCRIPTOR: Erc7730ResolvedDescriptor = {
       }
     }
   }
-}
+})
+
+const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor('built-in/permit2-approve', 'Approve')
+
+const PERMIT2_REVOKE_APPROVAL_DESCRIPTOR = getPermit2ApproveDescriptor(
+  'built-in/permit2-revoke-approval',
+  'Revoke approval'
+)
 
 const fetchCachedIndex = async <T>({
   path,
@@ -547,7 +560,13 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
     call.to.toLowerCase() === PERMIT2_ADDRESS &&
     selector === PERMIT2_APPROVE_SELECTOR
   ) {
-    return PERMIT2_APPROVE_DESCRIPTOR
+    try {
+      const [, , amount] = permit2ApproveInterface.decodeFunctionData('approve', call.data)
+
+      return amount === 0n ? PERMIT2_REVOKE_APPROVAL_DESCRIPTOR : PERMIT2_APPROVE_DESCRIPTOR
+    } catch {
+      return PERMIT2_APPROVE_DESCRIPTOR
+    }
   }
 
   return null
@@ -558,6 +577,95 @@ const getTypedMessageChainId = (message: Message): bigint | null => {
 
   try {
     return BigInt(message.content.domain.chainId ?? message.chainId)
+  } catch {
+    return null
+  }
+}
+
+const getAbiWord = (data: string, wordIndex: number): string | null => {
+  const wordStart = CALLDATA_SELECTOR_HEX_LENGTH + wordIndex * ABI_WORD_HEX_LENGTH
+  const wordEnd = wordStart + ABI_WORD_HEX_LENGTH
+  if (data.length < wordEnd) return null
+
+  return data.slice(wordStart, wordEnd)
+}
+
+const getAbiWordAsBigInt = (data: string, wordIndex: number): bigint | null => {
+  const word = getAbiWord(data, wordIndex)
+  if (!word) return null
+
+  try {
+    return BigInt(`0x${word}`)
+  } catch {
+    return null
+  }
+}
+
+const getAbiWordAsAddress = (data: string, wordIndex: number): string | null => {
+  const word = getAbiWord(data, wordIndex)
+  if (!word) return null
+
+  const address = `0x${word.slice(-40)}`
+  return isAddress(address) ? getAddress(address) : null
+}
+
+const getAbiBytesAtOffset = (data: string, offset: bigint): string | null => {
+  if (offset < BigInt(EXEC_TRANSACTION_STATIC_WORDS * 32)) return null
+  if (offset > BigInt(Number.MAX_SAFE_INTEGER)) return null
+
+  const lengthStart = CALLDATA_SELECTOR_HEX_LENGTH + Number(offset) * 2
+  const lengthEnd = lengthStart + ABI_WORD_HEX_LENGTH
+  if (data.length < lengthEnd) return null
+
+  let byteLength: bigint
+  try {
+    byteLength = BigInt(`0x${data.slice(lengthStart, lengthEnd)}`)
+  } catch {
+    return null
+  }
+
+  if (byteLength > BigInt(Number.MAX_SAFE_INTEGER)) return null
+
+  const valueStart = lengthEnd
+  const valueEnd = valueStart + Number(byteLength) * 2
+  if (data.length < valueEnd) return null
+
+  return `0x${data.slice(valueStart, valueEnd)}`
+}
+
+const getSafeTxCallsFromExecTransactionHead = (call: Call): Call[] | null => {
+  if (!call.data || !isHexString(call.data)) return null
+
+  const selector = call.data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH).toLowerCase()
+  if (selector !== safeExecTransactionInterface.getFunction('execTransaction')?.selector) {
+    return null
+  }
+
+  const to = getAbiWordAsAddress(call.data, 0)
+  const value = getAbiWordAsBigInt(call.data, 1)
+  const dataOffset = getAbiWordAsBigInt(call.data, 2)
+  const operation = getAbiWordAsBigInt(call.data, 3)
+  if (!to || value === null || dataOffset === null || operation === null) return null
+
+  const data = getAbiBytesAtOffset(call.data, dataOffset)
+  if (data === null) return null
+
+  if (operation === 0n) return [{ to, data, value }]
+  if (operation !== 1n) return null
+
+  try {
+    const multiSendDecoded = multiSendInterface.decodeFunctionData(
+      'multiSend',
+      getAbiBytesCalldataWithPadding(data)
+    )
+    const transactionsHex = multiSendDecoded[0]
+    if (typeof transactionsHex !== 'string') return null
+
+    return decodeMultiSend(transactionsHex).map((transaction) => ({
+      to: transaction.to,
+      data: transaction.data,
+      value: transaction.value
+    }))
   } catch {
     return null
   }
@@ -601,7 +709,7 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
       value: transaction.value
     }))
   } catch {
-    return null
+    return getSafeTxCallsFromExecTransactionHead(call)
   }
 }
 
