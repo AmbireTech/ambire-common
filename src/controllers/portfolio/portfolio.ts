@@ -1348,7 +1348,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           network,
           this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
-          discoveryData?.data?.defi?.positions || [],
+          discoveryData?.data?.defi?.positions,
           getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
         )
       ])
