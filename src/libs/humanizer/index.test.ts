@@ -1526,6 +1526,80 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('humanizes a Safe execTransaction reject call with ERC-7730', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: '0x6a761202000000000000000000000000714fd3db837e72bd49b8eda02b8f4d53dfdde5ce000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000829829d2364ba9c5fc4e5dae8915dc34bcfe2c6f3198d5d616cc3163362339f1c729972967c47cb4a0fc74a996e3e431628e43e6838c821a7c933dff90a31656771c000000000000000000000000E691cDAbc7dC1CD2138e21F75caF0bd048696133000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+    const provider = {
+      getStorage: jest.fn(async (address: string) => {
+        expect(address.toLowerCase()).toBe(safeProxy)
+
+        return ethers.zeroPadValue(safeSingleton, 32)
+      })
+    }
+    const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        expect(method).toBe('GET')
+
+        return {
+          success: true,
+          data: {
+            [`eip155:8453:${safeSingleton}`]: descriptorPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${descriptorPath}` })
+
+        return {
+          success: true,
+          display: {
+            formats: {}
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+      callRelayer,
+      provider: provider as any
+    })
+    const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(provider.getStorage).toHaveBeenCalledTimes(1)
+    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Reject Safe transaction',
+      rows: [
+        {
+          value: [
+            expect.objectContaining({
+              type: 'erc7730',
+              title: 'Reject currently queued transaction'
+            })
+          ]
+        }
+      ]
+    })
+  })
+
   test('fetches the EIP-712 descriptor index through the relayer', async () => {
     const registryPath = 'registry/test/eip712-relayer-permit.json'
     const permitMessage = {
