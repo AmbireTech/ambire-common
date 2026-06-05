@@ -475,7 +475,14 @@ export class LiFiAPI implements SwapProvider {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage: getSlippage(fromAsset, fromAmount, '0.01', 0.005),
+        slippage: getSlippage({
+          fromAsset,
+          toAsset,
+          fromChainId,
+          toChainId,
+          provider: 'lifi',
+          isWrapOrUnwrap
+        }),
         maxPriceImpact: '0.50',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',

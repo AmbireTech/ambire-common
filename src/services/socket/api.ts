@@ -21,6 +21,7 @@ import {
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  getSlippage,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { CITREA_CHAIN_ID } from '../squid/constants'
@@ -289,7 +290,15 @@ export class SocketAPI implements SwapProvider {
       inputAmount: fromAmount.toString(),
       receiverAddress: userAddress,
       useInbox: 'true',
-      enableManual: 'true'
+      enableManual: 'true',
+      slippage: getSlippage({
+        fromAsset,
+        toAsset,
+        fromChainId,
+        toChainId,
+        provider: 'socket',
+        isWrapOrUnwrap
+      })
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
     const shouldIncludeConvenienceFee =

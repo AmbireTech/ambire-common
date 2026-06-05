@@ -370,7 +370,16 @@ export class SquidAPI implements SwapProvider {
       toChain: toChainId.toString(),
       toToken: normalizeOutgoingSquidTokenAddress(toTokenAddress),
       toAddress: userAddress,
-      slippage: Number(getSlippage(fromAsset, fromAmount, '1', 0.5)),
+      slippage: Number(
+        getSlippage({
+          fromAsset,
+          toAsset,
+          fromChainId,
+          toChainId,
+          provider: 'squid',
+          isWrapOrUnwrap
+        })
+      ),
       quoteOnly: false
     }
 
