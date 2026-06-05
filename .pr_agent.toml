@@ -49,10 +49,6 @@ glob = [
     "**/*.spec.ts",
     "**/*.test.js",
     "**/*.spec.js",
-    # Generated / declaration files
-    "**/*.d.ts",
-    # CI/CD
-    "**/.github/**",
 ]
 
 # ─────────────────────────────────────────────
