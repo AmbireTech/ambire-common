@@ -71,6 +71,7 @@ jobs:
           docker run --rm \
             --read-only --tmpfs /tmp \
             --cap-drop=ALL --security-opt no-new-privileges \
+            -e HOME=/tmp \
             -e GITHUB__USER_TOKEN \
             -e GITHUB__DEPLOYMENT_TYPE=user \
             -e OPENROUTER__KEY \
