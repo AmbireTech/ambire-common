@@ -233,17 +233,7 @@ export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
 export type SignAccountOpFeeTokenPreference = StorageProps['signAccountOpFeeTokenPreference']
 
-const DEFAULT_FEE_TOKEN_PREFERENCE: SignAccountOpFeeTokenPreference = {
-  preferGasTank: false,
-  erc20ByChainId: {}
-}
-
 const FEE_TOKEN_PREFERENCE_STORAGE_KEY = 'signAccountOpFeeTokenPreference'
-
-const getDefaultFeeTokenPreference = (): SignAccountOpFeeTokenPreference => ({
-  preferGasTank: DEFAULT_FEE_TOKEN_PREFERENCE.preferGasTank,
-  erc20ByChainId: { ...DEFAULT_FEE_TOKEN_PREFERENCE.erc20ByChainId }
-})
 
 export class SignAccountOpController
   extends HumanizationController
@@ -304,7 +294,7 @@ export class SignAccountOpController
    */
   feeTokenResult: TokenResult | null = null
 
-  feeTokenPreference: SignAccountOpFeeTokenPreference = DEFAULT_FEE_TOKEN_PREFERENCE
+  feeTokenPreference: SignAccountOpFeeTokenPreference = {}
 
   pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
 
@@ -942,10 +932,7 @@ export class SignAccountOpController
 
   async #loadFeeTokenPreference() {
     try {
-      this.feeTokenPreference = await this.#storage.get(
-        FEE_TOKEN_PREFERENCE_STORAGE_KEY,
-        getDefaultFeeTokenPreference()
-      )
+      this.feeTokenPreference = await this.#storage.get(FEE_TOKEN_PREFERENCE_STORAGE_KEY, {})
       this.#isFeeTokenPreferenceLoaded = true
 
       if (!this.#hasUserSelectedFeeOption && this.estimation.status === EstimationStatus.Success) {
@@ -969,25 +956,17 @@ export class SignAccountOpController
     return option.token.address === ZERO_ADDRESS && !option.token.flags.onGasTank
   }
 
-  #isErc20FeeOption(option: FeePaymentOption) {
-    return option.token.address !== ZERO_ADDRESS && !option.token.flags.onGasTank
-  }
-
   #getPreferredFeeOption(options: FeePaymentOption[]) {
-    const erc20Preference =
-      this.feeTokenPreference.erc20ByChainId[this.accountOp.chainId.toString()]
+    const pref = this.feeTokenPreference[this.accountOp.chainId.toString()]
 
-    if (erc20Preference) {
-      return options.find(
-        (option) =>
-          this.#isErc20FeeOption(option) &&
-          option.token.address.toLowerCase() === erc20Preference.address.toLowerCase() &&
-          option.token.symbol.toLowerCase() === erc20Preference.symbol.toLowerCase()
-      )
-    }
+    if (pref) {
+      // find the gas tank
+      if (pref === 'gasTank') {
+        return options.find((option) => option.token.flags.onGasTank)
+      }
 
-    if (this.feeTokenPreference.preferGasTank) {
-      return options.find((option) => option.token.flags.onGasTank)
+      // find the token/native
+      return options.find((option) => option.token.address.toLowerCase() === pref.toLowerCase())
     }
 
     return undefined
@@ -1005,34 +984,17 @@ export class SignAccountOpController
     return (
       selectableOptions.find((option) => this.#isNativeFeeOption(option)) ||
       selectableOptions.find((option) => option.token.flags.onGasTank) ||
-      selectableOptions.find((option) => this.#isErc20FeeOption(option)) ||
       selectableOptions[0]
     )
   }
 
   #getFeeTokenPreference(feeToken: TokenResult) {
     const nextPreference: SignAccountOpFeeTokenPreference = {
-      preferGasTank: this.feeTokenPreference.preferGasTank,
-      erc20ByChainId: { ...this.feeTokenPreference.erc20ByChainId }
+      ...this.feeTokenPreference
     }
-    const chainId = this.accountOp.chainId.toString()
-
-    if (feeToken.flags.onGasTank) {
-      // set the gas tank across chains, remove other tokens chosen
-      nextPreference.preferGasTank = true
-      nextPreference.erc20ByChainId = {}
-    } else if (feeToken.address === ZERO_ADDRESS) {
-      // set native across chains, remove other tokens chosen
-      nextPreference.preferGasTank = false
-      nextPreference.erc20ByChainId = {}
-    } else {
-      // set a chain specific option
-      nextPreference.erc20ByChainId[chainId] = {
-        address: feeToken.address,
-        symbol: feeToken.symbol
-      }
-    }
-
+    nextPreference[this.accountOp.chainId.toString()] = feeToken.flags.onGasTank
+      ? 'gasTank'
+      : feeToken.address
     return nextPreference
   }
 
@@ -1042,21 +1004,13 @@ export class SignAccountOpController
   ) {
     const chainId = this.accountOp.chainId.toString()
 
-    if (feeToken.flags.onGasTank) {
-      return preference.preferGasTank && !preference.erc20ByChainId[chainId]
-    }
+    const chainPreference = preference[chainId]
+    if (!chainPreference) return false
 
-    if (feeToken.address === ZERO_ADDRESS) {
-      return !preference.preferGasTank && !preference.erc20ByChainId[chainId]
-    }
+    const isGasTank = feeToken.flags.onGasTank && chainPreference === 'gasTank'
+    const isSelectedToken = feeToken.address.toLowerCase() === chainPreference.toLowerCase()
 
-    const chainPreference = preference.erc20ByChainId[chainId]
-
-    return (
-      !!chainPreference &&
-      chainPreference.address.toLowerCase() === feeToken.address.toLowerCase() &&
-      chainPreference.symbol.toLowerCase() === feeToken.symbol.toLowerCase()
-    )
+    return isGasTank || isSelectedToken
   }
 
   async #persistPendingFeeTokenPreference() {

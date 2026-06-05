@@ -85,13 +85,7 @@ export type StorageProps = {
   rejectedSafeTxns: string[]
   // Other
   signAccountOpFeeTokenPreference: {
-    preferGasTank: boolean
-    erc20ByChainId: {
-      [chainId: string]: {
-        address: string
-        symbol: string
-      }
-    }
+    [chainId: string]: string | 'gasTank'
   }
   networks: { [key: string]: Network }
   accounts: Account[]
