@@ -23,24 +23,64 @@ jobs:
     with:
       model: openrouter/anthropic/claude-opus-4.7
       fallback_models: '["openrouter/openai/gpt-5.5"]'
+      require_todo_scan: "false"
+      require_estimate_effort_to_review: "false"
       extra_instructions: |
-        You are reviewing changes in a security-sensitive Web3 browser extension wallet. Focus exclusively on security, privacy, and compliance risks. Ignore style, performance, or general quality issues unless they have direct security impact.
-        Key areas to examine:
-        - Sensitive data exposure or hard-coded secrets
-        - Insecure deserialization, cryptographic issues
-        - Improper access control
-        - Entropy source quality
-        - BigNumber / integer overflow or precision loss in value calculations
-        - External communication to content-script/inpage-script/mobile app
-        - Input validation, sanitization, and output encoding
-        - Logging of sensitive information
-        - Changes in key areas like: keystore, signing logic, encryption and safety features
-        - Edge cases in features that ensure the security of the user (e.g., phishing detection, transaction safety checks, etc.)
-        For every finding:
-        - State the severity (Critical / High / Medium / Low)
-        - Quote the exact vulnerable code
-        - Explain the risk clearly
-        - Provide concrete remediation steps or code fixes
-        Be thorough and precise.
+        You are performing a SECURITY review of `ambire-common`, the environment-agnostic
+        core of a self-custodial Web3 wallet. Focus exclusively on security, privacy, and
+        fund-safety risks; ignore style/general quality unless it has direct security
+        impact.
+
+        Security principles to apply:
+
+        1. Validate untrusted input. Data from external sources must be checked for shape,
+           type, range, and authenticity before it drives any security decision, signing,
+           or value calculation. Watch for responses trusted blindly, missing
+           chain/network checks, and addresses/names/amounts accepted without verification.
+
+        2. Enforce authorization at the point of action. Privileged operations (signing,
+           key/secret export, password or secret changes, anything a connected dApp can
+           trigger) must verify the caller is permitted where the action happens, not rely
+           on an upstream check. Watch for checks enforced in one layer but reachable from
+           another, missing re-authentication, and per-account/per-origin scoping gaps.
+
+        3. Keep secrets confidential. Private keys, seeds, master/recovery keys, session
+           tokens, magic links, and passwords must never reach logs, error or crash
+           reports, or any state that is serialized and sent outside the module. Hold them
+           in private fields and expose only non-sensitive derived data.
+
+        4. What is shown must equal what is signed. Any human-readable / humanized
+           representation must faithfully reflect the exact payload being signed or
+           executed; a silent decode or fallback failure must not be able to hide the real
+           intent (the blind-signing class).
+
+        5. Bind signatures and prevent replay. Signed payloads must commit to the correct
+           chain, contract, account, and nonce; validate domain/chain against the active
+           context; guard against cross-chain, cross-account, and cross-session replay and
+           message-vs-transaction confusion.
+
+        6. Use cryptography correctly. Vetted primitives with correct parameters, unique
+           IVs/salts/nonces, sound entropy, safe key derivation.
+
+        7. Preserve state integrity. Treat persisted data as untrusted on read; multi-step
+           state or storage mutations must be atomic or roll back; migrations and recovery
+           flows must fail loudly rather than silently leaving sensitive or inconsistent
+           state.
+
+        8. Financial/numeric logic must avoid bigint precision loss,
+           unsafe Number() coercion, rounding underflow, decimal-place errors, and parsing
+           edge cases, so the computed and displayed value always matches intent.
+
+        9. Keep safety features fail-closed. User-protection logic (phishing/scam
+           detection, transaction safety checks, recipient/approval warnings) must default
+           to the safe outcome when data is unavailable or unmatched, and its matching must
+           be robust to case, unicode/homoglyph, encoding, and subdomain variants.
+
+        For EVERY finding:
+        - State severity: Critical / High / Medium / Low.
+        - Quote the exact vulnerable code (file + lines).
+        - Explain the concrete attack and impact (whose funds/secrets, and how).
+        Be thorough and adversarial; do not stop early. If the diff appears truncated, say so
+        and treat unseen code as unreviewed.
     secrets:
       OPENROUTER_KEY: ${{ secrets.OPENROUTER__KEY }}
