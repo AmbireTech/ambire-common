@@ -12,25 +12,35 @@ jobs:
     if: >-
       (github.event.action == 'labeled' && github.event.label.name == 'review') ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event.sender.type != 'Bot' && 
+      (github.event.sender.type != 'Bot' &&
       github.event_name == 'issue_comment' &&
-      contains(github.event.comment.body, '/review'))
-    runs-on: ubuntu-latest
+      contains(github.event.comment.body, '/review') &&
+      !contains(github.event.comment.body, '/security-review'))
     permissions:
       pull-requests: write
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Run General PR Agent
-        uses: The-PR-Agent/pr-agent@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
-          CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"
-          # Without auto_review=true we cannot have triggers such as
-          # workflow_dispatch and PR label
-          github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "false"
-          github_action_config.auto_improve: "false"
+      # This MUST be read!
+      contents: read
+    uses: ./.github/workflows/pr-agent.yml
+    with:
+      model: openrouter/moonshotai/kimi-k2.6
+      fallback_models: '["openrouter/anthropic/claude-sonnet-4.6"]'
+      extra_instructions: |
+        You are reviewing changes in a security-sensitive Web3 browser extension wallet.
+        Focus on the diff in front of you and assess it for correctness, security, reliability, and maintainability.
+        Prioritize issues such as:
+        - Requests without error handling and timeouts
+        - Inefficient algorithms or data structures
+        - Inconsistent naming conventions or formatting
+        - Unnecessary complexity or duplication
+        - Missing comments or documentation for complex logic
+        - Unhandled exceptions and edge cases
+        - Swallowed errors and edge case return statements that should at least log an error
+        - Concurrent modifications to state that may result in race conditions
+        - Unhandled degradations when interacting with external services and APIs
+        - Decimal precision handling and bigint conversions
+        - Unhandled pending operations (e.g., submitting twice, not awaiting async calls, etc.)
+        - Partial updates that leave the state inconsistent
+        - Improper cleanup of subscriptions, timers, and event listeners
+        Be constructive, concise, and actionable. Keep feedback grounded in the actual changes rather than using a fixed checklist.
+    secrets:
+      OPENROUTER_KEY: ${{ secrets.OPENROUTER__KEY }}
