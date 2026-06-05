@@ -25,12 +25,7 @@ import {
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import {
-  EIP_7702_AMBIRE_ACCOUNT,
-  EIP_7702_GRID_PLUS,
-  EIP_7702_KATANA,
-  SINGLETON
-} from '../../consts/deploy'
+import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
@@ -68,6 +63,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
+import { IStorageController, StorageProps } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
@@ -234,6 +230,20 @@ export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void
 
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
+export type SignAccountOpFeeTokenPreference = StorageProps['signAccountOpFeeTokenPreference']
+
+const DEFAULT_FEE_TOKEN_PREFERENCE: SignAccountOpFeeTokenPreference = {
+  preferGasTank: false,
+  erc20ByChainId: {}
+}
+
+const FEE_TOKEN_PREFERENCE_STORAGE_KEY = 'signAccountOpFeeTokenPreference'
+
+const getDefaultFeeTokenPreference = (): SignAccountOpFeeTokenPreference => ({
+  preferGasTank: DEFAULT_FEE_TOKEN_PREFERENCE.preferGasTank,
+  erc20ByChainId: { ...DEFAULT_FEE_TOKEN_PREFERENCE.erc20ByChainId }
+})
+
 export class SignAccountOpController
   extends HumanizationController
   implements ISignAccountOpController
@@ -247,6 +257,8 @@ export class SignAccountOpController
   #keystore: IKeystoreController
 
   #portfolio: IPortfolioController
+
+  #storage: IStorageController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -282,12 +294,18 @@ export class SignAccountOpController
 
   #paidBy: string | null = null
 
+  #hasUserSelectedFeeOption: boolean = false
+
   /**
    * The selected fee token the user is going to broadcast with.
    * This probably exists in selectedOption as well and it could
    * be refactored away someday
    */
   feeTokenResult: TokenResult | null = null
+
+  feeTokenPreference: SignAccountOpFeeTokenPreference = DEFAULT_FEE_TOKEN_PREFERENCE
+
+  #isFeeTokenPreferenceLoaded: boolean = false
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
@@ -403,6 +421,7 @@ export class SignAccountOpController
     networks,
     keystore,
     portfolio,
+    storage,
     externalSignerControllers,
     account,
     network,
@@ -424,6 +443,7 @@ export class SignAccountOpController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
+    storage: IStorageController
     externalSignerControllers: ExternalSignerControllers
     account: Account
     network: Network
@@ -444,6 +464,7 @@ export class SignAccountOpController
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#storage = storage
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -750,6 +771,7 @@ export class SignAccountOpController
   }
 
   #load() {
+    void this.#loadFeeTokenPreference()
     this.#setDefaults()
     this.humanize()
     this.learnTokens()
@@ -915,6 +937,76 @@ export class SignAccountOpController
     return this.estimation && this.estimation.isInitialized()
   }
 
+  async #loadFeeTokenPreference() {
+    try {
+      this.feeTokenPreference = await this.#storage.get(
+        FEE_TOKEN_PREFERENCE_STORAGE_KEY,
+        getDefaultFeeTokenPreference()
+      )
+      this.#isFeeTokenPreferenceLoaded = true
+
+      if (!this.#hasUserSelectedFeeOption && this.estimation.status === EstimationStatus.Success) {
+        this.feeTokenResult = null
+        this.#paidBy = null
+        this.update({ hasNewEstimation: true })
+        return
+      }
+
+      this.emitUpdate()
+    } catch (error) {
+      this.emitError({
+        message: 'Error loading SignAccountOp fee token preference',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
+  #isNativeFeeOption(option: FeePaymentOption) {
+    return option.token.address === ZERO_ADDRESS && !option.token.flags.onGasTank
+  }
+
+  #isErc20FeeOption(option: FeePaymentOption) {
+    return option.token.address !== ZERO_ADDRESS && !option.token.flags.onGasTank
+  }
+
+  #getPreferredFeeOption(options: FeePaymentOption[]) {
+    const erc20Preference =
+      this.feeTokenPreference.erc20ByChainId[this.accountOp.chainId.toString()]
+
+    if (erc20Preference) {
+      return options.find(
+        (option) =>
+          this.#isErc20FeeOption(option) &&
+          option.token.address.toLowerCase() === erc20Preference.address.toLowerCase() &&
+          option.token.symbol.toLowerCase() === erc20Preference.symbol.toLowerCase()
+      )
+    }
+
+    if (this.feeTokenPreference.preferGasTank) {
+      return options.find((option) => option.token.flags.onGasTank)
+    }
+
+    return undefined
+  }
+
+  #getDefaultFeeOption(options: FeePaymentOption[]) {
+    const notDisabled = options.filter((option) => !this.#getIsFeeOptionDisabled(option))
+    const selectableOptions = notDisabled.length ? notDisabled : options
+    const preferred = this.#isFeeTokenPreferenceLoaded
+      ? this.#getPreferredFeeOption(selectableOptions)
+      : undefined
+
+    if (preferred) return preferred
+
+    return (
+      selectableOptions.find((option) => this.#isNativeFeeOption(option)) ||
+      selectableOptions.find((option) => option.token.flags.onGasTank) ||
+      selectableOptions.find((option) => this.#isErc20FeeOption(option)) ||
+      selectableOptions[0]
+    )
+  }
+
   #setDefaults() {
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
@@ -954,30 +1046,17 @@ export class SignAccountOpController
         // for Safe accounts, always select the first not disabled EOA
         // or the first EOA if all are disabled
         if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
-          const notDisabled = payOptionsPaidByEOA.find(
-            (option) => !this.#getIsFeeOptionDisabled(option)
-          )
-          const selected = notDisabled ?? payOptionsPaidByEOA[0]!
+          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
           this.feeTokenResult = selected.token
           this.#paidBy = selected.paidBy
-        } else if (
-          payOptionsPaidByUsOrGasTank.length > 0 &&
-          !this.#getIsFeeOptionDisabled(payOptionsPaidByUsOrGasTank[0]!)
-        ) {
-          this.feeTokenResult = payOptionsPaidByUsOrGasTank[0]!.token
-          this.#paidBy = payOptionsPaidByUsOrGasTank[0]!.paidBy
-        } else if (
-          payOptionsPaidByEOA.length > 0 &&
-          !this.#getIsFeeOptionDisabled(payOptionsPaidByEOA[0]!)
-        ) {
-          this.feeTokenResult = payOptionsPaidByEOA[0]!.token
-          this.#paidBy = payOptionsPaidByEOA[0]!.paidBy
         } else if (payOptionsPaidByUsOrGasTank.length) {
-          this.feeTokenResult = payOptionsPaidByUsOrGasTank[0]!.token
-          this.#paidBy = payOptionsPaidByUsOrGasTank[0]!.paidBy
+          const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank)!
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
         } else if (payOptionsPaidByEOA.length) {
-          this.feeTokenResult = payOptionsPaidByEOA[0]!.token
-          this.#paidBy = payOptionsPaidByEOA[0]!.paidBy
+          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
         }
       }
     }
@@ -1385,6 +1464,43 @@ export class SignAccountOpController
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
   }
 
+  async setFeeTokenPreference(feeToken: TokenResult) {
+    try {
+      const nextPreference: SignAccountOpFeeTokenPreference = {
+        preferGasTank: this.feeTokenPreference.preferGasTank,
+        erc20ByChainId: { ...this.feeTokenPreference.erc20ByChainId }
+      }
+      const chainId = this.accountOp.chainId.toString()
+
+      if (feeToken.flags.onGasTank) {
+        // set the gas tank across chains, remove other tokens chosen
+        nextPreference.preferGasTank = true
+        nextPreference.erc20ByChainId = {}
+      } else if (feeToken.address === ZERO_ADDRESS) {
+        // set native across chains, remove other tokens chosen
+        nextPreference.preferGasTank = false
+        nextPreference.erc20ByChainId = {}
+      } else {
+        // set a chain specific option
+        nextPreference.erc20ByChainId[chainId] = {
+          address: feeToken.address,
+          symbol: feeToken.symbol
+        }
+      }
+
+      this.feeTokenPreference = nextPreference
+      this.#isFeeTokenPreferenceLoaded = true
+      await this.#storage.set(FEE_TOKEN_PREFERENCE_STORAGE_KEY, nextPreference)
+      this.emitUpdate()
+    } catch (error) {
+      this.emitError({
+        message: 'Error saving SignAccountOp fee token preference',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
   update({
     gasPrices,
     customGasPrices,
@@ -1554,6 +1670,7 @@ export class SignAccountOpController
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
+        this.#hasUserSelectedFeeOption = true
 
         if (this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.paidBy !== paidBy) {
           // Reset paidByKeyType if the payer has changed
@@ -1854,13 +1971,13 @@ export class SignAccountOpController
     if (aCanCoverFee && !bCanCoverFee) return -1
     if (!aCanCoverFee && bCanCoverFee) return 1
 
-    // gas tank first
+    // native first
+    if (this.#isNativeFeeOption(a) && !this.#isNativeFeeOption(b)) return -1
+    if (!this.#isNativeFeeOption(a) && this.#isNativeFeeOption(b)) return 1
+
+    // gas tank second
     if (a.token.flags.onGasTank && !b.token.flags.onGasTank) return -1
     if (!a.token.flags.onGasTank && b.token.flags.onGasTank) return 1
-
-    // native second
-    if (a.token.address === ZERO_ADDRESS && b.token.address !== ZERO_ADDRESS) return -1
-    if (a.token.address !== ZERO_ADDRESS && b.token.address === ZERO_ADDRESS) return 1
 
     if (!a || !b) return 0
 
@@ -2782,9 +2899,8 @@ export class SignAccountOpController
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
-        const signature = (await this.#withHardwareWalletSigningRequest(
-          signingRequest,
-          () => safeSigner.signTypedData(typedData)
+        const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
+          safeSigner.signTypedData(typedData)
         )) as Hex
         nowSignedSigs.push(signature)
 
@@ -3722,6 +3838,7 @@ export class SignAccountOpController
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
+      feeTokenPreference: this.feeTokenPreference,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,

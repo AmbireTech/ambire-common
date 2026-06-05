@@ -585,6 +585,7 @@ export class MainController extends EventEmitter implements IMainController {
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
+      storage: this.storage,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
       transfer: this.transfer,

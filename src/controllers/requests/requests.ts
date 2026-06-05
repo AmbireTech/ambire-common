@@ -23,6 +23,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -129,6 +130,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #providers: IProvidersController
 
+  #storage: IStorageController
+
   #selectedAccount: ISelectedAccountController
 
   #keystore: IKeystoreController
@@ -211,6 +214,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     accounts,
     networks,
     providers,
+    storage,
     selectedAccount,
     keystore,
     transfer,
@@ -243,6 +247,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
+    storage: IStorageController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     transfer: ITransferController
@@ -272,6 +277,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
+    this.#storage = storage
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
     this.#transfer = transfer
@@ -1887,6 +1893,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           account,
           network,
           provider: this.#providers.providers[network.chainId.toString()]!,
+          storage: this.#storage,
           phishing: this.#phishing,
           dapps: this.#dapps,
           fromRequestId: requestId,

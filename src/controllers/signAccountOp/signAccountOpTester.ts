@@ -6,6 +6,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EstimationController } from '../estimation/estimation'
@@ -21,6 +22,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
+    storage: IStorageController
     externalSignerControllers: ExternalSignerControllers
     account: Account
     network: Network

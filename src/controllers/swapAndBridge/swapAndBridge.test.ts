@@ -309,6 +309,7 @@ requestsCtrl = new RequestsController({
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
+  storage: storageCtrl,
   selectedAccount: selectedAccountCtrl,
   keystore,
   transfer: transferCtrl,

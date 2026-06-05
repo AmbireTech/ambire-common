@@ -2544,6 +2544,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      storage: this.#storage,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,

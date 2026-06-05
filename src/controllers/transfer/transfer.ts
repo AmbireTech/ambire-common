@@ -1098,6 +1098,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      storage: this.#storage,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,
