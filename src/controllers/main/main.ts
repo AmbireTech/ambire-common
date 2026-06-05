@@ -1382,6 +1382,15 @@ export class MainController extends EventEmitter implements IMainController {
                   op.status !== AccountOpStatus.BroadcastedButNotConfirmed
               )
 
+              // Schedule an update that will refetch new defi positions (if any)
+              chainsToUpdate.forEach((chainId) => {
+                this.portfolio.scheduleUpdate({
+                  accountId: accountAddr,
+                  chainId,
+                  bypassServerSideCache: true
+                })
+              })
+              // Discard the simulation (that also updates the portfolio, but doesn't force update defi)
               await this.portfolio.discardSimulation(finalizedAccountOps)
 
               // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
