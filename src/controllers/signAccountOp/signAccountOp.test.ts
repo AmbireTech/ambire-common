@@ -629,7 +629,8 @@ const init = async (
       storage: storageCtrl,
       networks: networksCtrl,
       phishing,
-      ui: uiCtrl
+      ui: uiCtrl,
+      selectedAccount: selectedAccountCtrl
     })
     await realDappsController.initialLoadPromise
     fetchAndUpdateSpy.mockRestore()

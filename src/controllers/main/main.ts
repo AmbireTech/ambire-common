@@ -430,7 +430,8 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
-      ui: this.ui
+      ui: this.ui,
+      selectedAccount: this.selectedAccount
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(
@@ -811,7 +812,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
+      this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
   }
@@ -1450,6 +1451,7 @@ export class MainController extends EventEmitter implements IMainController {
       await this.activity.removeAccountData(address)
       this.requests.removeAccountData(address)
       this.signMessage.removeAccountData(address)
+      this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
         await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
