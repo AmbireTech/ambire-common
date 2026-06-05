@@ -64,9 +64,6 @@ jobs:
           the long-lived background).
         - `withStatus` must wrap only public entry points, and NEVER methods that can
           hang (transaction signing, hardware-wallet prompts) or background intervals.
-        - Must stay environment-agnostic: NO `window`, `document`, `localStorage`, or
-          React-Native APIs.
-        - NEVER construct a new RPC provider - all RPC access goes through `ProvidersController`.
         - Unhandled degradation when external services/RPCs fail or time out, and
           network requests issued without error handling or a timeout.
         - Unhandled exceptions and edge cases (null/undefined, empty collections,

@@ -62,10 +62,8 @@ jobs:
         6. Use cryptography correctly. Vetted primitives with correct parameters, unique
            IVs/salts/nonces, sound entropy, safe key derivation.
 
-        7. Preserve state integrity. Treat persisted data as untrusted on read; multi-step
-           state or storage mutations must be atomic or roll back; migrations and recovery
-           flows must fail loudly rather than silently leaving sensitive or inconsistent
-           state.
+        7. Preserve state integrity. Multi-step state or storage mutations must be atomic or roll back; 
+           migrations and recovery flows must fail loudly rather than silently leaving sensitive or inconsistent state.
 
         8. Financial/numeric logic must avoid bigint precision loss,
            unsafe Number() coercion, rounding underflow, decimal-place errors, and parsing
