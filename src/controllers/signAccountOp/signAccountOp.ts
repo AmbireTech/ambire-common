@@ -209,6 +209,7 @@ export type SignAccountOpUpdateProps = {
   customGasPrices?: GasSpeeds
   customGasLimit?: bigint
   feeToken?: TokenResult
+  pendingFeeTokenPreference?: TokenResult | null
   paidBy?: string
   paidByKeyType?: Key['type']
   speed?: FeeSpeed
@@ -304,6 +305,8 @@ export class SignAccountOpController
   feeTokenResult: TokenResult | null = null
 
   feeTokenPreference: SignAccountOpFeeTokenPreference = DEFAULT_FEE_TOKEN_PREFERENCE
+
+  pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
 
   #isFeeTokenPreferenceLoaded: boolean = false
 
@@ -1007,6 +1010,73 @@ export class SignAccountOpController
     )
   }
 
+  #getFeeTokenPreference(feeToken: TokenResult) {
+    const nextPreference: SignAccountOpFeeTokenPreference = {
+      preferGasTank: this.feeTokenPreference.preferGasTank,
+      erc20ByChainId: { ...this.feeTokenPreference.erc20ByChainId }
+    }
+    const chainId = this.accountOp.chainId.toString()
+
+    if (feeToken.flags.onGasTank) {
+      // set the gas tank across chains, remove other tokens chosen
+      nextPreference.preferGasTank = true
+      nextPreference.erc20ByChainId = {}
+    } else if (feeToken.address === ZERO_ADDRESS) {
+      // set native across chains, remove other tokens chosen
+      nextPreference.preferGasTank = false
+      nextPreference.erc20ByChainId = {}
+    } else {
+      // set a chain specific option
+      nextPreference.erc20ByChainId[chainId] = {
+        address: feeToken.address,
+        symbol: feeToken.symbol
+      }
+    }
+
+    return nextPreference
+  }
+
+  #doesFeeTokenPreferenceMatchToken(
+    preference: SignAccountOpFeeTokenPreference,
+    feeToken: TokenResult
+  ) {
+    const chainId = this.accountOp.chainId.toString()
+
+    if (feeToken.flags.onGasTank) {
+      return preference.preferGasTank && !preference.erc20ByChainId[chainId]
+    }
+
+    if (feeToken.address === ZERO_ADDRESS) {
+      return !preference.preferGasTank && !preference.erc20ByChainId[chainId]
+    }
+
+    const chainPreference = preference.erc20ByChainId[chainId]
+
+    return (
+      !!chainPreference &&
+      chainPreference.address.toLowerCase() === feeToken.address.toLowerCase() &&
+      chainPreference.symbol.toLowerCase() === feeToken.symbol.toLowerCase()
+    )
+  }
+
+  async #persistPendingFeeTokenPreference() {
+    if (!this.pendingFeeTokenPreference) return
+
+    try {
+      this.feeTokenPreference = this.pendingFeeTokenPreference
+      this.pendingFeeTokenPreference = null
+      this.#isFeeTokenPreferenceLoaded = true
+      await this.#storage.set(FEE_TOKEN_PREFERENCE_STORAGE_KEY, this.feeTokenPreference)
+      this.emitUpdate()
+    } catch (error) {
+      this.emitError({
+        message: 'Error saving SignAccountOp fee token preference',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
   #setDefaults() {
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
@@ -1464,48 +1534,12 @@ export class SignAccountOpController
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
   }
 
-  async setFeeTokenPreference(feeToken: TokenResult) {
-    try {
-      const nextPreference: SignAccountOpFeeTokenPreference = {
-        preferGasTank: this.feeTokenPreference.preferGasTank,
-        erc20ByChainId: { ...this.feeTokenPreference.erc20ByChainId }
-      }
-      const chainId = this.accountOp.chainId.toString()
-
-      if (feeToken.flags.onGasTank) {
-        // set the gas tank across chains, remove other tokens chosen
-        nextPreference.preferGasTank = true
-        nextPreference.erc20ByChainId = {}
-      } else if (feeToken.address === ZERO_ADDRESS) {
-        // set native across chains, remove other tokens chosen
-        nextPreference.preferGasTank = false
-        nextPreference.erc20ByChainId = {}
-      } else {
-        // set a chain specific option
-        nextPreference.erc20ByChainId[chainId] = {
-          address: feeToken.address,
-          symbol: feeToken.symbol
-        }
-      }
-
-      this.feeTokenPreference = nextPreference
-      this.#isFeeTokenPreferenceLoaded = true
-      await this.#storage.set(FEE_TOKEN_PREFERENCE_STORAGE_KEY, nextPreference)
-      this.emitUpdate()
-    } catch (error) {
-      this.emitError({
-        message: 'Error saving SignAccountOp fee token preference',
-        error: error instanceof Error ? error : new Error(String(error)),
-        level: 'silent'
-      })
-    }
-  }
-
   update({
     gasPrices,
     customGasPrices,
     customGasLimit,
     feeToken,
+    pendingFeeTokenPreference,
     paidBy,
     speed,
     signingKeyAddr,
@@ -1665,12 +1699,24 @@ export class SignAccountOpController
         this.customGasLimit = customGasLimit
       }
 
+      if (typeof pendingFeeTokenPreference !== 'undefined') {
+        this.pendingFeeTokenPreference = pendingFeeTokenPreference
+          ? this.#getFeeTokenPreference(pendingFeeTokenPreference)
+          : null
+      }
+
       this.#syncSpeedUpFeeSelectionFromEstimation()
 
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
         this.#hasUserSelectedFeeOption = true
+        if (
+          this.pendingFeeTokenPreference &&
+          !this.#doesFeeTokenPreferenceMatchToken(this.pendingFeeTokenPreference, feeToken)
+        ) {
+          this.pendingFeeTokenPreference = null
+        }
 
         if (this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.paidBy !== paidBy) {
           // Reset paidByKeyType if the payer has changed
@@ -1843,6 +1889,7 @@ export class SignAccountOpController
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
     this.feeTokenResult = null
+    this.pendingFeeTokenPreference = null
     this.status = null
     this.signedTransactionsCount = null
     this.hardwareWalletSigningRequest = null
@@ -2799,6 +2846,8 @@ export class SignAccountOpController
       const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
+
+    await this.#persistPendingFeeTokenPreference()
 
     const estimation = this.estimation.estimation as FullEstimationSummary
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
@@ -3839,6 +3888,7 @@ export class SignAccountOpController
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
       feeTokenPreference: this.feeTokenPreference,
+      pendingFeeTokenPreference: this.pendingFeeTokenPreference,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,

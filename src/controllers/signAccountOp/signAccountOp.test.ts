@@ -884,11 +884,23 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.selectedOption?.token.address).toBe(usdcFeeToken.address)
     expect(controller.selectedOption?.token.symbol).toBe(usdcFeeToken.symbol)
 
-    await controller.setFeeTokenPreference(gasTankToken)
-    await wait(1)
+    controller.update({ pendingFeeTokenPreference: gasTankToken })
 
     const storedPreference = await storageCtrl.get('signAccountOpFeeTokenPreference')
     expect(storedPreference).toEqual({
+      preferGasTank: false,
+      erc20ByChainId: {
+        '1': {
+          address: usdcFeeToken.address,
+          symbol: usdcFeeToken.symbol
+        },
+        '137': {
+          address: nativeFeeTokenPolygon.address,
+          symbol: nativeFeeTokenPolygon.symbol
+        }
+      }
+    })
+    expect(controller.pendingFeeTokenPreference).toEqual({
       preferGasTank: true,
       erc20ByChainId: {}
     })
