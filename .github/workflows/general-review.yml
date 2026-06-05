@@ -71,6 +71,11 @@ jobs:
         - Inefficient algorithms or data structures on hot or large-data paths - quadratic loops, repeated linear scans,
           redundant network/RPC calls in a loop.
 
+        Beyond the invariants above, also flag logic that is simply wrong for its
+        intended purpose - incomplete data sets or enumerations, misclassifications,
+        wrong-default or off-by-one constants, and mismatched assumptions between a
+        function and its callers. Assign severity by the concrete impact.
+
         Be constructive, concise, and actionable. For each finding, prefix it with its
         severity (High/Medium/Low), quote the exact code, and explain the concrete
         failure it causes.

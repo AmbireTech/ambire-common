@@ -23,10 +23,13 @@ ai_timeout = 300
 # If a diff is too large, clip it rather than skipping entirely.
 large_patch_policy = "clip"
 
-# Increase the context window at the expense of more tokens/higher chance of clipping
-# Otherwise models will miss important context around changes
-patch_extra_lines_before = 16
-patch_extra_lines_after = 8
+# Show the model more lines around each change so it judges the surrounding code,
+# not just the diff. Costs more tokens and makes clipping on huge PRs a bit likelier,
+# but it's worth it for catching context-dependent bugs.
+# Note: pr-agent caps these first two at 10. 
+patch_extra_lines_before = 10
+patch_extra_lines_after = 10
+# The one that actually pulls in the rest of the function is the dynamic setting below (enabled by default).
 max_extra_lines_before_dynamic_context = 24
 
 # ─────────────────────────────────────────────
