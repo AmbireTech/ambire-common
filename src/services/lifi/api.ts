@@ -1,11 +1,12 @@
+import { lifi, SwapProviderName } from '@/libs/swapAndBridge/consts'
 import { CITREA_CHAIN_ID } from '@/services/squid/constants'
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -150,7 +151,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     : undefined
 
   return {
-    providerId: 'lifi',
+    providerId: lifi,
     routeId: route.id,
     fromChainId: route.fromChainId,
     toChainId: route.toChainId,
@@ -212,7 +213,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
 }
 
 export class LiFiAPI implements SwapProvider {
-  id: string = 'lifi'
+  id: SwapProviderName = lifi
 
   name: string = 'LiFi'
 
@@ -475,7 +476,14 @@ export class LiFiAPI implements SwapProvider {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage: getSlippage(fromAsset, fromAmount, '0.01', 0.005),
+        slippage: getSlippage({
+          fromAsset,
+          toAsset,
+          fromChainId,
+          toChainId,
+          provider: this.id,
+          isWrapOrUnwrap
+        }),
         maxPriceImpact: '0.50',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',

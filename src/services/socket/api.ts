@@ -1,5 +1,7 @@
 import { getAddress } from 'ethers'
 
+import { socket, SwapProviderName } from '@/libs/swapAndBridge/consts'
+
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
@@ -21,6 +23,7 @@ import {
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  getSlippage,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { CITREA_CHAIN_ID } from '../squid/constants'
@@ -55,7 +58,7 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
   )
 
 export class SocketAPI implements SwapProvider {
-  id: string = 'socket'
+  id: SwapProviderName = socket
 
   name = 'Socket'
 
@@ -289,7 +292,15 @@ export class SocketAPI implements SwapProvider {
       inputAmount: fromAmount.toString(),
       receiverAddress: userAddress,
       useInbox: 'true',
-      enableManual: 'true'
+      enableManual: 'true',
+      slippage: getSlippage({
+        fromAsset,
+        toAsset,
+        fromChainId,
+        toChainId,
+        provider: this.id,
+        isWrapOrUnwrap
+      })
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
     const shouldIncludeConvenienceFee =
@@ -379,7 +390,7 @@ export class SocketAPI implements SwapProvider {
 
         return {
           ...steps[0],
-          providerId: 'socket',
+          providerId: this.id,
           outputValueInUsd: route.output.valueInUsd,
           routeId: route.quoteId,
           disabled,

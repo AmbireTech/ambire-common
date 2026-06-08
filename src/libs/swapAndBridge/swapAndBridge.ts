@@ -14,7 +14,6 @@ import {
   BRIDGE_STATUS_INTERVAL,
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 } from '../../consts/intervals'
-import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -46,6 +45,8 @@ import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 import { getSanitizedAmount } from '../transfer/amount'
+
+import type { SwapProviderName } from '@/libs/swapAndBridge/consts'
 
 /**
  * Maps banned (or outdated) token addresses to their "valid" replacements,
@@ -572,21 +573,75 @@ const isNoFeeToken = (chainId: number, tokenAddr: string) => {
   return false
 }
 
-const getSlippage = (
-  fromAsset: TokenResult,
-  fromAmount: bigint,
-  upperBoundary: string,
-  delimeter: number
-) => {
-  // make sure the slippage doesn't exceed 100$
-  // we do so by having a base of 0.005
-  // to have a slippage of 100$, we need a fromAmountInUsd of at least 20000$,
-  // so each time the from amount makes a jump of 20000$, we lower
-  // the slippage by half
-  const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-  return Number(fromAmountInUsd) < 400
-    ? upperBoundary
-    : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
+const STABLE_TOKEN_SYMBOLS = [
+  'DAI',
+  'FDUSD',
+  'FRAX',
+  'GHO',
+  'LUSD',
+  'PYUSD',
+  'TUSD',
+  'USDC',
+  'USDC.E',
+  'USDE',
+  'USDP',
+  'USDT',
+  'USDT.E',
+  'USDS',
+  'XDAI',
+  'BUSD',
+  'GUSD',
+  'RLUSD',
+  'USD1',
+  'sUSDS',
+  'sDAI',
+  'sUSDe',
+  'sfrxUSD',
+  'USDY',
+  'sGHO',
+  'USD₮',
+  'EURe',
+  'EURc',
+  'GBPe'
+]
+
+const SQUID_MIN_SLIPPAGE_PERCENT = 0.01
+
+const getIsStableToken = (token: { symbol: string }) =>
+  STABLE_TOKEN_SYMBOLS.includes(token.symbol.trim().toUpperCase())
+
+const formatProviderSlippage = (provider: SwapProviderName, slippagePercent: number) => {
+  const providerSlippage =
+    provider !== 'squid'
+      ? slippagePercent / 100
+      : Math.max(slippagePercent, SQUID_MIN_SLIPPAGE_PERCENT)
+
+  return providerSlippage.toString()
+}
+
+const getSlippage = ({
+  fromAsset,
+  toAsset,
+  fromChainId,
+  toChainId,
+  provider,
+  isWrapOrUnwrap
+}: {
+  fromAsset: TokenResult
+  toAsset: SwapAndBridgeToToken
+  fromChainId: number
+  toChainId: number
+  provider: SwapProviderName
+  isWrapOrUnwrap: boolean
+}) => {
+  const isCrossChain = fromChainId !== toChainId
+  const isStablePair = getIsStableToken(fromAsset) && getIsStableToken(toAsset)
+
+  if (isWrapOrUnwrap) return formatProviderSlippage(provider, SQUID_MIN_SLIPPAGE_PERCENT)
+  if (isCrossChain) return formatProviderSlippage(provider, isStablePair ? 0.5 : 1)
+  if (isStablePair) return formatProviderSlippage(provider, 0.2)
+
+  return formatProviderSlippage(provider, 0.5)
 }
 
 export const calculateAmountWarnings = (

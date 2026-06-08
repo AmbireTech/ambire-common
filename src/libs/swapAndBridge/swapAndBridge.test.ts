@@ -3,8 +3,9 @@ import { parseUnits } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
-import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
-import { calculateAmountWarnings, getIsBridgeRoute } from './swapAndBridge'
+import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../portfolio'
+import { calculateAmountWarnings, getIsBridgeRoute, getSlippage } from './swapAndBridge'
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({
@@ -87,7 +88,128 @@ const createMockRoute = ({
   }
 }
 
+const createMockSlippageToken = (symbol: string): TokenResult => ({
+  address: '0x0000000000000000000000000000000000000000',
+  amount: 0n,
+  chainId: 1n,
+  decimals: 18,
+  flags: {
+    canTopUpGasTank: false,
+    isFeeToken: false,
+    onGasTank: false,
+    rewardsType: null
+  },
+  marketDataIn: [],
+  name: symbol,
+  priceIn: [{ baseCurrency: 'usd', price: 1 }],
+  symbol
+})
+
+const createMockToToken = (symbol: string, chainId = 1): SwapAndBridgeToToken => ({
+  address: '0x0000000000000000000000000000000000000000',
+  chainId,
+  decimals: 18,
+  name: symbol,
+  symbol
+})
+
 describe('swapAndBridge lib', () => {
+  describe('getSlippage', () => {
+    const eth = createMockSlippageToken('ETH')
+    const usdc = createMockSlippageToken('USDC')
+
+    test('uses low slippage for same-chain stable pairs', () => {
+      expect(
+        getSlippage({
+          fromAsset: usdc,
+          toAsset: createMockToToken('USDT'),
+          fromChainId: 1,
+          toChainId: 1,
+          provider: 'lifi',
+          isWrapOrUnwrap: false
+        })
+      ).toBe('0.002')
+    })
+
+    test('uses standard slippage for same-chain volatile routes', () => {
+      expect(
+        getSlippage({
+          fromAsset: eth,
+          toAsset: createMockToToken('WALLET'),
+          fromChainId: 1,
+          toChainId: 1,
+          provider: 'lifi',
+          isWrapOrUnwrap: false
+        })
+      ).toBe('0.005')
+    })
+
+    test('uses standard slippage for cross-chain stable routes', () => {
+      expect(
+        getSlippage({
+          fromAsset: usdc,
+          toAsset: createMockToToken('USDC', 42161),
+          fromChainId: 1,
+          toChainId: 42161,
+          provider: 'lifi',
+          isWrapOrUnwrap: false
+        })
+      ).toBe('0.005')
+    })
+
+    test('uses higher slippage for cross-chain volatile routes', () => {
+      expect(
+        getSlippage({
+          fromAsset: eth,
+          toAsset: createMockToToken('WALLET', 42161),
+          fromChainId: 1,
+          toChainId: 42161,
+          provider: 'lifi',
+          isWrapOrUnwrap: false
+        })
+      ).toBe('0.01')
+    })
+
+    test('converts defaults to Socket percentage units', () => {
+      expect(
+        getSlippage({
+          fromAsset: eth,
+          toAsset: createMockToToken('WALLET', 42161),
+          fromChainId: 1,
+          toChainId: 42161,
+          provider: 'socket',
+          isWrapOrUnwrap: false
+        })
+      ).toBe('1')
+    })
+
+    test('converts defaults to Squid percentage units', () => {
+      expect(
+        getSlippage({
+          fromAsset: eth,
+          toAsset: createMockToToken('WALLET', 5115),
+          fromChainId: 1,
+          toChainId: 5115,
+          provider: 'squid',
+          isWrapOrUnwrap: false
+        })
+      ).toBe('1')
+    })
+
+    test('keeps wrap and unwrap slippage at the provider minimum', () => {
+      expect(
+        getSlippage({
+          fromAsset: eth,
+          toAsset: createMockToToken('WETH'),
+          fromChainId: 1,
+          toChainId: 1,
+          provider: 'squid',
+          isWrapOrUnwrap: true
+        })
+      ).toBe('0.01')
+    })
+  })
+
   describe('getIsBridgeRoute', () => {
     test('should treat same-chain Squid routes as bridge-like routes', () => {
       const selectedRoute = createMockRoute({
