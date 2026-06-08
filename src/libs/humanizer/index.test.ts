@@ -1759,6 +1759,108 @@ describe('ERC-7730 descriptors', () => {
     })
   })
 
+  test('humanizes Safe setup calldata nested in a factory initializer with ERC-7730', () => {
+    const safeProxyFactory = '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67'
+    const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
+    const owner = '0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54'
+    const fallbackHandler = '0xfd0732dc9e303f09fcef3a7388ad10a83459ec99'
+    const setupTo = '0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54'
+    const module = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const safeInterface = new ethers.Interface([
+      'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)',
+      'function enableModule(address module)'
+    ])
+    const factoryInterface = new ethers.Interface([
+      'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+    ])
+    const initializer = safeInterface.encodeFunctionData('setup', [
+      [owner],
+      1,
+      setupTo,
+      safeInterface.encodeFunctionData('enableModule', [module]),
+      fallbackHandler,
+      ZeroAddress,
+      0,
+      ZeroAddress
+    ])
+    const safeSetupAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: safeProxyFactory,
+          value: 0n,
+          data: factoryInterface.encodeFunctionData('createProxyWithNonce', [
+            safeSingleton,
+            initializer,
+            1
+          ])
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeSetupAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)': {
+                  intent: 'Create Safe',
+                  fields: [
+                    {
+                      path: 'initializer',
+                      label: 'Account setup',
+                      format: 'calldata',
+                      params: { calleePath: '#._singleton' }
+                    },
+                    { path: '_singleton', label: 'Safe singleton', format: 'addressName' },
+                    { path: 'saltNonce', label: 'Salt nonce' }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Create Safe', [
+        {
+          label: 'Account setup',
+          value: [
+            getErc7730Visualization('Account setup', [
+              {
+                label: 'Owner',
+                value: [getAddressVisualization(owner)]
+              },
+              {
+                label: 'Threshold',
+                value: [getText('1')]
+              },
+              {
+                label: 'Fallback handler',
+                value: [getAddressVisualization(fallbackHandler)]
+              },
+              {
+                label: 'Setup transaction',
+                value: [getAction('Enable module:'), getAddressVisualization(module)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Safe singleton',
+          value: [getAddressVisualization(safeSingleton)]
+        },
+        {
+          label: 'Salt nonce',
+          value: [getText('1')]
+        }
+      ])
+    ])
+  })
+
   test('fetches the EIP-712 descriptor index through the relayer', async () => {
     const registryPath = 'registry/test/eip712-relayer-permit.json'
     const permitMessage = {
