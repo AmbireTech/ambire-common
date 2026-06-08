@@ -1,5 +1,7 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
+import { squid, SwapProviderName } from '@/libs/swapAndBridge/consts'
+
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
@@ -130,7 +132,7 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
   }
 
   return {
-    providerId: 'squid',
+    providerId: squid,
     routeId: route.quoteId,
     fromChainId,
     toChainId,
@@ -163,7 +165,7 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
 }
 
 export class SquidAPI implements SwapProvider {
-  id: string = 'squid'
+  id: SwapProviderName = squid
 
   name: string = 'Squid'
 
@@ -376,7 +378,7 @@ export class SquidAPI implements SwapProvider {
           toAsset,
           fromChainId,
           toChainId,
-          provider: 'squid',
+          provider: this.id,
           isWrapOrUnwrap
         })
       ),

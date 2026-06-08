@@ -1,5 +1,7 @@
 import { getAddress } from 'ethers'
 
+import { socket, SwapProviderName } from '@/libs/swapAndBridge/consts'
+
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
@@ -56,7 +58,7 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
   )
 
 export class SocketAPI implements SwapProvider {
-  id: string = 'socket'
+  id: SwapProviderName = socket
 
   name = 'Socket'
 
@@ -296,7 +298,7 @@ export class SocketAPI implements SwapProvider {
         toAsset,
         fromChainId,
         toChainId,
-        provider: 'socket',
+        provider: this.id,
         isWrapOrUnwrap
       })
     })
@@ -388,7 +390,7 @@ export class SocketAPI implements SwapProvider {
 
         return {
           ...steps[0],
-          providerId: 'socket',
+          providerId: this.id,
           outputValueInUsd: route.output.valueInUsd,
           routeId: route.quoteId,
           disabled,

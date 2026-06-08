@@ -46,6 +46,8 @@ import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 import { getSanitizedAmount } from '../transfer/amount'
 
+import type { SwapProviderName } from '@/libs/swapAndBridge/consts'
+
 /**
  * Maps banned (or outdated) token addresses to their "valid" replacements,
  * "valid" meaning Swap & Bridge gives more relevant results with these replacements.
@@ -571,9 +573,7 @@ const isNoFeeToken = (chainId: number, tokenAddr: string) => {
   return false
 }
 
-type SlippageProvider = 'lifi' | 'socket' | 'squid'
-
-const STABLE_TOKEN_SYMBOLS = new Set([
+const STABLE_TOKEN_SYMBOLS = [
   'DAI',
   'FDUSD',
   'FRAX',
@@ -588,17 +588,31 @@ const STABLE_TOKEN_SYMBOLS = new Set([
   'USDT',
   'USDT.E',
   'USDS',
-  'XDAI'
-])
+  'XDAI',
+  'BUSD',
+  'GUSD',
+  'RLUSD',
+  'USD1',
+  'sUSDS',
+  'sDAI',
+  'sUSDe',
+  'sfrxUSD',
+  'USDY',
+  'sGHO',
+  'USD₮',
+  'EURe',
+  'EURc',
+  'GBPe'
+]
 
 const SQUID_MIN_SLIPPAGE_PERCENT = 0.01
 
 const getIsStableToken = (token: { symbol: string }) =>
-  STABLE_TOKEN_SYMBOLS.has(token.symbol.trim().toUpperCase())
+  STABLE_TOKEN_SYMBOLS.includes(token.symbol.trim().toUpperCase())
 
-const formatProviderSlippage = (provider: SlippageProvider, slippagePercent: number) => {
+const formatProviderSlippage = (provider: SwapProviderName, slippagePercent: number) => {
   const providerSlippage =
-    provider === 'lifi'
+    provider !== 'squid'
       ? slippagePercent / 100
       : Math.max(slippagePercent, SQUID_MIN_SLIPPAGE_PERCENT)
 
@@ -617,7 +631,7 @@ const getSlippage = ({
   toAsset: SwapAndBridgeToToken
   fromChainId: number
   toChainId: number
-  provider: SlippageProvider
+  provider: SwapProviderName
   isWrapOrUnwrap: boolean
 }) => {
   const isCrossChain = fromChainId !== toChainId
