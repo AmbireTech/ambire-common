@@ -10,7 +10,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
-import { STATIC_BLACKLIST } from './blacklist'
+import { isBlacklistedAsset, STATIC_BLACKLIST } from './blacklist'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
@@ -374,13 +374,18 @@ export class Portfolio {
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
-        // Symbol/name-based blacklist: skip custom tokens so user-added assets are never hidden.
-        // Spam often hides the URL/lure in the name rather than the symbol, so match both.
-        if (allBlacklistedSymbols.length > 0 && !_tokensWithErrResult[1]?.flags?.isCustom) {
-          const token = _tokensWithErrResult[1]
-          const haystack = `${token.symbol} ${token.name || ''}`.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => haystack.includes(pattern))) return false
-        }
+        // Spam filter: hide tokens whose symbol/name matches a blacklisted pattern
+        // or embeds a phishing domain. Custom (user-added) tokens are never hidden.
+        const token = _tokensWithErrResult[1]
+        if (
+          isBlacklistedAsset({
+            symbol: token.symbol,
+            name: token.name,
+            isCustom: token.flags?.isCustom,
+            lowercasedPatterns: allBlacklistedSymbols
+          })
+        )
+          return false
 
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
         // The portfolio lib is used outside the controller, in which case we want to
@@ -418,12 +423,18 @@ export class Portfolio {
       (acc, [error, collection]) => {
         if (!isValidToken(error, collection)) return acc
 
-        // Never filter custom collections, even tho we don't support them atm.
-        // Spam often hides the URL/lure in the name rather than the symbol, so match both.
-        if (allBlacklistedSymbols.length > 0 && !collection?.flags?.isCustom) {
-          const haystack = `${collection.symbol} ${collection.name || ''}`.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => haystack.includes(pattern))) return acc
-        }
+        // Spam filter: hide collections whose symbol/name matches a blacklisted
+        // pattern or embeds a phishing domain. Custom collections are never hidden
+        // (even tho we don't support them atm).
+        if (
+          isBlacklistedAsset({
+            symbol: collection.symbol,
+            name: collection.name,
+            isCustom: collection.flags?.isCustom,
+            lowercasedPatterns: allBlacklistedSymbols
+          })
+        )
+          return acc
 
         // Important note: Collections with 0 collectibles are allow to pass through the filter.
         if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length > 0) {
