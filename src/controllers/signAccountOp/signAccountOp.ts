@@ -982,7 +982,8 @@ export class SignAccountOpController
     if (!chainPreference) return false
 
     const isGasTank = feeToken.flags.onGasTank && chainPreference === 'gasTank'
-    const isSelectedToken = feeToken.address.toLowerCase() === chainPreference.toLowerCase()
+    const isSelectedToken =
+      !feeToken.flags.onGasTank && feeToken.address.toLowerCase() === chainPreference.toLowerCase()
 
     return isGasTank || isSelectedToken
   }
