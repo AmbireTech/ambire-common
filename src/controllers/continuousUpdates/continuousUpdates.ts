@@ -36,6 +36,17 @@ export class ContinuousUpdatesController extends EventEmitter {
     return this.#accountsOpsStatusesInterval
   }
 
+  restartAccountsOpsStatusesInterval({ runImmediately = false } = {}) {
+    const allBroadcastedButNotConfirmed = Object.values(
+      this.#main.activity.broadcastedButNotConfirmed
+    ).flat()
+
+    this.#accountsOpsStatusesInterval.restart({
+      timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed),
+      runImmediately
+    })
+  }
+
   #accountStateLatestInterval: IRecurringTimeout
 
   get accountStateLatestInterval() {
@@ -188,7 +199,9 @@ export class ContinuousUpdatesController extends EventEmitter {
       ).flat()
 
       if (allBroadcastedButNotConfirmed.length) {
-        this.#accountsOpsStatusesInterval.start()
+        this.#accountsOpsStatusesInterval.start({
+          timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed)
+        })
       } else {
         this.#accountsOpsStatusesInterval.stop()
       }
@@ -217,8 +230,35 @@ export class ContinuousUpdatesController extends EventEmitter {
   }
 
   async #updateAccountsOpsStatuses() {
-    await this.initialLoadPromise
-    await this.#main.updateAccountsOpsStatuses()
+    try {
+      await this.initialLoadPromise
+      await this.#main.updateAccountsOpsStatuses()
+    } finally {
+      this.#accountsOpsStatusesInterval.updateTimeout({
+        timeout: Math.min(
+          this.#accountsOpsStatusesInterval.currentTimeout + 1000,
+          ACTIVITY_REFRESH_INTERVAL
+        )
+      })
+    }
+  }
+
+  #getAccountsOpsStatusesRefreshInterval(accountOps: SubmittedAccountOp[]) {
+    return accountOps.reduce((refreshInterval, accountOp) => {
+      const networkRefreshInterval = this.#main.networks.networks.find(
+        ({ chainId }) => chainId === accountOp.chainId
+      )?.refreshInterval
+
+      if (
+        !networkRefreshInterval ||
+        !Number.isFinite(networkRefreshInterval) ||
+        networkRefreshInterval <= 0
+      ) {
+        return refreshInterval
+      }
+
+      return Math.min(refreshInterval, networkRefreshInterval)
+    }, ACTIVITY_REFRESH_INTERVAL)
   }
 
   async #updateAccountStateLatest() {

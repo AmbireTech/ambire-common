@@ -1,5 +1,6 @@
 import { toUtf8String } from 'ethers'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
@@ -21,12 +22,14 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import {
   ISignMessageController,
   SignMessageStatus,
   SignMessageUpdateParams
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
+import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
 import {
   addMessage,
   addMessageSignature,
@@ -34,21 +37,31 @@ import {
   sortSigs
 } from '../../libs/safe/safe'
 import {
+  getEIP712SigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
+import {
   getAppFormatted,
+  getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
+  getSafeMessageTypedData,
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import HumanizationController from '../humanization/humanization'
 
+import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter implements ISignMessageController {
+export class SignMessageController
+  extends HumanizationController
+  implements ISignMessageController
+{
   #keystore: IKeystoreController
 
   #providers: IProvidersController
@@ -63,6 +76,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #dapps?: IDappsController
 
+  #callRelayer?: BindedRelayerCall
+
   signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
@@ -76,6 +91,14 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   } | null = null
 
   messageToSign: Message | null = null
+
+  humanizedMessage?: IrMessage
+
+  isHumanizing = false
+
+  safeEip712Data: unknown | null = null
+
+  hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
   signedMessage: SignedMessage | null = null
 
@@ -108,7 +131,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    dapps?: IDappsController
+    dapps?: IDappsController,
+    callRelayer?: BindedRelayerCall
   ) {
     super(eventEmitterRegistry)
 
@@ -119,6 +143,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#accounts = accounts
     this.#invite = invite
     this.#dapps = dapps
+    this.#callRelayer = callRelayer
     this.status = SignMessageStatus.Initial
   }
 
@@ -182,6 +207,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       if (this.#account.safeCreation) {
+        this.#updateSafeEip712Data()
         const notSigned = getImportedSignersThatHaveNotSigned(
           this.signed,
           accountState.importedAccountKeys.map((k) => k.addr)
@@ -200,6 +226,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       this.emitUpdate()
+      this.humanize()
     } else {
       this.emitError({
         level: 'major',
@@ -219,6 +246,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
+    this.humanizedMessage = undefined
+    this.isHumanizing = false
+    this.safeEip712Data = null
+    this.hardwareWalletSigningRequest = null
     this.signedMessage = null
     this.#account = undefined
     this.network = undefined
@@ -227,6 +258,135 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signer = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
+  }
+
+  #updateSafeEip712Data() {
+    if (!this.#account?.safeCreation || !this.messageToSign || !this.network) {
+      this.safeEip712Data = null
+      return
+    }
+
+    const { content } = this.messageToSign
+
+    try {
+      const message = content.kind === 'typedMessage' ? content : content.message
+      const typedData = getSafeMessageTypedData(
+        message,
+        this.network.chainId,
+        this.#account.addr as Hex
+      )
+      const safeMessageHash = getEIP712Hash(typedData)
+
+      this.safeEip712Data = getSigningRequestDisplayData(
+        getEIP712SigningRequest({ ...typedData, safeMessageHash })
+      )
+    } catch (error) {
+      this.safeEip712Data = null
+      this.emitError({
+        message: 'Error calculating Safe EIP-712 data',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
+  #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
+    let serializedRequestData: unknown = null
+
+    try {
+      if (request) serializedRequestData = getSigningRequestDisplayData(request)
+    } catch {
+      serializedRequestData = null
+    }
+
+    this.hardwareWalletSigningRequest =
+      request && serializedRequestData !== null
+        ? {
+            ...request,
+            data: serializedRequestData
+          }
+        : null
+    this.emitUpdate()
+  }
+
+  async #withHardwareWalletSigningRequest<T>(
+    request: HardwareWalletSigningRequest,
+    sign: () => Promise<T>
+  ) {
+    this.#setHardwareWalletSigningRequest(request)
+
+    try {
+      return await sign()
+    } finally {
+      this.#setHardwareWalletSigningRequest(null)
+    }
+  }
+
+  #startHumanization() {
+    return this.startHumanization(() => {
+      this.isHumanizing = true
+      this.humanizedMessage = undefined
+    })
+  }
+
+  #setHumanizedMessage(humanizedMessage: IrMessage, humanizationId: number) {
+    if (!this.isCurrentHumanization(humanizationId)) return false
+
+    this.humanizedMessage = humanizedMessage
+    this.isHumanizing = false
+    this.emitUpdate()
+
+    return true
+  }
+
+  #setFallbackHumanization(humanizationId: number) {
+    if (!this.messageToSign) return false
+
+    return this.#setHumanizedMessage(humanizeMessage(this.messageToSign), humanizationId)
+  }
+
+  async #applyDescriptorFirstHumanization(humanizationId: number) {
+    const messageToSign = this.messageToSign
+    const callRelayer = this.#callRelayer
+
+    if (!messageToSign) return
+    if (messageToSign.content.kind !== 'typedMessage' || !callRelayer) {
+      this.#setFallbackHumanization(humanizationId)
+      return
+    }
+
+    await this.applyDescriptorFirstHumanization({
+      humanizationId,
+      fetchDescriptor: async () => {
+        const provider = this.network
+          ? this.#providers.providers[this.network.chainId.toString()]
+          : undefined
+
+        return fetchErc7730DescriptorForMessage(messageToSign, callRelayer, provider)
+      },
+      applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
+        if (!erc7730Descriptor) return false
+
+        const erc7730Humanization = humanizeMessage(messageToSign, { erc7730Descriptor })
+
+        return this.#setHumanizedMessage(erc7730Humanization, currentHumanizationId)
+      },
+      applyFallbackHumanization: (currentHumanizationId) =>
+        this.#setFallbackHumanization(currentHumanizationId)
+    })
+  }
+
+  humanize() {
+    if (!this.messageToSign) return
+
+    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
+      const currentHumanizationId = this.#startHumanization()
+      this.#setFallbackHumanization(currentHumanizationId)
+      return
+    }
+
+    const currentHumanizationId = this.#startHumanization()
+    void this.#applyDescriptorFirstHumanization(currentHumanizationId)
   }
 
   update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
@@ -344,7 +504,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             this.#account,
             accountState,
             this.signer,
-            this.#invite.isOG
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -385,7 +546,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             accountState,
             this.signer,
             this.network,
-            this.#invite.isOG
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -525,12 +687,13 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
    */
   cancelSignReq() {
     this.statuses.sign = 'INITIAL'
+    this.hardwareWalletSigningRequest = null
     this.emitUpdate()
   }
 
   #onAbortOperation() {
     if (this.signer?.signingCleanup) {
-      this.signer.signingCleanup()
+      void this.signer.signingCleanup()
     }
   }
 

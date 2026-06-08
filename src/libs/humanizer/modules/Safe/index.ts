@@ -17,13 +17,13 @@ import {
   IrCall
 } from '../../interfaces'
 import {
-  HexIrCall,
   getAction,
   getAddressVisualization,
   getBreak,
   getLabel,
   getToken,
   getWarning,
+  HexIrCall,
   isHexCall
 } from '../../utils'
 
@@ -101,7 +101,7 @@ export const getSafeHumanization = (
         getAction('Add owner'),
         getAddressVisualization(newOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
@@ -134,7 +134,7 @@ export const getSafeHumanization = (
         getAction('Remove owner'),
         getAddressVisualization(removedOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
@@ -207,10 +207,34 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
     [toFunctionSelector(execTransactionAbi[0])]: (call: HexIrCall): IrCall | undefined => {
       if (!call.to) return
       if (call.value) return
-      const { args } = decodeFunctionData({ abi: execTransactionAbi, data: call.data })
-      const [to, value, data, operation] = args
+      let args: unknown[]
 
-      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, value, data)
+      try {
+        args = [...decodeFunctionData({ abi: execTransactionAbi, data: call.data }).args]
+      } catch {
+        return
+      }
+
+      const [to, value, data, operation] = args
+      if (typeof to !== 'string') return
+      if (typeof data !== 'string') return
+      if (typeof value !== 'bigint' && typeof value !== 'number' && typeof value !== 'string')
+        return
+      if (
+        typeof operation !== 'bigint' &&
+        typeof operation !== 'number' &&
+        typeof operation !== 'string'
+      )
+        return
+      const bigintValue = BigInt(value)
+      const bigintOperation = BigInt(operation)
+
+      const safeSpecificHumanization = getSafeHumanization(
+        accOp.accountAddr,
+        to,
+        bigintValue,
+        data
+      )
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -219,9 +243,9 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         getAddressVisualization(to)
       ]
 
-      if (value)
+      if (bigintValue)
         fullVisualization.push(
-          ...[getLabel('and'), getAction('Send'), getToken(zeroAddress, value)]
+          ...[getLabel('and'), getAction('Send'), getToken(zeroAddress, bigintValue)]
         )
 
       const warnings: HumanizerWarning[] = []
@@ -232,7 +256,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         if (safeSpecificHumanization.warnings) warnings.push(...safeSpecificHumanization.warnings)
       }
 
-      const delegateCallWarnings = getDelegateCallWarning(operation, to)
+      const delegateCallWarnings = getDelegateCallWarning(bigintOperation, to)
       if (delegateCallWarnings.length) warnings.push(...delegateCallWarnings)
 
       return { ...call, fullVisualization, warnings }

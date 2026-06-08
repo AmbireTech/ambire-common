@@ -509,6 +509,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
         suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
         suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
+        refreshInterval: relayerNetwork.refreshInterval,
         iconUrls: relayerNetwork.iconUrls,
         predefined: relayerNetwork.predefined
       }

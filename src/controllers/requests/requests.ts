@@ -1,12 +1,13 @@
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField, isAddress } from 'ethers'
+import { getAddress, getBigInt, hexlify, isAddress, TypedDataDomain, TypedDataField } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
+import { hashTypedData, isHex } from 'viem'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
@@ -81,7 +82,6 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { hashTypedData, isHex } from 'viem'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -106,7 +106,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #relayerUrl: string
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #portfolio: IPortfolioController
 
@@ -229,7 +229,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
@@ -937,12 +937,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const { kind, meta, dappPromises } = userRequest
 
     dappPromises.forEach((p) => {
+      // WE SHOULD NEVER RESOLVE THE PROMISE. It should only be rejected if the user rejects the request
+      // as that destroys the next request
+      if (userRequest.kind === 'switchAccount') return
+
       p.resolve(data)
     })
 
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
-    if (kind === 'unlock' || kind === 'dappConnect' || kind === 'switchAccount') {
+    if (kind === 'unlock' || kind === 'dappConnect') {
       meta.pendingToRemove = true
 
       setTimeout(async () => {
@@ -1246,6 +1250,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       try {
         typedData = parse(typedData)
       } catch (error) {
+        console.error('Failed to parse typed data', error)
         throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
       }
 
@@ -1260,6 +1265,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
       }
 
+      const domainChainId = BigInt(typedData.domain.chainId || 0)
+      if (domainChainId !== 0n && domainChainId !== network.chainId)
+        throw ethErrors.rpc.invalidRequest(
+          `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
+        )
+      typedData.domain.chainId = network.chainId
+
       if (!typedData.types[typedData.primaryType])
         throw ethErrors.rpc.invalidParams(
           'The primary data type is missing from the provided types'
@@ -1273,7 +1285,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           domain: typedData.domain
         })
       } catch (e) {
-        console.log(e)
+        console.error(e)
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
@@ -1295,7 +1307,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             primaryType: typedData.primaryType
           },
           accountAddr: msgAddress,
-          chainId: network.chainId
+          chainId: typedData.domain.chainId
         },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
@@ -1338,16 +1350,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ? 'open-request-window'
             : 'queue-but-open-request-window'
       })
-      return
-    }
-
-    const accountError = this.#getUserRequestAccountError(
-      dappPromise.session.origin,
-      (userRequest as SignUserRequest).meta.accountAddr
-    )
-
-    if (accountError) {
-      dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
       return
     }
 
@@ -1698,21 +1700,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
     const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
     if (userRequest) await this.addUserRequests([userRequest])
-  }
-
-  #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
-    if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
-      const isAddressInAccounts = this.#accounts.accounts.some((a) => a.addr === fromAccountAddr)
-
-      if (isAddressInAccounts) return null
-
-      return 'The dApp is trying to sign using an address that is not imported in the extension.'
-    }
-    const isAddressSelected = this.#selectedAccount.account?.addr === fromAccountAddr
-
-    if (isAddressSelected) return null
-
-    return 'The dApp is trying to sign using an address that is not selected in the extension.'
   }
 
   async #addSwitchAccountUserRequest(req: SignUserRequest) {

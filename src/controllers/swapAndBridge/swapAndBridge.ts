@@ -1,6 +1,7 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import { getAccountNetworks } from '@/libs/networks/networks'
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -260,7 +261,7 @@ type SignAccountOpControllerMethods = {
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #selectedAccount: ISelectedAccountController
 
@@ -432,7 +433,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController

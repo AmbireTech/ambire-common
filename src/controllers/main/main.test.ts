@@ -306,6 +306,9 @@ describe('Main Controller ', () => {
       const updateSelectedAccountSpy = jest
         .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
         .mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
 
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
@@ -314,6 +317,7 @@ describe('Main Controller ', () => {
       expect(updateAccountStateSpy).not.toHaveBeenCalled()
       expect(discardSimulationSpy).not.toHaveBeenCalled()
       expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
+      expect(scheduleUpdateSpy).not.toHaveBeenCalled()
     })
 
     test('should update account state for account address and discard finalized simulations', async () => {
@@ -355,12 +359,22 @@ describe('Main Controller ', () => {
       const discardSimulationSpy = jest
         .spyOn(mainCtrl.portfolio, 'discardSimulation')
         .mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
 
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
       expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      // A cache-busting update is scheduled for the updated chain.
+      expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 1n,
+        bypassServerSideCache: true
+      })
     })
 
     test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
@@ -441,6 +455,9 @@ describe('Main Controller ', () => {
       const discardSimulationSpy = jest
         .spyOn(mainCtrl.portfolio, 'discardSimulation')
         .mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
 
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
@@ -448,6 +465,105 @@ describe('Main Controller ', () => {
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
       expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      // Scheduling targets the tx account, not the selected one.
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 1n,
+        bypassServerSideCache: true
+      })
+    })
+
+    test('schedules a cache-busting update for every chain in chainsToUpdate', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n, 10n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.portfolio, 'discardSimulation').mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n])
+      expect(scheduleUpdateSpy).toHaveBeenCalledTimes(2)
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 1n,
+        bypassServerSideCache: true
+      })
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 10n,
+        bypassServerSideCache: true
+      })
+    })
+
+    test('schedules the update before discarding the simulation', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(scheduleUpdateSpy.mock.invocationCallOrder[0]!).toBeLessThan(
+        discardSimulationSpy.mock.invocationCallOrder[0]!
+      )
     })
   })
 })
