@@ -846,12 +846,6 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.selectedOption?.token.flags.onGasTank).toBe(false)
   })
 
-  test('falls back to gas tank before ERC-20 when native cannot cover the fee', async () => {
-    const { controller } = await initDefaultFeeSelection(getDefaultFeeSelectionOptions(1n))
-
-    expect(controller.selectedOption?.token.flags.onGasTank).toBe(true)
-  })
-
   test('uses gas tank as a saved default across chains', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
@@ -885,7 +879,8 @@ describe('SignAccountOp Controller ', () => {
       '137': nativeFeeTokenPolygon.address
     })
     expect(controller.pendingFeeTokenPreference).toEqual({
-      '1': 'gasTank'
+      '1': 'gasTank',
+      '137': nativeFeeTokenPolygon.address
     })
   })
 

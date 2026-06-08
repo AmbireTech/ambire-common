@@ -9,6 +9,8 @@ export const FEE_TOKEN_PREFERENCE_STORAGE_KEY = 'signAccountOpFeeTokenPreference
 export class SignAccountOpPreferenceController extends EventEmitter {
   #storage: IStorageController
 
+  #updateQueue: Promise<void> = Promise.resolve()
+
   feeTokenPreference: SignAccountOpFeeTokenPreference = {}
 
   initialLoadPromise?: Promise<void>
@@ -42,17 +44,22 @@ export class SignAccountOpPreferenceController extends EventEmitter {
   }
 
   async setFeeTokenPreference(feeTokenPreference: SignAccountOpFeeTokenPreference) {
-    this.feeTokenPreference = feeTokenPreference
-    this.emitUpdate()
+    const update = this.#updateQueue.then(async () => {
+      try {
+        await this.#storage.set(FEE_TOKEN_PREFERENCE_STORAGE_KEY, feeTokenPreference)
+        this.feeTokenPreference = feeTokenPreference
+        this.emitUpdate()
+      } catch (error) {
+        this.emitError({
+          message: 'Error saving SignAccountOp fee token preference',
+          error: error instanceof Error ? error : new Error(String(error)),
+          level: 'silent'
+        })
+        throw error
+      }
+    })
 
-    try {
-      await this.#storage.set(FEE_TOKEN_PREFERENCE_STORAGE_KEY, this.feeTokenPreference)
-    } catch (error) {
-      this.emitError({
-        message: 'Error saving SignAccountOp fee token preference',
-        error: error instanceof Error ? error : new Error(String(error)),
-        level: 'silent'
-      })
-    }
+    this.#updateQueue = update.catch(() => {})
+    await update
   }
 }

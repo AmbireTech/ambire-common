@@ -992,9 +992,10 @@ export class SignAccountOpController
     if (!this.pendingFeeTokenPreference) return
 
     try {
-      this.feeTokenPreference = this.pendingFeeTokenPreference
+      const nextFeeTokenPreference = this.pendingFeeTokenPreference
+      await this.#signAccountOpPreference.setFeeTokenPreference(nextFeeTokenPreference)
+      this.feeTokenPreference = nextFeeTokenPreference
       this.pendingFeeTokenPreference = null
-      await this.#signAccountOpPreference.setFeeTokenPreference(this.feeTokenPreference)
       this.emitUpdate()
     } catch (error) {
       this.emitError({
