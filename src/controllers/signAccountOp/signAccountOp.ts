@@ -63,7 +63,6 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
-import { IStorageController, StorageProps } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
@@ -157,6 +156,10 @@ import {
   getUnknownTokenWarning,
   SignAccountOpType
 } from './helper'
+import {
+  SignAccountOpFeeTokenPreference,
+  SignAccountOpPreferenceController
+} from './signAccountOpPreference'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -231,10 +234,6 @@ export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void
 
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
-export type SignAccountOpFeeTokenPreference = StorageProps['signAccountOpFeeTokenPreference']
-
-const FEE_TOKEN_PREFERENCE_STORAGE_KEY = 'signAccountOpFeeTokenPreference'
-
 export class SignAccountOpController
   extends HumanizationController
   implements ISignAccountOpController
@@ -249,7 +248,7 @@ export class SignAccountOpController
 
   #portfolio: IPortfolioController
 
-  #storage: IStorageController
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -285,8 +284,6 @@ export class SignAccountOpController
 
   #paidBy: string | null = null
 
-  #hasUserSelectedFeeOption: boolean = false
-
   /**
    * The selected fee token the user is going to broadcast with.
    * This probably exists in selectedOption as well and it could
@@ -297,8 +294,6 @@ export class SignAccountOpController
   feeTokenPreference: SignAccountOpFeeTokenPreference = {}
 
   pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
-
-  #isFeeTokenPreferenceLoaded: boolean = false
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
@@ -414,7 +409,7 @@ export class SignAccountOpController
     networks,
     keystore,
     portfolio,
-    storage,
+    signAccountOpPreference,
     externalSignerControllers,
     account,
     network,
@@ -436,7 +431,7 @@ export class SignAccountOpController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
-    storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
     network: Network
@@ -457,7 +452,8 @@ export class SignAccountOpController
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
+    this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -764,7 +760,6 @@ export class SignAccountOpController
   }
 
   #load() {
-    void this.#loadFeeTokenPreference()
     this.#setDefaults()
     this.humanize()
     this.learnTokens()
@@ -930,28 +925,6 @@ export class SignAccountOpController
     return this.estimation && this.estimation.isInitialized()
   }
 
-  async #loadFeeTokenPreference() {
-    try {
-      this.feeTokenPreference = await this.#storage.get(FEE_TOKEN_PREFERENCE_STORAGE_KEY, {})
-      this.#isFeeTokenPreferenceLoaded = true
-
-      if (!this.#hasUserSelectedFeeOption && this.estimation.status === EstimationStatus.Success) {
-        this.feeTokenResult = null
-        this.#paidBy = null
-        this.update({ hasNewEstimation: true })
-        return
-      }
-
-      this.emitUpdate()
-    } catch (error) {
-      this.emitError({
-        message: 'Error loading SignAccountOp fee token preference',
-        error: error instanceof Error ? error : new Error(String(error)),
-        level: 'silent'
-      })
-    }
-  }
-
   #isNativeFeeOption(option: FeePaymentOption) {
     return option.token.address === ZERO_ADDRESS && !option.token.flags.onGasTank
   }
@@ -975,9 +948,7 @@ export class SignAccountOpController
   #getDefaultFeeOption(options: FeePaymentOption[]) {
     const notDisabled = options.filter((option) => !this.#getIsFeeOptionDisabled(option))
     const selectableOptions = notDisabled.length ? notDisabled : options
-    const preferred = this.#isFeeTokenPreferenceLoaded
-      ? this.#getPreferredFeeOption(selectableOptions)
-      : undefined
+    const preferred = this.#getPreferredFeeOption(selectableOptions)
 
     if (preferred) return preferred
 
@@ -1019,8 +990,7 @@ export class SignAccountOpController
     try {
       this.feeTokenPreference = this.pendingFeeTokenPreference
       this.pendingFeeTokenPreference = null
-      this.#isFeeTokenPreferenceLoaded = true
-      await this.#storage.set(FEE_TOKEN_PREFERENCE_STORAGE_KEY, this.feeTokenPreference)
+      await this.#signAccountOpPreference.setFeeTokenPreference(this.feeTokenPreference)
       this.emitUpdate()
     } catch (error) {
       this.emitError({
@@ -1664,7 +1634,6 @@ export class SignAccountOpController
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
-        this.#hasUserSelectedFeeOption = true
         if (
           this.pendingFeeTokenPreference &&
           !this.#doesFeeTokenPreferenceMatchToken(this.pendingFeeTokenPreference, feeToken)

@@ -79,6 +79,7 @@ import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
@@ -402,6 +403,8 @@ const init = async (
   await storageCtrl.set('accounts', [account])
   await storageCtrl.set('selectedAccount', account.addr)
   if (options?.initialSetStorage) await options.initialSetStorage(storageCtrl)
+  const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
+  await signAccountOpPreference.initialLoadPromise
   if (options?.dapps) {
     await storageCtrl.set('dappsV2', options.dapps)
     await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
@@ -644,7 +647,7 @@ const init = async (
     networks: networksCtrl,
     keystore,
     portfolio,
-    storage: storageCtrl,
+    signAccountOpPreference,
     externalSignerControllers: {},
     account,
     network,
@@ -665,7 +668,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller, storageCtrl }
+  return { controller, storageCtrl, signAccountOpPreference }
 }
 
 const initDappVerificationBannerTest = async (
@@ -853,8 +856,7 @@ describe('SignAccountOp Controller ', () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
         await storageCtrl.set('signAccountOpFeeTokenPreference', {
-          preferGasTank: true,
-          erc20ByChainId: {}
+          '1': 'gasTank'
         })
       }
     })
@@ -866,17 +868,8 @@ describe('SignAccountOp Controller ', () => {
     const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storage) => {
         await storage.set('signAccountOpFeeTokenPreference', {
-          preferGasTank: false,
-          erc20ByChainId: {
-            '1': {
-              address: usdcFeeToken.address,
-              symbol: usdcFeeToken.symbol
-            },
-            '137': {
-              address: nativeFeeTokenPolygon.address,
-              symbol: nativeFeeTokenPolygon.symbol
-            }
-          }
+          '1': usdcFeeToken.address,
+          '137': nativeFeeTokenPolygon.address
         })
       }
     })
@@ -888,21 +881,11 @@ describe('SignAccountOp Controller ', () => {
 
     const storedPreference = await storageCtrl.get('signAccountOpFeeTokenPreference')
     expect(storedPreference).toEqual({
-      preferGasTank: false,
-      erc20ByChainId: {
-        '1': {
-          address: usdcFeeToken.address,
-          symbol: usdcFeeToken.symbol
-        },
-        '137': {
-          address: nativeFeeTokenPolygon.address,
-          symbol: nativeFeeTokenPolygon.symbol
-        }
-      }
+      '1': usdcFeeToken.address,
+      '137': nativeFeeTokenPolygon.address
     })
     expect(controller.pendingFeeTokenPreference).toEqual({
-      preferGasTank: true,
-      erc20ByChainId: {}
+      '1': 'gasTank'
     })
   })
 
@@ -1765,7 +1748,6 @@ describe('Negative cases', () => {
       },
       true
     )
-    // @ts-expect-error
     controller.update({
       hasNewEstimation: true,
       feeToken: gasTankToken,

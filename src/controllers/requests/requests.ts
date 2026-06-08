@@ -82,6 +82,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -131,6 +132,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #providers: IProvidersController
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #selectedAccount: ISelectedAccountController
 
@@ -215,6 +218,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     networks,
     providers,
     storage,
+    signAccountOpPreference,
     selectedAccount,
     keystore,
     transfer,
@@ -248,6 +252,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     networks: INetworksController
     providers: IProvidersController
     storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     transfer: ITransferController
@@ -278,6 +283,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#networks = networks
     this.#providers = providers
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
     this.#transfer = transfer
@@ -325,6 +331,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
     await this.#safe.initialLoadPromise
+    await this.#signAccountOpPreference.initialLoadPromise
   }
 
   get visibleUserRequests(): UserRequest[] {
@@ -1877,6 +1884,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
+      await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1888,12 +1896,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           networks: this.#networks,
           keystore: this.#keystore,
           portfolio: this.#portfolio,
+          signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,
           account,
           network,
           provider: this.#providers.providers[network.chainId.toString()]!,
-          storage: this.#storage,
           phishing: this.#phishing,
           dapps: this.#dapps,
           fromRequestId: requestId,

@@ -6,23 +6,24 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
-import { IStorageController } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { SignAccountOpType } from './helper'
 import { OnBroadcastFailed, OnBroadcastSuccess, SignAccountOpController } from './signAccountOp'
+import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 
 export class SignAccountOpTesterController extends SignAccountOpController {
   constructor(props: {
     type?: SignAccountOpType
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
-    storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
     network: Network

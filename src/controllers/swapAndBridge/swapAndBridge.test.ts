@@ -30,6 +30,7 @@ import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { TransferController } from '../transfer/transfer'
@@ -250,6 +251,7 @@ const PORTFOLIO_TOKENS = [
 ]
 
 let requestsCtrl: IRequestsController | undefined
+const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
 const dappsControllerMock = {
   dapps: [],
   isReady: true,
@@ -257,12 +259,13 @@ const dappsControllerMock = {
 } as any
 
 const swapAndBridgeController = new SwapAndBridgeController({
-  callRelayer: () => {},
+  callRelayer: async () => ({}),
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   accounts: accountsCtrl,
   activity: activityCtrl,
   storage: storageCtrl,
+  signAccountOpPreference,
   swapProvider: socketAPIMock as any,
   keystore,
   portfolio: portfolioCtrl,
@@ -279,8 +282,9 @@ const swapAndBridgeController = new SwapAndBridgeController({
 })
 
 const transferCtrl = new TransferController(
-  () => {},
+  async () => ({}),
   storageCtrl,
+  signAccountOpPreference,
   humanizerInfo as HumanizerMeta,
   selectedAccountCtrl,
   networksCtrl,
@@ -310,6 +314,7 @@ requestsCtrl = new RequestsController({
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
+  signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
   transfer: transferCtrl,

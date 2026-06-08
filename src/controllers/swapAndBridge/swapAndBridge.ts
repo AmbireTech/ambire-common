@@ -80,6 +80,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -145,6 +146,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #activity: IActivityController
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #serviceProviderAPI: SwapProvider
 
@@ -295,6 +298,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks,
     activity,
     storage,
+    signAccountOpPreference,
     phishing,
     dapps,
     portfolioUpdate,
@@ -318,6 +322,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks: INetworksController
     activity: IActivityController
     storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     phishing: IPhishingController
     dapps: IDappsController
     relayerUrl: string
@@ -346,6 +351,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activity = activity
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#phishing = phishing
     this.#dapps = dapps
     this.#relayerUrl = relayerUrl
@@ -2537,6 +2543,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    await this.#signAccountOpPreference.initialLoadPromise
     this.#signAccountOpController = new SignAccountOpController({
       type: 'one-click-swap-and-bridge',
       callRelayer: this.#callRelayer,
@@ -2544,7 +2551,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
-      storage: this.#storage,
+      signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,
