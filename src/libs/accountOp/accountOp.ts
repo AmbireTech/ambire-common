@@ -107,6 +107,8 @@ export interface AccountOp {
   flags?: {
     hideActivityBanner?: boolean
   }
+  /** Session ID of the dApp that initiated this accountOp, used for phishing context checks. */
+  dappSessionId?: string
 }
 
 /**

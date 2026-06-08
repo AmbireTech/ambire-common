@@ -73,6 +73,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     name: string
     icon: string
     url?: string
+    sessionId?: string
   } | null = null
 
   messageToSign: Message | null = null
@@ -129,7 +130,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     hash,
     signatures
   }: {
-    dapp?: { name: string; icon: string; url?: string }
+    dapp?: { name: string; icon: string; url?: string; sessionId?: string }
     messageToSign: Message
     // who are the signers that already signed this message
     // applicable on Safe message
@@ -563,7 +564,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     const banner = this.#dapps.getDappVerificationBanner([this.dapp.url.toLowerCase()], {
       // SignMessage operates on a single dApp, and the request window already shows it,
       // so repeating the dApp name in the banner text adds noise.
-      includeDappNamesInText: false
+      includeDappNamesInText: false,
+      sessionId: this.dapp.sessionId
     })
     if (!banner) return null
     // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.

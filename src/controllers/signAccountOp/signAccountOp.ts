@@ -1613,7 +1613,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (!dappUrls.length) return null
 
-    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls)
+    // Pass the session ID so getDappVerificationBanner can check co-sessions in the same
+    // tab/window for dangerous context (e.g. a phishing page hosting the dApp in an iframe).
+    const sessionId = this.accountOp.dappSessionId
+
+    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls, { sessionId })
     if (!dappVerificationBanner) return null
 
     const containsPermit2 = this.accountOp.calls.some((call) => {

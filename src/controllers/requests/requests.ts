@@ -1119,7 +1119,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             walletSendCallsVersion,
             paymasterService
           },
-          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }]
+          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }],
+          dappSessionId: request.session.sessionId
         })) ?? null
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -1759,12 +1760,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       calls,
       meta,
       accountOp: providedAccountOp,
-      dappPromises = []
+      dappPromises = [],
+      dappSessionId
     }: {
       calls: Call[]
       meta: CallsUserRequest['meta']
       accountOp?: AccountOp
       dappPromises?: CallsUserRequest['dappPromises']
+      dappSessionId?: string
     },
     executionType: RequestExecutionType = 'open-request-window'
   ) {
@@ -1927,7 +1930,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                   }))
                 ],
                 safeTx: meta.safeTx,
-                meta
+                meta,
+                dappSessionId
               },
           shouldSimulate: this.shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
