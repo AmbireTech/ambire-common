@@ -199,4 +199,96 @@ describe('Swap Provider Parallel execution', () => {
     expect(socketProvider.quote).not.toHaveBeenCalled()
     expect(squidProvider.quote).toHaveBeenCalled()
   })
+
+  it('Returns routes from all providers that complete within the wait window', async () => {
+    const makeProvider = (id: string, delayMs: number) =>
+      ({
+        id,
+        name: id,
+        isHealthy: null,
+        supportedChains: null,
+        updateHealth: jest.fn(),
+        resetHealth: jest.fn(),
+        getSupportedChains: jest.fn(),
+        getToTokenList: jest.fn(),
+        getToken: jest.fn(),
+        startRoute: jest.fn(),
+        quote: jest.fn(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(
+                () =>
+                  resolve({
+                    fromAsset: {
+                      address: '0x0000000000000000000000000000000000000000',
+                      chainId: 1,
+                      decimals: 18,
+                      name: 'Ether',
+                      symbol: 'ETH'
+                    },
+                    fromChainId: 1,
+                    toAsset: {
+                      address: '0x0000000000000000000000000000000000000000',
+                      chainId: 1,
+                      decimals: 18,
+                      name: 'Ether',
+                      symbol: 'ETH'
+                    },
+                    toChainId: 1,
+                    selectedRouteSteps: [],
+                    routes: [
+                      {
+                        providerId: id,
+                        routeId: id,
+                        fromAmount: '1',
+                        toAmount: '1'
+                      }
+                    ]
+                  }),
+                delayMs
+              )
+            })
+        ),
+        getRouteStatus: jest.fn()
+      }) as unknown as SwapProvider
+
+    const executor = new SwapProviderParallelExecutor([
+      makeProvider('lifi', 1),
+      makeProvider('socket', 5),
+      makeProvider('uniswap', 10)
+    ])
+
+    const quote = await executor.quote({
+      fromAsset: {
+        address: '0x0000000000000000000000000000000000000000',
+        chainId: 1n,
+        decimals: 18,
+        name: 'ETH',
+        symbol: 'ETH'
+      } as any,
+      fromChainId: 1,
+      fromTokenAddress: '0x0000000000000000000000000000000000000000',
+      toAsset: {
+        address: '0x0000000000000000000000000000000000000000',
+        chainId: 1,
+        decimals: 18,
+        name: 'ETH',
+        symbol: 'ETH'
+      },
+      toChainId: 1,
+      toTokenAddress: '0x0000000000000000000000000000000000000000',
+      fromAmount: 1n,
+      userAddress: '0x0000000000000000000000000000000000000001',
+      accountNativeBalance: 1n,
+      isWrapOrUnwrap: false,
+      nativeSymbol: 'ETH',
+      sort: 'output'
+    })
+
+    expect(quote.routes.map((route) => route.providerId).sort()).toEqual([
+      'lifi',
+      'socket',
+      'uniswap'
+    ])
+  })
 })

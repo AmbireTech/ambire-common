@@ -271,6 +271,38 @@ describe('Portfolio', () => {
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
   })
 
+  test('fetches and caches the price of an arbitrary token address', async () => {
+    const priceFetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        [USDT_ADDRESS.toLowerCase()]: {
+          usd: 0.99785
+        }
+      })
+    }))
+    const portfolioWithMockedPriceFetch = new Portfolio(
+      priceFetch as any,
+      provider,
+      ethereum,
+      velcroUrl
+    )
+    const tokenDataCache = new Map()
+
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(0.99785)
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS.toLowerCase(), {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(0.99785)
+    expect(priceFetch).toHaveBeenCalledTimes(1)
+  })
+
   test('simulation works for EOAs', async () => {
     const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {

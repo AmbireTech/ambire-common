@@ -100,6 +100,7 @@ const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
   static: 60 * 60 * 1000
 }
+const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
 
 /**
  * The portfolio controller is responsible for managing and updating the portfolio state.
@@ -1028,6 +1029,25 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.emitUpdate()
       return false
     }
+  }
+
+  async getTokenPrice(accountId: AccountId, chainId: bigint, address: string) {
+    const network = this.#networks.networks.find((x) => x.chainId === chainId)
+
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
+
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
+    if (!portfolioLib) return undefined
+
+    const networkTokenDataCache = this.tokenDataCache[chainId.toString()] || new Map()
+    const price = await portfolioLib.getTokenPrice(address, {
+      tokenDataCache: networkTokenDataCache,
+      tokenDataRecency: TOKEN_PRICE_CACHE_TTL
+    })
+
+    this.tokenDataCache[chainId.toString()] = networkTokenDataCache
+
+    return price
   }
 
   async #getAdditionalPortfolio(accountId: AccountId, maxDataAgeMs?: number) {

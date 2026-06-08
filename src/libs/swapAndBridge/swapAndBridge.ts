@@ -20,6 +20,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FromToken,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
@@ -700,48 +701,119 @@ const getSwapSponsorship = ({
   hasConvinienceFee,
   nativePrice,
   fromAmountInUsd,
-  fromTokenPriceInUsd,
-  fromTokenDecimals,
-  providerId
+  feeTokenPriceInUsd,
+  feeTokenDecimals,
+  providerId,
+  isBridge
 }: {
   hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
-  fromTokenPriceInUsd: number | undefined
-  fromTokenDecimals: number | undefined
+  feeTokenPriceInUsd: number | undefined
+  feeTokenDecimals: number | undefined
   providerId: string | undefined
+  isBridge: boolean
 }):
   | {
       nativePrice: number
       swapFeeInUsd: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
   | undefined => {
   if (
     !hasConvinienceFee ||
     !nativePrice ||
     !fromAmountInUsd ||
-    !fromTokenPriceInUsd ||
-    !fromTokenDecimals ||
-    providerId === 'squid'
+    !feeTokenPriceInUsd ||
+    !feeTokenDecimals ||
+    providerId === 'squid' ||
+    (providerId === 'uniswap' && isBridge)
   )
     return undefined
   return {
     nativePrice,
     swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
-    fromTokenPriceInUsd,
-    fromTokenDecimals
+    feeTokenPriceInUsd,
+    feeTokenDecimals
+  }
+}
+
+const enrichRouteWithOutputUsdPrice = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+): SwapAndBridgeRoute => {
+  if (!outputTokenPriceUSD) return route
+
+  const outputValueInUsd = Number(
+    safeTokenAmountAndNumberMultiplication(
+      BigInt(route.toAmount),
+      route.toToken.decimals,
+      outputTokenPriceUSD
+    )
+  )
+  const gasCostInUsd =
+    route.outputValueAfterGasInUsd === undefined
+      ? undefined
+      : route.outputValueInUsd - route.outputValueAfterGasInUsd
+
+  return {
+    ...route,
+    outputValueInUsd,
+    outputValueAfterGasInUsd:
+      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd,
+    toToken: {
+      ...route.toToken,
+      priceUSD: outputTokenPriceUSD.toString()
+    }
+  }
+}
+
+const getFeeTokenForSponsorship = (
+  fromSelectedToken: FromToken,
+  quote?: SwapAndBridgeQuote | null,
+  fromAmount?: string
+): { feeTokenPriceInUsd: number | undefined; decimals: number | undefined } => {
+  // if the provider is uniswap, we're getting the fee from the output token
+  if (quote?.selectedRoute?.providerId === 'uniswap') {
+    const outputAmount = Number(formatUnits(quote.selectedRoute.toAmount, quote.toAsset.decimals))
+
+    return {
+      feeTokenPriceInUsd: outputAmount
+        ? quote.selectedRoute.outputValueInUsd / outputAmount
+        : undefined,
+      decimals: quote.toAsset.decimals
+    }
+  }
+
+  // try to get from portfolio, if exists
+  // else take from quote
+  let feeTokenPriceInUsd = fromSelectedToken.priceIn.find((p) => p.baseCurrency === 'usd')?.price
+  const normalizedFromAmount = Number(fromAmount)
+  if (
+    !feeTokenPriceInUsd &&
+    quote?.selectedRoute?.inputValueInUsd &&
+    Number.isFinite(normalizedFromAmount) &&
+    normalizedFromAmount > 0
+  ) {
+    feeTokenPriceInUsd = quote.selectedRoute.inputValueInUsd / normalizedFromAmount
+  }
+
+  return {
+    feeTokenPriceInUsd,
+    decimals: quote?.fromAsset.decimals
   }
 }
 
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
   getLink,
   getSlippage,
   getSwapAndBridgeCalls,

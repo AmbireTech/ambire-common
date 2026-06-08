@@ -594,4 +594,39 @@ export class Portfolio {
       }
     ])
   }
+
+  async getTokenPrice(
+    address: string,
+    {
+      baseCurrency = 'usd',
+      tokenDataCache = new Map(),
+      tokenDataRecency = 0
+    }: {
+      baseCurrency?: string
+      tokenDataCache?: TokenDataCache
+      tokenDataRecency?: number
+    } = {}
+  ): Promise<number | undefined> {
+    const cachedTokenData = [...tokenDataCache.entries()].find(
+      ([cachedAddress]) => cachedAddress.toLowerCase() === address.toLowerCase()
+    )?.[1]
+
+    if (cachedTokenData && Date.now() - cachedTokenData[0] <= tokenDataRecency) {
+      return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
+    }
+
+    if (!this.network.platformId) return undefined
+
+    const tokenData = await this.batchedGecko({
+      address,
+      network: this.network,
+      baseCurrency,
+      responseIdentifier: geckoResponseIdentifier(address, this.network)
+    })
+    const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+    tokenDataCache.set(address, [Date.now(), formattedTokenData])
+
+    return formattedTokenData.priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
+  }
 }
