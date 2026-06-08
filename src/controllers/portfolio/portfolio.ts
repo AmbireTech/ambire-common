@@ -1102,7 +1102,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         },
         ...(banner.text && { text: banner.text }),
         ...(banner.title && { title: banner.title }),
-        actions
+        actions,
+        emoji: banner.emoji
       }
 
       this.#banner.addBanner(formattedBanner)
