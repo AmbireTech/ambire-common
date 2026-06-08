@@ -35,6 +35,7 @@ export interface Banner {
   category?: BannerCategory
   title: string
   text?: string
+  emoji?: string
   // Force a single action on purpose
   actions: [Action] | []
   dismissAction?: Action
