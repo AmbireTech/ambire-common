@@ -23,6 +23,15 @@ ai_timeout = 300
 # If a diff is too large, clip it rather than skipping entirely.
 large_patch_policy = "clip"
 
+# Show the model more lines around each change so it judges the surrounding code,
+# not just the diff. Costs more tokens and makes clipping on huge PRs a bit likelier,
+# but it's worth it for catching context-dependent bugs.
+# Note: pr-agent caps these first two at 10. 
+patch_extra_lines_before = 10
+patch_extra_lines_after = 10
+# The one that actually pulls in the rest of the function is the dynamic setting below (enabled by default).
+max_extra_lines_before_dynamic_context = 24
+
 # ─────────────────────────────────────────────
 # Ignore Patterns
 # ─────────────────────────────────────────────
@@ -55,6 +64,11 @@ glob = [
 # Review Settings shared by /review and /security-review
 # ─────────────────────────────────────────────
 [pr_reviewer]
+# Max findings the reviewer is allowed to report. Default is 3, which silently
+# drops everything past the third issue. We are bumping it to see if we can get
+# closer to Copilot reviews
+num_max_findings = 10
+
 # Post a NEW review comment on every run instead of editing the previous one.
 persistent_comment = false
 final_update_message = true
@@ -64,9 +78,9 @@ publish_output_no_suggestions = true
 
 # Enable built-in security sub-section even in general reviews.
 require_security_review = true
+require_tests_review = false
 
-# Also scan for missing tests, TODOs, and ticket references.
-require_tests_review = true
+# Also scan for missing TODOs, and ticket references.
 require_todo_scan = true
 require_estimate_effort_to_review = true
 

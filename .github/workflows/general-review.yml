@@ -25,22 +25,59 @@ jobs:
       model: openrouter/moonshotai/kimi-k2.6
       fallback_models: '["openrouter/anthropic/claude-sonnet-4.6"]'
       extra_instructions: |
-        You are reviewing changes in a security-sensitive Web3 browser extension wallet.
-        Focus on the diff in front of you and assess it for correctness, security, reliability, and maintainability.
-        Prioritize issues such as:
-        - Requests without error handling and timeouts
-        - Inefficient algorithms or data structures
-        - Inconsistent naming conventions or formatting
-        - Unnecessary complexity or duplication
-        - Missing comments or documentation for complex logic
-        - Unhandled exceptions and edge cases
-        - Swallowed errors and edge case return statements that should at least log an error
-        - Concurrent modifications to state that may result in race conditions
-        - Unhandled degradations when interacting with external services and APIs
-        - Decimal precision handling and bigint conversions
-        - Unhandled pending operations (e.g., submitting twice, not awaiting async calls, etc.)
-        - Partial updates that leave the state inconsistent
-        - Improper cleanup of subscriptions, timers, and event listeners
-        Be constructive, concise, and actionable. Keep feedback grounded in the actual changes rather than using a fixed checklist.
+        You are reviewing changes in `ambire-common`, the environment-agnostic core
+        business-logic package of a security-sensitive Web3 wallet. It is imported by
+        the iOS/Android apps, the Chrome/Firefox extensions and web apps, and runs for
+        long uninterrupted periods (especially in the extension background).
+
+        The invariants below are grouped by the severity a violation should carry.
+        Use the listed tier as the default severity for a finding, but adjust up or
+        down if the concrete impact in context clearly differs.
+
+        Non-exhaustive list of invariants, ranked by severity:
+
+        HIGH - loss/exposure of funds or secrets, state corruption, security bypass,
+        crashes:
+        - Errors in public controller methods must never propagate and must never be swallowed
+          silently: use `EmittableError` inside a `withStatus` wrapper, or
+          `try/catch` + `this.emitError({ level, message, error })`.
+        - Async state updates must be guarded against out-of-order/concurrent runs
+          (debounce, unique id/version check, or `AbortController`), and
+          `this.storage.set()` must never run in parallel (await the previous call) -
+          violations corrupt persisted state.
+        - Partial updates that leave state inconsistent: a multi-step mutation that can
+          fail or return early between steps without rolling back.
+        - Unhandled pending operations: un-awaited async calls, or an action that can be
+          triggered twice (e.g. double-submitting/double-signing a transaction) without
+          a guard.
+        - bigint/decimal precision loss in value, balance, and fee math.
+
+        MEDIUM - correctness/reliability bugs without direct security impact:
+        - State that must reach the UI requires `this.emitUpdate()` after the mutation.
+          Getter values are NOT auto-propagated - they also need `emitUpdate()`, and a
+          getter deriving from ANOTHER controller's state must subscribe to it and call
+          `this.propagateUpdate(...)`, or the UI silently goes stale.
+        - Getters must be pure: no side effects, no `emitUpdate()`, no expensive compute.
+        - Timers/lifecycle: never use raw `setInterval` (use `RecurringTimeout`);
+          long-running background loops belong in `ContinuousUpdatesController`; all
+          subscriptions, listeners and timers must be cleaned up (leaks accumulate in
+          the long-lived background).
+        - `withStatus` must wrap only public entry points, and NEVER methods that can
+          hang (transaction signing, hardware-wallet prompts) or background intervals.
+        - Unhandled degradation when external services/RPCs fail or time out, and
+          network requests issued without error handling or a timeout.
+        - Unhandled exceptions and edge cases (null/undefined, empty collections,
+          boundary values) on a code path that can realistically be reached.
+        - Inefficient algorithms or data structures on hot or large-data paths - quadratic loops, repeated linear scans,
+          redundant network/RPC calls in a loop.
+
+        Beyond the invariants above, also flag logic that is simply wrong for its
+        intended purpose - incomplete data sets or enumerations, misclassifications,
+        wrong-default or off-by-one constants, and mismatched assumptions between a
+        function and its callers. Assign severity by the concrete impact.
+
+        Be constructive, concise, and actionable. For each finding, prefix it with its
+        severity (High/Medium/Low), quote the exact code, and explain the concrete
+        failure it causes.
     secrets:
       OPENROUTER_KEY: ${{ secrets.OPENROUTER__KEY }}
