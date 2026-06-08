@@ -939,7 +939,10 @@ export class SignAccountOpController
       }
 
       // find the token/native
-      return options.find((option) => option.token.address.toLowerCase() === pref.toLowerCase())
+      return options.find(
+        (option) =>
+          !option.token.flags.onGasTank && option.token.address.toLowerCase() === pref.toLowerCase()
+      )
     }
 
     return undefined
