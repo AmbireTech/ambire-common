@@ -18,7 +18,8 @@ import {
   erc20TransferAbi,
   erc20TransferFromAbi,
   morphoRepayAbi,
-  morphoWithdrawCollateralAbi
+  morphoWithdrawCollateralAbi,
+  publicAllocatorReallocateToAbi
 } from './modules/Bundler3/generalAdapter'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
 import {
@@ -1260,6 +1261,109 @@ describe('ERC-7730 descriptors', () => {
         .some((value) =>
           ['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d'].includes(value.content || '')
         )
+    ).toBe(false)
+  })
+
+  test('humanizes Morpho PublicAllocator reallocateTo in Bundler3 ERC-7730 calldata', () => {
+    const morphoBundler = '0x6566194141eefa99Af43Bb5Aa71460Ca2Dc90245'
+    const publicAllocator = '0xfd32fA2ca22c76dD6E550706Ad913FC6CE91c75D'
+    const vault = '0xbeef01735c132ada46aa9aa4c54623caa92a64cb'
+    const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const wbtc = '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'
+    const supplyMarketParams = {
+      loanToken: usdc,
+      collateralToken: wbtc,
+      oracle: '0xf1561bc4b3d1ba49053986fb9ee88d4fe22d0cf4',
+      irm: '0x870ac11d48b15db9a138cf899d20f13f79ba00bc',
+      lltv: 86145408065551n
+    }
+    const withdrawalMarketParams = {
+      ...supplyMarketParams,
+      collateralToken: '0xdddd770badd886df3864029e4b377b5f6a2b6b83'
+    }
+    const iface = new ethers.Interface([
+      'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
+    ])
+    const morphoAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: morphoBundler,
+          value: 0n,
+          data: iface.encodeFunctionData('multicall', [
+            [
+              {
+                to: publicAllocator,
+                data: encodeFunctionData({
+                  abi: publicAllocatorReallocateToAbi,
+                  args: [
+                    vault,
+                    [{ marketParams: withdrawalMarketParams, amount: 1000000n }],
+                    supplyMarketParams
+                  ]
+                }),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              }
+            ]
+          ])
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(morphoAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/morpho/calldata-MorphoBundlerV3.json',
+          descriptor: {
+            display: {
+              formats: {
+                'multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)':
+                  {
+                    intent: 'Bundler3 Multicall',
+                    fields: [
+                      {
+                        path: '#.bundle.[].data',
+                        label: 'Action',
+                        format: 'calldata',
+                        params: {
+                          calleePath: '#.bundle.[].to',
+                          amountPath: '#.bundle.[].value'
+                        },
+                        visible: 'always'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+    const visualization = irCalls[0]!.fullVisualization?.[0]
+
+    expect(visualization).toMatchObject({
+      type: 'erc7730',
+      title: 'Bundler3 Multicall'
+    })
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+
+    expect(visualization.rows).toHaveLength(1)
+    expect(visualization.rows[0]!.label).toBe('Action')
+    expect(visualization.rows[0]!.value.find((value) => value.type === 'action')?.content).toBe(
+      'Reallocate liquidity'
+    )
+    expect(visualization.rows[0]!.value).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'label', content: 'To vault' }),
+        expect.objectContaining({ type: 'address', address: vault })
+      ])
+    )
+    expect(
+      visualization.rows[0]!.value.some((value) =>
+        ['0x833947fd', 'reallocateTo'].includes(value.content || '')
+      )
     ).toBe(false)
   })
 
