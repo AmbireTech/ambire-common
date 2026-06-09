@@ -198,7 +198,8 @@ export class EOA7702 extends BaseAccount {
   }
 
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
-    return this.accountState.isSmarterEoa ? 'supported' : 'ready'
+    // always supported to make dapps recognize it correctly
+    return 'supported'
   }
 
   getNonceId(): string {

@@ -55,6 +55,9 @@ export const erc4626WithdrawAbi = parseAbi([
 export const erc4626RedeemAbi = parseAbi([
   'function erc4626Redeem(address vault, uint256 shares, uint256 minSharePriceE27, address receiver, address owner)'
 ])
+export const publicAllocatorReallocateToAbi = parseAbi([
+  'function reallocateTo(address vault, ((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint128 amount)[] withdrawals, (address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) supplyMarketParams) payable'
+])
 
 export interface BundleCall {
   to: string
@@ -280,6 +283,21 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAddressVisualization(vault)
     ]
     return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+  },
+  [toFunctionSelector(publicAllocatorReallocateToAbi[0])]: (
+    _accAddr: string,
+    call: HexIrCall
+  ): IrCall | undefined => {
+    const { args } = decodeFunctionData({ abi: publicAllocatorReallocateToAbi, data: call.data })
+    const [vault] = args
+    const fullVisualization = [
+      getBreak(),
+      getAction('Reallocate liquidity'),
+      getLabel('To vault'),
+      getAddressVisualization(vault)
+    ]
+
+    return { ...call, fullVisualization }
   }
 }
 

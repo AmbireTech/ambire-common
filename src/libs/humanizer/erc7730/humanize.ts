@@ -738,6 +738,21 @@ const getCalldataRows = (
       typeof accountAddr === 'string' &&
       context.chainId
     ) {
+      const safeFallbackVisualization = getSafeCallFallbackVisualization({
+        to: callee,
+        data: calldata,
+        value: toBigIntOrNull(amount) || 0n
+      })
+
+      if (safeFallbackVisualization) {
+        acc.push({
+          label: nestedRowLabel,
+          value: [safeFallbackVisualization]
+        })
+
+        return acc
+      }
+
       const moduleFallbackVisualization = getModuleFallbackVisualization(
         {
           to: callee,
@@ -1095,6 +1110,15 @@ const getSafeCallFallbackVisualization = (
   const action = safeHumanization?.visuals?.find((visualization) => visualization.type === 'action')
   if (!safeHumanization?.visuals || !action || action.type !== 'action' || !action.content) {
     return null
+  }
+
+  if (action.content === 'Account setup') {
+    const rows = getRowsFromFlatCallVisualization(safeHumanization.visuals)
+    if (!rows) return null
+
+    const visualization = getErc7730Visualization(action.content, rows)
+
+    return visualization.type === 'erc7730' ? visualization : null
   }
 
   const firstActionIndex = safeHumanization.visuals.indexOf(action)
