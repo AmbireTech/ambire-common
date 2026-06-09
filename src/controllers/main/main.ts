@@ -701,13 +701,14 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       const ONE_HOUR = 1000 * 60 * 60
+      const THIRTY_MINUTES = 1000 * 60 * 30
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
           maxDataAgeMs: FIVE_MINUTES,
           maxDataAgeMsUnused: ONE_HOUR,
-          defiMaxDataAgeMs: ONE_HOUR
+          defiMaxDataAgeMs: THIRTY_MINUTES
         })
       }
 
@@ -1494,7 +1495,7 @@ export class MainController extends EventEmitter implements IMainController {
     const {
       chainIds,
       isManualReload = false,
-      defiMaxDataAgeMs,
+      defiMaxDataAgeMs = 30 * 60 * 1000,
       maxDataAgeMsUnused,
       maxDataAgeMs
     } = options || {}
