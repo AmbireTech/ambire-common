@@ -306,6 +306,13 @@ export class SignAccountOpController
 
   replacementFeeLow: boolean
 
+  // Set to true when a broadcast attempt fails because the network fee changed
+  // significantly while the transaction was being prepared (e.g. during a gas
+  // spike) and we auto-updated the gas prices. The UI uses this to show a soft
+  // "Gas fee updated" confirmation instead of a scary error toast, so the user
+  // can accept the new fee and continue without redoing the whole flow.
+  gasFeeChangedConfirmationRequired: boolean = false
+
   warnings: Warning[] = []
 
   // indicates whether the transaction gas is sponsored or not
@@ -1723,6 +1730,7 @@ export class SignAccountOpController
     this.#hwCleanup()
     this.gasPrices = undefined
     this.hasCustomGasPrices = false
+    this.gasFeeChangedConfirmationRequired = false
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
     this.feeTokenResult = null
@@ -2782,9 +2790,8 @@ export class SignAccountOpController
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
-        const signature = (await this.#withHardwareWalletSigningRequest(
-          signingRequest,
-          () => safeSigner.signTypedData(typedData)
+        const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
+          safeSigner.signTypedData(typedData)
         )) as Hex
         nowSignedSigs.push(signature)
 
@@ -3441,6 +3448,10 @@ export class SignAccountOpController
       })
     }
 
+    // A fresh attempt clears any pending "gas fee updated" confirmation, so a
+    // stale flag from a previous failed broadcast doesn't reopen the modal.
+    this.gasFeeChangedConfirmationRequired = false
+
     this.signAndBroadcastPromise = (async () => {
       this.signPromise = this.sign().finally(() => {
         this.signPromise = undefined
@@ -3511,6 +3522,10 @@ export class SignAccountOpController
     const originalMessage = _err?.message
     let message = humanReadableMessage
     let isReplacementFeeLow = false
+    // When the broadcast fails only because the network fee changed and we
+    // auto-updated the gas prices, we surface a soft confirmation modal instead
+    // of a scary error toast (see gasFeeChangedConfirmationRequired).
+    let softFeeUpdateConfirmation = false
 
     this.broadcastStatus = 'ERROR'
     this.forceEmitUpdate()
@@ -3554,6 +3569,11 @@ export class SignAccountOpController
           this.#silentGasPriceUpdate()
 
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+
+          // The fee was auto-updated, so don't alarm the user with a red error
+          // toast. Ask them to confirm the new fee and continue instead.
+          this.gasFeeChangedConfirmationRequired = true
+          softFeeUpdateConfirmation = true
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
@@ -3580,8 +3600,13 @@ export class SignAccountOpController
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
         })
       }
-      if (message.includes('the selected fee is too low')) {
+      if (message.includes('the selected fee is too low') && !this.hasCustomGasPrices) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#silentGasPriceUpdate()
+        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        this.gasFeeChangedConfirmationRequired = true
+        softFeeUpdateConfirmation = true
+        message = 'Transaction fees changed. Please try again'
       }
     }
 
@@ -3594,11 +3619,21 @@ export class SignAccountOpController
     }
 
     this.emitError({
-      level: 'major',
+      // Keep the report for Sentry/logging, but don't show a toast when we're
+      // handling this softly via the "Gas fee updated" confirmation modal.
+      level: softFeeUpdateConfirmation ? 'silent' : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
     })
+
+    // signAndBroadcastPromise may clear before a debounced UI update is sent.
+    // Force-emit so gasFeeChangedConfirmationRequired reliably reaches the UI.
+    if (softFeeUpdateConfirmation) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.forceEmitUpdate()
+    }
+
     throw new Error(message) // so that broadcast resolves with an error status
   }
 
@@ -3608,6 +3643,18 @@ export class SignAccountOpController
 
   setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
     this.traceCallDiscoveryStatus = status
+  }
+
+  /**
+   * Dismisses the soft "Gas fee updated" confirmation without retrying the
+   * broadcast (e.g. when the user cancels the modal). The controller stays in
+   * ReadyToSign so the user can still adjust and submit again manually.
+   */
+  dismissGasFeeChangedConfirmation() {
+    if (!this.gasFeeChangedConfirmationRequired) return
+
+    this.gasFeeChangedConfirmationRequired = false
+    this.emitUpdate()
   }
 
   /**
@@ -3740,7 +3787,8 @@ export class SignAccountOpController
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
-      safeEip712Data: this.safeEip712Data
+      safeEip712Data: this.safeEip712Data,
+      gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired
     }
   }
 }

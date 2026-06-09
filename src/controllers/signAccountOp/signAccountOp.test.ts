@@ -1613,7 +1613,6 @@ describe('Negative cases', () => {
       },
       true
     )
-    // @ts-expect-error
     controller.update({
       hasNewEstimation: true,
       feeToken: gasTankToken,
@@ -2228,6 +2227,103 @@ describe('throwBroadcastAccountOp', () => {
         'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
       )
     }
+  })
+  it('fee changed (underpriced) auto-update shows a soft confirmation instead of an error toast', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+
+    const error = new Error(
+      'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
+    )
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      // The user is asked to re-confirm the updated fee, not redo the whole flow
+      expect(e.message).toBe('Transaction fees changed. Please try again')
+    }
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+
+    // The error is tracked silently (no scary red toast for the user)
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('silent')
+
+    // Dismissing the confirmation (Cancel) clears the flag
+    controller.dismissGasFeeChangedConfirmation()
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+  })
+  it('fee changed with custom gas prices keeps the original error and no soft confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // The user explicitly set advanced gas prices, so we don't override them
+    controller.hasCustomGasPrices = true
+
+    const originalMessage =
+      'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
+    const error = new Error(originalMessage)
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(originalMessage)
+    }
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('major')
   })
 })
 
