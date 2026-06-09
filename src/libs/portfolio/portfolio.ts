@@ -1,5 +1,4 @@
 import { ZeroAddress } from 'ethers'
-
 import { getAddress } from 'viem'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
@@ -375,10 +374,12 @@ export class Portfolio {
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
-        // Symbol-based blacklist: skip custom tokens so user-added assets are never hidden
+        // Symbol/name-based blacklist: skip custom tokens so user-added assets are never hidden.
+        // Spam often hides the URL/lure in the name rather than the symbol, so match both.
         if (allBlacklistedSymbols.length > 0 && !_tokensWithErrResult[1]?.flags?.isCustom) {
-          const symbolLower = _tokensWithErrResult[1].symbol.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return false
+          const token = _tokensWithErrResult[1]
+          const haystack = `${token.symbol} ${token.name || ''}`.toLowerCase()
+          if (allBlacklistedSymbols.some((pattern) => haystack.includes(pattern))) return false
         }
 
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
@@ -417,10 +418,11 @@ export class Portfolio {
       (acc, [error, collection]) => {
         if (!isValidToken(error, collection)) return acc
 
-        // Never filter custom collections, even tho we don't support them atm
+        // Never filter custom collections, even tho we don't support them atm.
+        // Spam often hides the URL/lure in the name rather than the symbol, so match both.
         if (allBlacklistedSymbols.length > 0 && !collection?.flags?.isCustom) {
-          const symbolLower = collection.symbol.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return acc
+          const haystack = `${collection.symbol} ${collection.name || ''}`.toLowerCase()
+          if (allBlacklistedSymbols.some((pattern) => haystack.includes(pattern))) return acc
         }
 
         // Important note: Collections with 0 collectibles are allow to pass through the filter.
