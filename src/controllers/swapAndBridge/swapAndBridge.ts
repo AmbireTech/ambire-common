@@ -47,6 +47,7 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -1163,6 +1164,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+
+    // When the price endpoint is down, tokens come back without a USD price. We must
+    // not exclude them as "priceless" in that case, otherwise switching to an account
+    // with such tokens would wrongly hide them. Skip the price requirement for chains
+    // that currently have a price fetch error.
+    const chainIdsWithPriceError = new Set<string>()
+    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
+      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
+    )
+    priceError?.networkNames.forEach((networkName) => {
+      const network = this.#networks.networks.find((n) => n.name === networkName)
+      if (network) chainIdsWithPriceError.add(network.chainId.toString())
+    })
+
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1171,7 +1186,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(token) && !token.flags.isHidden
+          getIsTokenEligibleForSwapAndBridge(
+            token,
+            true,
+            !chainIdsWithPriceError.has(token.chainId.toString())
+          ) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
