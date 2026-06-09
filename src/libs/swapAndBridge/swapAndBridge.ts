@@ -250,7 +250,9 @@ export const getIsTokenEligibleForSwapAndBridge = (
 
   // Tokens without a known USD price most prob can't be quoted reliably, so exclude them
   // from the list when the caller opts in (e.g. the Swap & Bridge "form" tokens).
-  if (requirePrice && getTokenUsdPrice(token) <= 0) {
+  // Custom tokens are exempt - the user explicitly imported them and likely wants
+  // to use them for something (maybe swap or bridge).
+  if (requirePrice && !token.flags.isCustom && getTokenUsdPrice(token) <= 0) {
     return false
   }
 
