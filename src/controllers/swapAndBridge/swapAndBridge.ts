@@ -1046,7 +1046,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(token) && !token.flags.isHidden
+          getIsTokenEligibleForSwapAndBridge(token, true, true) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
