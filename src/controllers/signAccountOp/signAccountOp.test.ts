@@ -2423,7 +2423,10 @@ describe('ERC-7730 humanization', () => {
       })
 
       callRelayer.mockClear()
+      const previousHumanization = controller.humanization
       controller.humanize()
+      expect(controller.isHumanizing).toBe(true)
+      expect(controller.humanization).toBe(previousHumanization)
       await wait(0)
 
       expect(callRelayer).not.toHaveBeenCalled()
