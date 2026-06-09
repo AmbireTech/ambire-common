@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
@@ -707,7 +706,8 @@ export class MainController extends EventEmitter implements IMainController {
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
           maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR
+          maxDataAgeMsUnused: ONE_HOUR,
+          defiMaxDataAgeMs: ONE_HOUR
         })
       }
 

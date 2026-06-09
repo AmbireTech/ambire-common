@@ -1034,12 +1034,14 @@ describe('Portfolio Controller ', () => {
       }
     })
 
-    // The forceUpdateDefi flags from the batchedPortfolioDiscovery calls. Only the per-network
-    // discovery sets the flag; the defi-apps (customAppChain) call doesn't, so it's filtered out.
+    // The force state derived from the defiUpdateMode passed to batchedPortfolioDiscovery. Only the
+    // per-network discovery sets the mode; the defi-apps (customAppChain) call doesn't, so it's
+    // filtered out.
     const getForceFlags = (discoverySpy: any): boolean[] =>
       discoverySpy.mock.calls
-        .map((call: any[]) => call[0].forceUpdateDefi)
-        .filter((flag: unknown) => flag !== undefined)
+        .map((call: any[]) => call[0].defiUpdateMode)
+        .filter((mode: unknown) => mode !== undefined)
+        .map((mode: string) => mode === defiPositionsLib.DefiUpdateMode.Force)
 
     test('a pending scheduled update suppresses the server-side bypass on the next update', async () => {
       const { controller } = await prepareTest()
@@ -1104,7 +1106,7 @@ describe('Portfolio Controller ', () => {
 
         // And it actually forces the defi discovery.
         const forcedDiscovery = discoverySpy.mock.calls.some(
-          (call: any[]) => call[0]?.forceUpdateDefi === true
+          (call: any[]) => call[0]?.defiUpdateMode === defiPositionsLib.DefiUpdateMode.Force
         )
         expect(forcedDiscovery).toBe(true)
 
@@ -3407,7 +3409,7 @@ describe('Portfolio Controller ', () => {
         return Promise.resolve(createJsonResponse({}))
       }) as unknown as typeof fetch
 
-    test('Should add update=true even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with forceUpdateDefi=true', async () => {
+    test('Should send defi=force even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with the Force mode', async () => {
       const discoveryUrls: string[] = []
       const fetchOverride = createDiscoveryFetchOverride(async (url) => {
         discoveryUrls.push(url)
@@ -3425,7 +3427,7 @@ describe('Portfolio Controller ', () => {
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       // @ts-expect-error test
@@ -3433,16 +3435,16 @@ describe('Portfolio Controller ', () => {
         chainId: 137n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: true
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Force
       })
 
       await Promise.allSettled([firstCall, secondCall])
 
       expect(discoveryUrls).toHaveLength(1)
-      expect(new URL(discoveryUrls[0]!).searchParams.get('update')).toBe('true')
+      expect(new URL(discoveryUrls[0]!).searchParams.get('defi')).toBe('force')
     })
 
-    test('update=true is account-pair specific', async () => {
+    test('defi=force is account-pair specific', async () => {
       const discoveryUrls: string[] = []
       const fetchOverride = createDiscoveryFetchOverride(async (url) => {
         discoveryUrls.push(url)
@@ -3461,14 +3463,14 @@ describe('Portfolio Controller ', () => {
           chainId: 1n,
           accountAddr: account.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: false
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
         }),
         // @ts-expect-error test
         controller.batchedPortfolioDiscovery({
           chainId: 137n,
           accountAddr: account.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: true
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Force
         })
       ]
 
@@ -3478,7 +3480,7 @@ describe('Portfolio Controller ', () => {
           chainId: 1n,
           accountAddr: account2.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: false
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
         })
       ]
 
@@ -3495,8 +3497,8 @@ describe('Portfolio Controller ', () => {
       expect(pairWithForceUpdate).toBeDefined()
       expect(pairWithoutForceUpdate).toBeDefined()
 
-      expect(new URL(pairWithForceUpdate!).searchParams.get('update')).toBe('true')
-      expect(new URL(pairWithoutForceUpdate!).searchParams.get('update')).toBeNull()
+      expect(new URL(pairWithForceUpdate!).searchParams.get('defi')).toBe('force')
+      expect(new URL(pairWithoutForceUpdate!).searchParams.get('defi')).toBeNull()
     })
 
     test('Malformed array length mismatch should trigger mismatch rejection', async () => {
@@ -3512,7 +3514,7 @@ describe('Portfolio Controller ', () => {
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       // @ts-expect-error test
@@ -3520,7 +3522,7 @@ describe('Portfolio Controller ', () => {
         chainId: 137n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       const [firstResult, secondResult] = await Promise.allSettled([firstCall, secondCall])
@@ -3559,7 +3561,7 @@ describe('Portfolio Controller ', () => {
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       // @ts-expect-error test
@@ -3567,7 +3569,7 @@ describe('Portfolio Controller ', () => {
         chainId: 'customAppChain',
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       await Promise.allSettled([firstCall, secondCall])
