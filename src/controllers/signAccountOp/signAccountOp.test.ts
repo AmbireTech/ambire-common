@@ -629,7 +629,8 @@ const init = async (
       storage: storageCtrl,
       networks: networksCtrl,
       phishing,
-      ui: uiCtrl
+      ui: uiCtrl,
+      selectedAccount: selectedAccountCtrl
     })
     await realDappsController.initialLoadPromise
     fetchAndUpdateSpy.mockRestore()
@@ -2423,7 +2424,10 @@ describe('ERC-7730 humanization', () => {
       })
 
       callRelayer.mockClear()
+      const previousHumanization = controller.humanization
       controller.humanize()
+      expect(controller.isHumanizing).toBe(true)
+      expect(controller.humanization).toBe(previousHumanization)
       await wait(0)
 
       expect(callRelayer).not.toHaveBeenCalled()

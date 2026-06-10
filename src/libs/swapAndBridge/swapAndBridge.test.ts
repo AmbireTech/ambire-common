@@ -4,7 +4,12 @@ import { describe, expect, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
 import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
-import { calculateAmountWarnings, getIsBridgeRoute } from './swapAndBridge'
+import {
+  calculateAmountWarnings,
+  enrichRouteWithOutputUsdPrice,
+  getFeeTokenForSponsorship,
+  getIsBridgeRoute
+} from './swapAndBridge'
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({
@@ -116,6 +121,176 @@ describe('swapAndBridge lib', () => {
       if (!selectedRoute) return
 
       expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+    })
+  })
+
+  describe('getFeeTokenForSponsorship', () => {
+    test('should calculate the Uniswap output token price in USD', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 100,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.providerId = 'uniswap'
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          toAsset: { decimals: 6 }
+        } as SwapAndBridgeQuote
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 2,
+        decimals: 6
+      })
+    })
+
+    test('should not calculate an infinite Uniswap output token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 100,
+        fromAmount: 1,
+        minAmountOut: 0,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.providerId = 'uniswap'
+      selectedRoute.toAmount = '0'
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          toAsset: { decimals: 6 }
+        } as SwapAndBridgeQuote
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: undefined,
+        decimals: 6
+      })
+    })
+
+    test('should use the source token portfolio price for non-Uniswap providers', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 10,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [{ baseCurrency: 'usd', price: 7 }] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '10'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 7,
+        decimals: 18
+      })
+    })
+
+    test('should calculate the source token price from the quote when it is missing from portfolio', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 4,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '4'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 25,
+        decimals: 18
+      })
+    })
+
+    test('should not calculate an infinite source token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '0'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: undefined,
+        decimals: 18
+      })
+    })
+  })
+
+  describe('enrichRouteWithOutputUsdPrice', () => {
+    test('uses the fetched output token price and preserves the provider gas cost', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+      selectedRoute.outputValueAfterGasInUsd = 90
+
+      const result = enrichRouteWithOutputUsdPrice(selectedRoute, 2)
+
+      expect(result.outputValueInUsd).toBe(100)
+      expect(result.outputValueAfterGasInUsd).toBe(95)
+      expect(result.toToken.priceUSD).toBe('2')
+    })
+
+    test('keeps provider USD values when the fetched token price is unavailable', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      expect(enrichRouteWithOutputUsdPrice(selectedRoute)).toBe(selectedRoute)
+      expect(enrichRouteWithOutputUsdPrice(selectedRoute, null)).toBe(selectedRoute)
     })
   })
 

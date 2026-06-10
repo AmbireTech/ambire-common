@@ -276,6 +276,13 @@ describe('Portfolio helpers', () => {
 
       expect(total.usd).toBe(150.05)
     })
+    it('Returns the defi total when there are no tokens', () => {
+      const defiState = structuredClone(PORTFOLIO_STATE['1']?.result?.defiPositions!)
+
+      const total = getTotal([], defiState)
+
+      expect(total.usd).toBeGreaterThan(0)
+    })
   })
   describe('getHintsError', () => {
     it('NoApiHintsError is returned if there are no previous hints', () => {

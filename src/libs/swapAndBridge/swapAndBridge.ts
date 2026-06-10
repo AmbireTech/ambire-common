@@ -11,20 +11,21 @@ import {
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
 import {
+  BRIDGE_STATUS_INTERVAL,
+  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+} from '../../consts/intervals'
+import {
   HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
   SLIPPAGE_MIN_QUOTE_DIFF_USD
 } from '../../consts/safeguards/extremeSwapLoss'
 import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
-import {
-  BRIDGE_STATUS_INTERVAL,
-  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
-} from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FromToken,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
@@ -49,7 +50,7 @@ import { Call } from '../accountOp/types'
 import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getTokenBalanceInUSD, getTokenUsdPrice } from '../portfolio/helpers'
 import {
   getSwapEstimatedLossUsd,
   getSwapQuoteLossUsd,
@@ -245,7 +246,8 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  */
 export const getIsTokenEligibleForSwapAndBridge = (
   token: TokenResult,
-  requirePositiveBalance: boolean = true
+  requirePositiveBalance: boolean = true,
+  requirePrice: boolean = false
 ) => {
   const flagsRequirement =
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
@@ -256,6 +258,14 @@ export const getIsTokenEligibleForSwapAndBridge = (
     // Borrow tokens (e.g. variableDebt tokens) are protocol accounting assets
     // and are not transferable/swappable by design.
     token.flags.defiTokenType !== AssetType.Borrow
+
+  // Tokens without a known USD price most prob can't be quoted reliably, so exclude them
+  // from the list when the caller opts in (e.g. the Swap & Bridge "form" tokens).
+  // Custom tokens are exempt - the user explicitly imported them and likely wants
+  // to use them for something (maybe swap or bridge).
+  if (requirePrice && !token.flags.isCustom && getTokenUsdPrice(token) <= 0) {
+    return false
+  }
 
   if (!requirePositiveBalance) {
     return flagsRequirement
@@ -734,48 +744,119 @@ const getSwapSponsorship = ({
   hasConvinienceFee,
   nativePrice,
   fromAmountInUsd,
-  fromTokenPriceInUsd,
-  fromTokenDecimals,
-  providerId
+  feeTokenPriceInUsd,
+  feeTokenDecimals,
+  providerId,
+  isBridge
 }: {
   hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
-  fromTokenPriceInUsd: number | undefined
-  fromTokenDecimals: number | undefined
+  feeTokenPriceInUsd: number | undefined
+  feeTokenDecimals: number | undefined
   providerId: string | undefined
+  isBridge: boolean
 }):
   | {
       nativePrice: number
       swapFeeInUsd: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
   | undefined => {
   if (
     !hasConvinienceFee ||
     !nativePrice ||
     !fromAmountInUsd ||
-    !fromTokenPriceInUsd ||
-    !fromTokenDecimals ||
-    providerId === 'squid'
+    !feeTokenPriceInUsd ||
+    !feeTokenDecimals ||
+    providerId === 'squid' ||
+    (providerId === 'uniswap' && isBridge)
   )
     return undefined
   return {
     nativePrice,
     swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
-    fromTokenPriceInUsd,
-    fromTokenDecimals
+    feeTokenPriceInUsd,
+    feeTokenDecimals
+  }
+}
+
+const enrichRouteWithOutputUsdPrice = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+): SwapAndBridgeRoute => {
+  if (!outputTokenPriceUSD) return route
+
+  const outputValueInUsd = Number(
+    safeTokenAmountAndNumberMultiplication(
+      BigInt(route.toAmount),
+      route.toToken.decimals,
+      outputTokenPriceUSD
+    )
+  )
+  const gasCostInUsd =
+    route.outputValueAfterGasInUsd === undefined
+      ? undefined
+      : route.outputValueInUsd - route.outputValueAfterGasInUsd
+
+  return {
+    ...route,
+    outputValueInUsd,
+    outputValueAfterGasInUsd:
+      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd,
+    toToken: {
+      ...route.toToken,
+      priceUSD: outputTokenPriceUSD.toString()
+    }
+  }
+}
+
+const getFeeTokenForSponsorship = (
+  fromSelectedToken: FromToken,
+  quote?: SwapAndBridgeQuote | null,
+  fromAmount?: string
+): { feeTokenPriceInUsd: number | undefined; decimals: number | undefined } => {
+  // if the provider is uniswap, we're getting the fee from the output token
+  if (quote?.selectedRoute?.providerId === 'uniswap') {
+    const outputAmount = Number(formatUnits(quote.selectedRoute.toAmount, quote.toAsset.decimals))
+
+    return {
+      feeTokenPriceInUsd: outputAmount
+        ? quote.selectedRoute.outputValueInUsd / outputAmount
+        : undefined,
+      decimals: quote.toAsset.decimals
+    }
+  }
+
+  // try to get from portfolio, if exists
+  // else take from quote
+  let feeTokenPriceInUsd = fromSelectedToken.priceIn.find((p) => p.baseCurrency === 'usd')?.price
+  const normalizedFromAmount = Number(fromAmount)
+  if (
+    !feeTokenPriceInUsd &&
+    quote?.selectedRoute?.inputValueInUsd &&
+    Number.isFinite(normalizedFromAmount) &&
+    normalizedFromAmount > 0
+  ) {
+    feeTokenPriceInUsd = quote.selectedRoute.inputValueInUsd / normalizedFromAmount
+  }
+
+  return {
+    feeTokenPriceInUsd,
+    decimals: quote?.fromAsset.decimals
   }
 }
 
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
   getLink,
   getSlippage,
   getSwapAndBridgeCalls,

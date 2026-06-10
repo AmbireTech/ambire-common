@@ -313,8 +313,8 @@ export class Paymaster extends AbstractPaymaster {
         swapSponsorship:
           this.type === 'SwapSponsorship' && this.op?.meta?.swapSponsorship
             ? {
-                price: this.op.meta.swapSponsorship.fromTokenPriceInUsd,
-                decimals: this.op.meta.swapSponsorship.fromTokenDecimals
+                price: this.op.meta.swapSponsorship.feeTokenPriceInUsd,
+                decimals: this.op.meta.swapSponsorship.feeTokenDecimals
               }
             : undefined
       })
