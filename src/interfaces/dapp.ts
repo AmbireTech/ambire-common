@@ -6,6 +6,17 @@ export type IDappsController = ControllerInterface<
   InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
 >
 
+export interface DappAccountPreferences {
+  enabled: boolean
+  /**
+   * The last selected account in the extension when the dapp session was active. It is used
+   * when the currently selected account in the extension is not a part of the `accounts` list.
+   * If the currently selected account in the extension is a prat of the list, this field is ignored and the current account is used instead.
+   */
+  selectedAccount: string
+  accounts: string[]
+}
+
 export interface PredefinedDapp {
   id: string
   name: string
@@ -42,6 +53,7 @@ export interface ExtraDappInfo {
   favorite: boolean
   blacklisted: BlacklistedStatus
   grantedPermissionId?: string
+  accountPreferences?: DappAccountPreferences
   grantedPermissionAt?: number
 }
 

@@ -486,12 +486,14 @@ export const getTokenAmount = (token: TokenResult, beforeSimulation?: boolean): 
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
+export const getTokenUsdPrice = (token: TokenResult) =>
+  token.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price || 0
+
 export const getTokenBalanceInUSD = (token: TokenResult) => {
   const amount = getTokenAmount(token)
-  const { decimals, priceIn } = token
+  const { decimals } = token
   const balance = parseFloat(formatUnits(amount, decimals))
-  const price =
-    priceIn.find(({ baseCurrency }: { baseCurrency: string }) => baseCurrency === 'usd')?.price || 0
+  const price = getTokenUsdPrice(token)
 
   return balance * price
 }
@@ -567,6 +569,12 @@ export const getTotal = (
       },
       { usd: 0 }
     )
+  }
+
+  // In case the user doesn't have any tokens or the function is calculating for the custom
+  // network `defiApps` that doesn't have any tokens
+  if (!Object.keys(tokensTotal).length && Object.keys(defiTotal).length > 0) {
+    return defiTotal
   }
 
   return Object.keys(tokensTotal).reduce((cur, key) => {

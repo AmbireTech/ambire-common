@@ -1,11 +1,11 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { KeystoreSeed, StoredKey } from '../../interfaces/keystore'
+import { KeystoreSeed, StoredKey, StoredKeystoreSeed } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
 import { LegacyTokenPreference } from '../portfolio/customToken'
 
 export const getShouldMigrateKeystoreSeedsWithoutHdPath = (
-  keystoreSeeds: string[] | KeystoreSeed[]
+  keystoreSeeds: string[] | KeystoreSeed[] | StoredKeystoreSeed[]
 ) => !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string')
 
 export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: StoredKey[]) =>

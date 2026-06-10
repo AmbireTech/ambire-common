@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, parseUnits, ZeroAddress } from 'ethers'
+import { getAddress, parseUnits, ZeroAddress } from 'ethers'
 import { isHex } from 'viem'
 
 import { AccountId } from '../../interfaces/account'
@@ -528,9 +528,14 @@ const getShouldBypassServerSideCache = (
   isManualUpdate: boolean,
   hasKeys: boolean,
   sessionIds: string[],
-  hasNonceChangedSinceLastUpdate: boolean
+  hasNonceChangedSinceLastUpdate: boolean,
+  hasScheduledUpdate: boolean
 ): boolean => {
-  // Always bypass cache if the nonce has changed
+  // A scheduled update will bypass the cache soon; don't burn the server-side bypass
+  // budget for automatic updates (the server has a per-account cooldown).
+  // Manual updates are exempt: the user explicitly requested fresh data.
+  if (hasScheduledUpdate && !isManualUpdate) return false
+
   if (hasNonceChangedSinceLastUpdate) return true
 
   const hasForceApiUpdatePrerequisites = isManualUpdate && sessionIds.length && hasKeys

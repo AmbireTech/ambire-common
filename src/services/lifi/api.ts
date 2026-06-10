@@ -166,6 +166,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
+    outputValueAfterGasInUsd:
+      route.gasCostUSD === undefined ? undefined : +route.toAmountUSD - +route.gasCostUSD,
     serviceTime: route.steps[0]?.estimate.executionDuration || 0,
     rawRoute: route,
     sender: route.fromAddress,

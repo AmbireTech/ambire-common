@@ -19,12 +19,23 @@ export type BannerCategory =
   | 'temp-seed-not-confirmed'
   | 'old-account'
 
+interface BannerRequirements {
+  minBalanceTotal?: number
+  maxBalanceTotal?: number
+  minTxnsTotal?: number
+  maxTxnsTotal?: number
+  minAppVersion?: string
+  whitelistedAddresses?: string[]
+  shouldHaveKeys?: boolean
+}
+
 export interface Banner {
   id: number | string
   type: BannerType | MarketingBannerTypes
   category?: BannerCategory
   title: string
   text?: string
+  emoji?: string
   // Force a single action on purpose
   actions: [Action] | []
   dismissAction?: Action
@@ -32,6 +43,7 @@ export interface Banner {
     accountAddr?: string
     startTime?: number
     endTime?: number
+    requirements?: BannerRequirements
     [key: string]: any
   }
 }
@@ -109,20 +121,7 @@ export type Action = (
       actionName: 'dismiss-defi-positions-banner'
     }
   | { actionName: 'open-link'; meta: { url: string } }
-  | {
-      actionName: 'survey'
-      meta: {
-        surveyId: string
-        requirements: {
-          minBalanceTotal?: number
-          maxBalanceTotal?: number
-          minTxnsTotal?: number
-          maxTxnsTotal?: number
-          minAppVersion?: string
-          whitelistedAddresses?: string[]
-        }
-      }
-    }
+  | { actionName: 'survey'; meta: { surveyId: string } }
 ) & {
   label?: string
 }

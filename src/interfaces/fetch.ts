@@ -13,6 +13,7 @@ export interface RequestInitWithCustomHeaders extends RequestInit {
     'x-api-key'?: string // Jiffy Scan API key
     'x-lifi-api-key'?: string // Lifi API key
     'x-integrator-id'?: string // Squid integrator id
+    'x-permit2-disabled'?: string // Uniswap direct approval flow
   }
 }
 

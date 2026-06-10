@@ -1,5 +1,7 @@
 import { getDomain } from 'tldts'
 
+import { ISelectedAccountController } from '@/interfaces/selectedAccount'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -37,6 +39,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
+  getAccountsForDapp,
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
@@ -97,6 +100,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #retryFetchAndUpdateMaxAttempts: number = 3
 
+  #selectedAccount: ISelectedAccountController
+
   get shouldRetryFetchAndUpdate() {
     return this.#shouldRetryFetchAndUpdate
   }
@@ -119,7 +124,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
-    ui
+    ui,
+    selectedAccount
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -128,6 +134,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks: INetworksController
     phishing: IPhishingController
     ui: IUiController
+    selectedAccount: ISelectedAccountController
   }) {
     super(eventEmitterRegistry)
 
@@ -137,6 +144,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#networks = networks
     this.#phishing = phishing
     this.#ui = ui
+    this.#selectedAccount = selectedAccount
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
@@ -237,6 +245,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #load() {
     await this.#networks.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
 
     const [storedDapps, storedRecentDapps] = await Promise.all([
       this.#storage.get('dappsV2', predefinedDapps),
@@ -604,7 +613,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     dappSessions.forEach((dappSession) => {
       try {
         dappSession.data.sendMessage?.(ev, data)
-      } catch (e) {
+      } catch (e: any) {
+        console.error('Error broadcasting event to dapp session', e)
         if (this.dappSessions[dappSession.sessionId]) {
           this.deleteDappSession(dappSession.sessionId)
         }
@@ -746,7 +756,8 @@ export class DappsController extends EventEmitter implements IDappsController {
       this.updateDapp(dapp.id, {
         chainId: dapp.chainId,
         connectedSources: mergedSources,
-        isConnected: mergedSources.length > 0
+        isConnected: mergedSources.length > 0,
+        accountPreferences: dapp.accountPreferences
       })
       return
     }
@@ -815,6 +826,35 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
+    const accountPreferencesToUpdate = dappPropsToUpdate.accountPreferences
+
+    // Notify the dapp of the preference change
+    if ('accountPreferences' in dappPropsToUpdate && !!accountPreferencesToUpdate) {
+      if (
+        !accountPreferencesToUpdate.selectedAccount ||
+        !accountPreferencesToUpdate.accounts.length ||
+        !accountPreferencesToUpdate.accounts.includes(accountPreferencesToUpdate.selectedAccount)
+      ) {
+        this.emitError({
+          message: `Invalid preferences for ${dapp.name}. Contact support if the issue persists.`,
+          error: new Error(
+            'Invalid account preferences' + JSON.stringify(accountPreferencesToUpdate)
+          ),
+          level: 'major'
+        })
+        return
+      }
+
+      const newAccounts = getAccountsForDapp(
+        accountPreferencesToUpdate,
+        this.#selectedAccount.account?.addr
+      )
+
+      // We could add (and had) some logic here to prevent unnecessary updates, but it's not that simple
+      // and an extra update or two won't hurt anyway
+      void this.broadcastDappSessionEvent('accountsChanged', newAccounts, id, true)
+    }
+
     if (!existing.isCustom) {
       dappPropsToUpdate.name = existing.name
     } else if (existingByDomain && existing.isCustom) {
@@ -830,6 +870,70 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
     void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+
+    this.emitUpdate()
+  }
+
+  updateDappToConnect(id: string, data: Partial<Dapp>) {
+    if (!this.dappToConnect || this.dappToConnect.id !== id) {
+      this.emitError({
+        level: 'silent',
+        message: `Trying to update dappToConnect with id ${id}, but current dappToConnect is ${this.dappToConnect?.id}`,
+        error: new Error('updateDappToConnect: id not found')
+      })
+      return
+    }
+
+    this.dappToConnect = { ...this.dappToConnect, ...data }
+    this.emitUpdate()
+  }
+
+  async onSelectedAccountChange(newAccount: string) {
+    Object.values(this.dappSessions).forEach(async (session) => {
+      if (!this.hasPermission(session.id)) return
+
+      const accountPreferences = this.getDapp(session.id)?.accountPreferences
+
+      // Update the last selected account
+      if (
+        accountPreferences?.accounts.includes(newAccount) &&
+        accountPreferences.selectedAccount !== newAccount
+      ) {
+        accountPreferences.selectedAccount = newAccount
+      }
+
+      // Broadcast to dapps that the selected account has changed
+      const accounts = getAccountsForDapp(accountPreferences, newAccount)
+
+      await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
+    })
+  }
+
+  removeAccountData(address: string) {
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences) return
+
+      if (!dapp.accountPreferences.accounts.includes(address)) return
+
+      const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        // Disconnect the dapp if the removed account was the only one with access
+        isConnected: newAccounts.length > 0,
+        // Also delete preferences in this case
+        accountPreferences: newAccounts.length
+          ? {
+              ...dapp.accountPreferences,
+              accounts: newAccounts,
+              selectedAccount:
+                dapp.accountPreferences.selectedAccount === address
+                  ? newAccounts[0]!
+                  : dapp.accountPreferences.selectedAccount
+            }
+          : undefined
+      })
+    })
 
     this.emitUpdate()
   }
@@ -936,6 +1040,8 @@ export class DappsController extends EventEmitter implements IDappsController {
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
+          // Don't persist the preferences after the dapp has been disconnected
+          delete this.dappToConnect.accountPreferences
           this.emitUpdate()
 
           const session = dappPromises[0].session

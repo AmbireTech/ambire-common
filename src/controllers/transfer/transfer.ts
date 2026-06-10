@@ -1,5 +1,7 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -86,7 +88,7 @@ type SignAccountOpControllerMethods = {
 }
 
 export class TransferController extends EventEmitter implements ITransferController {
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #storage: IStorageController
 
@@ -189,7 +191,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   constructor(
-    callRelayer: Function,
+    callRelayer: BindedRelayerCall,
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
     selectedAccount: ISelectedAccountController,

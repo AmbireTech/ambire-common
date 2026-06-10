@@ -11,6 +11,8 @@ import {
 } from '../../interfaces/swapAndBridge'
 import wait, { waitWithAbort } from '../../utils/wait'
 
+const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
+
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
 
@@ -20,11 +22,17 @@ export class SwapProviderParallelExecutor {
 
   #providers: SwapProvider[]
 
+  #getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+
   // Added for compatibility with the type
   supportedChains: SwapProvider['supportedChains'] = []
 
-  constructor(providers: SwapProvider[]) {
+  constructor(
+    providers: SwapProvider[],
+    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+  ) {
     this.#providers = providers
+    this.#getFallbackSupportedChains = getFallbackSupportedChains
   }
 
   /**
@@ -86,6 +94,10 @@ export class SwapProviderParallelExecutor {
       fetchMethod(provider)
         .then((result) => ({ provider, result }))
         .catch((err) => ({ provider, result: err as Error }))
+        .then((result) => {
+          results.push(result)
+          return result
+        })
     )
 
     const waitPromise = waitWithAbort(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE)
@@ -96,41 +108,19 @@ export class SwapProviderParallelExecutor {
       )
     })
 
-    const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
+    await Promise.race([Promise.race(tasks), absoluteTimeout])
 
     if (waitPromise.abort) waitPromise.abort()
-
-    if ('provider' in firstResult && 'result' in firstResult) {
-      results.push(firstResult)
-    }
-
-    const remainingTasks = supportedProviders
-      // Make sure the provider was not filtered out
-      .filter((p) => !results.some((r) => r.provider === p))
-      .map((provider) => {
-        const originalIdx = supportedProviders.indexOf(provider)
-        if (!tasks[originalIdx]) return null
-        return tasks[originalIdx]
-          .then((res) => res)
-          .catch((err) => ({ provider, result: err as Error }))
-      })
 
     // Figure out how long we've already waited
     const elapsed = Date.now() - startTime
     // If first was too quick, extend wait time so total ≥ MIN_WAIT
     const remainingMinWait = Math.max(0, MIN_WAIT - elapsed)
 
-    const secondResult = (await Promise.race([
-      // Promise.any can't be called with an empty array
-      remainingTasks.length ? Promise.any(remainingTasks) : Promise.resolve(),
+    await Promise.race([
+      Promise.allSettled(tasks),
       wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
-    ])) as { provider: SwapProvider; result: Error | T }
-
-    if (secondResult) {
-      if ('provider' in secondResult && 'result' in secondResult) {
-        results.push(secondResult)
-      }
-    }
+    ])
 
     const valid = results.map((r) => r.result).filter((r) => !(r instanceof Error))
     if (valid.length > 0) return valid.flat() as T
@@ -184,15 +174,40 @@ export class SwapProviderParallelExecutor {
     return (provider[method] as any)(...args)
   }
 
+  async #getSupportedChainsWithTimeout(
+    provider: SwapProvider
+  ): Promise<SwapAndBridgeSupportedChain[] | Error> {
+    const waitPromise = waitWithAbort(GET_SUPPORTED_CHAINS_TIMEOUT)
+
+    try {
+      return await Promise.race([
+        provider.getSupportedChains().catch((e) => e),
+        waitPromise.promise.then(() => new Error('Get supported chains timeout'))
+      ])
+    } finally {
+      if (waitPromise.abort) waitPromise.abort()
+    }
+  }
+
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const chainIds = await this.#fetchFromAll<SwapAndBridgeSupportedChain[]>(
-      (provider: SwapProvider) => provider.getSupportedChains().catch((e) => e)
+    const promises = this.#providers.map((provider: SwapProvider) =>
+      this.#getSupportedChainsWithTimeout(provider)
     )
+    const fetchResults = await Promise.all(promises)
+    const chainIds = fetchResults
+      .filter((r): r is SwapAndBridgeSupportedChain[] => !(r instanceof Error))
+      .flat()
 
     // filter duplicates
-    return [
+    const uniqueChainIds = [
       ...new Map(chainIds.map((item: SwapAndBridgeSupportedChain) => [item.chainId, item])).values()
     ]
+
+    if (uniqueChainIds.length < 10 && this.#getFallbackSupportedChains) {
+      return this.#getFallbackSupportedChains()
+    }
+
+    return uniqueChainIds
   }
 
   async getToTokenList({
