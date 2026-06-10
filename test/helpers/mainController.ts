@@ -49,6 +49,7 @@ export interface MakeMainControllerOpts {
     liFiApiKey?: string
     bungeeApiKey?: string
     squidIntegratorId?: string
+    uniswapApiKey?: string
     externalSignerControllers?: ExternalSignerControllers
     keystoreSigners?: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     relayerUrl?: string
@@ -158,6 +159,7 @@ export const makeMainController = async (
     liFiApiKey: overrides.liFiApiKey ?? '',
     bungeeApiKey: overrides.bungeeApiKey ?? '',
     squidIntegratorId: overrides.squidIntegratorId ?? '',
+    uniswapApiKey: overrides.uniswapApiKey ?? '',
     featureFlags,
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},

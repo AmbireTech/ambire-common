@@ -261,6 +261,7 @@ describe('Defi positions helper and portfolio functions', () => {
         true,
         true,
         ['session-id-1'],
+        false,
         false
       )
       expect(shouldBypass).toBe(true)
@@ -277,10 +278,97 @@ describe('Defi positions helper and portfolio functions', () => {
         true,
         true,
         ['session-id-1'],
+        false,
         false
       )
 
       expect(shouldBypass).toBe(false)
+    })
+    it('Should NOT bypass on an automatic update when a scheduled update is pending, even if the force api update is older than 30sec (protects the server-side bypass budget)', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 31000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        false,
+        true,
+        ['session-id-1'],
+        false,
+        true
+      )
+
+      expect(shouldBypass).toBe(false)
+    })
+    it('Should NOT bypass on an automatic update when a scheduled update is pending, even if the nonce has changed (the scheduled update will refresh soon)', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        false,
+        true,
+        ['session-id-1'],
+        true,
+        true
+      )
+
+      expect(shouldBypass).toBe(false)
+    })
+    it('Should bypass on a manual update even when a scheduled update is pending, if the force api update is older than 30sec (manual updates are exempt)', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 31000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        true,
+        true,
+        ['session-id-1'],
+        false,
+        true
+      )
+
+      expect(shouldBypass).toBe(true)
+    })
+    it('Should NOT bypass on a manual update with a scheduled update pending if the force api update is within 30sec (manual exemption still respects the 30sec cooldown)', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 20000
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        true,
+        true,
+        ['session-id-1'],
+        false,
+        true
+      )
+
+      expect(shouldBypass).toBe(false)
+    })
+    it('Should bypass when the nonce has changed and no scheduled update is pending (regression: the new param does not alter pre-existing behavior)', () => {
+      const portfolioState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      const shouldBypass = getShouldBypassServerSideCache(
+        portfolioState.result!.defiPositions,
+        false,
+        true,
+        ['session-id-1'],
+        true,
+        false
+      )
+
+      expect(shouldBypass).toBe(true)
     })
   })
   describe('getAllAssetsAsHints', () => {

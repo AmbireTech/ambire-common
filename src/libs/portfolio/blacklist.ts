@@ -1,3 +1,5 @@
+import { parse } from 'tldts'
+
 import type { TokenBlacklist } from './interfaces'
 
 /**
@@ -45,4 +47,76 @@ export const filterStaticBlacklistedAddrs = (tokenAddrs: string[], chainId: bigi
   )
 
   return tokenAddrs.filter((addr) => !staticBlacklistedAddrsLower.has(addr.toLowerCase()))
+}
+
+const isDomainChar = (char: string): boolean =>
+  (char >= 'a' && char <= 'z') ||
+  (char >= '0' && char <= '9') ||
+  char === '.' ||
+  char === '-'
+
+/**
+ * Detects a real registrable domain anywhere in the text (e.g. "uniswap.org",
+ * "claim-x.xyz"). Spam assets embed phishing domains in their name/symbol to
+ * impersonate real projects, often without an "https"/"www." prefix.
+ *
+ * We scan the text into domain-charset candidates (no regex, per repo rule) and
+ * validate each against the Public Suffix List via tldts. The `isIcann` check
+ * rejects non-domain dotted strings such as "v2.0" or "eth.staking".
+ */
+export const containsDomainLike = (text: string): boolean => {
+  // A domain needs a dot; skip the scan entirely for the common dot-free case
+  if (!text.includes('.')) return false
+
+  const lower = text.toLowerCase()
+  let candidate = ''
+  let candidateHasDot = false
+
+  // Iterate one past the end so the final candidate is flushed too
+  for (let i = 0; i <= lower.length; i++) {
+    const char = lower[i]
+    if (char && isDomainChar(char)) {
+      candidate += char
+      if (char === '.') candidateHasDot = true
+      continue
+    }
+
+    // Only dotted candidates can be domains, so parse just those
+    if (candidateHasDot && parse(candidate).isIcann === true) return true
+    candidate = ''
+    candidateHasDot = false
+  }
+
+  return false
+}
+
+/**
+ * Decides whether an asset (ERC-20 token or NFT collection) should be hidden as
+ * spam based on its symbol and name. Custom (user-added) assets are never hidden.
+ *
+ * Spam often hides the lure in the name rather than the symbol, so both are
+ * checked, combining two signals:
+ * - substring patterns from the static + dynamic blacklist (e.g. "https", "www.")
+ * - a domain-like detector (see `containsDomainLike`)
+ *
+ * `lowercasedPatterns` must already be lowercased by the caller.
+ */
+export const isBlacklistedAsset = ({
+  symbol,
+  name,
+  isCustom,
+  lowercasedPatterns
+}: {
+  symbol: string
+  name?: string
+  isCustom?: boolean
+  lowercasedPatterns: string[]
+}): boolean => {
+  if (isCustom) return false
+
+  const haystack = `${symbol} ${name || ''}`.toLowerCase()
+
+  if (lowercasedPatterns.some((pattern) => haystack.includes(pattern))) return true
+
+  return containsDomainLike(haystack)
 }

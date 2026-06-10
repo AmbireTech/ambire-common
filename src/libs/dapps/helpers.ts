@@ -113,6 +113,27 @@ function unifyDefiLlamaDappUrl(url: string) {
   }
 }
 
+/**
+ * Returns the list of all accounts that should be returned to a dapp based on the dapp's
+ * account preferences.
+ */
+export function getAccountsForDapp(
+  preferences: Dapp['accountPreferences'],
+  extensionSelectedAccountAddr: string | undefined
+): string[] {
+  // Always prioritize the extension-selected account if it's in the dapp's allowed accounts, or if no account is currently selected in the dapp
+  if (preferences?.enabled) {
+    const selectedAccount = preferences.accounts.includes(extensionSelectedAccountAddr || '')
+      ? extensionSelectedAccountAddr || preferences.selectedAccount
+      : preferences.selectedAccount
+    const otherAccounts = preferences.accounts.filter((acc) => acc !== selectedAccount)
+
+    return [selectedAccount, ...otherAccounts]
+  }
+
+  return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
+}
+
 // Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of
 // truth and `isConnected` is always derived from it. Records written before per-source support
 // (or by a code path that updated only one of the two fields) can drift; this collapses them back.

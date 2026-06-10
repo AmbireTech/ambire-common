@@ -381,6 +381,7 @@ export class SocketAPI implements SwapProvider {
           ...steps[0],
           providerId: 'socket',
           outputValueInUsd: route.output.valueInUsd,
+          outputValueAfterGasInUsd: route.output.effectiveReceivedInUsd,
           routeId: route.quoteId,
           disabled,
           disabledReason,

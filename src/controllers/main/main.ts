@@ -105,6 +105,7 @@ import { paymasterFactory } from '@/services/paymaster'
 import { SocketAPI } from '@/services/socket/api'
 import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
+import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
 
@@ -216,6 +217,7 @@ export class MainController extends EventEmitter implements IMainController {
     liFiApiKey,
     bungeeApiKey,
     squidIntegratorId,
+    uniswapApiKey,
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
@@ -231,6 +233,7 @@ export class MainController extends EventEmitter implements IMainController {
     liFiApiKey: string
     bungeeApiKey: string
     squidIntegratorId: string
+    uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -430,7 +433,8 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
-      ui: this.ui
+      ui: this.ui,
+      selectedAccount: this.selectedAccount
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(
@@ -470,6 +474,7 @@ export class MainController extends EventEmitter implements IMainController {
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
+    const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -485,7 +490,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       swapProvider: new SwapProviderParallelExecutor(
-        [LiFiProvider, SocketProvider, SquidProvider],
+        [LiFiProvider, SocketProvider, SquidProvider, UniswapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
       ),
       relayerUrl,
@@ -811,7 +816,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
+      this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
   }
@@ -1381,6 +1386,15 @@ export class MainController extends EventEmitter implements IMainController {
                   op.status !== AccountOpStatus.BroadcastedButNotConfirmed
               )
 
+              // Schedule an update that will refetch new defi positions (if any)
+              chainsToUpdate.forEach((chainId) => {
+                this.portfolio.scheduleUpdate({
+                  accountId: accountAddr,
+                  chainId,
+                  bypassServerSideCache: true
+                })
+              })
+              // Discard the simulation (that also updates the portfolio, but doesn't force update defi)
               await this.portfolio.discardSimulation(finalizedAccountOps)
 
               // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
@@ -1450,6 +1464,7 @@ export class MainController extends EventEmitter implements IMainController {
       await this.activity.removeAccountData(address)
       this.requests.removeAccountData(address)
       this.signMessage.removeAccountData(address)
+      this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
         await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
