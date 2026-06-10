@@ -3,6 +3,7 @@
 # workflow callers (e.g. .github/workflows/general-review.yml).
 
 [config]
+log_level = "DEBUG"
 response_language = "en"
 
 # ─────────────────────────────────────────────
