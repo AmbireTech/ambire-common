@@ -1045,7 +1045,11 @@ export class DappsController extends EventEmitter implements IDappsController {
    */
   #getTabContextStatus(session: Session): BlacklistedStatus | undefined {
     for (const s of Object.values(this.dappSessions)) {
-      if (s.sessionId === session.sessionId || s.tabId !== session.tabId || s.windowId !== session.windowId) {
+      if (
+        s.sessionId === session.sessionId ||
+        s.tabId !== session.tabId ||
+        s.windowId !== session.windowId
+      ) {
         continue
       }
       const status = this.#phishing.getDomainBlacklistedStatus(s.origin)
@@ -1148,7 +1152,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         type: 'warning',
         text: withOptionalDappNames(
           'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
-          suspiciousHostingDappNames
+          '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
         )
       }
     }
