@@ -293,6 +293,15 @@ const valueToText = (value: unknown): string => {
   }
 }
 
+const interpolatedValueToText = (path: string, value: unknown): string => {
+  const amount = toBigIntOrNull(value)
+  if ((path === '@.value' || path === '#.@.value') && amount !== null) {
+    return formatUnits(amount, 18)
+  }
+
+  return valueToText(value)
+}
+
 const normalizeDecodedParam = (value: unknown, param: ParamType): unknown => {
   if (param.baseType === 'array' && param.arrayChildren) {
     return Array.from(value as ArrayLike<unknown>).map((item) =>
@@ -895,11 +904,11 @@ const interpolateIntent = (
 
     interpolated += template.slice(currentIndex, openingBraceIndex)
 
-    const path = template.slice(openingBraceIndex + 1, closingBraceIndex)
-    const value = resolvePath(path.trim(), context, base)
+    const path = template.slice(openingBraceIndex + 1, closingBraceIndex).trim()
+    const value = resolvePath(path, context, base)
     if (value === undefined) return null
 
-    interpolated += valueToText(value)
+    interpolated += interpolatedValueToText(path, value)
     currentIndex = closingBraceIndex + 1
   }
 
