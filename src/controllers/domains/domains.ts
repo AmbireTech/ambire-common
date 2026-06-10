@@ -81,25 +81,31 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   async batchReverseLookup(addresses: string[]) {
-    const addressesToLookup = this.#getAddressesToLookup(addresses)
+    const normalizedAddresses = this.#normalizeAddresses(addresses)
+    const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
 
-    if (!addressesToLookup.length) return
-
-    const batchPromise = this.#reverseLookup(addressesToLookup, false).finally(() => {
-      addressesToLookup.forEach((address) => {
-        this.#reverseLookupPromises[address] = undefined
+    if (addressesToLookup.length) {
+      const batchPromise = this.#reverseLookup(addressesToLookup, false).finally(() => {
+        addressesToLookup.forEach((address) => {
+          this.#reverseLookupPromises[address] = undefined
+        })
       })
-    })
 
-    addressesToLookup.forEach((address) => {
-      this.#reverseLookupPromises[address] = batchPromise
-    })
+      addressesToLookup.forEach((address) => {
+        this.#reverseLookupPromises[address] = batchPromise
+      })
+    }
 
-    await Promise.all(
-      addressesToLookup
-        .map((address) => this.#reverseLookupPromises[address])
-        .filter((promise): promise is Promise<void> => !!promise)
-    )
+    // Await both the freshly started lookups and any lookups for the requested
+    // addresses that are already in flight (e.g. from an earlier batch or a
+    // single reverseLookup), so callers never resolve before the data is ready.
+    const pendingPromises = normalizedAddresses
+      .map((address) => this.#reverseLookupPromises[address])
+      .filter((promise): promise is Promise<void> => !!promise)
+
+    if (!pendingPromises.length) return
+
+    await Promise.all(pendingPromises)
 
     this.emitUpdate()
   }
@@ -207,7 +213,18 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   async reverseLookup(address: string, emitUpdate = true) {
     if (!isAddress(address)) return
 
-    const addressToLookup = this.#getAddressesToLookup([address])[0]
+    const checksummedAddress = getAddress(address)
+
+    // If a lookup for this address is already in flight (e.g. via
+    // batchReverseLookup or a concurrent reverseLookup), await it instead of
+    // starting a duplicate, so the caller resolves only once the data is ready.
+    const inFlightPromise = this.#reverseLookupPromises[checksummedAddress]
+    if (inFlightPromise) {
+      await inFlightPromise
+      return
+    }
+
+    const addressToLookup = this.#getAddressesToLookup([checksummedAddress])[0]
 
     if (!addressToLookup) return
 
@@ -221,8 +238,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     await this.#reverseLookupPromises[addressToLookup]
   }
 
-  #getAddressesToLookup(addresses: string[]) {
-    const checksummedAddresses = [
+  #normalizeAddresses(addresses: string[]) {
+    return [
       ...new Set(
         addresses
           .map((address) => {
@@ -235,8 +252,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           .filter((v): v is string => !!v)
       )
     ]
+  }
 
-    return checksummedAddresses.filter((checksummedAddress) => {
+  #getAddressesToLookup(addresses: string[]) {
+    return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
       const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt
 
       const hasExpired = hasLastUpdateFailed
