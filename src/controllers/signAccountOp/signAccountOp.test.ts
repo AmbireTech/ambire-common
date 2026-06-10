@@ -2019,9 +2019,7 @@ describe('throwBroadcastAccountOp', () => {
         )
       })
     } catch (e: any) {
-      expect(e.message).toBe(
-        'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
-      )
+      expect(e.message).toBe('Transaction fees changed. Please try again')
     }
   })
   it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
