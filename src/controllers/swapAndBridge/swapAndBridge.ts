@@ -1,7 +1,7 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
-/* eslint-disable no-await-in-loop */
 import { getAccountNetworks } from '@/libs/networks/networks'
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -136,7 +136,7 @@ type SignAccountOpControllerMethods = {
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #selectedAccount: ISelectedAccountController
 
@@ -308,7 +308,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController
@@ -355,7 +355,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#onBroadcastFailed = onBroadcastFailed
     this.#ui = ui
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
@@ -713,7 +712,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
         if (r.routeStatus !== 'failed') {
-          // eslint-disable-next-line no-param-reassign
           delete r.error
         }
       })
@@ -723,7 +721,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         // update the activeRoute.route prop for the new session
         this.activeRoutes.forEach((r) => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateActiveRoute(r.activeRouteId, undefined, true)
         })
       }
@@ -731,7 +728,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
     this.#serviceProviderAPI.updateHealth()
     await this.updatePortfolioTokenList(structuredClone(this.#selectedAccount.portfolio.tokens), {
       preselectedToken: preselectedFromToken,

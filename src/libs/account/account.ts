@@ -38,11 +38,11 @@ import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 interface DKIMRecoveryAccInfo {
   emailFrom: string
   secondaryKey: string
-  waitUntilAcceptAdded?: BigInt
-  waitUntilAcceptRemoved?: BigInt
+  waitUntilAcceptAdded?: bigint
+  waitUntilAcceptRemoved?: bigint
   acceptEmptyDKIMSig?: boolean
   acceptEmptySecondSig?: boolean
-  onlyOneSigTimelock?: BigInt
+  onlyOneSigTimelock?: bigint
 }
 
 // returns to, data
@@ -343,7 +343,7 @@ export function hasBecomeSmarter(account: Account, state: AccountStates) {
   const networks = Object.keys(state[account.addr]!)
   for (let i = 0; i < networks.length; i++) {
     const onChainState = state[account.addr]![networks[i]!]
-    // eslint-disable-next-line no-continue
+
     if (!onChainState) continue
 
     if (onChainState.isSmarterEoa) return true

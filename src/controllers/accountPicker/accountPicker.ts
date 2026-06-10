@@ -962,7 +962,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     while (currentPage <= maxPages) {
       // TODO: Flag that excludes getting smart account key addresses
       // Load the accounts for the current page
-      // eslint-disable-next-line no-await-in-loop
+
       await this.setPage({
         page: currentPage,
         pageSize: this.pageSize,
@@ -1108,7 +1108,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const [index, smartAccKey] of smartAccKeys.entries()) {
       const slot = startIdx + (index + 1)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -1139,7 +1139,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       )
 
       // Yield to event loop to keep UI responsive
-      // eslint-disable-next-line no-await-in-loop
+
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
@@ -1150,7 +1150,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     accounts.push(...smartAccounts)
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const [index, basicAccKey] of basicAccKeys.entries()) {
       const slot = startIdx + (index + 1)
       // The EOA (basic) account on this slot

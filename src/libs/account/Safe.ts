@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
 

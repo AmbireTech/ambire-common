@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { toBeHex } from 'ethers'
 

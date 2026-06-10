@@ -1,14 +1,30 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { Allowance } from '../../const/abis/Allowance'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getToken,
+  HexIrCall,
+  isHexCall
+} from '../../utils'
 
-const iface = new Interface(Allowance)
+const setAllowanceAbi = parseAbi([
+  'function setAllowance(address delegate, address token, uint96 allowanceAmount, uint16 resetTimeMin, uint32 resetBaseMin)'
+])
+const deleteAllowanceAbi = parseAbi(['function deleteAllowance(address delegate, address token)'])
+const executeAllowanceTransferAbi = parseAbi([
+  'function executeAllowanceTransfer(address safe, address token, address to, uint96 amount, address paymentToken, uint96 payment, address delegate, bytes memory signature)'
+])
+const addDelegateAbi = parseAbi(['function addDelegate(address delegate)'])
+const removeDelegateAbi = parseAbi([
+  'function removeDelegate(address delegate, bool removeAllowances)'
+])
 
-const getTimeString = (resetTimeMin: bigint): string => {
+export const getAllowanceResetText = (resetTimeMin: bigint): string => {
+  if (resetTimeMin === 0n) return 'No reset'
   if (resetTimeMin === 1440n) return 'Daily'
   if (resetTimeMin === 10080n) return 'Weekly'
   if (resetTimeMin === 20160n) return 'Biweekly'
@@ -16,39 +32,52 @@ const getTimeString = (resetTimeMin: bigint): string => {
   return `Every ${resetTimeMin.toString()} minutes`
 }
 
+export const getSetAllowanceResetText = (call: IrCall): string | null => {
+  if (!isHexCall(call)) return null
+  if (call.data.slice(0, 10) !== toFunctionSelector(setAllowanceAbi[0])) return null
+
+  const { args } = decodeFunctionData({ abi: setAllowanceAbi, data: call.data })
+  const [, , , resetTimeMin] = args
+
+  return getAllowanceResetText(BigInt(resetTimeMin))
+}
+
 const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
-  const matcher = {
-    [iface.getFunction('setAllowance')?.selector!]: (call: IrCall): IrCall | undefined => {
-      const { delegate, token, allowanceAmount, resetTimeMin, resetBaseMin } =
-        iface.parseTransaction(call)!.args
+  const matcher: Record<string, (call: HexIrCall) => IrCall | undefined> = {
+    [toFunctionSelector(setAllowanceAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: setAllowanceAbi, data: call.data })
+      const [delegate, token, allowanceAmount, resetTimeMin] = args
 
       const fullVisualization = [
         getAction('Allow'),
         getAddressVisualization(delegate),
         getLabel('to spend'),
         getToken(token, allowanceAmount),
-        getLabel(getTimeString(resetTimeMin))
+        getLabel(getAllowanceResetText(BigInt(resetTimeMin)))
       ]
 
       return { ...call, fullVisualization }
     },
-    [iface.getFunction('addDelegate')?.selector!]: (call: IrCall): IrCall | undefined => {
-      const { delegate } = iface.parseTransaction(call)!.args
+    [toFunctionSelector(addDelegateAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: addDelegateAbi, data: call.data })
+      const [delegate] = args
 
       const fullVisualization = [getAction('Add delegate'), getAddressVisualization(delegate)]
 
       return { ...call, fullVisualization }
     },
-    [iface.getFunction('removeDelegate')?.selector!]: (call: IrCall): IrCall | undefined => {
-      const { delegate, removeAllowances } = iface.parseTransaction(call)!.args
+    [toFunctionSelector(removeDelegateAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: removeDelegateAbi, data: call.data })
+      const [delegate, removeAllowances] = args
 
       const fullVisualization = [getAction('Remove delegate'), getAddressVisualization(delegate)]
       if (removeAllowances) fullVisualization.push(getLabel('and set allowance to 0'))
 
       return { ...call, fullVisualization }
     },
-    [iface.getFunction('deleteAllowance')?.selector!]: (call: IrCall): IrCall | undefined => {
-      const { delegate, token } = iface.parseTransaction(call)!.args
+    [toFunctionSelector(deleteAllowanceAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: deleteAllowanceAbi, data: call.data })
+      const [delegate, token] = args
 
       const fullVisualization = [
         getAction('Remove allowance for'),
@@ -58,11 +87,12 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
 
       return { ...call, fullVisualization }
     },
-    [iface.getFunction('executeAllowanceTransfer')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { safe, token, to, amount, paymentToken, payment, delegate, signature } =
-        iface.parseTransaction(call)!.args
+    [toFunctionSelector(executeAllowanceTransferAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: executeAllowanceTransferAbi,
+        data: call.data
+      })
+      const [, token, , amount, , , delegate] = args
 
       const fullVisualization = [
         getAction('Execute allowance for'),
@@ -75,8 +105,9 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     }
   }
   const newCalls = calls.map((call) => {
+    if (call.fullVisualization || !isHexCall(call)) return call
     const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !match) return call
+    if (!match) return call
     const newCall = match(call)
     if (!newCall) return call
     return newCall

@@ -1,8 +1,8 @@
-import { getAddress, isAddress } from 'ethers'
+import { getAddress, isAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction } from '../../utils'
+import { getAction, isHexCall } from '../../utils'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV3Mapping } from './uniV3'
@@ -41,6 +41,7 @@ const uniAddresses = [
   '0x5E325eDA8064b456f4781070C0738d849c824258',
   // base
   '0x6fF5693b99212Da76ad316178A184AB56D299b43',
+  '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7',
   '0x6Df1c91424F79E40E33B1A48F0687B666bE71075',
   // binance
   '0x1A0A18AC4BECDDbd6389559687d1A73d8927E416',
@@ -89,6 +90,10 @@ export const uniswapHumanizer: HumanizerCallModule = (
       return
     }
 
+    if (!isHexCall(call)) {
+      newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] })
+      return
+    }
     const sigHash = call.data.substring(0, 10)
     if (fullUniswapHumanizerMapping[sigHash])
       newCalls.push({

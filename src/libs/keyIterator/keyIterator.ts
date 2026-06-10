@@ -1,4 +1,3 @@
-/* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
 import {
@@ -43,7 +42,7 @@ export const getPrivateKeyFromSeed = (
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
 export class KeyIterator implements KeyIteratorInterface {
-  type = 'internal' as 'internal'
+  type = 'internal' as const
 
   subType: 'seed' | 'private-key'
 
@@ -87,21 +86,6 @@ export class KeyIterator implements KeyIteratorInterface {
     return this.#cachedBaseWallet
   }
 
-  async getEncryptedSeed(
-    encryptor: (
-      seed: string,
-      seedPassphrase?: string | null | undefined
-    ) => Promise<{
-      seed: string
-      passphrase: string | null
-    }>
-  ) {
-    if (!this.#seedPhrase) return null
-    const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase)
-
-    return encryptedSeed
-  }
-
   async retrieve(
     fromToArr: { from: number; to: number }[],
     hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
@@ -110,7 +94,6 @@ export class KeyIterator implements KeyIteratorInterface {
 
     const baseWallet = this.#getBaseWallet()
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const { from, to } of fromToArr) {
       if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
         throw new Error('keyIterator: invalid or missing arguments')
@@ -124,11 +107,9 @@ export class KeyIterator implements KeyIteratorInterface {
       }
 
       if (this.#seedPhrase && baseWallet) {
-        // eslint-disable-next-line no-await-in-loop
         for (let i = from; i <= to; i++) {
           // Yield to the event loop every 2 derivations to keep UI responsive
           if (i > from && i % 2 === 0) {
-            // eslint-disable-next-line no-await-in-loop
             await new Promise((resolve) => setTimeout(resolve, 0))
           }
           const path = getHdPathFromTemplate(hdPathTemplate, i)
@@ -172,7 +153,7 @@ export class KeyIterator implements KeyIteratorInterface {
           return [
             {
               addr: new Wallet(privateKey).address,
-              type: 'internal' as 'internal',
+              type: 'internal' as const,
               label:
                 getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
                 getDefaultKeyLabel(
@@ -211,7 +192,7 @@ export class KeyIterator implements KeyIteratorInterface {
         return [
           {
             addr: new Wallet(this.#privateKey).address,
-            type: 'internal' as 'internal',
+            type: 'internal' as const,
             label:
               getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
               getDefaultKeyLabel(
@@ -229,8 +210,14 @@ export class KeyIterator implements KeyIteratorInterface {
     })
   }
 
-  isSeedMatching(seedPhraseToCompareWith: string) {
+  isSeedMatching(seedPhraseToCompareWith: string, passphraseToCompareWith: string | null): boolean {
     if (!this.#seedPhrase) return false
+    if (
+      passphraseToCompareWith !== undefined &&
+      (passphraseToCompareWith ?? '') !== (this.#seedPassphrase ?? '')
+    ) {
+      return false
+    }
 
     const baseWallet = this.#getBaseWallet()
     if (baseWallet) {

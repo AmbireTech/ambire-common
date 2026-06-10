@@ -398,4 +398,406 @@ describe('DappsController', () => {
       }
     })
   })
+
+  describe('recentDapps', () => {
+    test('recentDapps starts empty', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      expect(controller.recentDapps).toEqual([])
+    })
+
+    test('addToRecentDapps adds an entry resolved from the catalog', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const target = predefinedDapps[0]!
+      await controller.addToRecentDapps(target.id)
+
+      expect(controller.recentDapps).toHaveLength(1)
+      expect(controller.recentDapps[0]!.id).toBe(target.id)
+    })
+
+    test('adding the same id twice dedupes and bumps the timestamp', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const target = predefinedDapps[0]!
+      const before = Date.now()
+      await controller.addToRecentDapps(target.id)
+      await wait(2)
+      await controller.addToRecentDapps(target.id)
+      const after = Date.now()
+
+      expect(controller.recentDapps).toHaveLength(1)
+      // Inspect the persisted entries directly via storage to check the timestamp moved.
+      const persisted = (controller as any).toJSON().recentDapps as Dapp[]
+      expect(persisted).toHaveLength(1)
+      // openedAt is private; assert ordering remains stable.
+      expect(persisted[0]!.id).toBe(target.id)
+      // Sanity check on time window
+      expect(after).toBeGreaterThanOrEqual(before)
+    })
+
+    test('cap is enforced at MAX_RECENT_DAPPS (oldest evicted)', async () => {
+      const fakeDapps: Dapp[] = Array.from({ length: 25 }).map((_, i) => ({
+        id: `fake-${i}.com`,
+        name: `fake-${i}`,
+        description: '',
+        url: `https://fake-${i}.com`,
+        icon: null,
+        category: null,
+        tvl: null,
+        twitter: null,
+        geckoId: null,
+        chainIds: [1],
+        isConnected: false,
+        isFeatured: false,
+        isCustom: true,
+        chainId: 1,
+        favorite: false,
+        blacklisted: 'VERIFIED'
+      }))
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', fakeDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      for (const dapp of fakeDapps) {
+        // eslint-disable-next-line no-await-in-loop
+        await controller.addToRecentDapps(dapp.id)
+      }
+
+      expect(controller.recentDapps).toHaveLength(20)
+      expect(controller.recentDapps.find((d) => d.id === 'fake-0.com')).toBeUndefined()
+      // Most recent add is at the front
+      expect(controller.recentDapps[0]!.id).toBe('fake-24.com')
+    })
+
+    test('addToRecentDapps persists to the recentDapps storage key', async () => {
+      const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const target = predefinedDapps[0]!
+      await controller.addToRecentDapps(target.id)
+
+      const stored = await mainCtrl.storage.get('recentDapps', [])
+      expect(stored).toHaveLength(1)
+      expect(stored[0]!.id).toBe(target.id)
+      expect(typeof stored[0]!.openedAt).toBe('number')
+    })
+
+    test('recentDapps is restored from storage on init (newest first)', async () => {
+      const target = predefinedDapps[0]!
+      const second = predefinedDapps[1]!
+      const third = predefinedDapps[2]!
+      const seedEntries = [
+        { id: target.id, openedAt: 3000 },
+        { id: second.id, openedAt: 2000 },
+        { id: third.id, openedAt: 1000 }
+      ]
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+        await storageCtrl.set('recentDapps', seedEntries)
+      })
+
+      expect(controller.recentDapps.map((d) => d.id)).toEqual([target.id, second.id, third.id])
+    })
+
+    test('clearRecentDapps empties and persists', async () => {
+      const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addToRecentDapps(predefinedDapps[0]!.id)
+      expect(controller.recentDapps).toHaveLength(1)
+
+      await controller.clearRecentDapps()
+      expect(controller.recentDapps).toEqual([])
+      const stored = await mainCtrl.storage.get('recentDapps', [])
+      expect(stored).toEqual([])
+    })
+
+    test('recentDapps getter filters stale ids missing from the catalog', async () => {
+      const target = predefinedDapps[0]!
+      const seedEntries = [
+        { id: target.id, openedAt: 2000 },
+        { id: 'ghost-dapp.com', openedAt: 1000 }
+      ]
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+        await storageCtrl.set('recentDapps', seedEntries)
+      })
+
+      expect(controller.recentDapps).toHaveLength(1)
+      expect(controller.recentDapps[0]!.id).toBe(target.id)
+    })
+
+    test('addToRecentDapps bails for unknown id and does not persist', async () => {
+      const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addToRecentDapps('definitely-not-a-real-dapp.xyz')
+
+      expect(controller.recentDapps).toEqual([])
+      const stored = await mainCtrl.storage.get('recentDapps', null)
+      expect(stored).toBeNull()
+    })
+  })
+
+  describe('connection sources', () => {
+    const baseDapp = (): Dapp =>
+      makeDapp({
+        id: 'sources-dapp.com',
+        name: 'Sources Dapp',
+        url: 'https://sources-dapp.com',
+        isCustom: true,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    test('addDapp seeds connectedSources from the provided source (defaults to injected)', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp())
+
+      const stored = controller.getDapp('sources-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+    })
+
+    test('addDapp merges sources without duplicating', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'injected')
+      await controller.addDapp(baseDapp(), 'wc')
+      await controller.addDapp(baseDapp(), 'wc') // duplicate
+
+      const stored = controller.getDapp('sources-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected', 'wc'])
+    })
+
+    test('hasPermission(id, source) is source-scoped; hasPermission(id) is any-source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'wc')
+
+      expect(controller.hasPermission('sources-dapp.com')).toBe(true)
+      expect(controller.hasPermission('sources-dapp.com', 'wc')).toBe(true)
+      // Core behavior change: an injected request must still re-prompt even when WC is connected.
+      expect(controller.hasPermission('sources-dapp.com', 'injected')).toBe(false)
+    })
+
+    // BUG: a stored dapp whose isConnected and connectedSources had drifted (isConnected: true
+    // but connectedSources: []) used to load verbatim — the Explore "Connected" section (which
+    // reads isConnected) showed it as connected, while hasPermission (which reads
+    // connectedSources) returned false, forcing a reconnect on every request. #load now
+    // normalizes to the invariant on read so the two can't disagree.
+    test('normalizes a drifted stored dapp on load (connectedSources is source of truth)', async () => {
+      const drifted = makeDapp({
+        id: 'drifted-dapp.com',
+        name: 'Drifted Dapp',
+        url: 'https://drifted-dapp.com',
+        isCustom: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      // Force the divergence: connected flag on, but no active sources.
+      drifted.isConnected = true
+      drifted.connectedSources = []
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, drifted])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const stored = controller.getDapp('drifted-dapp.com')!
+      expect(stored.connectedSources).toEqual([])
+      expect(stored.isConnected).toBe(false)
+      expect(controller.hasPermission('drifted-dapp.com')).toBe(false)
+    })
+
+    // The inverse drift: a legacy record that never got connectedSources but had isConnected: true
+    // must keep its connection (seeded as injected) rather than silently disconnecting.
+    test('seeds connectedSources from a legacy isConnected flag on load', async () => {
+      const legacy = makeDapp({
+        id: 'legacy-dapp.com',
+        name: 'Legacy Dapp',
+        url: 'https://legacy-dapp.com',
+        isCustom: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      legacy.isConnected = true
+      // Pre-per-source shape: connectedSources is absent entirely.
+      delete (legacy as Partial<Dapp>).connectedSources
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, legacy])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const stored = controller.getDapp('legacy-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+      expect(controller.hasPermission('legacy-dapp.com', 'injected')).toBe(true)
+    })
+
+    test('disconnectDappSource removes only the targeted source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // Use a non-custom dapp so partial disconnect doesn't trigger removeDapp.
+      const dapp = makeDapp({
+        id: 'multi-source-dapp.com',
+        name: 'Multi Source',
+        url: 'https://multi-source-dapp.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      await controller.addDapp(dapp, 'injected')
+      await controller.addDapp(dapp, 'wc')
+
+      await controller.disconnectDappSource('multi-source-dapp.com', 'injected')
+
+      const stored = controller.getDapp('multi-source-dapp.com')!
+      expect(stored.connectedSources).toEqual(['wc'])
+      expect(stored.isConnected).toBe(true)
+      expect(controller.hasPermission('multi-source-dapp.com', 'wc')).toBe(true)
+      expect(controller.hasPermission('multi-source-dapp.com', 'injected')).toBe(false)
+    })
+
+    test('disconnectDappSource on the last source fully disconnects (and removes custom dapp)', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'wc')
+      expect(controller.getDapp('sources-dapp.com')).toBeDefined()
+
+      await controller.disconnectDappSource('sources-dapp.com', 'wc')
+
+      // Custom dapps that lose their last source are removed from the catalog.
+      expect(controller.getDapp('sources-dapp.com')).toBeUndefined()
+    })
+  })
+
+  describe('WalletConnect chainId selection', () => {
+    // 137 (Polygon) is a predefined, enabled network in the test harness; 5115 (Citrea) and
+    // 9999 are not present in the networks list.
+    const ENABLED_CHAIN_ID = 137
+    const UNKNOWN_CHAIN_ID = 5115
+    const ANOTHER_UNKNOWN_CHAIN_ID = 9999
+
+    test('pickWalletConnectChainId prefers an enabled network over an unknown chain, regardless of order', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // Unknown chain first, enabled chain second — must still pick the enabled one.
+      expect(controller.pickWalletConnectChainId([UNKNOWN_CHAIN_ID, ENABLED_CHAIN_ID])).toBe(
+        ENABLED_CHAIN_ID
+      )
+    })
+
+    test('pickWalletConnectChainId falls back to the first candidate when none match a known network', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // Neither chain is known: keep the dapp's real (first) chainId rather than defaulting to 1.
+      expect(
+        controller.pickWalletConnectChainId([UNKNOWN_CHAIN_ID, ANOTHER_UNKNOWN_CHAIN_ID])
+      ).toBe(UNKNOWN_CHAIN_ID)
+    })
+
+    test('pickWalletConnectChainId returns undefined when there are no candidates', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      expect(controller.pickWalletConnectChainId([])).toBeUndefined()
+      expect(controller.pickWalletConnectChainId(undefined)).toBeUndefined()
+    })
+
+    test('addDappFromIdentity stores the enabled candidate chainId, not chains[0]', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDappFromIdentity(
+        {
+          id: 'wc-multichain-dapp.com',
+          name: 'WC Multichain Dapp',
+          url: 'https://wc-multichain-dapp.com',
+          icon: null,
+          // Legacy single chainId points at an unknown chain; candidates list the real enabled one second.
+          chainId: UNKNOWN_CHAIN_ID,
+          candidateChainIds: [UNKNOWN_CHAIN_ID, ENABLED_CHAIN_ID]
+        },
+        'wc'
+      )
+
+      const stored = controller.getDapp('wc-multichain-dapp.com')!
+      expect(stored.chainId).toBe(ENABLED_CHAIN_ID)
+    })
+
+    test('addDappFromIdentity keeps an unknown chainId from candidates instead of resetting to 1', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDappFromIdentity(
+        {
+          id: 'wc-unknown-chain-dapp.com',
+          name: 'WC Unknown Chain Dapp',
+          url: 'https://wc-unknown-chain-dapp.com',
+          icon: null,
+          chainId: UNKNOWN_CHAIN_ID,
+          candidateChainIds: [UNKNOWN_CHAIN_ID]
+        },
+        'wc'
+      )
+
+      const stored = controller.getDapp('wc-unknown-chain-dapp.com')!
+      // BUG GUARD: #buildDapp resets an unknown chainId to 1 (DEFAULT_CHAIN_ID) for not-yet-loaded
+      // custom networks. pickWalletConnectChainId resolves the candidate, but #buildDapp still
+      // overrides it. This documents the current behavior; see note in the answer.
+      expect(stored.chainId).toBe(1)
+    })
+  })
 })

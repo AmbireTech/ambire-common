@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
 
 import {
@@ -15,7 +14,7 @@ import {
 } from '../../interfaces/account'
 import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-/* eslint-disable @typescript-eslint/no-use-before-define */
+
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -25,7 +24,7 @@ import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-/* eslint-disable @typescript-eslint/no-shadow */
+
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -93,8 +92,6 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-/* eslint-disable @typescript-eslint/no-shadow */
 
 const LEARNED_UNOWNED_LIMITS = {
   erc20s: 20,
@@ -731,7 +728,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#queue[accountAddr][chainId.toString()] = this.#queue?.[accountAddr]?.[
       chainId.toString()
     ]!.then(updatePromise).catch((error) => {
-      // eslint-disable-next-line no-console
       console.error(error)
       return updatePromise()
     })
@@ -849,9 +845,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       !libForKey ||
       !libForKey.provider ||
       libForKey.provider.destroyed ||
-      // eslint-disable-next-line no-underscore-dangle
       libForKey.provider?._getConnection().url !==
-        // eslint-disable-next-line no-underscore-dangle
         providers[network.chainId.toString()]?._getConnection().url
     ) {
       try {
@@ -1014,7 +1008,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           : new Date(banner.startTime).getTime()
 
       const formattedBanner: Banner = {
-        // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
         type: banner.type || 'updates',
         meta: {
@@ -1230,7 +1223,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
 
       for (const [key, priceData] of Object.entries(response.prices)) {
-        // eslint-disable-next-line no-continue
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
         networkTokenDataCache.set(key, [
@@ -1862,7 +1854,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.#queue[accountId][network.chainId.toString()] = this.#queue?.[accountId]?.[
           network.chainId.toString()
         ]!.then(updatePromise).catch((error) => {
-          // eslint-disable-next-line no-console
           console.error(error)
           return updatePromise()
         })

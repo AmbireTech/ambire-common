@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { decodeFunctionData, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { Bundler3 } from '../../const/abis/Bundler3'
-import { GeneralAdapter1 } from '../../const/abis/GeneralAdapter1'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -16,15 +14,46 @@ import {
   getBreak,
   getLabel,
   getToken,
-  getWarning
+  isHexCall
 } from '../../utils'
+import {
+  erc4626DepositAbi,
+  erc4626MintAbi,
+  erc4626RedeemAbi,
+  erc4626WithdrawAbi,
+  getWarnings,
+  morphoBorrowAbi,
+  morphoFlashLoanAbi,
+  morphoRepayAbi,
+  morphoSupplyCollateralAbi,
+  morphoWithdrawCollateralAbi
+} from './generalAdapter'
 
-const iface = new Interface(Bundler3)
-const generalAdapterInterface = new Interface(GeneralAdapter1)
-
+const multicallAbi = [
+  {
+    type: 'function',
+    name: 'multicall',
+    inputs: [
+      {
+        name: 'bundle',
+        type: 'tuple[]',
+        internalType: 'tuple[]',
+        components: [
+          { name: 'to', type: 'address', internalType: 'address' },
+          { name: 'data', type: 'bytes', internalType: 'bytes' },
+          { name: 'value', type: 'uint256', internalType: 'uint256' },
+          { name: 'skipRevert', type: 'bool', internalType: 'bool' },
+          { name: 'callbackHash', type: 'bytes32', internalType: 'bytes32' }
+        ]
+      }
+    ],
+    outputs: [],
+    stateMutability: 'payable'
+  }
+] as const
 interface BundleCall {
   to: string
-  data: string
+  data: `0x${string}`
   value: bigint
   skipRevert: boolean
   callbackHash: string
@@ -32,145 +61,72 @@ interface BundleCall {
   warnings?: HumanizerWarning[]
 }
 
-const getWarnings = (accAddr: string, onBehalf: string): HumanizerWarning[] => {
-  return onBehalf.toLowerCase() !== accAddr.toLowerCase()
-    ? [
-        getWarning(
-          `Differnt action address detected! Owner is ${accAddr}, while action address is ${onBehalf}`,
-          'Morpho_diff_addr'
-        )
-      ]
-    : []
-}
-
-const decodeGeneralAdapter = (accAddr: string, bundle: BundleCall[]) => {
-  const matcher = {
+const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) => {
+  const matcher: { [sighash: string]: (call: BundleCall) => IrCall | undefined } = {
     // the below commented out humanizations are legit multicall humanizations
     // but they don't bring any value to the user other than confusion
     //
-    // [generalAdapterInterface.getFunction('erc20TransferFrom')?.selector!]: (
-    //   call: IrCall
-    // ): IrCall | undefined => {
-    //   const { token, receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-    //   const fullVisualization = [
-    //     getBreak(),
-    //     getAction('Transfer'),
-    //     getToken(token, amount),
-    //     getLabel('To'),
-    //     getAddressVisualization(receiver)
-    //   ]
-    //   return { ...call, fullVisualization }
-    // },
-    // [generalAdapterInterface.getFunction('erc20Transfer')?.selector!]: (
-    //   call: IrCall
-    // ): IrCall | undefined => {
-    //   const { token, receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-    //   const fullVisualization = [
-    //     getBreak(),
-    //     getAction('Transfer'),
-    //     getToken(token, amount),
-    //     getLabel('To'),
-    //     getAddressVisualization(receiver)
-    //   ]
-    //   return { ...call, fullVisualization }
-    // },
-    // [generalAdapterInterface.getFunction('nativeTransfer')?.selector!]: (
-    //   call: IrCall
-    // ): IrCall | undefined => {
-    //   const { receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-    //   const fullVisualization = [
-    //     getBreak(),
-    //     getAction('Transfer'),
-    //     getToken(ZeroAddress, amount),
-    //     getLabel('To'),
-    //     getAddressVisualization(receiver)
-    //   ]
-    //   return { ...call, fullVisualization }
-    // },
-    // [generalAdapterInterface.getFunction('wrapNative')?.selector!]: (
-    //   call: IrCall
-    // ): IrCall | undefined => {
-    //   const { amount } = generalAdapterInterface.parseTransaction(call)!.args
-    //   const fullVisualization = [getBreak(), ...getWrapping(ZeroAddress, amount)]
-    //   return { ...call, fullVisualization }
-    // },
-    // [generalAdapterInterface.getFunction('unwrapNative')?.selector!]: (
-    //   call: IrCall
-    // ): IrCall | undefined => {
-    //   const { amount } = generalAdapterInterface.parseTransaction(call)!.args
-    //   const fullVisualization = [getBreak(), ...getUnwrapping(ZeroAddress, amount)]
-    //   return { ...call, fullVisualization }
-    // },
-    // [generalAdapterInterface.getFunction('permit2TransferFrom')?.selector!]: (
-    //     call: IrCall
-    //   ): IrCall | undefined => {
-    //     const { token, receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-    //     const fullVisualization = [
-    //       getBreak(),
-    //       getAction('Transfer'),
-    //       getToken(token, amount),
-    //       getLabel('To'),
-    //       getAddressVisualization(receiver)
-    //     ]
-    //     return { ...call, fullVisualization }
-    //   },
-    [generalAdapterInterface.getFunction('morphoSupplyCollateral')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { marketParams, assets, onBehalf, data } =
-        generalAdapterInterface.parseTransaction(call)!.args
-      const collateral = marketParams[1]
-      const collateralAmount = assets
-      const fullVisualization = [
-        getBreak(),
-        getAction('Supply'),
-        getToken(collateral, collateralAmount)
-      ]
+    // [toFunctionSelector(erc20TransferFromAbi[0])]: ...
+    // [toFunctionSelector(erc20TransferAbi[0])]: ...
+    // [toFunctionSelector(nativeTransferAbi[0])]: ...
+    // [toFunctionSelector(wrapNativeAbi[0])]: ...
+    // [toFunctionSelector(unwrapNativeAbi[0])]: ...
+    // [toFunctionSelector(permit2TransferFromAbi[0])]: ...
+    [toFunctionSelector(morphoSupplyCollateralAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: morphoSupplyCollateralAbi,
+        data: call.data
+      })
+      const [marketParams, assets, onBehalf] = args
+      const collateral = marketParams.collateralToken
+      const fullVisualization = [getBreak(), getAction('Supply'), getToken(collateral, assets)]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
     },
-    [generalAdapterInterface.getFunction('morphoBorrow')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { marketParams, assets, shares, minSharePriceE27, receiver } =
-        generalAdapterInterface.parseTransaction(call)!.args
-      const loanToken = marketParams[0]
-      const loanAmount = assets
+    [toFunctionSelector(morphoBorrowAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: morphoBorrowAbi,
+        data: call.data
+      })
+      const [marketParams, assets, , , receiver] = args
+      const loanToken = marketParams.loanToken
       const fullVisualization = [
         getBreak(),
         getAction('Take'),
-        getToken(loanToken, loanAmount),
+        getToken(loanToken, assets),
         getLabel('loan')
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [generalAdapterInterface.getFunction('morphoRepay')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { marketParams, assets, shares, minSharePriceE27, onBehalf, data } =
-        generalAdapterInterface.parseTransaction(call)!.args
-      const loanToken = marketParams[0]
-      const loanAmount = assets
-      const fullVisualization = [getBreak(), getAction('Repay'), getToken(loanToken, loanAmount)]
+    [toFunctionSelector(morphoRepayAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: morphoRepayAbi,
+        data: call.data
+      })
+      const [marketParams, assets, , , onBehalf] = args
+      const loanToken = marketParams.loanToken
+      const fullVisualization = [getBreak(), getAction('Repay'), getToken(loanToken, assets)]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
     },
-    [generalAdapterInterface.getFunction('morphoWithdrawCollateral')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { marketParams, assets, receiver } =
-        generalAdapterInterface.parseTransaction(call)!.args
-      const collateralToken = marketParams[1]
-      const amount = assets
+    [toFunctionSelector(morphoWithdrawCollateralAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: morphoWithdrawCollateralAbi,
+        data: call.data
+      })
+      const [marketParams, assets, receiver] = args
+      const collateralToken = marketParams.collateralToken
       const fullVisualization = [
         getBreak(),
         getAction('Withdraw'),
-        getToken(collateralToken, amount)
+        getToken(collateralToken, assets)
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [generalAdapterInterface.getFunction('morphoFlashLoan')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { token, assets, data } = generalAdapterInterface.parseTransaction(call)!.args
+    [toFunctionSelector(morphoFlashLoanAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: morphoFlashLoanAbi,
+        data: call.data
+      })
+      const [token, assets] = args
       const fullVisualization = [
         getBreak(),
         getAction('Execute flash loan for'),
@@ -178,11 +134,12 @@ const decodeGeneralAdapter = (accAddr: string, bundle: BundleCall[]) => {
       ]
       return { ...call, fullVisualization }
     },
-    [generalAdapterInterface.getFunction('erc4626Mint')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { vault, assets, maxSharePriceE27, receiver } =
-        generalAdapterInterface.parseTransaction(call)!.args
+    [toFunctionSelector(erc4626MintAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: erc4626MintAbi,
+        data: call.data
+      })
+      const [vault, , , receiver] = args
       const fullVisualization = [
         getBreak(),
         getAction('Supply to vault'),
@@ -190,11 +147,12 @@ const decodeGeneralAdapter = (accAddr: string, bundle: BundleCall[]) => {
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [generalAdapterInterface.getFunction('erc4626Deposit')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { vault, assets, maxSharePriceE27, receiver } =
-        generalAdapterInterface.parseTransaction(call)!.args
+    [toFunctionSelector(erc4626DepositAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: erc4626DepositAbi,
+        data: call.data
+      })
+      const [vault, , , receiver] = args
       const fullVisualization = [
         getBreak(),
         getAction('Mint from vault'),
@@ -202,11 +160,12 @@ const decodeGeneralAdapter = (accAddr: string, bundle: BundleCall[]) => {
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [generalAdapterInterface.getFunction('erc4626Withdraw')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { vault, assets, maxSharePriceE27, receiver, owner } =
-        generalAdapterInterface.parseTransaction(call)!.args
+    [toFunctionSelector(erc4626WithdrawAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: erc4626WithdrawAbi,
+        data: call.data
+      })
+      const [vault, , , receiver] = args
       const fullVisualization = [
         getBreak(),
         getAction('Withdraw from vault'),
@@ -214,11 +173,12 @@ const decodeGeneralAdapter = (accAddr: string, bundle: BundleCall[]) => {
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [generalAdapterInterface.getFunction('erc4626Redeem')?.selector!]: (
-      call: IrCall
-    ): IrCall | undefined => {
-      const { vault, assets, maxSharePriceE27, receiver, owner } =
-        generalAdapterInterface.parseTransaction(call)!.args
+    [toFunctionSelector(erc4626RedeemAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({
+        abi: erc4626RedeemAbi,
+        data: call.data
+      })
+      const [vault, , , receiver] = args
       const fullVisualization = [
         getBreak(),
         getAction('Withdraw from vault'),
@@ -238,11 +198,13 @@ const decodeGeneralAdapter = (accAddr: string, bundle: BundleCall[]) => {
 }
 
 const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
-  const matcher = {
-    [iface.getFunction('multicall')?.selector!]: (call: IrCall): IrCall | undefined => {
+  const matcher: { [sighash: string]: (call: IrCall) => IrCall | undefined } = {
+    [toFunctionSelector(multicallAbi[0])]: (call) => {
       if (!call.to) return
       if (call.value) return
-      const { bundle } = iface.parseTransaction(call)!.args
+      if (!isHexCall(call)) return
+      const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
+      const [bundle] = args
       const decodedBundle = decodeGeneralAdapter(accOp.accountAddr, bundle)
       const bundleVisualization = decodedBundle.map((c) => c.fullVisualization || []).flat()
       if (bundleVisualization.length) bundleVisualization.shift()

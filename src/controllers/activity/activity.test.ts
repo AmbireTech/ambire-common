@@ -541,9 +541,7 @@ describe('Activity Controller ', () => {
         }
       ] as submittedAccountOp.SubmittedAccountOp[]
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const accountOp of accountsOps) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addAccountOp(accountOp)
       }
 
@@ -760,7 +758,6 @@ describe('Activity Controller ', () => {
       expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
       const spy = jest.spyOn(submittedAccountOp, 'updateOpStatus')
       spy.mockImplementationOnce((op) => {
-        // eslint-disable-next-line no-param-reassign
         op.status = AccountOpStatus.Rejected
         return op
       })
@@ -893,9 +890,7 @@ describe('Activity Controller ', () => {
         }
       })
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const ao of accountsOps) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addAccountOp(ao)
       }
 
@@ -969,9 +964,7 @@ describe('Activity Controller ', () => {
         nonce: BigInt(key)
       }))
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const ao of accountsOps) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addAccountOp(ao)
       }
 
@@ -1068,9 +1061,7 @@ describe('Activity Controller ', () => {
         signature: key.toString()
       }))
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const sm of signedMessages) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 

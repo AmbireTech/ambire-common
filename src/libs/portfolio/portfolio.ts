@@ -1,6 +1,5 @@
-/* eslint-disable no-restricted-syntax */
 import { ZeroAddress } from 'ethers'
-/* eslint-disable guard-for-in */
+
 import { getAddress } from 'viem'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
@@ -284,7 +283,7 @@ export class Portfolio {
       const tokenDataHint = convertApiTokenDataToTokenDataCache(
         hints.externalApi?.prices[addr] || null
       )
-      // eslint-disable-next-line no-continue
+
       if (!tokenDataHint) continue
 
       tokenDataCache.set(addr, [start, tokenDataHint])

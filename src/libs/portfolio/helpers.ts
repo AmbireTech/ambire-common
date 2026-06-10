@@ -1,4 +1,3 @@
-/* eslint-disable import/no-cycle */
 import { Contract, formatUnits, ZeroAddress } from 'ethers'
 import { getAddress } from 'viem'
 
@@ -331,7 +330,7 @@ const limitConcurrency = async <T>(
   for (let i = 0; i < items.length; i += limit) {
     const batch = items.slice(i, i + limit)
     const batchPromises = batch.map(asyncFn)
-    // eslint-disable-next-line no-await-in-loop
+
     const batchResults = await Promise.allSettled(batchPromises)
 
     results.push(
@@ -510,7 +509,7 @@ export const getTotal = (
   const tokensTotal = t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
     if (token.flags.isHidden && !includeHiddenTokens) return localCur
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
 
@@ -526,7 +525,7 @@ export const getTotal = (
           'Amount:',
           tokenAmount
         )
-        // eslint-disable-next-line no-continue
+
         continue
       }
 
@@ -561,7 +560,6 @@ export const getTotal = (
           // stkWallet is an internal position, created from the stkWallet token
           if (positionsToExclude.includes(p.id) || p.id === 'stk-wallet') return
 
-          // eslint-disable-next-line no-param-reassign
           cur.usd += p.additionalData.positionInUSD || 0
         })
 
@@ -578,7 +576,6 @@ export const getTotal = (
   }
 
   return Object.keys(tokensTotal).reduce((cur, key) => {
-    // eslint-disable-next-line no-param-reassign
     cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0)
 
     return cur

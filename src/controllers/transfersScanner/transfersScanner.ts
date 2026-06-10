@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { Log, TransactionReceipt } from 'ethers'
 
 import { IActivityController } from '../../interfaces/activity'
