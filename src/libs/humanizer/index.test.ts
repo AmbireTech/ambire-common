@@ -874,6 +874,55 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
+  test('formats the native transaction value in ERC-7730 interpolated intents', () => {
+    accountOp.calls = [
+      {
+        to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        value: ethers.parseEther('0.001'),
+        data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'submit(address _referral)': {
+            intent: 'Stake ETH',
+            interpolatedIntent: 'Stake {@.value} ETH',
+            fields: [
+              {
+                label: 'Amount',
+                format: 'amount',
+                path: '@.value'
+              },
+              {
+                label: 'Referral',
+                path: '#._referral',
+                visible: 'never'
+              }
+            ]
+          }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: { descriptor }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Stake 0.001 ETH', [
+          {
+            label: 'Amount',
+            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+          }
+        ])
+      ]
+    ])
+  })
   test('humanizes nested calldata in execute with permit descriptors', async () => {
     const router = '0x111111125421cA6dc452d289314280a0f8842A65'
     const aave = '0x76fb31fb4af56892a25e32cfc43de717950c9278'
