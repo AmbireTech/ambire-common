@@ -15,9 +15,12 @@ import {
   failedDapp,
   getDappRequestData,
   getDappVerificationTestDapps,
-  loadingDapp
+  loadingDapp,
+  suspiciousHostingDapp,
+  verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -375,6 +378,7 @@ const init = async (
   updateWholePortfolio?: boolean,
   options?: {
     dapps?: Dapp[]
+    sessions?: Session[]
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -613,6 +617,13 @@ const init = async (
       ui: uiCtrl
     })
     await realDappsController.initialLoadPromise
+
+    // Register any dApp sessions so the real #getTabContextStatus can inspect co-sessions
+    // sharing the same tab (the iframe-in-suspicious-tab scenario).
+    options.sessions?.forEach((session) => {
+      realDappsController.dappSessions[session.sessionId] = session
+    })
+
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
@@ -646,7 +657,15 @@ const init = async (
 
 const initDappVerificationBannerTest = async (
   dapp: Dapp,
-  { isPermit2 = false }: { isPermit2?: boolean } = {}
+  {
+    isPermit2 = false,
+    dappSessionId,
+    sessions
+  }: {
+    isPermit2?: boolean
+    dappSessionId?: string
+    sessions?: Session[]
+  } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
   ;(accountOp.op.calls as any) = [
@@ -657,6 +676,9 @@ const initDappVerificationBannerTest = async (
       dapp: getDappRequestData(dapp)
     }
   ]
+  if (dappSessionId) {
+    ;(accountOp.op as any).dappSessionId = dappSessionId
+  }
 
   const feePaymentOptions = [
     {
@@ -721,9 +743,7 @@ const initDappVerificationBannerTest = async (
       }
     },
     false,
-    {
-      dapps: getDappVerificationTestDapps()
-    }
+    { dapps: getDappVerificationTestDapps(), sessions }
   )
 }
 
@@ -2351,5 +2371,40 @@ describe('dapp verification banners', () => {
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
+  })
+
+  // Scenario: dApp's own domain is in SUSPICIOUS_HOSTING_DOMAINS (e.g. my-dapp.vercel.app)
+  // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+  test('should return SUSPICIOUS_HOSTING warning banner for dapps on suspicious hosting platforms', async () => {
+    const { controller } = await initDappVerificationBannerTest(suspiciousHostingDapp)
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+        type: 'warning',
+        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it: Suspicious Hosting Dapp'
+      }
+    ])
+  })
+
+  // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
+  // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+  // Uses the real DappsController: the suspicious co-session shares the tab with the dApp's
+  // own session, so the real #getTabContextStatus derives the SUSPICIOUS_HOSTING context.
+  test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', async () => {
+    const verifiedDappSession = new Session({ tabId: 300, windowId: 1, url: verifiedDapp.url })
+    const googleSession = new Session({
+      tabId: 300,
+      windowId: 1,
+      url: 'https://sites.google.com'
+    })
+
+    const { controller } = await initDappVerificationBannerTest(verifiedDapp, {
+      dappSessionId: verifiedDappSession.sessionId,
+      sessions: [verifiedDappSession, googleSession]
+    })
+
+    expect(controller.banners[0]?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+    expect(controller.banners[0]?.type).toBe('warning')
   })
 })

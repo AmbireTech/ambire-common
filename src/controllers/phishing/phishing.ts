@@ -57,34 +57,32 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  *   app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED      intrinsic=BLACKLISTED wins → BLACKLISTED
  */
 export const SUSPICIOUS_HOSTING_DOMAINS = [
-// Google ecosystem
-'sites.google.com',
-'docs.google.com',
-'drive.google.com',
-'forms.google.com',
-'sheets.google.com',
-'slides.google.com',
+  // Google ecosystem
+  'sites.google.com',
+  'docs.google.com',
+  'drive.google.com',
+  'forms.google.com',
+  'sheets.google.com',
+  'slides.google.com',
 
-// JAMstack / static hosting
-'vercel.app',
-'netlify.app',         
-'pages.dev',            
-'github.io',           
+  // JAMstack / static hosting
+  'vercel.app',
+  'netlify.app',
+  'pages.dev',
+  'github.io',
 
-// Firebase
-'firebaseapp.com',
-'web.app',            
+  // Firebase
+  'firebaseapp.com',
+  'web.app',
 
-// IPFS gateway
-'ipfs.io',
+  // IPFS gateway
+  'ipfs.io'
 ]
 
 function isSuspiciousHostingDomain(url: string): boolean {
   try {
     const { hostname } = new URL(url)
-    return SUSPICIOUS_HOSTING_DOMAINS.some(
-      (d) => hostname === d || hostname.endsWith(`.${d}`)
-    )
+    return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
   } catch {
     return false
   }
@@ -350,7 +348,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
     dappsData.forEach(({ url, dappId }) => {
-      if (this.#domains.size && (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!))) {
+      if (
+        this.#domains.size &&
+        (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!))
+      ) {
         this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
         return
       }
