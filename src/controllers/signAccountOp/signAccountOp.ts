@@ -841,7 +841,6 @@ export class SignAccountOpController
   #startHumanization() {
     return this.startHumanization((humanizationId) => {
       this.isHumanizing = true
-      this.humanization = []
       this.humanizationId = humanizationId
     })
   }

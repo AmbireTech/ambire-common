@@ -47,13 +47,16 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
@@ -73,6 +76,7 @@ import {
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
+import { withTimeout } from '../../utils/with-timeout'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -100,6 +104,7 @@ const NETWORK_MISMATCH_MESSAGE =
 
 // For performance reasons, limit the max number of tokens in the to token list
 const TO_TOKEN_LIST_LIMIT = 100
+const TO_TOKEN_PRICE_TIMEOUT_MS = 4000
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
@@ -118,6 +123,127 @@ const STATUS_WRAPPED_METHODS = {
 
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
+
+export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute) => {
+  const isBridge = r1.fromChainId !== r1.toChainId
+
+  // the amount threshold in %. If below, we check the time as
+  // the deciding sort factor
+  const threshold = 1.2
+
+  const sortByTime = () => {
+    const aTime = Number(r1.serviceTime)
+    const bTime = Number(r2.serviceTime)
+    if (aTime === bTime) return 0
+    if (aTime > bTime) return 1
+    return -1
+  }
+
+  const sortByPerformance = () => {
+    // if it's a bridge, prioritize across and relay as we find
+    // across and relay the best bridges out where with a close
+    // to 100% success rate and an approximate bridge time of 30s
+    if (isBridge) {
+      const aHasAcross = r1.usedBridgeNames?.includes('across')
+      const bHasAcross = r2.usedBridgeNames?.includes('across')
+      if (aHasAcross && !bHasAcross) return -1
+      if (bHasAcross && !aHasAcross) return 1
+
+      const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
+      const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
+      if (aHasRelay && !bHasRelay) return -1
+      if (bHasRelay && !aHasRelay) return 1
+    } else {
+      // if it's a swap, deprioritize the bungee auto route as it's an intent
+      // engine. And intent engines are bad UX
+      const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
+      const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
+      if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
+      if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
+    }
+
+    // outputValueAfterGas is just as it name suggest: the value
+    // each provider returns after the gas calculations have been made.
+    // Uniswap is very efficient at this althouhg the rates might be slightly
+    // worse. But slightly worse rates are better than paying a massive
+    // transaction fee for the swap. That's why we're applying this sort
+    const aOutputValueAfterGasInUsd = r1.outputValueAfterGasInUsd
+    const bOutputValueAfterGasInUsd = r2.outputValueAfterGasInUsd
+    if (
+      aOutputValueAfterGasInUsd !== undefined &&
+      bOutputValueAfterGasInUsd !== undefined &&
+      Number.isFinite(aOutputValueAfterGasInUsd) &&
+      Number.isFinite(bOutputValueAfterGasInUsd)
+    ) {
+      if (aOutputValueAfterGasInUsd === bOutputValueAfterGasInUsd) {
+        if (!isBridge) return 0
+        return sortByTime()
+      }
+
+      const higherOutputValueAfterGasInUsd = Math.max(
+        aOutputValueAfterGasInUsd,
+        bOutputValueAfterGasInUsd
+      )
+      const lowerOutputValueAfterGasInUsd = Math.min(
+        aOutputValueAfterGasInUsd,
+        bOutputValueAfterGasInUsd
+      )
+      const outputComparison = aOutputValueAfterGasInUsd > bOutputValueAfterGasInUsd ? -1 : 1
+
+      // if it's not a bridge, just return the higher output route
+      if (!isBridge || higherOutputValueAfterGasInUsd <= 0) return outputComparison
+
+      const percentage =
+        ((higherOutputValueAfterGasInUsd - lowerOutputValueAfterGasInUsd) /
+          higherOutputValueAfterGasInUsd) *
+        100
+      if (percentage < threshold) return sortByTime()
+      return outputComparison
+    }
+
+    const a = BigInt(r1.toAmount)
+    const b = BigInt(r2.toAmount)
+
+    // if value is the same, check time if bridge
+    if (a === b) {
+      if (!isBridge) return 0
+      return sortByTime()
+    }
+
+    const aUsd = Number(r1.outputValueInUsd ?? 0)
+    const bUsd = Number(r2.outputValueInUsd ?? 0)
+    if (a > b) {
+      // if it's not a bridge, just return the higher output route
+      if (!isBridge) return -1
+
+      // if the bigint amount says a > b but the usd amount says
+      // the opposite, we're stuck, so just return a as the winner
+      if (bUsd > aUsd || aUsd === 0) return -1
+
+      const percentage = ((aUsd - bUsd) / aUsd) * 100
+      if (percentage < threshold) return sortByTime()
+      return -1
+    }
+
+    // if it's not a bridge, just return the higher output route
+    if (!isBridge) return 1
+
+    // if the bigint amount says b > a but the usd amount says
+    // the opposite, we're stuck, so just return b as the winner
+    if (aUsd > bUsd || bUsd === 0) return 1
+    const percentage = ((bUsd - aUsd) / bUsd) * 100
+    if (percentage < threshold) return sortByTime()
+    return 1
+  }
+
+  // move the routes with service fee to the bottom
+  const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
+  const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
+  if (r1ServiceFee && !r2ServiceFee) return 1
+  if (r2ServiceFee && !r1ServiceFee) return -1
+
+  return sortByPerformance()
+}
 
 type SignAccountOpControllerMethods = {
   [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
@@ -1038,6 +1164,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+
+    // When the price endpoint is down, tokens come back without a USD price. We must
+    // not exclude them as "priceless" in that case, otherwise switching to an account
+    // with such tokens would wrongly hide them. Skip the price requirement for chains
+    // that currently have a price fetch error.
+    const chainIdsWithPriceError = new Set<string>()
+    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
+      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
+    )
+    priceError?.networkNames.forEach((networkName) => {
+      const network = this.#networks.networks.find((n) => n.name === networkName)
+      if (network) chainIdsWithPriceError.add(network.chainId.toString())
+    })
+
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1046,7 +1186,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(token) && !token.flags.isHidden
+          getIsTokenEligibleForSwapAndBridge(
+            token,
+            true,
+            !chainIdsWithPriceError.has(token.chainId.toString())
+          ) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
@@ -1595,23 +1739,49 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       try {
         const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
         const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
+        const toSelectedToken = this.toSelectedToken
+        const selectedAccountAddress = this.#selectedAccount.account.addr
+        const toTokenPricePromise = withTimeout(
+          () =>
+            this.#portfolio.getTokenPrice(
+              selectedAccountAddress,
+              BigInt(this.toChainId!),
+              toSelectedToken.address
+            ),
+          {
+            timeoutMs: TO_TOKEN_PRICE_TIMEOUT_MS,
+            message: `Fetching the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId} timed out.`
+          }
+        ).catch((error: any) => {
+          this.emitError({
+            error,
+            level: 'silent',
+            message: `Unable to fetch the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId}.`
+          })
 
-        const quoteResult = await this.#serviceProviderAPI.quote({
-          fromAsset: this.fromSelectedToken,
-          fromChainId: this.fromChainId!,
-          fromTokenAddress: this.fromSelectedToken.address,
-          toAsset: this.toSelectedToken,
-          toChainId: this.toChainId!,
-          toTokenAddress: this.toSelectedToken.address,
-          fromAmount: bigintFromAmount,
-          userAddress: this.#selectedAccount.account.addr,
-          sort: this.routePriority,
-          isWrapOrUnwrap,
-          accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
-          nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+          return null
         })
+
+        const [toTokenPriceUSD, quoteResult] = await Promise.all([
+          toTokenPricePromise,
+          this.#serviceProviderAPI.quote({
+            fromAsset: this.fromSelectedToken,
+            fromChainId: this.fromChainId!,
+            fromTokenAddress: this.fromSelectedToken.address,
+            toAsset: toSelectedToken,
+            toChainId: this.toChainId!,
+            toTokenAddress: toSelectedToken.address,
+            fromAmount: bigintFromAmount,
+            userAddress: selectedAccountAddress,
+            sort: this.routePriority,
+            isWrapOrUnwrap,
+            accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
+            nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+          })
+        ])
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .map((route) => enrichRouteWithOutputUsdPrice(route, toTokenPriceUSD))
           .filter((route) => {
             const hasNoRouteId = !route.routeId
 
@@ -1631,87 +1801,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort((r1, r2) => {
-            const isBridge = r1.fromChainId !== r1.toChainId
-
-            // the amount threshold in %. If below, we check the time as
-            // the deciding sort factor
-            const threshold = 1.2
-
-            const sortByTime = () => {
-              const aTime = Number(r1.serviceTime)
-              const bTime = Number(r2.serviceTime)
-              if (aTime === bTime) return 0
-              if (aTime > bTime) return 1
-              return -1
-            }
-
-            const sortByPerformance = () => {
-              // if it's a bridge, prioritize across and relay as we find
-              // across and relay the best bridges out where with a close
-              // to 100% success rate and an approximate bridge time of 30s
-              if (isBridge) {
-                const aHasAcross = r1.usedBridgeNames?.includes('across')
-                const bHasAcross = r2.usedBridgeNames?.includes('across')
-                if (aHasAcross && !bHasAcross) return -1
-                if (bHasAcross && !aHasAcross) return 1
-
-                const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
-                const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
-                if (aHasRelay && !bHasRelay) return -1
-                if (bHasRelay && !aHasRelay) return 1
-              } else {
-                // if it's a swap, deprioritize the bungee auto route as it's an intent
-                // engine. And intent engines are bad UX
-                const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
-                const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
-                if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
-                if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
-              }
-
-              const a = BigInt(r1.toAmount)
-              const b = BigInt(r2.toAmount)
-
-              // if value is the same, check time if bridge
-              if (a === b) {
-                if (!isBridge) return 0
-                return sortByTime()
-              }
-
-              const aUsd = Number(r1.outputValueInUsd ?? 0)
-              const bUsd = Number(r2.outputValueInUsd ?? 0)
-              if (a > b) {
-                // if it's not a bridge, just return the higher output route
-                if (!isBridge) return -1
-
-                // if the bigint amount says a > b but the usd amount says
-                // the opposite, we're stuck, so just return a as the winner
-                if (bUsd > aUsd || aUsd === 0) return -1
-
-                const percentage = ((aUsd - bUsd) / aUsd) * 100
-                if (percentage < threshold) return sortByTime()
-                return -1
-              }
-
-              // if it's not a bridge, just return the higher output route
-              if (!isBridge) return 1
-
-              // if the bigint amount says b > a but the usd amount says
-              // the opposite, we're stuck, so just return b as the winner
-              if (aUsd > bUsd || bUsd === 0) return 1
-              const percentage = ((bUsd - aUsd) / bUsd) * 100
-              if (percentage < threshold) return sortByTime()
-              return 1
-            }
-
-            // move the routes with service fee to the bottom
-            const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
-            const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
-            if (r1ServiceFee && !r2ServiceFee) return 1
-            if (r2ServiceFee && !r1ServiceFee) return -1
-
-            return sortByPerformance()
-          })
+          .sort(sortSwapAndBridgeRoutes)
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined
@@ -2463,15 +2553,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
-    // get the price from the portfolio;
-    // if not present there, try to calculate it from the quote
-    let fromTokenPriceInUsd = this.fromSelectedToken.priceIn.find(
-      (p) => p.baseCurrency === 'usd'
-    )?.price
-    if (!fromTokenPriceInUsd && this.quote?.selectedRoute?.inputValueInUsd && this.fromAmount) {
-      fromTokenPriceInUsd = this.quote.selectedRoute.inputValueInUsd / Number(this.fromAmount)
-    }
-
+    const feeToken = getFeeTokenForSponsorship(this.fromSelectedToken, this.quote, this.fromAmount)
     const isBridge = this.quote?.selectedRoute
       ? getIsBridgeRoute(this.quote.selectedRoute)
       : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
@@ -2485,9 +2567,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
-      fromTokenPriceInUsd,
-      fromTokenDecimals: this.quote?.fromAsset.decimals,
-      providerId: this.quote?.selectedRoute?.providerId
+      feeTokenPriceInUsd: feeToken.feeTokenPriceInUsd,
+      feeTokenDecimals: feeToken.decimals,
+      providerId: this.quote?.selectedRoute?.providerId,
+      isBridge
     })
 
     if (this.#signAccountOpController) {

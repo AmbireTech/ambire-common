@@ -21,6 +21,7 @@ import {
   getAddressVisualization,
   getBreak,
   getLabel,
+  getText,
   getToken,
   getWarning,
   HexIrCall,
@@ -40,9 +41,13 @@ const swapOwnerAbi = parseAbi([
 const enableModuleAbi = parseAbi(['function enableModule(address module)'])
 const disableModuleAbi = parseAbi(['function disableModule(address prevModule, address module)'])
 const setGuardAbi = parseAbi(['function setGuard(address guard)'])
+const setupAbi = parseAbi([
+  'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+])
 const execTransactionAbi = parseAbi([
   'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
 ])
+const MAX_SAFE_SETUP_HOOK_DEPTH = 4
 
 export const getDelegateCallWarning = (
   operation: bigint | number,
@@ -68,7 +73,8 @@ export const getSafeHumanization = (
   safeAddr?: string,
   to?: string,
   value?: string | number | bigint,
-  data?: string
+  data?: string,
+  setupHookDepth = 0
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data || !isHex(data)) return
 
@@ -89,6 +95,69 @@ export const getSafeHumanization = (
   }
 
   const selector = data.substring(0, 10)
+
+  if (selector === toFunctionSelector(setupAbi[0])) {
+    const { args } = decodeFunctionData({ abi: setupAbi, data })
+    const [
+      owners,
+      threshold,
+      setupTo,
+      setupData,
+      fallbackHandler,
+      paymentToken,
+      payment,
+      paymentReceiver
+    ] = args
+    fullVisualization.push(getAction('Account setup'))
+
+    if (owners.length) {
+      fullVisualization.push(
+        getLabel(owners.length === 1 ? 'Owner' : 'Owners'),
+        ...owners.map((owner) => getAddressVisualization(owner))
+      )
+    }
+
+    fullVisualization.push(getLabel('Threshold'), getText(threshold.toString()))
+
+    if (fallbackHandler.toLowerCase() !== zeroAddress) {
+      fullVisualization.push(getLabel('Fallback handler'), getAddressVisualization(fallbackHandler))
+    }
+
+    if (payment) {
+      fullVisualization.push(getLabel('Payment'), getToken(paymentToken, payment))
+    }
+
+    if (paymentReceiver.toLowerCase() !== zeroAddress) {
+      fullVisualization.push(getLabel('Payment receiver'), getAddressVisualization(paymentReceiver))
+    }
+
+    if (
+      setupHookDepth < MAX_SAFE_SETUP_HOOK_DEPTH &&
+      setupTo.toLowerCase() !== zeroAddress &&
+      setupData !== '0x'
+    ) {
+      const setupCallHumanization = getSafeHumanization(
+        safeAddr,
+        setupTo,
+        0n,
+        setupData,
+        setupHookDepth + 1
+      )
+
+      if (setupCallHumanization?.visuals?.length) {
+        fullVisualization.push(getBreak(), getLabel('Setup transaction'))
+        fullVisualization.push(...setupCallHumanization.visuals)
+      }
+      if (setupCallHumanization?.warnings) warnings.push(...setupCallHumanization.warnings)
+    }
+
+    warnings.push(getWarning(`Safe setup configuration detected`, 'SAFE{WALLET}_CONFIG_CHANGE'))
+
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
 
   if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
     const { args } = decodeFunctionData({
@@ -229,12 +298,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
       const bigintValue = BigInt(value)
       const bigintOperation = BigInt(operation)
 
-      const safeSpecificHumanization = getSafeHumanization(
-        accOp.accountAddr,
-        to,
-        bigintValue,
-        data
-      )
+      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),

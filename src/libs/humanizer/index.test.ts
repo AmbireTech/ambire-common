@@ -18,7 +18,8 @@ import {
   erc20TransferAbi,
   erc20TransferFromAbi,
   morphoRepayAbi,
-  morphoWithdrawCollateralAbi
+  morphoWithdrawCollateralAbi,
+  publicAllocatorReallocateToAbi
 } from './modules/Bundler3/generalAdapter'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
 import {
@@ -1263,6 +1264,109 @@ describe('ERC-7730 descriptors', () => {
     ).toBe(false)
   })
 
+  test('humanizes Morpho PublicAllocator reallocateTo in Bundler3 ERC-7730 calldata', () => {
+    const morphoBundler = '0x6566194141eefa99Af43Bb5Aa71460Ca2Dc90245'
+    const publicAllocator = '0xfd32fA2ca22c76dD6E550706Ad913FC6CE91c75D'
+    const vault = '0xbeef01735c132ada46aa9aa4c54623caa92a64cb'
+    const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const wbtc = '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'
+    const supplyMarketParams = {
+      loanToken: usdc,
+      collateralToken: wbtc,
+      oracle: '0xf1561bc4b3d1ba49053986fb9ee88d4fe22d0cf4',
+      irm: '0x870ac11d48b15db9a138cf899d20f13f79ba00bc',
+      lltv: 86145408065551n
+    }
+    const withdrawalMarketParams = {
+      ...supplyMarketParams,
+      collateralToken: '0xdddd770badd886df3864029e4b377b5f6a2b6b83'
+    }
+    const iface = new ethers.Interface([
+      'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
+    ])
+    const morphoAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: morphoBundler,
+          value: 0n,
+          data: iface.encodeFunctionData('multicall', [
+            [
+              {
+                to: publicAllocator,
+                data: encodeFunctionData({
+                  abi: publicAllocatorReallocateToAbi,
+                  args: [
+                    vault,
+                    [{ marketParams: withdrawalMarketParams, amount: 1000000n }],
+                    supplyMarketParams
+                  ]
+                }),
+                value: 0n,
+                skipRevert: false,
+                callbackHash: ethers.ZeroHash
+              }
+            ]
+          ])
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(morphoAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/morpho/calldata-MorphoBundlerV3.json',
+          descriptor: {
+            display: {
+              formats: {
+                'multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)':
+                  {
+                    intent: 'Bundler3 Multicall',
+                    fields: [
+                      {
+                        path: '#.bundle.[].data',
+                        label: 'Action',
+                        format: 'calldata',
+                        params: {
+                          calleePath: '#.bundle.[].to',
+                          amountPath: '#.bundle.[].value'
+                        },
+                        visible: 'always'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+    const visualization = irCalls[0]!.fullVisualization?.[0]
+
+    expect(visualization).toMatchObject({
+      type: 'erc7730',
+      title: 'Bundler3 Multicall'
+    })
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+
+    expect(visualization.rows).toHaveLength(1)
+    expect(visualization.rows[0]!.label).toBe('Action')
+    expect(visualization.rows[0]!.value.find((value) => value.type === 'action')?.content).toBe(
+      'Reallocate liquidity'
+    )
+    expect(visualization.rows[0]!.value).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'label', content: 'To vault' }),
+        expect.objectContaining({ type: 'address', address: vault })
+      ])
+    )
+    expect(
+      visualization.rows[0]!.value.some((value) =>
+        ['0x833947fd', 'reallocateTo'].includes(value.content || '')
+      )
+    ).toBe(false)
+  })
+
   test('uses standard ERC-7730 approval descriptors in a Permit2 + Universal Router batch', async () => {
     const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
     const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
@@ -1757,6 +1861,108 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+  })
+
+  test('humanizes Safe setup calldata nested in a factory initializer with ERC-7730', () => {
+    const safeProxyFactory = '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67'
+    const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
+    const owner = '0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54'
+    const fallbackHandler = '0xfd0732dc9e303f09fcef3a7388ad10a83459ec99'
+    const setupTo = '0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54'
+    const module = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const safeInterface = new ethers.Interface([
+      'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)',
+      'function enableModule(address module)'
+    ])
+    const factoryInterface = new ethers.Interface([
+      'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+    ])
+    const initializer = safeInterface.encodeFunctionData('setup', [
+      [owner],
+      1,
+      setupTo,
+      safeInterface.encodeFunctionData('enableModule', [module]),
+      fallbackHandler,
+      ZeroAddress,
+      0,
+      ZeroAddress
+    ])
+    const safeSetupAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: safeProxyFactory,
+          value: 0n,
+          data: factoryInterface.encodeFunctionData('createProxyWithNonce', [
+            safeSingleton,
+            initializer,
+            1
+          ])
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeSetupAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)': {
+                  intent: 'Create Safe',
+                  fields: [
+                    {
+                      path: 'initializer',
+                      label: 'Account setup',
+                      format: 'calldata',
+                      params: { calleePath: '#._singleton' }
+                    },
+                    { path: '_singleton', label: 'Safe singleton', format: 'addressName' },
+                    { path: 'saltNonce', label: 'Salt nonce' }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Create Safe', [
+        {
+          label: 'Account setup',
+          value: [
+            getErc7730Visualization('Account setup', [
+              {
+                label: 'Owner',
+                value: [getAddressVisualization(owner)]
+              },
+              {
+                label: 'Threshold',
+                value: [getText('1')]
+              },
+              {
+                label: 'Fallback handler',
+                value: [getAddressVisualization(fallbackHandler)]
+              },
+              {
+                label: 'Setup transaction',
+                value: [getAction('Enable module:'), getAddressVisualization(module)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Safe singleton',
+          value: [getAddressVisualization(safeSingleton)]
+        },
+        {
+          label: 'Salt nonce',
+          value: [getText('1')]
+        }
+      ])
+    ])
   })
 
   test('fetches the EIP-712 descriptor index through the relayer', async () => {
