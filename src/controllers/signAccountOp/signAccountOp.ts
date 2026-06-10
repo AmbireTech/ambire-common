@@ -25,12 +25,7 @@ import {
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import {
-  EIP_7702_AMBIRE_ACCOUNT,
-  EIP_7702_GRID_PLUS,
-  EIP_7702_KATANA,
-  SINGLETON
-} from '../../consts/deploy'
+import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
@@ -159,6 +154,7 @@ import {
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
+  isUnderpriced,
   SignAccountOpType
 } from './helper'
 
@@ -312,6 +308,8 @@ export class SignAccountOpController
   // "Gas fee updated" confirmation instead of a scary error toast, so the user
   // can accept the new fee and continue without redoing the whole flow.
   gasFeeChangedConfirmationRequired: boolean = false
+
+  previousFee: SpeedCalc | null = null
 
   warnings: Warning[] = []
 
@@ -1386,6 +1384,21 @@ export class SignAccountOpController
     this.#gasPriceInterval.restart()
   }
 
+  #requestGasFeeChangedConfirmation() {
+    if (this.selectedOption && this.selectedFeeSpeed) {
+      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
+      const selectedFee = this.feeSpeeds[identifier]?.find(
+        (fee) => fee.type === this.selectedFeeSpeed
+      )
+
+      this.previousFee = selectedFee ? { ...selectedFee } : null
+    } else {
+      this.previousFee = null
+    }
+
+    this.gasFeeChangedConfirmationRequired = true
+  }
+
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
@@ -1730,6 +1743,7 @@ export class SignAccountOpController
     this.gasPrices = undefined
     this.hasCustomGasPrices = false
     this.gasFeeChangedConfirmationRequired = false
+    this.previousFee = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
     this.feeTokenResult = null
@@ -2999,14 +3013,24 @@ export class SignAccountOpController
             this.emitUpdate()
           } else {
             const errorResponse = paymasterInfo.errorResponse as PaymasterErrorReponse
-            this.emitError({
-              level: 'major',
-              message: errorResponse.message,
-              error: errorResponse.error
-            })
             this.status = { type: SigningStatus.ReadyToSign }
-            this.emitUpdate()
+            const isGasFeeUnderpriced = isUnderpriced(errorResponse.message)
+            if (isGasFeeUnderpriced) this.#requestGasFeeChangedConfirmation()
+
             this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+
+            // if the paymaster has failed because the txn was underpriced, prompt
+            // the user to accept the new price and continue quickly instead of
+            // displaying an error
+            if (!isGasFeeUnderpriced) {
+              this.emitError({
+                level: 'major',
+                message: errorResponse.message,
+                error: errorResponse.error
+              })
+            }
+
+            this.emitUpdate()
             return
           }
         }
@@ -3450,6 +3474,7 @@ export class SignAccountOpController
     // A fresh attempt clears any pending "gas fee updated" confirmation, so a
     // stale flag from a previous failed broadcast doesn't reopen the modal.
     this.gasFeeChangedConfirmationRequired = false
+    this.previousFee = null
 
     this.signAndBroadcastPromise = (async () => {
       this.signPromise = this.sign().finally(() => {
@@ -3548,22 +3573,13 @@ export class SignAccountOpController
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
-      } else if (
-        originalMessage.includes('underpriced') ||
-        originalMessage.includes('Fee confirmation failed') ||
-        originalMessage.includes('maxFeePerGas') ||
-        originalMessage.includes('maxPriorityFeePerGas')
-      ) {
-        if (
-          originalMessage.includes('underpriced') ||
-          originalMessage.includes('maxFeePerGas') ||
-          originalMessage.includes('maxPriorityFeePerGas')
-        ) {
-          if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
-          else message = originalMessage
-        }
+      } else if (isUnderpriced(originalMessage)) {
+        if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
+        else message = originalMessage
 
         if (!this.hasCustomGasPrices) {
+          this.#requestGasFeeChangedConfirmation()
+
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
 
@@ -3571,7 +3587,6 @@ export class SignAccountOpController
 
           // The fee was auto-updated, so don't alarm the user with a red error
           // toast. Ask them to confirm the new fee and continue instead.
-          this.gasFeeChangedConfirmationRequired = true
           softFeeUpdateConfirmation = true
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
@@ -3600,10 +3615,11 @@ export class SignAccountOpController
         })
       }
       if (message.includes('the selected fee is too low') && !this.hasCustomGasPrices) {
+        this.#requestGasFeeChangedConfirmation()
+
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#silentGasPriceUpdate()
         this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
-        this.gasFeeChangedConfirmationRequired = true
         softFeeUpdateConfirmation = true
         message = 'Transaction fees changed. Please try again'
       }
@@ -3653,6 +3669,7 @@ export class SignAccountOpController
     if (!this.gasFeeChangedConfirmationRequired) return
 
     this.gasFeeChangedConfirmationRequired = false
+    this.previousFee = null
     this.emitUpdate()
   }
 
@@ -3787,7 +3804,8 @@ export class SignAccountOpController
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
-      gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired
+      gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
+      previousFee: this.previousFee
     }
   }
 }

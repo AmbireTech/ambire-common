@@ -2258,6 +2258,29 @@ describe('throwBroadcastAccountOp', () => {
 
     expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
 
+    const feeOption = {
+      availableAmount: 1000000000000000000n,
+      paidBy: eoaAccount.addr,
+      gasUsed: 10000n,
+      addedNative: 0n,
+      token: createEOAAccountOp(eoaAccount).feeTokens[0]!
+    }
+    const previousFee = {
+      type: FeeSpeed.Fast,
+      amount: 100000000000000n,
+      simulatedGasLimit: 10000n,
+      amountFormatted: '0.0001',
+      amountUsd: '0.1',
+      gasPrice: 600n,
+      disabled: false,
+      maxPriorityFeePerGas: 300n
+    }
+    const identifier = getFeeSpeedIdentifier(feeOption, eoaAccount.addr)
+
+    controller.selectedOption = feeOption
+    controller.selectedFeeSpeed = FeeSpeed.Fast
+    controller.feeSpeeds = { [identifier]: [previousFee] }
+
     const error = new Error(
       'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
     )
@@ -2270,6 +2293,7 @@ describe('throwBroadcastAccountOp', () => {
     }
 
     expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+    expect(controller.previousFee).toEqual(previousFee)
 
     // The error is tracked silently (no scary red toast for the user)
     const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
@@ -2278,6 +2302,7 @@ describe('throwBroadcastAccountOp', () => {
     // Dismissing the confirmation (Cancel) clears the flag
     controller.dismissGasFeeChangedConfirmation()
     expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    expect(controller.previousFee).toBe(null)
   })
   it('fee changed with custom gas prices keeps the original error and no soft confirmation', async () => {
     const { controller } = await init(
