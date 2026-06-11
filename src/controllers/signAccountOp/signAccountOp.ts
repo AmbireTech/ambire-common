@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
-
 import {
   AbiCoder,
   formatEther,
@@ -403,7 +401,7 @@ export class SignAccountOpController
 
   signAndBroadcastPromise: Promise<void> | undefined
 
-  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+  private traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   #gasPriceInterval: IRecurringTimeout
 
@@ -774,8 +772,23 @@ export class SignAccountOpController
     this.humanize()
     this.learnTokens()
 
+    let lastEstimationStatus: EstimationStatus | null = null
+
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      // Retry asset discovery if the estimation managed to recover after failure
+      // An example is doing an approval and a transaction immediately after - the second
+      // transaction will fail before the approval txn is confirmed.
+      if (
+        lastEstimationStatus === EstimationStatus.Error &&
+        this.estimation.status === EstimationStatus.Success &&
+        this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed
+      ) {
+        this.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+        this.traceCall()
+      }
+
+      lastEstimationStatus = this.estimation.status
     })
 
     this.gasPrice.onUpdate(() => {
@@ -1373,7 +1386,7 @@ export class SignAccountOpController
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
-    if (shouldTraceCall) this.#traceCall()
+    if (shouldTraceCall) this.traceCall()
 
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
@@ -1482,6 +1495,7 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = true
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
@@ -2061,11 +2075,16 @@ export class SignAccountOpController
     return BigInt(toBigInt)
   }
 
-  async #traceCall() {
+  private async traceCall() {
+    if (this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.NotStarted) {
+      console.warn('Trace call already in progress')
+      return
+    }
+
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
     // to `SlowPendingResponse` for the newer `traceCall` invocation.
-    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+    if (this.traceCallTimeoutId) clearTimeout(this.traceCallTimeoutId)
 
     // Here, we also check the status because, in the case of re-estimation,
     // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
@@ -2079,7 +2098,7 @@ export class SignAccountOpController
       this.calculateWarnings()
     }, 2000)
 
-    this.#traceCallTimeoutId = timeoutId
+    this.traceCallTimeoutId = timeoutId
 
     try {
       const state =
@@ -2114,6 +2133,13 @@ export class SignAccountOpController
           erc721s = addresses.map((address) => [address, []])
         }
       }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
+      }
+
       if (!shouldUseAccessList || accessListFailed) {
         console.log('Debug: using debug_traceCall for asset discovery')
         const { tokens, nfts } = await debugTraceCall(
@@ -2125,6 +2151,12 @@ export class SignAccountOpController
         )
         erc20s = tokens
         erc721s = nfts
+      }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
       }
 
       const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
@@ -2150,7 +2182,7 @@ export class SignAccountOpController
     }
 
     this.calculateWarnings()
-    this.#traceCallTimeoutId = null
+    this.traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
 
@@ -2536,6 +2568,7 @@ export class SignAccountOpController
   #emitSigningErrorAndResetToReadyToSign({
     message,
     sendCrashReport,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     accountState
   }: {
     message: string
