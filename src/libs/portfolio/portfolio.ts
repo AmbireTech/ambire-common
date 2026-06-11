@@ -374,8 +374,9 @@ export class Portfolio {
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
-        // Spam filter: hide tokens whose symbol/name matches a blacklisted pattern
-        // or embeds a phishing domain. Custom (user-added) tokens are never hidden.
+        // Spam filter: hide tokens whose symbol/name matches a blacklisted
+        // pattern. Custom (user-added) tokens are never hidden. We don't run the
+        // embedded-domain check here because token names/symbols legitimately contain domains.
         const token = _tokensWithErrResult[1]
         if (
           isBlacklistedAsset({
@@ -431,7 +432,8 @@ export class Portfolio {
             symbol: collection.symbol,
             name: collection.name,
             isCustom: collection.flags?.isCustom,
-            lowercasedPatterns: allBlacklistedSymbols
+            lowercasedPatterns: allBlacklistedSymbols,
+            checkForEmbeddedDomain: true
           })
         )
           return acc
