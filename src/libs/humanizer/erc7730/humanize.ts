@@ -36,6 +36,7 @@ import {
   getText,
   getToken,
   getWarning,
+  flattenHumanizerVisualizations,
   uintToAddress
 } from '../utils'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
@@ -1220,23 +1221,16 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   })
 }
 
-const NATIVE_VALUE_ROW_EXCLUDED_TITLE_KEYWORDS = [
-  'Swap',
-  'Bridge',
-  'Swap/Bridge',
-  'Supply',
-  'Deposit',
-  'Supply to Vault',
-  'Wrap'
-].map((title) => title.toLowerCase())
-
-const hasExcludedNativeValueTitle = (title?: string) => {
-  const normalizedTitle = title?.trim().toLowerCase() || ''
-
-  return NATIVE_VALUE_ROW_EXCLUDED_TITLE_KEYWORDS.some((keyword) =>
-    normalizedTitle.includes(keyword)
+const hasDisplayedNativeTransactionValue = (
+  fullVisualization: HumanizerVisualization[],
+  nativeValue: bigint
+) =>
+  flattenHumanizerVisualizations(fullVisualization).some(
+    (visualization) =>
+      visualization.type === 'token' &&
+      visualization.address.toLowerCase() === ZeroAddress &&
+      visualization.value === nativeValue
   )
-}
 
 const appendNativeValueRow = (
   fullVisualization: HumanizerVisualization[],
@@ -1244,6 +1238,7 @@ const appendNativeValueRow = (
   chainId: bigint
 ): HumanizerVisualization[] => {
   if (nativeValue === 0n) return fullVisualization
+  if (hasDisplayedNativeTransactionValue(fullVisualization, nativeValue)) return fullVisualization
 
   let didFindErc7730Visualization = false
 
@@ -1251,19 +1246,6 @@ const appendNativeValueRow = (
     if (didFindErc7730Visualization || visualization.type !== 'erc7730') return visualization
 
     didFindErc7730Visualization = true
-    if (
-      hasExcludedNativeValueTitle(visualization.title) ||
-      visualization.rows.some(
-        (row) =>
-          row.label === 'Send' &&
-          row.value.some(
-            (value) => value.type === 'token' && value.address.toLowerCase() === ZeroAddress
-          )
-      )
-    ) {
-      return visualization
-    }
-
     return {
       ...visualization,
       rows: [

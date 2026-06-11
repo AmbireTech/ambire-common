@@ -510,7 +510,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
-  test('adds the native transaction value to ERC-7730 humanizations', async () => {
+  test('adds the native transaction value when it is not already displayed', async () => {
     const call = {
       ...transactions.erc20[1]!,
       value: 1n
@@ -525,7 +525,7 @@ describe('ERC-7730 descriptors', () => {
             display: {
               formats: {
                 'approve(address _spender, uint256 _value)': {
-                  intent: 'Authorize',
+                  intent: 'Swap assets',
                   fields: [
                     {
                       path: '#._spender',
@@ -551,7 +551,7 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Authorize',
+      title: 'Swap assets',
       rows: [
         { label: 'Spender' },
         { label: 'Amount' },
@@ -566,51 +566,56 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test.each(['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to Vault', 'Wrap'])(
-    'does not add the native transaction value to %s ERC-7730 humanizations',
-    async (excludedKeyword) => {
-      const intent = `${excludedKeyword} assets`
-      accountOp.calls = [
-        {
-          ...transactions.erc20[1]!,
-          value: 1n
-        }
-      ]
+  test('adds the native transaction value when an unrelated native amount is displayed', async () => {
+    accountOp.calls = [
+      {
+        ...transactions.erc20[1]!,
+        value: 1n
+      }
+    ]
 
-      const irCalls = humanizeAccountOp(accountOp, {
-        nativeAssetSymbol: 'ETH',
-        erc7730Descriptors: {
-          0: {
-            descriptor: {
-              display: {
-                formats: {
-                  'approve(address _spender, uint256 _value)': {
-                    intent,
-                    fields: [
-                      {
-                        path: '#._value',
-                        label: 'Amount',
-                        format: 'tokenAmount',
-                        params: { tokenPath: '@.to' },
-                        visible: 'always'
-                      }
-                    ]
-                  }
+    const irCalls = humanizeAccountOp(accountOp, {
+      nativeAssetSymbol: 'ETH',
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'approve(address _spender, uint256 _value)': {
+                  intent: 'Authorize',
+                  fields: [
+                    {
+                      path: '#._value',
+                      label: 'Unrelated native amount',
+                      format: 'amount',
+                      visible: 'always'
+                    }
+                  ]
                 }
               }
             }
           }
         }
-      })
+      }
+    })
 
-      const visualization = irCalls[0]!.fullVisualization?.[0]
-      expect(visualization).toMatchObject({ type: 'erc7730', title: intent })
-      if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
-
-      expect(visualization.rows.map((row) => row.label)).toEqual(['Amount'])
-      expect(irCalls[0]!.warnings).toEqual([])
-    }
-  )
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      rows: [
+        {
+          label: 'Unrelated native amount',
+          value: [expect.objectContaining({ address: ZeroAddress, value: 1000000000n })]
+        },
+        {
+          label: 'Send',
+          value: [expect.objectContaining({ address: ZeroAddress, value: 1n })]
+        }
+      ]
+    })
+    expect(irCalls[0]!.warnings).toEqual([
+      getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
+    ])
+  })
 
   test('resolves descriptor root and bracket paths used by registry descriptors', async () => {
     const tokenOut = transactions.erc20[1]!.to
@@ -1009,6 +1014,7 @@ describe('ERC-7730 descriptors', () => {
     }
 
     const irCalls = humanizeAccountOp(accountOp, {
+      nativeAssetSymbol: 'ETH',
       erc7730Descriptors: {
         0: { descriptor }
       }
@@ -1020,14 +1026,11 @@ describe('ERC-7730 descriptors', () => {
           {
             label: 'Amount',
             value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
-          },
-          {
-            label: 'Send',
-            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
           }
         ])
       ]
     ])
+    expect(irCalls[0]!.warnings).toEqual([])
   })
   test('humanizes nested calldata in execute with permit descriptors', async () => {
     const router = '0x111111125421cA6dc452d289314280a0f8842A65'
