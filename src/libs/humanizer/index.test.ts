@@ -1443,7 +1443,10 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const descriptors = await fetchErc7730DescriptorsForAccountOp(batchAccountOp)
-    const irCalls = humanizeAccountOp(batchAccountOp, { erc7730Descriptors: descriptors })
+    const irCalls = humanizeAccountOp(batchAccountOp, {
+      erc7730Descriptors: descriptors,
+      nativeAssetSymbol: 'ETH'
+    })
 
     expect(Object.keys(descriptors)).toEqual(['0', '1'])
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
@@ -1458,6 +1461,9 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+    expect(irCalls[0]!.warnings).toEqual([
+      getWarning('This transaction requires ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
+    ])
     expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: 'Approve',
@@ -1471,6 +1477,9 @@ describe('ERC-7730 descriptors', () => {
         { label: 'Approval expires' }
       ]
     })
+    expect(irCalls[1]!.warnings).toEqual([
+      getWarning('This transaction requires ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
+    ])
     expect(irCalls[2]!.fullVisualization?.[0]).toMatchObject({
       type: 'action',
       content: 'Swap'
@@ -1507,6 +1516,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ])
     ])
+    expect(irCalls[0]!.warnings).toEqual([])
   })
 
   test('uses revoke wording for standard ERC-7730 Permit2 approvals with a zero amount', async () => {
@@ -1551,6 +1561,7 @@ describe('ERC-7730 descriptors', () => {
         { label: 'Approval expires' }
       ]
     })
+    expect(irCalls[0]!.warnings).toEqual([])
   })
 
   test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {

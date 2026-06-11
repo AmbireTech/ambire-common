@@ -35,6 +35,7 @@ import {
   getErc7730Visualization,
   getText,
   getToken,
+  getWarning,
   uintToAddress
 } from '../utils'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
@@ -1219,6 +1220,38 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   })
 }
 
+const getNativeValueWarnings = (
+  fullVisualization: HumanizerVisualization[],
+  nativeAssetSymbol?: string
+): HumanizerWarning[] => {
+  if (!nativeAssetSymbol) return []
+
+  const hasNativeValue = fullVisualization.some(
+    (visualization) =>
+      visualization.type === 'erc7730' &&
+      visualization.rows.some(
+        (row) =>
+          row.label === 'Send' &&
+          row.value.some(
+            (value) =>
+              value.type === 'token' &&
+              value.address === ZeroAddress &&
+              value.value !== undefined &&
+              value.value > 0n
+          )
+      )
+  )
+
+  return hasNativeValue
+    ? [
+        getWarning(
+          `This transaction requires ${nativeAssetSymbol}`,
+          'ERC7730_REQUIRES_NATIVE_VALUE'
+        )
+      ]
+    : []
+}
+
 const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[] => {
   return getSafeHumanization(safeAddr, call.to, call.value, call.data)?.warnings || []
 }
@@ -1369,7 +1402,8 @@ export const humanizeCallWithErc7730 = (
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
-  nestedCalldataDepth = 0
+  nestedCalldataDepth = 0,
+  nativeAssetSymbol?: string
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
     const safeTxCallVisualizations = getSafeTxCallVisualizations(
@@ -1425,7 +1459,10 @@ export const humanizeCallWithErc7730 = (
     ? {
         ...call,
         fullVisualization: normalizedVisualization,
-        warnings: dedupeWarnings(getSafeCallWarnings(call, accountAddr))
+        warnings: dedupeWarnings([
+          ...getSafeCallWarnings(call, accountAddr),
+          ...getNativeValueWarnings(normalizedVisualization, nativeAssetSymbol)
+        ])
       }
     : null
 }
