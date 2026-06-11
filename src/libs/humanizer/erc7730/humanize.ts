@@ -1220,6 +1220,63 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   })
 }
 
+const NATIVE_VALUE_ROW_EXCLUDED_TITLE_KEYWORDS = [
+  'Swap',
+  'Bridge',
+  'Swap/Bridge',
+  'Supply',
+  'Deposit',
+  'Supply to Vault',
+  'Wrap'
+].map((title) => title.toLowerCase())
+
+const hasExcludedNativeValueTitle = (title?: string) => {
+  const normalizedTitle = title?.trim().toLowerCase() || ''
+
+  return NATIVE_VALUE_ROW_EXCLUDED_TITLE_KEYWORDS.some((keyword) =>
+    normalizedTitle.includes(keyword)
+  )
+}
+
+const appendNativeValueRow = (
+  fullVisualization: HumanizerVisualization[],
+  nativeValue: bigint,
+  chainId: bigint
+): HumanizerVisualization[] => {
+  if (nativeValue === 0n) return fullVisualization
+
+  let didFindErc7730Visualization = false
+
+  return fullVisualization.map((visualization) => {
+    if (didFindErc7730Visualization || visualization.type !== 'erc7730') return visualization
+
+    didFindErc7730Visualization = true
+    if (
+      hasExcludedNativeValueTitle(visualization.title) ||
+      visualization.rows.some(
+        (row) =>
+          row.label === 'Send' &&
+          row.value.some(
+            (value) => value.type === 'token' && value.address.toLowerCase() === ZeroAddress
+          )
+      )
+    ) {
+      return visualization
+    }
+
+    return {
+      ...visualization,
+      rows: [
+        ...visualization.rows,
+        {
+          label: 'Send',
+          value: [getToken(ZeroAddress, nativeValue, chainId)]
+        }
+      ]
+    }
+  })
+}
+
 const getNativeValueWarnings = (
   fullVisualization: HumanizerVisualization[],
   nativeAssetSymbol?: string
@@ -1245,7 +1302,7 @@ const getNativeValueWarnings = (
   return hasNativeValue
     ? [
         getWarning(
-          `This transaction requires ${nativeAssetSymbol}`,
+          `This transaction will send ${nativeAssetSymbol}`,
           'ERC7730_REQUIRES_NATIVE_VALUE'
         )
       ]
@@ -1454,14 +1511,17 @@ export const humanizeCallWithErc7730 = (
   const normalizedVisualization = fullVisualization
     ? getOneInchFillOrderSwapVisualization(match, context, fullVisualization, call.dapp)
     : null
+  const visualizationWithNativeValue = normalizedVisualization
+    ? appendNativeValueRow(normalizedVisualization, call.value, chainId)
+    : null
 
-  return normalizedVisualization?.length
+  return visualizationWithNativeValue?.length
     ? {
         ...call,
-        fullVisualization: normalizedVisualization,
+        fullVisualization: visualizationWithNativeValue,
         warnings: dedupeWarnings([
           ...getSafeCallWarnings(call, accountAddr),
-          ...getNativeValueWarnings(normalizedVisualization, nativeAssetSymbol)
+          ...getNativeValueWarnings(visualizationWithNativeValue, nativeAssetSymbol)
         ])
       }
     : null
