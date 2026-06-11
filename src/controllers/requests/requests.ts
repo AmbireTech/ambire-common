@@ -23,6 +23,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -81,6 +82,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -128,6 +130,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #networks: INetworksController
 
   #providers: IProvidersController
+
+  #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #selectedAccount: ISelectedAccountController
 
@@ -211,6 +217,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     accounts,
     networks,
     providers,
+    storage,
+    signAccountOpPreference,
     selectedAccount,
     keystore,
     transfer,
@@ -243,6 +251,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
+    storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     transfer: ITransferController
@@ -272,6 +282,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
+    this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
     this.#transfer = transfer
@@ -319,6 +331,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
     await this.#safe.initialLoadPromise
+    await this.#signAccountOpPreference.initialLoadPromise
   }
 
   get visibleUserRequests(): UserRequest[] {
@@ -1871,6 +1884,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
+      await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1882,6 +1896,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           networks: this.#networks,
           keystore: this.#keystore,
           portfolio: this.#portfolio,
+          signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,
           account,

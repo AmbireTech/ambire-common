@@ -79,6 +79,7 @@ import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
@@ -394,12 +395,16 @@ const init = async (
   options?: {
     dapps?: Dapp[]
     callRelayer?: BindedRelayerCall
+    initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
   }
 ) => {
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
   await storageCtrl.set('selectedAccount', account.addr)
+  if (options?.initialSetStorage) await options.initialSetStorage(storageCtrl)
+  const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
+  await signAccountOpPreference.initialLoadPromise
   if (options?.dapps) {
     await storageCtrl.set('dappsV2', options.dapps)
     await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
@@ -642,6 +647,7 @@ const init = async (
     networks: networksCtrl,
     keystore,
     portfolio,
+    signAccountOpPreference,
     externalSignerControllers: {},
     account,
     network,
@@ -662,7 +668,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller }
+  return { controller, storageCtrl, signAccountOpPreference }
 }
 
 const initDappVerificationBannerTest = async (
@@ -754,6 +760,130 @@ const initDappVerificationBannerTest = async (
 }
 
 describe('SignAccountOp Controller ', () => {
+  const defaultFeeSelectionGasPrices = {
+    slow: {
+      maxFeePerGas: toBeHex(200n) as Hex,
+      maxPriorityFeePerGas: toBeHex(100n) as Hex
+    },
+    medium: {
+      maxFeePerGas: toBeHex(400n) as Hex,
+      maxPriorityFeePerGas: toBeHex(200n) as Hex
+    },
+    fast: {
+      maxFeePerGas: toBeHex(600n) as Hex,
+      maxPriorityFeePerGas: toBeHex(300n) as Hex
+    },
+    ape: {
+      maxFeePerGas: toBeHex(800n) as Hex,
+      maxPriorityFeePerGas: toBeHex(400n) as Hex
+    }
+  }
+
+  const getDefaultFeeSelectionOptions = (nativeAvailableAmount = 1000000000000000000n) => [
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: nativeAvailableAmount,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: nativeFeeToken
+    },
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: gasTankToken
+    },
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: {
+        ...usdcFeeToken,
+        chainId: 1n
+      }
+    }
+  ]
+
+  const initDefaultFeeSelection = async (
+    feePaymentOptions = getDefaultFeeSelectionOptions(),
+    options?: Parameters<typeof init>[6]
+  ) => {
+    const { controller, storageCtrl } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, 1n),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 25000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      defaultFeeSelectionGasPrices,
+      false,
+      options
+    )
+
+    await wait(1)
+
+    return { controller, storageCtrl }
+  }
+
+  test('defaults fee payment to the network-native token before gas tank or ERC-20', async () => {
+    const { controller } = await initDefaultFeeSelection()
+
+    expect(controller.selectedOption?.token.address).toBe(nativeFeeToken.address)
+    expect(controller.selectedOption?.token.flags.onGasTank).toBe(false)
+  })
+
+  test('uses gas tank as a saved default across chains', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeTokenPreference', {
+          '1': 'gasTank'
+        })
+      }
+    })
+
+    expect(controller.selectedOption?.token.flags.onGasTank).toBe(true)
+  })
+
+  test('uses a saved ERC-20 default only for the matching chain', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storage) => {
+        await storage.set('signAccountOpFeeTokenPreference', {
+          '1': usdcFeeToken.address,
+          '137': nativeFeeTokenPolygon.address
+        })
+      }
+    })
+
+    expect(controller.selectedOption?.token.address).toBe(usdcFeeToken.address)
+    expect(controller.selectedOption?.token.symbol).toBe(usdcFeeToken.symbol)
+
+    controller.update({ pendingFeeTokenPreference: gasTankToken })
+
+    const storedPreference = await storageCtrl.get('signAccountOpFeeTokenPreference')
+    expect(storedPreference).toEqual({
+      '1': usdcFeeToken.address,
+      '137': nativeFeeTokenPolygon.address
+    })
+    expect(controller.pendingFeeTokenPreference).toEqual({
+      '1': 'gasTank',
+      '137': nativeFeeTokenPolygon.address
+    })
+  })
+
   test('Estimation race conditions are prevented', async () => {
     const { restore } = suppressConsole()
     const chainId = 137n
