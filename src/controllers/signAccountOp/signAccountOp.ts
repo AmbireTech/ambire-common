@@ -762,7 +762,11 @@ export class SignAccountOpController
       if (
         lastEstimationStatus === EstimationStatus.Error &&
         this.estimation.status === EstimationStatus.Success &&
-        this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed
+        // Retry unless discovery already completed (Done) - not only when it Failed.
+        // Any discovery that was still pending while the estimation was failing is
+        // unreliable too: it may have queried the RPC before the underlying issue
+        // cleared, so its result can't be trusted. Only a Done discovery is safe to keep.
+        this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.Done
       ) {
         this.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
         this.traceCall()
