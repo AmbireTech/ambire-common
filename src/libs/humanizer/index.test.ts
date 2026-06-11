@@ -510,6 +510,111 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
+
+  test('resolves the ERC-7730 call sender metadata used by 1inch unoswap2', () => {
+    accountOp.calls = [
+      {
+        to: '0x111111125421cA6dc452d289314280a0f8842A65',
+        value: 0n,
+        data: '0x8770ba91000000000000000000000000ade00c28244d5ce17d72e40330b1c318cd12b7c3000000000000000000000000000000000000000000000000d02ab486cedc000000000000000000000000000000000000000000000000000000000000000ca06d08800000000000003b6d0340d3772a963790fede65646cfdae08734a17cd0f4700000000000000003b6d0340397ff1542f962076d0bfe58ea045ffa2d347aca0ab0003904a82836d'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/1inch/calldata-AggregationRouterV6.json',
+          descriptor: {
+            display: {
+              definitions: {
+                sendAmount: {
+                  label: 'Amount to Send',
+                  format: 'tokenAmount'
+                },
+                minReceiveAmount: {
+                  label: 'Minimum to Receive',
+                  format: 'tokenAmount',
+                  params: {
+                    nativeCurrencyAddress: [
+                      '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+                      ZeroAddress
+                    ]
+                  }
+                },
+                beneficiary: {
+                  label: 'Beneficiary',
+                  format: 'addressName'
+                },
+                lastPool: {
+                  label: 'Last pool',
+                  format: 'addressName'
+                }
+              },
+              formats: {
+                'unoswap2(uint256 token, uint256 amount, uint256 minReturn, uint256 dex, uint256 dex2)':
+                  {
+                    intent: 'Swap',
+                    fields: [
+                      {
+                        path: 'amount',
+                        $ref: '$.display.definitions.sendAmount',
+                        params: { tokenPath: 'token.[-20:]' },
+                        visible: 'always'
+                      },
+                      {
+                        path: 'minReturn',
+                        $ref: '$.display.definitions.minReceiveAmount',
+                        visible: 'always'
+                      },
+                      {
+                        path: '@.from',
+                        $ref: '$.display.definitions.beneficiary',
+                        visible: 'always'
+                      },
+                      {
+                        path: 'dex2.[-20:]',
+                        $ref: '$.display.definitions.lastPool'
+                      },
+                      {
+                        label: 'Dex',
+                        path: 'dex',
+                        visible: 'never'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Swap', [
+          {
+            label: 'Amount to Send',
+            value: [
+              getToken('0xade00c28244d5ce17d72e40330b1c318cd12b7c3', 15000000000000000000n, 1n)
+            ]
+          },
+          {
+            label: 'Minimum to Receive',
+            value: [getToken(ZeroAddress, 827501n, 1n)]
+          },
+          {
+            label: 'Beneficiary',
+            value: [getAddressVisualization(accountOp.accountAddr)]
+          },
+          {
+            label: 'Last pool',
+            value: [getAddressVisualization('0x397ff1542f962076d0bfe58ea045ffa2d347aca0')]
+          }
+        ])
+      ]
+    ])
+  })
+
   test('adds the native transaction value when it is not already displayed', async () => {
     const call = {
       ...transactions.erc20[1]!,

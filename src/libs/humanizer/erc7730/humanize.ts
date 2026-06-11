@@ -1480,6 +1480,7 @@ export const humanizeCallWithErc7730 = (
       ...match.values,
       '@': {
         accountAddr,
+        from: accountAddr,
         to: call.to,
         value: call.value,
         data: call.data,
