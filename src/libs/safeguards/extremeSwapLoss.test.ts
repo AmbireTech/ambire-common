@@ -13,8 +13,8 @@ describe('extremeSwapLoss safeguards', () => {
   })
 
   test('should detect extreme swap losses above the threshold', () => {
-    expect(isExtremeSwapLoss(100_000)).toBe(false)
-    expect(isExtremeSwapLoss(100_001)).toBe(true)
+    expect(isExtremeSwapLoss(10_000)).toBe(false)
+    expect(isExtremeSwapLoss(10_001)).toBe(true)
   })
 
   test('should trim surrounding whitespace from confirmation phrase input', () => {
