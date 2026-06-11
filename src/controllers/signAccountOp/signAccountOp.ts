@@ -772,7 +772,11 @@ export class SignAccountOpController
         this.traceCall()
       }
 
-      lastEstimationStatus = this.estimation.status
+      // Ignore the transient Loading status. estimate() emits Loading at its start,
+      // so recording it here would overwrite a remembered Error before the following
+      // Success is seen, and the Error -> Success recovery above would never be detected.
+      if (this.estimation.status !== EstimationStatus.Loading)
+        lastEstimationStatus = this.estimation.status
     })
 
     this.gasPrice.onUpdate(() => {
