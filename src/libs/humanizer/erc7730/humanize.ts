@@ -935,6 +935,52 @@ const formatToVisualizations = (
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
   !!descriptorPath?.includes('registry/1inch/') && formatKey.startsWith('fillOrder(')
 
+const hasResolvableTokenReference = (field: Erc7730Field, context: FormatContext): boolean => {
+  const resolvedField = resolveFieldReference(field, context)
+  const tokenPath =
+    typeof resolvedField.params?.tokenPath === 'string'
+      ? resolvePath(resolvedField.params.tokenPath, context, context.root)
+      : undefined
+  const token = resolveParamValue(resolvedField.params?.token, context, context.root)
+  const tokenReference = tokenPath ?? token
+
+  return (
+    typeof tokenReference === 'bigint' ||
+    (typeof tokenReference === 'string' && isAddress(tokenReference))
+  )
+}
+
+const hideOneInchMinimumReceiveWithoutToken = (
+  match: DescriptorFormatMatch,
+  context: FormatContext,
+  fullVisualization: HumanizerVisualization[]
+): HumanizerVisualization[] => {
+  if (!context.descriptorPath?.includes('registry/1inch/')) return fullVisualization
+
+  const minimumReceiveField = match.format.fields
+    ?.map((field) => resolveFieldReference(field, context))
+    .find(
+      (field) =>
+        field.format === 'tokenAmount' &&
+        (field.label || field.path || '').trim().toLowerCase() === 'minimum to receive'
+    )
+
+  if (!minimumReceiveField || hasResolvableTokenReference(minimumReceiveField, context)) {
+    return fullVisualization
+  }
+
+  return fullVisualization.map((visualization) =>
+    visualization.type === 'erc7730'
+      ? {
+          ...visualization,
+          rows: visualization.rows.filter(
+            (row) => row.label.trim().toLowerCase() !== 'minimum to receive'
+          )
+        }
+      : visualization
+  )
+}
+
 const getUintAddressValue = (value: unknown): string | null => {
   if (typeof value === 'bigint') return uintToAddress(value)
   if (typeof value === 'string' && isAddress(value)) return value
@@ -1494,8 +1540,11 @@ export const humanizeCallWithErc7730 = (
   const normalizedVisualization = fullVisualization
     ? getOneInchFillOrderSwapVisualization(match, context, fullVisualization, call.dapp)
     : null
-  const visualizationWithNativeValue = normalizedVisualization
-    ? appendNativeValueRow(normalizedVisualization, call.value, chainId)
+  const oneInchVisualization = normalizedVisualization
+    ? hideOneInchMinimumReceiveWithoutToken(match, context, normalizedVisualization)
+    : null
+  const visualizationWithNativeValue = oneInchVisualization
+    ? appendNativeValueRow(oneInchVisualization, call.value, chainId)
     : null
 
   return visualizationWithNativeValue?.length

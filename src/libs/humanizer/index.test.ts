@@ -599,10 +599,6 @@ describe('ERC-7730 descriptors', () => {
             ]
           },
           {
-            label: 'Minimum to Receive',
-            value: [getToken(ZeroAddress, 827501n, 1n)]
-          },
-          {
             label: 'Beneficiary',
             value: [getAddressVisualization(accountOp.accountAddr)]
           },
