@@ -1420,18 +1420,19 @@ describe('ERC-7730 descriptors', () => {
     const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
     const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     const universalRouter = '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7'
+    const nativeValue = ethers.parseEther('0.00001')
     const batchAccountOp: AccountOp = {
       ...accountOp,
       chainId: 8453n,
       calls: [
         {
           to: baseCbBtc,
-          value: 0n,
+          value: nativeValue,
           data: '0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
         },
         {
           to: permit2,
-          value: 0n,
+          value: nativeValue,
           data: '0x87517c45000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf000000000000000000000000fdf682f51fe81aa4898f0ae2163d8a55c127fbc7000000000000000000000000ffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000006a2c1c44'
         },
         {
@@ -1448,12 +1449,27 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: 'Approve',
-      rows: [{ label: 'Spender' }, { label: 'Amount' }]
+      rows: [
+        { label: 'Spender' },
+        { label: 'Amount' },
+        {
+          label: 'Send',
+          value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+        }
+      ]
     })
     expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       title: 'Approve',
-      rows: [{ label: 'Spender' }, { label: 'Amount' }, { label: 'Approval expires' }]
+      rows: [
+        { label: 'Spender' },
+        { label: 'Amount' },
+        {
+          label: 'Send',
+          value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+        },
+        { label: 'Approval expires' }
+      ]
     })
     expect(irCalls[2]!.fullVisualization?.[0]).toMatchObject({
       type: 'action',
@@ -1641,7 +1657,11 @@ describe('ERC-7730 descriptors', () => {
   })
 
   test('fetches the calldata descriptor index through the relayer', async () => {
-    const call = transactions.erc20[1]!
+    const nativeValue = ethers.parseEther('0.00001')
+    const call = {
+      ...transactions.erc20[1]!,
+      value: nativeValue
+    }
     const registryPath = 'registry/test/calldata-relayer-approval.json'
     const relayerAccountOp: AccountOp = {
       ...accountOp,
@@ -1714,6 +1734,10 @@ describe('ERC-7730 descriptors', () => {
         {
           label: 'Amount allowance',
           value: [getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)]
+        },
+        {
+          label: 'Send',
+          value: [getToken(ZeroAddress, nativeValue, 1n)]
         }
       ])
     ])

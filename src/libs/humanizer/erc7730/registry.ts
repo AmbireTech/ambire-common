@@ -245,6 +245,12 @@ const getErc20ApproveDescriptor = (
               format: 'tokenAmount',
               params: { tokenPath: '@.to' },
               visible: 'always'
+            },
+            {
+              path: '@.value',
+              label: 'Send',
+              format: 'amount',
+              visible: { ifNotIn: ['0'] }
             }
           ]
         }
@@ -316,6 +322,12 @@ const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730Resol
               visible: 'always'
             },
             {
+              path: '@.value',
+              label: 'Send',
+              format: 'amount',
+              visible: { ifNotIn: ['0'] }
+            },
+            {
               path: '#.expiration',
               label: 'Approval expires',
               format: 'date',
@@ -329,7 +341,10 @@ const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730Resol
   }
 })
 
-const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor('built-in/permit2-approve', 'Approve')
+const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor(
+  'built-in/permit2-approve',
+  'Approve'
+)
 
 const PERMIT2_REVOKE_APPROVAL_DESCRIPTOR = getPermit2ApproveDescriptor(
   'built-in/permit2-revoke-approval',
@@ -416,6 +431,33 @@ const mergeDescriptors = (
   }
 
   return merge(base, override) as Erc7730Descriptor
+}
+
+const appendBuiltInNativeFields = (
+  descriptor: Erc7730Descriptor,
+  builtInDescriptor: Erc7730Descriptor
+): Erc7730Descriptor => {
+  const formats = descriptor.display?.formats
+  const builtInFormats = builtInDescriptor.display?.formats
+  if (!formats || !builtInFormats) return descriptor
+
+  Object.entries(builtInFormats).forEach(([signature, builtInFormat]) => {
+    const format = formats[signature]
+    const nativeField = builtInFormat.fields?.find(
+      (field) => field.path === '@.value' && field.label === 'Send'
+    )
+    if (!format || !nativeField) return
+
+    const fields = format.fields || []
+    if (
+      fields.some((field) => field.path === nativeField.path && field.label === nativeField.label)
+    )
+      return
+
+    format.fields = [...fields, nativeField]
+  })
+
+  return descriptor
 }
 
 const fetchDescriptorResource = async (
@@ -946,8 +988,13 @@ export const fetchErc7730DescriptorForCall = async (
     if (!registryDescriptor) return builtInDescriptor
     if (!builtInDescriptor) return registryDescriptor
 
+    const mergedDescriptor = mergeDescriptors(
+      builtInDescriptor.descriptor,
+      registryDescriptor.descriptor
+    )
+
     return {
-      descriptor: mergeDescriptors(builtInDescriptor.descriptor, registryDescriptor.descriptor),
+      descriptor: appendBuiltInNativeFields(mergedDescriptor, builtInDescriptor.descriptor),
       path: registryDescriptor.path
     }
   } catch (error) {
