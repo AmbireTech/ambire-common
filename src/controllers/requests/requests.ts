@@ -1941,7 +1941,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         if (!callsReq) return
 
-        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.propagateUpdate(forceEmit)
+        if (
+          callsReq.signAccountOp.isSignAndBroadcastInProgress ||
+          callsReq.signAccountOp.gasFeeChangedConfirmationRequired
+        ) {
+          this.propagateUpdate(forceEmit)
+        }
       }, 'requests-ctrl')
     }
 
