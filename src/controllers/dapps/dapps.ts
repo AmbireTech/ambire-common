@@ -1147,7 +1147,10 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       return {
         id,
-        status: dapp?.blacklisted,
+        // While the initial storage load is still pending, #dapps is empty, so a missing
+        // record/status here doesn't mean verification failed - report LOADING instead
+        // (e.g. a sign request can arrive right after the service worker wakes up).
+        status: this.initialLoadPromise ? ('LOADING' as const) : dapp?.blacklisted,
         name: dapp?.name || new URL(url).hostname
       }
     })
