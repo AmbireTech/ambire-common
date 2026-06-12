@@ -118,6 +118,7 @@ const humanizerTMModules = [
 
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
+  nativeAssetSymbol?: string
 }
 
 type HumanizeMessageOptions = {
@@ -151,7 +152,9 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
             originalCall,
             accountOp.chainId,
             accountOp.accountAddr,
-            resolvedDescriptor
+            resolvedDescriptor,
+            0,
+            options.nativeAssetSymbol
           ) || call
         )
       } catch (error) {
