@@ -2435,6 +2435,84 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptor?.path).toBe(registryPath)
   })
 
+  test('uses the standard ERC-2612 Permit descriptor for an unregistered Monerium token', async () => {
+    const moneriumEure = '0x39b8b6385416f4ca36a20319f70d28621895279d'
+    const aggregationRouterV6 = '0x111111125421ca6dc452d289314280a0f8842a65'
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+      content: {
+        kind: 'typedMessage',
+        types: {
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ],
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ]
+        },
+        domain: {
+          name: 'Monerium EURe',
+          version: '1',
+          chainId: '0x1',
+          verifyingContract: moneriumEure
+        },
+        message: {
+          owner: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          spender: aggregationRouterV6,
+          value: '115792089237316195423570985008687907853269984665640564039457584007913129639935',
+          nonce: '0',
+          deadline: '1781335603'
+        },
+        primaryType: 'Permit'
+      },
+      signature: null,
+      chainId: 1n
+    }
+    const callRelayer = jest.fn(async (path: string, method?: string) => {
+      expect(path).toBe('/v2/erc7730/eip-712')
+      expect(method).toBe('GET')
+
+      return {
+        success: true,
+        data: {},
+        errorState: []
+      }
+    })
+
+    const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
+    const irMessage = humanizeMessage(permitMessage as any, {
+      erc7730Descriptor: descriptor || undefined
+    })
+
+    expect(descriptor?.path).toBe('built-in/erc2612-permit')
+    expect(callRelayer).toHaveBeenCalledTimes(1)
+    expect(irMessage.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Authorize spending of tokens',
+      rows: [
+        {
+          label: 'Spender',
+          value: [{ type: 'address', address: aggregationRouterV6 }]
+        },
+        {
+          label: 'Max spending amount',
+          value: [{ type: 'token', address: moneriumEure, value: ethers.MaxUint256, chainId: 1n }]
+        },
+        {
+          label: 'Valid until'
+        }
+      ]
+    })
+  })
+
   test('prioritizes descriptor EIP-712 humanization over local modules', async () => {
     const permitMessage = {
       fromRequestId: 1,
