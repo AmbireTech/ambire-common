@@ -761,14 +761,9 @@ export class SignAccountOpController
       // transaction will fail before the approval txn is confirmed.
       if (
         lastEstimationStatus === EstimationStatus.Error &&
-        this.estimation.status === EstimationStatus.Success &&
-        // Retry unless discovery already completed (Done) - not only when it Failed.
-        // Any discovery that was still pending while the estimation was failing is
-        // unreliable too: it may have queried the RPC before the underlying issue
-        // cleared, so its result can't be trusted. Only a Done discovery is safe to keep.
-        this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.Done
+        this.estimation.status === EstimationStatus.Success
       ) {
-        this.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+        this.setDiscoveryStatus(TraceCallDiscoveryStatus.NotStarted)
         this.traceCall()
       }
 
@@ -1983,6 +1978,13 @@ export class SignAccountOpController
 
     // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
+      // Prevent race conditions between multiple `traceCall` invocations
+      if (
+        this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.InProgress ||
+        this.traceCallTimeoutId !== timeoutId
+      )
+        return
+
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
       this.calculateWarnings()
     }, 2000)
