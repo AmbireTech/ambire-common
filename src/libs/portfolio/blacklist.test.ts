@@ -94,6 +94,38 @@ describe('portfolio blacklist', () => {
       ).toBe(true)
     })
 
+    it('matches a space-padded lure word inside a phrase', () => {
+      expect(
+        isBlacklistedAsset({
+          symbol: 'OK',
+          name: 'claim your reward now',
+          lowercasedPatterns: ['claim ', ' airdrop']
+        })
+      ).toBe(true)
+    })
+
+    it('does not hide a token whose symbol equals a lure word (no artificial space from joining)', () => {
+      // Regression: joining symbol + " " + name produced "win " and tripped the
+      // space-padded "win " pattern. Symbol and name must be matched separately.
+      expect(
+        isBlacklistedAsset({
+          symbol: 'WIN',
+          name: '',
+          lowercasedPatterns: [' win', 'win ']
+        })
+      ).toBe(false)
+    })
+
+    it('does not hide a token whose name embeds a lure word without a boundary', () => {
+      expect(
+        isBlacklistedAsset({
+          symbol: 'WINNER',
+          name: 'Winner',
+          lowercasedPatterns: [' win', 'win ']
+        })
+      ).toBe(false)
+    })
+
     it('does not hide a clean asset', () => {
       expect(
         isBlacklistedAsset({ symbol: 'USDC', name: 'USD Coin', lowercasedPatterns: ['https', 'www.'] })
