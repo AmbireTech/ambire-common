@@ -2140,6 +2140,10 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
         {
+          label: 'Safe',
+          value: [getAddressVisualization(safeProxy)]
+        },
+        {
           label: '',
           value: [
             getErc7730Visualization('Approve', [
@@ -2226,6 +2230,15 @@ describe('ERC-7730 descriptors', () => {
       type: 'erc7730',
       title: 'Execute a Safe{Wallet} Transaction',
       rows: [
+        {
+          label: 'Safe',
+          value: [
+            expect.objectContaining({
+              type: 'address',
+              address: safeProxy
+            })
+          ]
+        },
         {
           value: [
             expect.objectContaining({

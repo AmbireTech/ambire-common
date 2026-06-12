@@ -1505,6 +1505,10 @@ export const humanizeCallWithErc7730 = (
       fullVisualization: [
         getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
           {
+            label: 'Safe',
+            value: [getAddressVisualization(call.to)]
+          },
+          {
             label: '',
             value: safeTxCallVisualizations
           }
