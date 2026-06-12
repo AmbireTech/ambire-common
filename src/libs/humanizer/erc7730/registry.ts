@@ -433,20 +433,26 @@ const mergeDescriptors = (
   return merge(base, override) as Erc7730Descriptor
 }
 
-const appendBuiltInNativeFields = (
+const applyBuiltInFormatOverrides = (
   descriptor: Erc7730Descriptor,
-  builtInDescriptor: Erc7730Descriptor
+  builtInDescriptor: Erc7730ResolvedDescriptor
 ): Erc7730Descriptor => {
   const formats = descriptor.display?.formats
-  const builtInFormats = builtInDescriptor.display?.formats
+  const builtInFormats = builtInDescriptor.descriptor.display?.formats
   if (!formats || !builtInFormats) return descriptor
 
   Object.entries(builtInFormats).forEach(([signature, builtInFormat]) => {
     const format = formats[signature]
+    if (!format) return
+
+    if (builtInDescriptor.path.endsWith('-revoke-approval')) {
+      format.intent = builtInFormat.intent
+    }
+
     const nativeField = builtInFormat.fields?.find(
       (field) => field.path === '@.value' && field.label === 'Send'
     )
-    if (!format || !nativeField) return
+    if (!nativeField) return
 
     const fields = format.fields || []
     if (
@@ -994,7 +1000,7 @@ export const fetchErc7730DescriptorForCall = async (
     )
 
     return {
-      descriptor: appendBuiltInNativeFields(mergedDescriptor, builtInDescriptor.descriptor),
+      descriptor: applyBuiltInFormatOverrides(mergedDescriptor, builtInDescriptor),
       path: registryDescriptor.path
     }
   } catch (error) {

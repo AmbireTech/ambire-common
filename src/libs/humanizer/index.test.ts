@@ -1729,6 +1729,87 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]!.warnings).toEqual([])
   })
 
+  test('keeps revoke wording for a zero USDT approval when its registry descriptor says approve', async () => {
+    const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const aggregationRouterV6 = '0x111111125421ca6dc452d289314280a0f8842a65'
+    const registryPath = 'registry/tether/calldata-usdt.json'
+    const revokeApprovalAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: usdt,
+          value: 0n,
+          data: '0x095ea7b3000000000000000000000000111111125421ca6dc452d289314280a0f8842a650000000000000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+    const callRelayer = async (path: string, method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${usdt}`]: registryPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        expect(method).toBe('POST')
+        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'approve(address _spender, uint256 _value)': {
+                intent: 'Approve',
+                fields: [
+                  {
+                    path: '#._spender',
+                    label: 'Spender',
+                    format: 'addressName',
+                    visible: 'always'
+                  },
+                  {
+                    path: '#._value',
+                    label: 'Amount',
+                    format: 'tokenAmount',
+                    params: { tokenPath: '@.to' },
+                    visible: 'always'
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokeApprovalAccountOp, {
+      callRelayer
+    })
+    const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe(registryPath)
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Revoke approval', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization(aggregationRouterV6)]
+        },
+        {
+          label: 'Amount',
+          value: [getToken(usdt, 0n, 1n)]
+        }
+      ])
+    ])
+    expect(irCalls[0]!.warnings).toEqual([])
+  })
+
   test('uses revoke wording for standard ERC-7730 Permit2 approvals with a zero amount', async () => {
     const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
     const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
