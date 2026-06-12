@@ -397,6 +397,213 @@ describe('DappsController', () => {
         updateDomainsSpy.mockRestore()
       }
     })
+
+    // Suspicious hosting scenarios
+
+    // Scenario: my-dapp.vercel.app (in SUSPICIOUS_HOSTING_DOMAINS, not in phishing DB)
+    // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
+    test('dApp on suspicious hosting domain shows SUSPICIOUS_HOSTING warning banner', async () => {
+      const vercelDapp = makeDapp({
+        id: 'my-dapp.vercel.app',
+        name: 'Fake Uniswap on Vercel',
+        url: 'https://my-dapp.vercel.app',
+        blacklisted: 'LOADING',
+        isCustom: true
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, vercelDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const banner = controller.getDappVerificationBanner([vercelDapp.url])
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.type).toBe('warning')
+    })
+
+    // Scenario: ipfs.io dApp opened directly
+    // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
+    test('ipfs.io dApp opened directly shows SUSPICIOUS_HOSTING warning banner', async () => {
+      const ipfsDapp = makeDapp({
+        id: 'ipfs.io',
+        name: 'IPFS Dapp',
+        url: 'https://ipfs.io/ipfs/bafkrei',
+        blacklisted: 'LOADING',
+        isCustom: true
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, ipfsDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const banner = controller.getDappVerificationBanner([ipfsDapp.url])
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.type).toBe('warning')
+    })
+
+    // Scenario: sites.google.com dApp (BLACKLISTED in phishing DB)
+    // intrinsic=BLACKLISTED → BLACKLISTED (highest priority)
+    test('dApp on BLACKLISTED domain shows BLACKLISTED error banner regardless of suspicious hosting list', async () => {
+      const googleSitesDapp = makeDapp({
+        id: 'sites.google.com',
+        name: 'Fake Uniswap',
+        url: 'https://sites.google.com/view/fake-uniswap',
+        blacklisted: 'LOADING',
+        isCustom: true
+      })
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'sites.google.com': 'BLACKLISTED' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', [...predefinedDapps, googleSitesDapp])
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        expect(controller.getDappVerificationBanner([googleSitesDapp.url])?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+        )
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    // Session context scenarios
+
+    // Scenario: app.uniswap.org iframe inside a sites.google.com tab
+    // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
+    test('VERIFIED dApp shows SUSPICIOUS_HOSTING when a co-session in the same tab is a suspicious hosting domain', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+      expect(aave.blacklisted).toBe('VERIFIED')
+
+      // Two sessions in the same tab: sites.google.com (suspicious) + AAVE (iframe dApp)
+      const googleSession = new Session({ tabId: 50, windowId: 1, url: 'https://sites.google.com' })
+      const aaveSession = new Session({ tabId: 50, windowId: 1, url: aave.url })
+      controller.dappSessions[googleSession.sessionId] = googleSession
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.type).toBe('warning')
+    })
+
+    // Scenario: app.uniswap.org opened directly (no suspicious co-session)
+    // intrinsic=VERIFIED, context=undefined → null (no banner)
+    test('VERIFIED dApp with no suspicious co-session shows no banner', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+      expect(aave.blacklisted).toBe('VERIFIED')
+
+      // Only the dApp's own session — no suspicious co-session
+      const aaveSession = new Session({ tabId: 51, windowId: 1, url: aave.url })
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner).toBeNull()
+    })
+
+    // Scenario: app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED
+    // intrinsic=BLACKLISTED wins → BLACKLISTED (context SUSPICIOUS_HOSTING is overridden)
+    test('BLACKLISTED intrinsic status wins over SUSPICIOUS_HOSTING context', async () => {
+      const blacklistedAaveDapp = makeDapp({
+        id: 'aave.com',
+        name: 'AAVE',
+        url: 'https://aave.com',
+        blacklisted: 'BLACKLISTED',
+        isCustom: false
+      })
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'BLACKLISTED' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', [...predefinedDapps, blacklistedAaveDapp])
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        // Two sessions: sites.google.com (suspicious) + AAVE (BLACKLISTED itself)
+        const googleSession = new Session({
+          tabId: 52,
+          windowId: 1,
+          url: 'https://sites.google.com'
+        })
+        const aaveSession = new Session({ tabId: 52, windowId: 1, url: 'https://aave.com' })
+        controller.dappSessions[googleSession.sessionId] = googleSession
+        controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+        const banner = controller.getDappVerificationBanner(['https://aave.com'], {
+          sessionId: aaveSession.sessionId
+        })
+        expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED)
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    // Extra: co-session in a different tab must not affect context
+    test('co-session in a different tab does not trigger SUSPICIOUS_HOSTING context', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+
+      // Google session is in tab 99, AAVE session is in tab 53 — different tabs
+      const googleSession = new Session({ tabId: 99, windowId: 1, url: 'https://sites.google.com' })
+      const aaveSession = new Session({ tabId: 53, windowId: 1, url: aave.url })
+      controller.dappSessions[googleSession.sessionId] = googleSession
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner).toBeNull()
+    })
+
+    // Extra: context status must not contaminate the dApp's global status in #dapps
+    test('dApp global status in #dapps is not contaminated by session context SUSPICIOUS_HOSTING', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+
+      const googleSession = new Session({ tabId: 54, windowId: 1, url: 'https://sites.google.com' })
+      const aaveSession = new Session({ tabId: 54, windowId: 1, url: aave.url })
+      controller.dappSessions[googleSession.sessionId] = googleSession
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      // Banner shows SUSPICIOUS_HOSTING due to context
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+
+      // But the global dApp status in #dapps is unchanged
+      expect(controller.getDapp(aave.id)?.blacklisted).toBe('VERIFIED')
+    })
   })
 
   describe('per-dapp account scoping', () => {

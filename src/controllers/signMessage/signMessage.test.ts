@@ -11,9 +11,11 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
@@ -759,6 +761,48 @@ describe('SignMessageController', () => {
       signMessageController.dapp = getDappRequestData(verifiedDapp)
 
       expect(signMessageController.banners).toEqual([])
+    })
+
+    // Scenario: dApp's own domain is in SUSPICIOUS_HOSTING_DOMAINS (e.g. my-dapp.vercel.app)
+    // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+    test('should return SUSPICIOUS_HOSTING warning banner for dapps on suspicious hosting platforms', () => {
+      signMessageController.dapp = getDappRequestData(suspiciousHostingDapp)
+
+      expect(signMessageController.banners).toEqual([
+        {
+          id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+          type: 'warning',
+          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+        }
+      ])
+    })
+
+    // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
+    // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+    test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', () => {
+      const verifiedDappSession = new Session({ tabId: 200, windowId: 1, url: verifiedDapp.url })
+      const googleSession = new Session({
+        tabId: 200,
+        windowId: 1,
+        url: 'https://sites.google.com'
+      })
+      dappsCtrl.dappSessions[verifiedDappSession.sessionId] = verifiedDappSession
+      dappsCtrl.dappSessions[googleSession.sessionId] = googleSession
+
+      signMessageController.dapp = {
+        ...getDappRequestData(verifiedDapp),
+        sessionId: verifiedDappSession.sessionId
+      }
+
+      try {
+        expect(signMessageController.banners[0]?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+        )
+        expect(signMessageController.banners[0]?.type).toBe('warning')
+      } finally {
+        delete dappsCtrl.dappSessions[verifiedDappSession.sessionId]
+        delete dappsCtrl.dappSessions[googleSession.sessionId]
+      }
     })
   })
 })
