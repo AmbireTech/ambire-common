@@ -34,6 +34,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     accountOp: AccountOp
     shouldSimulate: boolean
     traceCall?: Function
+    onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     estimateController: EstimationController
