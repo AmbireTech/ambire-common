@@ -18,6 +18,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
+const MAX_ENTRIES = 200
+const MAX_ENTRY_AGE_IN_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -83,7 +85,28 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   async #load(): Promise<void> {
     if (!this.#storage) return
 
-    this.domains = await this.#storage.get('domainsCache', {})
+    const domainsFromStorage = await this.#storage.get('domainsCache', {})
+
+    // Clean older than 7 days, empty entries and keep a maximum of 200 entries to avoid
+    // exposing a huge amount of state to the UI that may be stale (e.g., the Humanizer requested and address
+    // a month ago for one transaction, but the extension keeps it in state and sends it to the UI every time)
+    const sevenDaysAgo = Date.now() - MAX_ENTRY_AGE_IN_MS
+    const cleanedDomains = Object.fromEntries(
+      Object.entries(domainsFromStorage)
+        .filter(([, data]) => {
+          if (!data) return false
+
+          const isEmpty = !data.ens && !data.namoshi
+          const isTooOld = (data.updatedAt || 0) < sevenDaysAgo
+
+          return !isEmpty && !isTooOld
+        })
+        .sort(([, a], [, b]) => (b?.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, MAX_ENTRIES)
+    )
+
+    this.domains = cleanedDomains
+
     this.emitUpdate()
   }
 
@@ -98,6 +121,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   async batchReverseLookup(addresses: string[]) {
+    await this.initialLoadPromise
     const normalizedAddresses = this.#normalizeAddresses(addresses)
     const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
 
@@ -131,6 +155,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    * Resolves an ENS domain and persists it to state only if resolution succeeds.
    */
   async resolveDomain({ domain }: { domain: string }) {
+    await this.initialLoadPromise
+
     const isNamoshiDomain = getIsNamoshiDomain(domain)
     const providerChainId = isNamoshiDomain
       ? '4114'
@@ -229,6 +255,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   async reverseLookup(address: string, emitUpdate = true, opts?: ReverseLookupOptions) {
+    await this.initialLoadPromise
+
     if (!isAddress(address)) return
 
     const checksummedAddress = getAddress(address)
@@ -248,8 +276,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     this.#reverseLookupPromises[addressToLookup] = this.#reverseLookup(
       [addressToLookup],
-      emitUpdate,
-      opts
+      emitUpdate
     ).finally(() => {
       this.#reverseLookupPromises[addressToLookup] = undefined
     })
@@ -274,6 +301,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   #isPastTtl(entry: Domains[string] | undefined) {
+    if (!entry) return true
+
     if (entry?.updateFailedAt)
       return Date.now() - entry.updateFailedAt > PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
 
@@ -313,8 +342,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   /**
    * Resolves ENS names for one or multiple addresses.
    */
-  async #reverseLookup(addresses: string[], emitUpdate = true, opts?: ReverseLookupOptions) {
-    if (!addresses.length) return
+  async #reverseLookup(addressesToLookup: string[], emitUpdate = true) {
+    await this.initialLoadPromise
+
+    if (!addressesToLookup.length) return
 
     const ethereumProvider =
       this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
@@ -328,9 +359,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       })
       return
     }
-
-    const addressesToLookup = this.#getAddressesToLookup(addresses, opts)
-    if (!addressesToLookup.length) return
 
     this.loadingAddresses.push(...addressesToLookup)
     this.emitUpdate()
