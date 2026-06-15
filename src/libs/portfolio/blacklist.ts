@@ -50,10 +50,7 @@ export const filterStaticBlacklistedAddrs = (tokenAddrs: string[], chainId: bigi
 }
 
 const isDomainChar = (char: string): boolean =>
-  (char >= 'a' && char <= 'z') ||
-  (char >= '0' && char <= '9') ||
-  char === '.' ||
-  char === '-'
+  (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char === '.' || char === '-'
 
 /**
  * Detects a real registrable domain anywhere in the text (e.g. "uniswap.org",
@@ -105,18 +102,22 @@ export const isBlacklistedAsset = ({
   symbol,
   name,
   isCustom,
-  lowercasedPatterns
+  lowercasedPatterns,
+  checkForEmbeddedDomain
 }: {
   symbol: string
   name?: string
   isCustom?: boolean
   lowercasedPatterns: string[]
+  checkForEmbeddedDomain?: boolean
 }): boolean => {
   if (isCustom) return false
 
   const haystack = `${symbol} ${name || ''}`.toLowerCase()
 
   if (lowercasedPatterns.some((pattern) => haystack.includes(pattern))) return true
+
+  if (!checkForEmbeddedDomain) return false
 
   return containsDomainLike(haystack)
 }

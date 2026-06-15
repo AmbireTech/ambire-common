@@ -61,12 +61,35 @@ describe('portfolio blacklist', () => {
       ).toBe(true)
     })
 
-    it('matches a phishing domain in the name even with no patterns', () => {
+    it('matches a phishing domain in the name only when checkForEmbeddedDomain is set (NFT collections)', () => {
+      expect(
+        isBlacklistedAsset({
+          symbol: 'AIRDROP',
+          name: 'Claim your reward at claim-x.xyz',
+          lowercasedPatterns: [],
+          checkForEmbeddedDomain: true
+        })
+      ).toBe(true)
+    })
+
+    it('does not run the embedded-domain check for tokens (checkForEmbeddedDomain off)', () => {
+      // A token name that embeds a domain is NOT hidden, because token
+      // names/symbols legitimately contain dotted strings (false positives).
       expect(
         isBlacklistedAsset({
           symbol: 'AIRDROP',
           name: 'Claim your reward at claim-x.xyz',
           lowercasedPatterns: []
+        })
+      ).toBe(false)
+    })
+
+    it('still matches blacklist patterns for tokens even with the domain check off', () => {
+      expect(
+        isBlacklistedAsset({
+          symbol: 'OK',
+          name: 'claim at https://scam',
+          lowercasedPatterns: ['https']
         })
       ).toBe(true)
     })
@@ -83,7 +106,8 @@ describe('portfolio blacklist', () => {
           symbol: 'www.scam',
           name: 'Visit uniswap.org',
           isCustom: true,
-          lowercasedPatterns: ['www.']
+          lowercasedPatterns: ['www.'],
+          checkForEmbeddedDomain: true
         })
       ).toBe(false)
     })
