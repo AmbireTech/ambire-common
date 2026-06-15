@@ -151,6 +151,43 @@ describe('Transfer Controller', () => {
       formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
     )
   })
+  test('should preserve the amount when the fee leaves no transferable max amount', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const initialAmount = '0.001'
+
+    await transferController.update({
+      selectedToken: nativeToken,
+      amount: initialAmount
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: nativeToken.amount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(initialAmount)
+    expect(transferController.amountAdjustmentWarning).toBeNull()
+  })
   test('should set validation form messages', async () => {
     const { transferController, tokens } = await prepareTest()
 
