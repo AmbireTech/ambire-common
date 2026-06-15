@@ -57,6 +57,8 @@ const permit2ApproveInterface = new Interface([
 const ABI_WORD_HEX_LENGTH = 64
 const CALLDATA_SELECTOR_HEX_LENGTH = 10
 const EXEC_TRANSACTION_STATIC_WORDS = 10
+const ERC2612_PERMIT_ENCODE_TYPE_HASH =
+  '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
 
 /**
  * A helper function to use in the tests only
@@ -245,6 +247,12 @@ const getErc20ApproveDescriptor = (
               format: 'tokenAmount',
               params: { tokenPath: '@.to' },
               visible: 'always'
+            },
+            {
+              path: '@.value',
+              label: 'Send',
+              format: 'amount',
+              visible: { ifNotIn: ['0'] }
             }
           ]
         }
@@ -316,6 +324,12 @@ const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730Resol
               visible: 'always'
             },
             {
+              path: '@.value',
+              label: 'Send',
+              format: 'amount',
+              visible: { ifNotIn: ['0'] }
+            },
+            {
               path: '#.expiration',
               label: 'Approval expires',
               format: 'date',
@@ -329,12 +343,59 @@ const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730Resol
   }
 })
 
-const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor('built-in/permit2-approve', 'Approve')
+const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor(
+  'built-in/permit2-approve',
+  'Approve'
+)
 
 const PERMIT2_REVOKE_APPROVAL_DESCRIPTOR = getPermit2ApproveDescriptor(
   'built-in/permit2-revoke-approval',
   'Revoke approval'
 )
+
+const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
+  path: 'built-in/erc2612-permit',
+  descriptor: {
+    display: {
+      formats: {
+        'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
+          intent: 'Authorize spending of tokens',
+          fields: [
+            {
+              path: 'spender',
+              label: 'Spender',
+              format: 'raw',
+              visible: 'always'
+            },
+            {
+              path: 'value',
+              label: 'Max spending amount',
+              format: 'tokenAmount',
+              params: { tokenPath: '@.to' },
+              visible: 'always'
+            },
+            {
+              path: 'deadline',
+              label: 'Valid until',
+              format: 'date',
+              params: { encoding: 'timestamp' }
+            },
+            {
+              path: 'owner',
+              label: 'Owner',
+              visible: 'never'
+            },
+            {
+              path: 'nonce',
+              label: 'Nonce',
+              visible: 'never'
+            }
+          ]
+        }
+      }
+    }
+  }
+}
 
 const fetchCachedIndex = async <T>({
   path,
@@ -416,6 +477,39 @@ const mergeDescriptors = (
   }
 
   return merge(base, override) as Erc7730Descriptor
+}
+
+const applyBuiltInFormatOverrides = (
+  descriptor: Erc7730Descriptor,
+  builtInDescriptor: Erc7730ResolvedDescriptor
+): Erc7730Descriptor => {
+  const formats = descriptor.display?.formats
+  const builtInFormats = builtInDescriptor.descriptor.display?.formats
+  if (!formats || !builtInFormats) return descriptor
+
+  Object.entries(builtInFormats).forEach(([signature, builtInFormat]) => {
+    const format = formats[signature]
+    if (!format) return
+
+    if (builtInDescriptor.path?.endsWith('-revoke-approval')) {
+      format.intent = builtInFormat.intent
+    }
+
+    const nativeField = builtInFormat.fields?.find(
+      (field) => field.path === '@.value' && field.label === 'Send'
+    )
+    if (!nativeField) return
+
+    const fields = format.fields || []
+    if (
+      fields.some((field) => field.path === nativeField.path && field.label === nativeField.label)
+    )
+      return
+
+    format.fields = [...fields, nativeField]
+  })
+
+  return descriptor
 }
 
 const fetchDescriptorResource = async (
@@ -570,6 +664,22 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
   }
 
   return null
+}
+
+const getBuiltInDescriptorForMessage = (message: Message): Erc7730ResolvedDescriptor | null => {
+  if (message.content.kind !== 'typedMessage' || message.content.primaryType !== 'Permit')
+    return null
+
+  try {
+    const encodeTypeHash = getEip712EncodeTypeHash(
+      message.content.types as Erc7730TypedDataTypes,
+      message.content.primaryType
+    )
+
+    return encodeTypeHash === ERC2612_PERMIT_ENCODE_TYPE_HASH ? ERC2612_PERMIT_DESCRIPTOR : null
+  } catch {
+    return null
+  }
 }
 
 const getTypedMessageChainId = (message: Message): bigint | null => {
@@ -946,8 +1056,13 @@ export const fetchErc7730DescriptorForCall = async (
     if (!registryDescriptor) return builtInDescriptor
     if (!builtInDescriptor) return registryDescriptor
 
+    const mergedDescriptor = mergeDescriptors(
+      builtInDescriptor.descriptor,
+      registryDescriptor.descriptor
+    )
+
     return {
-      descriptor: mergeDescriptors(builtInDescriptor.descriptor, registryDescriptor.descriptor),
+      descriptor: applyBuiltInFormatOverrides(mergedDescriptor, builtInDescriptor),
       path: registryDescriptor.path
     }
   } catch (error) {
@@ -981,6 +1096,7 @@ export const fetchErc7730DescriptorForMessage = async (
   if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
   const primaryType = String(message.content.primaryType)
   const types = message.content.types
+  const builtInDescriptor = getBuiltInDescriptorForMessage(message)
 
   try {
     const index = await getEip712Index(callRelayer)
@@ -999,7 +1115,7 @@ export const fetchErc7730DescriptorForMessage = async (
       })
     }
 
-    if (primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+    if (primaryType !== SAFE_TX_PRIMARY_TYPE) return builtInDescriptor
 
     const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, verifyingContract)
     if (!safeSingleton || safeSingleton.toLowerCase() === verifyingContract.toLowerCase()) {
@@ -1021,6 +1137,6 @@ export const fetchErc7730DescriptorForMessage = async (
     })
   } catch (error) {
     console.error(error)
-    return null
+    return builtInDescriptor
   }
 }
