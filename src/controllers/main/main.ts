@@ -558,7 +558,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
-      defaultNetworksMode: this.networks.defaultNetworksMode
+      defaultNetworksMode: this.networks.defaultNetworksMode,
+      storage: this.storage,
+      featureFlags: this.featureFlags
     })
 
     this.contractNames = new ContractNamesController({
@@ -713,7 +715,12 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       const ONE_HOUR = 1000 * 60 * 60
-      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      // Passively bulk-resolving ENS for all accounts links them together, so we
+      // only do it when the user opts out of privacy. Otherwise accounts are
+      // refreshed on interaction (see DomainsController).
+      if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+        this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      }
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
@@ -753,9 +760,14 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.selectedAccount.initialLoadPromise
+    await this.domains.initialLoadPromise
 
     this.updateSelectedAccountPortfolio()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    // Only passively bulk-resolve ENS for all accounts when the user opts out of
+    // privacy (see onPopupOpen and DomainsController for the default behaviour).
+    if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    }
 
     await this.survey.initialLoadPromise
 
@@ -805,6 +817,9 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
+    // Update reverse lookup data
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.domains.reverseLookup(toAccountAddr, true, { keepUpToDate: true })
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })

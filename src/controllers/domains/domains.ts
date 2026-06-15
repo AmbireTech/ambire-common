@@ -1,8 +1,10 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { IDomainsController } from '../../interfaces/domains'
+import { Domains, IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { RPCProviders } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import {
   getEnsAvatar,
   getIsNamoshiDomain,
@@ -12,24 +14,6 @@ import {
 } from '../../services/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-interface Domains {
-  [address: string]: {
-    ens: string | null
-    /**
-     * Namoshi domains are fully compatible with the ENS implementation, they just use a different universal resolver contract
-     * and have different TLDs (.btc and .citrea).
-     */
-    namoshi: string | null
-    /**
-     * ENS or Namoshi avatar URL
-     */
-    ensAvatar?: string | null
-    createdAt?: number
-    updatedAt?: number
-    updateFailedAt?: number
-  }
-}
 
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
@@ -43,6 +27,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   #providers: RPCProviders = {}
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
+
+  #storage?: IStorageController
+
+  #featureFlags?: IFeatureFlagsController
+
+  initialLoadPromise: Promise<void>
 
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
@@ -68,16 +58,43 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   constructor({
     eventEmitterRegistry,
     providers,
-    defaultNetworksMode
+    defaultNetworksMode,
+    storage,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
     defaultNetworksMode?: 'mainnet' | 'testnet'
+    // Not needed for rewards/benzin as they are used for persistence and privacy opt-outs,
+    // which are not relevant there
+    storage?: IStorageController
+    featureFlags?: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
+    this.#storage = storage
+    this.#featureFlags = featureFlags
+
+    this.initialLoadPromise = this.#load()
+  }
+
+  async #load(): Promise<void> {
+    if (!this.#storage) return
+
+    this.domains = await this.#storage.get('domainsCache', {})
+    this.emitUpdate()
+  }
+
+  get #keepEnsProfilesUpToDate() {
+    return !!this.#featureFlags?.isFeatureEnabled('keepEnsProfilesUpToDate')
+  }
+
+  async #persistDomains() {
+    if (!this.#storage) return
+
+    await this.#storage.set('domainsCache', this.domains)
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -168,6 +185,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
             domain,
             type: isNamoshiDomain ? 'namoshi' : 'ens'
           })
+          await this.#persistDomains()
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
         await this.forceEmitUpdate()
@@ -210,7 +228,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
   }
 
-  async reverseLookup(address: string, emitUpdate = true) {
+  async reverseLookup(address: string, emitUpdate = true, { keepUpToDate = false } = {}) {
     if (!isAddress(address)) return
 
     const checksummedAddress = getAddress(address)
@@ -224,13 +242,16 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
-    const addressToLookup = this.#getAddressesToLookup([checksummedAddress])[0]
+    const addressToLookup = this.#getAddressesToLookup([checksummedAddress], { keepUpToDate })[0]
 
     if (!addressToLookup) return
 
     this.#reverseLookupPromises[addressToLookup] = this.#reverseLookup(
       [addressToLookup],
-      emitUpdate
+      emitUpdate,
+      {
+        keepUpToDate
+      }
     ).finally(() => {
       this.#reverseLookupPromises[addressToLookup] = undefined
     })
@@ -254,17 +275,26 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     ]
   }
 
-  #getAddressesToLookup(addresses: string[]) {
-    return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
-      const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt
+  #getAddressesToLookup(addresses: string[], { keepUpToDate = false } = {}) {
+    // Use the TTL-based refresh either when the user opts out of privacy (keep all
+    // profiles fresh in the background) or when the caller explicitly needs fresh
+    // data (e.g. selecting an account or the humanizer).
+    // Otherwise resolve an address only if it has never been resolved, keeping the
+    // cached value indefinitely.
+    const useTtl = keepUpToDate || this.#keepEnsProfilesUpToDate
 
-      const hasExpired = hasLastUpdateFailed
-        ? Date.now() - (this.domains[checksummedAddress]?.updateFailedAt ?? 0) >
-          PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
-        : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+    return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
+      const existing = this.domains[checksummedAddress]
+      const hasLastUpdateFailed = !!existing?.updateFailedAt
+
+      const isEligible = useTtl
+        ? hasLastUpdateFailed
+          ? Date.now() - (existing?.updateFailedAt ?? 0) > PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+          : Date.now() - (existing?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+        : !existing
 
       return (
-        hasExpired &&
+        isEligible &&
         !this.loadingAddresses.includes(checksummedAddress) &&
         !this.#reverseLookupPromises[checksummedAddress]
       )
@@ -284,7 +314,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   /**
    * Resolves ENS names for one or multiple addresses.
    */
-  async #reverseLookup(addresses: string[], emitUpdate = true) {
+  async #reverseLookup(addresses: string[], emitUpdate = true, { keepUpToDate = false } = {}) {
     if (!addresses.length) return
 
     const ethereumProvider =
@@ -300,7 +330,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
-    const addressesToLookup = this.#getAddressesToLookup(addresses)
+    const addressesToLookup = this.#getAddressesToLookup(addresses, { keepUpToDate })
     if (!addressesToLookup.length) return
 
     this.loadingAddresses.push(...addressesToLookup)
@@ -399,6 +429,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       this.loadingAddresses = this.loadingAddresses.filter(
         (loadingAddress) => !addressesToLookup.includes(loadingAddress)
       )
+
+      await this.#persistDomains()
 
       if (emitUpdate) this.emitUpdate()
     }

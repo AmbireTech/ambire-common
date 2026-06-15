@@ -77,8 +77,29 @@ const ENS2 = {
 
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
+const makeStorage = (initial: Record<string, any> = {}) => {
+  const store: Record<string, any> = { domainsCache: initial }
+  return {
+    get: jest.fn(async (key: string, def?: any) => (key in store ? store[key] : def)),
+    set: jest.fn(async (key: string, value: any) => {
+      store[key] = value
+    })
+  } as any
+}
+const makeFeatureFlags = (keepEnsProfilesUpToDate: boolean) =>
+  ({
+    isFeatureEnabled: (flag: string) =>
+      flag === 'keepEnsProfilesUpToDate' ? keepEnsProfilesUpToDate : false
+  }) as any
+const mainnetProvider = () => getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
+
 describe('Domains', () => {
-  const domainsController = new DomainsController({ providers })
+  // The TTL-based refresh tests below assume the "keep profiles up to date" mode.
+  // Privacy mode (the default, no TTL refresh) is covered by its own tests.
+  const domainsController = new DomainsController({
+    providers,
+    featureFlags: makeFeatureFlags(true)
+  })
 
   it('should reverse lookup (ENS)', async () => {
     await domainsController.reverseLookup(ENS_OLDEST_RESOLVER.address)
@@ -374,6 +395,144 @@ describe('Domains', () => {
     expect(domainsController.domainToAddresses[TEST.name]?.type).toBe('namoshi')
     expect(domainsController.domains[TEST.address]!.namoshi).toBe(TEST.name)
   })
+  it('privacy mode: resolves a never-seen address but never passively refreshes it after the TTL', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage: makeStorage(),
+      featureFlags: makeFeatureFlags(false)
+    })
+    await controller.initialLoadPromise
+
+    const address = getAddress(ENS_OLDEST_RESOLVER.address)
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [address]: { name: ENS_OLDEST_RESOLVER.name, failed: false } })
+    const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
+
+    await controller.reverseLookup(address)
+    expect(controller.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+    // Past the TTL: privacy mode keeps the cached value indefinitely.
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
+    await controller.reverseLookup(address)
+    // Not increasing
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+    nowSpy.mockRestore()
+    reverseLookupEnsSpy.mockRestore()
+    getEnsAvatarSpy.mockRestore()
+  })
+
+  it('privacy mode: a keepUpToDate lookup refreshes once the cached value is older than the TTL', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage: makeStorage(),
+      featureFlags: makeFeatureFlags(false)
+    })
+    await controller.initialLoadPromise
+
+    const address = getAddress(ENS_OLDEST_RESOLVER.address)
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [address]: { name: ENS_OLDEST_RESOLVER.name, failed: false } })
+    const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
+
+    await controller.reverseLookup(address)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+    // Before the TTL even a keepUpToDate lookup serves from cache.
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
+    await controller.reverseLookup(address, true, { keepUpToDate: true })
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+    // After the TTL a keepUpToDate lookup refreshes.
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
+    await controller.reverseLookup(address, true, { keepUpToDate: true })
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+
+    nowSpy.mockRestore()
+    reverseLookupEnsSpy.mockRestore()
+    getEnsAvatarSpy.mockRestore()
+  })
+
+  it('opt-out (keepEnsProfilesUpToDate): passively refreshes after the TTL', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage: makeStorage(),
+      featureFlags: makeFeatureFlags(true)
+    })
+    await controller.initialLoadPromise
+
+    const address = getAddress(ENS_OLDEST_RESOLVER.address)
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [address]: { name: ENS_OLDEST_RESOLVER.name, failed: false } })
+    const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
+
+    await controller.reverseLookup(address)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+    // Passive lookup past the TTL refreshes
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
+    await controller.reverseLookup(address)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+
+    nowSpy.mockRestore()
+    reverseLookupEnsSpy.mockRestore()
+    getEnsAvatarSpy.mockRestore()
+  })
+
+  it('persists resolved domains and hydrates them on load (skipping a re-lookup)', async () => {
+    const storage = makeStorage()
+    const address = getAddress(ENS_OLDEST_RESOLVER.address)
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [address]: { name: ENS_OLDEST_RESOLVER.name, failed: false } })
+    const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+
+    const first = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage,
+      featureFlags: makeFeatureFlags(false)
+    })
+    await first.initialLoadPromise
+    await first.reverseLookup(address)
+
+    expect(storage.set).toHaveBeenCalledWith(
+      'domainsCache',
+      expect.objectContaining({
+        [address]: expect.objectContaining({ ens: ENS_OLDEST_RESOLVER.name })
+      })
+    )
+
+    // A fresh controller backed by the same storage hydrates the cache and, in
+    // privacy mode, does not look the address up again.
+    const second = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage,
+      featureFlags: makeFeatureFlags(false)
+    })
+    await second.initialLoadPromise
+    expect(second.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+
+    const callsBefore = reverseLookupEnsSpy.mock.calls.length
+    await second.reverseLookup(address)
+    expect(reverseLookupEnsSpy.mock.calls.length).toBe(callsBefore)
+
+    reverseLookupEnsSpy.mockRestore()
+    getEnsAvatarSpy.mockRestore()
+  })
+
   it('controller works without a citrea provider', async () => {
     const controllerWithoutCitrea = new DomainsController({
       providers: {
