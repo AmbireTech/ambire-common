@@ -427,7 +427,7 @@ describe('Domains', () => {
     getEnsAvatarSpy.mockRestore()
   })
 
-  it('privacy mode: a keepUpToDate lookup refreshes once the cached value is older than the TTL', async () => {
+  it('privacy mode: a whenStale lookup refreshes once the cached value is older than the TTL', async () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
@@ -447,14 +447,14 @@ describe('Domains', () => {
     await controller.reverseLookup(address)
     expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
 
-    // Before the TTL even a keepUpToDate lookup serves from cache.
+    // Before the TTL even a whenStale lookup serves from cache.
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
-    await controller.reverseLookup(address, true, { keepUpToDate: true })
+    await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
     expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
 
-    // After the TTL a keepUpToDate lookup refreshes.
+    // After the TTL a whenStale lookup refreshes.
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
-    await controller.reverseLookup(address, true, { keepUpToDate: true })
+    await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
     expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     nowSpy.mockRestore()

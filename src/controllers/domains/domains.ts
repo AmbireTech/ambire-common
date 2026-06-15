@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { Domains, IDomainsController } from '../../interfaces/domains'
+import { Domains, IDomainsController, ReverseLookupOptions } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { RPCProviders } from '../../interfaces/provider'
@@ -228,7 +228,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
   }
 
-  async reverseLookup(address: string, emitUpdate = true, { keepUpToDate = false } = {}) {
+  async reverseLookup(address: string, emitUpdate = true, opts?: ReverseLookupOptions) {
     if (!isAddress(address)) return
 
     const checksummedAddress = getAddress(address)
@@ -242,16 +242,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
-    const addressToLookup = this.#getAddressesToLookup([checksummedAddress], { keepUpToDate })[0]
+    const addressToLookup = this.#getAddressesToLookup([checksummedAddress], opts)[0]
 
     if (!addressToLookup) return
 
     this.#reverseLookupPromises[addressToLookup] = this.#reverseLookup(
       [addressToLookup],
       emitUpdate,
-      {
-        keepUpToDate
-      }
+      opts
     ).finally(() => {
       this.#reverseLookupPromises[addressToLookup] = undefined
     })
@@ -275,23 +273,25 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     ]
   }
 
-  #getAddressesToLookup(addresses: string[], { keepUpToDate = false } = {}) {
-    // Use the TTL-based refresh either when the user opts out of privacy (keep all
-    // profiles fresh in the background) or when the caller explicitly needs fresh
-    // data (e.g. selecting an account or the humanizer).
-    // Otherwise resolve an address only if it has never been resolved, keeping the
-    // cached value indefinitely.
-    const useTtl = keepUpToDate || this.#keepEnsProfilesUpToDate
+  #isPastTtl(entry: Domains[string] | undefined) {
+    if (entry?.updateFailedAt)
+      return Date.now() - entry.updateFailedAt > PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+
+    return Date.now() - (entry?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+  }
+
+  #getAddressesToLookup(addresses: string[], opts?: ReverseLookupOptions) {
+    // The `keepEnsProfilesUpToDate` opt-out (off by default = privacy) forces TTL
+    // refreshes everywhere; otherwise the per-call mode decides, defaulting to `ifMissing`.
+    const mode = this.#keepEnsProfilesUpToDate
+      ? 'whenStale'
+      : (opts?.privacyUpdateMode ?? 'ifMissing')
+
+    if (mode === 'never') return []
 
     return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
       const existing = this.domains[checksummedAddress]
-      const hasLastUpdateFailed = !!existing?.updateFailedAt
-
-      const isEligible = useTtl
-        ? hasLastUpdateFailed
-          ? Date.now() - (existing?.updateFailedAt ?? 0) > PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
-          : Date.now() - (existing?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
-        : !existing
+      const isEligible = mode === 'ifMissing' ? !existing : this.#isPastTtl(existing)
 
       return (
         isEligible &&
@@ -314,7 +314,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   /**
    * Resolves ENS names for one or multiple addresses.
    */
-  async #reverseLookup(addresses: string[], emitUpdate = true, { keepUpToDate = false } = {}) {
+  async #reverseLookup(addresses: string[], emitUpdate = true, opts?: ReverseLookupOptions) {
     if (!addresses.length) return
 
     const ethereumProvider =
@@ -330,7 +330,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
-    const addressesToLookup = this.#getAddressesToLookup(addresses, { keepUpToDate })
+    const addressesToLookup = this.#getAddressesToLookup(addresses, opts)
     if (!addressesToLookup.length) return
 
     this.loadingAddresses.push(...addressesToLookup)

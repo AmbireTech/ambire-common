@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
@@ -819,7 +818,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.selectedAccount.setAccount(accountToSelect)
     // Update reverse lookup data
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.domains.reverseLookup(toAccountAddr, true, { keepUpToDate: true })
+    this.domains.reverseLookup(toAccountAddr, true, { privacyUpdateMode: 'whenStale' })
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
