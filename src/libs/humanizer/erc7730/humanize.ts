@@ -30,13 +30,13 @@ import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   eToNative,
+  flattenHumanizerVisualizations,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
   getText,
   getToken,
   getWarning,
-  flattenHumanizerVisualizations,
   uintToAddress
 } from '../utils'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
@@ -1498,7 +1498,7 @@ export const humanizeCallWithErc7730 = (
       resolvedDescriptor
     )
 
-    if (!safeTxCallVisualizations.length) return null
+    if (!safeTxCallVisualizations.length || !call.to) return null
 
     return {
       ...call,
