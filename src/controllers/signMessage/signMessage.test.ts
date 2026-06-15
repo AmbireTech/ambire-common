@@ -760,5 +760,55 @@ describe('SignMessageController', () => {
 
       expect(signMessageController.banners).toEqual([])
     })
+
+    test('shows the loading banner while the dapps controller is still loading and clears it once resolved', async () => {
+      const signMessageCtrl = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl
+      )
+
+      // Until the dapps controller finishes its initial storage load (e.g. right after a service
+      // worker restart), verification is unknown and must be reported as in progress, never as
+      // failed. A never-resolving promise holds it in that pending state.
+      dappsCtrl.initialLoadPromise = new Promise<void>(() => {})
+
+      try {
+        await signMessageCtrl.init({ messageToSign, dapp: getDappRequestData(verifiedDapp) })
+        // Flush the background humanization so its emit can't be mistaken for the one we assert on
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0)
+        })
+        expect(signMessageCtrl.banners).toEqual([
+          {
+            id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+            type: 'warning',
+            text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
+          }
+        ])
+
+        let emitsCount = 0
+        const unsubscribe = signMessageCtrl.onUpdate(() => {
+          emitsCount++
+        })
+
+        // The load completes and the dapps controller emits; the controller must re-emit so the
+        // loading banner is replaced by the resolved state (verified dapp in catalog → no banner).
+        dappsCtrl.initialLoadPromise = undefined
+        await dappsCtrl.forceEmitUpdate()
+
+        expect(emitsCount).toBeGreaterThan(0)
+        expect(signMessageCtrl.banners).toEqual([])
+
+        unsubscribe()
+      } finally {
+        dappsCtrl.initialLoadPromise = undefined
+      }
+    })
   })
 })
