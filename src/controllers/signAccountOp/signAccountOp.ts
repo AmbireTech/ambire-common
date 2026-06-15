@@ -1874,14 +1874,14 @@ export class SignAccountOpController
   #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
     const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
     const speeds = this.feeSpeeds[id] ?? []
-    const isTransferredTokenOption = isTransferredTokenFeeOption(feeOption, this.accountOp)
 
     const coversSlow = speeds.some(
       (speed: SpeedCalc) =>
-        speed.type === FeeSpeed.Slow && feeOption.availableAmount >= speed.amount
+        speed.type === FeeSpeed.Slow &&
+        canFeeOptionCoverAmount(feeOption, this.accountOp, speed.amount)
     )
 
-    if (!coversSlow && !isTransferredTokenOption) return true
+    if (!coversSlow) return true
 
     const isExternal = this.accountKeyStoreKeys.some(
       (keyStoreKey) => keyStoreKey.addr === feeOption.paidBy && keyStoreKey.isExternallyStored
@@ -1895,11 +1895,17 @@ export class SignAccountOpController
   }
 
   #shouldSuppressTransferFeeSelectionError(feeOption?: FeePaymentOption): boolean {
-    return (
-      this.#type === 'one-click-transfer' &&
-      !!feeOption &&
-      isTransferredTokenFeeOption(feeOption, this.accountOp)
+    if (
+      this.#type !== 'one-click-transfer' ||
+      !feeOption ||
+      !isTransferredTokenFeeOption(feeOption, this.accountOp)
     )
+      return false
+
+    const feeAmount = this.accountOp.gasFeePayment?.amount
+    if (!feeAmount) return true
+
+    return canFeeOptionCoverAmount(feeOption, this.accountOp, feeAmount)
   }
 
   /**
@@ -2222,7 +2228,7 @@ export class SignAccountOpController
           gasPrice,
           // undefined will switch the broadcast type to 0, legacy
           maxPriorityFeePerGas: maxPriorityFeePerGas > 0n ? maxPriorityFeePerGas : undefined,
-          disabled: option.availableAmount < amount
+          disabled: !canFeeOptionCoverAmount(option, this.accountOp, amount)
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)
