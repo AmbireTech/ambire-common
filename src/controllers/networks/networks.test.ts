@@ -200,7 +200,14 @@ describe('Networks Controller - background relayer refresh', () => {
     }
   }
 
-  const buildController = (defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet') => {
+  // The relayer-merge implementation is applied synchronously right after `new`,
+  // so the background `synchronizeNetworks` kicked off from `#load` already uses
+  // it (its first await yields before reaching `synchronizeNetworks`). This avoids
+  // a race where the construction-time refresh would run with a stale mock.
+  const buildController = (
+    defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet',
+    mergeImpl: NetworksController['mergeRelayerNetworks'] = async (current) => noChange(current)
+  ) => {
     onAddOrUpdateNetworks = jest.fn<(networks: Network[]) => Promise<void>>(async () => {})
     const ctrl = new NetworksController({
       defaultNetworksMode,
@@ -213,11 +220,7 @@ describe('Networks Controller - background relayer refresh', () => {
       onAddOrUpdateNetworks,
       onReady: async () => {}
     })
-    // Spied synchronously right after construction — before `#load`'s awaited
-    // microtasks reach `synchronizeNetworks`, so the background refresh is mocked.
-    mergeRelayerNetworks = jest
-      .spyOn(ctrl, 'mergeRelayerNetworks')
-      .mockImplementation(async (current) => noChange(current))
+    mergeRelayerNetworks = jest.spyOn(ctrl, 'mergeRelayerNetworks').mockImplementation(mergeImpl)
     return ctrl
   }
 
@@ -226,9 +229,11 @@ describe('Networks Controller - background relayer refresh', () => {
   })
 
   test('resolves initialLoadPromise with stored networks without awaiting the relayer refresh', async () => {
-    // Hold the relayer merge pending so we can prove the initial load does not wait on it.
+    // Build with a relayer merge that stays pending, so the background refresh is
+    // already in flight (with this impl) by the time the initial load resolves.
     let releaseMerge: () => void = () => {}
-    mergeRelayerNetworks.mockImplementation(
+    controller = buildController(
+      'mainnet',
       (current) =>
         new Promise((resolve) => {
           releaseMerge = () => resolve(noChange(current))
