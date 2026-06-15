@@ -94,7 +94,6 @@ type SwapAndBridgeErrorType = {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
-const DEFAULT_FORM_CHAIN_ID = 1
 
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
 
@@ -903,59 +902,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#serviceProviderAPI.isHealthy
   }
 
-  #shouldSyncReceiveNetworkToFrom(
-    fromTokenChainId: number,
-    {
-      isFromNetworkChanged,
-      wasFromChainIdOutOfSync
-    }: { isFromNetworkChanged: boolean; wasFromChainIdOutOfSync: boolean }
-  ) {
-    if (this.toSelectedToken || this.toChainId === fromTokenChainId) return false
-
-    if (isFromNetworkChanged || wasFromChainIdOutOfSync) return true
-
-    // Receive network is still on the initial default after a non-Ethereum from token was selected
-    return this.toChainId === DEFAULT_FORM_CHAIN_ID && fromTokenChainId !== DEFAULT_FORM_CHAIN_ID
-  }
-
-  #syncChainIdsWithFromSelectedToken(
-    fromSelectedToken: TokenResult,
-    isFromNetworkChanged: boolean
-  ): boolean {
-    const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
-    if (!network) return false
-
-    const fromTokenChainId = Number(network.chainId)
-    let shouldUpdateToTokenList = false
-    const wasFromChainIdOutOfSync = this.fromChainId !== fromTokenChainId
-
-    if (wasFromChainIdOutOfSync) {
-      this.fromChainId = fromTokenChainId
-      shouldUpdateToTokenList = true
-    }
-
-    if (
-      isFromNetworkChanged &&
-      this.toSelectedToken &&
-      Number(this.toSelectedToken.chainId) !== fromTokenChainId
-    ) {
-      this.toSelectedToken = null
-      shouldUpdateToTokenList = true
-    }
-
-    if (
-      this.#shouldSyncReceiveNetworkToFrom(fromTokenChainId, {
-        isFromNetworkChanged,
-        wasFromChainIdOutOfSync
-      })
-    ) {
-      this.toChainId = fromTokenChainId
-      shouldUpdateToTokenList = true
-    }
-
-    return shouldUpdateToTokenList
-  }
-
   #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
     const shouldNotReFetchSupportedChains =
       this.#cachedSupportedChains.data.length &&
@@ -966,26 +912,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
 
       this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
-
-      if (this.sessionIds.length) {
-        if (this.fromSelectedToken && !this.toSelectedToken) {
-          const fromTokenChainId = Number(this.fromSelectedToken.chainId)
-
-          if (
-            this.#shouldSyncReceiveNetworkToFrom(fromTokenChainId, {
-              isFromNetworkChanged: false,
-              wasFromChainIdOutOfSync: false
-            })
-          ) {
-            await this.updateForm({ toChainId: fromTokenChainId }, { emitUpdate: false })
-          }
-        } else if (!this.fromSelectedToken) {
-          await this.updatePortfolioTokenList(
-            structuredClone(this.#selectedAccount.portfolio.tokens)
-          )
-        }
-      }
-
       this.#emitUpdateIfNeeded(forceUpdate)
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
@@ -1131,10 +1057,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (typeof fromSelectedToken !== 'undefined') {
       const isFromNetworkChanged = this.fromSelectedToken?.chainId !== fromSelectedToken?.chainId
 
-      if (fromSelectedToken) {
-        shouldUpdateToTokenList =
-          this.#syncChainIdsWithFromSelectedToken(fromSelectedToken, isFromNetworkChanged) ||
-          shouldUpdateToTokenList
+      if (fromSelectedToken && isFromNetworkChanged) {
+        const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
+        if (network) {
+          this.fromChainId = Number(network.chainId)
+          shouldUpdateToTokenList = true
+        }
       }
 
       const shouldResetFromTokenAmount =
@@ -1220,9 +1148,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#toTokenList[toTokenListKey].tokens = []
     }
 
-    this.fromChainId = DEFAULT_FORM_CHAIN_ID
+    this.fromChainId = 1
     this.fromSelectedToken = null
-    this.toChainId = DEFAULT_FORM_CHAIN_ID
+    this.toChainId = 1
     this.errors = []
     this.updateQuoteInterval.stop()
 
