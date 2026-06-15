@@ -719,6 +719,8 @@ export class MainController extends EventEmitter implements IMainController {
       // refreshed on interaction (see DomainsController).
       if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
         this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      } else {
+        this.domains.reverseLookup(selectedAccountAddr, true, { privacyUpdateMode: 'whenStale' })
       }
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
@@ -766,6 +768,10 @@ export class MainController extends EventEmitter implements IMainController {
     // privacy (see onPopupOpen and DomainsController for the default behaviour).
     if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    } else if (this.selectedAccount.account?.addr) {
+      this.domains.reverseLookup(this.selectedAccount.account.addr, true, {
+        privacyUpdateMode: 'whenStale'
+      })
     }
 
     await this.survey.initialLoadPromise
