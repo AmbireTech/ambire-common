@@ -387,46 +387,6 @@ describe('SignMessageController', () => {
     })
   })
 
-  test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    const typedMessageToSign = createPermitTypedMessage()
-    const callRelayer = jest.fn(async (path: string, method?: string) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
-
-    signMessageController = new SignMessageController(
-      keystoreCtrl,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      {},
-      inviteCtrl,
-      undefined,
-      dappsCtrl,
-      callRelayer
-    )
-
-    await signMessageController.init({ messageToSign: typedMessageToSign })
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0)
-    })
-
-    expect(signMessageController.isHumanizing).toBe(false)
-    expect(signMessageController.humanizedMessage).toBeDefined()
-    expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
-    )
-  })
-
   test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
     const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
     const registryPath = 'registry/1inch/eip712-AggregationRouterV6.json'

@@ -27,7 +27,6 @@ import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { SafeTx } from '../../interfaces/safe'
-import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import isSameAddr from '../../utils/isSameAddr'
@@ -40,10 +39,12 @@ import {
 } from '../accountOp/accountOp'
 import { decodeError } from '../errorDecoder'
 import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
+import { stringify } from '../richJson/richJson'
 import { PackedUserOperation } from '../userOperation/types'
 import { getActivatorCall } from '../userOperation/userOperation'
 import { get7702SigV } from './utils'
 
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
 // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
 // as 0x92 is not a valid value for v.
@@ -108,6 +109,11 @@ const signWithHardwareWalletSigningRequest = <T>(
   sign: () => Promise<T>,
   withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest
 ) => (withHardwareWalletSigningRequest ? withHardwareWalletSigningRequest(request, sign) : sign())
+
+export const doesEIP712MessageContainAddress = (
+  message: TypedMessageUserRequest['meta']['params'],
+  address: string
+) => stringify(message).toLowerCase().includes(address.toLowerCase())
 
 export const adaptTypedMessageForMetaMaskSigUtil = (
   typedMessage: TypedMessageUserRequest['meta']['params']
@@ -637,11 +643,10 @@ export async function getEIP712Signature(
     }
 
   if (!accountState.isV2) {
-    const asString = JSON.stringify(message).toLowerCase()
     if (
       // @NOTE: isOG is to allow tem members to sign anything with v1 accounts regardless of safety and security
       !isOG &&
-      !asString.includes(account.addr.toLowerCase()) &&
+      !doesEIP712MessageContainAddress(message, account.addr) &&
       !(
         message.domain.name === 'Permit2' &&
         message.domain.verifyingContract &&
