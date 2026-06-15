@@ -57,6 +57,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
+  #persisting = false
+
+  #persistScheduled = false
+
   constructor({
     eventEmitterRegistry,
     providers,
@@ -85,7 +89,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   async #load(): Promise<void> {
     if (!this.#storage) return
 
-    const domainsFromStorage = await this.#storage.get('domainsCache', {})
+    let domainsFromStorage: Domains = {}
+    try {
+      domainsFromStorage = await this.#storage.get('domainsCache', {})
+    } catch (e) {
+      console.warn('domains: failed to load cache from storage', e)
+    }
 
     // Clean older than 7 days, empty entries and keep a maximum of 200 entries to avoid
     // exposing a huge amount of state to the UI that may be stale (e.g., the Humanizer requested and address
@@ -114,10 +123,33 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     return !!this.#featureFlags?.isFeatureEnabled('keepEnsProfilesUpToDate')
   }
 
+  /**
+   * Persists domains in storage. Writing in storage concurrently is not a good practice,
+   * but using a full-blown queue is overkill and not applicable for the domains controller as we
+   * are always storing this.domains. That's why this method awaits the running call (if any), skips
+   * any intermediary calls, and queues the last one (e.g., if 5 calls are made, the running one is awaited and only
+   * the fifth one is executed afterwards)
+   */
   async #persistDomains() {
     if (!this.#storage) return
 
-    await this.#storage.set('domainsCache', this.domains)
+    if (this.#persisting) {
+      this.#persistScheduled = true
+      return
+    }
+
+    this.#persisting = true
+    try {
+      await this.#storage.set('domainsCache', this.domains)
+    } catch (e) {
+      console.warn('domains: failed to persist domains cache', e)
+    } finally {
+      this.#persisting = false
+      if (this.#persistScheduled) {
+        this.#persistScheduled = false
+        void this.#persistDomains()
+      }
+    }
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -211,11 +243,15 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
             domain,
             type: isNamoshiDomain ? 'namoshi' : 'ens'
           })
-          await this.#persistDomains()
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
+
+        // Do it after updating the status to not slow down the UI
+        if (address) {
+          await this.#persistDomains()
+        }
       })
       .catch(async (e) => {
         console.error(`Failed to resolve ENS domain: ${domain}`, e)
@@ -457,9 +493,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         (loadingAddress) => !addressesToLookup.includes(loadingAddress)
       )
 
-      await this.#persistDomains()
-
       if (emitUpdate) this.emitUpdate()
+
+      // Don't slow down the UI
+      await this.#persistDomains()
     }
   }
 
