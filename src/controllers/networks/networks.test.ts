@@ -195,7 +195,6 @@ describe('Networks Controller - background relayer refresh', () => {
   // so each test starts from a clean `areNetworksFetchingFromRelayer === false`.
   const settleBackgroundSync = async () => {
     for (let i = 0; i < 100 && controller.areNetworksFetchingFromRelayer; i++) {
-      // eslint-disable-next-line no-await-in-loop
       await wait(0)
     }
   }
@@ -225,6 +224,7 @@ describe('Networks Controller - background relayer refresh', () => {
   }
 
   beforeEach(() => {
+    jest.restoreAllMocks()
     controller = buildController()
   })
 
