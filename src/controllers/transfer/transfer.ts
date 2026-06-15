@@ -635,10 +635,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     if (shouldSetMaxAmount) {
+      const maxAmountAfterFeeReservation = this.#getMaxAmountAfterFeeReservation()
+      if (!Number(maxAmountAfterFeeReservation)) return
+
       this.#isMaxAmountSelected = true
       this.#resetMaxFeeReservation()
       this.amountFieldMode = 'token'
-      this.#setTokenAmount(this.#getMaxAmountAfterFeeReservation(), true)
+      this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
     if (addressState) {
@@ -923,12 +926,9 @@ export class TransferController extends EventEmitter implements ITransferControl
       isMaxAmountSelected: this.#isMaxAmountSelected
     })
 
-    if (currentAmount === desiredAmount) return false
+    if (desiredAmount === 0n || currentAmount === desiredAmount) return false
 
-    this.#setTokenAmount(
-      desiredAmount === 0n ? '0' : formatUnits(desiredAmount, this.selectedToken.decimals),
-      true
-    )
+    this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.syncSignAccountOp()
     this.propagateUpdate(forceEmit)
@@ -956,8 +956,16 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.selectedToken.decimals
     )
     const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const maxAmountAfterFeeReservation = getAmountAfterFeeReserve(
+      totalTokenAmount,
+      gasFeePayment.amount
+    )
 
-    if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
+    if (
+      maxAmountAfterFeeReservation > 0n &&
+      currentAmount > 0n &&
+      currentAmount + gasFeePayment.amount >= totalTokenAmount
+    ) {
       return {
         severity: 'warning',
         message: 'Amount adjusted to cover blockchain fees'

@@ -385,6 +385,7 @@ describe('SwapAndBridge Controller', () => {
       '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toChainId).toEqual(10)
   })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!
