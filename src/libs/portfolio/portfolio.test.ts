@@ -271,6 +271,38 @@ describe('Portfolio', () => {
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
   })
 
+  test('fetches and caches the price of an arbitrary token address', async () => {
+    const priceFetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        [USDT_ADDRESS.toLowerCase()]: {
+          usd: 0.99785
+        }
+      })
+    }))
+    const portfolioWithMockedPriceFetch = new Portfolio(
+      priceFetch as any,
+      provider,
+      ethereum,
+      velcroUrl
+    )
+    const tokenDataCache = new Map()
+
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(0.99785)
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS.toLowerCase(), {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(0.99785)
+    expect(priceFetch).toHaveBeenCalledTimes(1)
+  })
+
   test('simulation works for EOAs', async () => {
     const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
@@ -801,23 +833,49 @@ describe('Portfolio', () => {
       expect(blacklistedTokenFound).toBe(false)
     })
 
-    test('should filter a held token by symbol pattern (case-insensitive, substring match)', async () => {
-      const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+    test('should filter a held token by symbol or name pattern (case-insensitive, substring match)', async () => {
+      const baseline = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
         blacklist: {
           blacklistAddrs: {},
-          blacklistBySymbols: ['usdt'],
+          blacklistBySymbols: [],
           updatedAt: Date.now()
         }
       })
 
-      const blacklistedTokenFound = filtered.tokens.some(
+      const token = baseline.tokens.find(
         (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
       )
-      expect(blacklistedTokenFound).toBe(false)
+
+      if (!token) throw new Error('Expected token to be present in baseline')
+
+      const isFilteredBy = async (pattern: string) => {
+        const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
+          blacklist: {
+            blacklistAddrs: {},
+            blacklistBySymbols: [pattern],
+            updatedAt: Date.now()
+          }
+        })
+
+        return !filtered.tokens.some(
+          (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
+        )
+      }
+
+      // Symbol match
+      expect(await isFilteredBy(token.symbol.toLowerCase())).toBe(true)
+
+      // Name match: the pattern lives in the name only, so the previous
+      // symbol-only filter would not have caught it.
+      const namePattern = token.name.toLowerCase()
+      expect(token.name).not.toBe('')
+      expect(token.symbol.toLowerCase().includes(namePattern)).toBe(false)
+      expect(await isFilteredBy(namePattern)).toBe(true)
     })
 
-    test('should filter a held collection by symbol pattern', async () => {
+    test('should filter a held collection by symbol or name pattern', async () => {
       const baseline = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc721Hints: {
           [ETHEREUM_COLLECTION_ADDRESS]: []
@@ -837,25 +895,36 @@ describe('Portfolio', () => {
         throw new Error('Expected collection to be present in baseline')
       }
 
-      const pattern = collection.symbol
+      const isFilteredBy = async (pattern: string) => {
+        const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          additionalErc721Hints: {
+            [ETHEREUM_COLLECTION_ADDRESS]: []
+          },
+          blacklist: {
+            blacklistAddrs: {},
+            blacklistBySymbols: [pattern],
+            updatedAt: Date.now()
+          }
+        })
+
+        return !filtered.collections.some(
+          (c) => c.address.toLowerCase() === ETHEREUM_COLLECTION_ADDRESS.toLowerCase()
+        )
+      }
+
+      // Symbol match
+      const symbolPattern = collection.symbol
         .slice(0, Math.min(4, collection.symbol.length))
         .toLowerCase()
+      expect(await isFilteredBy(symbolPattern)).toBe(true)
 
-      const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        additionalErc721Hints: {
-          [ETHEREUM_COLLECTION_ADDRESS]: []
-        },
-        blacklist: {
-          blacklistAddrs: {},
-          blacklistBySymbols: [pattern],
-          updatedAt: Date.now()
-        }
-      })
-
-      const blacklistedCollectionFound = filtered.collections.some(
-        (c) => c.address.toLowerCase() === ETHEREUM_COLLECTION_ADDRESS.toLowerCase()
-      )
-      expect(blacklistedCollectionFound).toBe(false)
+      // Name match: the pattern lives in the name only, so the previous
+      // symbol-only filter would not have caught it. This is the common spam
+      // NFT shape, where the URL/lure sits in the name and not the symbol.
+      const namePattern = collection.name.toLowerCase()
+      expect(collection.name).not.toBe('')
+      expect(collection.symbol.toLowerCase().includes(namePattern)).toBe(false)
+      expect(await isFilteredBy(namePattern)).toBe(true)
     })
 
     test('should never filter custom tokens even if blacklisted', async () => {

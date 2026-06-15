@@ -12,25 +12,72 @@ jobs:
     if: >-
       (github.event.action == 'labeled' && github.event.label.name == 'review') ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event.sender.type != 'Bot' && 
+      (github.event.sender.type != 'Bot' &&
       github.event_name == 'issue_comment' &&
-      contains(github.event.comment.body, '/review'))
-    runs-on: ubuntu-latest
+      contains(github.event.comment.body, '/review') &&
+      !contains(github.event.comment.body, '/security-review'))
     permissions:
       pull-requests: write
-      contents: write
+      # This MUST be read!
+      contents: read
+    uses: ./.github/workflows/pr-agent.yml
+    with:
+      model: openrouter/moonshotai/kimi-k2.6
+      fallback_models: '["openrouter/anthropic/claude-sonnet-4.6"]'
+      extra_instructions: |
+        You are reviewing changes in `ambire-common`, the environment-agnostic core
+        business-logic package of a security-sensitive Web3 wallet. It is imported by
+        the iOS/Android apps, the Chrome/Firefox extensions and web apps, and runs for
+        long uninterrupted periods (especially in the extension background).
 
-    steps:
-      - uses: actions/checkout@v6
+        The invariants below are grouped by the severity a violation should carry.
+        Use the listed tier as the default severity for a finding, but adjust up or
+        down if the concrete impact in context clearly differs.
 
-      - name: Run General PR Agent
-        uses: The-PR-Agent/pr-agent@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENROUTER__KEY: ${{ secrets.OPENROUTER__KEY }}
-          CONFIG__MODEL: "openrouter/moonshotai/kimi-k2.6"
-          # Without auto_review=true we cannot have triggers such as
-          # workflow_dispatch and PR label
-          github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "false"
-          github_action_config.auto_improve: "false"
+        Non-exhaustive list of invariants, ranked by severity:
+
+        HIGH - loss/exposure of funds or secrets, state corruption, security bypass,
+        crashes:
+        - Errors in public controller methods must never propagate and must never be swallowed
+          silently: use `EmittableError` inside a `withStatus` wrapper, or
+          `try/catch` + `this.emitError({ level, message, error })`.
+        - Async state updates must be guarded against out-of-order/concurrent runs
+          (debounce, unique id/version check, or `AbortController`), and
+          `this.storage.set()` must never run in parallel (await the previous call) -
+          violations corrupt persisted state.
+        - Partial updates that leave state inconsistent: a multi-step mutation that can
+          fail or return early between steps without rolling back.
+        - Unhandled pending operations: un-awaited async calls, or an action that can be
+          triggered twice (e.g. double-submitting/double-signing a transaction) without
+          a guard.
+        - bigint/decimal precision loss in value, balance, and fee math.
+
+        MEDIUM - correctness/reliability bugs without direct security impact:
+        - State that must reach the UI requires `this.emitUpdate()` after the mutation.
+          Getter values are NOT auto-propagated - they also need `emitUpdate()`, and a
+          getter deriving from ANOTHER controller's state must subscribe to it and call
+          `this.propagateUpdate(...)`, or the UI silently goes stale.
+        - Getters must be pure: no side effects, no `emitUpdate()`, no expensive compute.
+        - Timers/lifecycle: never use raw `setInterval` (use `RecurringTimeout`);
+          long-running background loops belong in `ContinuousUpdatesController`; all
+          subscriptions, listeners and timers must be cleaned up (leaks accumulate in
+          the long-lived background).
+        - `withStatus` must wrap only public entry points, and NEVER methods that can
+          hang (transaction signing, hardware-wallet prompts) or background intervals.
+        - Unhandled degradation when external services/RPCs fail or time out, and
+          network requests issued without error handling or a timeout.
+        - Unhandled exceptions and edge cases (null/undefined, empty collections,
+          boundary values) on a code path that can realistically be reached.
+        - Inefficient algorithms or data structures on hot or large-data paths - quadratic loops, repeated linear scans,
+          redundant network/RPC calls in a loop.
+
+        Beyond the invariants above, also flag logic that is simply wrong for its
+        intended purpose - incomplete data sets or enumerations, misclassifications,
+        wrong-default or off-by-one constants, and mismatched assumptions between a
+        function and its callers. Assign severity by the concrete impact.
+
+        Be constructive, concise, and actionable. For each finding, prefix it with its
+        severity (High/Medium/Low), quote the exact code, and explain the concrete
+        failure it causes.
+    secrets:
+      OPENROUTER_KEY: ${{ secrets.OPENROUTER__KEY }}
