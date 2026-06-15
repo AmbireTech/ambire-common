@@ -14,6 +14,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.sender.type != 'Bot' &&
       github.event_name == 'issue_comment' &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
       contains(github.event.comment.body, '/review') &&
       !contains(github.event.comment.body, '/security-review'))
     permissions:
