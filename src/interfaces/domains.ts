@@ -27,10 +27,9 @@ type ReverseLookupOptions = {
    * Decides when a reverse lookup is allowed to hit the network. Ignored when
    * `keepEnsProfilesUpToDate` is true (the opt-out), which forces `whenStale` everywhere.
    * whenStale - Refresh once the cached value is older than the TTL.
-   * ifMissing - Resolve only if the address was never resolved before, then serve from cache forever
    * never - Never trigger a lookup; serve from cache only (used for address lists to avoid linking accounts)
    */
-  privacyUpdateMode: 'whenStale' | 'ifMissing' | 'never'
+  privacyUpdateMode: 'whenStale' | 'never'
 }
 
 type AddressState = {

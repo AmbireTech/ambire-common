@@ -282,19 +282,18 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #getAddressesToLookup(addresses: string[], opts?: ReverseLookupOptions) {
     // The `keepEnsProfilesUpToDate` opt-out (off by default = privacy) forces TTL
-    // refreshes everywhere; otherwise the per-call mode decides, defaulting to `ifMissing`.
+    // refreshes everywhere; otherwise the per-call mode decides, defaulting to `whenStale`.
     const mode = this.#keepEnsProfilesUpToDate
       ? 'whenStale'
-      : (opts?.privacyUpdateMode ?? 'ifMissing')
+      : (opts?.privacyUpdateMode ?? 'whenStale')
 
     if (mode === 'never') return []
 
     return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
       const existing = this.domains[checksummedAddress]
-      const isEligible = mode === 'ifMissing' ? !existing : this.#isPastTtl(existing)
 
       return (
-        isEligible &&
+        this.#isPastTtl(existing) &&
         !this.loadingAddresses.includes(checksummedAddress) &&
         !this.#reverseLookupPromises[checksummedAddress]
       )
