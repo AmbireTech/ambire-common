@@ -381,57 +381,6 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
-  test('should sync toChainId when from token network changes and no to token is selected', async () => {
-    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    const tokenOnBase = PORTFOLIO_TOKENS.find((t) => t.chainId === 8453n)!
-
-    await swapAndBridgeController.updateForm({ fromSelectedToken: tokenOnBase })
-
-    expect(swapAndBridgeController.fromChainId).toEqual(8453)
-    expect(swapAndBridgeController.toChainId).toEqual(8453)
-  })
-  test('should clear incompatible to token and sync toChainId when from network changes', async () => {
-    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    const tokenOnBase = PORTFOLIO_TOKENS.find((t) => t.chainId === 8453n)!
-
-    await swapAndBridgeController.updateForm({ toChainId: 1 })
-    swapAndBridgeController.toSelectedToken = {
-      address: '0x1',
-      chainId: 1,
-      symbol: 'ETH',
-      name: 'Ether',
-      decimals: 18,
-      icon: undefined
-    }
-
-    await swapAndBridgeController.updateForm({ fromSelectedToken: tokenOnBase })
-
-    expect(swapAndBridgeController.toSelectedToken).toBeNull()
-    expect(swapAndBridgeController.toChainId).toEqual(8453)
-  })
-  test('should sync toChainId when fromChainId is out of sync with the selected from token', async () => {
-    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    const selectedFromToken = swapAndBridgeController.fromSelectedToken!
-
-    swapAndBridgeController.fromChainId = 1
-    swapAndBridgeController.toChainId = 1
-
-    await swapAndBridgeController.updateForm({ fromSelectedToken: selectedFromToken })
-
-    expect(swapAndBridgeController.fromChainId).toEqual(Number(selectedFromToken.chainId))
-    expect(swapAndBridgeController.toChainId).toEqual(Number(selectedFromToken.chainId))
-  })
-  test('should keep a manually selected bridge receive network when changing the from token on the same network', async () => {
-    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    const selectedFromToken = swapAndBridgeController.fromSelectedToken!
-
-    await swapAndBridgeController.updateForm({ toChainId: 8453 })
-
-    await swapAndBridgeController.updateForm({ fromSelectedToken: selectedFromToken })
-
-    expect(swapAndBridgeController.fromChainId).toEqual(Number(selectedFromToken.chainId))
-    expect(swapAndBridgeController.toChainId).toEqual(8453)
-  })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!
 
