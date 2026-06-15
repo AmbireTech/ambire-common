@@ -36,7 +36,8 @@ import {
   getHasNonceChangedSinceLastUpdate,
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
-  getShouldBypassServerSideCache
+  getShouldBypassServerSideCache,
+  getUniqueMergedPositions
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -1609,7 +1610,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               : 'Unknown error'
           }`
         )
-      const positionsByProvider = getFormattedApiPositions(defi.positions)
+
+      // Used only to sort assets and positions
+      const positionsByProvider = getUniqueMergedPositions(
+        getFormattedApiPositions(defi.positions),
+        [],
+        null
+      )
 
       accountState.defiApps = {
         isReady: true,
