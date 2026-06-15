@@ -877,7 +877,10 @@ export class SignAccountOpController
       return false
     }
 
-    const erc7730Humanization = humanizeAccountOp(this.accountOp, { erc7730Descriptors })
+    const erc7730Humanization = humanizeAccountOp(this.accountOp, {
+      erc7730Descriptors,
+      nativeAssetSymbol: this.#network.nativeAssetSymbol
+    })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||
       !this.isCurrentHumanization(humanizationId) ||
