@@ -193,6 +193,7 @@ describe('account fee options', () => {
       gasUsed: 0n,
       addedNative: 0n,
       token: {
+        amount: 15_000_000_000_000_000n,
         address: ZeroAddress,
         flags: {
           onGasTank: false
@@ -201,6 +202,38 @@ describe('account fee options', () => {
     } as FeePaymentOption
 
     expect(canFeeOptionCoverAmount(feeOption, op, 1n)).toBe(true)
+  })
+
+  test('should not allow the transferred token to cover a fee that leaves no transferable amount', () => {
+    const op = {
+      accountAddr: '0x1111111111111111111111111111111111111111',
+      meta: {
+        allowTransferFeeTokenSelfReserve: true
+      },
+      calls: [
+        {
+          to: '0x3333333333333333333333333333333333333333',
+          value: 1_000_000n,
+          data: '0x'
+        }
+      ]
+    } as AccountOp
+
+    const feeOption = {
+      paidBy: op.accountAddr,
+      availableAmount: 0n,
+      gasUsed: 0n,
+      addedNative: 0n,
+      token: {
+        amount: 1_000_000n,
+        address: ZeroAddress,
+        flags: {
+          onGasTank: false
+        }
+      }
+    } as FeePaymentOption
+
+    expect(canFeeOptionCoverAmount(feeOption, op, 1_000_000n)).toBe(false)
   })
 
   test('should not allow unrelated zero-balance fee options to cover the fee', () => {

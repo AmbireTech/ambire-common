@@ -10,7 +10,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
-import { isBlacklistedAsset, STATIC_BLACKLIST } from './blacklist'
+import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
@@ -365,24 +365,25 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
-    const allBlacklistedSymbols = [
+    const blacklistPatterns = prepareBlacklistPatterns([
       ...STATIC_BLACKLIST.blacklistBySymbols,
       ...(blacklist?.blacklistBySymbols || [])
-    ].map((p) => p.toLowerCase())
+    ])
 
     const tokensWithoutPrices = tokensWithErrResult
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
-        // Spam filter: hide tokens whose symbol/name matches a blacklisted pattern
-        // or embeds a phishing domain. Custom (user-added) tokens are never hidden.
+        // Spam filter: hide tokens whose symbol/name matches a blacklisted
+        // pattern. Custom (user-added) tokens are never hidden. We don't run the
+        // embedded-domain check here because token names/symbols legitimately contain domains.
         const token = _tokensWithErrResult[1]
         if (
           isBlacklistedAsset({
             symbol: token.symbol,
             name: token.name,
             isCustom: token.flags?.isCustom,
-            lowercasedPatterns: allBlacklistedSymbols
+            patterns: blacklistPatterns
           })
         )
           return false
@@ -431,7 +432,8 @@ export class Portfolio {
             symbol: collection.symbol,
             name: collection.name,
             isCustom: collection.flags?.isCustom,
-            lowercasedPatterns: allBlacklistedSymbols
+            patterns: blacklistPatterns,
+            checkForEmbeddedDomain: true
           })
         )
           return acc
