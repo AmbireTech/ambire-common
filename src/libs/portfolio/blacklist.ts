@@ -93,8 +93,15 @@ export const containsDomainLike = (text: string): boolean => {
  *
  * Spam often hides the lure in the name rather than the symbol, so both are
  * checked, combining two signals:
- * - substring patterns from the static + dynamic blacklist (e.g. "https", "www.")
+ * - substring patterns from the static + dynamic blacklist (e.g. "https", "www.",
+ *   or space-padded lure words like "claim " / " airdrop")
  * - a domain-like detector (see `containsDomainLike`)
+ *
+ * The symbol and name are matched SEPARATELY and never joined into one string.
+ * Many patterns are space-padded to match on word boundaries (e.g. "win " catches
+ * "win the prize" but not "winner"). Joining symbol + " " + name would insert an
+ * artificial space and wrongly trip those patterns — e.g. a token with symbol
+ * "WIN" would become "win " and match the "win " pattern.
  *
  * `lowercasedPatterns` must already be lowercased by the caller.
  */
@@ -113,11 +120,15 @@ export const isBlacklistedAsset = ({
 }): boolean => {
   if (isCustom) return false
 
-  const haystack = `${symbol} ${name || ''}`.toLowerCase()
+  const haystacks = [symbol.toLowerCase(), ...(name ? [name.toLowerCase()] : [])]
 
-  if (lowercasedPatterns.some((pattern) => haystack.includes(pattern))) return true
+  const matchesBlacklistedPattern = haystacks.some((haystack) =>
+    lowercasedPatterns.some((pattern) => haystack.includes(pattern))
+  )
+  if (matchesBlacklistedPattern) return true
 
   if (!checkForEmbeddedDomain) return false
 
-  return containsDomainLike(haystack)
+  const embedsPhishingDomain = haystacks.some((haystack) => containsDomainLike(haystack))
+  return embedsPhishingDomain
 }
