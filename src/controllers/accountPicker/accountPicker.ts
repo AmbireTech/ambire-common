@@ -1084,42 +1084,55 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
-    const indicesToRetrieve = [
-      { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
-    ]
-    // Since v4.31.0, do not retrieve smart accounts for the private key
-    // type. That's because we can't use the common derivation offset
-    // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
-    // accounts out of the private key (with another approach - salt and
-    // extra entropy) was creating confusion.
-    //
-    // + no smart accounts for QR wallets. Reasons:
-    // - some hws sign only if the signer is imported
-    // - we are generally moving in another direction
-    const shouldRetrieveSmartAccountIndices =
-      this.keyIterator.subType !== 'private-key' && this.type !== 'qr'
-    if (shouldRetrieveSmartAccountIndices) {
-      // Indices for the smart accounts.
-      indicesToRetrieve.push({
-        from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-      })
-    }
-    // Combine the requests for all accounts in one call to the keyIterator.
-    // That's optimization primarily focused on hardware wallets, to reduce the
-    // number of calls to the hardware device. This is important, especially
-    // for Trezor, because it fires a confirmation popup for each call.
-    const combinedBasicAndSmartAccKeys = await this.keyIterator.retrieve(
-      indicesToRetrieve,
+    const basicAccKeys = await this.keyIterator.retrieve(
+      [{ from: startIdx, to: endIdx }],
       this.hdPathTemplate
     )
 
-    const basicAccKeys = combinedBasicAndSmartAccKeys.slice(0, this.pageSize)
-    const smartAccKeys = combinedBasicAndSmartAccKeys.slice(
-      this.pageSize,
-      combinedBasicAndSmartAccKeys.length
+    for (const [index, basicAccKey] of basicAccKeys.entries()) {
+      const slot = startIdx + (index + 1)
+      // The EOA (basic) account on this slot
+      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
+      const result = { account, isLinked: false, slot, index: slot - 1 }
+      accounts.push(result)
+    }
+
+    return accounts
+  }
+
+  async #deriveSmartAccountsForCurrentPage({
+    calledForPage,
+    calledForAbortController
+  }: {
+    calledForPage: number
+    calledForAbortController: AbortController | undefined
+  }) {
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.hdPathTemplate) return this.#throwMissingHdPath()
+    if (this.keyIterator.subType === 'private-key' || this.type === 'qr') return
+
+    const startIdx = (this.page - 1) * this.pageSize
+    const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
+    const startIdxWithOffset = startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+    const endIdxWithOffset = endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+
+    const derivedSmartAccountKeyIndices = new Set(
+      this.#derivedAccounts.filter((acc) => !isSmartAccount(acc.account)).map((acc) => acc.index)
+    )
+    const areSmartAccountKeysAlreadyDerived = Array.from(
+      { length: this.pageSize },
+      (_, index) => startIdxWithOffset + index
+    ).every((index) => derivedSmartAccountKeyIndices.has(index))
+    if (areSmartAccountKeysAlreadyDerived) return
+
+    const smartAccKeys = await this.keyIterator.retrieve(
+      [{ from: startIdxWithOffset, to: endIdxWithOffset }],
+      this.hdPathTemplate
     )
 
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+    const accounts: DerivedAccountWithoutNetworkMeta[] = []
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
@@ -1158,6 +1171,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
     const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
     const smartAccounts = unfilteredSmartAccountsList.filter(
       (x) => x !== null
@@ -1165,15 +1180,24 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     accounts.push(...smartAccounts)
 
-    for (const [index, basicAccKey] of basicAccKeys.entries()) {
-      const slot = startIdx + (index + 1)
-      // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
-      const result = { account, isLinked: false, slot, index: slot - 1 }
-      accounts.push(result)
-    }
+    const accountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
+      accounts,
+      page: calledForPage
+    })
 
-    return accounts
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+    const derivedAccountsByKey = new Map(
+      this.#derivedAccounts.map((acc) => [`${acc.index}-${acc.account.addr}`, acc])
+    )
+    accountsWithUsedOn.forEach((acc) => {
+      derivedAccountsByKey.set(`${acc.index}-${acc.account.addr}`, acc)
+    })
+
+    this.#derivedAccounts = Array.from(derivedAccountsByKey.values()).sort(
+      (a, b) => a.index - b.index
+    )
+    this.emitUpdate()
   }
 
   async #getAccountsUsedOnNetworks({
@@ -1279,6 +1303,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
     if (accounts.length === 0) {
+      this.linkedAccountsLoading = false
       this.linkedAccountsScanCompleted = true
       this.emitUpdate()
       return
@@ -1401,19 +1426,35 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     // Create a new AbortController for this operation
     this.#findAndSetLinkedAccountsAbortController = new AbortController()
+    const calledForPage = this.page
+    const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
-    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
-      accounts: this.#derivedAccounts
-        .filter(
-          (acc) =>
-            // Since v4.60.0, linked accounts are searched for 1) EOAs
-            // and 2) EOAs derived for Smart Account keys ONLY
-            // (workaround so that the Relayer returns information if the Smart
-            // Account with this key is used (with identity) or not).
-            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
-        )
-        .map((acc) => acc.account)
-    }).finally(() => {
+    this.linkedAccountsLoading = true
+    this.linkedAccountsScanCompleted = false
+    this.linkedAccountsError = ''
+    this.emitUpdate()
+
+    this.findAndSetLinkedAccountsPromise = (async () => {
+      await this.#deriveSmartAccountsForCurrentPage({
+        calledForPage,
+        calledForAbortController
+      })
+
+      if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+      await this.#findAndSetLinkedAccounts({
+        accounts: this.#derivedAccounts
+          .filter(
+            (acc) =>
+              // Since v4.60.0, linked accounts are searched for 1) EOAs
+              // and 2) EOAs derived for Smart Account keys ONLY
+              // (workaround so that the Relayer returns information if the Smart
+              // Account with this key is used (with identity) or not).
+              !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
+          )
+          .map((acc) => acc.account)
+      })
+    })().finally(() => {
       this.findAndSetLinkedAccountsPromise = undefined
       this.#findAndSetLinkedAccountsAbortController = undefined
     })
