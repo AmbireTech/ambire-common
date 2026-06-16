@@ -133,6 +133,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   linkedAccountsLoading: boolean = false
 
+  linkedAccountsScanCompleted: boolean = false
+
   safeAccountsLoading: boolean = false
 
   safeAccountsScanCompleted: boolean = false
@@ -495,6 +497,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.pageError = null
 
     this.linkedAccountsLoading = false
+    this.linkedAccountsScanCompleted = false
     this.safeAccountsLoading = false
     this.safeAccountsScanCompleted = false
     this.linkedAccountsError = ''
@@ -723,6 +726,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.accountsLoading = true
     this.networksWithAccountStateError = []
     this.linkedAccountsLoading = false
+    this.linkedAccountsScanCompleted = false
     this.safeAccountsLoading = false
     this.safeAccountsScanCompleted = false
     this.emitUpdate()
@@ -787,7 +791,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (this.page !== page) return
 
-    await this.findAndSetLinkedAccounts()
+    if (this.shouldSearchForLinkedAccounts) await this.findAndSetLinkedAccounts()
   }
 
   #updateStateWithTheLatestFromAccounts() {
@@ -1274,9 +1278,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
-    if (!this.shouldSearchForLinkedAccounts) return
-
-    if (accounts.length === 0) return
+    if (accounts.length === 0) {
+      this.linkedAccountsScanCompleted = true
+      this.emitUpdate()
+      return
+    }
 
     // Cache the page and the abort controller at the start to use throughout
     // the operation, even if reset() clears them mid-process
@@ -1284,6 +1290,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
     this.linkedAccountsLoading = true
+    this.linkedAccountsScanCompleted = false
     this.linkedAccountsError = ''
     this.emitUpdate()
 
@@ -1382,6 +1389,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.#linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
+    this.linkedAccountsScanCompleted = true
     this.emitUpdate()
   }
 
