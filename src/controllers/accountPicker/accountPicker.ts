@@ -133,6 +133,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   linkedAccountsLoading: boolean = false
 
+  safeAccountsLoading: boolean = false
+
+  safeAccountsScanCompleted: boolean = false
+
   linkedAccountsError: string = ''
 
   networksWithAccountStateError: bigint[] = []
@@ -491,6 +495,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.pageError = null
 
     this.linkedAccountsLoading = false
+    this.safeAccountsLoading = false
+    this.safeAccountsScanCompleted = false
     this.linkedAccountsError = ''
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
@@ -717,6 +723,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.accountsLoading = true
     this.networksWithAccountStateError = []
     this.linkedAccountsLoading = false
+    this.safeAccountsLoading = false
+    this.safeAccountsScanCompleted = false
     this.emitUpdate()
 
     if (page <= 0) {
@@ -1425,7 +1433,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     const calledForPage = this.page
-    this.linkedAccountsLoading = true
+    this.safeAccountsLoading = true
+    this.safeAccountsScanCompleted = false
     this.linkedAccountsError = ''
     this.emitUpdate()
 
@@ -1522,7 +1531,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     this.linkedAccountsError = Array.from(safeScanErrorMessages).join(' ')
-    this.linkedAccountsLoading = false
+    this.safeAccountsLoading = false
+    this.safeAccountsScanCompleted = true
     this.emitUpdate()
   }
 
