@@ -96,6 +96,10 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
   const serviceTime = route.estimate.estimatedRouteDuration || 0
   const protocol = getSquidProtocol(route)
   const minAmountOut = route.estimate.toAmountMin || toAmount
+  const gasCostsInUsd = route.estimate.gasCosts?.reduce(
+    (total, gasCost) => total + Number(gasCost.amountUSD || 0),
+    0
+  )
   const serviceFeeCost = route.estimate.feeCosts?.find((fee) => fee.included === false)
   const serviceFee = serviceFeeCost
     ? {
@@ -144,6 +148,10 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
     steps: [step],
     inputValueInUsd: Number(route.estimate.fromAmountUSD || 0),
     outputValueInUsd: Number(route.estimate.toAmountUSD || 0),
+    outputValueAfterGasInUsd:
+      gasCostsInUsd === undefined
+        ? undefined
+        : Number(route.estimate.toAmountUSD || 0) - gasCostsInUsd,
     serviceTime,
     rawRoute: route,
     sender: userAddress,

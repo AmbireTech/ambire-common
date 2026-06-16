@@ -379,6 +379,7 @@ describe('SwapAndBridge Controller', () => {
       '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toChainId).toEqual(10)
   })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!
@@ -440,6 +441,25 @@ describe('SwapAndBridge Controller', () => {
       }
     })
     swapAndBridgeController.updateForm({ fromAmount: '0.8' })
+  })
+  test('should keep the provider quote when the receive token price lookup times out', async () => {
+    jest.useFakeTimers()
+    const { restore } = suppressConsole()
+    jest.spyOn(portfolioCtrl, 'getTokenPrice').mockImplementation(() => new Promise(() => {}))
+    jest.spyOn(swapAndBridgeController, 'initSignAccountOpIfNeeded').mockResolvedValue()
+
+    const updateQuotePromise = swapAndBridgeController.updateQuote({
+      skipQuoteUpdateOnSameValues: false
+    })
+
+    await jest.advanceTimersByTimeAsync(4000)
+    await updateQuotePromise
+
+    expect(swapAndBridgeController.quote).not.toBeNull()
+
+    jest.clearAllTimers()
+    jest.useRealTimers()
+    restore()
   })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId

@@ -3,6 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption } from '../estimate/interfaces'
+import { getAmountAfterFeeReserve } from '../transfer/amount'
 
 const ERC20Interface = new Interface(IERC20.abi)
 
@@ -36,7 +37,10 @@ const canFeeOptionCoverAmount = (
   op: AccountOp,
   amount: bigint
 ): boolean => {
-  return feeOption.availableAmount >= amount || isTransferredTokenFeeOption(feeOption, op)
+  if (feeOption.availableAmount >= amount) return true
+  if (!isTransferredTokenFeeOption(feeOption, op)) return false
+
+  return getAmountAfterFeeReserve(feeOption.token.amount, amount) > 0n
 }
 
 export { canFeeOptionCoverAmount, isTransferredTokenFeeOption }

@@ -30,13 +30,13 @@ import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   eToNative,
+  flattenHumanizerVisualizations,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
   getText,
   getToken,
   getWarning,
-  flattenHumanizerVisualizations,
   uintToAddress
 } from '../utils'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
@@ -376,6 +376,17 @@ const getCalldataFormatMatch = (
   }
 
   return null
+}
+
+const getSafeExecTransactionWarnings = (match: DescriptorFormatMatch): HumanizerWarning[] => {
+  const fragment = getFunctionFragment(match.formatKey)
+  if (fragment?.name !== 'execTransaction') return []
+
+  const operation = toBigIntOrNull(match.values.operation)
+  const to = match.values.to
+  if (operation === null || typeof to !== 'string') return []
+
+  return getDelegateCallWarning(operation, to)
 }
 
 const getTypedMessageFormatMatch = (
@@ -1259,7 +1270,7 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   const warningKeys = new Set<string>()
 
   return warnings.filter((warning) => {
-    const warningKey = `${warning.code}:${warning.content}`
+    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
     if (warningKeys.has(warningKey)) return false
     warningKeys.add(warningKey)
 
@@ -1498,7 +1509,7 @@ export const humanizeCallWithErc7730 = (
       resolvedDescriptor
     )
 
-    if (!safeTxCallVisualizations.length) return null
+    if (!safeTxCallVisualizations.length || !call.to) return null
 
     return {
       ...call,
@@ -1557,6 +1568,7 @@ export const humanizeCallWithErc7730 = (
         fullVisualization: visualizationWithNativeValue,
         warnings: dedupeWarnings([
           ...getSafeCallWarnings(call, accountAddr),
+          ...getSafeExecTransactionWarnings(match),
           ...getNativeValueWarnings(visualizationWithNativeValue, nativeAssetSymbol)
         ])
       }

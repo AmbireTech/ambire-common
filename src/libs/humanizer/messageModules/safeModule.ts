@@ -1,11 +1,10 @@
-import { getAddress, isAddress } from 'ethers'
+import { isAddress } from 'ethers'
 
-import { allowedMulticallContracts } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
-import { getSafeHumanization } from '../modules/Safe'
+import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
-import { getAction, getAddressVisualization, getBreak, getLabel, getWarning } from '../utils'
+import { getAction, getAddressVisualization, getBreak, getLabel } from '../utils'
 
 export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind === 'message' || typeof message.content.message === 'string')
@@ -36,18 +35,11 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   if (humanizedCalls[0]?.fullVisualization) {
     fullVisualization.push(...humanizedCalls[0].fullVisualization)
   }
-  if (
-    operation === 1 &&
-    (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
-  ) {
+  const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
+  if (delegateCallWarnings.length) {
     return {
       fullVisualization,
-      warnings: [
-        getWarning(
-          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
-          'SAFE{WALLET}_DELEGATE_CALL'
-        )
-      ]
+      warnings: delegateCallWarnings
     }
   }
 

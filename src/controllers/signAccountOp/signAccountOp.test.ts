@@ -80,7 +80,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
-import { getFeeSpeedIdentifier } from './helper'
+import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
@@ -397,6 +397,7 @@ const init = async (
   options?: {
     dapps?: Dapp[]
     callRelayer?: BindedRelayerCall
+    type?: SignAccountOpType
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
   }
@@ -634,13 +635,15 @@ const init = async (
       storage: storageCtrl,
       networks: networksCtrl,
       phishing,
-      ui: uiCtrl
+      ui: uiCtrl,
+      selectedAccount: selectedAccountCtrl
     })
     await realDappsController.initialLoadPromise
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
   const controller = new SignAccountOpTesterController({
+    type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
     accounts: accountsCtrl,
     networks: networksCtrl,
@@ -1617,7 +1620,6 @@ describe('Negative cases', () => {
       },
       true
     )
-    // @ts-expect-error
     controller.update({
       hasNewEstimation: true,
       feeToken: gasTankToken,
@@ -1924,6 +1926,89 @@ describe('Negative cases', () => {
     await controller.sign()
 
     expect(controller.signedAccountOp?.signature).toBeFalsy()
+  })
+
+  test('Signing [one-click transfer]: transferred token cannot reserve the fee', async () => {
+    const network = networks.find((n) => n.chainId === 137n)!
+    const token = {
+      ...nativeFeeTokenPolygon,
+      amount: 100n
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 0n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token
+      }
+    ]
+    const accountOp = createAccountOp(smartAccount, network.chainId)
+    accountOp.op.calls = [
+      {
+        to: FEE_COLLECTOR,
+        value: token.amount,
+        data: '0x'
+      }
+    ]
+    accountOp.op.meta = {
+      allowTransferFeeTokenSelfReserve: true
+    }
+    accountOp.feeTokens = [token]
+
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
+      },
+      undefined,
+      {
+        type: 'one-click-transfer'
+      }
+    )
+
+    controller.update({
+      hasNewEstimation: true,
+      feeToken: token,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    expect(controller.errors[0]?.title).toContain('Insufficient funds to cover the fee')
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
   })
 })
 
