@@ -577,7 +577,8 @@ const getDefiUpdateMode = (params: {
 
   // If there isn't a successful update yet do a default update
   // Example: extension boot
-  if (!previousState || !previousState.lastSuccessfulUpdate) return DefiUpdateMode.Default
+  if (!previousState || !previousState.lastSuccessfulUpdate || isManualUpdate)
+    return DefiUpdateMode.Default
 
   // In this case we don't care about defi positions so the age of the data doesn't matter, we can serve stale data from cache
   // Example: background update
