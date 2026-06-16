@@ -20,6 +20,7 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit, {
   ProposeTransactionProps,
   SafeCreationInfoResponse,
+  SafeInfoResponse,
   SafeMessage,
   SafeMessageListResponse,
   SafeMultisigTransactionListResponse
@@ -31,8 +32,8 @@ import {
 } from '@safe-global/types-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
-import { AccountOnchainState } from '../../interfaces/account'
+import { execTransactionAbi, multiSendAddr, safeNullOwner } from '../../consts/safe'
+import { AccountOnchainState, SafeAccountCreation } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
@@ -61,6 +62,136 @@ export interface SafeResults {
   [chainId: string]: {
     txns: SafeMultisigTransactionResponse[]
     messages: ExtendedSafeMessage[]
+  }
+}
+
+export type SafeImportInfo = SafeAccountCreation & {
+  address: Hex
+  deployedOn: bigint[]
+  owners: Hex[]
+  requiresModules: boolean
+}
+
+export async function getSafeImportInfo({
+  safeAddr,
+  chainId,
+  deployedOn = [chainId]
+}: {
+  safeAddr: string
+  chainId: bigint
+  deployedOn?: bigint[]
+}): Promise<SafeImportInfo | null> {
+  const apiKit = new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+  const [safeInfo, safeCreationInfo]: [SafeInfoResponse | Error, SafeCreationInfoResponse | Error] =
+    await Promise.all([
+      apiKit.getSafeInfo(safeAddr).catch((e) => e),
+      apiKit.getSafeCreationInfo(safeAddr).catch((e) => e)
+    ])
+
+  if (safeInfo instanceof Error || safeCreationInfo instanceof Error) return null
+
+  return {
+    version: safeInfo.version,
+    address: safeInfo.address as Hex,
+    owners: safeInfo.owners as Hex[],
+    deployedOn,
+    factoryAddr: safeCreationInfo.factoryAddress as Hex,
+    singleton: safeCreationInfo.singleton as Hex,
+    saltNonce: safeCreationInfo.saltNonce
+      ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
+      : (toBeHex(0, 32) as Hex),
+    setupData: safeCreationInfo.setupData as Hex,
+    requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
+  }
+}
+
+export async function scanSafesByOwners({
+  ownerAddrs,
+  chainIds
+}: {
+  ownerAddrs: string[]
+  chainIds: bigint[]
+}): Promise<{
+  safeInfos: SafeImportInfo[]
+  errorMessage?: string
+}> {
+  const safeAddressesByChainId = new Map<string, Set<bigint>>()
+  const scanErrors: string[] = []
+  const ownerScanRequests = ownerAddrs.flatMap((ownerAddr) =>
+    chainIds.map((chainId) => ({ ownerAddr, chainId }))
+  )
+  let ownerScanPromises = []
+
+  for (let i = 0; i < ownerScanRequests.length; i++) {
+    const { ownerAddr, chainId } = ownerScanRequests[i]!
+    const apiKit = new SafeApiKit({
+      chainId,
+      apiKey: process.env.SAFE_API_KEY
+    })
+
+    ownerScanPromises.push(
+      apiKit.getSafesByOwner(ownerAddr).then((response) => ({
+        response,
+        chainId
+      }))
+    )
+
+    if ((i + 1) % 3 === 0 || i + 1 === ownerScanRequests.length) {
+      const responses = await Promise.all(
+        ownerScanPromises.map((promise) => promise.catch((e) => e))
+      )
+      responses.forEach((result) => {
+        if (result instanceof Error) {
+          scanErrors.push(result.message)
+          return
+        }
+
+        result.response.safes.forEach((safeAddr: string) => {
+          const checksummedSafeAddr = getAddress(safeAddr)
+          const safeChainIds = safeAddressesByChainId.get(checksummedSafeAddr) || new Set<bigint>()
+          safeChainIds.add(result.chainId)
+          safeAddressesByChainId.set(checksummedSafeAddr, safeChainIds)
+        })
+      })
+      await wait(1100)
+      ownerScanPromises = []
+    }
+  }
+
+  const safeInfos: SafeImportInfo[] = []
+  const safeInfoRequests = Array.from(safeAddressesByChainId.entries())
+  let safeInfoPromises = []
+
+  for (let i = 0; i < safeInfoRequests.length; i++) {
+    const [safeAddr, deployedOn] = safeInfoRequests[i]!
+    const firstChainId = Array.from(deployedOn)[0]!
+
+    safeInfoPromises.push(
+      getSafeImportInfo({
+        safeAddr,
+        chainId: firstChainId,
+        deployedOn: Array.from(deployedOn)
+      })
+    )
+
+    if ((i + 1) % 2 === 0 || i + 1 === safeInfoRequests.length) {
+      const responses = await Promise.all(safeInfoPromises)
+      safeInfos.push(...responses.filter((safeInfo): safeInfo is SafeImportInfo => !!safeInfo))
+      await wait(1100)
+      safeInfoPromises = []
+    }
+  }
+
+  return {
+    safeInfos,
+    errorMessage: scanErrors.length
+      ? `The attempt to discover Safe accounts failed for some networks. Error details: <${[
+          ...new Set(scanErrors)
+        ].join('; ')}>`
+      : undefined
   }
 }
 

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { getCreate2Address, keccak256 } from 'ethers'
+import { getAddress, getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -10,6 +10,7 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
+import { SAFE_NETWORKS } from '../../consts/safe'
 import {
   Account,
   AccountOnchainState,
@@ -48,6 +49,7 @@ import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { SafeImportInfo, scanSafesByOwners } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_PAGE = 1
@@ -312,9 +314,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     mergedAccounts.sort((a, b) => {
       const prioritizeAccountType = (item: any) => {
         if (!isSmartAccount(item.account)) return -1
-        if (item.isLinked) return 1
+        if (item.account.safeCreation) return 0
+        if (item.isLinked) return 2
 
-        return 0
+        return 1
       }
 
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
@@ -1399,6 +1402,128 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.#findAndSetLinkedAccountsAbortController = undefined
     })
     await this.findAndSetLinkedAccountsPromise
+  }
+
+  async scanForSafeAccounts(ownerAddrs: string[]) {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    const uniqueOwnerAddrs = Array.from(new Set(ownerAddrs.map((addr) => getAddress(addr))))
+    if (!uniqueOwnerAddrs.length) return
+
+    const safeNetworks = this.#networks.networks.filter(
+      (n) =>
+        SAFE_NETWORKS.includes(Number(n.chainId)) &&
+        !!this.#providers.providers[n.chainId.toString()]
+    )
+
+    if (!safeNetworks.length) {
+      this.linkedAccountsError =
+        'Safe account scanning is unavailable because none of your enabled networks have Safe support.'
+      this.emitUpdate()
+      return
+    }
+
+    const calledForPage = this.page
+    this.linkedAccountsLoading = true
+    this.linkedAccountsError = ''
+    this.emitUpdate()
+
+    const getScannedSafeAccounts = (
+      safeInfos: SafeImportInfo[]
+    ): { account: AccountWithNetworkMeta; isLinked: boolean }[] =>
+      safeInfos.map((safeInfo) => {
+        const addr = getAddress(safeInfo.address)
+        const existingAccount = this.#alreadyImportedAccounts.find((acc) => acc.addr === addr)
+
+        return {
+          account: {
+            addr,
+            associatedKeys: safeInfo.owners.map((owner) => getAddress(owner)),
+            initialPrivileges: safeInfo.owners.map(
+              (owner) => [getAddress(owner), '0x01'] as [string, string]
+            ),
+            creation: null,
+            safeCreation: {
+              factoryAddr: safeInfo.factoryAddr,
+              singleton: safeInfo.singleton,
+              saltNonce: safeInfo.saltNonce,
+              setupData: safeInfo.setupData,
+              version: safeInfo.version
+            },
+            preferences: {
+              label: existingAccount?.preferences.label || 'Safe',
+              pfp: existingAccount?.preferences.pfp || addr
+            }
+          },
+          isLinked: true
+        }
+      })
+
+    const addScannedSafeAccounts = (
+      scannedSafeAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[]
+    ) => {
+      const linkedAccountsByAddress = new Map(
+        this.#linkedAccounts.map((linkedAccount) => [linkedAccount.account.addr, linkedAccount])
+      )
+
+      scannedSafeAccounts.forEach((linkedAccount) => {
+        const existingLinkedAccount = linkedAccountsByAddress.get(linkedAccount.account.addr)
+        linkedAccountsByAddress.set(linkedAccount.account.addr, {
+          ...linkedAccount,
+          account: {
+            ...linkedAccount.account,
+            usedOnNetworks:
+              existingLinkedAccount?.account.usedOnNetworks ?? linkedAccount.account.usedOnNetworks
+          }
+        })
+      })
+
+      this.#linkedAccounts = Array.from(linkedAccountsByAddress.values())
+    }
+
+    const safeScanErrorMessages = new Set<string>()
+
+    for (let i = 0; i < safeNetworks.length; i++) {
+      const network = safeNetworks[i]!
+      const { safeInfos, errorMessage } = await scanSafesByOwners({
+        ownerAddrs: uniqueOwnerAddrs,
+        chainIds: [network.chainId]
+      })
+
+      if (calledForPage !== this.page) return
+
+      if (errorMessage) safeScanErrorMessages.add(errorMessage)
+
+      const scannedSafeAccounts = getScannedSafeAccounts(safeInfos)
+      if (!scannedSafeAccounts.length) continue
+
+      addScannedSafeAccounts(scannedSafeAccounts)
+      this.#verifyLinkedAccounts()
+      this.linkedAccountsError = Array.from(safeScanErrorMessages).join(' ')
+      this.emitUpdate()
+
+      const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
+        accounts: this.#linkedAccounts as any,
+        page: calledForPage
+      })
+
+      if (calledForPage !== this.page) return
+
+      this.#linkedAccounts = Array.from(
+        new Map(
+          [...this.#linkedAccounts, ...(linkedAccountsWithNetworks as any)].map((linkedAccount) => [
+            linkedAccount.account.addr,
+            linkedAccount
+          ])
+        ).values()
+      )
+      this.emitUpdate()
+    }
+
+    this.linkedAccountsError = Array.from(safeScanErrorMessages).join(' ')
+    this.linkedAccountsLoading = false
+    this.emitUpdate()
   }
 
   /**
