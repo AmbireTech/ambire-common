@@ -2251,6 +2251,60 @@ describe('ERC-7730 descriptors', () => {
     })
   })
 
+  test('keeps the Safe delegatecall warning after ERC-7730 execTransaction humanization', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [recipeExecutor, 0, '0x0c2c8750', 1, 0, 0, 0, ZeroAddress, ZeroAddress, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures)':
+                  {
+                    intent: 'sign multisig operation',
+                    fields: [
+                      { path: 'operation', label: 'Operation type' },
+                      {
+                        path: 'data',
+                        label: 'Transaction',
+                        format: 'calldata',
+                        params: { calleePath: 'to' }
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irCalls[0]?.warnings).toEqual([
+      getWarning(
+        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        'SAFE{WALLET}_DELEGATE_CALL',
+        undefined,
+        recipeExecutor
+      )
+    ])
+  })
+
   test('humanizes Safe setup calldata nested in a factory initializer with ERC-7730', () => {
     const safeProxyFactory = '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67'
     const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
