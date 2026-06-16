@@ -328,8 +328,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           // Analytics should not be polluted with inactive extensions
           const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
 
+          // This is a hack to achieve something that would require a good amount of refactoring in the portfolio
+          // To understand the problem you need to know the following information:
+          // Discovery is done with the batcher, every network is updated in parallel and customAppChain is updated
+          // in parallel with regular networks. customAppChain should be updated ONLY when AT LEAST ONE another network is updated.
+          // There is absolutely no reason to update customAppChain with default or force mode by itself. To fix this properly
+          // we have to move the logic that determines updateMode for each network BEFORE the Promise.all([]) that updates all networks
+          // in parallel and also make the call to velcro there, instead of using the batcher. This way we will know which networks have to
+          // be updated and can decide if customAppChain should be updated or not. For now, we will just update with 'cache' mode if the only
+          // network to be updated is customAppChain.
+          const isUpdatingOnlyDefiApps =
+            queueSegment.length === 1 && queueSegment[0]?.data.chainId === 'customAppChain'
+
           // Tells velcro-v3 how fresh the defi positions must be
-          const defiParam = `&defi=${defiUpdateMode}`
+          const defiParam = `&defi=${isUpdatingOnlyDefiApps ? 'cache' : defiUpdateMode}`
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
