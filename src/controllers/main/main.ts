@@ -36,6 +36,7 @@ import { SafeController } from '@/controllers/safe/safe'
 import { SelectedAccountController } from '@/controllers/selectedAccount/selectedAccount'
 import { SignAccountOpType } from '@/controllers/signAccountOp/helper'
 import { OnboardingSuccessProps } from '@/controllers/signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '@/controllers/signAccountOp/signAccountOpPreference'
 import { SignMessageController } from '@/controllers/signMessage/signMessage'
 import { StorageController } from '@/controllers/storage/storage'
 import { SurveyController } from '@/controllers/survey/survey'
@@ -132,6 +133,8 @@ export class MainController extends EventEmitter implements IMainController {
   // sub-controllers
 
   storage: IStorageController
+
+  signAccountOpPreference: SignAccountOpPreferenceController
 
   featureFlags: IFeatureFlagsController
 
@@ -243,6 +246,10 @@ export class MainController extends EventEmitter implements IMainController {
     this.#appVersion = appVersion
     this.fetch = fetch
     this.storage = new StorageController(this.#storageAPI, eventEmitterRegistry)
+    this.signAccountOpPreference = new SignAccountOpPreferenceController({
+      eventEmitterRegistry,
+      storage: this.storage
+    })
     this.featureFlags = new FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry)
     this.ui = new UiController({ eventEmitterRegistry, uiManager })
     this.invite = new InviteController({
@@ -486,6 +493,7 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       activity: this.activity,
       storage: this.storage,
+      signAccountOpPreference: this.signAccountOpPreference,
       phishing: this.phishing,
       dapps: this.dapps,
       swapProvider: new SwapProviderParallelExecutor(
@@ -528,6 +536,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.transfer = new TransferController(
       this.callRelayer,
       this.storage,
+      this.signAccountOpPreference,
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
       this.networks,
@@ -588,6 +597,8 @@ export class MainController extends EventEmitter implements IMainController {
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
+      storage: this.storage,
+      signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
       transfer: this.transfer,

@@ -52,6 +52,7 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -91,6 +92,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   #callRelayer: BindedRelayerCall
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #networks: INetworksController
 
@@ -193,6 +196,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   constructor(
     callRelayer: BindedRelayerCall,
     storage: IStorageController,
+    signAccountOpPreference: SignAccountOpPreferenceController,
     humanizerInfo: HumanizerMeta,
     selectedAccount: ISelectedAccountController,
     networks: INetworksController,
@@ -214,6 +218,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#callRelayer = callRelayer
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
     this.#networks = networks
@@ -630,10 +635,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     if (shouldSetMaxAmount) {
+      const maxAmountAfterFeeReservation = this.#getMaxAmountAfterFeeReservation()
+      if (!Number(maxAmountAfterFeeReservation)) return
+
       this.#isMaxAmountSelected = true
       this.#resetMaxFeeReservation()
       this.amountFieldMode = 'token'
-      this.#setTokenAmount(this.#getMaxAmountAfterFeeReservation(), true)
+      this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
     if (addressState) {
@@ -918,12 +926,9 @@ export class TransferController extends EventEmitter implements ITransferControl
       isMaxAmountSelected: this.#isMaxAmountSelected
     })
 
-    if (currentAmount === desiredAmount) return false
+    if (desiredAmount === 0n || currentAmount === desiredAmount) return false
 
-    this.#setTokenAmount(
-      desiredAmount === 0n ? '0' : formatUnits(desiredAmount, this.selectedToken.decimals),
-      true
-    )
+    this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.syncSignAccountOp()
     this.propagateUpdate(forceEmit)
@@ -951,8 +956,16 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.selectedToken.decimals
     )
     const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const maxAmountAfterFeeReservation = getAmountAfterFeeReserve(
+      totalTokenAmount,
+      gasFeePayment.amount
+    )
 
-    if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
+    if (
+      maxAmountAfterFeeReservation > 0n &&
+      currentAmount > 0n &&
+      currentAmount + gasFeePayment.amount >= totalTokenAmount
+    ) {
       return {
         severity: 'warning',
         message: 'Amount adjusted to cover blockchain fees'
@@ -1091,6 +1104,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     await this.#updateRecipientHistoryAndPoisoning()
+    await this.#signAccountOpPreference.initialLoadPromise
     this.signAccountOpController = new SignAccountOpController({
       type: 'one-click-transfer',
       callRelayer: this.#callRelayer,
@@ -1098,6 +1112,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,

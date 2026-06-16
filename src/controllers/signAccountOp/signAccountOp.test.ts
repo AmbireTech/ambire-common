@@ -34,6 +34,7 @@ import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IProvidersController } from '../../interfaces/provider'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
@@ -50,6 +51,8 @@ import {
   getTypedData
 } from '../../libs/signMessage/signMessage'
 import { PERMIT2_ADDRESS_LOWERCASED } from '../../libs/simulation/detectPermit2Interaction'
+import * as accessListCallLib from '../../libs/tracer/accessListCall'
+import * as debugTraceCallLib from '../../libs/tracer/debugTraceCall'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
@@ -77,8 +80,9 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
-import { getFeeSpeedIdentifier } from './helper'
+import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
@@ -394,12 +398,18 @@ const init = async (
   options?: {
     dapps?: Dapp[]
     callRelayer?: BindedRelayerCall
+    type?: SignAccountOpType
+    initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
+    onUpdateAfterTraceCallSuccess?: () => Promise<void>
   }
 ) => {
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
   await storageCtrl.set('selectedAccount', account.addr)
+  if (options?.initialSetStorage) await options.initialSetStorage(storageCtrl)
+  const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
+  await signAccountOpPreference.initialLoadPromise
   if (options?.dapps) {
     await storageCtrl.set('dappsV2', options.dapps)
     await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
@@ -637,11 +647,13 @@ const init = async (
     dapps = realDappsController
   }
   const controller = new SignAccountOpTesterController({
+    type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
     portfolio,
+    signAccountOpPreference,
     externalSignerControllers: {},
     account,
     network,
@@ -652,8 +664,8 @@ const init = async (
     fromRequestId: 1,
     accountOp: op,
     shouldSimulate: false,
-    // @ts-expect-error
-    onBroadcastSuccess: () => {},
+    onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
+    onBroadcastSuccess: async () => {},
     estimateController: estimationController,
     gasPriceController
   })
@@ -662,7 +674,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller }
+  return { controller, storageCtrl, signAccountOpPreference }
 }
 
 const initDappVerificationBannerTest = async (
@@ -754,6 +766,130 @@ const initDappVerificationBannerTest = async (
 }
 
 describe('SignAccountOp Controller ', () => {
+  const defaultFeeSelectionGasPrices = {
+    slow: {
+      maxFeePerGas: toBeHex(200n) as Hex,
+      maxPriorityFeePerGas: toBeHex(100n) as Hex
+    },
+    medium: {
+      maxFeePerGas: toBeHex(400n) as Hex,
+      maxPriorityFeePerGas: toBeHex(200n) as Hex
+    },
+    fast: {
+      maxFeePerGas: toBeHex(600n) as Hex,
+      maxPriorityFeePerGas: toBeHex(300n) as Hex
+    },
+    ape: {
+      maxFeePerGas: toBeHex(800n) as Hex,
+      maxPriorityFeePerGas: toBeHex(400n) as Hex
+    }
+  }
+
+  const getDefaultFeeSelectionOptions = (nativeAvailableAmount = 1000000000000000000n) => [
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: nativeAvailableAmount,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: nativeFeeToken
+    },
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: gasTankToken
+    },
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: {
+        ...usdcFeeToken,
+        chainId: 1n
+      }
+    }
+  ]
+
+  const initDefaultFeeSelection = async (
+    feePaymentOptions = getDefaultFeeSelectionOptions(),
+    options?: Parameters<typeof init>[6]
+  ) => {
+    const { controller, storageCtrl } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, 1n),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 25000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      defaultFeeSelectionGasPrices,
+      false,
+      options
+    )
+
+    await wait(1)
+
+    return { controller, storageCtrl }
+  }
+
+  test('defaults fee payment to the network-native token before gas tank or ERC-20', async () => {
+    const { controller } = await initDefaultFeeSelection()
+
+    expect(controller.selectedOption?.token.address).toBe(nativeFeeToken.address)
+    expect(controller.selectedOption?.token.flags.onGasTank).toBe(false)
+  })
+
+  test('uses gas tank as a saved default across chains', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeTokenPreference', {
+          '1': 'gasTank'
+        })
+      }
+    })
+
+    expect(controller.selectedOption?.token.flags.onGasTank).toBe(true)
+  })
+
+  test('uses a saved ERC-20 default only for the matching chain', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storage) => {
+        await storage.set('signAccountOpFeeTokenPreference', {
+          '1': usdcFeeToken.address,
+          '137': nativeFeeTokenPolygon.address
+        })
+      }
+    })
+
+    expect(controller.selectedOption?.token.address).toBe(usdcFeeToken.address)
+    expect(controller.selectedOption?.token.symbol).toBe(usdcFeeToken.symbol)
+
+    controller.update({ pendingFeeTokenPreference: gasTankToken })
+
+    const storedPreference = await storageCtrl.get('signAccountOpFeeTokenPreference')
+    expect(storedPreference).toEqual({
+      '1': usdcFeeToken.address,
+      '137': nativeFeeTokenPolygon.address
+    })
+    expect(controller.pendingFeeTokenPreference).toEqual({
+      '1': 'gasTank',
+      '137': nativeFeeTokenPolygon.address
+    })
+  })
+
   test('Estimation race conditions are prevented', async () => {
     const { restore } = suppressConsole()
     const chainId = 137n
@@ -946,7 +1082,7 @@ describe('SignAccountOp Controller ', () => {
       new Promise((resolve) => {
         const unsub = controller.estimation.onUpdate(() => {
           if (controller.estimation.status !== EstimationStatus.Loading) {
-            // @ts-expect-error
+            // @ts-expect-error - we want to check the internal state
             expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
             resolve(true)
             unsub()
@@ -1613,7 +1749,6 @@ describe('Negative cases', () => {
       },
       true
     )
-    // @ts-expect-error
     controller.update({
       hasNewEstimation: true,
       feeToken: gasTankToken,
@@ -1921,6 +2056,89 @@ describe('Negative cases', () => {
 
     expect(controller.signedAccountOp?.signature).toBeFalsy()
   })
+
+  test('Signing [one-click transfer]: transferred token cannot reserve the fee', async () => {
+    const network = networks.find((n) => n.chainId === 137n)!
+    const token = {
+      ...nativeFeeTokenPolygon,
+      amount: 100n
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 0n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token
+      }
+    ]
+    const accountOp = createAccountOp(smartAccount, network.chainId)
+    accountOp.op.calls = [
+      {
+        to: FEE_COLLECTOR,
+        value: token.amount,
+        data: '0x'
+      }
+    ]
+    accountOp.op.meta = {
+      allowTransferFeeTokenSelfReserve: true
+    }
+    accountOp.feeTokens = [token]
+
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
+      },
+      undefined,
+      {
+        type: 'one-click-transfer'
+      }
+    )
+
+    controller.update({
+      hasNewEstimation: true,
+      feeToken: token,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    expect(controller.errors[0]?.title).toContain('Insufficient funds to cover the fee')
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+  })
 })
 
 describe('throwBroadcastAccountOp', () => {
@@ -2020,9 +2238,7 @@ describe('throwBroadcastAccountOp', () => {
         )
       })
     } catch (e: any) {
-      expect(e.message).toBe(
-        'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
-      )
+      expect(e.message).toBe('Transaction fees changed. Please try again')
     }
   })
   it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -2229,6 +2445,128 @@ describe('throwBroadcastAccountOp', () => {
       )
     }
   })
+  it('fee changed (underpriced) auto-update shows a soft confirmation instead of an error toast', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+
+    const feeOption = {
+      availableAmount: 1000000000000000000n,
+      paidBy: eoaAccount.addr,
+      gasUsed: 10000n,
+      addedNative: 0n,
+      token: createEOAAccountOp(eoaAccount).feeTokens[0]!
+    }
+    const previousFee = {
+      type: FeeSpeed.Fast,
+      amount: 100000000000000n,
+      simulatedGasLimit: 10000n,
+      amountFormatted: '0.0001',
+      amountUsd: '0.1',
+      gasPrice: 600n,
+      disabled: false,
+      maxPriorityFeePerGas: 300n
+    }
+    const identifier = getFeeSpeedIdentifier(feeOption, eoaAccount.addr)
+
+    controller.selectedOption = feeOption
+    controller.selectedFeeSpeed = FeeSpeed.Fast
+    controller.feeSpeeds = { [identifier]: [previousFee] }
+
+    const error = new Error(
+      'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
+    )
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      // The user is asked to re-confirm the updated fee, not redo the whole flow
+      expect(e.message).toBe('Transaction fees changed. Please try again')
+    }
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+    expect(controller.previousFee).toEqual(previousFee)
+
+    // The error is tracked silently (no scary red toast for the user)
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('silent')
+
+    // Dismissing the confirmation (Cancel) clears the flag
+    controller.dismissGasFeeChangedConfirmation()
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    expect(controller.previousFee).toBe(null)
+  })
+  it('fee changed with custom gas prices keeps the original error and no soft confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // The user explicitly set advanced gas prices, so we don't override them
+    controller.hasCustomGasPrices = true
+
+    const originalMessage =
+      'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
+    const error = new Error(originalMessage)
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(originalMessage)
+    }
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('major')
+  })
 })
 
 test('Signing [V1 with EOA payment]: working case', async () => {
@@ -2424,7 +2762,10 @@ describe('ERC-7730 humanization', () => {
       })
 
       callRelayer.mockClear()
+      const previousHumanization = controller.humanization
       controller.humanize()
+      expect(controller.isHumanizing).toBe(true)
+      expect(controller.humanization).toBe(previousHumanization)
       await wait(0)
 
       expect(callRelayer).not.toHaveBeenCalled()
@@ -2530,5 +2871,230 @@ describe('dapp verification banners', () => {
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
+  })
+})
+
+describe('traceCall asset discovery', () => {
+  suppressConsoleBeforeEach(true)
+
+  const traceCallGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  let getShouldUseAccessListCallSpy: jest.SpiedFunction<
+    typeof accessListCallLib.getShouldUseAccessListCall
+  >
+  let createAccessListCallSpy: jest.SpiedFunction<typeof accessListCallLib.createAccessListCall>
+  let debugTraceCallSpy: jest.SpiedFunction<typeof debugTraceCallLib.debugTraceCall>
+  let addTokensToBeLearnedSpy: jest.SpiedFunction<
+    typeof PortfolioController.prototype.addTokensToBeLearned
+  >
+  let addErc721sToBeLearnedSpy: jest.SpiedFunction<
+    typeof PortfolioController.prototype.addErc721sToBeLearned
+  >
+
+  beforeEach(() => {
+    // Defaults: the access list branch resolves with no discovered assets and
+    // nothing new learned. Individual tests override these to drive a path.
+    jest.spyOn(debugTraceCallLib, 'getStateOverride').mockReturnValue(undefined as any)
+    getShouldUseAccessListCallSpy = jest
+      .spyOn(accessListCallLib, 'getShouldUseAccessListCall')
+      .mockReturnValue(true)
+    createAccessListCallSpy = jest
+      .spyOn(accessListCallLib, 'createAccessListCall')
+      .mockResolvedValue([])
+    debugTraceCallSpy = jest
+      .spyOn(debugTraceCallLib, 'debugTraceCall')
+      .mockResolvedValue({ tokens: [], nfts: [] })
+    addTokensToBeLearnedSpy = jest
+      .spyOn(PortfolioController.prototype, 'addTokensToBeLearned')
+      .mockReturnValue(false)
+    addErc721sToBeLearnedSpy = jest
+      .spyOn(PortfolioController.prototype, 'addErc721sToBeLearned')
+      .mockReturnValue(false)
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.useRealTimers()
+  })
+
+  // Builds a controller and neutralizes the discovery run that the estimate
+  // interval fires on init, so every test starts from a clean NotStarted state
+  // with empty mock history.
+  const initTraceCall = async (onUpdateAfterTraceCallSuccess?: () => Promise<void>) => {
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, 1n),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      traceCallGasPrices,
+      false,
+      { onUpdateAfterTraceCallSuccess }
+    )
+
+    await wait(100)
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    return controller
+  }
+
+  test('runs the full discovery lifecycle and learns the discovered assets', async () => {
+    const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
+    const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
+
+    const discovered = ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48']
+    const createAccessListDeferred = createDeferred<string[]>()
+    createAccessListCallSpy.mockReturnValue(createAccessListDeferred.promise)
+    addTokensToBeLearnedSpy.mockReturnValue(true)
+
+    jest.useFakeTimers()
+
+    // Discovery is kicked off and immediately flips to InProgress.
+    const traceCallPromise = (controller as any).traceCall()
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.InProgress)
+
+    // A second request while one is in progress is a no-op (reentrancy guard).
+    await (controller as any).traceCall()
+    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+
+    // After 2s without a response the status reflects the slow pending state.
+    jest.advanceTimersByTime(2000)
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.SlowPendingResponse)
+
+    // Resolving discovery learns the assets, fires the success callback and
+    // settles on Done.
+    createAccessListDeferred.resolve(discovered)
+    await traceCallPromise
+
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discovered, 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      discovered.map((address) => [address, []]),
+      smartAccount.addr,
+      1n
+    )
+    expect(onUpdateAfterTraceCallSuccess).toHaveBeenCalledTimes(1)
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('falls back to debug_traceCall when the access list fails and skips the callback when nothing is learned', async () => {
+    const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
+    const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
+
+    const emitErrorSpy = jest.fn()
+    ;(controller as any).emitError = emitErrorSpy
+
+    getShouldUseAccessListCallSpy.mockReturnValue(true)
+    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
+    debugTraceCallSpy.mockResolvedValueOnce({
+      tokens: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
+      nfts: []
+    })
+
+    await (controller as any).traceCall()
+
+    // The access list failure is reported silently, then discovery falls back
+    // to debug_traceCall.
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'silent', message: 'Error in signAccountOp.traceCall' })
+    )
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
+      ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
+      1n
+    )
+    // Nothing new learned (both learn spies default to false) -> no callback.
+    expect(onUpdateAfterTraceCallSuccess).not.toHaveBeenCalled()
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('sets Failed and emits a silent error when discovery throws', async () => {
+    const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
+    const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
+
+    const emitErrorSpy = jest.fn()
+    ;(controller as any).emitError = emitErrorSpy
+
+    getShouldUseAccessListCallSpy.mockReturnValue(false)
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+
+    await (controller as any).traceCall()
+
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Failed)
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'silent', message: 'Error in signAccountOp.traceCall' })
+    )
+    expect(onUpdateAfterTraceCallSuccess).not.toHaveBeenCalled()
+  })
+
+  // A cool way to not write two test cases for both branches
+  describe.each([
+    { branch: 'access-list', useAccessList: true },
+    { branch: 'debug', useAccessList: false }
+  ])('discards stale runs', ({ useAccessList }) => {
+    test('the stale run does not overwrite the latest results', async () => {
+      const controller = await initTraceCall()
+
+      getShouldUseAccessListCallSpy.mockReturnValue(useAccessList)
+
+      const deferredA = createDeferred<any>()
+      const deferredB = createDeferred<any>()
+      const armNextCall = (deferred: { promise: Promise<any> }) =>
+        useAccessList
+          ? createAccessListCallSpy.mockReturnValueOnce(deferred.promise)
+          : debugTraceCallSpy.mockReturnValueOnce(deferred.promise)
+      const resultWith = (token: string) =>
+        useAccessList ? [token] : { tokens: [token], nfts: [] }
+
+      armNextCall(deferredA)
+      const runA = (controller as any).traceCall()
+
+      // Supersede the in-flight run A with a newer run B.
+      controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+      armNextCall(deferredB)
+      const runB = (controller as any).traceCall()
+
+      // B finishes first and commits its discovered token.
+      const tokenB = '0xB0B86991c6218b36C1d19D4A2e9Eb0CE3606eB48'
+      deferredB.resolve(resultWith(tokenB))
+      await runB
+
+      expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith([tokenB], 1n)
+      expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+
+      addTokensToBeLearnedSpy.mockClear()
+
+      // A resolves late but is detected as stale and must not learn or mutate state.
+      const tokenA = '0xA0a86991C6218b36c1D19D4a2E9eB0cE3606eb48'
+      deferredA.resolve(resultWith(tokenA))
+      await runA
+
+      expect(addTokensToBeLearnedSpy).not.toHaveBeenCalled()
+      expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+    })
   })
 })

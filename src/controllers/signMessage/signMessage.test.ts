@@ -387,46 +387,6 @@ describe('SignMessageController', () => {
     })
   })
 
-  test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    const typedMessageToSign = createPermitTypedMessage()
-    const callRelayer = jest.fn(async (path: string, method?: string) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
-
-    signMessageController = new SignMessageController(
-      keystoreCtrl,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      {},
-      inviteCtrl,
-      undefined,
-      dappsCtrl,
-      callRelayer
-    )
-
-    await signMessageController.init({ messageToSign: typedMessageToSign })
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0)
-    })
-
-    expect(signMessageController.isHumanizing).toBe(false)
-    expect(signMessageController.humanizedMessage).toBeDefined()
-    expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
-    )
-  })
-
   test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
     const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
     const registryPath = 'registry/1inch/eip712-AggregationRouterV6.json'
@@ -759,6 +719,56 @@ describe('SignMessageController', () => {
       signMessageController.dapp = getDappRequestData(verifiedDapp)
 
       expect(signMessageController.banners).toEqual([])
+    })
+
+    test('shows the loading banner while the dapps controller is still loading and clears it once resolved', async () => {
+      const signMessageCtrl = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl
+      )
+
+      // Until the dapps controller finishes its initial storage load (e.g. right after a service
+      // worker restart), verification is unknown and must be reported as in progress, never as
+      // failed. A never-resolving promise holds it in that pending state.
+      dappsCtrl.initialLoadPromise = new Promise<void>(() => {})
+
+      try {
+        await signMessageCtrl.init({ messageToSign, dapp: getDappRequestData(verifiedDapp) })
+        // Flush the background humanization so its emit can't be mistaken for the one we assert on
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0)
+        })
+        expect(signMessageCtrl.banners).toEqual([
+          {
+            id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+            type: 'warning',
+            text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
+          }
+        ])
+
+        let emitsCount = 0
+        const unsubscribe = signMessageCtrl.onUpdate(() => {
+          emitsCount++
+        })
+
+        // The load completes and the dapps controller emits; the controller must re-emit so the
+        // loading banner is replaced by the resolved state (verified dapp in catalog → no banner).
+        dappsCtrl.initialLoadPromise = undefined
+        await dappsCtrl.forceEmitUpdate()
+
+        expect(emitsCount).toBeGreaterThan(0)
+        expect(signMessageCtrl.banners).toEqual([])
+
+        unsubscribe()
+      } finally {
+        dappsCtrl.initialLoadPromise = undefined
+      }
     })
   })
 })

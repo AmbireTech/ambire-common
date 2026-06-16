@@ -30,6 +30,7 @@ import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { TransferController } from '../transfer/transfer'
@@ -250,6 +251,7 @@ const PORTFOLIO_TOKENS = [
 ]
 
 let requestsCtrl: IRequestsController | undefined
+const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
 const dappsControllerMock = {
   dapps: [],
   isReady: true,
@@ -257,12 +259,13 @@ const dappsControllerMock = {
 } as any
 
 const swapAndBridgeController = new SwapAndBridgeController({
-  callRelayer: () => {},
+  callRelayer: async () => ({}),
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   accounts: accountsCtrl,
   activity: activityCtrl,
   storage: storageCtrl,
+  signAccountOpPreference,
   swapProvider: socketAPIMock as any,
   keystore,
   portfolio: portfolioCtrl,
@@ -279,8 +282,9 @@ const swapAndBridgeController = new SwapAndBridgeController({
 })
 
 const transferCtrl = new TransferController(
-  () => {},
+  async () => ({}),
   storageCtrl,
+  signAccountOpPreference,
   humanizerInfo as HumanizerMeta,
   selectedAccountCtrl,
   networksCtrl,
@@ -309,6 +313,8 @@ requestsCtrl = new RequestsController({
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
+  storage: storageCtrl,
+  signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
   transfer: transferCtrl,
@@ -379,6 +385,7 @@ describe('SwapAndBridge Controller', () => {
       '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toChainId).toEqual(10)
   })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!

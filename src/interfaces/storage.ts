@@ -84,6 +84,9 @@ export type StorageProps = {
   automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[]
   rejectedSafeTxns: string[]
   // Other
+  signAccountOpFeeTokenPreference: {
+    [chainId: string]: string | 'gasTank'
+  }
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }

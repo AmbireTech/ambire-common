@@ -30,11 +30,13 @@ import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   eToNative,
+  flattenHumanizerVisualizations,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
   getText,
   getToken,
+  getWarning,
   uintToAddress
 } from '../utils'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
@@ -291,6 +293,15 @@ const valueToText = (value: unknown): string => {
   } catch {
     return String(value)
   }
+}
+
+const interpolatedValueToText = (path: string, value: unknown): string => {
+  const amount = toBigIntOrNull(value)
+  if ((path === '@.value' || path === '#.@.value') && amount !== null) {
+    return formatUnits(amount, 18)
+  }
+
+  return valueToText(value)
 }
 
 const normalizeDecodedParam = (value: unknown, param: ParamType): unknown => {
@@ -738,6 +749,21 @@ const getCalldataRows = (
       typeof accountAddr === 'string' &&
       context.chainId
     ) {
+      const safeFallbackVisualization = getSafeCallFallbackVisualization({
+        to: callee,
+        data: calldata,
+        value: toBigIntOrNull(amount) || 0n
+      })
+
+      if (safeFallbackVisualization) {
+        acc.push({
+          label: nestedRowLabel,
+          value: [safeFallbackVisualization]
+        })
+
+        return acc
+      }
+
       const moduleFallbackVisualization = getModuleFallbackVisualization(
         {
           to: callee,
@@ -880,11 +906,11 @@ const interpolateIntent = (
 
     interpolated += template.slice(currentIndex, openingBraceIndex)
 
-    const path = template.slice(openingBraceIndex + 1, closingBraceIndex)
-    const value = resolvePath(path.trim(), context, base)
+    const path = template.slice(openingBraceIndex + 1, closingBraceIndex).trim()
+    const value = resolvePath(path, context, base)
     if (value === undefined) return null
 
-    interpolated += valueToText(value)
+    interpolated += interpolatedValueToText(path, value)
     currentIndex = closingBraceIndex + 1
   }
 
@@ -908,6 +934,52 @@ const formatToVisualizations = (
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
   !!descriptorPath?.includes('registry/1inch/') && formatKey.startsWith('fillOrder(')
+
+const hasResolvableTokenReference = (field: Erc7730Field, context: FormatContext): boolean => {
+  const resolvedField = resolveFieldReference(field, context)
+  const tokenPath =
+    typeof resolvedField.params?.tokenPath === 'string'
+      ? resolvePath(resolvedField.params.tokenPath, context, context.root)
+      : undefined
+  const token = resolveParamValue(resolvedField.params?.token, context, context.root)
+  const tokenReference = tokenPath ?? token
+
+  return (
+    typeof tokenReference === 'bigint' ||
+    (typeof tokenReference === 'string' && isAddress(tokenReference))
+  )
+}
+
+const hideOneInchMinimumReceiveWithoutToken = (
+  match: DescriptorFormatMatch,
+  context: FormatContext,
+  fullVisualization: HumanizerVisualization[]
+): HumanizerVisualization[] => {
+  if (!context.descriptorPath?.includes('registry/1inch/')) return fullVisualization
+
+  const minimumReceiveField = match.format.fields
+    ?.map((field) => resolveFieldReference(field, context))
+    .find(
+      (field) =>
+        field.format === 'tokenAmount' &&
+        (field.label || field.path || '').trim().toLowerCase() === 'minimum to receive'
+    )
+
+  if (!minimumReceiveField || hasResolvableTokenReference(minimumReceiveField, context)) {
+    return fullVisualization
+  }
+
+  return fullVisualization.map((visualization) =>
+    visualization.type === 'erc7730'
+      ? {
+          ...visualization,
+          rows: visualization.rows.filter(
+            (row) => row.label.trim().toLowerCase() !== 'minimum to receive'
+          )
+        }
+      : visualization
+  )
+}
 
 const getUintAddressValue = (value: unknown): string | null => {
   if (typeof value === 'bigint') return uintToAddress(value)
@@ -1097,6 +1169,15 @@ const getSafeCallFallbackVisualization = (
     return null
   }
 
+  if (action.content === 'Account setup') {
+    const rows = getRowsFromFlatCallVisualization(safeHumanization.visuals)
+    if (!rows) return null
+
+    const visualization = getErc7730Visualization(action.content, rows)
+
+    return visualization.type === 'erc7730' ? visualization : null
+  }
+
   const firstActionIndex = safeHumanization.visuals.indexOf(action)
   const value = safeHumanization.visuals
     .slice(firstActionIndex + 1)
@@ -1184,6 +1265,76 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
 
     return true
   })
+}
+
+const hasDisplayedNativeTransactionValue = (
+  fullVisualization: HumanizerVisualization[],
+  nativeValue: bigint
+) =>
+  flattenHumanizerVisualizations(fullVisualization).some(
+    (visualization) =>
+      visualization.type === 'token' &&
+      visualization.address.toLowerCase() === ZeroAddress &&
+      visualization.value === nativeValue
+  )
+
+const appendNativeValueRow = (
+  fullVisualization: HumanizerVisualization[],
+  nativeValue: bigint,
+  chainId: bigint
+): HumanizerVisualization[] => {
+  if (nativeValue === 0n) return fullVisualization
+  if (hasDisplayedNativeTransactionValue(fullVisualization, nativeValue)) return fullVisualization
+
+  let didFindErc7730Visualization = false
+
+  return fullVisualization.map((visualization) => {
+    if (didFindErc7730Visualization || visualization.type !== 'erc7730') return visualization
+
+    didFindErc7730Visualization = true
+    return {
+      ...visualization,
+      rows: [
+        ...visualization.rows,
+        {
+          label: 'Send',
+          value: [getToken(ZeroAddress, nativeValue, chainId)]
+        }
+      ]
+    }
+  })
+}
+
+const getNativeValueWarnings = (
+  fullVisualization: HumanizerVisualization[],
+  nativeAssetSymbol?: string
+): HumanizerWarning[] => {
+  if (!nativeAssetSymbol) return []
+
+  const hasNativeValue = fullVisualization.some(
+    (visualization) =>
+      visualization.type === 'erc7730' &&
+      visualization.rows.some(
+        (row) =>
+          row.label === 'Send' &&
+          row.value.some(
+            (value) =>
+              value.type === 'token' &&
+              value.address === ZeroAddress &&
+              value.value !== undefined &&
+              value.value > 0n
+          )
+      )
+  )
+
+  return hasNativeValue
+    ? [
+        getWarning(
+          `This transaction will send ${nativeAssetSymbol}`,
+          'ERC7730_REQUIRES_NATIVE_VALUE'
+        )
+      ]
+    : []
 }
 
 const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[] => {
@@ -1336,7 +1487,8 @@ export const humanizeCallWithErc7730 = (
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
-  nestedCalldataDepth = 0
+  nestedCalldataDepth = 0,
+  nativeAssetSymbol?: string
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
     const safeTxCallVisualizations = getSafeTxCallVisualizations(
@@ -1346,12 +1498,16 @@ export const humanizeCallWithErc7730 = (
       resolvedDescriptor
     )
 
-    if (!safeTxCallVisualizations.length) return null
+    if (!safeTxCallVisualizations.length || !call.to) return null
 
     return {
       ...call,
       fullVisualization: [
         getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
+          {
+            label: 'Safe',
+            value: [getAddressVisualization(call.to)]
+          },
           {
             label: '',
             value: safeTxCallVisualizations
@@ -1374,6 +1530,7 @@ export const humanizeCallWithErc7730 = (
       ...match.values,
       '@': {
         accountAddr,
+        from: accountAddr,
         to: call.to,
         value: call.value,
         data: call.data,
@@ -1387,12 +1544,21 @@ export const humanizeCallWithErc7730 = (
   const normalizedVisualization = fullVisualization
     ? getOneInchFillOrderSwapVisualization(match, context, fullVisualization, call.dapp)
     : null
+  const oneInchVisualization = normalizedVisualization
+    ? hideOneInchMinimumReceiveWithoutToken(match, context, normalizedVisualization)
+    : null
+  const visualizationWithNativeValue = oneInchVisualization
+    ? appendNativeValueRow(oneInchVisualization, call.value, chainId)
+    : null
 
-  return normalizedVisualization?.length
+  return visualizationWithNativeValue?.length
     ? {
         ...call,
-        fullVisualization: normalizedVisualization,
-        warnings: dedupeWarnings(getSafeCallWarnings(call, accountAddr))
+        fullVisualization: visualizationWithNativeValue,
+        warnings: dedupeWarnings([
+          ...getSafeCallWarnings(call, accountAddr),
+          ...getNativeValueWarnings(visualizationWithNativeValue, nativeAssetSymbol)
+        ])
       }
     : null
 }

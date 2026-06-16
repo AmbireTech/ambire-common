@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
-
 import {
   AbiCoder,
   formatEther,
@@ -25,12 +23,7 @@ import {
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import {
-  EIP_7702_AMBIRE_ACCOUNT,
-  EIP_7702_GRID_PLUS,
-  EIP_7702_KATANA,
-  SINGLETON
-} from '../../consts/deploy'
+import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
@@ -159,8 +152,13 @@ import {
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
+  isUnderpriced,
   SignAccountOpType
 } from './helper'
+import {
+  SignAccountOpFeeTokenPreference,
+  SignAccountOpPreferenceController
+} from './signAccountOpPreference'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -213,6 +211,7 @@ export type SignAccountOpUpdateProps = {
   customGasPrices?: GasSpeeds
   customGasLimit?: bigint
   feeToken?: TokenResult
+  pendingFeeTokenPreference?: TokenResult | null
   paidBy?: string
   paidByKeyType?: Key['type']
   speed?: FeeSpeed
@@ -247,6 +246,8 @@ export class SignAccountOpController
   #keystore: IKeystoreController
 
   #portfolio: IPortfolioController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -289,6 +290,10 @@ export class SignAccountOpController
    */
   feeTokenResult: TokenResult | null = null
 
+  feeTokenPreference: SignAccountOpFeeTokenPreference = {}
+
+  pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
+
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
   /**
@@ -305,6 +310,15 @@ export class SignAccountOpController
   signedAccountOp: AccountOp | null
 
   replacementFeeLow: boolean
+
+  // Set to true when a broadcast attempt fails because the network fee changed
+  // significantly while the transaction was being prepared (e.g. during a gas
+  // spike) and we auto-updated the gas prices. The UI uses this to show a soft
+  // "Gas fee updated" confirmation instead of a scary error toast, so the user
+  // can accept the new fee and continue without redoing the whole flow.
+  gasFeeChangedConfirmationRequired: boolean = false
+
+  previousFee: SpeedCalc | null = null
 
   warnings: Warning[] = []
 
@@ -387,7 +401,7 @@ export class SignAccountOpController
 
   signAndBroadcastPromise: Promise<void> | undefined
 
-  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+  private traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   #gasPriceInterval: IRecurringTimeout
 
@@ -403,6 +417,7 @@ export class SignAccountOpController
     networks,
     keystore,
     portfolio,
+    signAccountOpPreference,
     externalSignerControllers,
     account,
     network,
@@ -424,6 +439,7 @@ export class SignAccountOpController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
+    signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
     network: Network
@@ -444,6 +460,8 @@ export class SignAccountOpController
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#signAccountOpPreference = signAccountOpPreference
+    this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -754,8 +772,26 @@ export class SignAccountOpController
     this.humanize()
     this.learnTokens()
 
+    let lastEstimationStatus: EstimationStatus | null = null
+
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      // Retry asset discovery if the estimation managed to recover after failure
+      // An example is doing an approval and a transaction immediately after - the second
+      // transaction will fail before the approval txn is confirmed.
+      if (
+        lastEstimationStatus === EstimationStatus.Error &&
+        this.estimation.status === EstimationStatus.Success
+      ) {
+        this.setDiscoveryStatus(TraceCallDiscoveryStatus.NotStarted)
+        this.traceCall()
+      }
+
+      // Ignore the transient Loading status. estimate() emits Loading at its start,
+      // so recording it here would overwrite a remembered Error before the following
+      // Success is seen, and the Error -> Success recovery above would never be detected.
+      if (this.estimation.status !== EstimationStatus.Loading)
+        lastEstimationStatus = this.estimation.status
     })
 
     this.gasPrice.onUpdate(() => {
@@ -834,7 +870,6 @@ export class SignAccountOpController
   #startHumanization() {
     return this.startHumanization((humanizationId) => {
       this.isHumanizing = true
-      this.humanization = []
       this.humanizationId = humanizationId
     })
   }
@@ -862,7 +897,10 @@ export class SignAccountOpController
       return false
     }
 
-    const erc7730Humanization = humanizeAccountOp(this.accountOp, { erc7730Descriptors })
+    const erc7730Humanization = humanizeAccountOp(this.accountOp, {
+      erc7730Descriptors,
+      nativeAssetSymbol: this.#network.nativeAssetSymbol
+    })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||
       !this.isCurrentHumanization(humanizationId) ||
@@ -915,6 +953,87 @@ export class SignAccountOpController
     return this.estimation && this.estimation.isInitialized()
   }
 
+  #isNativeFeeOption(option: FeePaymentOption) {
+    return option.token.address === ZERO_ADDRESS && !option.token.flags.onGasTank
+  }
+
+  #getPreferredFeeOption(options: FeePaymentOption[]) {
+    const pref = this.feeTokenPreference[this.accountOp.chainId.toString()]
+
+    if (pref) {
+      // find the gas tank
+      if (pref === 'gasTank') {
+        return options.find((option) => option.token.flags.onGasTank)
+      }
+
+      // find the token/native
+      return options.find(
+        (option) =>
+          !option.token.flags.onGasTank && option.token.address.toLowerCase() === pref.toLowerCase()
+      )
+    }
+
+    return undefined
+  }
+
+  #getDefaultFeeOption(options: FeePaymentOption[]) {
+    const notDisabled = options.filter((option) => !this.#getIsFeeOptionDisabled(option))
+    const selectableOptions = notDisabled.length ? notDisabled : options
+    const preferred = this.#getPreferredFeeOption(selectableOptions)
+
+    if (preferred) return preferred
+
+    return (
+      selectableOptions.find((option) => this.#isNativeFeeOption(option)) ||
+      selectableOptions.find((option) => option.token.flags.onGasTank) ||
+      selectableOptions[0]
+    )
+  }
+
+  #getFeeTokenPreference(feeToken: TokenResult) {
+    const nextPreference: SignAccountOpFeeTokenPreference = {
+      ...this.feeTokenPreference
+    }
+    nextPreference[this.accountOp.chainId.toString()] = feeToken.flags.onGasTank
+      ? 'gasTank'
+      : feeToken.address
+    return nextPreference
+  }
+
+  #doesFeeTokenPreferenceMatchToken(
+    preference: SignAccountOpFeeTokenPreference,
+    feeToken: TokenResult
+  ) {
+    const chainId = this.accountOp.chainId.toString()
+
+    const chainPreference = preference[chainId]
+    if (!chainPreference) return false
+
+    const isGasTank = feeToken.flags.onGasTank && chainPreference === 'gasTank'
+    const isSelectedToken =
+      !feeToken.flags.onGasTank && feeToken.address.toLowerCase() === chainPreference.toLowerCase()
+
+    return isGasTank || isSelectedToken
+  }
+
+  async #persistPendingFeeTokenPreference() {
+    if (!this.pendingFeeTokenPreference) return
+
+    try {
+      const nextFeeTokenPreference = this.pendingFeeTokenPreference
+      await this.#signAccountOpPreference.setFeeTokenPreference(nextFeeTokenPreference)
+      this.feeTokenPreference = nextFeeTokenPreference
+      this.pendingFeeTokenPreference = null
+      this.emitUpdate()
+    } catch (error) {
+      this.emitError({
+        message: 'Error saving SignAccountOp fee token preference',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
   #setDefaults() {
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
@@ -954,30 +1073,17 @@ export class SignAccountOpController
         // for Safe accounts, always select the first not disabled EOA
         // or the first EOA if all are disabled
         if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
-          const notDisabled = payOptionsPaidByEOA.find(
-            (option) => !this.#getIsFeeOptionDisabled(option)
-          )
-          const selected = notDisabled ?? payOptionsPaidByEOA[0]!
+          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
           this.feeTokenResult = selected.token
           this.#paidBy = selected.paidBy
-        } else if (
-          payOptionsPaidByUsOrGasTank.length > 0 &&
-          !this.#getIsFeeOptionDisabled(payOptionsPaidByUsOrGasTank[0]!)
-        ) {
-          this.feeTokenResult = payOptionsPaidByUsOrGasTank[0]!.token
-          this.#paidBy = payOptionsPaidByUsOrGasTank[0]!.paidBy
-        } else if (
-          payOptionsPaidByEOA.length > 0 &&
-          !this.#getIsFeeOptionDisabled(payOptionsPaidByEOA[0]!)
-        ) {
-          this.feeTokenResult = payOptionsPaidByEOA[0]!.token
-          this.#paidBy = payOptionsPaidByEOA[0]!.paidBy
         } else if (payOptionsPaidByUsOrGasTank.length) {
-          this.feeTokenResult = payOptionsPaidByUsOrGasTank[0]!.token
-          this.#paidBy = payOptionsPaidByUsOrGasTank[0]!.paidBy
+          const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank)!
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
         } else if (payOptionsPaidByEOA.length) {
-          this.feeTokenResult = payOptionsPaidByEOA[0]!.token
-          this.#paidBy = payOptionsPaidByEOA[0]!.paidBy
+          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
         }
       }
     }
@@ -1286,7 +1392,7 @@ export class SignAccountOpController
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
-    if (shouldTraceCall) this.#traceCall()
+    if (shouldTraceCall) this.traceCall()
 
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
@@ -1380,6 +1486,22 @@ export class SignAccountOpController
     this.#gasPriceInterval.restart()
   }
 
+  #requestGasFeeChangedConfirmation() {
+    if (this.selectedOption && this.selectedFeeSpeed) {
+      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
+      const selectedFee = this.feeSpeeds[identifier]?.find(
+        (fee) => fee.type === this.selectedFeeSpeed
+      )
+
+      this.previousFee = selectedFee ? { ...selectedFee } : null
+    } else {
+      this.previousFee = null
+    }
+
+    this.gasFeeChangedConfirmationRequired = true
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
@@ -1390,6 +1512,7 @@ export class SignAccountOpController
     customGasPrices,
     customGasLimit,
     feeToken,
+    pendingFeeTokenPreference,
     paidBy,
     speed,
     signingKeyAddr,
@@ -1549,11 +1672,23 @@ export class SignAccountOpController
         this.customGasLimit = customGasLimit
       }
 
+      if (typeof pendingFeeTokenPreference !== 'undefined') {
+        this.pendingFeeTokenPreference = pendingFeeTokenPreference
+          ? this.#getFeeTokenPreference(pendingFeeTokenPreference)
+          : null
+      }
+
       this.#syncSpeedUpFeeSelectionFromEstimation()
 
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
+        if (
+          this.pendingFeeTokenPreference &&
+          !this.#doesFeeTokenPreferenceMatchToken(this.pendingFeeTokenPreference, feeToken)
+        ) {
+          this.pendingFeeTokenPreference = null
+        }
 
         if (this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.paidBy !== paidBy) {
           // Reset paidByKeyType if the payer has changed
@@ -1723,9 +1858,12 @@ export class SignAccountOpController
     this.#hwCleanup()
     this.gasPrices = undefined
     this.hasCustomGasPrices = false
+    this.gasFeeChangedConfirmationRequired = false
+    this.previousFee = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
     this.feeTokenResult = null
+    this.pendingFeeTokenPreference = null
     this.status = null
     this.signedTransactionsCount = null
     this.hardwareWalletSigningRequest = null
@@ -1854,13 +1992,13 @@ export class SignAccountOpController
     if (aCanCoverFee && !bCanCoverFee) return -1
     if (!aCanCoverFee && bCanCoverFee) return 1
 
-    // gas tank first
+    // native first
+    if (this.#isNativeFeeOption(a) && !this.#isNativeFeeOption(b)) return -1
+    if (!this.#isNativeFeeOption(a) && this.#isNativeFeeOption(b)) return 1
+
+    // gas tank second
     if (a.token.flags.onGasTank && !b.token.flags.onGasTank) return -1
     if (!a.token.flags.onGasTank && b.token.flags.onGasTank) return 1
-
-    // native second
-    if (a.token.address === ZERO_ADDRESS && b.token.address !== ZERO_ADDRESS) return -1
-    if (a.token.address !== ZERO_ADDRESS && b.token.address === ZERO_ADDRESS) return 1
 
     if (!a || !b) return 0
 
@@ -1875,14 +2013,14 @@ export class SignAccountOpController
   #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
     const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
     const speeds = this.feeSpeeds[id] ?? []
-    const isTransferredTokenOption = isTransferredTokenFeeOption(feeOption, this.accountOp)
 
     const coversSlow = speeds.some(
       (speed: SpeedCalc) =>
-        speed.type === FeeSpeed.Slow && feeOption.availableAmount >= speed.amount
+        speed.type === FeeSpeed.Slow &&
+        canFeeOptionCoverAmount(feeOption, this.accountOp, speed.amount)
     )
 
-    if (!coversSlow && !isTransferredTokenOption) return true
+    if (!coversSlow) return true
 
     const isExternal = this.accountKeyStoreKeys.some(
       (keyStoreKey) => keyStoreKey.addr === feeOption.paidBy && keyStoreKey.isExternallyStored
@@ -1896,11 +2034,17 @@ export class SignAccountOpController
   }
 
   #shouldSuppressTransferFeeSelectionError(feeOption?: FeePaymentOption): boolean {
-    return (
-      this.#type === 'one-click-transfer' &&
-      !!feeOption &&
-      isTransferredTokenFeeOption(feeOption, this.accountOp)
+    if (
+      this.#type !== 'one-click-transfer' ||
+      !feeOption ||
+      !isTransferredTokenFeeOption(feeOption, this.accountOp)
     )
+      return false
+
+    const feeAmount = this.accountOp.gasFeePayment?.amount
+    if (!feeAmount) return true
+
+    return canFeeOptionCoverAmount(feeOption, this.accountOp, feeAmount)
   }
 
   /**
@@ -1943,11 +2087,16 @@ export class SignAccountOpController
     return BigInt(toBigInt)
   }
 
-  async #traceCall() {
+  private async traceCall() {
+    if (this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.NotStarted) {
+      console.warn('Trace call already in progress')
+      return
+    }
+
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
     // to `SlowPendingResponse` for the newer `traceCall` invocation.
-    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+    if (this.traceCallTimeoutId) clearTimeout(this.traceCallTimeoutId)
 
     // Here, we also check the status because, in the case of re-estimation,
     // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
@@ -1957,11 +2106,18 @@ export class SignAccountOpController
 
     // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
+      // Prevent race conditions between multiple `traceCall` invocations
+      if (
+        this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.InProgress ||
+        this.traceCallTimeoutId !== timeoutId
+      )
+        return
+
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
       this.calculateWarnings()
     }, 2000)
 
-    this.#traceCallTimeoutId = timeoutId
+    this.traceCallTimeoutId = timeoutId
 
     try {
       const state =
@@ -1996,6 +2152,13 @@ export class SignAccountOpController
           erc721s = addresses.map((address) => [address, []])
         }
       }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
+      }
+
       if (!shouldUseAccessList || accessListFailed) {
         console.log('Debug: using debug_traceCall for asset discovery')
         const { tokens, nfts } = await debugTraceCall(
@@ -2007,6 +2170,12 @@ export class SignAccountOpController
         )
         erc20s = tokens
         erc721s = nfts
+      }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
       }
 
       const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
@@ -2032,7 +2201,7 @@ export class SignAccountOpController
     }
 
     this.calculateWarnings()
-    this.#traceCallTimeoutId = null
+    this.traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
 
@@ -2223,7 +2392,7 @@ export class SignAccountOpController
           gasPrice,
           // undefined will switch the broadcast type to 0, legacy
           maxPriorityFeePerGas: maxPriorityFeePerGas > 0n ? maxPriorityFeePerGas : undefined,
-          disabled: option.availableAmount < amount
+          disabled: !canFeeOptionCoverAmount(option, this.accountOp, amount)
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)
@@ -2418,6 +2587,7 @@ export class SignAccountOpController
   #emitSigningErrorAndResetToReadyToSign({
     message,
     sendCrashReport,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     accountState
   }: {
     message: string
@@ -2683,6 +2853,8 @@ export class SignAccountOpController
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
+    await this.#persistPendingFeeTokenPreference()
+
     const estimation = this.estimation.estimation as FullEstimationSummary
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
@@ -2782,9 +2954,8 @@ export class SignAccountOpController
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
-        const signature = (await this.#withHardwareWalletSigningRequest(
-          signingRequest,
-          () => safeSigner.signTypedData(typedData)
+        const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
+          safeSigner.signTypedData(typedData)
         )) as Hex
         nowSignedSigs.push(signature)
 
@@ -2993,14 +3164,24 @@ export class SignAccountOpController
             this.emitUpdate()
           } else {
             const errorResponse = paymasterInfo.errorResponse as PaymasterErrorReponse
-            this.emitError({
-              level: 'major',
-              message: errorResponse.message,
-              error: errorResponse.error
-            })
             this.status = { type: SigningStatus.ReadyToSign }
-            this.emitUpdate()
+            const isGasFeeUnderpriced = isUnderpriced(errorResponse.message)
+            if (isGasFeeUnderpriced) this.#requestGasFeeChangedConfirmation()
+
             this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+
+            // if the paymaster has failed because the txn was underpriced, prompt
+            // the user to accept the new price and continue quickly instead of
+            // displaying an error
+            if (!isGasFeeUnderpriced) {
+              this.emitError({
+                level: 'major',
+                message: errorResponse.message,
+                error: errorResponse.error
+              })
+            }
+
+            this.emitUpdate()
             return
           }
         }
@@ -3441,6 +3622,11 @@ export class SignAccountOpController
       })
     }
 
+    // A fresh attempt clears any pending "gas fee updated" confirmation, so a
+    // stale flag from a previous failed broadcast doesn't reopen the modal.
+    this.gasFeeChangedConfirmationRequired = false
+    this.previousFee = null
+
     this.signAndBroadcastPromise = (async () => {
       this.signPromise = this.sign().finally(() => {
         this.signPromise = undefined
@@ -3511,6 +3697,10 @@ export class SignAccountOpController
     const originalMessage = _err?.message
     let message = humanReadableMessage
     let isReplacementFeeLow = false
+    // When the broadcast fails only because the network fee changed and we
+    // auto-updated the gas prices, we surface a soft confirmation modal instead
+    // of a scary error toast (see gasFeeChangedConfirmationRequired).
+    let softFeeUpdateConfirmation = false
 
     this.broadcastStatus = 'ERROR'
     this.forceEmitUpdate()
@@ -3534,26 +3724,21 @@ export class SignAccountOpController
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
-      } else if (
-        originalMessage.includes('underpriced') ||
-        originalMessage.includes('Fee confirmation failed') ||
-        originalMessage.includes('maxFeePerGas') ||
-        originalMessage.includes('maxPriorityFeePerGas')
-      ) {
-        if (
-          originalMessage.includes('underpriced') ||
-          originalMessage.includes('maxFeePerGas') ||
-          originalMessage.includes('maxPriorityFeePerGas')
-        ) {
-          if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
-          else message = originalMessage
-        }
+      } else if (isUnderpriced(originalMessage)) {
+        if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
+        else message = originalMessage
 
         if (!this.hasCustomGasPrices) {
+          this.#requestGasFeeChangedConfirmation()
+
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
 
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+
+          // The fee was auto-updated, so don't alarm the user with a red error
+          // toast. Ask them to confirm the new fee and continue instead.
+          softFeeUpdateConfirmation = true
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
@@ -3580,8 +3765,14 @@ export class SignAccountOpController
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
         })
       }
-      if (message.includes('the selected fee is too low')) {
+      if (message.includes('the selected fee is too low') && !this.hasCustomGasPrices) {
+        this.#requestGasFeeChangedConfirmation()
+
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#silentGasPriceUpdate()
+        this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+        softFeeUpdateConfirmation = true
+        message = 'Transaction fees changed. Please try again'
       }
     }
 
@@ -3594,11 +3785,21 @@ export class SignAccountOpController
     }
 
     this.emitError({
-      level: 'major',
+      // Keep the report for Sentry/logging, but don't show a toast when we're
+      // handling this softly via the "Gas fee updated" confirmation modal.
+      level: softFeeUpdateConfirmation ? 'silent' : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
     })
+
+    // signAndBroadcastPromise may clear before a debounced UI update is sent.
+    // Force-emit so gasFeeChangedConfirmationRequired reliably reaches the UI.
+    if (softFeeUpdateConfirmation) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.forceEmitUpdate()
+    }
+
     throw new Error(message) // so that broadcast resolves with an error status
   }
 
@@ -3608,6 +3809,19 @@ export class SignAccountOpController
 
   setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
     this.traceCallDiscoveryStatus = status
+  }
+
+  /**
+   * Dismisses the soft "Gas fee updated" confirmation without retrying the
+   * broadcast (e.g. when the user cancels the modal). The controller stays in
+   * ReadyToSign so the user can still adjust and submit again manually.
+   */
+  dismissGasFeeChangedConfirmation() {
+    if (!this.gasFeeChangedConfirmationRequired) return
+
+    this.gasFeeChangedConfirmationRequired = false
+    this.previousFee = null
+    this.emitUpdate()
   }
 
   /**
@@ -3722,6 +3936,8 @@ export class SignAccountOpController
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
+      feeTokenPreference: this.feeTokenPreference,
+      pendingFeeTokenPreference: this.pendingFeeTokenPreference,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,
@@ -3740,7 +3956,9 @@ export class SignAccountOpController
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
-      safeEip712Data: this.safeEip712Data
+      safeEip712Data: this.safeEip712Data,
+      gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
+      previousFee: this.previousFee
     }
   }
 }

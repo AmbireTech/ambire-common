@@ -145,6 +145,15 @@ export class SignMessageController
     this.#dapps = dapps
     this.#callRelayer = callRelayer
     this.status = SignMessageStatus.Initial
+
+    // `banners` is derived from DappsController state (the dapp verification status), so its
+    // updates must be propagated - otherwise a banner computed before the status resolves
+    // (e.g. right after a service worker restart) would stay stale in the UI until this
+    // controller happens to emit for another reason.
+    // NOTE: No unsubscribe needed - both controllers are singletons living for the app lifetime.
+    this.#dapps?.onUpdate((forceEmit) => {
+      if (this.dapp?.url) this.propagateUpdate(forceEmit)
+    }, 'sign-message-dapps-verification')
   }
 
   async init({
