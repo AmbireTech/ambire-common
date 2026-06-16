@@ -1259,7 +1259,7 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   const warningKeys = new Set<string>()
 
   return warnings.filter((warning) => {
-    const warningKey = `${warning.code}:${warning.content}`
+    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
     if (warningKeys.has(warningKey)) return false
     warningKeys.add(warningKey)
 
