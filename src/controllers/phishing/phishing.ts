@@ -56,6 +56,23 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  *   app.uniswap.org opened directly (no suspicious co-session)                  intrinsic=VERIFIED, context=undefined → VERIFIED
  *   app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED      intrinsic=BLACKLISTED wins → BLACKLISTED
  */
+/**
+ * The non-Google entries below are derived from an analysis of the eth-phishing-detect
+ * blocklist, ranked by how many blocked phishing
+ * entries are hosted on each shared platform. Only platforms that can serve an arbitrary
+ * JS wallet connector (the actual eth_requestAccounts attack vector) and that legitimate
+ * DeFi protocols never use as a primary domain are included.
+ *
+ * Deliberately EXCLUDED despite appearing in the report, to avoid false positives on
+ * legitimate traffic and because they cannot host a wallet connector:
+ *   - typeform.com, zendesk.com — form/support builders; cannot run a custom connector.
+ *   - medium.com — publishing platform; no custom JS.
+ *   - netlify.com — Netlify's own corporate site (the user-hosting suffix netlify.app IS listed).
+ *   - s3.amazonaws.com, cloudfront.net — object storage / CDN that fronts large amounts of
+ *     legitimate dApp assets; low blocklist share, high false-positive risk.
+ *   - translate.goog — Google Translate proxy; would flag legitimate translated browsing.
+ *   - page.link — Firebase Dynamic Links (deprecated redirect service), not a host.
+ */
 export const SUSPICIOUS_HOSTING_DOMAINS = [
   // Google ecosystem
   'sites.google.com',
@@ -68,15 +85,73 @@ export const SUSPICIOUS_HOSTING_DOMAINS = [
   // JAMstack / static hosting
   'vercel.app',
   'netlify.app',
+  'bitballoon.com', // Netlify legacy
   'pages.dev',
-  'github.io',
+  'r2.dev', // Cloudflare R2 (public buckets serving static sites)
+  'workers.dev', // Cloudflare Workers
+  'github.io', // GitHub Pages
+  'gitlab.io', // GitLab Pages
+  'surge.sh',
 
   // Firebase
   'firebaseapp.com',
   'web.app',
 
-  // IPFS gateway
-  'ipfs.io'
+  // Cloud app / PaaS hosts
+  'azurewebsites.net',
+  'onrender.com',
+  'herokuapp.com',
+  'railway.app',
+  'glitch.me',
+  'repl.co',
+  'replit.app',
+  'csb.app', // CodeSandbox
+
+  // Docs hosting
+  'gitbook.io',
+
+  // Website builders
+  'webflow.io',
+  'mystrikingly.com',
+  'b12sites.com',
+  'weebly.com',
+  'weeblysite.com',
+  'godaddysites.com',
+  'umso.co',
+  'jimdosite.com',
+  'tilda.ws',
+  'square.site',
+  'flazio.com',
+
+  // Website / managed hosts
+  'pantheonsite.io',
+  'plesk.page',
+
+  // Free web hosts
+  '42web.io',
+  'cprapid.com',
+  '000webhostapp.com',
+
+  // Blogging platforms
+  'blogspot.com',
+  'wordpress.com',
+
+  // Dynamic DNS (abuse-prone, no legitimate DeFi usage)
+  'us.to',
+  'duia.us',
+  'mooo.com',
+
+  // IPFS / decentralized gateways
+  'ipfs.io',
+  'dweb.link',
+  'cf-ipfs.com',
+  'on-fleek.app',
+  'fleek.co',
+  'mypinata.cloud',
+  '4everland.app',
+  'w3s.link',
+  'eth.limo',
+  'eth.link'
 ]
 
 function isSuspiciousHostingDomain(url: string): boolean {
