@@ -915,7 +915,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const newKeys: StoredKey[] = (
       await Promise.all(
         uniqueKeysToAdd.map(async ({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
-          // eslint-disable-next-line no-param-reassign
           privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
           // Set up the cipher

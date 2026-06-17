@@ -22,7 +22,6 @@ const stkWrapAbi = parseAbi(['function wrap(uint256 shareAmount)'])
 const stkUnwrapAbi = parseAbi(['function unwrap(uint256 shareAmount)'])
 const stkEnterAbi = parseAbi(['function enter(uint256 amount)'])
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
     supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,
