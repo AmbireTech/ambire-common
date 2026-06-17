@@ -259,7 +259,6 @@ export class UniswapAPI implements SwapProvider {
     }
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     return true
   }
