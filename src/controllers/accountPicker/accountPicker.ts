@@ -1591,23 +1591,25 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * Also, could be an attack vector. So indicate to the user that something is wrong.
    */
   #verifyLinkedAccounts() {
-    this.#linkedAccounts.forEach((linkedAcc) => {
-      const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
-        linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
-      )
+    this.#linkedAccounts
+      .filter((linkedAcc) => !linkedAcc.account.safeCreation)
+      .forEach((linkedAcc) => {
+        const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
+          linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
+        )
 
-      // The `correspondingDerivedAccount` should always be found,
-      // except something is wrong with the data we have stored on the Relayer
-      if (!correspondingDerivedAccount) {
-        this.emitError({
-          level: 'major',
-          message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
-          error: new Error(
-            `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
-          )
-        })
-      }
-    })
+        // The `correspondingDerivedAccount` should always be found,
+        // except something is wrong with the data we have stored on the Relayer
+        if (!correspondingDerivedAccount) {
+          this.emitError({
+            level: 'major',
+            message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
+            error: new Error(
+              `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
+            )
+          })
+        }
+      })
   }
 
   #throwNotInitialized() {
