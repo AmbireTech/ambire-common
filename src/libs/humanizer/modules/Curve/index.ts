@@ -13,7 +13,6 @@ const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
     address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? zeroAddress : address
 
   const handleBasicSwap = (curveRoute: readonly string[], amountIn: bigint, amountOut: bigint) => {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     const route = curveRoute.filter((a: string) => a !== zeroAddress)
     const [inToken, outToken] = [route[0], route[route.length - 1]]
     return [

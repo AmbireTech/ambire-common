@@ -1203,7 +1203,15 @@ export class DappsController extends EventEmitter implements IDappsController {
       const intrinsic = dapp?.blacklisted
       return {
         id,
-        status: intrinsic === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsic),
+        // BLACKLISTED on the dApp itself always wins. While the initial storage load is still
+        // pending, #dapps may be empty, so a missing record/status doesn't mean verification
+        // failed - report LOADING instead (e.g. a sign request right after a service worker wake-up).
+        status:
+          intrinsic === 'BLACKLISTED'
+            ? 'BLACKLISTED'
+            : this.initialLoadPromise
+              ? 'LOADING'
+              : (contextStatus ?? intrinsic),
         name: dapp?.name || new URL(url).hostname
       }
     })

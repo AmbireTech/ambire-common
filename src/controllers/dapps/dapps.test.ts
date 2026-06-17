@@ -301,6 +301,40 @@ describe('DappsController', () => {
       }
     })
 
+    test('should return loading banner while the initial storage load is still pending', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'FAILED_TO_GET' })
+
+      try {
+        const { controller } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+
+        // Simulate a banner request arriving before the initial storage load has finished
+        // (e.g. right after a service worker restart) - the statuses are not known yet,
+        // so the banner must report the verification as in progress, not failed/unknown
+        controller.initialLoadPromise = new Promise<void>(() => {})
+        expect(controller.getDappVerificationBanner([aave.url])).toEqual({
+          id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+          type: 'warning',
+          text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
+        })
+
+        // Once the load completes, the actual (failed) status should be reported again
+        controller.initialLoadPromise = undefined
+        expect(controller.getDappVerificationBanner([aave.url])).toEqual({
+          id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+          type: 'warning',
+          text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
+        })
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
     test('should return failed banner for dapps with failed verification', async () => {
       const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'FAILED_TO_GET' })
 

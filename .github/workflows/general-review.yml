@@ -14,6 +14,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.sender.type != 'Bot' &&
       github.event_name == 'issue_comment' &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
       contains(github.event.comment.body, '/review') &&
       !contains(github.event.comment.body, '/security-review'))
     permissions:
@@ -22,8 +23,16 @@ jobs:
       contents: read
     uses: ./.github/workflows/pr-agent.yml
     with:
-      model: openrouter/moonshotai/kimi-k2.6:nitro
-      fallback_models: '["openrouter/anthropic/claude-sonnet-4.6"]'
+      # Allow everyone to request a review from Sonnet, without a separate workflow file
+      # and without them typing out the whole model name. Done so we can test with both models
+      model: >-
+        ${{ contains(github.event.comment.body, '--sonnet')
+            && 'openrouter/anthropic/claude-sonnet-4.6'
+            || 'openrouter/moonshotai/kimi-k2.6:nitro' }}
+      fallback_models: >-
+        ${{ contains(github.event.comment.body, '--sonnet')
+            && '["openrouter/moonshotai/kimi-k2.6:nitro"]'
+            || '["openrouter/anthropic/claude-sonnet-4.6"]' }}
       extra_instructions: |
         You are reviewing changes in `ambire-common`, the environment-agnostic core
         business-logic package of a security-sensitive Web3 wallet. It is imported by
