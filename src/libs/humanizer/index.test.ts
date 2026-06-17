@@ -2251,6 +2251,60 @@ describe('ERC-7730 descriptors', () => {
     })
   })
 
+  test('keeps the Safe delegatecall warning after ERC-7730 execTransaction humanization', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [recipeExecutor, 0, '0x0c2c8750', 1, 0, 0, 0, ZeroAddress, ZeroAddress, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures)':
+                  {
+                    intent: 'sign multisig operation',
+                    fields: [
+                      { path: 'operation', label: 'Operation type' },
+                      {
+                        path: 'data',
+                        label: 'Transaction',
+                        format: 'calldata',
+                        params: { calleePath: 'to' }
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irCalls[0]?.warnings).toEqual([
+      getWarning(
+        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        'SAFE{WALLET}_DELEGATE_CALL',
+        undefined,
+        recipeExecutor
+      )
+    ])
+  })
+
   test('humanizes Safe setup calldata nested in a factory initializer with ERC-7730', () => {
     const safeProxyFactory = '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67'
     const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
@@ -2858,6 +2912,120 @@ describe('ERC-7730 descriptors', () => {
           value: [getAddressVisualization(ZeroAddress)]
         }
       ])
+    ])
+  })
+
+  test('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
+    const safeProxy = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
+    const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeProxy,
+          chainId: 8453
+        },
+        message: {
+          to: recipeExecutor,
+          value: '0',
+          data: '0x0c2c8750',
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: '0x25aa0f9a42eE4Ea2Dc7f3c9fF02F558dcb0445a3',
+          nonce: 74,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('1')]
+        },
+        {
+          label: 'Transaction',
+          value: [getAddressVisualization(recipeExecutor), getText('0x0c2c8750')]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization('0x25aa0f9a42eE4Ea2Dc7f3c9fF02F558dcb0445a3')]
+        }
+      ])
+    ])
+    expect(irMessage.warnings).toEqual([
+      getWarning(
+        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        'SAFE{WALLET}_DELEGATE_CALL',
+        undefined,
+        recipeExecutor
+      )
     ])
   })
 

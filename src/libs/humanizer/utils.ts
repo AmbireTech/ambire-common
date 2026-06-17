@@ -18,9 +18,10 @@ export function isHexCall(call: IrCall): call is HexIrCall {
 export function getWarning(
   content: string,
   code: HumanizerWarning['code'],
-  blocking?: boolean
+  blocking?: boolean,
+  address?: string
 ): HumanizerWarning {
-  return { content, blocking, code }
+  return { content, blocking, code, address }
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
