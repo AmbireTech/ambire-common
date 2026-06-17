@@ -280,7 +280,9 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
+        await Promise.all(
+          networks.filter((net) => !net.disabled).map((n) => this.providers.setProvider(n))
+        )
         await this.reloadSelectedAccount({ chainIds: networks.map((n) => n.chainId) })
       },
       onReady: async () => {
@@ -292,7 +294,10 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
-      sendUiMessage: this.ui.message.sendUiMessage
+      sendUiMessage: this.ui.message.sendUiMessage,
+      onHeliosProviderInitFailed: async (chainId) => {
+        await this.networks.disableHeliosProvider(chainId)
+      }
     })
     this.accounts = new AccountsController(
       this.storage,

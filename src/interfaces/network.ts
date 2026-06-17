@@ -115,6 +115,7 @@ export interface Network {
   allowForce4337?: boolean
   disabled?: boolean
   customBundlerUrl?: string
+  useHeliosProvider?: boolean
   /**
    * Initial polling interval for pending account operation statuses.
    */

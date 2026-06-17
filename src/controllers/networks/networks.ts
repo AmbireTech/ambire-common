@@ -489,8 +489,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
       ...changedNetwork
     }
 
-    if (!skipUpdate) void this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]!])
     await this.#storage.set('networks', this.#networks)
+
+    if (!skipUpdate) void this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]!])
 
     const checkRPC = async (
       networkToAddOrUpdate: {
@@ -569,6 +570,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
   async updateNetwork(network: Partial<Network>, chainId: ChainId) {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, chainId))
+  }
+
+  async disableHeliosProvider(chainId: ChainId) {
+    await this.#updateNetwork({ useHeliosProvider: false }, chainId, true)
+    this.emitUpdate()
   }
 
   async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
