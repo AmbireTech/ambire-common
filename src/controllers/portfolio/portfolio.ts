@@ -48,6 +48,7 @@ import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
+import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   convertApiTokenDataToTokenDataCache,
@@ -137,7 +138,10 @@ const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
-export class PortfolioController extends EventEmitter implements IPortfolioController {
+export class PortfolioController
+  extends EventEmitter<PortfolioDebugFlow>
+  implements IPortfolioController
+{
   #state: PortfolioControllerState
 
   // A queue to prevent race conditions when calling `updateSelectedAccount`.
@@ -687,6 +691,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    */
   async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
+    this.debugLog(
+      'simulation',
+      `${chainId.toString()}: Overriding simulation results for ${accountAddr}`,
+      () => ({
+        accountOpId: accountOp.id
+      })
+    )
 
     const updatePromise = async () => {
       if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
@@ -814,8 +825,22 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
       // Debounce: start the 60s window from the most recent transaction, not the first
       networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+
+      this.debugLog(
+        'simulation',
+        `${chainId.toString()} Debounced scheduled update for ${accountId}`,
+        () => ({
+          bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
+          scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
+        })
+      )
       return
     }
+
+    this.debugLog('simulation', `${chainId.toString()} Scheduled update for ${accountId}`, () => ({
+      bypassServerSideCache,
+      scheduledAt: Date.now()
+    }))
 
     this.#scheduledUpdates[accountId] = [
       ...(this.#scheduledUpdates[accountId] || []),
@@ -870,6 +895,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     })
 
     if (!accountAddrToUpdate || networksToUpdate.length === 0) return
+    this.debugLog('simulation', `Discarding simulation for ${accountAddrToUpdate}`, () => ({
+      discardedOpIds: accountOps.map((op) => op.id),
+      chainIds: networksToUpdate.map((n) => n.chainId.toString())
+    }))
     await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
       accountOps: accountOpsAfterUpdate
     })
@@ -1259,8 +1288,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       !bypassServerSideCache &&
       getCanSkipUpdate(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs)
 
+    // Request can be skipped altogether
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
-      // Request can be skipped altogether
+      this.debugLog(
+        'discovery',
+        `${chainId.toString()}: Skipping portfolio discovery for ${account.addr}`,
+        () => ({
+          lastUpdate: externalApiHintsResponse?.lastUpdate,
+          hasHints: externalApiHintsResponse?.hasHints,
+          isManualUpdate,
+          bypassServerSideCache,
+          hasNonceChangedSinceLastUpdate
+        })
+      )
       return null
     }
 
@@ -1402,7 +1442,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs
     )
 
-    if (canSkipUpdate) return [true, null]
+    if (canSkipUpdate) {
+      this.debugLog(
+        'update',
+        `${network.chainId.toString()} update skipped for ${account.addr}`,
+        () => ({
+          lastSuccessfulUpdate: accountState[network.chainId.toString()]?.lastSuccessfulUpdate,
+          maxDataAgeMs,
+          isManualUpdate,
+          isLoading: accountState[network.chainId.toString()]?.isLoading
+        })
+      )
+      return [true, null]
+    }
 
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
@@ -1583,7 +1635,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       !portfolioProps.bypassServerSideCache &&
       PortfolioController.#getCanSkipUpdate(accountState['defiApps'], defiMaxDataAgeMs)
 
-    if (canSkipUpdate) return
+    if (canSkipUpdate) {
+      this.debugLog('defi', 'Skipping DeFi apps update for account', () => ({
+        account: account.addr,
+        lastSuccessfulUpdate: accountState['defiApps']?.lastSuccessfulUpdate,
+        defiMaxDataAgeMs
+      }))
+      return
+    }
 
     const updateStarted = Date.now()
 
@@ -1758,6 +1817,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     learnedTokensHints.push(...defiHints)
 
+    this.debugLog(
+      'hints',
+      `${chainId.toString()}: hints for ${accountId} (${!isManualUpdate ? 'not ' : ''}enhanced with those of other accounts)`,
+      () => ({
+        specialErc20Hints,
+        specialErc721Hints,
+        learnedTokensHints,
+        learnedNftsHints
+      })
+    )
+
     return {
       specialErc20Hints,
       specialErc721Hints,
@@ -1865,6 +1935,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const accountState = this.#state[accountId]
 
     const networksToUpdate = networks || this.#networks.networks
+    this.debugLog('update', `Update queued for ${accountId}`, () => ({
+      chainIds: networksToUpdate.map((n) => n.chainId.toString()),
+      hasSimulation: !!simulation,
+      opts
+    }))
     await Promise.all([
       this.#getAdditionalPortfolio(accountId, paramsMaxDataAgeMs),
       ...networksToUpdate.map(async (network) => {
@@ -1928,6 +2003,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               disableAutoDiscovery: true,
               hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
             }
+          )
+
+          if (accountOpsToSimulate?.length)
+            this.debugLog(
+              'simulation',
+              `${network.chainId.toString()}: Simulated ${accountOpsToSimulate.length} account op(s)`,
+              () => ({
+                accountOpIds: accountOpsToSimulate.map((op) => op.id),
+                isSuccessful
+              })
+            )
+
+          this.debugLog(
+            'update',
+            `${network.chainId.toString()}: Portfolio updated on ${network.name}`,
+            () => ({
+              isSuccessful
+            })
           )
 
           // Learn tokens and nfts from the portfolio lib
@@ -2142,6 +2235,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
+    this.debugLog(
+      'learning',
+      `${chainId.toString()}: Added ERC-20 tokens to be learned`,
+      tokensToLearn
+    )
+
     this.#toBeLearnedAssets.erc20s[chainIdString] = networkToBeLearnedTokens
     return true
   }
@@ -2228,6 +2327,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           }
 
           if (tokenId) toBeLearnedAssets[collectionAddress].push(tokenId)
+
+          this.debugLog('learning', `${chainId.toString()}: Added ERC-721 to be learned`, () => ({
+            collectionAddress,
+            tokenId: tokenId.toString(),
+            accountAddr
+          }))
         })
       })
 
@@ -2318,11 +2423,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       .sort(([, timestampA], [, timestampB]) => timestampB - timestampA)
       .map(([address]) => address)
 
+    this.debugLog('learning', `${chainId.toString()}: Tokens learned for ${key}`, () => ({
+      learned: tokensWithBalance.filter((addr) => addr !== ZeroAddress),
+      currentlyTracked: Object.keys(learnedTokens).length
+    }))
+
     // Remove the oldest no longer owned tokens
     if (noLongerOwnedTokens.length > LEARNED_UNOWNED_LIMITS.erc20s) {
-      noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s).forEach((address) => {
+      const discarded = noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s)
+      discarded.forEach((address) => {
         delete learnedTokens[address]
       })
+      this.debugLog(
+        'learning',
+        `${chainId.toString()}: Discarded learned tokens for ${key}`,
+        () => ({
+          discarded,
+          limit: LEARNED_UNOWNED_LIMITS.erc20s,
+          noLongerOwned: noLongerOwnedTokens.length
+        })
+      )
     }
 
     await this.#storage.set('learnedAssets', this.#learnedAssets)

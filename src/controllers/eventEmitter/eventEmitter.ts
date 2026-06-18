@@ -1,11 +1,17 @@
 import { v4 as uuidv4 } from 'uuid'
 
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import {
+  debugLog as moduleDebugLog,
+  debugLoggerRegistry,
+  DebugLogOptions
+} from '../../libs/debugLogger/debugLogger'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-export default class EventEmitter {
+// Can be overwritten by controllers to narrow the flow tags for better console filtering and type safety.
+export default class EventEmitter<DebugFlow extends string = string> {
   id: string
 
   #registry: IEventEmitterRegistryController | null = null
@@ -38,6 +44,9 @@ export default class EventEmitter {
    */
   constructor(registry?: IEventEmitterRegistryController, registerImmediately: boolean = true) {
     this.id = uuidv4()
+
+    // Register the controller on construction
+    debugLoggerRegistry.registerNamespace(this.name)
 
     if (registry) {
       this.#registry = registry
@@ -124,6 +133,22 @@ export default class EventEmitter {
     for (const i of this.#callbacksWithId) i.cb(forceEmit)
 
     for (const cb of this.#callbacks) cb(forceEmit)
+  }
+
+  /** True when this controller's debug logging is toggled on. */
+  get isDebugLogEnabled(): boolean {
+    return debugLoggerRegistry.isEnabled(this.name)
+  }
+
+  /** Per-controller gated debug log. No-op unless this controller's namespace is
+   *  toggled on via DebugController. */
+  protected debugLog(
+    flow: DebugFlow,
+    message: string,
+    payload?: unknown | (() => unknown),
+    options?: DebugLogOptions
+  ): void {
+    moduleDebugLog(this.name, flow, message, payload, options)
   }
 
   protected emitError(error: ErrorRef) {

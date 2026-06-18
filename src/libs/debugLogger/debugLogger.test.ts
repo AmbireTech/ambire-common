@@ -1,0 +1,293 @@
+import {
+  createScopedDebugLogger,
+  debugLog,
+  debugLoggerRegistry,
+  SEED_NAMESPACES
+} from './debugLogger'
+
+const USDC = {
+  address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+  symbol: 'USDC',
+  chainId: '1'
+}
+const WETH = {
+  address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+  symbol: 'WETH',
+  chainId: '1'
+}
+
+describe('debugLogger', () => {
+  let logSpy: jest.SpyInstance
+  let warnSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    // The registry is a module-level singleton, so reset the toggles and buffers
+    // between tests. hydrate({}) clears the enabled set; clear() empties the buffers.
+    debugLoggerRegistry.hydrate({})
+    debugLoggerRegistry.clear()
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    logSpy.mockRestore()
+    warnSpy.mockRestore()
+  })
+
+  describe('toggle gating', () => {
+    it('stays completely silent for a controller that is switched off', () => {
+      debugLog('PortfolioController', 'simulation', 'simulating account op', { accountOps: 2 })
+
+      expect(logSpy).not.toHaveBeenCalled()
+      expect(debugLoggerRegistry.read('PortfolioController')).toHaveLength(0)
+    })
+
+    it('does not evaluate the lazy payload function while disabled', () => {
+      const buildExpensivePayload = jest.fn(() => ({ tokens: 5000 }))
+
+      debugLog('PortfolioController', 'fetch', 'portfolio fetched', buildExpensivePayload)
+
+      expect(buildExpensivePayload).not.toHaveBeenCalled()
+    })
+
+    it('starts logging the moment the controller is enabled and goes quiet again when disabled', () => {
+      debugLoggerRegistry.setEnabled('AccountsController', true)
+      debugLog('AccountsController', 'update', 'accounts reloaded', { count: 3 })
+      expect(logSpy).toHaveBeenCalledTimes(1)
+
+      debugLoggerRegistry.setEnabled('AccountsController', false)
+      debugLog('AccountsController', 'update', 'accounts reloaded again', { count: 4 })
+      expect(logSpy).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('log line format and buffering', () => {
+    beforeEach(() => debugLoggerRegistry.setEnabled('PortfolioController', true))
+
+    it('tags the line as [Controller:flow] and appends the serialized payload', () => {
+      debugLog('PortfolioController', 'blacklist', 'filtered token', USDC)
+
+      const expected =
+        '[PortfolioController:blacklist] filtered token ' +
+        '{"address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","symbol":"USDC","chainId":"1"}'
+      expect(logSpy).toHaveBeenCalledWith(expected)
+      expect(debugLoggerRegistry.read('PortfolioController')).toEqual([expected])
+    })
+
+    it('omits the payload section when there is nothing to serialize', () => {
+      debugLog('PortfolioController', 'update', 'update queued')
+
+      expect(logSpy).toHaveBeenCalledWith('[PortfolioController:update] update queued')
+    })
+
+    it('resolves a thunk payload so callers can defer building it until logging is on', () => {
+      const buildPayload = jest.fn(() => ({ symbol: 'DAI', chainId: '1' }))
+
+      debugLog('PortfolioController', 'learnedTokens', 'token learned', buildPayload)
+
+      expect(buildPayload).toHaveBeenCalledTimes(1)
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
+        '[PortfolioController:learnedTokens] token learned {"symbol":"DAI","chainId":"1"}'
+      )
+    })
+
+    it('prefixes a traceId when given, to correlate one flow across controllers', () => {
+      debugLoggerRegistry.setEnabled('SignAccountOpController', true)
+
+      debugLog(
+        'SignAccountOpController',
+        'broadcast',
+        'user op submitted',
+        { hash: '0xfeed' },
+        { traceId: 'op-7f3a' }
+      )
+
+      expect(debugLoggerRegistry.read('SignAccountOpController')[0]).toBe(
+        '[op-7f3a][SignAccountOpController:broadcast] user op submitted {"hash":"0xfeed"}'
+      )
+    })
+
+    it('routes warn-level lines to console.warn instead of console.log', () => {
+      debugLoggerRegistry.setEnabled('GasPriceController', true)
+
+      debugLog('GasPriceController', 'fetch', 'rpc gas estimate slow', undefined, { level: 'warn' })
+
+      expect(warnSpy).toHaveBeenCalledWith('[GasPriceController:fetch] rpc gas estimate slow')
+      expect(logSpy).not.toHaveBeenCalled()
+    })
+
+    it('stores the serialized string in the buffer, not the live object reference', () => {
+      const mutablePayload = { symbol: 'USDC', chainId: '1' }
+      debugLog('PortfolioController', 'fetch', 'fetched', mutablePayload)
+      mutablePayload.symbol = 'MUTATED'
+
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).toContain('"symbol":"USDC"')
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).not.toContain('MUTATED')
+    })
+  })
+
+  describe('payload serialization', () => {
+    beforeEach(() => debugLoggerRegistry.setEnabled('PortfolioController', true))
+
+    it('serializes a bigint amount  without throwing', () => {
+      debugLog('PortfolioController', 'fetch', 'native balance', { wei: 1500000000000000000n })
+
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
+        '[PortfolioController:fetch] native balance {"wei":{"$bigint":"1500000000000000000"}}'
+      )
+    })
+
+    it('falls back to a placeholder when a payload cannot be serialized', () => {
+      const payloadThatThrowsOnRead = {
+        get balance() {
+          throw new Error('getter blew up')
+        }
+      }
+
+      debugLog('PortfolioController', 'fetch', 'reading balance', payloadThatThrowsOnRead)
+
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
+        '[PortfolioController:fetch] reading balance [unserializable payload]'
+      )
+    })
+
+    it('preserves nested objects and arrays — the token list a portfolio "fetch" log is meant to show', () => {
+      debugLog('PortfolioController', 'fetch', 'portfolio fetched', {
+        chainId: '1',
+        tokens: [USDC, WETH],
+        totalMs: 42
+      })
+
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
+        '[PortfolioController:fetch] portfolio fetched ' +
+          '{"chainId":"1","tokens":[' +
+          '{"address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","symbol":"USDC","chainId":"1"},' +
+          '{"address":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","symbol":"WETH","chainId":"1"}' +
+          '],"totalMs":42}'
+      )
+    })
+  })
+
+  describe('per-namespace ring buffer', () => {
+    it('caps a namespace at 200 lines, evicting the oldest first', () => {
+      debugLoggerRegistry.setEnabled('ActivityController', true)
+      for (let i = 0; i < 220; i++) {
+        debugLog('ActivityController', 'submitted', `tx #${i} broadcast`)
+      }
+
+      const buffer = debugLoggerRegistry.read('ActivityController')
+      expect(buffer).toHaveLength(200)
+      expect(buffer[0]).toContain('tx #20 broadcast') // 0..19 evicted
+      expect(buffer[buffer.length - 1]).toContain('tx #219 broadcast')
+    })
+
+    it('keeps a separate buffer per controller', () => {
+      debugLoggerRegistry.setEnabled('PortfolioController', true)
+      debugLoggerRegistry.setEnabled('ActivityController', true)
+
+      debugLog('PortfolioController', 'fetch', 'portfolio fetched')
+      debugLog('ActivityController', 'submitted', 'tx broadcast')
+
+      expect(debugLoggerRegistry.read('PortfolioController')).toHaveLength(1)
+      expect(debugLoggerRegistry.read('ActivityController')).toHaveLength(1)
+    })
+
+    it('clears one namespace without disturbing the others, and clears everything when called bare', () => {
+      debugLoggerRegistry.setEnabled('PortfolioController', true)
+      debugLoggerRegistry.setEnabled('ActivityController', true)
+      debugLog('PortfolioController', 'fetch', 'portfolio fetched')
+      debugLog('ActivityController', 'submitted', 'tx broadcast')
+
+      debugLoggerRegistry.clear('PortfolioController')
+      expect(debugLoggerRegistry.read('PortfolioController')).toHaveLength(0)
+      expect(debugLoggerRegistry.read('ActivityController')).toHaveLength(1)
+
+      debugLoggerRegistry.clear()
+      expect(debugLoggerRegistry.read('ActivityController')).toHaveLength(0)
+    })
+  })
+
+  describe('catalog and UI subscriptions', () => {
+    it('seeds the on-demand controllers so they can be toggled before they are ever constructed', () => {
+      expect(SEED_NAMESPACES).toContain('SignAccountOpController')
+      SEED_NAMESPACES.forEach((namespace) =>
+        expect(debugLoggerRegistry.catalog()).toContain(namespace)
+      )
+    })
+
+    it('lists a library namespace as soon as its scoped logger is created', () => {
+      const swapAndBridgeLog = createScopedDebugLogger('SwapAndBridgeController')
+      debugLoggerRegistry.setEnabled('SwapAndBridgeController', true)
+
+      swapAndBridgeLog('quote', 'fetched route', { provider: 'socket' })
+
+      expect(debugLoggerRegistry.catalog()).toContain('SwapAndBridgeController')
+      expect(debugLoggerRegistry.read('SwapAndBridgeController')[0]).toBe(
+        '[SwapAndBridgeController:quote] fetched route {"provider":"socket"}'
+      )
+    })
+
+    it('notifies subscribers once for a brand-new controller and dedupes repeated registrations', () => {
+      const onCatalogChange = jest.fn()
+      const unsubscribe = debugLoggerRegistry.subscribe(onCatalogChange)
+
+      // NetworksController has not been registered by any earlier test.
+      debugLoggerRegistry.registerNamespace('NetworksController') // new -> notifies
+      debugLoggerRegistry.registerNamespace('NetworksController') // already known -> silent
+      debugLoggerRegistry.registerNamespace('NetworksController')
+
+      expect(onCatalogChange).toHaveBeenCalledTimes(1)
+      expect(debugLoggerRegistry.catalog()).toContain('NetworksController')
+      unsubscribe()
+    })
+
+    it('stops notifying a subscriber after it unsubscribes', () => {
+      const onCatalogChange = jest.fn()
+      const unsubscribe = debugLoggerRegistry.subscribe(onCatalogChange)
+      unsubscribe()
+
+      debugLoggerRegistry.registerNamespace('DappsController')
+
+      expect(onCatalogChange).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('persistence (snapshot / hydrate)', () => {
+    it('snapshots only the enabled controllers, which is what gets stored', () => {
+      debugLoggerRegistry.setEnabled('PortfolioController', true)
+      debugLoggerRegistry.setEnabled('ActivityController', true)
+
+      expect(debugLoggerRegistry.snapshot()).toEqual({
+        PortfolioController: true,
+        ActivityController: true
+      })
+    })
+
+    it('hydrates enabled controllers from storage and keeps a persisted dynamic one visible cold', () => {
+      // SignAccountOpController was enabled last session but is not constructed yet this session.
+      debugLoggerRegistry.hydrate({ SignAccountOpController: true })
+
+      expect(debugLoggerRegistry.isEnabled('SignAccountOpController')).toBe(true)
+      expect(debugLoggerRegistry.catalog()).toContain('SignAccountOpController')
+    })
+
+    it('hydrate replaces the previous enabled set rather than merging into it', () => {
+      debugLoggerRegistry.setEnabled('PortfolioController', true)
+
+      debugLoggerRegistry.hydrate({ KeystoreController: true })
+
+      expect(debugLoggerRegistry.isEnabled('PortfolioController')).toBe(false)
+      expect(debugLoggerRegistry.isEnabled('KeystoreController')).toBe(true)
+    })
+
+    it('hydrate notifies subscribers so the UI re-renders the toggles', () => {
+      const onChange = jest.fn()
+      const unsubscribe = debugLoggerRegistry.subscribe(onChange)
+
+      debugLoggerRegistry.hydrate({ PortfolioController: true })
+
+      expect(onChange).toHaveBeenCalled()
+      unsubscribe()
+    })
+  })
+})
