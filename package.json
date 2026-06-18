@@ -15,30 +15,31 @@
     "type:check": "tsc --noEmit"
   },
   "dependencies": {
-    "@ambire/signature-validator": "^1.5.0",
+    "@ambire/signature-validator": "1.5.0",
     "@lifi/types": "^17.7.1",
-    "@metamask/eth-sig-util": "^8.2.0",
-    "@safe-global/api-kit": "^4.0.1",
+    "@metamask/eth-sig-util": "8.2.0",
+    "@safe-global/api-kit": "4.0.1",
     "@safe-global/protocol-kit": "^6.1.2",
     "@signinwithethereum/siwe": "4.2.0",
-    "aes-js": "^3.1.2",
+    "aes-js": "3.1.2",
+    "bip44": "0.0.1",
     "dotenv": "^16.3.1",
-    "eth-crypto": "^2.6.0",
-    "eth-rpc-errors": "^4.0.3",
-    "ethers": "^6.8.0",
-    "events": "^3.3.0",
-    "js-yaml": "^4.1.0",
-    "scrypt-js": "^3.0.1",
+    "eth-crypto": "2.8.0",
+    "eth-rpc-errors": "4.0.3",
+    "ethers": "6.14.1",
+    "events": "3.3.0",
+    "js-yaml": "4.1.0",
+    "scrypt-js": "3.0.1",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
     "viem": "2.45.2"
   },
   "peerDependencies": {
-    "@noble/hashes": "^1.8.0",
-    "bip44-constants": "^128.0.0",
-    "react": "^19.1.0",
-    "secp256k1": "^5.0.1",
-    "validator": "^13.7.0"
+    "@noble/hashes": "1.8.0",
+    "bip44-constants": "128.0.0",
+    "react": "19.1.0",
+    "secp256k1": "5.0.1",
+    "validator": "13.7.0"
   },
   "peerDependenciesMeta": {
     "@noble/hashes": {
