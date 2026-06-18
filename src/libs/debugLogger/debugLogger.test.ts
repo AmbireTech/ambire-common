@@ -22,6 +22,7 @@ const NOW = 1700000000000
 describe('debugLogger', () => {
   let logSpy: jest.SpyInstance
   let warnSpy: jest.SpyInstance
+  let errorSpy: jest.SpyInstance
 
   beforeEach(() => {
     // The registry is a module-level singleton, so reset the toggles and buffers
@@ -30,6 +31,7 @@ describe('debugLogger', () => {
     debugLoggerRegistry.clear()
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     jest.spyOn(Date, 'now').mockReturnValue(NOW)
   })
 
@@ -77,11 +79,11 @@ describe('debugLogger', () => {
       expect(debugLoggerRegistry.read('PortfolioController')).toEqual([expected])
     })
 
-    it('omits the payload section when there is nothing to serialize', () => {
+    it('marks the line as having no payload when none is given', () => {
       debugLog('PortfolioController', 'update', 'update queued')
 
       expect(logSpy).toHaveBeenCalledWith(
-        `Debug: PortfolioController:update (at ${NOW}) update queued`
+        `Debug: PortfolioController:update (at ${NOW}) update queued No payload (perhaps an error?)`
       )
     })
 
@@ -118,7 +120,7 @@ describe('debugLogger', () => {
       debugLog('GasPriceController', 'fetch', 'rpc gas estimate slow', undefined, { level: 'warn' })
 
       expect(warnSpy).toHaveBeenCalledWith(
-        `Debug: GasPriceController:fetch (at ${NOW}) rpc gas estimate slow`
+        `Debug: GasPriceController:fetch (at ${NOW}) rpc gas estimate slow No payload (perhaps an error?)`
       )
       expect(logSpy).not.toHaveBeenCalled()
     })
@@ -144,6 +146,24 @@ describe('debugLogger', () => {
       )
     })
 
+    it('catches a payload thunk that throws - logs the error and still records the line without a payload', () => {
+      const explodingThunk = jest.fn(() => {
+        throw new Error('balance fetch failed')
+      })
+
+      expect(() =>
+        debugLog('PortfolioController', 'fetch', 'reading balances', explodingThunk)
+      ).not.toThrow()
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Debug: PortfolioController:fetch payload function threw',
+        expect.any(Error)
+      )
+      expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
+        `Debug: PortfolioController:fetch (at ${NOW}) reading balances No payload (perhaps an error?)`
+      )
+    })
+
     it('falls back to a placeholder when a payload cannot be serialized', () => {
       const payloadThatThrowsOnRead = {
         get balance() {
@@ -158,7 +178,7 @@ describe('debugLogger', () => {
       )
     })
 
-    it('preserves nested objects and arrays — the token list a portfolio "fetch" log is meant to show', () => {
+    it('preserves nested objects and arrays - the token list a portfolio "fetch" log is meant to show', () => {
       debugLog('PortfolioController', 'fetch', 'portfolio fetched', {
         chainId: '1',
         tokens: [USDC, WETH],

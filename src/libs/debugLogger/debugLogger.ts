@@ -95,10 +95,16 @@ export function debugLog(
 ): void {
   if (!enabled.has(namespace)) return
 
-  const data = typeof payload === 'function' ? (payload as () => unknown)() : payload
+  let data = undefined
+
+  try {
+    data = (typeof payload === 'function' ? (payload as () => unknown)() : payload) as unknown
+  } catch (err) {
+    console.error(`Debug: ${namespace}:${flow} payload function threw`, err)
+  }
   const scope = `${namespace}:${flow}`
   const prefix = options?.traceId ? `${options.traceId}:${scope}` : `${scope}`
-  const line = `Debug: ${prefix} (at ${Date.now()}) ${message}${serialize(data)}`
+  const line = `Debug: ${prefix} (at ${Date.now()}) ${message}${data ? serialize(data) : ' No payload (perhaps an error?)'}`
 
   const buffer = buffers.get(namespace) ?? []
   buffer.push(line)
