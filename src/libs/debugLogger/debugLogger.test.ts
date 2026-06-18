@@ -16,6 +16,9 @@ const WETH = {
   chainId: '1'
 }
 
+// Each log line embeds Date.now(), so pin it to keep exact-match assertions stable.
+const NOW = 1700000000000
+
 describe('debugLogger', () => {
   let logSpy: jest.SpyInstance
   let warnSpy: jest.SpyInstance
@@ -27,11 +30,11 @@ describe('debugLogger', () => {
     debugLoggerRegistry.clear()
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    jest.spyOn(Date, 'now').mockReturnValue(NOW)
   })
 
   afterEach(() => {
-    logSpy.mockRestore()
-    warnSpy.mockRestore()
+    jest.restoreAllMocks()
   })
 
   describe('toggle gating', () => {
@@ -64,11 +67,11 @@ describe('debugLogger', () => {
   describe('log line format and buffering', () => {
     beforeEach(() => debugLoggerRegistry.setEnabled('PortfolioController', true))
 
-    it('tags the line as [Controller:flow] and appends the serialized payload', () => {
+    it('tags the line with the Controller:flow scope and appends the serialized payload', () => {
       debugLog('PortfolioController', 'blacklist', 'filtered token', USDC)
 
       const expected =
-        '[PortfolioController:blacklist] filtered token ' +
+        `Debug: PortfolioController:blacklist (at ${NOW}) filtered token ` +
         '{"address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","symbol":"USDC","chainId":"1"}'
       expect(logSpy).toHaveBeenCalledWith(expected)
       expect(debugLoggerRegistry.read('PortfolioController')).toEqual([expected])
@@ -77,7 +80,9 @@ describe('debugLogger', () => {
     it('omits the payload section when there is nothing to serialize', () => {
       debugLog('PortfolioController', 'update', 'update queued')
 
-      expect(logSpy).toHaveBeenCalledWith('[PortfolioController:update] update queued')
+      expect(logSpy).toHaveBeenCalledWith(
+        `Debug: PortfolioController:update (at ${NOW}) update queued`
+      )
     })
 
     it('resolves a thunk payload so callers can defer building it until logging is on', () => {
@@ -87,7 +92,7 @@ describe('debugLogger', () => {
 
       expect(buildPayload).toHaveBeenCalledTimes(1)
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
-        '[PortfolioController:learnedTokens] token learned {"symbol":"DAI","chainId":"1"}'
+        `Debug: PortfolioController:learnedTokens (at ${NOW}) token learned {"symbol":"DAI","chainId":"1"}`
       )
     })
 
@@ -103,7 +108,7 @@ describe('debugLogger', () => {
       )
 
       expect(debugLoggerRegistry.read('SignAccountOpController')[0]).toBe(
-        '[op-7f3a][SignAccountOpController:broadcast] user op submitted {"hash":"0xfeed"}'
+        `Debug: op-7f3a:SignAccountOpController:broadcast (at ${NOW}) user op submitted {"hash":"0xfeed"}`
       )
     })
 
@@ -112,7 +117,9 @@ describe('debugLogger', () => {
 
       debugLog('GasPriceController', 'fetch', 'rpc gas estimate slow', undefined, { level: 'warn' })
 
-      expect(warnSpy).toHaveBeenCalledWith('[GasPriceController:fetch] rpc gas estimate slow')
+      expect(warnSpy).toHaveBeenCalledWith(
+        `Debug: GasPriceController:fetch (at ${NOW}) rpc gas estimate slow`
+      )
       expect(logSpy).not.toHaveBeenCalled()
     })
 
@@ -129,11 +136,11 @@ describe('debugLogger', () => {
   describe('payload serialization', () => {
     beforeEach(() => debugLoggerRegistry.setEnabled('PortfolioController', true))
 
-    it('serializes a bigint amount  without throwing', () => {
+    it('serializes a bigint amount without throwing', () => {
       debugLog('PortfolioController', 'fetch', 'native balance', { wei: 1500000000000000000n })
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
-        '[PortfolioController:fetch] native balance {"wei":{"$bigint":"1500000000000000000"}}'
+        `Debug: PortfolioController:fetch (at ${NOW}) native balance {"wei":{"$bigint":"1500000000000000000"}}`
       )
     })
 
@@ -147,7 +154,7 @@ describe('debugLogger', () => {
       debugLog('PortfolioController', 'fetch', 'reading balance', payloadThatThrowsOnRead)
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
-        '[PortfolioController:fetch] reading balance [unserializable payload]'
+        `Debug: PortfolioController:fetch (at ${NOW}) reading balance [unserializable payload]`
       )
     })
 
@@ -159,7 +166,7 @@ describe('debugLogger', () => {
       })
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
-        '[PortfolioController:fetch] portfolio fetched ' +
+        `Debug: PortfolioController:fetch (at ${NOW}) portfolio fetched ` +
           '{"chainId":"1","tokens":[' +
           '{"address":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","symbol":"USDC","chainId":"1"},' +
           '{"address":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","symbol":"WETH","chainId":"1"}' +
@@ -223,7 +230,7 @@ describe('debugLogger', () => {
 
       expect(debugLoggerRegistry.catalog()).toContain('SwapAndBridgeController')
       expect(debugLoggerRegistry.read('SwapAndBridgeController')[0]).toBe(
-        '[SwapAndBridgeController:quote] fetched route {"provider":"socket"}'
+        `Debug: SwapAndBridgeController:quote (at ${NOW}) fetched route {"provider":"socket"}`
       )
     })
 

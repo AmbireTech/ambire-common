@@ -98,7 +98,7 @@ export function debugLog(
   const data = typeof payload === 'function' ? (payload as () => unknown)() : payload
   const scope = `${namespace}:${flow}`
   const prefix = options?.traceId ? `${options.traceId}:${scope}` : `${scope}`
-  const line = `Debug: ${prefix} ${message}${serialize(data)}`
+  const line = `Debug: ${prefix} (at ${Date.now()}) ${message}${serialize(data)}`
 
   const buffer = buffers.get(namespace) ?? []
   buffer.push(line)
