@@ -43,13 +43,11 @@ describe('Main Controller ', () => {
   ]
 
   let controller: MainController
-  test('Init controller', async () => {
+  beforeAll(async () => {
     const { mainCtrl } = await makeMainController(async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
     })
     controller = mainCtrl
-    // @TODO
-    // expect(states).to
   })
 
   // @TODO: We should pass `autoConfirmMagicLink` to emailVault controller initialization
@@ -143,56 +141,32 @@ describe('Main Controller ', () => {
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
 
-  // FIXME: This test works when fired standalone, but it throws an error when
-  // run with the rest of the tests. Figure out wtf.
-  test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
-    const mainCtrl = new MainController({} as any)
-
-    mainCtrl.accounts.accounts = [
-      {
-        addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
-        associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
-        initialPrivileges: [
-          [
-            '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
-            '0x0000000000000000000000000000000000000000000000000000000000000001'
-          ]
-        ],
-        creation: accounts[0]!.creation,
-        preferences: {
-          label: DEFAULT_ACCOUNT_LABEL,
-          pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
-        }
-      }
+  test('should add accounts and merge the associated keys of the already added accounts', async () => {
+    const privilege: [string, string] = [
+      '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
     ]
-
-    let emitCounter = 0
-    const unsubscribe = mainCtrl.onUpdate(() => {
-      emitCounter++
-      if (emitCounter === 3) {
-        expect(mainCtrl.accounts.accounts[0]!.associatedKeys.length).toEqual(2)
-        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
-          '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
-        )
-        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
-          '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
-        )
-        unsubscribe()
-        done()
+    const existingAccount = {
+      addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
+      associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
+      initialPrivileges: [privilege],
+      creation: accounts[0]!.creation,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
       }
-    })
+    }
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    mainCtrl.accounts.addAccounts([
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', [existingAccount])
+    })
+    await mainCtrl.initialLoadPromise
+
+    await mainCtrl.accounts.addAccounts([
       {
         addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
         associatedKeys: ['0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'],
-        initialPrivileges: [
-          [
-            '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
-            '0x0000000000000000000000000000000000000000000000000000000000000001'
-          ]
-        ],
+        initialPrivileges: [privilege],
         creation: accounts[0]!.creation,
         preferences: {
           label: DEFAULT_ACCOUNT_LABEL,
@@ -200,6 +174,14 @@ describe('Main Controller ', () => {
         }
       }
     ])
+
+    expect(mainCtrl.accounts.accounts[0]!.associatedKeys.length).toEqual(2)
+    expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
+      '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
+    )
+    expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
+      '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
+    )
   })
 
   test('should check if network features get displayed correctly for ethereum', async () => {

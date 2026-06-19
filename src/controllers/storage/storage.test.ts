@@ -65,14 +65,12 @@ function produceCountingStore() {
 }
 
 describe('StorageController', () => {
-  const storage: Storage = produceMemoryStore()
-
   test('should init StorageController', async () => {
-    const storageCtrl = new StorageController(storage)
+    const storageCtrl = new StorageController(produceMemoryStore())
     expect(storageCtrl).toBeDefined()
   })
   test('test should get correct state from storage after storage.set', async () => {
-    const storageCtrl = new StorageController(storage)
+    const storageCtrl = new StorageController(produceMemoryStore())
     storageCtrl.set('migrations', ['1'])
     storageCtrl.set('migrations', ['1', '2'])
     expect(await storageCtrl.get('migrations', [])).toEqual(['1', '2'])
@@ -81,7 +79,8 @@ describe('StorageController', () => {
     expect(await storageCtrl.get('migrations', [])).toEqual(['1', '2', '3', '4'])
   })
   test('test should get correct state from storage after storage.remove', async () => {
-    const storageCtrl = new StorageController(storage)
+    const storageCtrl = new StorageController(produceMemoryStore())
+    storageCtrl.set('migrations', ['1', '2', '3', '4'])
     expect(await storageCtrl.get('migrations', [])).toEqual(['1', '2', '3', '4'])
     storageCtrl.remove('migrations')
     expect(await storageCtrl.get('migrations', [])).toEqual([])

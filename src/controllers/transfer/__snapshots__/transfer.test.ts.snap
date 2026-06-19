@@ -1,0 +1,53 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Transfer Controller should toJSON() 1`] = `
+{
+  "addressPoisoningMatch": null,
+  "addressState": {
+    "fieldValue": "",
+    "isDomainResolving": false,
+    "resolvedAddress": "",
+    "resolvedAddressType": null,
+  },
+  "amount": "",
+  "amountAdjustmentWarning": null,
+  "amountFieldMode": "token",
+  "amountInFiat": "",
+  "areDefaultsSet": false,
+  "emittedErrors": [],
+  "hasPersistedState": false,
+  "hasProceeded": false,
+  "id": "2ccd73e3-9c58-45d2-a2d4-2f2fcdb08b58",
+  "isFormValid": true,
+  "isInitialized": true,
+  "isRecipientAddressFirstTimeSend": false,
+  "isRecipientAddressUnknown": false,
+  "isRecipientAddressUnknownAgreed": false,
+  "isRecipientAddressViewOnly": false,
+  "isRecipientHumanizerKnownTokenOrSmartContract": false,
+  "isTopUp": false,
+  "lastSentToRecipientAt": null,
+  "latestBroadcastedAccountOp": null,
+  "latestBroadcastedToken": null,
+  "maxAmount": "0",
+  "maxAmountInFiat": "0",
+  "name": "TransferController",
+  "programmaticUpdateCounter": 1,
+  "selectedToken": null,
+  "shouldSkipTransactionQueuedModal": false,
+  "signAccountOpController": null,
+  "statuses": {},
+  "tokens": [],
+  "transferSessionId": null,
+  "validationFormMsgs": {
+    "amount": {
+      "message": "",
+      "severity": "success",
+    },
+    "recipientAddress": {
+      "message": "",
+      "severity": "success",
+    },
+  },
+}
+`;

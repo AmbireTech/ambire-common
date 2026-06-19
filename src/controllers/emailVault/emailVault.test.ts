@@ -161,19 +161,24 @@ describe('happy cases', () => {
     expect(keystore2.keys.length).toBe(2)
   })
 
-  test('cancel login attempt', (done) => {
-    expect.assertions(3)
+  test('cancel login attempt', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore)
 
-    setTimeout(() => {
-      expect(ev.currentState).toBe(EmailVaultState.WaitingEmailConfirmation)
-      ev.cancelEmailConfirmation()
-      expect(ev.currentState).toBe(EmailVaultState.Ready)
-      expect(Object.keys(ev.emailVaultStates.email).length).toBe(0)
-      done()
-    }, 4000)
+    const waitingForConfirmation = new Promise<void>((resolve) => {
+      const unsub = ev.onUpdate(() => {
+        if (ev.currentState === EmailVaultState.WaitingEmailConfirmation) {
+          unsub()
+          resolve()
+        }
+      })
+    })
+    void ev.handleMagicLinkKey(email, () => {})
+    await waitingForConfirmation
 
-    void ev.handleMagicLinkKey(email, () => console.log('ready'))
+    expect(ev.currentState).toBe(EmailVaultState.WaitingEmailConfirmation)
+    ev.cancelEmailConfirmation()
+    expect(ev.currentState).toBe(EmailVaultState.Ready)
+    expect(Object.keys(ev.emailVaultStates.email).length).toBe(0)
   })
   test('remove keyStoreSecret', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)

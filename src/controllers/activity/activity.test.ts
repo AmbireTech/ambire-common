@@ -110,7 +110,7 @@ const buildMockReceipt = (overrides: Partial<any> = {}) =>
     ...overrides
   }) as any
 
-const prepareTest = async () => {
+const prepareTest = async (mode: 'accountsOps' | 'signedMessages' = 'accountsOps') => {
   const controller = new ActivityController(
     mainCtrl.storage,
     fetch,
@@ -126,34 +126,13 @@ const prepareTest = async () => {
 
   const sessionId = Date.now().toString()
 
-  await controller.filterAccountsOps(sessionId, INIT_PARAMS)
-
-  return {
-    controller,
-    storage,
-    sessionId
+  if (mode === 'signedMessages') {
+    await controller.filterSignedMessages(sessionId, INIT_PARAMS)
+  } else {
+    await controller.filterAccountsOps(sessionId, INIT_PARAMS)
   }
-}
 
-const prepareSignedMessagesTest = async () => {
-  const controller = new ActivityController(
-    mainCtrl.storage,
-    fetch,
-    mainCtrl.callRelayer,
-    mainCtrl.accounts,
-    mainCtrl.selectedAccount,
-    mainCtrl.providers,
-    mainCtrl.networks,
-    mainCtrl.portfolio,
-    mainCtrl.safe,
-    () => Promise.resolve()
-  )
-
-  const sessionId = Date.now().toString()
-
-  await controller.filterSignedMessages(sessionId, INIT_PARAMS)
-
-  return { controller, sessionId }
+  return { controller, storage, sessionId }
 }
 
 describe('Activity Controller ', () => {
@@ -983,7 +962,7 @@ describe('Activity Controller ', () => {
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       const signedMessage: SignedMessage = {
         fromRequestId: 1,
@@ -1018,7 +997,7 @@ describe('Activity Controller ', () => {
     })
 
     test('Pagination and filtration handled correctly', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       await controller.addSignedMessage(
         SIGNED_MESSAGE,
@@ -1054,7 +1033,7 @@ describe('Activity Controller ', () => {
     })
 
     test('Keeps no more than 1000 items', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       const signedMessages = Array.from(Array(1500).keys()).map((key) => ({
         ...SIGNED_MESSAGE,
