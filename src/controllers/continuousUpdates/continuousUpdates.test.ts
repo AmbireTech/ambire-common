@@ -294,10 +294,10 @@ describe('ContinuousUpdatesController intervals', () => {
     const mockAccountOp = new EventEmitter() as any
     mockAccountOp.signAndBroadcastPromise = new Promise(() => {})
     mockAccountOp.broadcastStatus = 'SUCCESS'
-    jest.replaceProperty(mainCtrl.requests, 'currentUserRequest' as any, {
+    jest.spyOn(mainCtrl.requests, 'currentUserRequest', 'get').mockReturnValue({
       kind: 'calls',
       signAccountOp: mockAccountOp
-    })
+    } as any)
     // @ts-expect-error — need synchronous emit here; forceEmitUpdate is async and won't resolve with fake timers
     mainCtrl.requests.emitUpdate()
     mockAccountOp.emitUpdate()
