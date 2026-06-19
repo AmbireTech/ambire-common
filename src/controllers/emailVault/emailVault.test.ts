@@ -3,7 +3,8 @@ import { expect } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { fetchWithAppVersion as fetch, produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { InternalSigner } from '../../../test/keystore'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
@@ -11,39 +12,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { EmailVaultController, EmailVaultState } from './emailVault'
-
-class InternalSigner implements KeystoreSignerInterface {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    throw new Error('not supported')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
 
 const keystoreSigners = { internal: InternalSigner }
 
@@ -194,6 +162,7 @@ describe('happy cases', () => {
   })
 
   test('cancel login attempt', (done) => {
+    expect.assertions(3)
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore)
 
     setTimeout(() => {

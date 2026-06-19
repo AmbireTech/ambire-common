@@ -73,9 +73,6 @@ describe('Main Controller ', () => {
   // })
 
   test('backup keyStore secret emailVault', async () => {
-    // console.log(
-    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    // )
     void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
 
     await new Promise((resolve) => {
@@ -88,7 +85,9 @@ describe('Main Controller ', () => {
         resolve(null)
       }
     })
-    // console.log(JSON.stringify(controller.emailVault, null, 2))
+    // Assert the emailVault sub-controller is present and its status was updated
+    expect(controller.emailVault).not.toBeNull()
+    expect(controller.emailVault?.statuses).toBeDefined()
   })
 
   // @TODO - have to rewrite this test and it should be part of email vault tests.
@@ -112,17 +111,7 @@ describe('Main Controller ', () => {
       await storageCtrl.set('accounts', accounts)
     })
 
-    let retries = 0
-
-    while (!controller.isReady && retries < 20) {
-      await wait(100)
-      retries++
-    }
-
-    if (!controller.isReady) {
-      console.error('Controller failed to become ready in time', controller)
-      throw new Error('Controller initialization timeout')
-    }
+    await controller.initialLoadPromise
 
     await controller.keystore.addSecret('password', '12345678', '', true)
     const keyIterator = new KeyIterator(

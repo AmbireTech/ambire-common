@@ -67,7 +67,7 @@ function produceCountingStore() {
 describe('StorageController', () => {
   const storage: Storage = produceMemoryStore()
 
-  test('should init AccountsController', async () => {
+  test('should init StorageController', async () => {
     const storageCtrl = new StorageController(storage)
     expect(storageCtrl).toBeDefined()
   })

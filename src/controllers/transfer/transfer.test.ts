@@ -1,4 +1,4 @@
-import { ZeroAddress, formatUnits } from 'ethers'
+import { formatUnits, ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
@@ -293,8 +293,7 @@ describe('Transfer Controller', () => {
   test('should toJSON()', async () => {
     const { transferController } = await prepareTest()
 
-    const json = transferController.toJSON()
-    expect(json).toBeDefined()
+    expect(transferController.toJSON()).toMatchSnapshot()
   })
 })
 

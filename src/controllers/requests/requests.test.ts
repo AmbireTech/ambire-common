@@ -482,22 +482,23 @@ describe('RequestsController ', () => {
     const { controller, event, getWindowId } = await prepareTest()
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
-    event.emit('windowFocusChange', 'random-window-id')
     let emitCounter = 0
-    const finishPromise = new Promise((resolve) => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        expect(controller.requestWindow.windowProps).not.toBe(null)
-        expect(controller.requestWindow.windowProps?.focused).toEqual(false)
-        event.emit('windowFocusChange', getWindowId())
-      }
-      if (emitCounter === 1) {
-        expect(controller.requestWindow.windowProps).not.toBe(null)
-        expect(controller.requestWindow.windowProps?.focused).toEqual(true)
-        resolve(null)
-      }
+    const finishPromise = new Promise<void>((resolve) => {
+      controller.onUpdate(() => {
+        if (emitCounter === 0) {
+          expect(controller.requestWindow.windowProps).not.toBe(null)
+          expect(controller.requestWindow.windowProps?.focused).toEqual(false)
+          event.emit('windowFocusChange', getWindowId())
+        }
+        if (emitCounter === 1) {
+          expect(controller.requestWindow.windowProps).not.toBe(null)
+          expect(controller.requestWindow.windowProps?.focused).toEqual(true)
+          resolve()
+        }
+        emitCounter++
+      })
     })
+    event.emit('windowFocusChange', 'random-window-id')
     await finishPromise
   })
   test('should close the request window', async () => {
@@ -537,8 +538,7 @@ describe('RequestsController ', () => {
   test('should toJSON()', async () => {
     const { controller } = await prepareTest()
 
-    const json = controller.toJSON()
-    expect(json).toBeDefined()
+    expect(controller.toJSON()).toMatchSnapshot()
   })
 
   describe('call data and "to" field validation', () => {

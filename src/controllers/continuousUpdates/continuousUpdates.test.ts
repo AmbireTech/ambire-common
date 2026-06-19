@@ -294,12 +294,13 @@ describe('ContinuousUpdatesController intervals', () => {
     const mockAccountOp = new EventEmitter() as any
     mockAccountOp.signAndBroadcastPromise = new Promise(() => {})
     mockAccountOp.broadcastStatus = 'SUCCESS'
-    ;(mainCtrl.requests.currentUserRequest as any) = {
+    jest.replaceProperty(mainCtrl.requests, 'currentUserRequest' as any, {
       kind: 'calls',
       signAccountOp: mockAccountOp
-    }
-    ;(mainCtrl.requests as any).emitUpdate()
-    ;(mockAccountOp as any).emitUpdate()
+    })
+    // @ts-expect-error — need synchronous emit here; forceEmitUpdate is async and won't resolve with fake timers
+    mainCtrl.requests.emitUpdate()
+    mockAccountOp.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
     expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.running).toBe(true)
