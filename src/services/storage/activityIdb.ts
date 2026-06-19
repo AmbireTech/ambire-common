@@ -1,10 +1,9 @@
+import { IActivityIdbStorage, InternalAccountsOps } from '../../interfaces/activity'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
-import { IActivityIdbStorage, InternalAccountsOps } from '../../interfaces/activityIdb'
-import { BaseIdbStore } from './baseIdbStore'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { BaseIdbStore } from './baseIdbStore'
 
 const STARTUP_RECENT_OPS_LIMIT = 20
-const MAX_OPS_PER_ACCOUNT_CHAIN = 1000
 
 // Known bigint field names — used by the JSON reviver to restore bigint values after deserialization
 const BIGINT_FIELDS = new Set([
@@ -30,10 +29,12 @@ function serializeOp(op: SubmittedAccountOp | SubmittedAccountOpLike): string {
 
 function deserializeOp(serialized: string): SubmittedAccountOp {
   return JSON.parse(serialized, (key, value) => {
-    if (BIGINT_FIELDS.has(key) && typeof value === 'string' && /^\d+$/.test(value)) {
+    if (!BIGINT_FIELDS.has(key) || typeof value !== 'string') return value
+    try {
       return BigInt(value)
+    } catch {
+      return value
     }
-    return value
   }) as SubmittedAccountOp
 }
 
@@ -49,15 +50,6 @@ interface IdbAccountOpRow {
   timestamp: number
   status: AccountOpStatus
   serializedOp: string // JSON.stringify with bigint→string replacement
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
-// V1 shape — only used during migration in onupgradeneeded
-// ────────────────────────────────────────────────────────────────────────────────
-interface V1IdbAccountOpsRecord {
-  accountAddr: string
-  chainId: string
-  ops: any[]
 }
 
 // The highest unicode character — used as a range upper bound to select all keys
@@ -84,10 +76,9 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
   }
 
   /**
-   * Override doInit to:
-   * 1. Create the object store with the v2 compound keyPath
-   * 2. Add the 'by-account-chain-timestamp' index
-   * 3. Migrate existing v1 blob records to individual rows when upgrading from v1
+   * Override doInit to create the object store with the compound keyPath and
+   * the 'by-account-chain-timestamp' index. Any existing store from an older
+   * schema version is dropped — no data migration.
    */
   protected doInit(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -108,101 +99,16 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result
-        const tx = (event.target as IDBOpenDBRequest).transaction!
-        const oldVersion = event.oldVersion
 
-        if (oldVersion < 1) {
-          // Fresh install — create store directly at v3 shape
-          const store = db.createObjectStore(this.config.storeName, {
-            keyPath: this.config.keyPath
-          })
-          store.createIndex('by-account-chain-timestamp', ['accountAddr', 'chainId', 'timestamp'])
-          console.log(`[BaseIdbStore] Created store "${this.config.storeName}"`)
-          return
+        if (db.objectStoreNames.contains(this.config.storeName)) {
+          db.deleteObjectStore(this.config.storeName)
         }
 
-        if (oldVersion === 1 || oldVersion === 2) {
-          // v1→v3: expand blob-per-(account,chain) records into individual rows.
-          // v2→v3: re-run migration to fix bad chainId data — v2 used op.chainId which
-          //        could be a non-string (bigint, object) depending on serialization history.
-          //        v3 always uses record.chainId (the safe IDB key string) instead.
-          console.log(`[ActivityIdbStorage] Migrating from v${oldVersion} to v3 schema...`)
-
-          const oldStore = tx.objectStore(this.config.storeName)
-          const getAllRequest = oldStore.getAll()
-
-          getAllRequest.onsuccess = () => {
-            const oldRecords = (getAllRequest.result || []) as any[]
-
-            db.deleteObjectStore(this.config.storeName)
-            const newStore = db.createObjectStore(this.config.storeName, {
-              keyPath: this.config.keyPath
-            })
-            newStore.createIndex(
-              'by-account-chain-timestamp',
-              ['accountAddr', 'chainId', 'timestamp']
-            )
-            console.log(`[ActivityIdbStorage] Recreated store for v3`)
-
-            let migratedOps = 0
-            for (const record of oldRecords) {
-              const { accountAddr, chainId } = record
-
-              if (oldVersion === 1) {
-                // v1 shape: { accountAddr, chainId, ops: any[] }
-                // Use record.chainId — already the correct string from the v1 IDB key.
-                // Do NOT use op.chainId — it may be a bigint, object, or custom-serialized value.
-                const ops: any[] = record.ops || []
-                for (const op of ops) {
-                  if (!op?.id) continue
-                  const row: IdbAccountOpRow = {
-                    accountAddr,
-                    chainId,
-                    id: op.id,
-                    timestamp: op.timestamp ?? 0,
-                    status: op.status,
-                    serializedOp: serializeOp(op)
-                  }
-                  newStore.put(row)
-                  migratedOps++
-                }
-              } else {
-                // v2 shape: already a row — { accountAddr, chainId, id, timestamp, status, serializedOp }
-                // chainId may be "[object Object]" — fix it using the record key components directly.
-                // The v2 IDB key was ['accountAddr', 'chainId', 'id'] so the values are on the record.
-                // If chainId is bad, we have no reliable source for the correct value and must drop the row.
-                if (!chainId || chainId === '[object Object]') {
-                  console.warn(
-                    `[ActivityIdbStorage] v2→v3: dropping row with bad chainId for ${accountAddr}:${record.id}`
-                  )
-                  continue
-                }
-                const row: IdbAccountOpRow = {
-                  accountAddr,
-                  chainId,
-                  id: record.id,
-                  timestamp: record.timestamp ?? 0,
-                  status: record.status,
-                  serializedOp: record.serializedOp
-                }
-                newStore.put(row)
-                migratedOps++
-              }
-            }
-            console.log(
-              `[ActivityIdbStorage] v${oldVersion}→v3 migration complete: ${oldRecords.length} records → ${migratedOps} rows`
-            )
-          }
-
-          getAllRequest.onerror = () => {
-            console.error(
-              `[ActivityIdbStorage] v${oldVersion}→v3 migration failed to read old records`,
-              getAllRequest.error
-            )
-            // Don't reject — let the upgrade complete even if data is lost;
-            // a broken upgrade prevents the DB from opening at all.
-          }
-        }
+        const store = db.createObjectStore(this.config.storeName, {
+          keyPath: this.config.keyPath
+        })
+        store.createIndex('by-account-chain-timestamp', ['accountAddr', 'chainId', 'timestamp'])
+        console.log(`[BaseIdbStore] Created store "${this.config.storeName}"`)
       }
     })
   }
@@ -331,9 +237,6 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
       request.onsuccess = () => {
         const rows = (request.result || []) as IdbAccountOpRow[]
         if (rows.length === 0) {
-          console.log(
-            `[ActivityIdbStorage] getOpsForAccountAndChain ${accountAddr}:${chainIdStr} - found 0 ops`
-          )
           resolve(undefined)
           return
         }
@@ -357,43 +260,7 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     chainId: bigint | string,
     ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
   ): Promise<void> {
-    await this.init()
-
-    const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction([this.config.storeName], 'readwrite')
-      const store = tx.objectStore(this.config.storeName)
-
-      // Delete all existing rows for this (account, chain)
-      const deleteRange = IDBKeyRange.bound(
-        [accountAddr, chainIdStr, ''],
-        [accountAddr, chainIdStr, RANGE_HIGH]
-      )
-      store.delete(deleteRange)
-
-      // Insert each op as an individual row
-      for (const op of ops) {
-        const row = this.#opToRow(accountAddr, chainIdStr, op)
-        store.put(row)
-      }
-
-      tx.onerror = () => {
-        console.error(
-          `ActivityIdbStorage: Failed to put ops for ${accountAddr}:${chainIdStr}`,
-          tx.error
-        )
-        reject(tx.error)
-      }
-
-      tx.oncomplete = () => {
-        console.log(
-          `[ActivityIdbStorage] putOpsForAccountAndChain ${accountAddr}:${chainIdStr} - wrote ${ops.length} ops`
-        )
-        this.checkQuota()
-        resolve()
-      }
-    })
+    return this.putMultiple([{ accountAddr, chainId, ops }])
   }
 
   /**
@@ -413,22 +280,9 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
       const tx = this.db!.transaction([this.config.storeName], 'readwrite')
       const store = tx.objectStore(this.config.storeName)
 
-      for (const record of records) {
-        const chainIdStr =
-          typeof record.chainId === 'bigint' ? record.chainId.toString() : record.chainId
-
-        // Delete existing rows for this (account, chain)
-        const deleteRange = IDBKeyRange.bound(
-          [record.accountAddr, chainIdStr, ''],
-          [record.accountAddr, chainIdStr, RANGE_HIGH]
-        )
-        store.delete(deleteRange)
-
-        // Insert individual rows
-        for (const op of record.ops) {
-          const row = this.#opToRow(record.accountAddr, chainIdStr, op)
-          store.put(row)
-        }
+      for (const { accountAddr, chainId, ops } of records) {
+        const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
+        this.#writeRecordToStore(store, accountAddr, chainIdStr, ops)
       }
 
       tx.onerror = () => {
@@ -489,26 +343,13 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
    * After successful import, the caller should remove the key from chrome.storage.local.
    */
   async migrateFromStorage(data: InternalAccountsOps): Promise<void> {
-    await this.init()
-
-    const records: Array<{
-      accountAddr: string
-      chainId: string
-      ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
-    }> = []
-    let totalOps = 0
-
-    for (const [accountAddr, chainMap] of Object.entries(data)) {
-      for (const [chainIdString, ops] of Object.entries(chainMap)) {
-        records.push({ accountAddr, chainId: chainIdString, ops })
-        totalOps += ops.length
-      }
-    }
-
+    const records = Object.entries(data).flatMap(([accountAddr, chainMap]) =>
+      Object.entries(chainMap).map(([chainId, ops]) => ({ accountAddr, chainId, ops }))
+    )
+    const totalOps = records.reduce((sum, r) => sum + r.ops.length, 0)
     console.log(
       `[ActivityIdbStorage] migrateFromStorage - importing ${records.length} records with ${totalOps} total ops`
     )
-
     return this.putMultiple(records)
   }
 
@@ -582,6 +423,19 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
   // ──────────────────────────────────────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────────────────────────────────────
+
+  #writeRecordToStore(
+    store: IDBObjectStore,
+    accountAddr: string,
+    chainIdStr: string,
+    ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
+  ): void {
+    // Delete existing rows for this (account, chain), then insert fresh ones
+    store.delete(IDBKeyRange.bound([accountAddr, chainIdStr, ''], [accountAddr, chainIdStr, RANGE_HIGH]))
+    for (const op of ops) {
+      store.put(this.#opToRow(accountAddr, chainIdStr, op))
+    }
+  }
 
   #opToRow(
     accountAddr: string,

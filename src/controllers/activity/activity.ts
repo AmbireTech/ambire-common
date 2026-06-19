@@ -9,8 +9,7 @@ import {
 import { ActivityIdbStorage } from '@/services/storage/activityIdb'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
-import { IActivityController } from '../../interfaces/activity'
-import { IActivityIdbStorage } from '../../interfaces/activityIdb'
+import { IActivityController, IActivityIdbStorage, InternalAccountsOps } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -86,10 +85,6 @@ export interface Filters {
   identifiedBy?: AccountOpIdentifiedBy
 }
 
-export interface InternalAccountsOps {
-  // account => network => SubmittedAccountOp[]
-  [key: string]: { [key: string]: SubmittedAccountOp[] }
-}
 
 export interface ExternalAccountOps {
   [account: string]: { [network: string]: SubmittedAccountOpLike[] }
