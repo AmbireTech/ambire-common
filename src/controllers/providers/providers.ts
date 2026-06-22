@@ -1,5 +1,7 @@
 import { Contract } from 'ethers'
 
+import { getHeliosRpcProvider } from '@/services/provider/helios'
+
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
@@ -8,11 +10,7 @@ import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { isHeliosProviderAvailable } from '../../libs/networks/helios'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
-import {
-  getHeliosRpcProvider,
-  getProviderConnectionUrl,
-  getRpcProvider
-} from '../../services/provider'
+import { getProviderConnectionUrl, getRpcProvider } from '../../services/provider'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import EventEmitter from '../eventEmitter/eventEmitter'
 

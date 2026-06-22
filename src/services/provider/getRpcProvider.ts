@@ -1,10 +1,9 @@
-import { BrowserProvider, JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
-import { helios } from '@kohaku-eth/provider/helios'
+import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
 import { createPublicClient, custom, PublicClient } from 'viem'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { getHeliosProviderConfig, isHeliosProviderAvailable } from '../../libs/networks/helios'
+import { isHeliosProviderAvailable } from '../../libs/networks/helios'
 import getRootDomain from '../../utils/getRootDomain'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
@@ -68,30 +67,6 @@ const getProviderConnectionUrl = (network: NetworkInterface) => {
     : network.selectedRpcUrl
 }
 
-const getHeliosRpcProvider = async (
-  network: NetworkInterface,
-  options?: JsonRpcApiProviderOptions
-): Promise<RPCProvider> => {
-  const heliosConfig = getHeliosProviderConfig(network.chainId, network.selectedRpcUrl)
-
-  if (!heliosConfig) {
-    return getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, options)
-  }
-
-  const kohakuProvider = await helios(heliosConfig.config, heliosConfig.kind, true)
-  const staticNetwork = Network.from(Number(network.chainId))
-  const provider = new BrowserProvider(kohakuProvider, staticNetwork) as unknown as RPCProvider
-  const browserProviderDestroy = provider.destroy.bind(provider)
-
-  ;(provider as any)._getConnection = () => ({ url: getProviderConnectionUrl(network) })
-  provider.destroy = () => {
-    browserProviderDestroy()
-    void kohakuProvider._internal.destroy()
-  }
-
-  return provider
-}
-
 const getViemClientForProvider = (provider: RPCProvider): PublicClient => {
   const cached = viemClientByProvider.get(provider)
   if (cached) return cached
@@ -106,4 +81,4 @@ const getViemClientForProvider = (provider: RPCProvider): PublicClient => {
   return client
 }
 
-export { getHeliosRpcProvider, getProviderConnectionUrl, getRpcProvider, getViemClientForProvider }
+export { getProviderConnectionUrl, getRpcProvider, getViemClientForProvider }
