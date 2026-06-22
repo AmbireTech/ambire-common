@@ -3,6 +3,7 @@ import { ControllerInterface } from './controller'
 export type VerificationStatus = 'not-configured' | 'syncing' | 'ready' | 'failed'
 
 export type NetworkVerificationStatus = {
+  provider?: 'colibri'
   status: VerificationStatus
   error?: string
   updatedAt?: number

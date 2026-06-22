@@ -2,7 +2,11 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
-import { getHeliosRpcProvider } from '../../services/provider/helios'
+import {
+  getDefaultColibriProverUrl,
+  isColibriProviderAvailable
+} from '../../libs/networks/colibri'
+import { getColibriRpcProvider } from '../../services/provider/colibri'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -11,6 +15,11 @@ const SYNC_HEALTH_CHECK_RETRY_INTERVAL = 10000
 type VerifierProvider = {
   connectionUrl: string
   provider: RPCProvider
+}
+
+type VerifierConfig = {
+  connectionUrl: string
+  proverUrl: string
 }
 
 const isOutOfSyncError = (error: any) =>
@@ -66,7 +75,8 @@ export class VerificationController extends EventEmitter {
       delete this.#providers[stringChainId]
       this.#setStatus(chainId, {
         status: 'failed',
-        error: 'Helios verifier provider was shut down',
+        provider: 'colibri',
+        error: 'Colibri verifier provider was shut down',
         updatedAt: Date.now()
       })
 
@@ -109,11 +119,26 @@ export class VerificationController extends EventEmitter {
     provider.destroy()
   }
 
+  #getVerifierConfig(network: Network): VerifierConfig | null {
+    if (network.disabled) return null
+    if (!network.isColibriEnabled) return null
+    if (!isColibriProviderAvailable(network.chainId)) return null
+
+    const proverUrl =
+      network.colibriProverUrl?.trim() || getDefaultColibriProverUrl(network.chainId)
+    if (!proverUrl) return null
+
+    return {
+      proverUrl,
+      connectionUrl: `colibri:${network.selectedRpcUrl}:${proverUrl}`
+    }
+  }
+
   #syncNetwork(network: Network) {
     const stringChainId = network.chainId.toString()
-    const heliosRpcUrl = network.heliosRpcUrl?.trim()
+    const verifierConfig = this.#getVerifierConfig(network)
 
-    if (!heliosRpcUrl || network.disabled) {
+    if (!verifierConfig) {
       this.#destroyProvider(network.chainId)
       delete this.#syncPromises[stringChainId]
       delete this.#connectionUrls[stringChainId]
@@ -121,7 +146,7 @@ export class VerificationController extends EventEmitter {
       return
     }
 
-    const connectionUrl = `helios:${network.selectedRpcUrl}:${heliosRpcUrl}`
+    const { connectionUrl, proverUrl } = verifierConfig
     const currentConnectionUrl = this.#connectionUrls[stringChainId]
     const currentStatus = this.statusesByChainId[stringChainId]?.status
 
@@ -145,14 +170,23 @@ export class VerificationController extends EventEmitter {
 
     this.#destroyProvider(network.chainId)
     this.#connectionUrls[stringChainId] = connectionUrl
-    this.#setStatus(network.chainId, { status: 'syncing', updatedAt: Date.now() })
+    this.#setStatus(network.chainId, {
+      status: 'syncing',
+      provider: 'colibri',
+      updatedAt: Date.now()
+    })
 
     let syncPromise!: Promise<void>
     syncPromise = (async () => {
       let provider: RPCProvider | null = null
 
       try {
-        provider = await getHeliosRpcProvider(network)
+        provider = await Promise.resolve(
+          getColibriRpcProvider({
+            ...network,
+            colibriProverUrl: proverUrl
+          })
+        )
 
         if (this.#syncPromises[stringChainId]?.promise !== syncPromise) {
           this.#destroyRpcProvider(provider)
@@ -174,14 +208,19 @@ export class VerificationController extends EventEmitter {
               return
             }
 
-            this.#setStatus(network.chainId, { status: 'ready', updatedAt: Date.now() })
+            this.#setStatus(network.chainId, {
+              status: 'ready',
+              provider: 'colibri',
+              updatedAt: Date.now()
+            })
             return
           } catch (syncError: any) {
             if (!isOutOfSyncError(syncError)) throw syncError
 
             this.#setStatus(network.chainId, {
               status: 'syncing',
-              error: syncError?.message || 'Helios verifier is out of sync',
+              provider: 'colibri',
+              error: syncError?.message || 'Colibri verifier is out of sync',
               updatedAt: Date.now()
             })
             await wait(SYNC_HEALTH_CHECK_RETRY_INTERVAL)
@@ -202,7 +241,8 @@ export class VerificationController extends EventEmitter {
 
         this.#setStatus(network.chainId, {
           status: 'failed',
-          error: error?.message || 'Failed to initialize Helios verifier',
+          provider: 'colibri',
+          error: error?.message || 'Failed to initialize Colibri verifier',
           updatedAt: Date.now()
         })
       }

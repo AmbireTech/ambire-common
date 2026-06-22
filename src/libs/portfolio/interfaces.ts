@@ -296,6 +296,15 @@ export interface PortfolioLibGetResult {
   afterNonce: bigint
 }
 
+export type PortfolioVerificationStatus = 'loading' | 'success' | 'warning'
+
+export type PortfolioVerification = {
+  provider: 'colibri'
+  status: PortfolioVerificationStatus
+  error?: string
+  updatedAt?: number
+}
+
 export interface Total {
   [currency: string]: number
 }
@@ -427,6 +436,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
   lastSuccessfulUpdate?: number
+  verification?: PortfolioVerification
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.

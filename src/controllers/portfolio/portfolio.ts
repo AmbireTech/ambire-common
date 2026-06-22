@@ -78,6 +78,7 @@ import {
   NetworkState,
   PortfolioControllerState,
   PortfolioLibGetResult,
+  PortfolioVerification,
   PreviousHintsStorage,
   ScheduledUpdates,
   TemporaryTokens,
@@ -138,6 +139,17 @@ const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
+type PortfolioVerificationAttempt =
+  | {
+      status: 'success'
+      result: PortfolioLibGetResult
+    }
+  | {
+      status: 'warning'
+      error: string
+    }
+  | null
+
 export class PortfolioController extends EventEmitter implements IPortfolioController {
   #state: PortfolioControllerState
 
@@ -989,31 +1001,97 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       fetchPinned: boolean
       tokenDataCache: TokenDataCache
     }
-  ) {
+  ): Promise<PortfolioVerificationAttempt> {
     const portfolioLib = this.initializeVerificationPortfolioLibIfReady(
       account.addr,
       network.chainId,
       network
     )
-    if (!portfolioLib) return
+    if (!portfolioLib) {
+      return {
+        status: 'warning',
+        error: 'Colibri verifier is not ready'
+      }
+    }
 
     try {
-      await portfolioLib.get(account.addr, {
+      const result = await portfolioLib.get(account.addr, {
         tokenDataRecency: 60000 * 5,
         tokenDataCache: new Map(opts.tokenDataCache),
-        blockTag: 'both',
         fetchPinned: opts.fetchPinned,
         ...opts.allHints,
         ...portfolioProps,
+        blockTag: 'latest',
         disableAutoDiscovery: true,
         blacklist: this.#blacklist
       })
+
+      return {
+        status: 'success',
+        result
+      }
     } catch (error: any) {
       this.emitError({
         level: 'silent',
-        message: `Error while verifying portfolio through Helios on ${network.name} (${network.chainId}).`,
+        message: `Error while verifying portfolio through Colibri on ${network.name} (${network.chainId}).`,
         error
       })
+
+      return {
+        status: 'warning',
+        error: error?.message || 'Colibri could not verify portfolio balances'
+      }
+    }
+  }
+
+  #getPortfolioVerificationStatus(
+    portfolioResult: PortfolioLibGetResult,
+    verificationResult: PortfolioVerificationAttempt
+  ): PortfolioVerification | undefined {
+    if (!verificationResult) return undefined
+
+    if (verificationResult.status === 'warning') {
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: verificationResult.error,
+        updatedAt: Date.now()
+      }
+    }
+
+    const rpcTokenAmounts = new Map(
+      portfolioResult.tokens.map((token) => [
+        token.address.toLowerCase(),
+        token.latestAmount ?? token.amount
+      ])
+    )
+    const verifiedTokenAmounts = new Map(
+      verificationResult.result.tokens.map((token) => [token.address.toLowerCase(), token.amount])
+    )
+    const mismatches: string[] = []
+
+    rpcTokenAmounts.forEach((rpcAmount, address) => {
+      const verifiedAmount = verifiedTokenAmounts.get(address) ?? 0n
+      if (rpcAmount !== verifiedAmount) mismatches.push(address)
+    })
+
+    verifiedTokenAmounts.forEach((verifiedAmount, address) => {
+      if (!rpcTokenAmounts.has(address) && verifiedAmount !== 0n) mismatches.push(address)
+    })
+
+    if (mismatches.length) {
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: `${mismatches.length} balance(s) differed from the Colibri verified result`,
+        updatedAt: Date.now()
+      }
+    }
+
+    return {
+      provider: 'colibri',
+      status: 'success',
+      updatedAt: Date.now()
     }
   }
 
@@ -1506,14 +1584,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         isManualUpdate,
         discoveryData?.data?.hints
       )
-      this.#verifyPortfolioRequest(account, network, portfolioProps, {
-        allHints,
-        fetchPinned: !hasNonZeroTokens,
-        tokenDataCache: networkTokenDataCache
-      })
+      const shouldVerifyPortfolio = !!network.isColibriEnabled
+
+      if (shouldVerifyPortfolio) {
+        state.verification = {
+          provider: 'colibri',
+          status: 'loading',
+          updatedAt: Date.now()
+        }
+        this.emitUpdate()
+      } else {
+        delete state.verification
+      }
 
       // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, customPositionsResult] = await Promise.all([
+      const [portfolioResult, customPositionsResult, verificationResult] = await Promise.all([
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           tokenDataCache: networkTokenDataCache,
@@ -1532,8 +1617,16 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
           getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
-        )
+        ),
+        shouldVerifyPortfolio
+          ? this.#verifyPortfolioRequest(account, network, portfolioProps, {
+              allHints,
+              fetchPinned: !hasNonZeroTokens,
+              tokenDataCache: networkTokenDataCache
+            })
+          : Promise.resolve(null)
       ])
+      const verification = this.#getPortfolioVerificationStatus(portfolioResult, verificationResult)
 
       const stkWalletToken =
         portfolioResult.tokens.find(
@@ -1580,6 +1673,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         isLoading: false,
         errors: combinedErrors,
         lastSuccessfulUpdate,
+        verification,
         result: {
           ...portfolioResult,
           // Overwrite the discovery time from the portfolio lib
@@ -1607,6 +1701,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
       state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
+      if (state.verification?.status === 'loading') {
+        state.verification = {
+          provider: 'colibri',
+          status: 'warning',
+          error: e?.message || 'Portfolio failed before Colibri verification completed',
+          updatedAt: Date.now()
+        }
+      }
       // Convert the error to an object because the portfolio state is cloned
       // using structuredClone() which doesn't preserve custom error properties
       // like simulationErrorMsg

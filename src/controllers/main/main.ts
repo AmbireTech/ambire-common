@@ -570,6 +570,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
+      verification: this.verification,
       defaultNetworksMode: this.networks.defaultNetworksMode
     })
 

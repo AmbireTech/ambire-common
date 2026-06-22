@@ -45,6 +45,13 @@ export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
   pendingAmount?: bigint
 }
 
+export type SelectedAccountPortfolioVerification = {
+  provider: 'colibri'
+  status: 'loading' | 'success' | 'warning'
+  verifiedChains: string[]
+  failedChains: string[]
+}
+
 export interface SelectedAccountPortfolio {
   tokens: SelectedAccountPortfolioTokenResult[]
   collections: CollectionResultInterface[]
@@ -74,6 +81,7 @@ export interface SelectedAccountPortfolio {
   defiPositions: PositionsByProvider[]
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
+  verification: SelectedAccountPortfolioVerification | null
   projectedRewardsStats: ProjectedRewardsStats | null
 }
 
