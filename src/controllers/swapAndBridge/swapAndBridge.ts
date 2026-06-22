@@ -1256,7 +1256,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           toSelectedTokenAddr: preselectedToToken?.address,
           toChainId:
             preselectedToToken?.chainId ??
-            (preselectedToken ? nextFromSelectedToken?.chainId : undefined),
+            (!this.toSelectedToken ? nextFromSelectedToken?.chainId : undefined),
           fromAmount
         },
         {

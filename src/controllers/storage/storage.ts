@@ -30,6 +30,9 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   #storageUpdateQueue: Promise<void> = Promise.resolve()
 
+  // In-memory copy of the `passedMigrations` storage value, read once at boot
+  #passedMigrations: Set<string> = new Set()
+
   #associateAccountKeysWithLegacySavedSeedMigrationPassed: boolean = false
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -42,8 +45,15 @@ export class StorageController extends EventEmitter implements IStorageControlle
     this.#storageMigrationsPromise = this.#loadMigrations()
   }
 
+  async #markMigrationPassed(migrationKey: string) {
+    this.#passedMigrations.add(migrationKey)
+    await this.#storage.set('passedMigrations', [...this.#passedMigrations])
+  }
+
   async #loadMigrations() {
     try {
+      this.#passedMigrations = new Set(await this.#storage.get('passedMigrations', []))
+
       // IMPORTANT: should be ordered by versions
       await this.#migrateNetworkPreferencesToNetworks() // As of version 4.24.0
       await this.#migrateAccountPreferencesToAccounts() // As of version 4.25.0
@@ -75,18 +85,15 @@ export class StorageController extends EventEmitter implements IStorageControlle
    */
   async #fixSelectedAccountDismissedBannerIdsType() {
     const MIGRATION_KEY = 'fixSelectedAccountDismissedBannerIdsType'
-    const [dismissedBannerIds, passedMigrations] = await Promise.all([
-      this.#storage.get('selectedAccountDismissedBannerIds'),
-      this.#storage.get('passedMigrations', [])
-    ])
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes(MIGRATION_KEY)) return
+    const dismissedBannerIds = await this.#storage.get('selectedAccountDismissedBannerIds')
 
     if (dismissedBannerIds && Array.isArray(dismissedBannerIds)) {
       await this.#storage.set('selectedAccountDismissedBannerIds', {})
     }
 
-    await this.#storage.set('passedMigrations', [...new Set([...passedMigrations, MIGRATION_KEY])])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.24.0, a new Network interface has been introduced,
@@ -97,13 +104,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // This function migrates the data from the old NetworkPreferences to the new structure
   // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
   async #migrateNetworkPreferencesToNetworks() {
-    const [passedMigrations, networks, networkPreferences] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
+    const MIGRATION_KEY = 'migrateNetworkPreferencesToNetworks'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const [networks, networkPreferences] = await Promise.all([
       this.#storage.get('networks', {}),
       this.#storage.get('networkPreferences')
     ])
-
-    if (passedMigrations.includes('migrateNetworkPreferencesToNetworks')) return
 
     if (!Object.keys(networks).length && networkPreferences) {
       const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences)
@@ -112,9 +119,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#storage.remove('networkPreferences')
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateNetworkPreferencesToNetworks'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.25.0, a new Account interface has been introduced,
@@ -122,13 +127,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // This change requires a migration due to the introduction of a new controller, AccountsController,
   // which now manages both accounts and their preferences.
   async #migrateAccountPreferencesToAccounts() {
-    const [passedMigrations, accounts, accountPreferences] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
+    const MIGRATION_KEY = 'migrateAccountPreferencesToAccounts'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const [accounts, accountPreferences] = await Promise.all([
       this.#storage.get('accounts', []),
       this.#storage.get('accountPreferences')
     ])
-
-    if (passedMigrations.includes('migrateAccountPreferencesToAccounts')) return
 
     if (accountPreferences) {
       const migratedAccounts = getUniqueAccountsArray(
@@ -147,21 +152,17 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#storage.remove('accountPreferences')
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateAccountPreferencesToAccounts'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version v4.33.0, user can change the HD path when importing a seed.
   // Migration is needed because previously the HD path was not stored,
   // and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.
   async #migrateKeystoreSeedsWithoutHdPathTemplate() {
-    const [passedMigrations, keystoreSeeds] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('keystoreSeeds', [])
-    ])
+    const MIGRATION_KEY = 'migrateKeystoreSeedsWithoutHdPathTemplate'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes('migrateKeystoreSeedsWithoutHdPathTemplate')) return
+    const keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
 
     if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
       const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
@@ -172,22 +173,20 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateKeystoreSeedsWithoutHdPathTemplate'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.33.0, we no longer store the key preferences in a separate object called keyPreferences in the storage.
   // Migration is needed because each preference (like key label)
   // is now part of the Key interface and managed by the KeystoreController.
   async #migrateKeyPreferencesToKeystoreKeys() {
-    const [passedMigrations, keyPreferences, keystoreKeys] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
+    const MIGRATION_KEY = 'migrateKeyPreferencesToKeystoreKeys'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const [keyPreferences, keystoreKeys] = await Promise.all([
       this.#storage.get('keyPreferences', []),
       this.#storage.get('keystoreKeys', [])
     ])
-
-    if (passedMigrations.includes('migrateKeyPreferencesToKeystoreKeys')) return
 
     const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
     if (shouldMigrateKeyPreferencesToKeystoreKeys) {
@@ -205,19 +204,15 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#storage.remove('keyPreferences')
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateKeyPreferencesToKeystoreKeys'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
   async #migrateKeyMetaNullToKeyMetaCreatedAt() {
-    const [passedMigrations, keystoreKeys] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('keystoreKeys', [])
-    ])
+    const MIGRATION_KEY = 'migrateKeyMetaNullToKeyMetaCreatedAt'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes('migrateKeyMetaNullToKeyMetaCreatedAt')) return
+    const keystoreKeys = await this.#storage.get('keystoreKeys', [])
 
     const migratedKeystoreKeys = keystoreKeys.map((key) => {
       if (!key.meta) return { ...key, meta: { createdAt: null } } as StoredKey
@@ -227,37 +222,35 @@ export class StorageController extends EventEmitter implements IStorageControlle
       return key
     })
     await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateKeyMetaNullToKeyMetaCreatedAt'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version v4.34.0 HumanizerMetaV2 in storage is no longer needed. It was
   // used for persisting learnt data from async operations, triggered by the
   // humanization process.
   async #clearHumanizerMetaObjectFromStorage() {
+    const MIGRATION_KEY = 'clearHumanizerMetaObjectFromStorage'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
     await this.#storage.remove('HumanizerMetaV2')
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.55.0 we no longer need the dappSessions in the storage so this migration removes them
   async #removeDappSessions() {
-    const passedMigrations = await this.#storage.get('passedMigrations', [])
-    if (passedMigrations.includes('removeDappSessions')) return
+    const MIGRATION_KEY = 'removeDappSessions'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
     await this.#storage.remove('dappSessions')
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'removeDappSessions'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.51.0, migrate legacy token preferences to token preferences and custom tokens
   async #migrateTokenPreferences() {
-    const [passedMigrations, tokenPreferences] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('tokenPreferences', [])
-    ])
+    const MIGRATION_KEY = 'migrateTokenPreferences'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes('migrateTokenPreferences')) return
+    const tokenPreferences = await this.#storage.get('tokenPreferences', [])
 
     if (
       (tokenPreferences as LegacyTokenPreference[]).some(
@@ -274,14 +267,14 @@ export class StorageController extends EventEmitter implements IStorageControlle
       )
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateTokenPreferences'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   async #migrateNetworkIdToChainId() {
+    const MIGRATION_KEY = 'migrateNetworkIdToChainId'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
     const [
-      passedMigrations,
       networks,
       previousHints,
       customTokens,
@@ -291,7 +284,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
       accountsOps,
       signedMessages
     ] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
       this.#storage.get('networks', {}),
       this.#storage.get('previousHints', {
         learnedTokens: {},
@@ -306,12 +298,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
       this.#storage.get('signedMessages', {})
     ])
 
-    if (passedMigrations.includes('migrateNetworkIdToChainId')) return
-
     if (!Object.keys(networks).length) {
-      await this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
-      ])
+      await this.#markMigrationPassed(MIGRATION_KEY)
 
       return
     }
@@ -401,27 +389,35 @@ export class StorageController extends EventEmitter implements IStorageControlle
     )
     await this.#storage.set('accountsOps', migratedAccountsOps)
     await this.#storage.set('signedMessages', migratedSignedMessages)
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.57.0, we the Ambire wallet is always the default wallet, so we no longer need 'isDefaultWallet' in the storage.
   async #removeIsDefaultWalletStorageIfExist() {
+    const MIGRATION_KEY = 'removeIsDefaultWalletStorageIfExist'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
     const isDefaultWalletStorageSet = await this.#storage.get('isDefaultWallet', undefined)
 
     if (isDefaultWalletStorageSet !== undefined) {
       await this.#storage.remove('isDefaultWallet')
     }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 4.59.0. the onboarding flow (stories) has been removed, we no longer need 'onboardingState' in the storage.
   async #removeOnboardingStateStorageIfExist() {
+    const MIGRATION_KEY = 'removeOnboardingStateStorageIfExist'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
     const isOnboardingStateExists = await this.#storage.get('onboardingState', undefined)
 
     if (isOnboardingStateExists !== undefined) {
       await this.#storage.remove('onboardingState')
     }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   async get<K extends keyof StorageProps>(key: K): Promise<StorageProps[K] | undefined>
@@ -576,12 +572,10 @@ export class StorageController extends EventEmitter implements IStorageControlle
    * then gradually getting used on more networks.
    */
   async #migrateAccountsCleanupUsedOnNetworks() {
-    const [passedMigrations, accounts] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('accounts', [])
-    ])
+    const MIGRATION_KEY = 'migrateAccountsCleanupUsedOnNetworks'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
+    const accounts = await this.#storage.get('accounts', [])
 
     const shouldCleanupUsedOnNetworks = accounts.some((a) => 'usedOnNetworks' in a)
     if (shouldCleanupUsedOnNetworks) {
@@ -595,20 +589,16 @@ export class StorageController extends EventEmitter implements IStorageControlle
       )
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateAccountsCleanupUsedOnNetworks'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 5.30.0, we've introduced an extended dynamic dapp catalog.
   // This method migrates legacy dapp data to the new format and clears outdated storage.
   async #migrateLegacyDappsToDappsV2() {
-    const [passedMigrations, dapps] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('dapps', [])
-    ])
+    const MIGRATION_KEY = 'migrateLegacyDappsToDappsV2'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes('migrateLegacyDappsToDappsV2')) return
+    const dapps = await this.#storage.get('dapps', [])
 
     const migratedDapps: Dapp[] = []
     dapps.forEach((dapp: Dapp) => {
@@ -632,9 +622,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     await this.#storage.set('dappsV2', migratedDapps)
     await this.#storage.remove('dapps')
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateLegacyDappsToDappsV2'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // Per-source dapp connections (`connectedSources`) replaced the single `isConnected` flag.
@@ -643,12 +631,9 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // re-added on restore via RESTORE_WC_SESSIONS), so this is correct on both web and mobile.
   async #migrateDappsAddConnectionSources() {
     const MIGRATION_KEY = 'migrateDappsAddConnectionSources'
-    const [passedMigrations, dapps] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('dappsV2', [] as Dapp[])
-    ])
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes(MIGRATION_KEY)) return
+    const dapps = await this.#storage.get('dappsV2', [] as Dapp[])
 
     const hasConnectionDrift = (d: Dapp) =>
       !Array.isArray(d.connectedSources) || !!d.isConnected !== d.connectedSources.length > 0
@@ -658,7 +643,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#storage.set('dappsV2', migratedDapps)
     }
 
-    await this.#storage.set('passedMigrations', [...new Set([...passedMigrations, MIGRATION_KEY])])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   /**
@@ -666,12 +651,10 @@ export class StorageController extends EventEmitter implements IStorageControlle
    * interface and moreover - even before this v - it was no longer used anywhere.
    */
   async #cleanObsoleteNewlyCreatedFlagOnAccounts() {
-    const [passedMigrations, accounts] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('accounts', [])
-    ])
+    const MIGRATION_KEY = 'cleanObsoleteNewlyCreatedFlagOnAccounts'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    if (passedMigrations.includes('cleanObsoleteNewlyCreatedFlagOnAccounts')) return
+    const accounts = await this.#storage.get('accounts', [])
 
     const shouldCleanupNewlyCreatedFlags = accounts.some((a) => 'newlyCreated' in a)
     if (shouldCleanupNewlyCreatedFlags) {
@@ -685,44 +668,35 @@ export class StorageController extends EventEmitter implements IStorageControlle
       )
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'cleanObsoleteNewlyCreatedFlagOnAccounts'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 5.32.0, we no longer need to keep cashback status by account in the storage
   async #cleanupCashbackStatus() {
-    const [passedMigrations] = await Promise.all([this.#storage.get('passedMigrations', [])])
-
-    if (passedMigrations.includes('cleanupCashbackStatus')) return
+    const MIGRATION_KEY = 'cleanupCashbackStatus'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
     await this.#storage.remove('cashbackStatusByAccount')
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'cleanupCashbackStatus'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 5.32.0 we no longer need the phishingDetection prop in the storage so this migration removes it
   async #removeLegacyPhishingDetection() {
-    const passedMigrations = await this.#storage.get('passedMigrations', [])
-    if (passedMigrations.includes('removePhishingDetection')) return
+    const MIGRATION_KEY = 'removePhishingDetection'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
     await this.#storage.remove('phishingDetection')
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'removePhishingDetection'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   // As of version 5.34.0 we no longer need the domainsBlacklistedStatus and addressesBlacklistedStatus props in the storage so this migration removes them
   async #removeLegacyPhishingDetectionV2() {
-    const passedMigrations = await this.#storage.get('passedMigrations', [])
-    if (passedMigrations.includes('removePhishingDetectionV2')) return
+    const MIGRATION_KEY = 'removePhishingDetectionV2'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
     await this.#storage.remove('domainsBlacklistedStatus')
     await this.#storage.remove('addressesBlacklistedStatus')
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'removePhishingDetectionV2'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   /**
@@ -731,8 +705,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
    * Accessing them in memory when needed was sufficient.
    */
   async #cleanUpEmailVaultStorage() {
-    const passedMigrations = await this.#storage.get('passedMigrations', [])
-    if (passedMigrations.includes('cleanUpEmailVaultStorage')) return
+    const MIGRATION_KEY = 'cleanUpEmailVaultStorage'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
     const EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP = 'emailVault' // storage key name as of v5.33.5
     const emailVaultStorage: { email: { [email: string]: EmailVaultData } } | null =
@@ -773,9 +747,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#storage.set(EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP, cleanEmailVaultStorage)
     }
 
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'cleanUpEmailVaultStorage'])
-    ])
+    await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
   toJSON() {

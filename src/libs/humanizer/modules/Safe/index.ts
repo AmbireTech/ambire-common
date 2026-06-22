@@ -62,7 +62,9 @@ export const getDelegateCallWarning = (
     warnings.push(
       getWarning(
         'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
-        'SAFE{WALLET}_DELEGATE_CALL'
+        'SAFE{WALLET}_DELEGATE_CALL',
+        undefined,
+        to && isAddress(to) ? getAddress(to) : undefined
       )
     )
 

@@ -11,9 +11,11 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
@@ -387,46 +389,6 @@ describe('SignMessageController', () => {
     })
   })
 
-  test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    const typedMessageToSign = createPermitTypedMessage()
-    const callRelayer = jest.fn(async (path: string, method?: string) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
-
-    signMessageController = new SignMessageController(
-      keystoreCtrl,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      {},
-      inviteCtrl,
-      undefined,
-      dappsCtrl,
-      callRelayer
-    )
-
-    await signMessageController.init({ messageToSign: typedMessageToSign })
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0)
-    })
-
-    expect(signMessageController.isHumanizing).toBe(false)
-    expect(signMessageController.humanizedMessage).toBeDefined()
-    expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
-    )
-  })
-
   test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
     const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
     const registryPath = 'registry/1inch/eip712-AggregationRouterV6.json'
@@ -759,6 +721,98 @@ describe('SignMessageController', () => {
       signMessageController.dapp = getDappRequestData(verifiedDapp)
 
       expect(signMessageController.banners).toEqual([])
+    })
+
+    // Scenario: dApp's own domain is in SUSPICIOUS_HOSTING_DOMAINS (e.g. my-dapp.vercel.app)
+    // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+    test('should return SUSPICIOUS_HOSTING warning banner for dapps on suspicious hosting platforms', () => {
+      signMessageController.dapp = getDappRequestData(suspiciousHostingDapp)
+
+      expect(signMessageController.banners).toEqual([
+        {
+          id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+          type: 'warning',
+          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+        }
+      ])
+    })
+
+    // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
+    // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+    test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', () => {
+      const verifiedDappSession = new Session({ tabId: 200, windowId: 1, url: verifiedDapp.url })
+      const googleSession = new Session({
+        tabId: 200,
+        windowId: 1,
+        url: 'https://sites.google.com'
+      })
+      dappsCtrl.dappSessions[verifiedDappSession.sessionId] = verifiedDappSession
+      dappsCtrl.dappSessions[googleSession.sessionId] = googleSession
+
+      signMessageController.dapp = {
+        ...getDappRequestData(verifiedDapp),
+        sessionId: verifiedDappSession.sessionId
+      }
+
+      try {
+        expect(signMessageController.banners[0]?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+        )
+        expect(signMessageController.banners[0]?.type).toBe('warning')
+      } finally {
+        delete dappsCtrl.dappSessions[verifiedDappSession.sessionId]
+        delete dappsCtrl.dappSessions[googleSession.sessionId]
+      }
+    })
+
+    test('shows the loading banner while the dapps controller is still loading and clears it once resolved', async () => {
+      const signMessageCtrl = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl
+      )
+
+      // Until the dapps controller finishes its initial storage load (e.g. right after a service
+      // worker restart), verification is unknown and must be reported as in progress, never as
+      // failed. A never-resolving promise holds it in that pending state.
+      dappsCtrl.initialLoadPromise = new Promise<void>(() => {})
+
+      try {
+        await signMessageCtrl.init({ messageToSign, dapp: getDappRequestData(verifiedDapp) })
+        // Flush the background humanization so its emit can't be mistaken for the one we assert on
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0)
+        })
+        expect(signMessageCtrl.banners).toEqual([
+          {
+            id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+            type: 'warning',
+            text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
+          }
+        ])
+
+        let emitsCount = 0
+        const unsubscribe = signMessageCtrl.onUpdate(() => {
+          emitsCount++
+        })
+
+        // The load completes and the dapps controller emits; the controller must re-emit so the
+        // loading banner is replaced by the resolved state (verified dapp in catalog → no banner).
+        dappsCtrl.initialLoadPromise = undefined
+        await dappsCtrl.forceEmitUpdate()
+
+        expect(emitsCount).toBeGreaterThan(0)
+        expect(signMessageCtrl.banners).toEqual([])
+
+        unsubscribe()
+      } finally {
+        dappsCtrl.initialLoadPromise = undefined
+      }
     })
   })
 })

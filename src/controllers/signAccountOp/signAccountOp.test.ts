@@ -23,9 +23,12 @@ import {
   failedDapp,
   getDappRequestData,
   getDappVerificationTestDapps,
-  loadingDapp
+  loadingDapp,
+  suspiciousHostingDapp,
+  verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -34,6 +37,7 @@ import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IProvidersController } from '../../interfaces/provider'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
@@ -50,6 +54,8 @@ import {
   getTypedData
 } from '../../libs/signMessage/signMessage'
 import { PERMIT2_ADDRESS_LOWERCASED } from '../../libs/simulation/detectPermit2Interaction'
+import * as accessListCallLib from '../../libs/tracer/accessListCall'
+import * as debugTraceCallLib from '../../libs/tracer/debugTraceCall'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
@@ -77,7 +83,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
-import { getFeeSpeedIdentifier } from './helper'
+import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
@@ -394,8 +400,11 @@ const init = async (
   updateWholePortfolio?: boolean,
   options?: {
     dapps?: Dapp[]
+    sessions?: Session[]
     callRelayer?: BindedRelayerCall
+    type?: SignAccountOpType
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
+    onUpdateAfterTraceCallSuccess?: () => Promise<void>
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -638,10 +647,18 @@ const init = async (
       selectedAccount: selectedAccountCtrl
     })
     await realDappsController.initialLoadPromise
+
+    // Register any dApp sessions so the real #getTabContextStatus can inspect co-sessions
+    // sharing the same tab (the iframe-in-suspicious-tab scenario).
+    options.sessions?.forEach((session) => {
+      realDappsController.dappSessions[session.sessionId] = session
+    })
+
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
   const controller = new SignAccountOpTesterController({
+    type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
     accounts: accountsCtrl,
     networks: networksCtrl,
@@ -658,8 +675,8 @@ const init = async (
     fromRequestId: 1,
     accountOp: op,
     shouldSimulate: false,
-    // @ts-expect-error
-    onBroadcastSuccess: () => {},
+    onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
+    onBroadcastSuccess: async () => {},
     estimateController: estimationController,
     gasPriceController
   })
@@ -676,8 +693,16 @@ const initDappVerificationBannerTest = async (
   {
     isPermit2 = false,
     calls,
-    callRelayer
-  }: { isPermit2?: boolean; calls?: AccountOp['calls']; callRelayer?: BindedRelayerCall } = {}
+    callRelayer,
+    dappSessionId,
+    sessions
+  }: {
+    isPermit2?: boolean
+    calls?: AccountOp['calls']
+    callRelayer?: BindedRelayerCall
+    dappSessionId?: string
+    sessions?: Session[]
+  } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
   ;(accountOp.op.calls as any) = calls || [
@@ -688,6 +713,9 @@ const initDappVerificationBannerTest = async (
       dapp: getDappRequestData(dapp)
     }
   ]
+  if (dappSessionId) {
+    ;(accountOp.op as any).dappSessionId = dappSessionId
+  }
 
   const feePaymentOptions = [
     {
@@ -752,10 +780,7 @@ const initDappVerificationBannerTest = async (
       }
     },
     false,
-    {
-      dapps: getDappVerificationTestDapps(),
-      callRelayer
-    }
+    { dapps: getDappVerificationTestDapps(), callRelayer, sessions }
   )
 }
 
@@ -1076,7 +1101,7 @@ describe('SignAccountOp Controller ', () => {
       new Promise((resolve) => {
         const unsub = controller.estimation.onUpdate(() => {
           if (controller.estimation.status !== EstimationStatus.Loading) {
-            // @ts-expect-error
+            // @ts-expect-error - we want to check the internal state
             expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
             resolve(true)
             unsub()
@@ -2050,6 +2075,89 @@ describe('Negative cases', () => {
 
     expect(controller.signedAccountOp?.signature).toBeFalsy()
   })
+
+  test('Signing [one-click transfer]: transferred token cannot reserve the fee', async () => {
+    const network = networks.find((n) => n.chainId === 137n)!
+    const token = {
+      ...nativeFeeTokenPolygon,
+      amount: 100n
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 0n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token
+      }
+    ]
+    const accountOp = createAccountOp(smartAccount, network.chainId)
+    accountOp.op.calls = [
+      {
+        to: FEE_COLLECTOR,
+        value: token.amount,
+        data: '0x'
+      }
+    ]
+    accountOp.op.meta = {
+      allowTransferFeeTokenSelfReserve: true
+    }
+    accountOp.feeTokens = [token]
+
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: {
+          maxFeePerGas: toBeHex(200n) as Hex,
+          maxPriorityFeePerGas: toBeHex(100n) as Hex
+        },
+        medium: {
+          maxFeePerGas: toBeHex(400n) as Hex,
+          maxPriorityFeePerGas: toBeHex(200n) as Hex
+        },
+        fast: {
+          maxFeePerGas: toBeHex(600n) as Hex,
+          maxPriorityFeePerGas: toBeHex(300n) as Hex
+        },
+        ape: {
+          maxFeePerGas: toBeHex(800n) as Hex,
+          maxPriorityFeePerGas: toBeHex(400n) as Hex
+        }
+      },
+      undefined,
+      {
+        type: 'one-click-transfer'
+      }
+    )
+
+    controller.update({
+      hasNewEstimation: true,
+      feeToken: token,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    expect(controller.errors[0]?.title).toContain('Insufficient funds to cover the fee')
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+  })
 })
 
 describe('throwBroadcastAccountOp', () => {
@@ -2782,5 +2890,265 @@ describe('dapp verification banners', () => {
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
+  })
+
+  // Scenario: dApp's own domain is in SUSPICIOUS_HOSTING_DOMAINS (e.g. my-dapp.vercel.app)
+  // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+  test('should return SUSPICIOUS_HOSTING warning banner for dapps on suspicious hosting platforms', async () => {
+    const { controller } = await initDappVerificationBannerTest(suspiciousHostingDapp)
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+        type: 'warning',
+        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+      }
+    ])
+  })
+
+  // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
+  // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+  // Uses the real DappsController: the suspicious co-session shares the tab with the dApp's
+  // own session, so the real #getTabContextStatus derives the SUSPICIOUS_HOSTING context.
+  test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', async () => {
+    const verifiedDappSession = new Session({ tabId: 300, windowId: 1, url: verifiedDapp.url })
+    const googleSession = new Session({
+      tabId: 300,
+      windowId: 1,
+      url: 'https://sites.google.com'
+    })
+
+    const { controller } = await initDappVerificationBannerTest(verifiedDapp, {
+      dappSessionId: verifiedDappSession.sessionId,
+      sessions: [verifiedDappSession, googleSession]
+    })
+
+    expect(controller.banners[0]?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+    expect(controller.banners[0]?.type).toBe('warning')
+  })
+})
+
+describe('traceCall asset discovery', () => {
+  suppressConsoleBeforeEach(true)
+
+  const traceCallGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  let getShouldUseAccessListCallSpy: jest.SpiedFunction<
+    typeof accessListCallLib.getShouldUseAccessListCall
+  >
+  let createAccessListCallSpy: jest.SpiedFunction<typeof accessListCallLib.createAccessListCall>
+  let debugTraceCallSpy: jest.SpiedFunction<typeof debugTraceCallLib.debugTraceCall>
+  let addTokensToBeLearnedSpy: jest.SpiedFunction<
+    typeof PortfolioController.prototype.addTokensToBeLearned
+  >
+  let addErc721sToBeLearnedSpy: jest.SpiedFunction<
+    typeof PortfolioController.prototype.addErc721sToBeLearned
+  >
+
+  beforeEach(() => {
+    // Defaults: the access list branch resolves with no discovered assets and
+    // nothing new learned. Individual tests override these to drive a path.
+    jest.spyOn(debugTraceCallLib, 'getStateOverride').mockReturnValue(undefined as any)
+    getShouldUseAccessListCallSpy = jest
+      .spyOn(accessListCallLib, 'getShouldUseAccessListCall')
+      .mockReturnValue(true)
+    createAccessListCallSpy = jest
+      .spyOn(accessListCallLib, 'createAccessListCall')
+      .mockResolvedValue([])
+    debugTraceCallSpy = jest
+      .spyOn(debugTraceCallLib, 'debugTraceCall')
+      .mockResolvedValue({ tokens: [], nfts: [] })
+    addTokensToBeLearnedSpy = jest
+      .spyOn(PortfolioController.prototype, 'addTokensToBeLearned')
+      .mockReturnValue(false)
+    addErc721sToBeLearnedSpy = jest
+      .spyOn(PortfolioController.prototype, 'addErc721sToBeLearned')
+      .mockReturnValue(false)
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.useRealTimers()
+  })
+
+  // Builds a controller and neutralizes the discovery run that the estimate
+  // interval fires on init, so every test starts from a clean NotStarted state
+  // with empty mock history.
+  const initTraceCall = async (onUpdateAfterTraceCallSuccess?: () => Promise<void>) => {
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, 1n),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      traceCallGasPrices,
+      false,
+      { onUpdateAfterTraceCallSuccess }
+    )
+
+    await wait(100)
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    return controller
+  }
+
+  test('runs the full discovery lifecycle and learns the discovered assets', async () => {
+    const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
+    const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
+
+    const discovered = ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48']
+    const createAccessListDeferred = createDeferred<string[]>()
+    createAccessListCallSpy.mockReturnValue(createAccessListDeferred.promise)
+    addTokensToBeLearnedSpy.mockReturnValue(true)
+
+    jest.useFakeTimers()
+
+    // Discovery is kicked off and immediately flips to InProgress.
+    const traceCallPromise = (controller as any).traceCall()
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.InProgress)
+
+    // A second request while one is in progress is a no-op (reentrancy guard).
+    await (controller as any).traceCall()
+    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+
+    // After 2s without a response the status reflects the slow pending state.
+    jest.advanceTimersByTime(2000)
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.SlowPendingResponse)
+
+    // Resolving discovery learns the assets, fires the success callback and
+    // settles on Done.
+    createAccessListDeferred.resolve(discovered)
+    await traceCallPromise
+
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discovered, 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      discovered.map((address) => [address, []]),
+      smartAccount.addr,
+      1n
+    )
+    expect(onUpdateAfterTraceCallSuccess).toHaveBeenCalledTimes(1)
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('falls back to debug_traceCall when the access list fails and skips the callback when nothing is learned', async () => {
+    const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
+    const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
+
+    const emitErrorSpy = jest.fn()
+    ;(controller as any).emitError = emitErrorSpy
+
+    getShouldUseAccessListCallSpy.mockReturnValue(true)
+    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
+    debugTraceCallSpy.mockResolvedValueOnce({
+      tokens: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
+      nfts: []
+    })
+
+    await (controller as any).traceCall()
+
+    // The access list failure is reported silently, then discovery falls back
+    // to debug_traceCall.
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'silent', message: 'Error in signAccountOp.traceCall' })
+    )
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
+      ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
+      1n
+    )
+    // Nothing new learned (both learn spies default to false) -> no callback.
+    expect(onUpdateAfterTraceCallSuccess).not.toHaveBeenCalled()
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('sets Failed and emits a silent error when discovery throws', async () => {
+    const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
+    const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
+
+    const emitErrorSpy = jest.fn()
+    ;(controller as any).emitError = emitErrorSpy
+
+    getShouldUseAccessListCallSpy.mockReturnValue(false)
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+
+    await (controller as any).traceCall()
+
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Failed)
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'silent', message: 'Error in signAccountOp.traceCall' })
+    )
+    expect(onUpdateAfterTraceCallSuccess).not.toHaveBeenCalled()
+  })
+
+  // A cool way to not write two test cases for both branches
+  describe.each([
+    { branch: 'access-list', useAccessList: true },
+    { branch: 'debug', useAccessList: false }
+  ])('discards stale runs', ({ useAccessList }) => {
+    test('the stale run does not overwrite the latest results', async () => {
+      const controller = await initTraceCall()
+
+      getShouldUseAccessListCallSpy.mockReturnValue(useAccessList)
+
+      const deferredA = createDeferred<any>()
+      const deferredB = createDeferred<any>()
+      const armNextCall = (deferred: { promise: Promise<any> }) =>
+        useAccessList
+          ? createAccessListCallSpy.mockReturnValueOnce(deferred.promise)
+          : debugTraceCallSpy.mockReturnValueOnce(deferred.promise)
+      const resultWith = (token: string) =>
+        useAccessList ? [token] : { tokens: [token], nfts: [] }
+
+      armNextCall(deferredA)
+      const runA = (controller as any).traceCall()
+
+      // Supersede the in-flight run A with a newer run B.
+      controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+      armNextCall(deferredB)
+      const runB = (controller as any).traceCall()
+
+      // B finishes first and commits its discovered token.
+      const tokenB = '0xB0B86991c6218b36C1d19D4A2e9Eb0CE3606eB48'
+      deferredB.resolve(resultWith(tokenB))
+      await runB
+
+      expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith([tokenB], 1n)
+      expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+
+      addTokensToBeLearnedSpy.mockClear()
+
+      // A resolves late but is detected as stale and must not learn or mutate state.
+      const tokenA = '0xA0a86991C6218b36c1D19D4a2E9eB0cE3606eb48'
+      deferredA.resolve(resultWith(tokenA))
+      await runA
+
+      expect(addTokensToBeLearnedSpy).not.toHaveBeenCalled()
+      expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+    })
   })
 })

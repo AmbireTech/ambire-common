@@ -76,6 +76,16 @@ There are two patterns:
 - Do not wrap internal helper methods; wrap the public entry-point only.
 - Do not wrap background-interval handlers or fire-and-forget side effects.
 
+## initialLoadPromise
+Most controllers have `initialLoadPromise` that resolves when the controller finishes its initial loading (e.g., fetching data, initializing state, reading from storage). 
+
+### When to use it
+- In the `initialLoadPromise` of another controller that depends on the state of the first controller. 
+- In methods a controller that depends on the `initialLoadPromise` of that controller.
+
+### Example:
+The networks controller that reads the network list from storage (which is async) exposes an `initialLoadPromise` that resolves when the networks are loaded. Then, the providers controller awaits the networks controller's `initialLoadPromise` in its own `initialLoadPromise` before initializing the providers, ensuring it has the network data available. The networks controller also awaits its own `initialLoadPromise` in its methods that read the network list, to ensure the data is loaded before accessing it.
+
 ## Other rules:
 - Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
@@ -85,7 +95,6 @@ There are two patterns:
 - NEVER write expensive calculations inside getters.
 - NEVER emit updates in getters. Getters should be pure and side-effect free.
 - Getter values are not automatically propagated to the UI. To update a getter value, you need to call `this.emitUpdate()`. Be VERY careful with this - you should NEVER write a getter that depends on data from another controller without subscribing to that controller's updates and calling `this.propagateUpdate(...)` in the subscription callback, otherwise the UI will not update when the underlying data changes.
-- Most controllers have `initialLoadPromise` that resolves when the controller finishes its initial loading (e.g., fetching data, initializing state). If you need to ensure that the controller is fully loaded before performing an action, await this promise first. Example: `await this.someController.initialLoadPromise`
 - If a controller depends on the state of the UI (e.g., which screen it is on), it should subscribe to `this.ui.uiEvent.on`
 - When retrying failed background fetches, use a retry counter with a maximum number of attempts (reset on success) and an increasing delay. For periodic polling with retry, use `RecurringTimeout` with adaptive intervals (shorter on failure, longer on success). See `PortfolioController.updateExchangeList()`, `DappsController.#retryFetchAndUpdateInterval`, and `ContractNamesController`'s `retryAfter` timestamps for examples.
 - ALWAYS guard async operations that update state with appropriate stale-data checks, such as debounce, unique ID/version checks, or cancellation with `AbortController`, to prevent state corruption from out-of-order or concurrent operations. Examples of these patterns can be found in `SwapAndBridgeController` and `AccountPickerController`.

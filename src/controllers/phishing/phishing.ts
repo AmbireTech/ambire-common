@@ -22,6 +22,147 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
 
+/**
+ * Shared hosting platforms that legitimate DeFi protocols do not use as a primary domain.
+ * Phishing attacks exploit these platforms because their well-known parent domain (e.g.
+ * google.com, vercel.app) makes the URL appear trustworthy and bypasses most phishing filters.
+ *
+ * Attack example:
+ *   A user searches for "Uniswap" — a sponsored search result points to
+ *   sites.google.com/uniswap, a convincing fake hosted on Google Sites.
+ *   The page embeds a wallet connector that requests a signature, stealing funds.
+ *
+ * HOW IT WORKS
+ *
+ * Two independent checks feed into getDappVerificationBanner():
+ *
+ * 1. Intrinsic status — the dApp's own domain, resolved by getDomainBlacklistedStatus().
+ *    Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING (this list) > VERIFIED.
+ *
+ * 2. Session context — if a dApp is loaded as an iframe inside a tab that also holds a
+ *    session for a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getTabContextStatus() returns
+ *    SUSPICIOUS_HOSTING. This is only used for the banner — never written to #dapps or
+ *    storage, so the dApp's global status is not contaminated for unrelated sessions.
+ *
+ * Final priority in getDappVerificationBanner():
+ *   dApp intrinsic BLACKLISTED  >  context SUSPICIOUS_HOSTING  >  dApp intrinsic SUSPICIOUS_HOSTING  >  VERIFIED
+ *
+ * Examples:
+ *   Scenario                                                                     Result
+ *   sites.google.com dApp (BLACKLISTED in phishing DB)                          intrinsic=BLACKLISTED → BLACKLISTED
+ *   my-dapp.vercel.app (in this list, not in phishing DB)                       intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
+ *   ipfs.io dApp opened directly                                                intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
+ *   app.uniswap.org iframe inside a sites.google.com tab                        intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
+ *   app.uniswap.org opened directly (no suspicious co-session)                  intrinsic=VERIFIED, context=undefined → VERIFIED
+ *   app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED      intrinsic=BLACKLISTED wins → BLACKLISTED
+ */
+/**
+ * The non-Google entries below are derived from an analysis of the eth-phishing-detect
+ * blocklist, ranked by how many blocked phishing
+ * entries are hosted on each shared platform. Only platforms that can serve an arbitrary
+ * JS wallet connector (the actual eth_requestAccounts attack vector) and that legitimate
+ * DeFi protocols never use as a primary domain are included.
+ *
+ * Deliberately EXCLUDED despite appearing in the report, to avoid false positives on
+ * legitimate traffic and because they cannot host a wallet connector:
+ *   - typeform.com, zendesk.com — form/support builders; cannot run a custom connector.
+ *   - medium.com — publishing platform; no custom JS.
+ *   - netlify.com — Netlify's own corporate site (the user-hosting suffix netlify.app IS listed).
+ *   - s3.amazonaws.com, cloudfront.net — object storage / CDN that fronts large amounts of
+ *     legitimate dApp assets; low blocklist share, high false-positive risk.
+ *   - translate.goog — Google Translate proxy; would flag legitimate translated browsing.
+ *   - page.link — Firebase Dynamic Links (deprecated redirect service), not a host.
+ */
+export const SUSPICIOUS_HOSTING_DOMAINS = [
+  // Google ecosystem
+  'sites.google.com',
+  'docs.google.com',
+  'drive.google.com',
+  'forms.google.com',
+  'sheets.google.com',
+  'slides.google.com',
+
+  // JAMstack / static hosting
+  'vercel.app',
+  'netlify.app',
+  'bitballoon.com', // Netlify legacy
+  'pages.dev',
+  'r2.dev', // Cloudflare R2 (public buckets serving static sites)
+  'workers.dev', // Cloudflare Workers
+  'github.io', // GitHub Pages
+  'gitlab.io', // GitLab Pages
+  'surge.sh',
+
+  // Firebase
+  'firebaseapp.com',
+  'web.app',
+
+  // Cloud app / PaaS hosts
+  'azurewebsites.net',
+  'onrender.com',
+  'herokuapp.com',
+  'railway.app',
+  'glitch.me',
+  'repl.co',
+  'replit.app',
+  'csb.app', // CodeSandbox
+
+  // Docs hosting
+  'gitbook.io',
+
+  // Website builders
+  'webflow.io',
+  'mystrikingly.com',
+  'b12sites.com',
+  'weebly.com',
+  'weeblysite.com',
+  'godaddysites.com',
+  'umso.co',
+  'jimdosite.com',
+  'tilda.ws',
+  'square.site',
+  'flazio.com',
+
+  // Website / managed hosts
+  'pantheonsite.io',
+  'plesk.page',
+
+  // Free web hosts
+  '42web.io',
+  'cprapid.com',
+  '000webhostapp.com',
+
+  // Blogging platforms
+  'blogspot.com',
+  'wordpress.com',
+
+  // Dynamic DNS (abuse-prone, no legitimate DeFi usage)
+  'us.to',
+  'duia.us',
+  'mooo.com',
+
+  // IPFS / decentralized gateways
+  'ipfs.io',
+  'dweb.link',
+  'cf-ipfs.com',
+  'on-fleek.app',
+  'fleek.co',
+  'mypinata.cloud',
+  '4everland.app',
+  'w3s.link',
+  'eth.limo',
+  'eth.link'
+]
+
+function isSuspiciousHostingDomain(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
+  } catch {
+    return false
+  }
+}
+
 export class PhishingController extends EventEmitter implements IPhishingController {
   #fetch: Fetch
 
@@ -259,7 +400,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const dappsData = urls.map((url) => ({ dappId: getDappIdFromUrl(url), url }))
 
     if (process.env.IS_TESTING === 'true') {
-      dappsData.forEach(({ dappId }) => {
+      dappsData.forEach(({ url, dappId }) => {
+        // Suspicious hosting check runs before the VERIFIED fallback so the status is set correctly.
+        if (isSuspiciousHostingDomain(url)) {
+          this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
+          return
+        }
         this.#domainsBlacklistedStatus.set(
           dappId,
           this.#domainsBlacklistedStatus.get(dappId) || 'VERIFIED'
@@ -275,13 +421,20 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       return
     }
 
-    dappsData.forEach(({ dappId }) => {
-      const status = this.#domains.size
-        ? this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!)
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
-        : undefined
-      if (status) this.#domainsBlacklistedStatus.set(dappId, status)
+    // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
+    dappsData.forEach(({ url, dappId }) => {
+      if (
+        this.#domains.size &&
+        (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!))
+      ) {
+        this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
+        return
+      }
+      if (isSuspiciousHostingDomain(url)) {
+        this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
+        return
+      }
+      if (this.#domains.size) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
     })
 
     // Filter: we only fetch for ones that are missing or stale
@@ -506,13 +659,16 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   getDomainBlacklistedStatus(url: string): BlacklistedStatus | undefined {
     const dappId = getDappIdFromUrl(url)
     if (!dappId) return undefined
-    if (!this.#domains.size) return undefined
 
-    if (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!)) {
-      return 'BLACKLISTED'
+    // BLACKLISTED (phishing DB) always takes highest priority.
+    if (this.#domains.size) {
+      if (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!)) return 'BLACKLISTED'
+      if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
+      return 'VERIFIED'
     }
-
-    return 'VERIFIED'
+    // DB not yet loaded - SUSPICIOUS_HOSTING_DOMAINS still detectable without it.
+    if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
+    return undefined
   }
 
   toJSON() {

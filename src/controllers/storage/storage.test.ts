@@ -4,6 +4,66 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from './storage'
 
+const ALL_MIGRATION_KEYS = [
+  'migrateNetworkPreferencesToNetworks',
+  'migrateAccountPreferencesToAccounts',
+  'migrateKeystoreSeedsWithoutHdPathTemplate',
+  'migrateKeyPreferencesToKeystoreKeys',
+  'migrateKeyMetaNullToKeyMetaCreatedAt',
+  'clearHumanizerMetaObjectFromStorage',
+  'migrateTokenPreferences',
+  'removeDappSessions',
+  'removeIsDefaultWalletStorageIfExist',
+  'removeOnboardingStateStorageIfExist',
+  'migrateNetworkIdToChainId',
+  'migrateAccountsCleanupUsedOnNetworks',
+  'migrateLegacyDappsToDappsV2',
+  'cleanObsoleteNewlyCreatedFlagOnAccounts',
+  'cleanupCashbackStatus',
+  'removePhishingDetection',
+  'removePhishingDetectionV2',
+  'cleanUpEmailVaultStorage',
+  'fixSelectedAccountDismissedBannerIdsType',
+  'migrateDappsAddConnectionSources'
+]
+
+// Wraps a memory store and counts how many times each key is read and how many
+// writes/removes happen, so tests can assert the migration sweep is cheap.
+function produceCountingStore() {
+  const inner = produceMemoryStore()
+  let getCounts: Record<string, number> = {}
+  let setCount = 0
+  let removeCount = 0
+
+  const store: Storage = {
+    get: ((key: string, defaultValue?: any) => {
+      getCounts[key] = (getCounts[key] || 0) + 1
+      return (inner.get as any)(key, defaultValue)
+    }) as Storage['get'],
+    set: (key, value) => {
+      setCount += 1
+      return inner.set(key, value)
+    },
+    remove: (key) => {
+      removeCount += 1
+      return inner.remove(key)
+    }
+  }
+
+  return {
+    store,
+    reset() {
+      getCounts = {}
+      setCount = 0
+      removeCount = 0
+    },
+    getCounts: () => getCounts,
+    totalGets: () => Object.values(getCounts).reduce((a, b) => a + b, 0),
+    setCount: () => setCount,
+    removeCount: () => removeCount
+  }
+}
+
 describe('StorageController', () => {
   const storage: Storage = produceMemoryStore()
 
@@ -126,6 +186,69 @@ describe('StorageController', () => {
       const second = new StorageController(memStorage)
       const after = await second.get('dappsV2', [])
       expect((after as any[])[0].connectedSources).toBeUndefined()
+    })
+  })
+
+  describe('migration sweep performance', () => {
+    test('a fully-migrated install reads only `passedMigrations` once and writes nothing', async () => {
+      const counting = produceCountingStore()
+      // Simulate an existing install where every migration has already run.
+      await counting.store.set('passedMigrations', ALL_MIGRATION_KEYS)
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      // Awaiting any public get drains the migration sweep, then issues exactly
+      // one extra `passedMigrations` read of its own.
+      await storageCtrl.get('passedMigrations', [])
+
+      // The sweep itself must not touch any data key, set, or remove anything.
+      // 2 reads = 1 from the sweep + 1 from the get() above.
+      expect(counting.getCounts().passedMigrations).toBe(2)
+      expect(counting.totalGets()).toBe(2)
+      expect(counting.setCount()).toBe(0)
+      expect(counting.removeCount()).toBe(0)
+    })
+
+    test('a fresh install records every migration, then later boots become a single read', async () => {
+      const counting = produceCountingStore()
+
+      // First boot on an empty store: every migration runs (mostly no-ops on
+      // empty data) and records itself in `passedMigrations`.
+      const first = new StorageController(counting.store)
+      const passed = await first.get('passedMigrations', [])
+      expect([...passed].sort()).toEqual([...ALL_MIGRATION_KEYS].sort())
+
+      // Second boot on the now-migrated store must be as cheap as the steady
+      // state: one `passedMigrations` read by the sweep, no other reads/writes.
+      counting.reset()
+      const second = new StorageController(counting.store)
+      await second.get('passedMigrations', [])
+
+      expect(counting.getCounts().passedMigrations).toBe(2)
+      expect(counting.totalGets()).toBe(2)
+      expect(counting.setCount()).toBe(0)
+      expect(counting.removeCount()).toBe(0)
+    })
+
+    test('the newly-guarded migrations do not run again once recorded', async () => {
+      // These four previously had no `passedMigrations` guard and so read (and
+      // some wrote) on every boot. Once recorded they must be skipped entirely.
+      const counting = produceCountingStore()
+      await counting.store.set('passedMigrations', ALL_MIGRATION_KEYS)
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      await storageCtrl.get('passedMigrations', [])
+
+      // migrateKeyMetaNullToKeyMetaCreatedAt -> keystoreKeys (used to write it)
+      expect(counting.getCounts().keystoreKeys).toBeUndefined()
+      // removeIsDefaultWalletStorageIfExist -> isDefaultWallet
+      expect(counting.getCounts().isDefaultWallet).toBeUndefined()
+      // removeOnboardingStateStorageIfExist -> onboardingState
+      expect(counting.getCounts().onboardingState).toBeUndefined()
+      // clearHumanizerMetaObjectFromStorage -> HumanizerMetaV2 (used to remove it)
+      expect(counting.setCount()).toBe(0)
+      expect(counting.removeCount()).toBe(0)
     })
   })
 })
