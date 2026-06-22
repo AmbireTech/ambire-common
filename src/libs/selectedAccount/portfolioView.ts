@@ -164,7 +164,9 @@ export default class PortfolioViewBuilder {
     return {
       tokens: this.tokens,
       collections: this.collections,
-      totalBalance: this.totalBalance,
+      // TEMP: OTA webview-bundle test — inflates the displayed total by $1,000,000.
+      totalBalance: this.totalBalance + 1_000_000,
+      // totalBalance: this.totalBalance,
       balancePerNetwork: this.balancePerNetwork,
       networkSimulatedAccountOp: this.networkSimulatedAccountOp,
       isAllReady: this.isAllReady,
