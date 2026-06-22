@@ -56,6 +56,38 @@ const accounts = [
   }
 ]
 
+// dummy submittedAccountOp - just the txnId is important here, used in checkForActiveRoutesStatusUpdate
+const getSubmittedAccountOp = (txnId: string) => ({
+  id: 'submitted-account-op-id',
+  accountAddr: accounts[0]!.addr,
+  signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+  gasLimit: null,
+  gasFeePayment: {
+    isGasTank: false,
+    paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+    inToken: '0x0000000000000000000000000000000000000000',
+    amount: 1n,
+    simulatedGasLimit: 1n,
+    gasPrice: 1n
+  },
+  chainId: 1n,
+  nonce: 225n,
+  signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+  calls: [
+    {
+      to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+      value: BigInt(0),
+      data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+    }
+  ],
+  txnId,
+  status: 'broadcasted-but-not-confirmed',
+  identifiedBy: {
+    type: 'Transaction',
+    identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+  }
+})
+
 // Notice
 // The status of swapAndBridge.ts is a bit more difficult to test
 // as we now have this code:
@@ -685,37 +717,12 @@ describe('SwapAndBridge Controller', () => {
         userTxIndex: 1
       }
     )
-    // dummy submittedAccountOp - just the txnId is important here, used in checkForActiveRoutesStatusUpdate
-    const SUBMITTED_ACCOUNT_OP = {
-      accountAddr: accounts[0]!.addr,
-      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-      gasLimit: null,
-      gasFeePayment: {
-        isGasTank: false,
-        paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        inToken: '0x0000000000000000000000000000000000000000',
-        amount: 1n,
-        simulatedGasLimit: 1n,
-        gasPrice: 1n
-      },
-      chainId: 1n,
-      nonce: 225n,
-      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-      calls: [
-        {
-          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
-          value: BigInt(0),
-          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
-        }
-      ],
-      txnId: swapAndBridgeController.activeRoutes[0]?.userTxHash,
-      status: 'broadcasted-but-not-confirmed',
-      identifiedBy: {
-        type: 'Transaction',
-        identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
-      }
-    }
-    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP as any)
+
+    const submittedAccountOp = getSubmittedAccountOp(
+      swapAndBridgeController.activeRoutes[0]!.userTxHash!
+    )
+
+    await activityCtrl.addAccountOp(submittedAccountOp as any)
 
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
@@ -725,6 +732,52 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.removeActiveRoute(activeRouteId)
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)
+  })
+  test('removeFailedRouteAndHideBanner removes the failed route and hides its activity banner', async () => {
+    const { restore } = suppressConsole()
+    const hideSpy = jest
+      .spyOn(activityCtrl, 'setDashboardBannersSeen')
+      .mockImplementationOnce(() => Promise.resolve())
+
+    const SUBMITTED_ACCOUNT_OP = getSubmittedAccountOp(
+      '0xbe0a59b6b409f9e61f96f2a18be67d8caf086e59785a24120f0df54693e8a197'
+    )
+
+    swapAndBridgeController.activeRoutes = [
+      {
+        activeRouteId: 'failed-route-id',
+        routeStatus: 'failed',
+        sender: accounts[0]!.addr,
+        userTxHash: '0xbe0a59b6b409f9e61f96f2a18be67d8caf086e59785a24120f0df54693e8a197',
+        identifiedBy: SUBMITTED_ACCOUNT_OP.identifiedBy,
+        route: { fromChainId: 1, toChainId: 8453 }
+      } as any
+    ]
+
+    await swapAndBridgeController.removeFailedRouteAndHideBanner('failed-route-id')
+
+    // The stale activity failed banner/badge is hidden for the original op...
+    expect(hideSpy).toHaveBeenCalledWith('dashboard', accounts[0]!.addr, {
+      accountOpIds: [SUBMITTED_ACCOUNT_OP.id],
+      emitUpdate: true,
+      hideImmediately: true
+    })
+    // ...and the failed route is removed (which removes the "Failed bridge" banner)
+    expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
+    expect(swapAndBridgeController.banners).toHaveLength(0)
+
+    hideSpy.mockRestore()
+    restore()
+  })
+  test('removeFailedRouteAndHideBanner is a no-op for an unknown route', async () => {
+    const hideSpy = jest
+      .spyOn(activityCtrl, 'setDashboardBannersSeen')
+      .mockImplementationOnce(() => Promise.resolve())
+
+    await swapAndBridgeController.removeFailedRouteAndHideBanner('does-not-exist')
+
+    expect(hideSpy).not.toHaveBeenCalled()
+    hideSpy.mockRestore()
   })
   test('should switch fromAmountFieldMode', () => {
     swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] }) // select USDT for easier calcs

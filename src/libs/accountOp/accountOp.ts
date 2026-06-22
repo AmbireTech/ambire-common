@@ -108,7 +108,9 @@ export interface AccountOp {
     clearSigningHumanization?: IrCall[]
   }
   flags?: {
-    hideActivityBanner?: boolean
+    /** Excludes it from the "failed transactions" banner and the Activity counter badge,
+     *  while keeping it in the Activity history. */
+    hiddenFromFailedBanner?: boolean
   }
   /** Session ID of the dApp that initiated this accountOp, used for phishing context checks. */
   dappSessionId?: string
