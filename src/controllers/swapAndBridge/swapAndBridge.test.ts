@@ -726,6 +726,43 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
+  test('removeFailedRouteAndHideBanner removes the failed route and hides its activity banner', async () => {
+    const identifiedBy = { type: 'Transaction', identifier: '0xretried-route-op' } as const
+    const hideSpy = jest
+      .spyOn(activityCtrl, 'hideFailedBannerForRetriedOp')
+      .mockResolvedValue(undefined)
+
+    swapAndBridgeController.activeRoutes = [
+      {
+        activeRouteId: 'failed-route-id',
+        routeStatus: 'failed',
+        sender: accounts[0]!.addr,
+        userTxHash: '0xretried-route-op',
+        identifiedBy,
+        route: { fromChainId: 1, toChainId: 8453 }
+      } as any
+    ]
+
+    await swapAndBridgeController.removeFailedRouteAndHideBanner('failed-route-id')
+
+    // The stale activity failed banner/badge is hidden for the original op...
+    expect(hideSpy).toHaveBeenCalledWith(accounts[0]!.addr, 1n, identifiedBy)
+    // ...and the failed route is removed (which removes the "Failed bridge" banner)
+    expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
+    expect(swapAndBridgeController.banners).toHaveLength(0)
+
+    hideSpy.mockRestore()
+  })
+  test('removeFailedRouteAndHideBanner is a no-op for an unknown route', async () => {
+    const hideSpy = jest
+      .spyOn(activityCtrl, 'hideFailedBannerForRetriedOp')
+      .mockResolvedValue(undefined)
+
+    await swapAndBridgeController.removeFailedRouteAndHideBanner('does-not-exist')
+
+    expect(hideSpy).not.toHaveBeenCalled()
+    hideSpy.mockRestore()
+  })
   test('should switch fromAmountFieldMode', () => {
     swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] }) // select USDT for easier calcs
     swapAndBridgeController.updateForm({ fromAmountFieldMode: 'fiat' })

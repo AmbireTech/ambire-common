@@ -60,7 +60,7 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
+type AccountsOps = PaginationResult<SubmittedAccountOpLike>
 
 type AddExternalAccountOpParams = {
   accountAddr: string
@@ -76,7 +76,7 @@ type AccountOpBalanceChangesBackfillReference = Pick<
   'identifiedBy' | 'accountAddr' | 'chainId'
 >
 
-interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
+type MessagesToBeSigned = PaginationResult<SignedMessage>
 
 export interface Filters {
   account: string
@@ -507,7 +507,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         op.balanceChanges === undefined
     )
     if (opsWithNoBalanceChanges.length)
-      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
+      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch(() => null)
   }
 
   setDashboardBannersSeen(sessionId: string, accountAddr: string) {
@@ -817,7 +817,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           this.#providers.providers[network.chainId.toString()]
         )
       })
-    } catch (error) {
+    } catch {
       submittedAccountOpLike.balanceChanges = undefined
     }
 
@@ -1357,7 +1357,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // record the balance changes but do not await them
     // no need to console.log errors in the catch() as it's handled inside
-    this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null)
+    this.#executeBalanceChanges(balanceChangesTasks).catch(() => null)
 
     return {
       shouldEmitUpdate,
@@ -1529,6 +1529,68 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
   }
 
+  /**
+   * Marks a failed account op as retried so it no longer contributes to the
+   * "failed transactions" banner or the Activity counter badge. The op itself
+   * stays in the Activity history.
+   *
+   * Example: the user retries a failed swap/bridge
+   */
+  async hideFailedBannerForRetriedOp(
+    accountAddr: string,
+    chainId: bigint,
+    identifiedBy: AccountOpIdentifiedBy
+  ) {
+    await this.#initialLoadPromise
+
+    const op = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
+    if (
+      !op ||
+      (op.status !== AccountOpStatus.Failure && op.status !== AccountOpStatus.Rejected) ||
+      op.flags?.hiddenFromFailedBanner
+    )
+      return
+
+    op.flags = { ...op.flags, hiddenFromFailedBanner: true }
+
+    const prevBanners = this.#bannersByAccount.get(accountAddr)
+    if (prevBanners) {
+      const updatedBanners = prevBanners
+        .map((banner) => {
+          if (banner.category !== 'failed-acc-ops') return banner
+
+          const remainingOpsData = banner.meta?.accountOpsDataForNextUpdate.filter(
+            (meta: { accountAddr: string; chainId: bigint; timestamp: number }) =>
+              !(
+                meta.accountAddr === op.accountAddr &&
+                meta.chainId === op.chainId &&
+                meta.timestamp === op.timestamp
+              )
+          )
+
+          // Drop the banner entirely once no failed ops remain
+          if (!remainingOpsData.length) return null
+
+          return {
+            ...banner,
+            meta: {
+              ...banner.meta,
+              accountOpsDataForNextUpdate: remainingOpsData,
+              accountOpsCount: remainingOpsData.length
+            }
+          }
+        })
+        .filter((banner): banner is Banner => banner !== null)
+
+      this.#bannersByAccount.set(accountAddr, updatedBanners)
+    }
+
+    this.emitUpdate()
+    // Don't await as this method is used inside of swapAndBridge's updateForm
+    // and we don't want to slow it down for users with a lot of transactions
+    this.#storage.set('accountsOps', this.#accountsOps)
+  }
+
   get banners() {
     if (!this.#networks.isInitialized) {
       return Array.from(this.#bannersByAccount.values()).flat()
@@ -1620,7 +1682,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
         : []
 
       const failedOps = pendingOpsWithUpdatedStatus.filter(
-        (op) => op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
+        (op) =>
+          (op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected) &&
+          !op.flags?.hiddenFromFailedBanner
       )
 
       if (failedOps.length) {
