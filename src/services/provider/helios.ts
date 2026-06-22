@@ -7,6 +7,9 @@ import { getProviderConnectionUrl, getRpcProvider } from '@/services/provider/ge
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { getHeliosProviderConfig } from '../../libs/networks/helios'
 
+const isOutOfSyncError = (error: any) =>
+  (error?.message || error?.toString?.() || '').toLowerCase().includes('out of sync')
+
 const getProviderWithBypassedLogs = (heliosProvider: any, config: HeliosConfig) => {
   let nextId = 1
   let isDestroyed = false
@@ -37,7 +40,7 @@ const getProviderWithBypassedLogs = (heliosProvider: any, config: HeliosConfig) 
 
           return result
         } catch (error) {
-          destroy()
+          if (!isOutOfSyncError(error)) destroy()
           throw error
         }
       }

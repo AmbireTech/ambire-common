@@ -1506,11 +1506,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         isManualUpdate,
         discoveryData?.data?.hints
       )
-      // this.#verifyPortfolioRequest(account, network, portfolioProps, {
-      //   allHints,
-      //   fetchPinned: !hasNonZeroTokens,
-      //   tokenDataCache: networkTokenDataCache
-      // })
+      this.#verifyPortfolioRequest(account, network, portfolioProps, {
+        allHints,
+        fetchPinned: !hasNonZeroTokens,
+        tokenDataCache: networkTokenDataCache
+      })
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([

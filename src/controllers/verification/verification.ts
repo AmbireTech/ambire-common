@@ -3,12 +3,18 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
 import { getHeliosRpcProvider } from '../../services/provider/helios'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const SYNC_HEALTH_CHECK_RETRY_INTERVAL = 10000
 
 type VerifierProvider = {
   connectionUrl: string
   provider: RPCProvider
 }
+
+const isOutOfSyncError = (error: any) =>
+  (error?.message || error?.toString?.() || '').toLowerCase().includes('out of sync')
 
 export class VerificationController extends EventEmitter {
   #networks: INetworksController
@@ -121,7 +127,7 @@ export class VerificationController extends EventEmitter {
 
     if (
       currentConnectionUrl === connectionUrl &&
-      (currentStatus === 'syncing' || currentStatus === 'ready' || currentStatus === 'failed')
+      (currentStatus === 'syncing' || currentStatus === 'ready')
     ) {
       return
     }
@@ -158,14 +164,31 @@ export class VerificationController extends EventEmitter {
           provider
         }
 
-        await (provider as any).waitSynced?.()
+        while (this.#syncPromises[stringChainId]?.promise === syncPromise) {
+          try {
+            await (provider as any).waitSynced?.()
+            await provider.send('eth_blockNumber', [])
 
-        if (this.#syncPromises[stringChainId]?.promise !== syncPromise) {
-          this.#destroyRpcProvider(provider)
-          return
+            if (this.#syncPromises[stringChainId]?.promise !== syncPromise) {
+              this.#destroyRpcProvider(provider)
+              return
+            }
+
+            this.#setStatus(network.chainId, { status: 'ready', updatedAt: Date.now() })
+            return
+          } catch (syncError: any) {
+            if (!isOutOfSyncError(syncError)) throw syncError
+
+            this.#setStatus(network.chainId, {
+              status: 'syncing',
+              error: syncError?.message || 'Helios verifier is out of sync',
+              updatedAt: Date.now()
+            })
+            await wait(SYNC_HEALTH_CHECK_RETRY_INTERVAL)
+          }
         }
 
-        this.#setStatus(network.chainId, { status: 'ready', updatedAt: Date.now() })
+        this.#destroyRpcProvider(provider)
       } catch (error: any) {
         this.#destroyRpcProvider(provider)
         if (this.#syncPromises[stringChainId]?.promise !== syncPromise) {
