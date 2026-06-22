@@ -134,6 +134,8 @@ async function reverseLookupEns(
     }
 
     addressChunk.forEach((address, index) => {
+      if (!chunkResult.value) return
+
       const reverseResult = chunkResult.value[index] as
         | { resolvedName: string; hasName: boolean; needsOffchainLookup: boolean }
         | undefined
