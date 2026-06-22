@@ -21,6 +21,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IVerificationController } from '../../interfaces/verification'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -161,6 +162,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #portfolioLibs: Map<string, Portfolio>
 
+  #verificationPortfolioLibs: Map<string, Portfolio>
+
   #banner: IBannerController
 
   #storage: IStorageController
@@ -198,6 +201,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
 
   #providers: IProvidersController
+
+  #verification?: IVerificationController
 
   #networks: INetworksController
 
@@ -256,18 +261,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     velcroUrl: string,
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    verification?: IVerificationController
   ) {
     super(eventEmitterRegistry)
 
     this.#state = {}
     this.#queue = {}
     this.#portfolioLibs = new Map()
+    this.#verificationPortfolioLibs = new Map()
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#velcroUrl = velcroUrl
     this.#providers = providers
+    this.#verification = verification
     this.#networks = networks
     this.#accounts = accounts
     this.#keystore = keystore
@@ -951,6 +959,64 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return this.#portfolioLibs.get(key)!
   }
 
+  initializeVerificationPortfolioLibIfReady(
+    accountId: AccountId,
+    chainId: bigint,
+    network: Network
+  ): Portfolio | null {
+    const provider = this.#verification?.getReadyProvider(chainId)
+    if (!provider) return null
+
+    const key = `${chainId}:${accountId}`
+    const libForKey = this.#verificationPortfolioLibs.get(key)
+
+    if (!libForKey || !libForKey.provider || libForKey.provider !== provider) {
+      this.#verificationPortfolioLibs.set(
+        key,
+        new Portfolio(this.#fetch, provider, network, this.#velcroUrl)
+      )
+    }
+
+    return this.#verificationPortfolioLibs.get(key)!
+  }
+
+  async #verifyPortfolioRequest(
+    account: Account,
+    network: Network,
+    portfolioProps: Partial<GetOptions>,
+    opts: {
+      allHints: Partial<GetOptions>
+      fetchPinned: boolean
+      tokenDataCache: TokenDataCache
+    }
+  ) {
+    const portfolioLib = this.initializeVerificationPortfolioLibIfReady(
+      account.addr,
+      network.chainId,
+      network
+    )
+    if (!portfolioLib) return
+
+    try {
+      await portfolioLib.get(account.addr, {
+        tokenDataRecency: 60000 * 5,
+        tokenDataCache: new Map(opts.tokenDataCache),
+        blockTag: 'both',
+        fetchPinned: opts.fetchPinned,
+        ...opts.allHints,
+        ...portfolioProps,
+        disableAutoDiscovery: true,
+        blacklist: this.#blacklist
+      })
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Error while verifying portfolio through Helios on ${network.name} (${network.chainId}).`,
+        error
+      })
+    }
+  }
+
   async getTokenBalancesOnBlock(
     accountId: AccountId,
     chainId: bigint,
@@ -1440,6 +1506,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         isManualUpdate,
         discoveryData?.data?.hints
       )
+      // this.#verifyPortfolioRequest(account, network, portfolioProps, {
+      //   allHints,
+      //   fetchPinned: !hasNonZeroTokens,
+      //   tokenDataCache: networkTokenDataCache
+      // })
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([

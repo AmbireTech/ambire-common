@@ -1,13 +1,10 @@
 import { Contract } from 'ethers'
 
-import { getHeliosRpcProvider } from '@/services/provider/helios'
-
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
-import { isHeliosProviderAvailable } from '../../libs/networks/helios'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getProviderConnectionUrl, getRpcProvider } from '../../services/provider'
@@ -192,8 +189,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
     const nextInitPromise = (async () => {
       const oldRPC = this.#providers[stringChainId]
-      const heliosRpcUrl = network.heliosRpcUrl?.trim()
-      const shouldUseHeliosProvider = !!heliosRpcUrl && isHeliosProviderAvailable(network.chainId)
       const batchMaxCount = this.isBatchingEnabled
         ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
         : 1
@@ -210,15 +205,10 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       }
 
       try {
-        nextProvider = shouldUseHeliosProvider
-          ? await getHeliosRpcProvider(network, {
-              batchMaxCount,
-              batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
-            })
-          : getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
-              batchMaxCount,
-              batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
-            })
+        nextProvider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
+          batchMaxCount,
+          batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
+        })
       } catch (error: any) {
         this.emitError({
           error,

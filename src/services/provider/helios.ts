@@ -69,6 +69,7 @@ export const getHeliosRpcProvider = async (
   const browserProviderDestroy = provider.destroy.bind(provider)
 
   ;(provider as any)._getConnection = () => ({ url: getProviderConnectionUrl(network) })
+  ;(provider as any).waitSynced = () => heliosProvider.waitSynced()
   provider.destroy = () => {
     browserProviderDestroy()
     eip1193Provider.destroy()

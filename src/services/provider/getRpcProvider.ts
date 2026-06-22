@@ -3,7 +3,6 @@ import { createPublicClient, custom, PublicClient } from 'viem'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { isHeliosProviderAvailable } from '../../libs/networks/helios'
 import getRootDomain from '../../utils/getRootDomain'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
@@ -62,10 +61,7 @@ const getRpcProvider = (
 }
 
 const getProviderConnectionUrl = (network: NetworkInterface) => {
-  const heliosRpcUrl = network.heliosRpcUrl?.trim()
-  return heliosRpcUrl && isHeliosProviderAvailable(network.chainId)
-    ? `helios:${network.selectedRpcUrl}:${heliosRpcUrl}`
-    : network.selectedRpcUrl
+  return network.selectedRpcUrl
 }
 
 const getViemClientForProvider = (provider: RPCProvider): PublicClient => {
