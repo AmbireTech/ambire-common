@@ -1,5 +1,6 @@
 import fetch from 'node-fetch'
 
+import { generateUuid } from '@/utils/uuid'
 import { describe, expect } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -51,6 +52,7 @@ const ACCOUNTS = [
 ]
 
 const SUBMITTED_ACCOUNT_OP = {
+  id: generateUuid(),
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
   gasLimit: null,
@@ -803,11 +805,17 @@ describe('Activity Controller ', () => {
       expect(controller.banners[0]!.category).toBe('failed-acc-ops')
       expect(controller.banners[0]!.meta!.accountOpsCount).toBe(1)
 
-      await controller.hideFailedBannerForRetriedOp(
+      const op = controller.findByIdentifiedBy(
+        accountOp.identifiedBy,
         accountOp.accountAddr,
-        accountOp.chainId,
-        accountOp.identifiedBy
+        accountOp.chainId
       )
+
+      controller.setDashboardBannersSeen('dashboard', accountOp.accountAddr, {
+        accountOpIds: [op!.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
 
       // Banner is gone
       expect(controller.banners.length).toBe(0)
@@ -816,7 +824,7 @@ describe('Activity Controller ', () => {
       const ops = controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })
       expect(ops.length).toBe(1)
       expect(ops[0]!.status).toBe(AccountOpStatus.Failure)
-      expect(ops[0]!.flags?.hiddenFromFailedBanner).toBe(true)
+      expect(ops[0]!.id).toBe(op!.id)
     })
 
     test('hideFailedBannerForRetriedOp is a no-op for a non-failed op', async () => {
@@ -832,14 +840,20 @@ describe('Activity Controller ', () => {
       // Pending banner shows; the op is not failed
       expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
 
-      await controller.hideFailedBannerForRetriedOp(
+      const op = controller.findByIdentifiedBy(
+        accountOp.identifiedBy,
         accountOp.accountAddr,
-        accountOp.chainId,
-        accountOp.identifiedBy
+        accountOp.chainId
       )
 
+      controller.setDashboardBannersSeen('dashboard', accountOp.accountAddr, {
+        accountOpIds: [op!.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+
       const ops = controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })
-      expect(ops[0]!.flags?.hiddenFromFailedBanner).toBeUndefined()
+      expect(ops[0]!.id).toBe(op!.id)
       expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
     })
 

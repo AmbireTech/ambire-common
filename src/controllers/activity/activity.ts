@@ -510,21 +510,46 @@ export class ActivityController extends EventEmitter implements IActivityControl
       this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch(() => null)
   }
 
-  setDashboardBannersSeen(sessionId: string, accountAddr: string) {
+  setDashboardBannersSeen(
+    sessionId: string,
+    accountAddr: string,
+    params?: {
+      accountOpIds?: SubmittedAccountOp['id'][]
+      emitUpdate?: boolean
+      /**
+       * When true, the banners are hidden immediately, instead of awaiting the user
+       * to leave the screen
+       */
+      hideImmediately?: boolean
+    }
+  ) {
+    const { accountOpIds, emitUpdate, hideImmediately } = params || {}
     if (!sessionId.startsWith('dashboard')) return
 
     const prevBanners = this.#bannersByAccount.get(accountAddr)
     if (!prevBanners) return
 
-    const updatedBanners = prevBanners.map((b) => {
-      if (b.category === 'failed-acc-ops') {
+    let updatedBanners = prevBanners.map((b) => {
+      if (
+        b.category === 'failed-acc-ops' &&
+        (!accountOpIds ||
+          (b.meta?.accountOpsDataForNextUpdate &&
+            b.meta.accountOpsDataForNextUpdate.length === 1 &&
+            b.meta.accountOpsDataForNextUpdate.some((opData) => accountOpIds.includes(opData.id))))
+      ) {
         return { ...b, meta: { ...b.meta, seen: true } }
       }
 
       return b
     })
 
+    if (hideImmediately) {
+      updatedBanners = updatedBanners.filter((b) => !b.meta?.seen)
+    }
+
     this.#bannersByAccount.set(accountAddr, updatedBanners)
+
+    if (emitUpdate) this.emitUpdate()
   }
 
   // Reset filtered AccountsOps session.
@@ -1529,68 +1554,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
   }
 
-  /**
-   * Marks a failed account op as retried so it no longer contributes to the
-   * "failed transactions" banner or the Activity counter badge. The op itself
-   * stays in the Activity history.
-   *
-   * Example: the user retries a failed swap/bridge
-   */
-  async hideFailedBannerForRetriedOp(
-    accountAddr: string,
-    chainId: bigint,
-    identifiedBy: AccountOpIdentifiedBy
-  ) {
-    await this.#initialLoadPromise
-
-    const op = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId)
-    if (
-      !op ||
-      (op.status !== AccountOpStatus.Failure && op.status !== AccountOpStatus.Rejected) ||
-      op.flags?.hiddenFromFailedBanner
-    )
-      return
-
-    op.flags = { ...op.flags, hiddenFromFailedBanner: true }
-
-    const prevBanners = this.#bannersByAccount.get(accountAddr)
-    if (prevBanners) {
-      const updatedBanners = prevBanners
-        .map((banner) => {
-          if (banner.category !== 'failed-acc-ops') return banner
-
-          const remainingOpsData = banner.meta?.accountOpsDataForNextUpdate.filter(
-            (meta: { accountAddr: string; chainId: bigint; timestamp: number }) =>
-              !(
-                meta.accountAddr === op.accountAddr &&
-                meta.chainId === op.chainId &&
-                meta.timestamp === op.timestamp
-              )
-          )
-
-          // Drop the banner entirely once no failed ops remain
-          if (!remainingOpsData.length) return null
-
-          return {
-            ...banner,
-            meta: {
-              ...banner.meta,
-              accountOpsDataForNextUpdate: remainingOpsData,
-              accountOpsCount: remainingOpsData.length
-            }
-          }
-        })
-        .filter((banner): banner is Banner => banner !== null)
-
-      this.#bannersByAccount.set(accountAddr, updatedBanners)
-    }
-
-    this.emitUpdate()
-    // Don't await as this method is used inside of swapAndBridge's updateForm
-    // and we don't want to slow it down for users with a lot of transactions
-    this.#storage.set('accountsOps', this.#accountsOps)
-  }
-
   get banners() {
     if (!this.#networks.isInitialized) {
       return Array.from(this.#bannersByAccount.values()).flat()
@@ -1601,7 +1564,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       ops.map((op) => ({
         accountAddr: op.accountAddr,
         chainId: op.chainId,
-        timestamp: op.timestamp
+        timestamp: op.timestamp,
+        id: op.id
       }))
 
     for (const acc of this.#accounts.accounts) {
@@ -1637,14 +1601,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
         if (pendingBanner) {
           opsDataForNextUpdate = [
-            ...pendingBanner.meta!.accountOpsDataForNextUpdate,
+            ...(pendingBanner.meta?.accountOpsDataForNextUpdate || []),
             ...opsDataForNextUpdate
           ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
         }
 
         if (!pendingBanner && failedBanner) {
           opsDataForNextUpdate = [
-            ...failedBanner.meta!.accountOpsDataForNextUpdate,
+            ...(failedBanner.meta?.accountOpsDataForNextUpdate || []),
             ...opsDataForNextUpdate
           ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
         }
@@ -1672,7 +1636,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
       const pendingOpsWithUpdatedStatus = pendingBanner
         ? latestOps.filter((op) =>
-            pendingBanner.meta!.accountOpsDataForNextUpdate.find(
+            pendingBanner.meta!.accountOpsDataForNextUpdate?.find(
               (meta: any) =>
                 meta.accountAddr === op.accountAddr &&
                 meta.chainId === op.chainId &&

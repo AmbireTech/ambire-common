@@ -2259,20 +2259,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
     if (!route) return
 
-    if (route.identifiedBy && route.route) {
-      try {
-        await this.#activity.hideFailedBannerForRetriedOp(
-          route.sender,
-          BigInt(route.route.fromChainId),
-          route.identifiedBy
-        )
-      } catch (error: any) {
-        this.emitError({
-          level: 'silent',
-          message: 'Failed to hide the failed transaction banner for the retried route',
-          error
-        })
-      }
+    if (!route.identifiedBy || !route.route) return
+
+    const op = this.#activity.findByIdentifiedBy(
+      route.identifiedBy,
+      route.sender,
+      BigInt(route.route.fromChainId)
+    )
+
+    if (op) {
+      this.#activity.setDashboardBannersSeen('dashboard', route.sender, {
+        accountOpIds: [op.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
     }
 
     this.removeActiveRoute(activeRouteId)
