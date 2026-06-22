@@ -34,11 +34,18 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   #sendUiMessage: (params: {}) => void
 
-  #onHeliosProviderInitFailed?: (chainId: Network['chainId']) => void | Promise<void>
-
   #providers: RPCProviders = {}
 
   #providersProxy: RPCProviders
+
+  #providerInitPromises: {
+    [chainId: string]:
+      | {
+          connectionUrl: string
+          promise: Promise<void>
+        }
+      | undefined
+  } = {}
 
   #scheduledResolveAssetInfoActions: {
     [chainId: string]:
@@ -60,20 +67,17 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     storage,
     getNetworks,
     sendUiMessage,
-    onHeliosProviderInitFailed,
     eventEmitterRegistry
   }: {
     storage: IStorageController
     getNetworks: () => Network[]
     sendUiMessage: (params: {}) => void
-    onHeliosProviderInitFailed?: (chainId: Network['chainId']) => void | Promise<void>
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
     this.#storage = storage
     this.#getNetworks = getNetworks
     this.#sendUiMessage = sendUiMessage
-    this.#onHeliosProviderInitFailed = onHeliosProviderInitFailed
 
     /**
      * Proxy over the providers map that:
@@ -170,15 +174,40 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     const providerConnectionUrl = getProviderConnectionUrl(network)
     const isRpcUrlChanged = provider?._getConnection().url !== providerConnectionUrl
 
-    if (!provider || isRpcUrlChanged || forceUpdate) {
+    if (provider && !isRpcUrlChanged && !forceUpdate) return
+
+    const initPromise = this.#providerInitPromises[stringChainId]
+    if (initPromise) {
+      await initPromise.promise.catch(() => {})
+
+      const initializedProvider = this.#providers[stringChainId]
+      if (
+        initializedProvider &&
+        initializedProvider._getConnection().url === providerConnectionUrl &&
+        !forceUpdate
+      ) {
+        return
+      }
+    }
+
+    const nextInitPromise = (async () => {
       const oldRPC = this.#providers[stringChainId]
+      const heliosRpcUrl = network.heliosRpcUrl?.trim()
+      const shouldUseHeliosProvider = !!heliosRpcUrl && isHeliosProviderAvailable(network.chainId)
       const batchMaxCount = this.isBatchingEnabled
         ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
         : 1
 
       let nextProvider: RPCProvider
-      const shouldUseHeliosProvider =
-        network.useHeliosProvider && isHeliosProviderAvailable(network.chainId)
+
+      try {
+        if (oldRPC) oldRPC.destroy()
+        delete this.#providers[stringChainId]
+      } catch (error: any) {
+        if (error?.message !== 'provider destroyed; cancelled request') {
+          this.emitError({ error, message: error.message, level: 'silent', sendCrashReport: true })
+        }
+      }
 
       try {
         nextProvider = shouldUseHeliosProvider
@@ -197,24 +226,28 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
           level: 'major',
           sendCrashReport: true
         })
-        if (shouldUseHeliosProvider) await this.#onHeliosProviderInitFailed?.(network.chainId)
         nextProvider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
           batchMaxCount,
           batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
         })
       }
 
-      try {
-        if (oldRPC) oldRPC.destroy()
-      } catch (error: any) {
-        if (error?.message !== 'provider destroyed; cancelled request') {
-          this.emitError({ error, message: error.message, level: 'silent', sendCrashReport: true })
-        }
-      }
-
       this.#providers[stringChainId] = nextProvider
       this.#providers[stringChainId].isWorking = true
       this.#providers[stringChainId]!.batchMaxCount = batchMaxCount
+    })()
+
+    this.#providerInitPromises[stringChainId] = {
+      connectionUrl: providerConnectionUrl,
+      promise: nextInitPromise
+    }
+
+    try {
+      await nextInitPromise
+    } finally {
+      if (this.#providerInitPromises[stringChainId]?.promise === nextInitPromise) {
+        delete this.#providerInitPromises[stringChainId]
+      }
     }
   }
 

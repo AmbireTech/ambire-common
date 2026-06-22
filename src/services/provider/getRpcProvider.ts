@@ -62,8 +62,9 @@ const getRpcProvider = (
 }
 
 const getProviderConnectionUrl = (network: NetworkInterface) => {
-  return network.useHeliosProvider && isHeliosProviderAvailable(network.chainId)
-    ? `helios:${network.selectedRpcUrl}`
+  const heliosRpcUrl = network.heliosRpcUrl?.trim()
+  return heliosRpcUrl && isHeliosProviderAvailable(network.chainId)
+    ? `helios:${network.selectedRpcUrl}:${heliosRpcUrl}`
     : network.selectedRpcUrl
 }
 

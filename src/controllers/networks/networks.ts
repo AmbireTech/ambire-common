@@ -572,11 +572,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, chainId))
   }
 
-  async disableHeliosProvider(chainId: ChainId) {
-    await this.#updateNetwork({ useHeliosProvider: false }, chainId, true)
-    this.emitUpdate()
-  }
-
   async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
     await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
     void this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)))

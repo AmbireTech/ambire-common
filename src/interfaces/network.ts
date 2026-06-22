@@ -115,7 +115,7 @@ export interface Network {
   allowForce4337?: boolean
   disabled?: boolean
   customBundlerUrl?: string
-  useHeliosProvider?: boolean
+  heliosRpcUrl?: string
   /**
    * Initial polling interval for pending account operation statuses.
    */
@@ -137,6 +137,7 @@ export interface AddNetworkRequestParams {
   explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
   customBundlerUrl?: Network['customBundlerUrl']
+  heliosRpcUrl?: Network['heliosRpcUrl']
 }
 
 export interface ChainlistNetwork {

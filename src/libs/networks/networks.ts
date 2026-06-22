@@ -436,6 +436,7 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
     // messed-up networks in storage. So perform comprehensive validation against
     // some of the Network interface requirements
     if (sanityCheckImportantNetworkProperties(network)) {
+      delete (network as any).useHeliosProvider
       validNetworks[network.chainId.toString()] = network
     } else if (hadValidChainId) {
       // Attempt to replace broken network with predefined version, if available
