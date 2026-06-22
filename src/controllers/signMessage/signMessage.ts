@@ -22,7 +22,6 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import {
   ISignMessageController,
   SignMessageStatus,
@@ -53,6 +52,7 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'
 
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
@@ -568,7 +568,7 @@ export class SignMessageController
               if (this.signed.length === 1) {
                 await this.addMsgToSafeGlobal(
                   signed.signature,
-                  this.messageToSign.content.message as EIP712TypedData
+                  this.messageToSign.content as EIP712TypedData
                 )
               } else {
                 await this.addSigToSafeGlobal(signed.signature, signed.hash)
