@@ -85,7 +85,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
-import { IUiController, UiManager, View } from '@/interfaces/ui'
+import { IUiController, UiManager, View, isExtensionOverlayView } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
@@ -696,7 +696,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
-      if (view.type === 'popup') await this.onPopupOpen(view.id)
+      if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
   }
 

@@ -1,7 +1,7 @@
 import { EventEmitter as UiEventEmitter } from 'events'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { IUiController, UiManager, View } from '../../interfaces/ui'
+import { IUiController, UiManager, View, isExtensionOverlayView } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class UiController extends EventEmitter implements IUiController {
@@ -31,11 +31,13 @@ export class UiController extends EventEmitter implements IUiController {
   }
 
   addView(view: View) {
-    const existingPopup = this.views.find((v) => v.type === 'popup')
+    const existingOverlay = this.views.find((v) => isExtensionOverlayView(v))
 
-    // if a popup already exists, just update its id and stop here
-    if (view.type === 'popup' && existingPopup) {
-      existingPopup.id = view.id
+    // if an overlay view already exists, just update its id and stop here
+    if (isExtensionOverlayView(view) && existingOverlay) {
+      existingOverlay.id = view.id
+      existingOverlay.type = view.type
+      if (!existingOverlay.isReady) this.uiEvent.emit('addView', view)
       this.emitUpdate()
       return
     }
