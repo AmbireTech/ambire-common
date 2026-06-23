@@ -364,15 +364,6 @@ requestsCtrl = new RequestsController({
 
 describe('SwapAndBridge Controller', () => {
   beforeEach(() => {
-    const testName = expect.getState().currentTestName
-    if (
-      testName?.includes('should continuously update the quote') ||
-      testName?.includes('should not continuously update the quote') ||
-      testName?.includes('should continuously update active routes')
-    ) {
-      return
-    }
-
     jest.spyOn(swapAndBridgeController.updateQuoteInterval, 'start').mockImplementation(jest.fn())
     jest.spyOn(swapAndBridgeController.updateQuoteInterval, 'restart').mockImplementation(jest.fn())
     jest.spyOn(swapAndBridgeController.updateQuoteInterval, 'stop').mockImplementation(jest.fn())
@@ -535,109 +526,117 @@ describe('SwapAndBridge Controller', () => {
 
     await check()
   })
-  it('should continuously update the quote', async () => {
-    // Set #isOnSwapAndBridgeRoute = true so #shouldAutoUpdateQuote can pass.
-    // The controller listens on 'updateView' (not 'addView'), so we add a view
-    // with a different route first, then update it to 'swap-and-bridge'.
-    // Must happen before useFakeTimers so the restart() queued by the listener
-    // resolves immediately and doesn't interfere with the test timers.
-    uiCtrl.addView({ id: 'test-quote', type: 'tab', currentRoute: 'other', isReady: true })
-    uiCtrl.updateView('test-quote', { currentRoute: 'swap-and-bridge', isReady: true })
-
-    jest.useFakeTimers()
-    const { restore } = suppressConsole()
-
-    uiCtrl.updateView('swap-and-bridge', {
-      currentRoute: 'swap-and-bridge',
-      isReady: true,
-      searchParams: {}
+  describe('continuous quote updates', () => {
+    beforeEach(() => {
+      // These tests need real interval behavior - undo the outer beforeEach mocks
+      jest.restoreAllMocks()
     })
 
-    const updateQuoteSpy = jest
-      .spyOn(swapAndBridgeController, 'updateQuote')
-      .mockImplementation((() => {}) as any)
-    jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
-    const updateQuoteIntervalRestartSpy = jest.spyOn(
-      swapAndBridgeController.updateQuoteInterval,
-      'restart'
-    )
-    const updateQuoteIntervalStopSpy = jest.spyOn(
-      swapAndBridgeController.updateQuoteInterval,
-      'stop'
-    )
+    it('should continuously update the quote', async () => {
+      // Set #isOnSwapAndBridgeRoute = true so #shouldAutoUpdateQuote can pass.
+      // The controller listens on 'updateView' (not 'addView'), so we add a view
+      // with a different route first, then update it to 'swap-and-bridge'.
+      // Must happen before useFakeTimers so the restart() queued by the listener
+      // resolves immediately and doesn't interfere with the test timers.
+      uiCtrl.addView({ id: 'test-quote', type: 'tab', currentRoute: 'other', isReady: true })
+      uiCtrl.updateView('test-quote', { currentRoute: 'swap-and-bridge', isReady: true })
 
-    expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.ReadyToSubmit)
+      jest.useFakeTimers()
+      const { restore } = suppressConsole()
 
-    swapAndBridgeController.updateQuoteInterval.restart()
-    expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
-    expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      uiCtrl.updateView('swap-and-bridge', {
+        currentRoute: 'swap-and-bridge',
+        isReady: true,
+        searchParams: {}
+      })
 
-    jest
-      .spyOn(swapAndBridgeController, 'formStatus', 'get')
-      .mockReturnValueOnce(SwapAndBridgeFormStatus.ReadyToSubmit)
+      const updateQuoteSpy = jest
+        .spyOn(swapAndBridgeController, 'updateQuote')
+        .mockImplementation((() => {}) as any)
+      jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
+      const updateQuoteIntervalRestartSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'restart'
+      )
+      const updateQuoteIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'stop'
+      )
 
-    // Otherwise the interval won't run
-    swapAndBridgeController.quote!.selectedRoute!.disabled = false
+      expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.ReadyToSubmit)
 
-    swapAndBridgeController.updateQuoteInterval.restart()
-    expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(2)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
-    expect(updateQuoteSpy).toHaveBeenCalledTimes(1)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
-    jest.clearAllTimers()
-    jest.useRealTimers()
-    restore()
-  })
-  it('should not continuously update the quote when not on the swap and bridge route', async () => {
-    jest.useFakeTimers()
-    const { restore } = suppressConsole()
+      swapAndBridgeController.updateQuoteInterval.restart()
+      expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
 
-    // Navigate to dashboard
-    uiCtrl.updateView('swap-and-bridge', {
-      currentRoute: 'dashboard',
-      isReady: true,
-      searchParams: {}
+      jest
+        .spyOn(swapAndBridgeController, 'formStatus', 'get')
+        .mockReturnValueOnce(SwapAndBridgeFormStatus.ReadyToSubmit)
+
+      // Otherwise the interval won't run
+      swapAndBridgeController.quote!.selectedRoute!.disabled = false
+
+      swapAndBridgeController.updateQuoteInterval.restart()
+      expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(2)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(1)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
     })
+    it('should not continuously update the quote when not on the swap and bridge route', async () => {
+      jest.useFakeTimers()
+      const { restore } = suppressConsole()
 
-    const updateQuoteSpy = jest
-      .spyOn(swapAndBridgeController, 'updateQuote')
-      .mockImplementation((() => {}) as any)
-    jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
-    const updateQuoteIntervalRestartSpy = jest.spyOn(
-      swapAndBridgeController.updateQuoteInterval,
-      'restart'
-    )
-    const updateQuoteIntervalStopSpy = jest.spyOn(
-      swapAndBridgeController.updateQuoteInterval,
-      'stop'
-    )
+      // Navigate to dashboard
+      uiCtrl.updateView('swap-and-bridge', {
+        currentRoute: 'dashboard',
+        isReady: true,
+        searchParams: {}
+      })
 
-    // Set all the conditions that would normally allow updateQuote to run
-    jest
-      .spyOn(swapAndBridgeController, 'formStatus', 'get')
-      .mockReturnValue(SwapAndBridgeFormStatus.ReadyToSubmit)
-    swapAndBridgeController.quote!.selectedRoute!.disabled = false
+      const updateQuoteSpy = jest
+        .spyOn(swapAndBridgeController, 'updateQuote')
+        .mockImplementation((() => {}) as any)
+      jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
+      const updateQuoteIntervalRestartSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'restart'
+      )
+      const updateQuoteIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'stop'
+      )
 
-    expect(swapAndBridgeController.updateQuoteInterval.running).toBe(false)
+      // Set all the conditions that would normally allow updateQuote to run
+      jest
+        .spyOn(swapAndBridgeController, 'formStatus', 'get')
+        .mockReturnValue(SwapAndBridgeFormStatus.ReadyToSubmit)
+      swapAndBridgeController.quote!.selectedRoute!.disabled = false
 
-    swapAndBridgeController.updateQuoteInterval.restart()
-    expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+      expect(swapAndBridgeController.updateQuoteInterval.running).toBe(false)
 
-    // updateQuote must not be called even though all other conditions are met,
-    // because we are on dashboard and not on the swap-and-bridge route
-    expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      swapAndBridgeController.updateQuoteInterval.restart()
+      expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
 
-    jest.clearAllTimers()
-    jest.useRealTimers()
-    restore()
-  })
+      // updateQuote must not be called even though all other conditions are met,
+      // because we are on dashboard and not on the swap-and-bridge route
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
+    })
+  }) // end describe('continuous quote updates')
+
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
       route: swapAndBridgeController.quote!.selectedRoute!
@@ -662,51 +661,59 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.banners).toHaveLength(1)
     expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(1)
   })
-  it('should continuously update active routes', async () => {
-    const { restore } = suppressConsole()
-    jest.useFakeTimers()
+  describe('continuous active-route updates', () => {
+    beforeEach(() => {
+      // These tests need real interval behavior — undo the outer beforeEach mocks
+      jest.restoreAllMocks()
+    })
 
-    const checkForActiveRoutesStatusUpdateSpy = jest
-      .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
-      .mockImplementation((() => {}) as any)
-    jest.spyOn(swapAndBridgeController, 'continuouslyUpdateActiveRoutes')
-    const updateActiveRoutesIntervalStartSpy = jest.spyOn(
-      swapAndBridgeController.updateActiveRoutesInterval,
-      'start'
-    )
-    const updateActiveRoutesIntervalUpdateTimeoutSpy = jest.spyOn(
-      swapAndBridgeController.updateActiveRoutesInterval,
-      'updateTimeout'
-    )
-    const updateActiveRoutesIntervalStopSpy = jest.spyOn(
-      swapAndBridgeController.updateActiveRoutesInterval,
-      'stop'
-    )
+    it('should continuously update active routes', async () => {
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
 
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(0)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
-    expect(swapAndBridgeController.activeRoutes.length).toEqual(1)
-    expect(swapAndBridgeController.activeRoutesInProgress.length).toEqual(1)
-    swapAndBridgeController.activeRoutes = [...swapAndBridgeController.activeRoutes]
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(1)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(2)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(2)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(2)
-    expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
-    jest.clearAllTimers()
-    jest.useRealTimers()
-    restore()
-  })
+      const checkForActiveRoutesStatusUpdateSpy = jest
+        .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
+        .mockImplementation((() => {}) as any)
+      jest.spyOn(swapAndBridgeController, 'continuouslyUpdateActiveRoutes')
+      const updateActiveRoutesIntervalStartSpy = jest.spyOn(
+        swapAndBridgeController.updateActiveRoutesInterval,
+        'start'
+      )
+      const updateActiveRoutesIntervalUpdateTimeoutSpy = jest.spyOn(
+        swapAndBridgeController.updateActiveRoutesInterval,
+        'updateTimeout'
+      )
+      const updateActiveRoutesIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateActiveRoutesInterval,
+        'stop'
+      )
+
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(0)
+      expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
+      expect(swapAndBridgeController.activeRoutes.length).toEqual(1)
+      expect(swapAndBridgeController.activeRoutesInProgress.length).toEqual(1)
+      swapAndBridgeController.activeRoutes = [...swapAndBridgeController.activeRoutes]
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
+      expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
+      expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
+      expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(1)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(1)
+      expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(2)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
+      expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(2)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(2)
+      expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
+    })
+  }) // end describe('continuous active-route updates')
+
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
@@ -793,7 +800,6 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.sessionIds.length).toEqual(0)
   })
   test('should toJSON()', () => {
-    const json = swapAndBridgeController.toJSON()
-    expect(json).toBeDefined()
+    expect(swapAndBridgeController.toJSON()).toBeDefined()
   })
 })
