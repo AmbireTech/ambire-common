@@ -77,6 +77,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   resolveDomainsErrors: { [domain: string]: string | undefined } = {}
 
+  verifiedDomainsStatus: { [domain: string]: 'VERIFIED' | undefined } = {}
+
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
   constructor({
@@ -108,10 +110,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     address: string
     isNamoshiDomain: boolean
   }) {
-    if (isNamoshiDomain) return
+    if (isNamoshiDomain) return false
 
     const verificationProvider = this.#verification?.getReadyProvider(BigInt(providerChainId))
-    if (!verificationProvider) return
+    if (!verificationProvider) return false
 
     const verifiedResult = await withTimeout(
       () =>
@@ -123,13 +125,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       { timeoutMs: 15000 }
     )
 
-    if (!verifiedResult.address && !address) return
+    if (!verifiedResult.address && !address) return false
     if (
       verifiedResult.address &&
       address &&
       getAddress(verifiedResult.address) === getAddress(address)
     ) {
-      return
+      return true
     }
 
     throw new Error(
@@ -219,12 +221,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     if (this.domainToAddresses[domain]) {
       try {
         if (this.domainToAddresses[domain]?.address) {
-          await this.#verifyEnsResolution({
+          const isEnsVerifiedByColibri = await this.#verifyEnsResolution({
             providerChainId,
             domain,
             address: this.domainToAddresses[domain]!.address!,
             isNamoshiDomain
           })
+          if (isEnsVerifiedByColibri) this.verifiedDomainsStatus[domain] = 'VERIFIED'
         }
 
         this.resolveDomainsStatus[domain] = 'RESOLVED'
@@ -250,12 +253,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     })
       .then(async ({ address, avatar }) => {
         if (address) {
-          await this.#verifyEnsResolution({
+          const isEnsVerifiedByColibri = await this.#verifyEnsResolution({
             providerChainId,
             domain,
             address,
             isNamoshiDomain
           })
+          if (isEnsVerifiedByColibri) this.verifiedDomainsStatus[domain] = 'VERIFIED'
 
           this.domainToAddresses[domain] = {
             address: getAddress(address),
