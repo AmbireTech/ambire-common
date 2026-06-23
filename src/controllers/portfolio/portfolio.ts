@@ -27,17 +27,18 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
+  DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAccountNetworksWithPositions,
   getAllAssetsAsHints,
-  getCanSkipUpdate,
   getCustomProviderPositions,
+  getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
-  getShouldBypassServerSideCache,
-  getUniqueMergedPositions
+  getUniqueMergedPositions,
+  mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -298,17 +299,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accountAddrs.map((accountAddr) => ({
               baseCurrency,
               accountAddr,
-              forceUpdateDefi: queue.some(
-                (x) =>
-                  x.data.baseCurrency === baseCurrency &&
-                  x.data.accountAddr === accountAddr &&
-                  x.data.forceUpdateDefi
+              // When several requests for the same account+currency are batched, the most
+              // aggressive update mode wins (see `mergeDefiUpdateModes`).
+              defiUpdateMode: mergeDefiUpdateModes(
+                queue
+                  .filter(
+                    (x) =>
+                      x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
+                  )
+                  .map((x) => x.data.defiUpdateMode)
               )
             }))
           )
           .flat()
 
-        return pairs.map(({ baseCurrency, accountAddr, forceUpdateDefi }) => {
+        return pairs.map(({ baseCurrency, accountAddr, defiUpdateMode }) => {
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
@@ -323,16 +328,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           // Analytics should not be polluted with inactive extensions
           const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
 
-          // The relayer has internal cache for the defi positions. If we want to
-          // invalidate it, we need to pass this param.
-          // See `getShouldBypassServerSideCache` for more details.
-          const forceUpdateParam = forceUpdateDefi ? '&update=true' : ''
+          // This is a hack to achieve something that would require a good amount of refactoring in the portfolio
+          // To understand the problem you need to know the following information:
+          // Discovery is done with the batcher, every network is updated in parallel and customAppChain is updated
+          // in parallel with regular networks. customAppChain should be updated ONLY when AT LEAST ONE another network is updated.
+          // There is absolutely no reason to update customAppChain with default or force mode by itself. To fix this properly
+          // we have to move the logic that determines updateMode for each network BEFORE the Promise.all([]) that updates all networks
+          // in parallel and also make the call to velcro there, instead of using the batcher. This way we will know which networks have to
+          // be updated and can decide if customAppChain should be updated or not. For now, we will just update with 'cache' mode if the only
+          // network to be updated is customAppChain.
+          const isUpdatingOnlyDefiApps =
+            queueSegment.length === 1 && queueSegment[0]?.data.chainId === 'customAppChain'
+
+          // Tells velcro-v3 how fresh the defi positions must be
+          const defiParam = `&defi=${isUpdatingOnlyDefiApps ? 'cache' : defiUpdateMode}`
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}${activeParam}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${defiParam}&sigs=${accountKeysCount}${activeParam}`
 
           return { url, queueSegment }
         })
@@ -1255,39 +1270,38 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#getNonceId(account, chainId)
     )
 
-    const canSkipDefiUpdate =
-      !bypassServerSideCache &&
-      getCanSkipUpdate(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs)
-
-    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
-      // Request can be skipped altogether
-      return null
-    }
-
     // Used by getShouldBypassServerSideCache to avoid spending the server-side bypass budget
     // before the scheduled update fires (the server has a per-account cooldown)
     const hasScheduledUpdate = !!this.#scheduledUpdates[account.addr]?.find(
       (update) => update.chainId === chainId && update.bypassServerSideCache
     )
 
+    const defiUpdateMode = getDefiUpdateMode({
+      previousState: defiState,
+      bypassServerSideCache: !!bypassServerSideCache,
+      isManualUpdate: !!isManualUpdate,
+      hasKeys,
+      sessionIds: this.defiSessionIds,
+      hasNonceChangedSinceLastUpdate,
+      hasScheduledUpdate,
+      maxDataAgeMs: defiMaxDataAgeMs
+    })
+
+    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.StaleOk
+
+    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
+      // Request can be skipped altogether
+      return null
+    }
+
     let response: ExternalPortfolioDiscoveryResponse | null = null
-    const shouldForceUpdateDefi =
-      bypassServerSideCache ||
-      getShouldBypassServerSideCache(
-        defiState,
-        !!isManualUpdate,
-        hasKeys,
-        this.defiSessionIds,
-        hasNonceChangedSinceLastUpdate,
-        hasScheduledUpdate
-      )
 
     try {
       response = await this.batchedPortfolioDiscovery({
         chainId,
         accountAddr: account.addr,
         baseCurrency,
-        forceUpdateDefi: shouldForceUpdateDefi
+        defiUpdateMode
       })
 
       // Throw the error after assigning the response so we can still use the returned hints
@@ -1360,7 +1374,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             ? {
                 updatedAt: response.defi.updatedAt,
                 positions: getFormattedApiPositions(response.defi.positions),
-                isForceUpdate: shouldForceUpdateDefi
+                isForceUpdate: defiUpdateMode === DefiUpdateMode.Force
               }
             : null,
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
@@ -1847,9 +1861,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
-      // Set to 6 hours by default. That is because we are making a lot of
+      // Set to -1 by default, which means no update. That is because we are making a lot of
       // portfolio updates, most of which shouldn't update the defi positions.
-      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      defiMaxDataAgeMs = -1,
       isManualUpdate,
       bypassServerSideCache
     } = opts || {}
