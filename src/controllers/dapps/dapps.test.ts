@@ -967,9 +967,9 @@ describe('DappsController', () => {
   describe('connection sources', () => {
     const baseDapp = (): Dapp =>
       makeDapp({
-        id: 'sources-dapp.com',
-        name: 'Sources Dapp',
-        url: 'https://sources-dapp.com',
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
         isCustom: true,
         isConnected: true,
         chainId: 1,
@@ -984,7 +984,7 @@ describe('DappsController', () => {
 
       await controller.addDapp(baseDapp())
 
-      const stored = controller.getDapp('sources-dapp.com')!
+      const stored = controller.getDapp('aave.com')!
       expect(stored.connectedSources).toEqual(['injected'])
       expect(stored.isConnected).toBe(true)
     })
@@ -999,7 +999,7 @@ describe('DappsController', () => {
       await controller.addDapp(baseDapp(), 'wc')
       await controller.addDapp(baseDapp(), 'wc') // duplicate
 
-      const stored = controller.getDapp('sources-dapp.com')!
+      const stored = controller.getDapp('aave.com')!
       expect(stored.connectedSources).toEqual(['injected', 'wc'])
     })
 
@@ -1017,12 +1017,14 @@ describe('DappsController', () => {
             accountPreferences
           }
         ])
-        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+        await storageCtrl.set('lastDappsUpdateVersion', 'force-dapp-refetch')
       })
+
+      await controller.fetchAndUpdatePromise
 
       await controller.addDapp(baseDapp(), 'wc')
 
-      const stored = controller.getDapp('sources-dapp.com')!
+      const stored = controller.getDapp('aave.com')!
       expect(stored.connectedSources).toEqual(['injected', 'wc'])
       expect(stored.accountPreferences).toEqual(accountPreferences)
     })
@@ -1035,10 +1037,10 @@ describe('DappsController', () => {
 
       await controller.addDapp(baseDapp(), 'wc')
 
-      expect(controller.hasPermission('sources-dapp.com')).toBe(true)
-      expect(controller.hasPermission('sources-dapp.com', 'wc')).toBe(true)
+      expect(controller.hasPermission('aave.com')).toBe(true)
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
       // Core behavior change: an injected request must still re-prompt even when WC is connected.
-      expect(controller.hasPermission('sources-dapp.com', 'injected')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'injected')).toBe(false)
     })
 
     // BUG: a stored dapp whose isConnected and connectedSources had drifted (isConnected: true
@@ -1131,12 +1133,12 @@ describe('DappsController', () => {
       })
 
       await controller.addDapp(baseDapp(), 'wc')
-      expect(controller.getDapp('sources-dapp.com')).toBeDefined()
+      expect(controller.getDapp('aave.com')).toBeDefined()
 
-      await controller.disconnectDappSource('sources-dapp.com', 'wc')
+      await controller.disconnectDappSource('aave.com', 'wc')
 
       // Custom dapps that lose their last source are removed from the catalog.
-      expect(controller.getDapp('sources-dapp.com')).toBeUndefined()
+      expect(controller.getDapp('aave.com')).toBeUndefined()
     })
   })
 
