@@ -16,6 +16,55 @@ import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+// Two valid entries plus one invalid (no price) to exercise normalization + filtering.
+const mockTrending = [
+  {
+    id: 'bitcoin',
+    name: 'Bitcoin',
+    symbol: 'BTC',
+    market_cap_rank: 1,
+    thumb: 'https://example.com/btc-thumb.png',
+    small: 'https://example.com/btc-small.png',
+    large: 'https://example.com/btc-large.png',
+    data: {
+      price: 65000.5,
+      price_change_percentage_24h: { usd: 1.23, eur: 1.1 },
+      market_cap: '$1,200,000,000',
+      total_volume: '$45,000,000',
+      content: { title: 'About Bitcoin', description: 'The first cryptocurrency.' }
+    }
+  },
+  {
+    id: 'ethereum',
+    name: 'Ethereum',
+    symbol: 'ETH',
+    market_cap_rank: 2,
+    thumb: 'https://example.com/eth-thumb.png',
+    small: 'https://example.com/eth-small.png',
+    large: 'https://example.com/eth-large.png',
+    data: {
+      price: 3200,
+      price_change_percentage_24h: { usd: -2.5 },
+      market_cap: '$400,000,000',
+      total_volume: '$20,000,000',
+      content: null
+    }
+  },
+  // Invalid: missing data.price → must be filtered out by normalizeTrendingTokens.
+  {
+    id: 'no-price-coin',
+    name: 'No Price Coin',
+    symbol: 'NPC',
+    market_cap_rank: 999,
+    thumb: '',
+    small: '',
+    large: '',
+    data: { price_change_percentage_24h: { usd: 0 } }
+  }
+]
+
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
   getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
@@ -39,6 +88,14 @@ const prepareTest = async (
           ok: true,
           status: 200,
           json: async () => mockChains
+        }
+      }
+
+      if (url === TRENDING_TOKENS_URL) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => mockTrending
         }
       }
 
@@ -1415,6 +1472,90 @@ describe('DappsController', () => {
       // custom networks. pickWalletConnectChainId resolves the candidate, but #buildDapp still
       // overrides it. This documents the current behavior; see note in the answer.
       expect(stored.chainId).toBe(1)
+    })
+  })
+
+  describe('trending tokens', () => {
+    const seedStorage = async (storageCtrl: IStorageController) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    }
+
+    test('fetches, normalizes and filters invalid entries on load', async () => {
+      const { controller } = await prepareTest(seedStorage)
+      await controller.continuouslyUpdateTrendingTokens()
+
+      // The third fixture entry has no price and must be dropped.
+      expect(controller.trendingTokens).toHaveLength(2)
+
+      const btc = controller.trendingTokens.find((tt) => tt.symbol === 'BTC')!
+      expect(btc.id).toBe('bitcoin')
+      expect(btc.priceUSD).toBe(65000.5)
+      expect(btc.priceChange24hUSD).toBe(1.23)
+      expect(btc.marketCapRank).toBe(1)
+      expect(btc.icon).toBe('https://example.com/btc-large.png') // prefers `large`
+      expect(btc.marketCap).toBe('$1,200,000,000')
+      expect(btc.totalVolume).toBe('$45,000,000')
+      expect(btc.description).toBe('The first cryptocurrency.')
+
+      const eth = controller.trendingTokens.find((tt) => tt.symbol === 'ETH')!
+      expect(eth.priceChange24hUSD).toBe(-2.5)
+      expect(eth.description).toBeNull() // content was null
+    })
+
+    test('persists fetched trending tokens to storage', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedStorage)
+      await controller.continuouslyUpdateTrendingTokens()
+
+      const stored = await mainCtrl.storage.get('trending', { updatedAt: 0, tokens: [] })
+      expect(stored.tokens).toHaveLength(2)
+      expect(typeof stored.updatedAt).toBe('number')
+      expect(stored.updatedAt).toBeGreaterThan(0)
+    })
+
+    test('restores trending tokens from storage on init', async () => {
+      const seeded = {
+        id: 'solana',
+        name: 'Solana',
+        symbol: 'SOL',
+        icon: 'https://example.com/sol.png',
+        priceUSD: 150,
+        priceChange24hUSD: 5,
+        marketCapRank: 5,
+        marketCap: '$70,000,000',
+        totalVolume: '$3,000,000',
+        description: 'A fast L1.'
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await seedStorage(storageCtrl)
+        // A fresh updatedAt keeps the skip-if-fresh guard from refetching over the seed.
+        await storageCtrl.set('trending', { updatedAt: Date.now(), tokens: [seeded] })
+      })
+
+      expect(controller.trendingTokens).toEqual([seeded])
+    })
+
+    test('keeps trending empty and backs off the interval when the fetch fails', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
+        if (url === 'https://api.llama.fi/protocols')
+          return { ok: true, status: 200, json: async () => mockDapps }
+        if (url === 'https://api.llama.fi/v2/chains')
+          return { ok: true, status: 200, json: async () => mockChains }
+        if (url === TRENDING_TOKENS_URL) return { ok: false, status: 500, json: async () => ({}) }
+        return fetch(url, ...args)
+      })
+
+      try {
+        await controller.continuouslyUpdateTrendingTokens()
+      } catch {
+        // The wrapper rethrows after switching to the failed-retry interval; expected here.
+      }
+
+      expect(controller.trendingTokens).toEqual([])
+      // 1 minute failed-retry cadence (TRENDING_TOKENS_FAILED_UPDATE_INTERVAL).
+      expect(controller.updateTrendingTokensInterval.currentTimeout).toBe(60 * 1000)
+      restore()
     })
   })
 })

@@ -1,7 +1,13 @@
 import { getDomain } from 'tldts'
 
 import { predefinedDapps } from '../../consts/dapps/dapps'
-import { ConnectionSource, Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
+import {
+  ConnectionSource,
+  Dapp,
+  DefiLlamaProtocol,
+  RawTrendingToken,
+  TrendingToken
+} from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url: string): string => {
   if (!url || url === 'internal') return 'internal'
@@ -145,6 +151,28 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
   return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 }
 }
 
+// Maps the raw cena trending response to the minimal, UI-ready shape kept in state.
+// Items without a usable id or price are dropped — they can't be keyed or displayed meaningfully.
+function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
+  return raw
+    .filter((token) => !!token?.id && typeof token?.data?.price === 'number')
+    .map((token) => ({
+      id: token.id,
+      name: token.name,
+      symbol: token.symbol,
+      icon: token.large || token.small || token.thumb || '',
+      priceUSD: token.data!.price!,
+      priceChange24hUSD:
+        typeof token.data?.price_change_percentage_24h?.usd === 'number'
+          ? token.data.price_change_percentage_24h.usd
+          : null,
+      marketCapRank: token.market_cap_rank ?? null,
+      marketCap: token.data?.market_cap ?? null,
+      totalVolume: token.data?.total_volume ?? null,
+      description: token.data?.content?.description ?? null
+    }))
+}
+
 export {
   getDappIdFromUrl,
   getDomainFromUrl,
@@ -153,5 +181,6 @@ export {
   modifyDappPropsIfNeeded,
   getDappNameFromId,
   unifyDefiLlamaDappUrl,
-  normalizeDappConnection
+  normalizeDappConnection,
+  normalizeTrendingTokens
 }

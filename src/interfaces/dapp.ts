@@ -64,6 +64,43 @@ export interface RecentDappEntry {
   openedAt: number
 }
 
+// Raw shape of a single item returned by the cena trending tokens endpoint
+// (https://cena.ambire.com/api/v3/trending/). Only the fields the wallet consumes are typed;
+// the endpoint returns more (sparkline, btc-denominated values, etc.) that we ignore.
+export interface RawTrendingToken {
+  id: string
+  name: string
+  symbol: string
+  market_cap_rank: number | null
+  thumb: string
+  small: string
+  large: string
+  data?: {
+    price?: number
+    // Percentage change keyed by fiat/crypto currency (usd, eur, btc, ...). We only read `usd`.
+    price_change_percentage_24h?: { [currency: string]: number }
+    // Pre-formatted, currency-prefixed strings from the server (e.g. "$74,041,107").
+    market_cap?: string
+    total_volume?: string
+    content?: { title: string; description: string } | null
+  }
+}
+
+// Normalized trending token kept in the DappsController state and rendered by the UI.
+export interface TrendingToken {
+  // CoinGecko id (e.g. 'zignaly'); stable, used as the list key and details-screen lookup id.
+  id: string
+  name: string
+  symbol: string
+  icon: string
+  priceUSD: number
+  priceChange24hUSD: number | null
+  marketCapRank: number | null
+  marketCap: string | null
+  totalVolume: string | null
+  description: string | null
+}
+
 export interface DefiLlamaProtocol {
   id: string
   name: string

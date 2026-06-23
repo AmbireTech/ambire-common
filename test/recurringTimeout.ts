@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { IRecurringTimeout } from '../src/classes/recurringTimeout/recurringTimeout'
 
 export const waitForFnToBeCalledAndExecuted = async (
