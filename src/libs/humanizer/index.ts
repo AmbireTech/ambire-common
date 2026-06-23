@@ -116,12 +116,6 @@ const humanizerTMModules = [
   fallbackShortPlaintext
 ]
 
-const isInvalidUtf8MessageError = (error: unknown) =>
-  error instanceof Error &&
-  'code' in error &&
-  error.code === 'INVALID_ARGUMENT' &&
-  error.message.includes('invalid codepoint')
-
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
@@ -189,7 +183,7 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
           try {
             return m(message)
           } catch (error) {
-            if (!isInvalidUtf8MessageError(error)) console.error(error)
+            console.error(error)
             return {}
           }
         })
@@ -202,6 +196,6 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   }
 }
 
-export { humanizeAccountOp, humanizeMessage }
 export * from './erc7730'
+export { humanizeAccountOp, humanizeMessage }
 export type { HumanizeAccountOpOptions, HumanizeMessageOptions }
