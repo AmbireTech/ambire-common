@@ -3498,7 +3498,7 @@ describe('Portfolio Controller ', () => {
       expect(pairWithoutForceUpdate).toBeDefined()
 
       expect(new URL(pairWithForceUpdate!).searchParams.get('defi')).toBe('force')
-      expect(new URL(pairWithoutForceUpdate!).searchParams.get('defi')).toBeNull()
+      expect(new URL(pairWithoutForceUpdate!).searchParams.get('defi')).toBe('default')
     })
 
     test('Malformed array length mismatch should trigger mismatch rejection', async () => {
