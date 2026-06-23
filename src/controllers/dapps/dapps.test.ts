@@ -91,6 +91,35 @@ describe('DappsController', () => {
     expect(lido.chainIds).toEqual([1]) // other networks should be excluded because the are not in our networks list
     expect(lido.blacklisted).toEqual('VERIFIED')
   })
+  test('should preserve account preferences while fetching and updating dapps', async () => {
+    const accountPreferences = {
+      enabled: true,
+      selectedAccount: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+      accounts: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB']
+    }
+    const storedAave = makeDapp({
+      id: 'aave.com',
+      name: 'Aave',
+      url: 'https://aave.com',
+      isConnected: true,
+      connectedSources: ['injected'],
+      accountPreferences
+    })
+
+    const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', [storedAave])
+      await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+    })
+
+    await controller.fetchAndUpdatePromise
+
+    expect(controller.getDapp('aave.com')!.accountPreferences).toEqual(accountPreferences)
+
+    const stored = await mainCtrl.storage.get('dappsV2', [])
+    expect(stored.find((dapp) => dapp.id === 'aave.com')!.accountPreferences).toEqual(
+      accountPreferences
+    )
+  })
   test('should skip fetch and update', async () => {
     const { controller } = await prepareTest(async (storageCtrl) => {
       await storageCtrl.set('dappsV2', predefinedDapps)
@@ -972,6 +1001,30 @@ describe('DappsController', () => {
 
       const stored = controller.getDapp('sources-dapp.com')!
       expect(stored.connectedSources).toEqual(['injected', 'wc'])
+    })
+
+    test('addDapp preserves existing account preferences when merging a source', async () => {
+      const accountPreferences = {
+        enabled: true,
+        selectedAccount: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+        accounts: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB']
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          {
+            ...baseDapp(),
+            connectedSources: ['injected'],
+            accountPreferences
+          }
+        ])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(baseDapp(), 'wc')
+
+      const stored = controller.getDapp('sources-dapp.com')!
+      expect(stored.connectedSources).toEqual(['injected', 'wc'])
+      expect(stored.accountPreferences).toEqual(accountPreferences)
     })
 
     test('hasPermission(id, source) is source-scoped; hasPermission(id) is any-source', async () => {
