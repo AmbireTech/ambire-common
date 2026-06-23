@@ -1,5 +1,3 @@
-import { hexlify, randomBytes } from 'ethers'
-
 import { clearErc7730RegistryCache } from '@/libs/humanizer'
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
@@ -11,57 +9,23 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { InternalSigner } from '../../../test/keystore'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
-import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { SignMessageController } from './signMessage'
-
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    s
-  ) => '0x'
-}
 
 const account: Account = {
   addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
@@ -719,6 +683,48 @@ describe('SignMessageController', () => {
       signMessageController.dapp = getDappRequestData(verifiedDapp)
 
       expect(signMessageController.banners).toEqual([])
+    })
+
+    // Scenario: dApp's own domain is in SUSPICIOUS_HOSTING_DOMAINS (e.g. my-dapp.vercel.app)
+    // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+    test('should return SUSPICIOUS_HOSTING warning banner for dapps on suspicious hosting platforms', () => {
+      signMessageController.dapp = getDappRequestData(suspiciousHostingDapp)
+
+      expect(signMessageController.banners).toEqual([
+        {
+          id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+          type: 'warning',
+          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+        }
+      ])
+    })
+
+    // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
+    // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+    test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', () => {
+      const verifiedDappSession = new Session({ tabId: 200, windowId: 1, url: verifiedDapp.url })
+      const googleSession = new Session({
+        tabId: 200,
+        windowId: 1,
+        url: 'https://sites.google.com'
+      })
+      dappsCtrl.dappSessions[verifiedDappSession.sessionId] = verifiedDappSession
+      dappsCtrl.dappSessions[googleSession.sessionId] = googleSession
+
+      signMessageController.dapp = {
+        ...getDappRequestData(verifiedDapp),
+        sessionId: verifiedDappSession.sessionId
+      }
+
+      try {
+        expect(signMessageController.banners[0]?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+        )
+        expect(signMessageController.banners[0]?.type).toBe('warning')
+      } finally {
+        delete dappsCtrl.dappSessions[verifiedDappSession.sessionId]
+        delete dappsCtrl.dappSessions[googleSession.sessionId]
+      }
     })
 
     test('shows the loading banner while the dapps controller is still loading and clears it once resolved', async () => {

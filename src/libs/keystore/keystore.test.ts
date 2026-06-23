@@ -206,7 +206,10 @@ describe('Keystore lib', () => {
       const encrypted = await encryptWithKey(key, getBytes(TEST_PRIVATE_KEY))
       // The 128-bit auth tag is appended to the ciphertext, so the last byte is part of the tag.
       const lastByteIndex = getBytes(encrypted.ciphertext).length - 1
-      const tampered = { ...encrypted, ciphertext: tamperHexByte(encrypted.ciphertext, lastByteIndex) }
+      const tampered = {
+        ...encrypted,
+        ciphertext: tamperHexByte(encrypted.ciphertext, lastByteIndex)
+      }
 
       await expect(decryptWithKey(key, tampered)).rejects.toThrow()
     })

@@ -26,7 +26,7 @@ describe('Swap Provider Parallel execution', () => {
       startRoute: jest.fn(),
       quote: jest.fn(),
       getRouteStatus: jest.fn()
-    } as unknown as SwapProvider)
+    }) as unknown as SwapProvider
 
   it('Fetch chains successfully and make sure there are no duplicates', async () => {
     const chainIds = await swapProviderParallelExecutor.getSupportedChains()

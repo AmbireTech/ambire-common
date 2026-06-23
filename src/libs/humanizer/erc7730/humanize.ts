@@ -378,6 +378,17 @@ const getCalldataFormatMatch = (
   return null
 }
 
+const getSafeExecTransactionWarnings = (match: DescriptorFormatMatch): HumanizerWarning[] => {
+  const fragment = getFunctionFragment(match.formatKey)
+  if (fragment?.name !== 'execTransaction') return []
+
+  const operation = toBigIntOrNull(match.values.operation)
+  const to = match.values.to
+  if (operation === null || typeof to !== 'string') return []
+
+  return getDelegateCallWarning(operation, to)
+}
+
 const getTypedMessageFormatMatch = (
   message: Message,
   descriptor: Erc7730Descriptor
@@ -1259,7 +1270,7 @@ const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
   const warningKeys = new Set<string>()
 
   return warnings.filter((warning) => {
-    const warningKey = `${warning.code}:${warning.content}`
+    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
     if (warningKeys.has(warningKey)) return false
     warningKeys.add(warningKey)
 
@@ -1557,6 +1568,7 @@ export const humanizeCallWithErc7730 = (
         fullVisualization: visualizationWithNativeValue,
         warnings: dedupeWarnings([
           ...getSafeCallWarnings(call, accountAddr),
+          ...getSafeExecTransactionWarnings(match),
           ...getNativeValueWarnings(visualizationWithNativeValue, nativeAssetSymbol)
         ])
       }

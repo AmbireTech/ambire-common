@@ -71,6 +71,7 @@ export interface HumanizerWarning {
   content: string
   blocking?: boolean
   code: string
+  address?: string
 }
 export interface Ir {
   calls: IrCall[]

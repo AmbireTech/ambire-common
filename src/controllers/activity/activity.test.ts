@@ -1,5 +1,6 @@
 import fetch from 'node-fetch'
 
+import { generateUuid } from '@/utils/uuid'
 import { describe, expect } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -51,6 +52,7 @@ const ACCOUNTS = [
 ]
 
 const SUBMITTED_ACCOUNT_OP = {
+  id: generateUuid(),
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
   gasLimit: null,
@@ -110,7 +112,7 @@ const buildMockReceipt = (overrides: Partial<any> = {}) =>
     ...overrides
   }) as any
 
-const prepareTest = async () => {
+const prepareTest = async (mode: 'accountsOps' | 'signedMessages' = 'accountsOps') => {
   const controller = new ActivityController(
     mainCtrl.storage,
     fetch,
@@ -126,34 +128,13 @@ const prepareTest = async () => {
 
   const sessionId = Date.now().toString()
 
-  await controller.filterAccountsOps(sessionId, INIT_PARAMS)
-
-  return {
-    controller,
-    storage,
-    sessionId
+  if (mode === 'signedMessages') {
+    await controller.filterSignedMessages(sessionId, INIT_PARAMS)
+  } else {
+    await controller.filterAccountsOps(sessionId, INIT_PARAMS)
   }
-}
 
-const prepareSignedMessagesTest = async () => {
-  const controller = new ActivityController(
-    mainCtrl.storage,
-    fetch,
-    mainCtrl.callRelayer,
-    mainCtrl.accounts,
-    mainCtrl.selectedAccount,
-    mainCtrl.providers,
-    mainCtrl.networks,
-    mainCtrl.portfolio,
-    mainCtrl.safe,
-    () => Promise.resolve()
-  )
-
-  const sessionId = Date.now().toString()
-
-  await controller.filterSignedMessages(sessionId, INIT_PARAMS)
-
-  return { controller, sessionId }
+  return { controller, storage, sessionId }
 }
 
 describe('Activity Controller ', () => {
@@ -774,6 +755,87 @@ describe('Activity Controller ', () => {
       expect(controller.banners.length).toBe(0)
     })
 
+    test('hideFailedBannerForRetriedOp hides the failed banner but keeps the op in history', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now()
+      }
+
+      await controller.addAccountOp(accountOp)
+      // Read banners while pending so the pending banner gets cached - the failed
+      // banner is derived from previously pending (now updated) ops
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+
+      const spy = jest.spyOn(submittedAccountOp, 'updateOpStatus')
+      spy.mockImplementationOnce((op) => {
+        op.status = AccountOpStatus.Failure
+        return op
+      })
+      await controller.updateAccountsOpsStatuses()
+
+      expect(controller.banners.length).toBe(1)
+      expect(controller.banners[0]!.category).toBe('failed-acc-ops')
+      expect(controller.banners[0]!.meta!.accountOpsCount).toBe(1)
+
+      const op = controller.findByIdentifiedBy(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+
+      controller.setDashboardBannersSeen('dashboard', accountOp.accountAddr, {
+        accountOpIds: [op!.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+
+      // Banner is gone
+      expect(controller.banners.length).toBe(0)
+
+      // The failed op is still present in the Activity history
+      const ops = controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })
+      expect(ops.length).toBe(1)
+      expect(ops[0]!.status).toBe(AccountOpStatus.Failure)
+      expect(ops[0]!.id).toBe(op!.id)
+    })
+
+    test('hideFailedBannerForRetriedOp is a no-op for a non-failed op', async () => {
+      const { controller } = await prepareTest()
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now()
+      }
+      await controller.addAccountOp(accountOp)
+
+      // Pending banner shows; the op is not failed
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+
+      const op = controller.findByIdentifiedBy(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+
+      controller.setDashboardBannersSeen('dashboard', accountOp.accountAddr, {
+        accountOpIds: [op!.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+
+      const ops = controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })
+      expect(ops[0]!.id).toBe(op!.id)
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+    })
+
     // test('`Unknown but past nonce` status is set correctly', async () => {
     //   await selectedAccountCtrl.setAccount(ACCOUNTS[0])
     //   await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
@@ -983,7 +1045,7 @@ describe('Activity Controller ', () => {
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       const signedMessage: SignedMessage = {
         fromRequestId: 1,
@@ -1018,7 +1080,7 @@ describe('Activity Controller ', () => {
     })
 
     test('Pagination and filtration handled correctly', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       await controller.addSignedMessage(
         SIGNED_MESSAGE,
@@ -1054,7 +1116,7 @@ describe('Activity Controller ', () => {
     })
 
     test('Keeps no more than 1000 items', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       const signedMessages = Array.from(Array(1500).keys()).map((key) => ({
         ...SIGNED_MESSAGE,
