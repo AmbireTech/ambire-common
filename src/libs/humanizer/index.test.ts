@@ -367,6 +367,29 @@ describe('Humanizer main function', () => {
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
+
+  test('does not log when a plain hex message is not valid UTF-8', () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const fullMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'message',
+        message: '0xa71f8b68bb4034b57e5168cba25df617fa1fdac05877e481fed0cbddab23f3ff'
+      },
+      signature: null,
+      chainId: 1n
+    }
+
+    try {
+      const irMessage = humanizeMessage(fullMessage as any)
+
+      expect(irMessage.fullVisualization).toBeUndefined()
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
 })
 
 describe('TypedMessages', () => {

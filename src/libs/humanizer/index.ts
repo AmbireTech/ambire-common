@@ -116,6 +116,12 @@ const humanizerTMModules = [
   fallbackShortPlaintext
 ]
 
+const isInvalidUtf8MessageError = (error: unknown) =>
+  error instanceof Error &&
+  'code' in error &&
+  error.code === 'INVALID_ARGUMENT' &&
+  error.message.includes('invalid codepoint')
+
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
@@ -178,7 +184,16 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
 
     // runs all modules and takes the first non empty array
     const { fullVisualization, warnings, canHideDropdownArrow } =
-      humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
+      humanizerTMModules
+        .map((m) => {
+          try {
+            return m(message)
+          } catch (error) {
+            if (!isInvalidUtf8MessageError(error)) console.error(error)
+            return {}
+          }
+        })
+        .filter((p) => p.fullVisualization?.length)[0] || {}
 
     return { ...message, fullVisualization, warnings, canHideDropdownArrow }
   } catch (error) {
