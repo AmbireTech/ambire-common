@@ -91,6 +91,35 @@ describe('DappsController', () => {
     expect(lido.chainIds).toEqual([1]) // other networks should be excluded because the are not in our networks list
     expect(lido.blacklisted).toEqual('VERIFIED')
   })
+  test('should preserve account preferences while fetching and updating dapps', async () => {
+    const accountPreferences = {
+      enabled: true,
+      selectedAccount: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+      accounts: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB']
+    }
+    const storedAave = makeDapp({
+      id: 'aave.com',
+      name: 'Aave',
+      url: 'https://aave.com',
+      isConnected: true,
+      connectedSources: ['injected'],
+      accountPreferences
+    })
+
+    const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', [storedAave])
+      await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+    })
+
+    await controller.fetchAndUpdatePromise
+
+    expect(controller.getDapp('aave.com')!.accountPreferences).toEqual(accountPreferences)
+
+    const stored = await mainCtrl.storage.get('dappsV2', [])
+    expect(stored.find((dapp) => dapp.id === 'aave.com')!.accountPreferences).toEqual(
+      accountPreferences
+    )
+  })
   test('should skip fetch and update', async () => {
     const { controller } = await prepareTest(async (storageCtrl) => {
       await storageCtrl.set('dappsV2', predefinedDapps)
@@ -938,9 +967,9 @@ describe('DappsController', () => {
   describe('connection sources', () => {
     const baseDapp = (): Dapp =>
       makeDapp({
-        id: 'sources-dapp.com',
-        name: 'Sources Dapp',
-        url: 'https://sources-dapp.com',
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
         isCustom: true,
         isConnected: true,
         chainId: 1,
@@ -955,7 +984,7 @@ describe('DappsController', () => {
 
       await controller.addDapp(baseDapp())
 
-      const stored = controller.getDapp('sources-dapp.com')!
+      const stored = controller.getDapp('aave.com')!
       expect(stored.connectedSources).toEqual(['injected'])
       expect(stored.isConnected).toBe(true)
     })
@@ -970,8 +999,34 @@ describe('DappsController', () => {
       await controller.addDapp(baseDapp(), 'wc')
       await controller.addDapp(baseDapp(), 'wc') // duplicate
 
-      const stored = controller.getDapp('sources-dapp.com')!
+      const stored = controller.getDapp('aave.com')!
       expect(stored.connectedSources).toEqual(['injected', 'wc'])
+    })
+
+    test('addDapp preserves existing account preferences when merging a source', async () => {
+      const accountPreferences = {
+        enabled: true,
+        selectedAccount: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+        accounts: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB']
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          {
+            ...baseDapp(),
+            connectedSources: ['injected'],
+            accountPreferences
+          }
+        ])
+        await storageCtrl.set('lastDappsUpdateVersion', 'force-dapp-refetch')
+      })
+
+      await controller.fetchAndUpdatePromise
+
+      await controller.addDapp(baseDapp(), 'wc')
+
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual(['injected', 'wc'])
+      expect(stored.accountPreferences).toEqual(accountPreferences)
     })
 
     test('hasPermission(id, source) is source-scoped; hasPermission(id) is any-source', async () => {
@@ -982,10 +1037,10 @@ describe('DappsController', () => {
 
       await controller.addDapp(baseDapp(), 'wc')
 
-      expect(controller.hasPermission('sources-dapp.com')).toBe(true)
-      expect(controller.hasPermission('sources-dapp.com', 'wc')).toBe(true)
+      expect(controller.hasPermission('aave.com')).toBe(true)
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
       // Core behavior change: an injected request must still re-prompt even when WC is connected.
-      expect(controller.hasPermission('sources-dapp.com', 'injected')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'injected')).toBe(false)
     })
 
     // BUG: a stored dapp whose isConnected and connectedSources had drifted (isConnected: true
@@ -1078,12 +1133,12 @@ describe('DappsController', () => {
       })
 
       await controller.addDapp(baseDapp(), 'wc')
-      expect(controller.getDapp('sources-dapp.com')).toBeDefined()
+      expect(controller.getDapp('aave.com')).toBeDefined()
 
-      await controller.disconnectDappSource('sources-dapp.com', 'wc')
+      await controller.disconnectDappSource('aave.com', 'wc')
 
       // Custom dapps that lose their last source are removed from the catalog.
-      expect(controller.getDapp('sources-dapp.com')).toBeUndefined()
+      expect(controller.getDapp('aave.com')).toBeUndefined()
     })
   })
 
