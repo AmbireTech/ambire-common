@@ -280,9 +280,23 @@ export async function addMessage(
     apiKey: process.env.SAFE_API_KEY
   })
   return apiKit.addMessage(safeAddress, {
-    message,
+    message: normalizeSafeGlobalMessage(message),
     signature
   })
+}
+
+export function normalizeSafeGlobalMessage(message: string | EIP712TypedData) {
+  if (typeof message === 'string') return message
+  const chainId = (message.domain as { chainId?: unknown }).chainId
+  if (typeof chainId !== 'bigint') return message
+
+  return {
+    ...message,
+    domain: {
+      ...message.domain,
+      chainId: chainId.toString()
+    }
+  } as unknown as EIP712TypedData
 }
 
 export async function getMessage({
