@@ -1,6 +1,8 @@
 import { getAddress, parseUnits, ZeroAddress } from 'ethers'
 import { isHex } from 'viem'
 
+import { getSanitizedAmount } from '@/libs/transfer/amount'
+
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
@@ -284,7 +286,10 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
 
                 if (isCustomAppChain) {
                   // Amount should be formatted with decimals and turned to bigint after that
-                  amount = parseUnits(String(amount), asset.decimals)
+                  amount = parseUnits(
+                    String(getSanitizedAmount(String(amount), asset.decimals)),
+                    asset.decimals
+                  )
                   // In else because app assets don't have addresses and we don't want to set them as zero addresses
                 } else {
                   // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
@@ -508,44 +513,93 @@ const getHasNonceChangedSinceLastUpdate = (
 }
 
 /**
- * Whether the portfolio defi positions data should be updated
+ * Describes how fresh the DeFi positions data should be when fetched, based on various factors such as:
+ * - Whether the user explicitly requested a refresh (isManualUpdate)
+ * - Whether there has been a nonce change since the last update, indicating on-chain activity
+ * - Whether there is a scheduled update coming soon (hasScheduledUpdate)
+ * - The age of the currently cached data (maxDataAgeMs)
  */
-const getCanSkipUpdate = (
-  previousState: PortfolioNetworkResult['defiPositions'] | undefined,
-  hasNonceChangedSinceLastUpdate: boolean,
-  maxDataAgeMs: number = 60000
-): boolean => {
-  if (!previousState || !previousState.lastSuccessfulUpdate) return false
-
-  // Always update if the nonce has changed
-  if (hasNonceChangedSinceLastUpdate) return false
-
-  return Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs
+export enum DefiUpdateMode {
+  /** Serve cached data regardless of its age */
+  StaleOk = 'staleOk',
+  /** Serve cached data if it is fresh enough, otherwise refetch */
+  Default = 'default',
+  /** Bypass the server-side cache and refetch fresh data (was: `update=true`) */
+  Force = 'force'
 }
 
-const getShouldBypassServerSideCache = (
-  previousState: PortfolioNetworkResult['defiPositions'] | undefined,
-  isManualUpdate: boolean,
-  hasKeys: boolean,
-  sessionIds: string[],
-  hasNonceChangedSinceLastUpdate: boolean,
+const DEFI_UPDATE_MODE_RANK: Record<DefiUpdateMode, number> = {
+  [DefiUpdateMode.StaleOk]: 0,
+  [DefiUpdateMode.Default]: 1,
+  [DefiUpdateMode.Force]: 2
+}
+
+// The server-side defi cache has a per-account cooldown; we only force a bypass once per window.
+const FORCE_API_UPDATE_COOLDOWN_MS = 30000
+
+const getDefiUpdateMode = (params: {
+  previousState: PortfolioNetworkResult['defiPositions'] | undefined
+  bypassServerSideCache: boolean
+  isManualUpdate: boolean
+  hasKeys: boolean
+  sessionIds: string[]
+  hasNonceChangedSinceLastUpdate: boolean
   hasScheduledUpdate: boolean
-): boolean => {
-  // A scheduled update will bypass the cache soon; don't burn the server-side bypass
-  // budget for automatic updates (the server has a per-account cooldown).
-  // Manual updates are exempt: the user explicitly requested fresh data.
-  if (hasScheduledUpdate && !isManualUpdate) return false
+  maxDataAgeMs: number
+}): DefiUpdateMode => {
+  const {
+    previousState,
+    bypassServerSideCache,
+    isManualUpdate,
+    hasKeys,
+    sessionIds,
+    hasNonceChangedSinceLastUpdate,
+    hasScheduledUpdate,
+    maxDataAgeMs
+  } = params
 
-  if (hasNonceChangedSinceLastUpdate) return true
+  // An explicit override always bypasses the server-side cache.
+  if (bypassServerSideCache) return DefiUpdateMode.Force
 
-  const hasForceApiUpdatePrerequisites = isManualUpdate && sessionIds.length && hasKeys
+  // There is a scheduled update coming soon that will update defi positions
+  const shouldDeferToScheduledUpdate = hasScheduledUpdate && !isManualUpdate
 
-  if (!hasForceApiUpdatePrerequisites) return false
+  // A nonce change means on-chain state changed, so refetch fresh.
+  if (hasNonceChangedSinceLastUpdate && !shouldDeferToScheduledUpdate) return DefiUpdateMode.Force
 
-  // Bypass the server-side cache if the last force update was more than 30s ago
-  const HALF_MINUTE_MS = 30000
+  // Manual update with additional conditions
+  const isThrottledManualForceDue =
+    isManualUpdate &&
+    !!sessionIds.length &&
+    hasKeys &&
+    Date.now() - (previousState?.lastForceApiUpdate || 0) >= FORCE_API_UPDATE_COOLDOWN_MS
+  if (isThrottledManualForceDue) return DefiUpdateMode.Force
 
-  return Date.now() - (previousState?.lastForceApiUpdate || 0) >= HALF_MINUTE_MS
+  // If there isn't a successful update yet do a default update
+  // Example: extension boot
+  if (!previousState || !previousState.lastSuccessfulUpdate || isManualUpdate)
+    return DefiUpdateMode.Default
+
+  // In this case we don't care about defi positions so the age of the data doesn't matter, we can serve stale data from cache
+  // Example: background update
+  if (maxDataAgeMs < 0) return DefiUpdateMode.StaleOk
+
+  // If a specific maxDataAgeMs is set, then we rely on it instead of the default server-side cache age.
+  if (Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs) return DefiUpdateMode.StaleOk
+
+  return DefiUpdateMode.Default
+}
+
+/**
+ * Combines the modes of several batched requests into one (most aggressive mode wins because the request is shared)
+ */
+const mergeDefiUpdateModes = (modes: (DefiUpdateMode | undefined)[]): DefiUpdateMode => {
+  const definedModes = modes.filter((mode): mode is DefiUpdateMode => !!mode)
+  if (!definedModes.length) return DefiUpdateMode.Default
+
+  return definedModes.reduce((strongest, mode) =>
+    DEFI_UPDATE_MODE_RANK[mode] > DEFI_UPDATE_MODE_RANK[strongest] ? mode : strongest
+  )
 }
 
 /**
@@ -593,12 +647,12 @@ export {
   getAccountNetworksWithPositions,
   getAllAssetsAsHints,
   getAssetValue,
-  getCanSkipUpdate,
   getCustomProviderPositions,
+  getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
   getNewDefiState,
-  getShouldBypassServerSideCache,
   getUniqueMergedPositions,
+  mergeDefiUpdateModes,
   updatePositionsByProviderAssetPrices
 }
