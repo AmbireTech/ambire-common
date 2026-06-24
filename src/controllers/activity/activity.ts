@@ -43,11 +43,14 @@ import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
 import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
+import { getAddressCaught } from '../../utils/getAddressCaught'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { InternalSignedMessages, SignedMessage } from './types'
+import { InternalSignedMessages, SentToHistory, SignedMessage } from './types'
 
 import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
+
+// TODO: Move all of these types and helpers to separate files!
 export interface Pagination {
   fromPage: number
   itemsPerPage: number
@@ -60,7 +63,7 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-interface AccountsOps extends PaginationResult<SubmittedAccountOpLike> {}
+type AccountsOps = PaginationResult<SubmittedAccountOpLike>
 
 type AddExternalAccountOpParams = {
   accountAddr: string
@@ -76,7 +79,7 @@ type AccountOpBalanceChangesBackfillReference = Pick<
   'identifiedBy' | 'accountAddr' | 'chainId'
 >
 
-interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
+type MessagesToBeSigned = PaginationResult<SignedMessage>
 
 export interface Filters {
   account: string
@@ -254,6 +257,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #externalAccountOps: ExternalAccountOps = {}
 
+  #sentToHistory: SentToHistory = { domains: {}, recipients: {} }
+
   accountsOps: {
     [sessionId: string]: {
       result: AccountsOps
@@ -338,15 +343,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
-    const [accountsOps, externalAccountOps, signedMessages] = await Promise.all([
+    const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
       this.#storage.get('accountsOps', {}),
       this.#storage.get('externalAccountOps', {}),
-      this.#storage.get('signedMessages', {})
+      this.#storage.get('signedMessages', {}),
+      this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
     ])
 
     this.#accountsOps = accountsOps
     this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
+    this.#sentToHistory = sentToHistory
 
     this.emitUpdate()
   }
@@ -365,6 +372,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }> {
     await this.#initialLoadPromise
     if (!toAddress) return { found: false, lastTransactionDate: null, addressPoisoningMatch: null }
+
+    const checksummedToAddress = getAddressCaught(toAddress)
+    const lastSentAt =
+      checksummedToAddress && this.#sentToHistory.recipients[accountId]?.[checksummedToAddress]
+
+    // No need to check all account ops if we have this data
+    if (lastSentAt)
+      return {
+        found: true,
+        lastTransactionDate: new Date(lastSentAt),
+        addressPoisoningMatch: null
+      }
 
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
@@ -395,7 +414,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         const networkAccountOpsOfAccount = accountOpsOfAccount[network]
         if (!networkAccountOpsOfAccount) return
         networkAccountOpsOfAccount.forEach((op) => {
-          const recipients = getAccountOpRecipients(op)
+          const recipients = getAccountOpRecipients(op).map((recipient) => recipient.address)
           const hasSentToRecipient = recipients.some((recipient) => {
             if (recipient.toLowerCase() === normalizedToAddress) return true
 
@@ -507,7 +526,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         op.balanceChanges === undefined
     )
     if (opsWithNoBalanceChanges.length)
-      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null)
+      this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch(() => null)
   }
 
   setDashboardBannersSeen(sessionId: string, accountAddr: string) {
@@ -680,10 +699,47 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#accountsOps[accountAddr]![chainId.toString()]!.unshift({ ...accountOp })
     trim(this.#accountsOps[accountAddr][chainId.toString()]!)
 
+    getAccountOpRecipients(accountOp).forEach((recipient) =>
+      this.#recordRecipient(accountAddr, recipient.address, recipient.domain, accountOp.timestamp)
+    )
+
     await this.syncFilteredAccountsOps()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
+    await this.#storage.set('sentToHistory', this.#sentToHistory)
     this.emitUpdate()
+  }
+
+  #recordRecipient(
+    accountId: AccountId,
+    toAddress: string,
+    toDomain: string | undefined,
+    timestamp: number
+  ) {
+    const checksummedAddress = getAddressCaught(toAddress)
+    if (!checksummedAddress) return
+
+    if (!this.#sentToHistory.recipients[accountId]) this.#sentToHistory.recipients[accountId] = {}
+
+    const existing = this.#sentToHistory.recipients[accountId]![checksummedAddress] || 0
+    this.#sentToHistory.recipients[accountId]![checksummedAddress] = Math.max(existing, timestamp)
+
+    const normalized = toDomain?.toLowerCase().trim()
+
+    if (normalized) {
+      this.#sentToHistory.domains[normalized] = {
+        address: checksummedAddress,
+        sentAt: timestamp
+      }
+    }
+  }
+
+  /** Returns the address a domain last resolved to when the user sent to it, or null if never. */
+  getSentToDomainAddress(domain: string): string | null {
+    const normalizedDomain = domain.toLowerCase().trim()
+    if (!normalizedDomain) return null
+
+    return this.#sentToHistory.domains[normalizedDomain]?.address ?? null
   }
 
   async addExternalAccountOp({
@@ -817,7 +873,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           this.#providers.providers[network.chainId.toString()]
         )
       })
-    } catch (error) {
+    } catch {
       submittedAccountOpLike.balanceChanges = undefined
     }
 
@@ -1292,7 +1348,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   const accountOpRecipients = getAccountOpRecipients(
                     accountOp,
                     this.#accounts.accounts.map((a) => a.addr)
-                  )
+                  ).map((recipient) => recipient.address)
 
                   accountOpRecipients.forEach((accAddr) => {
                     if (!portfoliosToUpdate[accAddr]) portfoliosToUpdate[accAddr] = []
@@ -1357,7 +1413,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // record the balance changes but do not await them
     // no need to console.log errors in the catch() as it's handled inside
-    this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null)
+    this.#executeBalanceChanges(balanceChangesTasks).catch(() => null)
 
     return {
       shouldEmitUpdate,

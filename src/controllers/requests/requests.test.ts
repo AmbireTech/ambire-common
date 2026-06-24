@@ -280,7 +280,8 @@ describe('RequestsController ', () => {
         amount: '1',
         amountInFiat: 100000n,
         executionType: 'open-request-window',
-        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        recipientDomain: undefined
       }
     })
 

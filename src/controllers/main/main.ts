@@ -718,9 +718,15 @@ export class MainController extends EventEmitter implements IMainController {
       // only do it when the user opts out of privacy. Otherwise accounts are
       // refreshed on interaction (see DomainsController).
       if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
-        this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+        this.domains.batchReverseLookup(
+          this.accounts.accounts.map((a) => a.addr),
+          this.selectedAccount.account ? [this.selectedAccount.account.addr] : []
+        )
       } else {
-        this.domains.reverseLookup(selectedAccountAddr, true, { privacyUpdateMode: 'whenStale' })
+        this.domains.reverseLookup(selectedAccountAddr, true, {
+          privacyUpdateMode: 'whenStale',
+          updateExpiry: true
+        })
       }
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
@@ -757,7 +763,8 @@ export class MainController extends EventEmitter implements IMainController {
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
       networks: this.networks,
-      providers: this.providers
+      providers: this.providers,
+      domains: this.domains
     })
 
     await this.selectedAccount.initialLoadPromise
@@ -767,10 +774,14 @@ export class MainController extends EventEmitter implements IMainController {
     // Only passively bulk-resolve ENS for all accounts when the user opts out of
     // privacy (see onPopupOpen and DomainsController for the default behaviour).
     if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
-      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      this.domains.batchReverseLookup(
+        this.accounts.accounts.map((a) => a.addr),
+        this.selectedAccount.account ? [this.selectedAccount.account.addr] : []
+      )
     } else if (this.selectedAccount.account?.addr) {
       this.domains.reverseLookup(this.selectedAccount.account.addr, true, {
-        privacyUpdateMode: 'whenStale'
+        privacyUpdateMode: 'whenStale',
+        updateExpiry: true
       })
     }
 
@@ -822,9 +833,12 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    // Update reverse lookup data
+    // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.domains.reverseLookup(toAccountAddr, true, { privacyUpdateMode: 'whenStale' })
+    this.domains.reverseLookup(toAccountAddr, true, {
+      privacyUpdateMode: 'whenStale',
+      updateExpiry: true
+    })
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
