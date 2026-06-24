@@ -116,6 +116,7 @@ const prepareTest = async (seedTestDapp = false) => {
   }) => {
     await mainCtrl.accounts.initialLoadPromise
     await mainCtrl.networks.initialLoadPromise
+    await mainCtrl.signAccountOpPreference.initialLoadPromise
     const account = mainCtrl.accounts.accounts.find((a) => a.addr === addr)!
     const network = mainCtrl.networks.networks.find((n) => n.chainId === chainId)!
 
@@ -126,6 +127,7 @@ const prepareTest = async (seedTestDapp = false) => {
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,
       portfolio: mainCtrl.portfolio,
+      signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
       activity: mainCtrl.activity,
       account,

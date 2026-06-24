@@ -61,6 +61,16 @@ export const customDapp = makeDapp({
   isCustom: true
 })
 
+// A dApp hosted on a shared platform from SUSPICIOUS_HOSTING_DOMAINS (vercel.app subdomain).
+// Used to test the SUSPICIOUS_HOSTING banner path.
+export const suspiciousHostingDapp = makeDapp({
+  id: 'my-dapp.vercel.app',
+  name: 'Suspicious Hosting Dapp',
+  url: 'https://my-dapp.vercel.app',
+  blacklisted: 'SUSPICIOUS_HOSTING',
+  isCustom: true
+})
+
 export const getDappVerificationTestDapps = () => [
   makeDapp({
     id: 'verified-dapp.com',
@@ -92,7 +102,8 @@ export const getDappVerificationTestDapps = () => [
     url: 'https://custom-dapp.com',
     blacklisted: 'VERIFIED',
     isCustom: true
-  })
+  }),
+  suspiciousHostingDapp
 ]
 
 export const getDappRequestData = (dapp: Dapp) => ({

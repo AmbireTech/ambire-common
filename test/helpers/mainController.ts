@@ -178,6 +178,7 @@ export const makeMainController = async (
   }
   if (skipDomainsResolveOnLoad) {
     mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
+    mainCtrl.domains.batchReverseLookup = jest.fn().mockResolvedValue(undefined)
   }
 
   if (awaitInitialLoad) {

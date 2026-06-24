@@ -235,7 +235,6 @@ export async function debugTraceCall(
       }
     ])
     .catch((e) => {
-      // eslint-disable-next-line no-underscore-dangle
       throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
     })
 

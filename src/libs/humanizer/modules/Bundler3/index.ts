@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { decodeFunctionData, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'

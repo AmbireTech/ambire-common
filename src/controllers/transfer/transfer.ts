@@ -52,6 +52,7 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -91,6 +92,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   #callRelayer: BindedRelayerCall
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #networks: INetworksController
 
@@ -193,6 +196,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   constructor(
     callRelayer: BindedRelayerCall,
     storage: IStorageController,
+    signAccountOpPreference: SignAccountOpPreferenceController,
     humanizerInfo: HumanizerMeta,
     selectedAccount: ISelectedAccountController,
     networks: INetworksController,
@@ -214,6 +218,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#callRelayer = callRelayer
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
     this.#networks = networks
@@ -1099,6 +1104,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     await this.#updateRecipientHistoryAndPoisoning()
+    await this.#signAccountOpPreference.initialLoadPromise
     this.signAccountOpController = new SignAccountOpController({
       type: 'one-click-transfer',
       callRelayer: this.#callRelayer,
@@ -1106,6 +1112,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,

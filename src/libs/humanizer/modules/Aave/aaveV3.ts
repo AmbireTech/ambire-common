@@ -273,8 +273,7 @@ export const aaveV3Pool = (): {
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
       const token = tokensByIndex[tokenIndex]
-      if (!token)
-        return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
+      if (!token) return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
       // stores amount inn uint128 instead of uint256, but max value is treated as max value
       const amount = amountAsString === 'f'.repeat(32) ? maxUint256 : BigInt(`0x${amountAsString}`)

@@ -23,9 +23,12 @@ import {
   failedDapp,
   getDappRequestData,
   getDappVerificationTestDapps,
-  loadingDapp
+  loadingDapp,
+  suspiciousHostingDapp,
+  verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -82,6 +85,7 @@ import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
@@ -396,6 +400,7 @@ const init = async (
   updateWholePortfolio?: boolean,
   options?: {
     dapps?: Dapp[]
+    sessions?: Session[]
     callRelayer?: BindedRelayerCall
     type?: SignAccountOpType
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
@@ -406,6 +411,9 @@ const init = async (
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
   await storageCtrl.set('selectedAccount', account.addr)
+  if (options?.initialSetStorage) await options.initialSetStorage(storageCtrl)
+  const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
+  await signAccountOpPreference.initialLoadPromise
   if (options?.dapps) {
     await storageCtrl.set('dappsV2', options.dapps)
     await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
@@ -639,6 +647,13 @@ const init = async (
       selectedAccount: selectedAccountCtrl
     })
     await realDappsController.initialLoadPromise
+
+    // Register any dApp sessions so the real #getTabContextStatus can inspect co-sessions
+    // sharing the same tab (the iframe-in-suspicious-tab scenario).
+    options.sessions?.forEach((session) => {
+      realDappsController.dappSessions[session.sessionId] = session
+    })
+
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
@@ -649,6 +664,7 @@ const init = async (
     networks: networksCtrl,
     keystore,
     portfolio,
+    signAccountOpPreference,
     externalSignerControllers: {},
     account,
     network,
@@ -669,7 +685,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller }
+  return { controller, storageCtrl, signAccountOpPreference }
 }
 
 const initDappVerificationBannerTest = async (
@@ -677,8 +693,16 @@ const initDappVerificationBannerTest = async (
   {
     isPermit2 = false,
     calls,
-    callRelayer
-  }: { isPermit2?: boolean; calls?: AccountOp['calls']; callRelayer?: BindedRelayerCall } = {}
+    callRelayer,
+    dappSessionId,
+    sessions
+  }: {
+    isPermit2?: boolean
+    calls?: AccountOp['calls']
+    callRelayer?: BindedRelayerCall
+    dappSessionId?: string
+    sessions?: Session[]
+  } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
   ;(accountOp.op.calls as any) = calls || [
@@ -689,6 +713,9 @@ const initDappVerificationBannerTest = async (
       dapp: getDappRequestData(dapp)
     }
   ]
+  if (dappSessionId) {
+    ;(accountOp.op as any).dappSessionId = dappSessionId
+  }
 
   const feePaymentOptions = [
     {
@@ -753,14 +780,135 @@ const initDappVerificationBannerTest = async (
       }
     },
     false,
-    {
-      dapps: getDappVerificationTestDapps(),
-      callRelayer
-    }
+    { dapps: getDappVerificationTestDapps(), callRelayer, sessions }
   )
 }
 
 describe('SignAccountOp Controller ', () => {
+  const defaultFeeSelectionGasPrices = {
+    slow: {
+      maxFeePerGas: toBeHex(200n) as Hex,
+      maxPriorityFeePerGas: toBeHex(100n) as Hex
+    },
+    medium: {
+      maxFeePerGas: toBeHex(400n) as Hex,
+      maxPriorityFeePerGas: toBeHex(200n) as Hex
+    },
+    fast: {
+      maxFeePerGas: toBeHex(600n) as Hex,
+      maxPriorityFeePerGas: toBeHex(300n) as Hex
+    },
+    ape: {
+      maxFeePerGas: toBeHex(800n) as Hex,
+      maxPriorityFeePerGas: toBeHex(400n) as Hex
+    }
+  }
+
+  const getDefaultFeeSelectionOptions = (nativeAvailableAmount = 1000000000000000000n) => [
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: nativeAvailableAmount,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: nativeFeeToken
+    },
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: gasTankToken
+    },
+    {
+      paidBy: smartAccount.addr,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: {
+        ...usdcFeeToken,
+        chainId: 1n
+      }
+    }
+  ]
+
+  const initDefaultFeeSelection = async (
+    feePaymentOptions = getDefaultFeeSelectionOptions(),
+    options?: Parameters<typeof init>[6]
+  ) => {
+    const { controller, storageCtrl } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, 1n),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 25000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      defaultFeeSelectionGasPrices,
+      false,
+      options
+    )
+
+    await wait(1)
+
+    return { controller, storageCtrl }
+  }
+
+  test('defaults fee payment to the network-native token before gas tank or ERC-20', async () => {
+    const { controller } = await initDefaultFeeSelection()
+
+    expect(controller.selectedOption?.token.address).toBe(nativeFeeToken.address)
+    expect(controller.selectedOption?.token.flags.onGasTank).toBe(false)
+  })
+
+  test('uses gas tank as a saved default across chains', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeTokenPreference', {
+          '1': 'gasTank'
+        })
+      }
+    })
+
+    expect(controller.selectedOption?.token.flags.onGasTank).toBe(true)
+  })
+
+  test('uses a saved ERC-20 default only for the matching chain', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storage) => {
+        await storage.set('signAccountOpFeeTokenPreference', {
+          '1': usdcFeeToken.address,
+          '137': nativeFeeTokenPolygon.address
+        })
+      }
+    })
+
+    expect(controller.selectedOption?.token.address).toBe(usdcFeeToken.address)
+    expect(controller.selectedOption?.token.symbol).toBe(usdcFeeToken.symbol)
+
+    controller.update({ pendingFeeTokenPreference: gasTankToken })
+
+    const storedPreference = await storageCtrl.get('signAccountOpFeeTokenPreference')
+    expect(storedPreference).toEqual({
+      '1': usdcFeeToken.address,
+      '137': nativeFeeTokenPolygon.address
+    })
+    expect(controller.pendingFeeTokenPreference).toEqual({
+      '1': 'gasTank',
+      '137': nativeFeeTokenPolygon.address
+    })
+  })
+
   test('Estimation race conditions are prevented', async () => {
     const { restore } = suppressConsole()
     const chainId = 137n
@@ -2109,9 +2257,7 @@ describe('throwBroadcastAccountOp', () => {
         )
       })
     } catch (e: any) {
-      expect(e.message).toBe(
-        'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
-      )
+      expect(e.message).toBe('Transaction fees changed. Please try again')
     }
   })
   it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -2317,6 +2463,128 @@ describe('throwBroadcastAccountOp', () => {
         'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
       )
     }
+  })
+  it('fee changed (underpriced) auto-update shows a soft confirmation instead of an error toast', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+
+    const feeOption = {
+      availableAmount: 1000000000000000000n,
+      paidBy: eoaAccount.addr,
+      gasUsed: 10000n,
+      addedNative: 0n,
+      token: createEOAAccountOp(eoaAccount).feeTokens[0]!
+    }
+    const previousFee = {
+      type: FeeSpeed.Fast,
+      amount: 100000000000000n,
+      simulatedGasLimit: 10000n,
+      amountFormatted: '0.0001',
+      amountUsd: '0.1',
+      gasPrice: 600n,
+      disabled: false,
+      maxPriorityFeePerGas: 300n
+    }
+    const identifier = getFeeSpeedIdentifier(feeOption, eoaAccount.addr)
+
+    controller.selectedOption = feeOption
+    controller.selectedFeeSpeed = FeeSpeed.Fast
+    controller.feeSpeeds = { [identifier]: [previousFee] }
+
+    const error = new Error(
+      'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
+    )
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      // The user is asked to re-confirm the updated fee, not redo the whole flow
+      expect(e.message).toBe('Transaction fees changed. Please try again')
+    }
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+    expect(controller.previousFee).toEqual(previousFee)
+
+    // The error is tracked silently (no scary red toast for the user)
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('silent')
+
+    // Dismissing the confirmation (Cancel) clears the flag
+    controller.dismissGasFeeChangedConfirmation()
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    expect(controller.previousFee).toBe(null)
+  })
+  it('fee changed with custom gas prices keeps the original error and no soft confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // The user explicitly set advanced gas prices, so we don't override them
+    controller.hasCustomGasPrices = true
+
+    const originalMessage =
+      'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
+    const error = new Error(originalMessage)
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(originalMessage)
+    }
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('major')
   })
 })
 
@@ -2622,6 +2890,41 @@ describe('dapp verification banners', () => {
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
+  })
+
+  // Scenario: dApp's own domain is in SUSPICIOUS_HOSTING_DOMAINS (e.g. my-dapp.vercel.app)
+  // intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+  test('should return SUSPICIOUS_HOSTING warning banner for dapps on suspicious hosting platforms', async () => {
+    const { controller } = await initDappVerificationBannerTest(suspiciousHostingDapp)
+
+    expect(controller.banners).toEqual([
+      {
+        id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+        type: 'warning',
+        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+      }
+    ])
+  })
+
+  // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
+  // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
+  // Uses the real DappsController: the suspicious co-session shares the tab with the dApp's
+  // own session, so the real #getTabContextStatus derives the SUSPICIOUS_HOSTING context.
+  test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', async () => {
+    const verifiedDappSession = new Session({ tabId: 300, windowId: 1, url: verifiedDapp.url })
+    const googleSession = new Session({
+      tabId: 300,
+      windowId: 1,
+      url: 'https://sites.google.com'
+    })
+
+    const { controller } = await initDappVerificationBannerTest(verifiedDapp, {
+      dappSessionId: verifiedDappSession.sessionId,
+      sessions: [verifiedDappSession, googleSession]
+    })
+
+    expect(controller.banners[0]?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+    expect(controller.banners[0]?.type).toBe('warning')
   })
 })
 
