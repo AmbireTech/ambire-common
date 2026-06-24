@@ -296,12 +296,13 @@ export interface PortfolioLibGetResult {
   afterNonce: bigint
 }
 
-export type PortfolioVerificationStatus = 'loading' | 'success' | 'warning'
+export type PortfolioVerificationStatus = 'loading' | 'success' | 'warning' | 'stale'
 
 export type PortfolioVerification = {
   provider: 'colibri'
   status: PortfolioVerificationStatus
   error?: string
+  blockDiff?: number
   updatedAt?: number
 }
 

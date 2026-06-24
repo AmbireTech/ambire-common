@@ -47,7 +47,8 @@ export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
 
 export type SelectedAccountPortfolioVerification = {
   provider: 'colibri'
-  status: 'loading' | 'success' | 'warning'
+  status: 'loading' | 'success' | 'warning' | 'stale'
+  blockDiff?: number
   verifiedChains: string[]
   failedChains: string[]
 }

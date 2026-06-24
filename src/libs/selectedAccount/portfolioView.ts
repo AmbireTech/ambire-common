@@ -103,6 +103,7 @@ export default class PortfolioViewBuilder {
       this.verification = {
         provider: networkData.verification.provider,
         status: networkData.verification.status,
+        blockDiff: networkData.verification.blockDiff,
         verifiedChains: [],
         failedChains: []
       }
@@ -116,10 +117,24 @@ export default class PortfolioViewBuilder {
       this.verification.failedChains.push(chainId)
     }
 
+    if (networkData.verification.status === 'stale') {
+      this.verification.blockDiff = Math.max(
+        this.verification.blockDiff || 0,
+        networkData.verification.blockDiff || 0
+      )
+    }
+
     if (this.verification.status === 'warning') return
 
     if (networkData.verification.status === 'warning') {
       this.verification.status = 'warning'
+      return
+    }
+
+    if (this.verification.status === 'stale') return
+
+    if (networkData.verification.status === 'stale') {
+      this.verification.status = 'stale'
       return
     }
 
