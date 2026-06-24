@@ -550,7 +550,6 @@ export class DappsController extends EventEmitter implements IDappsController {
    * Wrapper around #continuouslyUpdateTrendingTokens that:
    * 1) deduplicates concurrent triggers via a shared promise
    * 2) switches to the failed-retry interval when the fetch/update flow throws
-   * Mirrors the PhishingController.continuouslyUpdatePhishing pattern.
    */
   async continuouslyUpdateTrendingTokens() {
     if (this.#continuouslyUpdateTrendingTokensPromise) {
