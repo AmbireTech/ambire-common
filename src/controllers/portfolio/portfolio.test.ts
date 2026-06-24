@@ -31,8 +31,10 @@ import {
   Hints,
   LearnedAssets,
   PortfolioGasTankResult,
+  PortfolioLibGetResult,
   PortfolioNetworkResult,
-  PreviousHintsStorage
+  PreviousHintsStorage,
+  TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
@@ -40,6 +42,8 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
 import { PortfolioController } from './portfolio'
+
+import type { FeatureFlags } from '../../consts/featureFlags'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
@@ -297,11 +301,13 @@ const prepareTest = async (opts?: {
   skipBlacklistFetch?: boolean
   awaitInitialLoad?: boolean
   skipAccountStateFetch?: boolean
+  featureFlags?: Partial<FeatureFlags>
 }) => {
   const {
     initialSetStorage,
     awaitInitialLoad = true,
     fetchOverride,
+    featureFlags,
     skipBlacklistFetch = true,
     skipAccountStateFetch = true
   } = opts || {}
@@ -334,7 +340,8 @@ const prepareTest = async (opts?: {
       skipPortfolioFetchBlacklistOnLoad: skipBlacklistFetch,
       skipAccountStateLoad: skipAccountStateFetch,
       overrides: {
-        fetch: fetchOverride
+        fetch: fetchOverride,
+        featureFlags
       }
     }
   )
@@ -348,7 +355,9 @@ const prepareTest = async (opts?: {
     controller: mainCtrl.portfolio as PortfolioController,
     storageCtrl: mainCtrl.storage,
     networksCtrl: mainCtrl.networks,
-    accountsCtrl: mainCtrl.accounts
+    accountsCtrl: mainCtrl.accounts,
+    providersCtrl: mainCtrl.providers,
+    verificationCtrl: mainCtrl.verification
   }
 }
 
@@ -393,6 +402,154 @@ describe('Portfolio Controller ', () => {
       [network.chainId.toString()]: [op]
     } as Record<string, AccountOp[]>
   }
+
+  test('Colibri portfolio verification warns on changed balances, stale RPCs and succeeds on matching balances', async () => {
+    const verifiedProvider = {
+      destroyed: false,
+      getBlockNumber: jest.fn<() => Promise<number>>().mockResolvedValue(122)
+    } as any
+    const colibriEthereum = { ...ethereum, isColibriEnabled: true }
+    const tokenAddress = getAddress('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')
+    const rpcAmount = 100n
+    let verifiedAmount = 99n
+    const makeToken = (amount: bigint): TokenResult => ({
+      symbol: 'USDC',
+      name: 'USD Coin',
+      decimals: 6,
+      address: tokenAddress,
+      chainId: 1n,
+      amount,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      marketDataIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: false,
+        isFeeToken: false
+      }
+    })
+    const makePortfolioLibResult = (amount: bigint): PortfolioLibGetResult => ({
+      updateStarted: Date.now(),
+      discoveryTime: 0,
+      oracleCallTime: 0,
+      priceUpdateTime: 0,
+      tokenDataCache: new Map(),
+      tokens: [makeToken(amount)],
+      feeTokens: [],
+      toBeLearned: { erc20s: [], erc721s: {} },
+      tokenErrors: [],
+      collectionErrors: [],
+      collections: [],
+      errors: [],
+      blockNumber: 0,
+      beforeNonce: 0n,
+      afterNonce: 0n
+    })
+    const createRelayerResponse = (body: unknown) =>
+      ({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify(body))
+      }) as any
+    const fetchOverride = jest.fn(() =>
+      Promise.resolve(
+        createRelayerResponse({
+          success: true,
+          data: {
+            banner: null,
+            rewards: {
+              stkWalletClaimableBalance: [],
+              walletClaimableBalance: []
+            },
+            rewardsProjectionDataV2: {},
+            frozenRewardSeason1: 0,
+            gasTank: {
+              balance: []
+            }
+          }
+        })
+      )
+    ) as unknown as typeof fetch
+    const { controller, verificationCtrl, providersCtrl } = await prepareTest({
+      fetchOverride,
+      featureFlags: { tokenAndDefiAutoDiscovery: false }
+    })
+    const rpcGetBlockNumberMock = jest
+      .spyOn(providersCtrl.providers['1']!, 'getBlockNumber')
+      .mockResolvedValue(123)
+
+    jest.spyOn(verificationCtrl, 'getReadyProvider').mockReturnValue(verifiedProvider)
+    jest.spyOn(controller as any, 'batchedPortfolioDiscovery').mockResolvedValue({
+      data: { hints: null, defi: null, otherNetworksDefiCounts: {} },
+      discoveryTime: 0,
+      errors: []
+    })
+    jest
+      .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+      .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
+    const portfolioGetCalls: any[] = []
+    jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
+      portfolioGetCalls.push({ provider: this.provider, blockTag: opts?.blockTag })
+
+      return Promise.resolve(
+        makePortfolioLibResult(this.provider === verifiedProvider ? verifiedAmount : rpcAmount)
+      )
+    })
+
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+    expect(portfolioGetCalls).toHaveLength(2)
+    expect(portfolioGetCalls).toEqual(
+      expect.arrayContaining([
+        { provider: providersCtrl.providers['1'], blockTag: 122 },
+        { provider: verifiedProvider, blockTag: 122 }
+      ])
+    )
+
+    const warningVerification = controller.getAccountPortfolioState(account.addr)['1']?.verification
+    expect(warningVerification?.status).toBe('warning')
+    expect(warningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
+
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+    const successfulVerification = controller.getAccountPortfolioState(account.addr)['1']
+      ?.verification
+    expect(successfulVerification?.status).toBe('success')
+    expect(successfulVerification?.error).toBeUndefined()
+
+    verifiedProvider.getBlockNumber.mockResolvedValue(117)
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+    expect(portfolioGetCalls).toHaveLength(1)
+    expect(portfolioGetCalls[0]).toEqual({
+      provider: providersCtrl.providers['1'],
+      blockTag: 'both'
+    })
+
+    const colibriBehindVerification = controller.getAccountPortfolioState(account.addr)['1']
+      ?.verification
+    expect(colibriBehindVerification?.status).toBe('warning')
+    expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
+
+    rpcGetBlockNumberMock.mockResolvedValue(100)
+    verifiedProvider.getBlockNumber.mockResolvedValue(111)
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+    expect(portfolioGetCalls).toHaveLength(1)
+    expect(portfolioGetCalls[0]).toEqual({
+      provider: providersCtrl.providers['1'],
+      blockTag: 'both'
+    })
+
+    const staleVerification = controller.getAccountPortfolioState(account.addr)['1']?.verification
+    expect(staleVerification?.status).toBe('stale')
+    expect(staleVerification?.blockDiff).toBe(11)
+  })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
     const { controller } = await prepareTest()

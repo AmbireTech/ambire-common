@@ -3,6 +3,7 @@ import { getAddress, isAddress } from 'ethers'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { RPCProviders } from '../../interfaces/provider'
+import { IVerificationController } from '../../interfaces/verification'
 import {
   getEnsAvatar,
   getIsNamoshiDomain,
@@ -34,6 +35,15 @@ interface Domains {
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
+const USER_FACING_RESOLUTION_ERROR_PREFIX = 'ENS resolution mismatch for'
+
+const getUserFacingResolutionError = (error: any) => {
+  const message = error?.message
+  if (typeof message !== 'string') return undefined
+  if (!message.startsWith(USER_FACING_RESOLUTION_ERROR_PREFIX)) return undefined
+
+  return message
+}
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -41,6 +51,8 @@ export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
  */
 export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
+
+  #verification?: IVerificationController
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
@@ -63,21 +75,82 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   resolveDomainsStatus: { [domain: string]: 'LOADING' | 'RESOLVED' | 'FAILED' | undefined } = {}
 
+  resolveDomainsErrors: { [domain: string]: string | undefined } = {}
+
+  verifiedDomainsStatus: { [domain: string]: 'VERIFIED' | undefined } = {}
+
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
   constructor({
     eventEmitterRegistry,
     providers,
+    verification,
     defaultNetworksMode
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
+    verification?: IVerificationController
     defaultNetworksMode?: 'mainnet' | 'testnet'
   }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers
+    this.#verification = verification
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
+  }
+
+  async #verifyEnsResolution({
+    providerChainId,
+    domain,
+    address,
+    isNamoshiDomain
+  }: {
+    providerChainId: string
+    domain: string
+    address: string
+    isNamoshiDomain: boolean
+  }) {
+    if (isNamoshiDomain) return false
+
+    const verificationProvider = this.#verification?.getReadyProvider(BigInt(providerChainId))
+    if (!verificationProvider) return false
+
+    const verifiedResult = await withTimeout(
+      () =>
+        resolveENSDomain({
+          provider: verificationProvider,
+          domain,
+          options: { isNamoshiDomain }
+        }),
+      { timeoutMs: 15000 }
+    )
+
+    if (!verifiedResult.address && !address) return false
+    if (
+      verifiedResult.address &&
+      address &&
+      getAddress(verifiedResult.address) === getAddress(address)
+    ) {
+      return true
+    }
+
+    throw new Error(
+      `ENS resolution mismatch for ${domain}: RPC returned ${address}, Colibri returned ${verifiedResult.address}`
+    )
+  }
+
+  #setResolveDomainFailure(domain: string, error: any) {
+    const message = getUserFacingResolutionError(error)
+
+    if (message) {
+      this.resolveDomainsErrors = {
+        ...this.resolveDomainsErrors,
+        [domain]: message
+      }
+    } else {
+      delete this.resolveDomainsErrors[domain]
+    }
+    this.resolveDomainsStatus[domain] = 'FAILED'
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -142,12 +215,34 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     this.resolveDomainsStatus[domain] = 'LOADING'
+    delete this.resolveDomainsErrors[domain]
     await this.forceEmitUpdate()
 
     if (this.domainToAddresses[domain]) {
-      this.resolveDomainsStatus[domain] = 'RESOLVED'
-      await this.forceEmitUpdate()
-      this.resolveDomainsStatus[domain] = undefined
+      try {
+        if (this.domainToAddresses[domain]?.address) {
+          const isEnsVerifiedByColibri = await this.#verifyEnsResolution({
+            providerChainId,
+            domain,
+            address: this.domainToAddresses[domain]!.address!,
+            isNamoshiDomain
+          })
+          if (isEnsVerifiedByColibri) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+        }
+
+        this.resolveDomainsStatus[domain] = 'RESOLVED'
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      } catch (e: any) {
+        this.emitError({
+          error: e,
+          message: `ENS resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        this.#setResolveDomainFailure(domain, e)
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      }
       return
     }
 
@@ -158,6 +253,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     })
       .then(async ({ address, avatar }) => {
         if (address) {
+          const isEnsVerifiedByColibri = await this.#verifyEnsResolution({
+            providerChainId,
+            domain,
+            address,
+            isNamoshiDomain
+          })
+          if (isEnsVerifiedByColibri) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+
           this.domainToAddresses[domain] = {
             address: getAddress(address),
             type: isNamoshiDomain ? 'namoshi' : 'ens'
@@ -170,12 +273,18 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           })
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
+        delete this.resolveDomainsErrors[domain]
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
       })
       .catch(async (e) => {
         console.error(`Failed to resolve ENS domain: ${domain}`, e)
-        this.resolveDomainsStatus[domain] = 'FAILED'
+        this.emitError({
+          error: e,
+          message: `ENS resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        this.#setResolveDomainFailure(domain, e)
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
       })

@@ -102,6 +102,57 @@ describe('Domains', () => {
     expect(domainsController.domainToAddresses[name]?.address).toBe(address)
     expect(domainsController.domainToAddresses[name]?.type).toBe('ens')
   })
+  it('should fail Colibri verification for a changed ENS address and succeed for the resolved address', async () => {
+    const domain = '0xbobby.eth'
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    const changedAddress = getAddress('0x0000000000000000000000000000000000000001')
+    const provider = {} as any
+    const verificationProvider = {} as any
+    const getReadyProvider = jest.fn(() => undefined as any)
+    const { restore } = suppressConsole()
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      verification: { getReadyProvider } as any
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null })
+
+    try {
+      await controller.resolveDomain({ domain })
+
+      expect(controller.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+
+      getReadyProvider.mockReturnValue(verificationProvider)
+      controller.domainToAddresses[domain] = {
+        address: changedAddress,
+        type: 'ens'
+      }
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBe(
+        `ENS resolution mismatch for ${domain}: RPC returned ${changedAddress}, Colibri returned ${resolvedAddress}`
+      )
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+
+      controller.domainToAddresses[domain] = {
+        address: resolvedAddress,
+        type: 'ens'
+      }
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+      restore()
+    }
+  })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
   } min, if the lookup succeeds (the happy case)`, async () => {
