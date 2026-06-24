@@ -91,6 +91,7 @@
   },
   "overrides": {
     "elliptic": "^6.6.1",
-    "cipher-base": "^1.0.6"
+    "cipher-base": "^1.0.6",
+    "handlebars": "^4.7.9"
   }
 }
