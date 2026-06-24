@@ -1651,7 +1651,7 @@ export class PortfolioController
         isManualUpdate,
         discoveryData?.data?.hints
       )
-      const shouldVerifyPortfolio = !!network.isColibriEnabled
+      const shouldVerifyPortfolio = !!network.isColibriEnabled && !portfolioProps.simulation
 
       if (shouldVerifyPortfolio) {
         state.verification = {
