@@ -101,7 +101,7 @@ describe('SelectedAccount Controller', () => {
     jest.clearAllMocks()
     jest.restoreAllMocks()
   })
-  test('should init controllers and set account', async () => {
+  it('should init controllers and set account', async () => {
     const { selectedAccountCtrl, storage } = await prepareTest()
 
     const selectedAccountInStorage = await storage.get('selectedAccount')
@@ -110,7 +110,7 @@ describe('SelectedAccount Controller', () => {
 
     expect(selectedAccountCtrl.areControllersInitialized).toEqual(true)
   })
-  test('should update selected account portfolio', async () => {
+  it('should update selected account portfolio', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
     await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
@@ -119,7 +119,7 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
     expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
   })
-  test('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
+  it('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
@@ -140,7 +140,7 @@ describe('SelectedAccount Controller', () => {
 
     expect(PORTFOLIO_STATE_AFTER).toEqual(PORTFOLIO_STATE_BEFORE)
   })
-  test('should reset selected account portfolio', async () => {
+  it('should reset selected account portfolio', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
     await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', [
@@ -151,7 +151,7 @@ describe('SelectedAccount Controller', () => {
     selectedAccountCtrl.resetSelectedAccountPortfolio()
     expect(selectedAccountCtrl.portfolio).toEqual(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
   })
-  test('should toJSON()', async () => {
+  it('should toJSON()', async () => {
     const { selectedAccountCtrl } = await prepareTest()
     const json = selectedAccountCtrl.toJSON()
     expect(json).toBeDefined()

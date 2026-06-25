@@ -396,6 +396,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
+        accountPreferences: prevStoredDapp?.accountPreferences,
         grantedPermissionId: prevStoredDapp?.grantedPermissionId,
         grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
       }
@@ -434,7 +435,8 @@ export class DappsController extends EventEmitter implements IDappsController {
           favorite: prevStoredDapp?.favorite ?? false,
           blacklisted: 'LOADING',
           twitter: pd.twitter || null,
-          geckoId: null
+          geckoId: null,
+          accountPreferences: prevStoredDapp?.accountPreferences
         })
       }
     }
@@ -753,12 +755,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     if (existing) {
       const mergedSources = mergeSource(existing.connectedSources, source)
-      this.updateDapp(dapp.id, {
+      const dappUpdate: Partial<Dapp> = {
         chainId: dapp.chainId,
         connectedSources: mergedSources,
-        isConnected: mergedSources.length > 0,
-        accountPreferences: dapp.accountPreferences
-      })
+        isConnected: mergedSources.length > 0
+      }
+
+      if (dapp.accountPreferences) dappUpdate.accountPreferences = dapp.accountPreferences
+
+      this.updateDapp(dapp.id, dappUpdate)
       return
     }
 

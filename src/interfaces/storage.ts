@@ -111,6 +111,8 @@ export type StorageProps = {
   isBatchingEnabled: boolean
   surveysRespondedTo: string[]
   functionSelectors: Selectors
+  // Per-controller debug logging toggles. Only enabled ones are stored
+  debugLogNamespaces: Record<string, boolean>
 }
 
 export interface Storage {
