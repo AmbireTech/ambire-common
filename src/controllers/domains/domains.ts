@@ -1,5 +1,7 @@
 import { getAddress, isAddress } from 'ethers'
 
+import { Contacts } from '@/interfaces/addressBook'
+
 import { Domains, IDomainsController, ReverseLookupOptions } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -18,8 +20,6 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
-const MAX_ENTRIES = 200
-const MAX_ENTRY_AGE_IN_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -33,8 +33,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   #storage?: IStorageController
 
   #featureFlags?: IFeatureFlagsController
-
-  initialLoadPromise: Promise<void>
 
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
@@ -82,39 +80,43 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#featureFlags = featureFlags
-
-    this.initialLoadPromise = this.#load()
   }
 
-  async #load(): Promise<void> {
+  /**
+   * Initializes the controller with the data persisted in storage
+   * As the domains in storage may be from one time requests in sign message/sign account op, we don't want
+   * to load them all in a public variable which will be sent to the UI. Instead, we filter only the domains
+   * that are in the address book, which includes accounts and address book contacts
+   */
+  async init(contacts: Contacts) {
     if (!this.#storage) return
 
     let domainsFromStorage: Domains = {}
+
     try {
       domainsFromStorage = await this.#storage.get('domainsCache', {})
-    } catch (e) {
-      console.warn('domains: failed to load cache from storage', e)
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Something went wrong when loading the Domains cache. Please try again or contact support if the problem persists.',
+        level: 'silent',
+        error
+      })
     }
 
-    // Clean older than 7 days, empty entries and keep a maximum of 200 entries to avoid
-    // exposing a huge amount of state to the UI that may be stale (e.g., the Humanizer requested and address
-    // a month ago for one transaction, but the extension keeps it in state and sends it to the UI every time)
-    const sevenDaysAgo = Date.now() - MAX_ENTRY_AGE_IN_MS
-    const cleanedDomains = Object.fromEntries(
-      Object.entries(domainsFromStorage)
-        .filter(([, data]) => {
-          if (!data) return false
+    domainsFromStorage = Object.fromEntries(
+      Object.entries(domainsFromStorage).filter(([addressInDomains, data]) => {
+        if (!data) return false
 
-          const isEmpty = !data.ens && !data.namoshi
-          const isTooOld = (data.updatedAt || 0) < sevenDaysAgo
+        // @TODO: Filter out expired entries
 
-          return !isEmpty && !isTooOld
-        })
-        .sort(([, a], [, b]) => (b?.updatedAt || 0) - (a.updatedAt || 0))
-        .slice(0, MAX_ENTRIES)
+        const isInContacts = contacts.some(({ address }) => address === addressInDomains)
+
+        return isInContacts
+      })
     )
 
-    this.domains = cleanedDomains
+    this.domains = domainsFromStorage
 
     this.emitUpdate()
   }
@@ -153,7 +155,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   async batchReverseLookup(addresses: string[]) {
-    await this.initialLoadPromise
     const normalizedAddresses = this.#normalizeAddresses(addresses)
     const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
 
@@ -187,8 +188,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    * Resolves an ENS domain and persists it to state only if resolution succeeds.
    */
   async resolveDomain({ domain }: { domain: string }) {
-    await this.initialLoadPromise
-
     const isNamoshiDomain = getIsNamoshiDomain(domain)
     const providerChainId = isNamoshiDomain
       ? '4114'
@@ -291,8 +290,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   }
 
   async reverseLookup(address: string, emitUpdate = true, opts?: ReverseLookupOptions) {
-    await this.initialLoadPromise
-
     if (!isAddress(address)) return
 
     const checksummedAddress = getAddress(address)
@@ -379,8 +376,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    * Resolves ENS names for one or multiple addresses.
    */
   async #reverseLookup(addressesToLookup: string[], emitUpdate = true) {
-    await this.initialLoadPromise
-
     if (!addressesToLookup.length) return
 
     const ethereumProvider =

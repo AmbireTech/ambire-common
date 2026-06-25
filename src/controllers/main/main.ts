@@ -753,6 +753,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
     await this.contractInfo.initialLoadPromise
+    await this.addressBook.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -761,7 +762,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.selectedAccount.initialLoadPromise
-    await this.domains.initialLoadPromise
+    await this.domains.init(this.addressBook.contacts)
 
     this.updateSelectedAccountPortfolio()
     // Only passively bulk-resolve ENS for all accounts when the user opts out of
