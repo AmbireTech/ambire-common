@@ -404,7 +404,6 @@ describe('Domains', () => {
       storage: makeStorage(),
       featureFlags: makeFeatureFlags(false)
     })
-    await controller.initialLoadPromise
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
     const reverseLookupEnsSpy = jest
@@ -439,7 +438,6 @@ describe('Domains', () => {
       storage: makeStorage(),
       featureFlags: makeFeatureFlags(true)
     })
-    await controller.initialLoadPromise
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
     const reverseLookupEnsSpy = jest
@@ -476,7 +474,6 @@ describe('Domains', () => {
       storage,
       featureFlags: makeFeatureFlags(false)
     })
-    await first.initialLoadPromise
     await first.reverseLookup(address)
 
     expect(storage.set).toHaveBeenCalledWith(
@@ -493,7 +490,14 @@ describe('Domains', () => {
       storage,
       featureFlags: makeFeatureFlags(false)
     })
-    await second.initialLoadPromise
+
+    await second.init([
+      {
+        name: 'test',
+        address: ENS_OLDEST_RESOLVER.address,
+        isWalletAccount: true
+      }
+    ])
     expect(second.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
 
     const callsBefore = reverseLookupEnsSpy.mock.calls.length
@@ -502,6 +506,66 @@ describe('Domains', () => {
 
     reverseLookupEnsSpy.mockRestore()
     getEnsAvatarSpy.mockRestore()
+  })
+
+  it('removes resolved domains from storage that are not in the wallet and the address book', async () => {
+    const storage = makeStorage({
+      [ENS_OLDEST_RESOLVER.address]: {
+        ens: ENS_OLDEST_RESOLVER.name,
+        updatedAt: Date.now()
+      },
+      [ENS_OLD_RESOLVER.address]: {
+        ens: ENS_OLD_RESOLVER.name,
+        updatedAt: Date.now()
+      }
+    })
+
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage,
+      featureFlags: makeFeatureFlags(false)
+    })
+
+    await controller.init([
+      {
+        name: 'test',
+        address: ENS_OLDEST_RESOLVER.address,
+        isWalletAccount: true
+      }
+    ])
+
+    expect(controller.domains[ENS_OLDEST_RESOLVER.address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(controller.domains[ENS_OLD_RESOLVER.address]).toBeUndefined()
+  })
+
+  it('removes resolved domains from storage that are past the grace period of the ENS expiry', async () => {
+    const storage = makeStorage({
+      [ENS_OLDEST_RESOLVER.address]: {
+        ens: ENS_OLDEST_RESOLVER.name,
+        updatedAt: Date.now(),
+        ensExpiry: {
+          expiresAt: Date.now() - 1000,
+          gracePeriodEndsAt: Date.now() - 1000,
+          updatedAt: Date.now()
+        }
+      }
+    })
+
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage,
+      featureFlags: makeFeatureFlags(false)
+    })
+
+    await controller.init([
+      {
+        name: 'test',
+        address: ENS_OLDEST_RESOLVER.address,
+        isWalletAccount: true
+      }
+    ])
+
+    expect(controller.domains[ENS_OLDEST_RESOLVER.address]).toBeUndefined()
   })
 
   it('controller works without a citrea provider', async () => {
@@ -566,7 +630,6 @@ describe('Domains - ENS expiry', () => {
     jest.spyOn(ensDomainsModule, 'getEnsExpiry').mockResolvedValue(expiry)
 
     const controller = makeController(seedStaleEntry())
-    await controller.initialLoadPromise
     await controller.reverseLookup(ADDR, true, {
       privacyUpdateMode: 'whenStale',
       updateExpiry: true
@@ -586,7 +649,6 @@ describe('Domains - ENS expiry', () => {
       .mockResolvedValue({ address: ADDR, avatar: null, expiry })
 
     const controller = makeController(makeStorage({}))
-    await controller.initialLoadPromise
     await controller.resolveDomain({ domain: 'vitalik.eth' })
 
     expect(controller.domains[ADDR]!.ensExpiry).toEqual(expiry)
@@ -606,7 +668,15 @@ describe('Domains - ENS expiry', () => {
       updatedAt: Date.now()
     }
     const controller = makeController(seedStaleEntry(cachedExpiry))
-    await controller.initialLoadPromise
+
+    await controller.init([
+      {
+        name: 'test',
+        address: ADDR,
+        isWalletAccount: true
+      }
+    ])
+
     await controller.reverseLookup(ADDR, true, {
       privacyUpdateMode: 'whenStale',
       updateExpiry: true
@@ -624,7 +694,6 @@ describe('Domains - ENS expiry', () => {
     const getEnsExpirySpy = jest.spyOn(ensDomainsModule, 'getEnsExpiry')
 
     const controller = makeController(seedStaleEntry())
-    await controller.initialLoadPromise
     await controller.reverseLookup(ADDR, true, { privacyUpdateMode: 'whenStale' })
 
     expect(getEnsExpirySpy).not.toHaveBeenCalled()

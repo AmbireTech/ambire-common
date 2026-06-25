@@ -27,17 +27,18 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
+  DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAccountNetworksWithPositions,
   getAllAssetsAsHints,
-  getCanSkipUpdate,
   getCustomProviderPositions,
+  getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
-  getShouldBypassServerSideCache,
-  getUniqueMergedPositions
+  getUniqueMergedPositions,
+  mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -48,6 +49,7 @@ import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
+import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   convertApiTokenDataToTokenDataCache,
@@ -137,7 +139,10 @@ const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
-export class PortfolioController extends EventEmitter implements IPortfolioController {
+export class PortfolioController
+  extends EventEmitter<PortfolioDebugFlow>
+  implements IPortfolioController
+{
   #state: PortfolioControllerState
 
   // A queue to prevent race conditions when calling `updateSelectedAccount`.
@@ -298,17 +303,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accountAddrs.map((accountAddr) => ({
               baseCurrency,
               accountAddr,
-              forceUpdateDefi: queue.some(
-                (x) =>
-                  x.data.baseCurrency === baseCurrency &&
-                  x.data.accountAddr === accountAddr &&
-                  x.data.forceUpdateDefi
+              // When several requests for the same account+currency are batched, the most
+              // aggressive update mode wins (see `mergeDefiUpdateModes`).
+              defiUpdateMode: mergeDefiUpdateModes(
+                queue
+                  .filter(
+                    (x) =>
+                      x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
+                  )
+                  .map((x) => x.data.defiUpdateMode)
               )
             }))
           )
           .flat()
 
-        return pairs.map(({ baseCurrency, accountAddr, forceUpdateDefi }) => {
+        return pairs.map(({ baseCurrency, accountAddr, defiUpdateMode }) => {
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
@@ -323,16 +332,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           // Analytics should not be polluted with inactive extensions
           const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
 
-          // The relayer has internal cache for the defi positions. If we want to
-          // invalidate it, we need to pass this param.
-          // See `getShouldBypassServerSideCache` for more details.
-          const forceUpdateParam = forceUpdateDefi ? '&update=true' : ''
+          // This is a hack to achieve something that would require a good amount of refactoring in the portfolio
+          // To understand the problem you need to know the following information:
+          // Discovery is done with the batcher, every network is updated in parallel and customAppChain is updated
+          // in parallel with regular networks. customAppChain should be updated ONLY when AT LEAST ONE another network is updated.
+          // There is absolutely no reason to update customAppChain with default or force mode by itself. To fix this properly
+          // we have to move the logic that determines updateMode for each network BEFORE the Promise.all([]) that updates all networks
+          // in parallel and also make the call to velcro there, instead of using the batcher. This way we will know which networks have to
+          // be updated and can decide if customAppChain should be updated or not. For now, we will just update with 'cache' mode if the only
+          // network to be updated is customAppChain.
+          const isUpdatingOnlyDefiApps =
+            queueSegment.length === 1 && queueSegment[0]?.data.chainId === 'customAppChain'
+
+          // Tells velcro-v3 how fresh the defi positions must be
+          const defiParam = `&defi=${isUpdatingOnlyDefiApps ? 'cache' : defiUpdateMode}`
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}${activeParam}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${defiParam}&sigs=${accountKeysCount}${activeParam}`
 
           return { url, queueSegment }
         })
@@ -687,6 +706,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    */
   async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
+    this.debugLog(
+      'simulation',
+      `${chainId.toString()}: Overriding simulation results for ${accountAddr}`,
+      () => ({
+        accountOpId: accountOp.id
+      })
+    )
 
     const updatePromise = async () => {
       if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
@@ -814,8 +840,22 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
       // Debounce: start the 60s window from the most recent transaction, not the first
       networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+
+      this.debugLog(
+        'simulation',
+        `${chainId.toString()} Debounced scheduled update for ${accountId}`,
+        () => ({
+          bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
+          scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
+        })
+      )
       return
     }
+
+    this.debugLog('simulation', `${chainId.toString()} Scheduled update for ${accountId}`, () => ({
+      bypassServerSideCache,
+      scheduledAt: Date.now()
+    }))
 
     this.#scheduledUpdates[accountId] = [
       ...(this.#scheduledUpdates[accountId] || []),
@@ -870,6 +910,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     })
 
     if (!accountAddrToUpdate || networksToUpdate.length === 0) return
+    this.debugLog('simulation', `Discarding simulation for ${accountAddrToUpdate}`, () => ({
+      discardedOpIds: accountOps.map((op) => op.id),
+      chainIds: networksToUpdate.map((n) => n.chainId.toString())
+    }))
     await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
       accountOps: accountOpsAfterUpdate
     })
@@ -1255,39 +1299,50 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#getNonceId(account, chainId)
     )
 
-    const canSkipDefiUpdate =
-      !bypassServerSideCache &&
-      getCanSkipUpdate(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs)
-
-    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
-      // Request can be skipped altogether
-      return null
-    }
-
     // Used by getShouldBypassServerSideCache to avoid spending the server-side bypass budget
     // before the scheduled update fires (the server has a per-account cooldown)
     const hasScheduledUpdate = !!this.#scheduledUpdates[account.addr]?.find(
       (update) => update.chainId === chainId && update.bypassServerSideCache
     )
 
-    let response: ExternalPortfolioDiscoveryResponse | null = null
-    const shouldForceUpdateDefi =
-      bypassServerSideCache ||
-      getShouldBypassServerSideCache(
-        defiState,
-        !!isManualUpdate,
-        hasKeys,
-        this.defiSessionIds,
-        hasNonceChangedSinceLastUpdate,
-        hasScheduledUpdate
+    const defiUpdateMode = getDefiUpdateMode({
+      previousState: defiState,
+      bypassServerSideCache: !!bypassServerSideCache,
+      isManualUpdate: !!isManualUpdate,
+      hasKeys,
+      sessionIds: this.defiSessionIds,
+      hasNonceChangedSinceLastUpdate,
+      hasScheduledUpdate,
+      maxDataAgeMs: defiMaxDataAgeMs
+    })
+
+    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.StaleOk
+
+    // Request can be skipped altogether
+    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
+      this.debugLog(
+        'discovery',
+        `${chainId.toString()}: Skipping portfolio discovery for ${account.addr}`,
+        () => ({
+          lastUpdate: externalApiHintsResponse?.lastUpdate,
+          hasHints: externalApiHintsResponse?.hasHints,
+          isManualUpdate,
+          bypassServerSideCache,
+          hasNonceChangedSinceLastUpdate
+        })
       )
+
+      return null
+    }
+
+    let response: ExternalPortfolioDiscoveryResponse | null = null
 
     try {
       response = await this.batchedPortfolioDiscovery({
         chainId,
         accountAddr: account.addr,
         baseCurrency,
-        forceUpdateDefi: shouldForceUpdateDefi
+        defiUpdateMode
       })
 
       // Throw the error after assigning the response so we can still use the returned hints
@@ -1360,7 +1415,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             ? {
                 updatedAt: response.defi.updatedAt,
                 positions: getFormattedApiPositions(response.defi.positions),
-                isForceUpdate: shouldForceUpdateDefi
+                isForceUpdate: defiUpdateMode === DefiUpdateMode.Force
               }
             : null,
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
@@ -1402,7 +1457,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs
     )
 
-    if (canSkipUpdate) return [true, null]
+    if (canSkipUpdate) {
+      this.debugLog(
+        'update',
+        `${network.chainId.toString()} update skipped for ${account.addr}`,
+        () => ({
+          lastSuccessfulUpdate: accountState[network.chainId.toString()]?.lastSuccessfulUpdate,
+          maxDataAgeMs,
+          isManualUpdate,
+          isLoading: accountState[network.chainId.toString()]?.isLoading
+        })
+      )
+      return [true, null]
+    }
 
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
@@ -1583,7 +1650,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       !portfolioProps.bypassServerSideCache &&
       PortfolioController.#getCanSkipUpdate(accountState['defiApps'], defiMaxDataAgeMs)
 
-    if (canSkipUpdate) return
+    if (canSkipUpdate) {
+      this.debugLog('defi', 'Skipping DeFi apps update for account', () => ({
+        account: account.addr,
+        lastSuccessfulUpdate: accountState['defiApps']?.lastSuccessfulUpdate,
+        defiMaxDataAgeMs
+      }))
+      return
+    }
 
     const updateStarted = Date.now()
 
@@ -1758,6 +1832,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     learnedTokensHints.push(...defiHints)
 
+    this.debugLog(
+      'hints',
+      `${chainId.toString()}: hints for ${accountId} (${!isManualUpdate ? 'not ' : ''}enhanced with those of other accounts)`,
+      () => ({
+        specialErc20Hints,
+        specialErc721Hints,
+        learnedTokensHints,
+        learnedNftsHints
+      })
+    )
+
     return {
       specialErc20Hints,
       specialErc721Hints,
@@ -1847,9 +1932,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
-      // Set to 6 hours by default. That is because we are making a lot of
+      // Set to -1 by default, which means no update. That is because we are making a lot of
       // portfolio updates, most of which shouldn't update the defi positions.
-      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      defiMaxDataAgeMs = -1,
       isManualUpdate,
       bypassServerSideCache
     } = opts || {}
@@ -1865,6 +1950,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const accountState = this.#state[accountId]
 
     const networksToUpdate = networks || this.#networks.networks
+    this.debugLog('update', `Update queued for ${accountId}`, () => ({
+      chainIds: networksToUpdate.map((n) => n.chainId.toString()),
+      hasSimulation: !!simulation,
+      opts
+    }))
     await Promise.all([
       this.#getAdditionalPortfolio(accountId, paramsMaxDataAgeMs),
       ...networksToUpdate.map(async (network) => {
@@ -1928,6 +2018,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               disableAutoDiscovery: true,
               hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
             }
+          )
+
+          if (accountOpsToSimulate?.length)
+            this.debugLog(
+              'simulation',
+              `${network.chainId.toString()}: Simulated ${accountOpsToSimulate.length} account op(s)`,
+              () => ({
+                accountOpIds: accountOpsToSimulate.map((op) => op.id),
+                isSuccessful
+              })
+            )
+
+          this.debugLog(
+            'update',
+            `${network.chainId.toString()}: Portfolio updated on ${network.name}`,
+            () => ({
+              isSuccessful
+            })
           )
 
           // Learn tokens and nfts from the portfolio lib
@@ -2142,6 +2250,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
+    this.debugLog(
+      'learning',
+      `${chainId.toString()}: Added ERC-20 tokens to be learned`,
+      tokensToLearn
+    )
+
     this.#toBeLearnedAssets.erc20s[chainIdString] = networkToBeLearnedTokens
     return true
   }
@@ -2228,6 +2342,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           }
 
           if (tokenId) toBeLearnedAssets[collectionAddress].push(tokenId)
+
+          this.debugLog('learning', `${chainId.toString()}: Added ERC-721 to be learned`, () => ({
+            collectionAddress,
+            tokenId: tokenId.toString(),
+            accountAddr
+          }))
         })
       })
 
@@ -2318,11 +2438,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       .sort(([, timestampA], [, timestampB]) => timestampB - timestampA)
       .map(([address]) => address)
 
+    this.debugLog('learning', `${chainId.toString()}: Tokens learned for ${key}`, () => ({
+      learned: tokensWithBalance.filter((addr) => addr !== ZeroAddress),
+      currentlyTracked: Object.keys(learnedTokens).length
+    }))
+
     // Remove the oldest no longer owned tokens
     if (noLongerOwnedTokens.length > LEARNED_UNOWNED_LIMITS.erc20s) {
-      noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s).forEach((address) => {
+      const discarded = noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s)
+      discarded.forEach((address) => {
         delete learnedTokens[address]
       })
+      this.debugLog(
+        'learning',
+        `${chainId.toString()}: Discarded learned tokens for ${key}`,
+        () => ({
+          discarded,
+          limit: LEARNED_UNOWNED_LIMITS.erc20s,
+          noLongerOwned: noLongerOwnedTokens.length
+        })
+      )
     }
 
     await this.#storage.set('learnedAssets', this.#learnedAssets)

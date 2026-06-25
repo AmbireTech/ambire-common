@@ -529,21 +529,46 @@ export class ActivityController extends EventEmitter implements IActivityControl
       this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch(() => null)
   }
 
-  setDashboardBannersSeen(sessionId: string, accountAddr: string) {
+  setDashboardBannersSeen(
+    sessionId: string,
+    accountAddr: string,
+    params?: {
+      accountOpIds?: SubmittedAccountOp['id'][]
+      emitUpdate?: boolean
+      /**
+       * When true, the banners are hidden immediately, instead of awaiting the user
+       * to leave the screen
+       */
+      hideImmediately?: boolean
+    }
+  ) {
+    const { accountOpIds, emitUpdate, hideImmediately } = params || {}
     if (!sessionId.startsWith('dashboard')) return
 
     const prevBanners = this.#bannersByAccount.get(accountAddr)
     if (!prevBanners) return
 
-    const updatedBanners = prevBanners.map((b) => {
-      if (b.category === 'failed-acc-ops') {
+    let updatedBanners = prevBanners.map((b) => {
+      if (
+        b.category === 'failed-acc-ops' &&
+        (!accountOpIds ||
+          (b.meta?.accountOpsDataForNextUpdate &&
+            b.meta.accountOpsDataForNextUpdate.length === 1 &&
+            b.meta.accountOpsDataForNextUpdate.some((opData) => accountOpIds.includes(opData.id))))
+      ) {
         return { ...b, meta: { ...b.meta, seen: true } }
       }
 
       return b
     })
 
+    if (hideImmediately) {
+      updatedBanners = updatedBanners.filter((b) => !b.meta?.seen)
+    }
+
     this.#bannersByAccount.set(accountAddr, updatedBanners)
+
+    if (emitUpdate) this.emitUpdate()
   }
 
   // Reset filtered AccountsOps session.
@@ -1595,7 +1620,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       ops.map((op) => ({
         accountAddr: op.accountAddr,
         chainId: op.chainId,
-        timestamp: op.timestamp
+        timestamp: op.timestamp,
+        id: op.id
       }))
 
     for (const acc of this.#accounts.accounts) {
@@ -1631,14 +1657,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
         if (pendingBanner) {
           opsDataForNextUpdate = [
-            ...pendingBanner.meta!.accountOpsDataForNextUpdate,
+            ...(pendingBanner.meta?.accountOpsDataForNextUpdate || []),
             ...opsDataForNextUpdate
           ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
         }
 
         if (!pendingBanner && failedBanner) {
           opsDataForNextUpdate = [
-            ...failedBanner.meta!.accountOpsDataForNextUpdate,
+            ...(failedBanner.meta?.accountOpsDataForNextUpdate || []),
             ...opsDataForNextUpdate
           ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
         }
@@ -1666,7 +1692,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
       const pendingOpsWithUpdatedStatus = pendingBanner
         ? latestOps.filter((op) =>
-            pendingBanner.meta!.accountOpsDataForNextUpdate.find(
+            pendingBanner.meta!.accountOpsDataForNextUpdate?.find(
               (meta: any) =>
                 meta.accountAddr === op.accountAddr &&
                 meta.chainId === op.chainId &&
@@ -1676,7 +1702,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
         : []
 
       const failedOps = pendingOpsWithUpdatedStatus.filter(
-        (op) => op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
+        (op) =>
+          (op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected) &&
+          !op.flags?.hiddenFromFailedBanner
       )
 
       if (failedOps.length) {

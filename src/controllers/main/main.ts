@@ -20,6 +20,7 @@ import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/con
 import { ContractInfoController } from '@/controllers/contractInfo/contractInfo'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
+import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
 import { EstimationStatus } from '@/controllers/estimation/types'
@@ -54,6 +55,7 @@ import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractInfoController } from '@/interfaces/contractInfo'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
+import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
 import { IEmailVaultController } from '@/interfaces/emailVault'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
@@ -137,6 +139,8 @@ export class MainController extends EventEmitter implements IMainController {
   signAccountOpPreference: SignAccountOpPreferenceController
 
   featureFlags: IFeatureFlagsController
+
+  debug: IDebugController
 
   invite: IInviteController
 
@@ -246,6 +250,8 @@ export class MainController extends EventEmitter implements IMainController {
     this.#appVersion = appVersion
     this.fetch = fetch
     this.storage = new StorageController(this.#storageAPI, eventEmitterRegistry)
+    // Constructed early so debug-log toggles are hydrated before other controllers start logging
+    this.debug = new DebugController(this.storage, eventEmitterRegistry)
     this.signAccountOpPreference = new SignAccountOpPreferenceController({
       eventEmitterRegistry,
       storage: this.storage
@@ -728,11 +734,13 @@ export class MainController extends EventEmitter implements IMainController {
           updateExpiry: true
         })
       }
+      const THIRTY_MINUTES = 1000 * 60 * 30
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
           maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR
+          maxDataAgeMsUnused: ONE_HOUR,
+          defiMaxDataAgeMs: THIRTY_MINUTES
         })
       }
 
@@ -759,6 +767,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
     await this.contractInfo.initialLoadPromise
+    await this.addressBook.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -768,7 +777,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.selectedAccount.initialLoadPromise
-    await this.domains.initialLoadPromise
+    await this.domains.init(this.addressBook.contacts)
 
     this.updateSelectedAccountPortfolio()
     // Only passively bulk-resolve ENS for all accounts when the user opts out of
@@ -1539,7 +1548,7 @@ export class MainController extends EventEmitter implements IMainController {
     const {
       chainIds,
       isManualReload = false,
-      defiMaxDataAgeMs,
+      defiMaxDataAgeMs = 30 * 60 * 1000,
       maxDataAgeMsUnused,
       maxDataAgeMs
     } = options || {}
