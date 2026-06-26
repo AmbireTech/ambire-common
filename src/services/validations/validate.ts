@@ -311,6 +311,7 @@ export {
   isValidPassword,
   isValidURL,
   isValidHostname,
+  getTimeAgo,
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount

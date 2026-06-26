@@ -563,7 +563,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
-      defaultNetworksMode: this.networks.defaultNetworksMode
+      defaultNetworksMode: this.networks.defaultNetworksMode,
+      storage: this.storage,
+      featureFlags: this.featureFlags
     })
 
     this.contractNames = new ContractNamesController({
@@ -718,8 +720,15 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       const ONE_HOUR = 1000 * 60 * 60
+      // Passively bulk-resolving ENS for all accounts links them together, so we
+      // only do it when the user opts out of privacy. Otherwise accounts are
+      // refreshed on interaction (see DomainsController).
+      if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+        this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      } else {
+        this.domains.reverseLookup(selectedAccountAddr, true, { privacyUpdateMode: 'whenStale' })
+      }
       const THIRTY_MINUTES = 1000 * 60 * 30
-      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
@@ -752,6 +761,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
     await this.contractInfo.initialLoadPromise
+    await this.addressBook.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -760,9 +770,18 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.selectedAccount.initialLoadPromise
+    await this.domains.init(this.addressBook.contacts)
 
     this.updateSelectedAccountPortfolio()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    // Only passively bulk-resolve ENS for all accounts when the user opts out of
+    // privacy (see onPopupOpen and DomainsController for the default behaviour).
+    if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    } else if (this.selectedAccount.account?.addr) {
+      this.domains.reverseLookup(this.selectedAccount.account.addr, true, {
+        privacyUpdateMode: 'whenStale'
+      })
+    }
 
     await this.survey.initialLoadPromise
 
@@ -812,6 +831,9 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
+    // Update reverse lookup data
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.domains.reverseLookup(toAccountAddr, true, { privacyUpdateMode: 'whenStale' })
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
