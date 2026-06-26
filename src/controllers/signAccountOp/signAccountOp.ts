@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
-
 import {
   AbiCoder,
   formatEther,
@@ -403,7 +401,7 @@ export class SignAccountOpController
 
   signAndBroadcastPromise: Promise<void> | undefined
 
-  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+  private traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   #gasPriceInterval: IRecurringTimeout
 
@@ -774,8 +772,26 @@ export class SignAccountOpController
     this.humanize()
     this.learnTokens()
 
+    let lastEstimationStatus: EstimationStatus | null = null
+
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      // Retry asset discovery if the estimation managed to recover after failure
+      // An example is doing an approval and a transaction immediately after - the second
+      // transaction will fail before the approval txn is confirmed.
+      if (
+        lastEstimationStatus === EstimationStatus.Error &&
+        this.estimation.status === EstimationStatus.Success
+      ) {
+        this.setDiscoveryStatus(TraceCallDiscoveryStatus.NotStarted)
+        this.traceCall()
+      }
+
+      // Ignore the transient Loading status. estimate() emits Loading at its start,
+      // so recording it here would overwrite a remembered Error before the following
+      // Success is seen, and the Error -> Success recovery above would never be detected.
+      if (this.estimation.status !== EstimationStatus.Loading)
+        lastEstimationStatus = this.estimation.status
     })
 
     this.gasPrice.onUpdate(() => {
@@ -881,7 +897,10 @@ export class SignAccountOpController
       return false
     }
 
-    const erc7730Humanization = humanizeAccountOp(this.accountOp, { erc7730Descriptors })
+    const erc7730Humanization = humanizeAccountOp(this.accountOp, {
+      erc7730Descriptors,
+      nativeAssetSymbol: this.#network.nativeAssetSymbol
+    })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||
       !this.isCurrentHumanization(humanizationId) ||
@@ -1373,7 +1392,7 @@ export class SignAccountOpController
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
-    if (shouldTraceCall) this.#traceCall()
+    if (shouldTraceCall) this.traceCall()
 
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
@@ -1482,6 +1501,7 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = true
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
@@ -1856,7 +1876,11 @@ export class SignAccountOpController
 
     if (!dappUrls.length) return null
 
-    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls)
+    // Pass the session ID so getDappVerificationBanner can check co-sessions in the same
+    // tab/window for dangerous context (e.g. a phishing page hosting the dApp in an iframe).
+    const sessionId = this.accountOp.dappSessionId
+
+    const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls, { sessionId })
     if (!dappVerificationBanner) return null
 
     const containsPermit2 = this.accountOp.calls.some((call) => {
@@ -1993,14 +2017,14 @@ export class SignAccountOpController
   #getIsFeeOptionDisabled(feeOption: FeePaymentOption): boolean {
     const id = getFeeSpeedIdentifier(feeOption, this.accountOp.accountAddr)
     const speeds = this.feeSpeeds[id] ?? []
-    const isTransferredTokenOption = isTransferredTokenFeeOption(feeOption, this.accountOp)
 
     const coversSlow = speeds.some(
       (speed: SpeedCalc) =>
-        speed.type === FeeSpeed.Slow && feeOption.availableAmount >= speed.amount
+        speed.type === FeeSpeed.Slow &&
+        canFeeOptionCoverAmount(feeOption, this.accountOp, speed.amount)
     )
 
-    if (!coversSlow && !isTransferredTokenOption) return true
+    if (!coversSlow) return true
 
     const isExternal = this.accountKeyStoreKeys.some(
       (keyStoreKey) => keyStoreKey.addr === feeOption.paidBy && keyStoreKey.isExternallyStored
@@ -2014,11 +2038,17 @@ export class SignAccountOpController
   }
 
   #shouldSuppressTransferFeeSelectionError(feeOption?: FeePaymentOption): boolean {
-    return (
-      this.#type === 'one-click-transfer' &&
-      !!feeOption &&
-      isTransferredTokenFeeOption(feeOption, this.accountOp)
+    if (
+      this.#type !== 'one-click-transfer' ||
+      !feeOption ||
+      !isTransferredTokenFeeOption(feeOption, this.accountOp)
     )
+      return false
+
+    const feeAmount = this.accountOp.gasFeePayment?.amount
+    if (!feeAmount) return true
+
+    return canFeeOptionCoverAmount(feeOption, this.accountOp, feeAmount)
   }
 
   /**
@@ -2061,11 +2091,16 @@ export class SignAccountOpController
     return BigInt(toBigInt)
   }
 
-  async #traceCall() {
+  private async traceCall() {
+    if (this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.NotStarted) {
+      console.warn('Trace call already in progress')
+      return
+    }
+
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
     // to `SlowPendingResponse` for the newer `traceCall` invocation.
-    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+    if (this.traceCallTimeoutId) clearTimeout(this.traceCallTimeoutId)
 
     // Here, we also check the status because, in the case of re-estimation,
     // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
@@ -2075,11 +2110,18 @@ export class SignAccountOpController
 
     // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
+      // Prevent race conditions between multiple `traceCall` invocations
+      if (
+        this.traceCallDiscoveryStatus !== TraceCallDiscoveryStatus.InProgress ||
+        this.traceCallTimeoutId !== timeoutId
+      )
+        return
+
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
       this.calculateWarnings()
     }, 2000)
 
-    this.#traceCallTimeoutId = timeoutId
+    this.traceCallTimeoutId = timeoutId
 
     try {
       const state =
@@ -2114,6 +2156,13 @@ export class SignAccountOpController
           erc721s = addresses.map((address) => [address, []])
         }
       }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
+      }
+
       if (!shouldUseAccessList || accessListFailed) {
         console.log('Debug: using debug_traceCall for asset discovery')
         const { tokens, nfts } = await debugTraceCall(
@@ -2125,6 +2174,12 @@ export class SignAccountOpController
         )
         erc20s = tokens
         erc721s = nfts
+      }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
       }
 
       const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
@@ -2150,7 +2205,7 @@ export class SignAccountOpController
     }
 
     this.calculateWarnings()
-    this.#traceCallTimeoutId = null
+    this.traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
 
@@ -2341,7 +2396,7 @@ export class SignAccountOpController
           gasPrice,
           // undefined will switch the broadcast type to 0, legacy
           maxPriorityFeePerGas: maxPriorityFeePerGas > 0n ? maxPriorityFeePerGas : undefined,
-          disabled: option.availableAmount < amount
+          disabled: !canFeeOptionCoverAmount(option, this.accountOp, amount)
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)
@@ -2536,6 +2591,7 @@ export class SignAccountOpController
   #emitSigningErrorAndResetToReadyToSign({
     message,
     sendCrashReport,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     accountState
   }: {
     message: string

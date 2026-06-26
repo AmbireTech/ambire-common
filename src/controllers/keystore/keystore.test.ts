@@ -39,7 +39,7 @@ describe('KeystoreController', () => {
     expect(keystore).toBeDefined()
   })
 
-  describe('Negative cases', () => {
+  describe('Negative cases - before unlock', () => {
     suppressConsoleBeforeEach()
     test('should not unlock with non-existent secret (when no secrets exist)', async () => {
       await keystore.unlockWithSecret('password', pass)
@@ -59,7 +59,7 @@ describe('KeystoreController', () => {
     expect(await keystore.isReadyToStoreKeys).toBe(true)
   })
 
-  describe('Negative cases', () => {
+  describe('Negative cases - unlocked', () => {
     suppressConsoleBeforeEach()
     test('should not unlock with non-existent secret (when secrets exist)', async () => {
       await keystore.unlockWithSecret('playstation', '')
@@ -337,7 +337,7 @@ describe('KeystoreController', () => {
     expect(internalSigner.key.addr).toEqual(keyPublicAddress)
   })
 
-  describe('Negative cases', () => {
+  describe('Negative cases - seeds', () => {
     suppressConsoleBeforeEach()
 
     test('should not get a signer', () => {

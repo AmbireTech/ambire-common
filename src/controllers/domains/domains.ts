@@ -1,35 +1,21 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { IDomainsController } from '../../interfaces/domains'
+import { Contacts } from '@/interfaces/addressBook'
+
+import { Domains, IDomainsController, ReverseLookupOptions } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { RPCProviders } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import {
   getEnsAvatar,
   getIsNamoshiDomain,
-  NAMOSHI_UNIVERSAL_RESOLVER,
   resolveENSDomain,
-  reverseLookupEns
+  reverseLookupEns,
+  ReverseLookupResult
 } from '../../services/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-interface Domains {
-  [address: string]: {
-    ens: string | null
-    /**
-     * Namoshi domains are fully compatible with the ENS implementation, they just use a different universal resolver contract
-     * and have different TLDs (.btc and .citrea).
-     */
-    namoshi: string | null
-    /**
-     * ENS or Namoshi avatar URL
-     */
-    ensAvatar?: string | null
-    createdAt?: number
-    updatedAt?: number
-    updateFailedAt?: number
-  }
-}
 
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
@@ -43,6 +29,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   #providers: RPCProviders = {}
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
+
+  #storage?: IStorageController
+
+  #featureFlags?: IFeatureFlagsController
 
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
@@ -65,24 +55,131 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
+  #persisting = false
+
+  #persistScheduled = false
+
   constructor({
     eventEmitterRegistry,
     providers,
-    defaultNetworksMode
+    defaultNetworksMode,
+    storage,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
     defaultNetworksMode?: 'mainnet' | 'testnet'
+    // Not needed for rewards/benzin as they are used for persistence and privacy opt-outs,
+    // which are not relevant there
+    storage?: IStorageController
+    featureFlags?: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
+    this.#storage = storage
+    this.#featureFlags = featureFlags
+  }
+
+  /**
+   * Initializes the controller with the data persisted in storage
+   * As the domains in storage may be from one time requests in sign message/sign account op, we don't want
+   * to load them all in a public variable which will be sent to the UI. Instead, we filter only the domains
+   * that are in the address book, which includes accounts and address book contacts
+   */
+  async init(contacts: Contacts) {
+    if (!this.#storage) return
+
+    let domainsFromStorage: Domains = {}
+
+    try {
+      domainsFromStorage = await this.#storage.get('domainsCache', {})
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Something went wrong when loading the Domains cache. Please try again or contact support if the problem persists.',
+        level: 'silent',
+        error
+      })
+    }
+
+    domainsFromStorage = Object.fromEntries(
+      Object.entries(domainsFromStorage).filter(([addressInDomains, data]) => {
+        if (!data) return false
+
+        // @TODO: Filter out expired entries
+
+        const isInContacts = contacts.some(({ address }) => address === addressInDomains)
+
+        return isInContacts
+      })
+    )
+
+    this.domains = domainsFromStorage
+
+    this.emitUpdate()
+  }
+
+  get #keepEnsProfilesUpToDate() {
+    return !!this.#featureFlags?.isFeatureEnabled('keepEnsProfilesUpToDate')
+  }
+
+  /**
+   * Persists domains in storage. Writing in storage concurrently is not a good practice,
+   * but using a full-blown queue is overkill and not applicable for the domains controller as we
+   * are always storing this.domains. That's why this method awaits the running call (if any), skips
+   * any intermediary calls, and queues the last one (e.g., if 5 calls are made, the running one is awaited and only
+   * the fifth one is executed afterwards)
+   */
+  async #persistDomains() {
+    if (!this.#storage) return
+
+    if (this.#persisting) {
+      this.#persistScheduled = true
+      return
+    }
+
+    this.#persisting = true
+    try {
+      await this.#storage.set('domainsCache', this.domains)
+    } catch (e) {
+      console.warn('domains: failed to persist domains cache', e)
+    } finally {
+      this.#persisting = false
+      if (this.#persistScheduled) {
+        this.#persistScheduled = false
+        void this.#persistDomains()
+      }
+    }
   }
 
   async batchReverseLookup(addresses: string[]) {
-    const filteredAddresses = addresses.filter((address) => isAddress(address))
-    await Promise.all(filteredAddresses.map((address) => this.reverseLookup(address, false)))
+    const normalizedAddresses = this.#normalizeAddresses(addresses)
+    const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
+
+    if (addressesToLookup.length) {
+      const batchPromise = this.#reverseLookup(addressesToLookup, false).finally(() => {
+        addressesToLookup.forEach((address) => {
+          this.#reverseLookupPromises[address] = undefined
+        })
+      })
+
+      addressesToLookup.forEach((address) => {
+        this.#reverseLookupPromises[address] = batchPromise
+      })
+    }
+
+    // Await both the freshly started lookups and any lookups for the requested
+    // addresses that are already in flight (e.g. from an earlier batch or a
+    // single reverseLookup), so callers never resolve before the data is ready.
+    const pendingPromises = normalizedAddresses
+      .map((address) => this.#reverseLookupPromises[address])
+      .filter((promise): promise is Promise<void> => !!promise)
+
+    if (!pendingPromises.length) return
+
+    await Promise.all(pendingPromises)
 
     this.emitUpdate()
   }
@@ -131,9 +228,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     await resolveENSDomain({
       provider: provider,
       domain,
-      options: isNamoshiDomain
-        ? { universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER }
-        : undefined
+      options: { isNamoshiDomain }
     })
       .then(async ({ address, avatar }) => {
         if (address) {
@@ -151,6 +246,11 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         this.resolveDomainsStatus[domain] = 'RESOLVED'
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
+
+        // Do it after updating the status to not slow down the UI
+        if (address) {
+          await this.#persistDomains()
+        }
       })
       .catch(async (e) => {
         console.error(`Failed to resolve ENS domain: ${domain}`, e)
@@ -189,24 +289,95 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
   }
 
-  async reverseLookup(address: string, emitUpdate = true) {
-    if (this.#reverseLookupPromises[address]) {
-      await this.#reverseLookupPromises[address]
+  async reverseLookup(address: string, emitUpdate = true, opts?: ReverseLookupOptions) {
+    if (!isAddress(address)) return
 
+    const checksummedAddress = getAddress(address)
+
+    // If a lookup for this address is already in flight (e.g. via
+    // batchReverseLookup or a concurrent reverseLookup), await it instead of
+    // starting a duplicate, so the caller resolves only once the data is ready.
+    const inFlightPromise = this.#reverseLookupPromises[checksummedAddress]
+    if (inFlightPromise) {
+      await inFlightPromise
       return
     }
 
-    this.#reverseLookupPromises[address] = this.#reverseLookup(address, emitUpdate).finally(() => {
-      this.#reverseLookupPromises[address] = undefined
+    const addressToLookup = this.#getAddressesToLookup([checksummedAddress], opts)[0]
+
+    if (!addressToLookup) return
+
+    this.#reverseLookupPromises[addressToLookup] = this.#reverseLookup(
+      [addressToLookup],
+      emitUpdate
+    ).finally(() => {
+      this.#reverseLookupPromises[addressToLookup] = undefined
     })
 
-    await this.#reverseLookupPromises[address]
+    await this.#reverseLookupPromises[addressToLookup]
+  }
+
+  #normalizeAddresses(addresses: string[]) {
+    return [
+      ...new Set(
+        addresses
+          .map((address) => {
+            try {
+              return getAddress(address)
+            } catch {
+              return undefined
+            }
+          })
+          .filter((v): v is string => !!v)
+      )
+    ]
+  }
+
+  #isPastTtl(entry: Domains[string] | undefined) {
+    if (!entry) return true
+
+    if (entry?.updateFailedAt)
+      return Date.now() - entry.updateFailedAt > PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+
+    return Date.now() - (entry?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+  }
+
+  #getAddressesToLookup(addresses: string[], opts?: ReverseLookupOptions) {
+    // The `keepEnsProfilesUpToDate` opt-out (off by default = privacy) forces TTL
+    // refreshes everywhere; otherwise the per-call mode decides, defaulting to `whenStale`.
+    const mode = this.#keepEnsProfilesUpToDate
+      ? 'whenStale'
+      : (opts?.privacyUpdateMode ?? 'whenStale')
+
+    if (mode === 'never') return []
+
+    return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
+      const existing = this.domains[checksummedAddress]
+
+      return (
+        this.#isPastTtl(existing) &&
+        !this.loadingAddresses.includes(checksummedAddress) &&
+        !this.#reverseLookupPromises[checksummedAddress]
+      )
+    })
+  }
+
+  #setLookupFailure(address: string) {
+    const hasBeenResolvedOnce = !!this.domains[address]?.createdAt
+
+    if (hasBeenResolvedOnce) {
+      this.domains[address]!.updateFailedAt = Date.now()
+    } else {
+      this.domains[address] = { ens: null, namoshi: null, updateFailedAt: Date.now() }
+    }
   }
 
   /**
-   * Resolves the ENS names for an address if such exist.
+   * Resolves ENS names for one or multiple addresses.
    */
-  async #reverseLookup(address: string, emitUpdate = true) {
+  async #reverseLookup(addressesToLookup: string[], emitUpdate = true) {
+    if (!addressesToLookup.length) return
+
     const ethereumProvider =
       this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
     const citreaProvider = this.#providers['4114']
@@ -219,42 +390,21 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       })
       return
     }
-    const checksummedAddress = getAddress(address)
 
-    const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt
-
-    const hasExpired = hasLastUpdateFailed
-      ? Date.now() - (this.domains[checksummedAddress]?.updateFailedAt ?? 0) >
-        PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
-      : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
-
-    if (!hasExpired || this.loadingAddresses.includes(checksummedAddress)) return
-
-    this.loadingAddresses.push(checksummedAddress)
+    this.loadingAddresses.push(...addressesToLookup)
     this.emitUpdate()
 
     try {
-      let ensAvatar: string | undefined | null
-
-      const [ens, namoshi] = await Promise.all([
-        withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider), {
+      const [ensByAddress, namoshiByAddress] = await Promise.all([
+        withTimeout(() => reverseLookupEns(addressesToLookup, ethereumProvider), {
           timeoutMs: 15000
         }),
         withTimeout(
           () => {
-            if (!citreaProvider) return Promise.resolve(null)
+            if (!citreaProvider) return Promise.resolve<ReverseLookupResult>({})
 
-            return reverseLookupEns(checksummedAddress, citreaProvider, {
-              universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
-            }).catch((e) => {
-              const shortMessage = e?.cause?.shortMessage ?? e?.cause?.message ?? ''
-
-              // Ignore, the user simply doesn't have a namoshi domain
-              if (typeof shortMessage === 'string' && shortMessage.includes('data="0x77209fe8'))
-                return null
-
-              console.warn('reverse Namoshi lookup failed', e)
-              return null
+            return reverseLookupEns(addressesToLookup, citreaProvider, {
+              isNamoshiDomain: true
             })
           },
           {
@@ -263,55 +413,86 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         )
       ])
 
-      if (ens) {
-        // We need the ens name to resolve the avatar
-        ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider), {
-          timeoutMs: 15000
-        })
-        this.domainToAddresses[ens] = { address: checksummedAddress, type: 'ens' }
-      } else if (namoshi && citreaProvider) {
-        ensAvatar = await withTimeout(
-          () =>
-            getEnsAvatar(namoshi, citreaProvider, {
-              universalResolverAddress: NAMOSHI_UNIVERSAL_RESOLVER
-            }),
-          {
-            timeoutMs: 15000
-          }
-        )
-        this.domainToAddresses[namoshi] = { address: checksummedAddress, type: 'namoshi' }
-      }
+      const resolved = addressesToLookup.map((address) => {
+        const ensEntry = ensByAddress[address]
+        if (!ensEntry || ensEntry.failed) return { address, failed: true as const }
 
-      const now = Date.now()
-      const existing = this.domains[checksummedAddress]
-      this.domains[checksummedAddress] = {
-        ens,
-        namoshi,
-        ensAvatar,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now
+        const namoshiEntry = namoshiByAddress[address]
+        return {
+          address,
+          failed: false as const,
+          ens: ensEntry.name,
+          namoshi: namoshiEntry && !namoshiEntry.failed ? namoshiEntry.name : null
+        }
+      })
+
+      // Avatars can't be resolved in a batch because there is additional handling
+      // for NFT/ipfs avatars. It's not that big of a deal anyway, because most accounts
+      // won't have ENS names
+      const avatarEntries = await Promise.all(
+        resolved.map(async (entry) => {
+          if (entry.failed) return [entry.address, null] as const
+
+          const ensName = entry.ens
+          if (ensName) {
+            const avatar = await withTimeout(() => getEnsAvatar(ensName, ethereumProvider), {
+              timeoutMs: 15000
+            }).catch(() => null)
+            return [entry.address, avatar] as const
+          }
+
+          const namoshiName = entry.namoshi
+          if (namoshiName && citreaProvider) {
+            const avatar = await withTimeout(
+              () => getEnsAvatar(namoshiName, citreaProvider, { isNamoshiDomain: true }),
+              { timeoutMs: 15000 }
+            ).catch(() => null)
+            return [entry.address, avatar] as const
+          }
+
+          return [entry.address, null] as const
+        })
+      )
+      const avatarByAddress = Object.fromEntries(avatarEntries)
+
+      for (const entry of resolved) {
+        if (entry.failed) {
+          this.#setLookupFailure(entry.address)
+          continue
+        }
+
+        const { address, ens, namoshi } = entry
+
+        if (ens) {
+          this.domainToAddresses[ens] = { address, type: 'ens' }
+        } else if (namoshi && citreaProvider) {
+          this.domainToAddresses[namoshi] = { address, type: 'namoshi' }
+        }
+
+        const now = Date.now()
+        const existing = this.domains[address]
+        this.domains[address] = {
+          ens,
+          namoshi,
+          ensAvatar: avatarByAddress[address] ?? null,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now
+        }
       }
     } catch (e: any) {
-      const shortMessage = e?.cause?.shortMessage ?? e?.cause?.message ?? ''
-      // Fail silently with a console error, no biggie, since that would get retried
-      // Ignore, the user simply doesn't have a namoshi domain
-      if (typeof shortMessage !== 'string' || !shortMessage.includes('data="0x77209fe8')) {
-        console.warn('reverse ENS/Namoshi lookup failed for address', checksummedAddress, e)
-      }
+      console.warn('reverse ENS/Namoshi lookup failed', e)
 
-      const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
-      if (hasBeenResolvedOnce) {
-        this.domains[checksummedAddress]!.updateFailedAt = Date.now()
-      } else {
-        this.domains[checksummedAddress] = { ens: null, namoshi: null, updateFailedAt: Date.now() }
-      }
+      addressesToLookup.forEach((address) => this.#setLookupFailure(address))
+    } finally {
+      this.loadingAddresses = this.loadingAddresses.filter(
+        (loadingAddress) => !addressesToLookup.includes(loadingAddress)
+      )
+
+      if (emitUpdate) this.emitUpdate()
+
+      // Don't slow down the UI
+      await this.#persistDomains()
     }
-
-    this.loadingAddresses = this.loadingAddresses.filter(
-      (loadingAddress) => loadingAddress !== checksummedAddress
-    )
-
-    if (emitUpdate) this.emitUpdate()
   }
 
   toJSON() {

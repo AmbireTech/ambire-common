@@ -873,7 +873,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#fetchSupportedChainsIfNeeded()
 
     if (activeRouteIdToDelete) {
-      this.removeActiveRoute(activeRouteIdToDelete, false)
+      await this.removeFailedRouteAndHideBanner(activeRouteIdToDelete)
     }
 
     this.#emitUpdateIfNeeded()
@@ -983,6 +983,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       toChainId?: bigint | number
       toSelectedTokenAddr?: SwapAndBridgeToToken['address'] | null
       routePriority?: 'output' | 'time'
+      activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId']
     },
     updateProps?: {
       emitUpdate?: boolean
@@ -996,7 +997,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmountFieldMode,
       toChainId,
       shouldSetMaxAmount,
-      routePriority
+      routePriority,
+      activeRouteIdToDelete
     } = props
 
     const fromSelectedToken = props.fromSelectedToken
@@ -1101,6 +1103,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.quote = null
         this.quoteRoutesStatuses = {}
       }
+    }
+
+    if (activeRouteIdToDelete) {
+      await this.removeFailedRouteAndHideBanner(activeRouteIdToDelete)
     }
 
     if (emitUpdate) this.#emitUpdateIfNeeded()
@@ -1256,7 +1262,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           toSelectedTokenAddr: preselectedToToken?.address,
           toChainId:
             preselectedToToken?.chainId ??
-            (preselectedToken ? nextFromSelectedToken?.chainId : undefined),
+            (!this.toSelectedToken ? nextFromSelectedToken?.chainId : undefined),
           fromAmount
         },
         {
@@ -2247,6 +2253,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /**
+   * Removes failed active routes and hides the failed txn banner
+   */
+  async removeFailedRouteAndHideBanner(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']) {
+    const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
+    if (!route) return
+
+    if (!route.identifiedBy || !route.route) return
+
+    const op = this.#activity.findByIdentifiedBy(
+      route.identifiedBy,
+      route.sender,
+      BigInt(route.route.fromChainId)
+    )
+
+    if (op) {
+      this.#activity.setDashboardBannersSeen('dashboard', route.sender, {
+        accountOpIds: [op.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+    }
+
+    this.removeActiveRoute(activeRouteId)
+  }
+
+  /**
    * Find the next route in line and try to re-estimate with it
    */
   async onEstimationFailure(activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId']) {
@@ -2615,9 +2647,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       nonce: accountState.nonce,
       signature: null,
       calls,
-      flags: {
-        hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
-      },
       meta: {
         swapTxn: userTxn,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),

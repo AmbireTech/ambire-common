@@ -33,7 +33,7 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
-import { IPhishingController } from '../../interfaces/phishing'
+import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -295,7 +295,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
       const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
-        (d) => !!d.blacklisted && ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
+        (d) =>
+          !d.blacklisted ||
+          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
+          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
+          // suspicious hosting pattern, so existing entries are migrated on startup.
+          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
+            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
       )
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -390,6 +396,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
+        accountPreferences: prevStoredDapp?.accountPreferences,
         grantedPermissionId: prevStoredDapp?.grantedPermissionId,
         grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
       }
@@ -428,7 +435,8 @@ export class DappsController extends EventEmitter implements IDappsController {
           favorite: prevStoredDapp?.favorite ?? false,
           blacklisted: 'LOADING',
           twitter: pd.twitter || null,
-          geckoId: null
+          geckoId: null,
+          accountPreferences: prevStoredDapp?.accountPreferences
         })
       }
     }
@@ -518,6 +526,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
+
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
     return this.#createDappSession({ windowId, tabId, url, wcTopic })
@@ -746,12 +755,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     if (existing) {
       const mergedSources = mergeSource(existing.connectedSources, source)
-      this.updateDapp(dapp.id, {
+      const dappUpdate: Partial<Dapp> = {
         chainId: dapp.chainId,
         connectedSources: mergedSources,
-        isConnected: mergedSources.length > 0,
-        accountPreferences: dapp.accountPreferences
-      })
+        isConnected: mergedSources.length > 0
+      }
+
+      if (dapp.accountPreferences) dappUpdate.accountPreferences = dapp.accountPreferences
+
+      this.updateDapp(dapp.id, dappUpdate)
       return
     }
 
@@ -955,6 +967,41 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  async disconnectAllDapps(source?: ConnectionSource): Promise<Dapp[]> {
+    if (!this.isReady) return []
+
+    const connectedDapps = this.dapps.filter((dapp) => dapp.isConnected)
+    if (!connectedDapps.length) return []
+
+    for (const dapp of connectedDapps) {
+      const existing = this.#dapps.get(dapp.id)
+      if (!existing) continue
+
+      const current = existing.connectedSources ?? []
+      if (source && !current.includes(source)) continue
+
+      const nextSources = source ? current.filter((s) => s !== source) : []
+
+      await this.broadcastDappSessionEvent('disconnect', undefined, dapp.id, false, source)
+
+      // Mirror `updateDapp`: a custom dapp that loses its last source is removed.
+      if (existing.isCustom && nextSources.length === 0) {
+        this.#dapps.delete(dapp.id)
+      } else {
+        this.#dapps.set(dapp.id, {
+          ...existing,
+          connectedSources: nextSources,
+          isConnected: nextSources.length > 0
+        })
+      }
+    }
+
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    this.emitUpdate()
+
+    return connectedDapps
+  }
+
   removeDapp(id: string) {
     if (!this.isReady) return
 
@@ -1037,17 +1084,28 @@ export class DappsController extends EventEmitter implements IDappsController {
           delete this.dappToConnect.accountPreferences
           this.emitUpdate()
 
+          const session = dappPromises[0].session
+
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
+            const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+
+            // Check all other sessions in the same tab/window for a dangerous context
+            // (e.g. a phishing page hosting the dApp in an iframe). Context status is
+            // not stored in #dapps so the dApp's global status stays uncontaminated.
+            const contextStatus = this.#getTabContextStatus(session)
+            // BLACKLISTED on the dApp itself always wins over any session context status.
+            const effectiveStatus =
+              intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
+
             if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
-              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
-              this.dappToConnect.blacklisted = status
+              this.dappToConnect.blacklisted = effectiveStatus
             }
 
+            // Update #dapps with intrinsic status only — never the context-derived one.
             const existingDapp = this.#dapps.get(dapp.id)
-            if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
-              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
-              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
+            if (existingDapp && existingDapp.blacklisted !== intrinsicStatus) {
+              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: intrinsicStatus })
             }
 
             this.emitUpdate()
@@ -1121,33 +1179,79 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
+   * Returns the highest-priority dangerous status from any OTHER session sharing the same
+   * tab/window as `session`. BLACKLISTED takes priority over SUSPICIOUS_HOSTING.
+   *
+   * This detects phishing pages that host a legitimate dApp in an iframe: the legitimate
+   * dApp's own session looks clean, but the phishing page's session (e.g. sites.google.com)
+   * is in the same tab and has SUSPICIOUS_HOSTING status.
+   *
+   * Returns `undefined` if no dangerous co-session is found, or if the status cannot yet
+   * be determined (phishing DB not loaded and domain not in the static list).
+   */
+  #getTabContextStatus(session: Session): BlacklistedStatus | undefined {
+    for (const s of Object.values(this.dappSessions)) {
+      if (
+        s.sessionId === session.sessionId ||
+        s.tabId !== session.tabId ||
+        s.windowId !== session.windowId
+      ) {
+        continue
+      }
+      const status = this.#phishing.getDomainBlacklistedStatus(s.origin)
+      // Whether the co-session's domain is BLACKLISTED or SUSPICIOUS_HOSTING, the threat
+      // is the same for this session: dangerous hosting context. Always return SUSPICIOUS_HOSTING
+      // — BLACKLISTED belongs to the co-session's own domain, not to this dApp.
+      if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'
+    }
+    return undefined
+  }
+
+  /**
    * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if none apply.
    *
    * Priority order:
-   * 1) dApp verification in progress (`LOADING`)
-   * 2) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
-   * 3) dApp is blacklisted (`BLACKLISTED`)
-   * 4) dApp is verified but not in the default catalog
+   * 1) dApp is blacklisted (`BLACKLISTED`)
+   * 2) dApp is hosted on a suspicious user-content platform (`SUSPICIOUS_HOSTING`)
+   * 3) dApp verification in progress (`LOADING`)
+   * 4) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
+   * 5) dApp is verified but not in the default catalog
    *
    * Pass `includeDappNamesInText: false` in single-dApp flows (e.g. SignMessage),
    * where appending the dApp names in the banner text is redundant.
    */
   getDappVerificationBanner(
     dappUrls: string[],
-    { includeDappNamesInText = true }: { includeDappNamesInText?: boolean } = {}
+    {
+      includeDappNamesInText = true,
+      sessionId
+    }: { includeDappNamesInText?: boolean; sessionId?: string } = {}
   ): DappVerificationBanner | null {
     const validDappUrls = dappUrls
       .map((url) => url?.toLowerCase())
       .filter((url): url is string => !!url)
     if (!validDappUrls.length) return null
 
+    const sessionForId = sessionId ? this.dappSessions[sessionId] : undefined
+    const contextStatus = sessionForId ? this.#getTabContextStatus(sessionForId) : undefined
+
     const dappVerificationData = validDappUrls.map((url) => {
       const id = getDappIdFromUrl(url)
       const dapp = this.#dapps.get(id)
 
+      // BLACKLISTED on the dApp itself always wins over any session context status.
+      const intrinsic = dapp?.blacklisted
       return {
         id,
-        status: dapp?.blacklisted,
+        // BLACKLISTED on the dApp itself always wins. While the initial storage load is still
+        // pending, #dapps may be empty, so a missing record/status doesn't mean verification
+        // failed - report LOADING instead (e.g. a sign request right after a service worker wake-up).
+        status:
+          intrinsic === 'BLACKLISTED'
+            ? 'BLACKLISTED'
+            : this.initialLoadPromise
+              ? 'LOADING'
+              : (contextStatus ?? intrinsic),
         name: dapp?.name || new URL(url).hostname
       }
     })
@@ -1179,7 +1283,35 @@ export class DappsController extends EventEmitter implements IDappsController {
       return !!storedDapp && !storedDapp.isCustom
     }
 
-    // 1) dApp verification in progress
+    // 1) dApp is blacklisted
+    const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
+    if (blacklistedDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+        type: 'error',
+        text: withOptionalDappNames(
+          "This app didn't pass our safety check. Proceed at your own risk.",
+          blacklistedDappNames
+        )
+      }
+    }
+
+    // 2) dApp is hosted on a user-content platform never used by legitimate DeFi protocols
+    const suspiciousHostingDappNames = getDappNamesByPredicate(
+      (dapp) => dapp.status === 'SUSPICIOUS_HOSTING'
+    )
+    if (suspiciousHostingDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+        type: 'warning',
+        text: withOptionalDappNames(
+          'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
+          '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
+        )
+      }
+    }
+
+    // 3) dApp verification in progress
     const loadingDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
     if (loadingDappNames.length) {
       return {
@@ -1192,7 +1324,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       }
     }
 
-    // 2) dApp verification failed / unknown
+    // 4) dApp verification failed / unknown
     const failedToVerifyDappNames = getDappNamesByPredicate(
       (dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status
     )
@@ -1207,20 +1339,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       }
     }
 
-    // 3) dApp is blacklisted
-    const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
-    if (blacklistedDappNames.length) {
-      return {
-        id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
-        type: 'error',
-        text: withOptionalDappNames(
-          "This app didn't pass our safety check. Proceed at your own risk.",
-          blacklistedDappNames
-        )
-      }
-    }
-
-    // 4) dApp is not in the default catalog
+    // 5) dApp is not in the default catalog
     const notInCatalogDappNames = getDappNamesByPredicate(
       (dapp) => dapp.status === 'VERIFIED' && !isDappInDefaultCatalog(dapp.id)
     )
