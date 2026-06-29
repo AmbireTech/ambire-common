@@ -11,4 +11,4 @@ export type PortfolioDebugFlow =
   | 'blacklist'
 
 // Used only in the lib
-export const portfolioDebugLog = createScopedDebugLogger<PortfolioDebugFlow>('PortfolioController')
+export const portfolioDebugLog = createScopedDebugLogger('PortfolioController')

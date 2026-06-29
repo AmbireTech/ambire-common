@@ -143,12 +143,11 @@ export default class EventEmitter<DebugFlow extends string = string> {
   /** Per-controller gated debug log. No-op unless this controller's namespace is
    *  toggled on via DebugController. */
   protected debugLog(
-    flow: DebugFlow,
     message: string,
     payload?: unknown | (() => unknown),
-    options?: DebugLogOptions
+    options?: DebugLogOptions & { flow?: DebugFlow }
   ): void {
-    moduleDebugLog(this.name, flow, message, payload, options)
+    moduleDebugLog(this.name, message, payload, options)
   }
 
   protected emitError(error: ErrorRef) {
