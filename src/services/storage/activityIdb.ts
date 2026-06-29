@@ -38,11 +38,6 @@ function deserializeOp(serialized: string): SubmittedAccountOp {
   }) as SubmittedAccountOp
 }
 
-/**
- * One IDB row per submitted account op (v2 schema).
- * keyPath: ['accountAddr', 'chainId', 'id']
- * index 'by-account-chain-timestamp': ['accountAddr', 'chainId', 'timestamp']
- */
 interface IdbAccountOpRow {
   accountAddr: string
   chainId: string // bigint converted to string for IDB compatibility
@@ -52,33 +47,23 @@ interface IdbAccountOpRow {
   serializedOp: string // JSON.stringify with bigint→string replacement
 }
 
-// The highest unicode character — used as a range upper bound to select all keys
+// The highest BMP Unicode character — used as a range upper bound to select all keys
 // that start with a given prefix, without matching the prefix itself as a key.
-const RANGE_HIGH = '￿'
+const RANGE_HIGH = '\uffff'
 
-/**
- * IndexedDB-backed storage for account operations — v2 row-per-op schema.
- *
- * One IDB record per SubmittedAccountOp, indexed by timestamp so that
- * loadStartupOps() can use a cursor to fetch only the needed subset instead of
- * reading the full history for every (account, chain).
- *
- * Extends BaseIdbStore for common IDB operations and error handling.
- */
 export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStorage {
   constructor() {
     super({
-      dbName: 'ambire-activity',
+      dbName: 'ambire',
       storeName: 'accountsOps',
       keyPath: ['accountAddr', 'chainId', 'id'],
-      dbVersion: 3
+      dbVersion: 1
     })
   }
 
   /**
-   * Override doInit to create the object store with the compound keyPath and
-   * the 'by-account-chain-timestamp' index. Any existing store from an older
-   * schema version is dropped — no data migration.
+   * Override doInit to create the object store with the compound keyPath.
+   * Any existing store from an older schema version is dropped — no data migration.
    */
   protected doInit(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -104,10 +89,7 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
           db.deleteObjectStore(this.config.storeName)
         }
 
-        const store = db.createObjectStore(this.config.storeName, {
-          keyPath: this.config.keyPath
-        })
-        store.createIndex('by-account-chain-timestamp', ['accountAddr', 'chainId', 'timestamp'])
+        db.createObjectStore(this.config.storeName, { keyPath: this.config.keyPath })
         console.log(`[BaseIdbStore] Created store "${this.config.storeName}"`)
       }
     })
@@ -118,86 +100,48 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
   // ──────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Load minimal startup dataset using a cursor on 'by-account-chain-timestamp'
-   * (newest-first). For each (account, chain) group we collect:
-   *   - All pending ops (BroadcastedButNotConfirmed | Pending)
-   *   - Up to STARTUP_RECENT_OPS_LIMIT finalized ops
-   * Once a group has enough finalized ops the cursor jumps to the next chain.
+   * Load minimal startup dataset: all pending ops + up to STARTUP_RECENT_OPS_LIMIT
+   * finalized ops per (account, chain). Reads all rows then filters in JS.
    */
   async loadStartupOps(): Promise<InternalAccountsOps> {
     await this.init()
 
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction([this.config.storeName], 'readonly')
-      const store = tx.objectStore(this.config.storeName)
-      const index = store.index('by-account-chain-timestamp')
+      const request = tx.objectStore(this.config.storeName).getAll()
 
-      // 'prev' gives us newest first within each (accountAddr, chainId) group
-      const cursorRequest = index.openCursor(null, 'prev')
-
-      const result: InternalAccountsOps = {}
-      // Tracks how many finalized ops we've collected per group key
-      const finalizedCount = new Map<string, number>()
-      // Accumulates rows before we sort and deserialize at the end
-      const rowsByGroup = new Map<string, IdbAccountOpRow[]>()
-
-      let totalRecords = 0
-
-      cursorRequest.onerror = () => {
-        console.error('[ActivityIdbStorage] loadStartupOps cursor error', cursorRequest.error)
-        reject(cursorRequest.error)
+      request.onerror = () => {
+        console.error('[ActivityIdbStorage] loadStartupOps error', request.error)
+        reject(request.error)
       }
 
-      cursorRequest.onsuccess = () => {
-        const cursor = cursorRequest.result as IDBCursorWithValue | null
+      request.onsuccess = () => {
+        const rows = (request.result as IdbAccountOpRow[]).sort(
+          (a, b) => b.timestamp - a.timestamp
+        )
 
-        if (!cursor) {
-          // Cursor exhausted — build the result object
-          let totalOps = 0
-          for (const [groupKey, rows] of rowsByGroup) {
-            // Sort descending by timestamp (cursor already delivered newest-first
-            // within a chain, but groups may interleave so re-sort to be safe)
-            rows.sort((a, b) => b.timestamp - a.timestamp)
-            const [accountAddr, chainIdStr] = groupKey.split(':')
-            if (!result[accountAddr]) result[accountAddr] = {}
-            result[accountAddr][chainIdStr] = rows.map((r) => deserializeOp(r.serializedOp))
-            totalOps += rows.length
-          }
-          console.log(
-            `[ActivityIdbStorage] loadStartupOps complete: ${totalRecords} records, ${totalOps} ops loaded`
-          )
-          resolve(result)
-          return
+        const result: InternalAccountsOps = {}
+        const finalizedCount = new Map<string, number>()
+
+        for (const row of rows) {
+          const isPending =
+            row.status === AccountOpStatus.BroadcastedButNotConfirmed ||
+            row.status === AccountOpStatus.Pending
+          const groupKey = `${row.accountAddr}:${row.chainId}`
+          const count = finalizedCount.get(groupKey) ?? 0
+
+          if (!isPending && count >= STARTUP_RECENT_OPS_LIMIT) continue
+
+          if (!result[row.accountAddr]) result[row.accountAddr] = {}
+          const chainMap = result[row.accountAddr]!
+          if (!chainMap[row.chainId]) chainMap[row.chainId] = []
+          chainMap[row.chainId]!.push(deserializeOp(row.serializedOp))
+
+          if (!isPending) finalizedCount.set(groupKey, count + 1)
         }
 
-        const row = cursor.value as IdbAccountOpRow
-        totalRecords++
-
-        const groupKey = `${row.accountAddr}:${row.chainId}`
-        const isPending =
-          row.status === AccountOpStatus.BroadcastedButNotConfirmed ||
-          row.status === AccountOpStatus.Pending
-
-        if (isPending) {
-          // Always include pending ops — just collect and advance
-          if (!rowsByGroup.has(groupKey)) rowsByGroup.set(groupKey, [])
-          rowsByGroup.get(groupKey)!.push(row)
-          cursor.continue()
-          return
-        }
-
-        // Finalized op
-        const count = finalizedCount.get(groupKey) ?? 0
-        if (count < STARTUP_RECENT_OPS_LIMIT) {
-          if (!rowsByGroup.has(groupKey)) rowsByGroup.set(groupKey, [])
-          rowsByGroup.get(groupKey)!.push(row)
-          finalizedCount.set(groupKey, count + 1)
-        }
-        // Always advance without a key argument — cursor.continue(key) in 'prev'
-        // direction requires the key to be strictly less than the current position,
-        // so the chainId + RANGE_HIGH skip trick only works in 'next' direction.
-        // Saturated groups are skipped in JS above; we still iterate their rows.
-        cursor.continue()
+        console.log(`[ActivityIdbStorage] loadStartupOps: loaded from ${rows.length} rows`)
+        resolve(result)
       }
     })
   }
@@ -282,7 +226,7 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
 
       for (const { accountAddr, chainId, ops } of records) {
         const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
-        this.#writeRecordToStore(store, accountAddr, chainIdStr, ops)
+        this.#writeRecordToStore(store, accountAddr, chainIdStr, this.#dedupeOpsById(ops))
       }
 
       tx.onerror = () => {
@@ -339,8 +283,8 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
   }
 
   /**
-   * One-time migration: import all ops from chrome.storage.local into IDB.
-   * After successful import, the caller should remove the key from chrome.storage.local.
+   * One-time migration: import all ops from legacy blob storage into IDB.
+   * After successful import, the caller should remove the key from legacy storage.
    */
   async migrateFromStorage(data: InternalAccountsOps): Promise<void> {
     const records = Object.entries(data).flatMap(([accountAddr, chainMap]) =>
@@ -379,47 +323,6 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     })
   }
 
-  /**
-   * Debug: dump all data in the database without trimming (for testing only).
-   */
-  async debugDumpAll(): Promise<InternalAccountsOps> {
-    await this.init()
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction([this.config.storeName], 'readonly')
-      const store = tx.objectStore(this.config.storeName)
-      const request = store.getAll()
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const rows = (request.result || []) as IdbAccountOpRow[]
-        const result: InternalAccountsOps = {}
-
-        for (const row of rows) {
-          if (!result[row.accountAddr]) result[row.accountAddr] = {}
-          if (!result[row.accountAddr][row.chainId]) result[row.accountAddr][row.chainId] = []
-          result[row.accountAddr][row.chainId].push(deserializeOp(row.serializedOp))
-        }
-
-        // Sort each group descending by timestamp
-        for (const chainMap of Object.values(result)) {
-          for (const ops of Object.values(chainMap)) {
-            ops.sort((a, b) => b.timestamp - a.timestamp)
-          }
-        }
-
-        for (const [accountAddr, chainMap] of Object.entries(result)) {
-          for (const [chainId, ops] of Object.entries(chainMap)) {
-            console.log(`[ActivityIdbStorage] DEBUG: ${accountAddr}:${chainId} = ${ops.length} ops`)
-          }
-        }
-
-        console.log(`[ActivityIdbStorage] DEBUG dump complete: ${rows.length} rows`)
-        resolve(result)
-      }
-    })
-  }
-
   // ──────────────────────────────────────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────────────────────────────────────
@@ -431,10 +334,28 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
   ): void {
     // Delete existing rows for this (account, chain), then insert fresh ones
-    store.delete(IDBKeyRange.bound([accountAddr, chainIdStr, ''], [accountAddr, chainIdStr, RANGE_HIGH]))
+    store.delete(
+      IDBKeyRange.bound([accountAddr, chainIdStr, ''], [accountAddr, chainIdStr, RANGE_HIGH])
+    )
     for (const op of ops) {
       store.put(this.#opToRow(accountAddr, chainIdStr, op))
     }
+  }
+
+  #dedupeOpsById(
+    ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
+  ): (SubmittedAccountOp | SubmittedAccountOpLike)[] {
+    const deduped = new Map<string, SubmittedAccountOp | SubmittedAccountOpLike>()
+
+    for (const op of ops) {
+      if (typeof op.id !== 'string' || !op.id) {
+        console.warn('[ActivityIdbStorage] Skipping op without a valid id', op)
+        continue
+      }
+      deduped.set(op.id, op)
+    }
+
+    return Array.from(deduped.values())
   }
 
   #opToRow(
@@ -442,12 +363,24 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     chainIdStr: string,
     op: SubmittedAccountOp | SubmittedAccountOpLike
   ): IdbAccountOpRow {
+    if (typeof op.id !== 'string' || !op.id) {
+      throw new Error('[ActivityIdbStorage] Cannot store op without a valid id')
+    }
+
+    if (typeof op.timestamp !== 'number') {
+      throw new Error(`[ActivityIdbStorage] Cannot store op ${op.id} without a valid timestamp`)
+    }
+
+    if (op.status === undefined) {
+      throw new Error(`[ActivityIdbStorage] Cannot store op ${op.id} without a valid status`)
+    }
+
     return {
       accountAddr,
       chainId: chainIdStr,
-      id: (op as any).id as string,
-      timestamp: (op as any).timestamp as number,
-      status: (op as any).status as AccountOpStatus,
+      id: op.id,
+      timestamp: op.timestamp,
+      status: op.status,
       serializedOp: serializeOp(op)
     }
   }

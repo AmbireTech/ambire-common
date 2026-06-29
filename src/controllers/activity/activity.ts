@@ -9,7 +9,11 @@ import {
 import { ActivityIdbStorage } from '@/services/storage/activityIdb'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
-import { IActivityController, IActivityIdbStorage, InternalAccountsOps } from '../../interfaces/activity'
+import {
+  IActivityController,
+  IActivityIdbStorage,
+  InternalAccountsOps
+} from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -859,6 +863,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#initialLoadPromise
 
     const { accountAddr, chainId } = accountOp
+    console.log(`[ActivityController] addAccountOp: ${accountAddr} chain=${chainId} id=${accountOp.id} status=${accountOp.status} txnId=${accountOp.txnId}`)
 
     if (!this.#accountsOps[accountAddr]) this.#accountsOps[accountAddr] = {}
     if (!this.#accountsOps[accountAddr][chainId.toString()])
@@ -869,6 +874,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     trim(this.#accountsOps[accountAddr][chainId.toString()]!)
 
     await this.syncFilteredAccountsOps()
+    this.emitUpdate()
 
     // Write to IDB if available, otherwise fallback to chrome.storage.local
     if (this.#activityIdb) {
@@ -885,8 +891,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     } else {
       await this.#storage.set('accountsOps', this.#accountsOps)
     }
-
-    this.emitUpdate()
   }
 
   async addExternalAccountOp({

@@ -357,44 +357,6 @@ describe('ActivityIdbStorage', () => {
     })
   })
 
-  describe('debugDumpAll', () => {
-    test('returns all stored ops grouped by account and chain', async () => {
-      const store = new ActivityIdbStorage()
-      await store.putMultiple([
-        {
-          accountAddr: ACC_A,
-          chainId: CHAIN_1,
-          ops: [makeOp('a', ACC_A, CHAIN_1, AccountOpStatus.Success, 1)]
-        },
-        {
-          accountAddr: ACC_B,
-          chainId: CHAIN_137,
-          ops: [makeOp('b', ACC_B, CHAIN_137, AccountOpStatus.Success, 2)]
-        }
-      ])
-
-      const dump = await store.debugDumpAll()
-      expect(dump[ACC_A]?.['1']).toHaveLength(1)
-      expect(dump[ACC_B]?.['137']).toHaveLength(1)
-    })
-
-    test('returns an empty object for an empty store', async () => {
-      const store = new ActivityIdbStorage()
-      expect(await store.debugDumpAll()).toEqual({})
-    })
-
-    test('returns ops sorted by timestamp descending', async () => {
-      const store = new ActivityIdbStorage()
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 100),
-        makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 300)
-      ])
-
-      const dump = await store.debugDumpAll()
-      expect(dump[ACC_A]!['1'].map((op) => op.timestamp)).toEqual([300, 100])
-    })
-  })
-
   describe('bigint serialization roundtrip', () => {
     test('chainId and nonce survive serialize → store → deserialize', async () => {
       const store = new ActivityIdbStorage()
