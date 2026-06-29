@@ -245,10 +245,9 @@ export class SocketV3API implements SwapProvider {
     errorPrefix: string
   }): Promise<T> {
     let response: CustomResponse
+    let timeoutPromise: ReturnType<typeof setTimeout> | undefined
 
     try {
-      let timeoutPromise
-
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
@@ -261,13 +260,13 @@ export class SocketV3API implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
-
-      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
       const error = `${errorPrefix} Upstream error: <${message}>${status}`
       throw new SwapAndBridgeProviderApiError(error)
+    } finally {
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     }
 
     if (response.status === 429) {
@@ -595,7 +594,7 @@ export class SocketV3API implements SwapProvider {
 
     const status = (response.status || response.statusCode || '').toUpperCase()
     const statusCode = (response.statusCode || '').toUpperCase()
-    if (status === 'COMPLETED' || statusCode === 'FULFILLED')
+    if (status === 'COMPLETED' || status === 'FULFILLED' || statusCode === 'FULFILLED')
       return { status: 'completed', txnId: getStatusTxnId(response, txHash) }
     if (status === 'REFUNDED')
       return { status: 'refunded', txnId: getStatusTxnId(response, txHash) }
