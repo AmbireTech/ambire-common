@@ -297,6 +297,8 @@ export class TransferController
         this.emitUpdate()
       }
 
+      this.debugLog('Keeping existing form state on transfer enter', view)
+
       return
     }
 
@@ -307,6 +309,13 @@ export class TransferController
             chainId: String(searchParams.chainId)
           }
         : undefined
+
+    this.debugLog('Entering transfer screen, resetting form state', () => ({
+      view,
+      prevIsTopUp: this.isTopUp,
+      nextIsTopUp,
+      tokenParams
+    }))
 
     this.isTopUp = nextIsTopUp
     this.#setTokens()
@@ -522,7 +531,7 @@ export class TransferController
       {
         shouldDestroyAccountOp
       },
-      { flow: 'reset' }
+      { flow: 'lifecycle' }
     )
 
     this.emitUpdate()
@@ -1285,7 +1294,7 @@ export class TransferController
         viewType,
         hasPersistedState: this.hasPersistedState
       }),
-      { flow: 'reset' }
+      { flow: 'lifecycle' }
     )
 
     if (shouldSkipUnload) return
@@ -1303,7 +1312,7 @@ export class TransferController
         hasSignAccountOpController: !!this.signAccountOpController,
         hasPersistedState: this.hasPersistedState
       }),
-      { flow: 'reset' }
+      { flow: 'lifecycle' }
     )
 
     this.#tokens = []

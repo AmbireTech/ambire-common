@@ -1,1 +1,1 @@
-export type TransferDebugFlow = 'reset' | 'accountOp'
+export type TransferDebugFlow = 'lifecycle' | 'accountOp'
