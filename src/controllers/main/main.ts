@@ -104,6 +104,7 @@ import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketAPI } from '@/services/socket/api'
+import { SocketV3API } from '@/services/socketv3/api'
 import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
@@ -479,7 +480,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry
     })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
-    const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
+    const SocketLegacyProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
+    const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
@@ -499,7 +501,8 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, SquidProvider, UniswapProvider],
-        () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
+        () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
+        [SocketLegacyProvider]
       ),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {

@@ -22,6 +22,12 @@ export class SwapProviderParallelExecutor {
 
   #providers: SwapProvider[]
 
+  /**
+   * Used for legacy providers to prevent active routes from bricking
+   * while also disabling these from new quotes
+   */
+  #routeProviders: SwapProvider[]
+
   #getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
 
   // Added for compatibility with the type
@@ -29,9 +35,11 @@ export class SwapProviderParallelExecutor {
 
   constructor(
     providers: SwapProvider[],
-    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[],
+    routeProviders: SwapProvider[] = []
   ) {
     this.#providers = providers
+    this.#routeProviders = routeProviders
     this.#getFallbackSupportedChains = getFallbackSupportedChains
   }
 
@@ -169,7 +177,7 @@ export class SwapProviderParallelExecutor {
     method: M,
     ...args: any
   ): Promise<T> {
-    const provider = this.#providers.find((p) => p.id === providerId)
+    const provider = [...this.#providers, ...this.#routeProviders].find((p) => p.id === providerId)
     if (!provider) throw new Error('Swap provider misconfiguration')
     return (provider[method] as any)(...args)
   }
