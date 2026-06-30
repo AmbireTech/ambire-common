@@ -1,12 +1,21 @@
+import { labelhash, namehash } from 'viem'
+import { normalize } from 'viem/ens'
+
 import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { networks } from '../../consts/networks'
 import { RPCProvider } from '../../interfaces/provider'
 import * as deploylessModule from '../../libs/deployless/deployless'
 import * as providerModule from '../provider'
-import { reverseLookupEns } from './ensDomains'
+import { getEnsExpiry, resolveENSDomain, reverseLookupEns } from './ensDomains'
 
 const STUB_PROVIDER = {} as RPCProvider
+
+const ethereumProvider = providerModule.getRpcProvider(
+  networks.find((n) => n.chainId === 1n)!.rpcUrls,
+  1n
+)
 
 const makeAddress = (index: number) => `0x${(index + 1).toString(16).padStart(40, '0')}`
 
@@ -114,5 +123,224 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
 
     expect(result[offchainAddress]).toEqual({ name: null, failed: true })
     restore()
+  })
+})
+
+describe('getEnsExpiry', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  const GRACE_PERIOD_SECONDS = 90n * 24n * 60n * 60n
+  const BLOCK_TIMESTAMP = BigInt(Math.floor(new Date('2026-06-24T00:00:00Z').getTime() / 1000))
+
+  type ExpiryTuple = { expiry: bigint; gracePeriod: bigint; blockTimestamp: bigint }
+
+  const expectFreshTimestamp = (updatedAt: number) => {
+    expect(updatedAt).toBeGreaterThan(Date.now() - 10 * 60 * 1000)
+    expect(updatedAt).toBeLessThanOrEqual(Date.now() + 60 * 1000)
+  }
+
+  it('returns the exact registrar expiry + 90-day grace for .eth name', async () => {
+    const result = await getEnsExpiry(ethereumProvider, { name: 'offchaindemo.eth' })
+
+    expect(result).not.toBeNull()
+    // May 16, 2027 07:18:59 GMT+3
+    expect(result!.expiresAt).toBe(new Date('2027-05-16T07:18:59+03:00').getTime())
+    // Aug 14, 2027 07:18:59 GMT+3 (registration expiry + the 90-day registrar grace period)
+    expect(result!.gracePeriodEndsAt).toBe(new Date('2027-08-14T07:18:59+03:00').getTime())
+    expectFreshTimestamp(result!.updatedAt)
+  })
+
+  it('returns the exact registrar expiry + 90-day grace for .eth name', async () => {
+    const result = await getEnsExpiry(ethereumProvider, { name: 'vitalik.eth' })
+
+    expect(result).not.toBeNull()
+    // Dec 28, 2047 15:25:30 GMT+2
+    expect(result!.expiresAt).toBe(new Date('2047-12-28T15:25:30+02:00').getTime())
+    // Mar 27, 2048 15:25:30 GMT+2 (registration expiry + the 90-day registrar grace period)
+    expect(result!.gracePeriodEndsAt).toBe(new Date('2048-03-27T15:25:30+02:00').getTime())
+    expectFreshTimestamp(result!.updatedAt)
+  })
+
+  it('returns null for a subname that is not wrapped', async () => {
+    // No expiry
+    expect(await getEnsExpiry(ethereumProvider, { name: 'test.offchaindemo.eth' })).toBeNull()
+  })
+
+  it('returns null for non-.eth subname that is not wrapped', async () => {
+    // No expiry
+    expect(await getEnsExpiry(ethereumProvider, { name: 'ses.fkey.id' })).toBeNull()
+  })
+
+  const mockGetExpiry = (makeResult: (args: any[]) => ExpiryTuple | (() => never)) => {
+    const callMock = jest
+      .fn<(method: string, args: any[]) => Promise<any>>()
+      .mockImplementation(async (_method, args) => {
+        const result = makeResult(args)
+        if (typeof result === 'function') return result()
+        return result
+      })
+    jest
+      .spyOn(deploylessModule, 'fromDescriptor')
+      .mockReturnValue({ call: callMock } as unknown as deploylessModule.Deployless)
+    return callMock
+  }
+
+  const argsOf = (callMock: ReturnType<typeof mockGetExpiry>) => {
+    const [useRegistrar, baseRegistrar, nameWrapper, id] = callMock.mock.calls[0]![1]
+    return { useRegistrar, baseRegistrar, nameWrapper, id }
+  }
+
+  it('returns expiry (ms) and grace-period end for a registered .eth 2LD via the registrar', async () => {
+    const expiresSeconds = BigInt(Math.floor(new Date('2033-05-18T00:00:00Z').getTime() / 1000))
+    const callMock = mockGetExpiry(() => ({
+      expiry: expiresSeconds,
+      gracePeriod: GRACE_PERIOD_SECONDS,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+
+    const result = await getEnsExpiry(STUB_PROVIDER, { name: 'alice.eth' })
+
+    const gracePeriodMs = Number(GRACE_PERIOD_SECONDS) * 1000
+    expect(result).toEqual({
+      expiresAt: Number(expiresSeconds) * 1000,
+      gracePeriodEndsAt: Number(expiresSeconds) * 1000 + gracePeriodMs,
+      // updatedAt comes from the on-chain block timestamp, not Date.now()
+      updatedAt: Number(BLOCK_TIMESTAMP) * 1000
+    })
+    // useRegistrar === true and the id is the labelhash of the FIRST label (never the namehash).
+    const { useRegistrar, id } = argsOf(callMock)
+    expect(useRegistrar).toBe(true)
+    expect(id).toBe(BigInt(labelhash('alice')))
+  })
+
+  it('honours the `contract` override: forces the NameWrapper for a .eth 2LD', async () => {
+    const wrapperExpirySeconds = BigInt(
+      Math.floor(new Date('2034-09-01T00:00:00Z').getTime() / 1000)
+    )
+    const callMock = mockGetExpiry(() => ({
+      expiry: wrapperExpirySeconds,
+      gracePeriod: 0n,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+
+    const result = await getEnsExpiry(STUB_PROVIDER, { name: 'alice.eth', contract: 'nameWrapper' })
+
+    expect(result).toEqual({
+      expiresAt: Number(wrapperExpirySeconds) * 1000,
+      gracePeriodEndsAt: Number(wrapperExpirySeconds) * 1000,
+      updatedAt: Number(BLOCK_TIMESTAMP) * 1000
+    })
+    const { useRegistrar, id } = argsOf(callMock)
+    expect(useRegistrar).toBe(false)
+    // Wrapper path uses the namehash of the full name.
+    expect(id).toBe(BigInt(namehash(normalize('alice.eth'))))
+  })
+
+  it('honours the `contract` override: forces the registrar for a subname', async () => {
+    const expiresSeconds = BigInt(Math.floor(new Date('2033-05-18T00:00:00Z').getTime() / 1000))
+    const callMock = mockGetExpiry(() => ({
+      expiry: expiresSeconds,
+      gracePeriod: GRACE_PERIOD_SECONDS,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+
+    await getEnsExpiry(STUB_PROVIDER, { name: 'sub.alice.eth', contract: 'registrar' })
+
+    const { useRegistrar, id } = argsOf(callMock)
+    expect(useRegistrar).toBe(true)
+    // Registrar path hashes only the FIRST label.
+    expect(id).toBe(BigInt(labelhash('sub')))
+  })
+
+  it('routes a subname to the NameWrapper with the namehash of the full name', async () => {
+    const wrapperExpirySeconds = BigInt(
+      Math.floor(new Date('2034-09-01T00:00:00Z').getTime() / 1000)
+    )
+    const callMock = mockGetExpiry(() => ({
+      expiry: wrapperExpirySeconds,
+      gracePeriod: 0n,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+
+    const result = await getEnsExpiry(STUB_PROVIDER, { name: 'sub.alice.eth' })
+
+    // Wrapper expiry has no separate grace period, so gracePeriodEndsAt === expiresAt.
+    expect(result).toEqual({
+      expiresAt: Number(wrapperExpirySeconds) * 1000,
+      gracePeriodEndsAt: Number(wrapperExpirySeconds) * 1000,
+      updatedAt: Number(BLOCK_TIMESTAMP) * 1000
+    })
+    const { useRegistrar, id } = argsOf(callMock)
+    expect(useRegistrar).toBe(false)
+    expect(id).toBe(BigInt(namehash(normalize('sub.alice.eth'))))
+  })
+
+  it('routes a non-.eth name to the NameWrapper', async () => {
+    const wrapperExpirySeconds = BigInt(
+      Math.floor(new Date('2030-01-01T00:00:00Z').getTime() / 1000)
+    )
+    const callMock = mockGetExpiry(() => ({
+      expiry: wrapperExpirySeconds,
+      gracePeriod: 0n,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+
+    const result = await getEnsExpiry(STUB_PROVIDER, { name: 'alice.com' })
+
+    expect(result).toEqual({
+      expiresAt: Number(wrapperExpirySeconds) * 1000,
+      gracePeriodEndsAt: Number(wrapperExpirySeconds) * 1000,
+      updatedAt: Number(BLOCK_TIMESTAMP) * 1000
+    })
+    const { useRegistrar, id } = argsOf(callMock)
+    expect(useRegistrar).toBe(false)
+    expect(id).toBe(BigInt(namehash(normalize('alice.com'))))
+  })
+
+  it('returns null when the name is unregistered', async () => {
+    mockGetExpiry(() => ({
+      expiry: 0n,
+      gracePeriod: GRACE_PERIOD_SECONDS,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+    expect(await getEnsExpiry(STUB_PROVIDER, { name: 'unregistered.eth' })).toBeNull()
+  })
+
+  it('returns null when the NameWrapper reports the name is not wrapped', async () => {
+    mockGetExpiry(() => ({ expiry: 0n, gracePeriod: 0n, blockTimestamp: BLOCK_TIMESTAMP }))
+    expect(await getEnsExpiry(STUB_PROVIDER, { name: 'unwrapped.alice.eth' })).toBeNull()
+  })
+
+  // ENS v2 has no grace period: GRACE_PERIOD() returns 0. The name still has a real expiry, so a 0
+  // grace must NOT discard it - it just means the grace window is empty (gracePeriodEndsAt === expiresAt).
+  // Sadly, I couldn't find such a name to test, so we are mocking it
+  it('returns a valid expiry with no grace window when GRACE_PERIOD() is 0 (ENS v2)', async () => {
+    const expiresSeconds = BigInt(Math.floor(new Date('2033-05-18T00:00:00Z').getTime() / 1000))
+    mockGetExpiry(() => ({
+      expiry: expiresSeconds,
+      gracePeriod: 0n,
+      blockTimestamp: BLOCK_TIMESTAMP
+    }))
+
+    const result = await getEnsExpiry(STUB_PROVIDER, { name: 'alice.eth' })
+
+    expect(result).toEqual({
+      expiresAt: Number(expiresSeconds) * 1000,
+      gracePeriodEndsAt: Number(expiresSeconds) * 1000,
+      updatedAt: Number(BLOCK_TIMESTAMP) * 1000
+    })
+  })
+})
+
+describe('resolveENSDomain', () => {
+  it('live mainnet: resolves the address, avatar and the exact ENS expiry for vitalik.eth', async () => {
+    const result = await resolveENSDomain({ provider: ethereumProvider, domain: 'vitalik.eth' })
+
+    expect(result.address).toBe('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    expect(result.expiry).not.toBeNull()
+    expect(result.expiry!.expiresAt).toBe(new Date('2047-12-28T15:25:30+02:00').getTime())
+    expect(result.expiry!.gracePeriodEndsAt).toBe(new Date('2048-03-27T15:25:30+02:00').getTime())
   })
 })
