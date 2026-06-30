@@ -1,13 +1,14 @@
-import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress } from 'viem'
+import { decodeFunctionData, getAddress, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
-  HexIrCall,
   getAction,
   getAddressVisualization,
   getLabel,
   getToken,
+  getWarning,
+  HexIrCall,
   isHexCall
 } from '../../utils'
 
@@ -33,9 +34,40 @@ const erc20TransferFromAbi = parseAbi([
 const erc20IncreaseAllowanceAbi = parseAbi([
   'function increaseAllowance(address spender, uint256 addedValue) returns (bool)'
 ])
+const erc20IncreaseApprovalAbi = parseAbi([
+  'function increaseApproval(address spender, uint256 addedValue) returns (bool)'
+])
 const erc20DecreaseAllowanceAbi = parseAbi([
   'function decreaseAllowance(address spender, uint256 subtractedValue) returns (bool)'
 ])
+const erc20DecreaseApprovalAbi = parseAbi([
+  'function decreaseApproval(address spender, uint256 subtractedValue) returns (bool)'
+])
+
+const WORD_HEX_LENGTH = 64
+const SELECTOR_HEX_LENGTH = 10
+const ADDRESS_AMOUNT_ARGS_HEX_LENGTH = WORD_HEX_LENGTH * 2
+const INVALID_TRANSACTION_DATA_WARNING = getWarning(
+  'Transaction data seems invalid. Please review it carefully',
+  'TRANSACTION_DATA_INVALID'
+)
+
+const getStaticCallWord = (data: HexIrCall['data'], index: number): string => {
+  const start = SELECTOR_HEX_LENGTH + index * WORD_HEX_LENGTH
+  const end = start + WORD_HEX_LENGTH
+
+  return data.slice(start, end).padEnd(WORD_HEX_LENGTH, '0')
+}
+
+const getAddressAndAmountArgs = (data: HexIrCall['data']): [string, bigint] => {
+  const addressWord = getStaticCallWord(data, 0)
+  const amountWord = getStaticCallWord(data, 1)
+
+  return [getAddress(`0x${addressWord.slice(-40)}`), BigInt(`0x${amountWord}`)]
+}
+
+const isAddressAndAmountArgsTruncated = (data: HexIrCall['data']): boolean =>
+  data.length < SELECTOR_HEX_LENGTH + ADDRESS_AMOUNT_ARGS_HEX_LENGTH
 
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -119,8 +151,7 @@ export const genericErc20Humanizer = (
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(erc20ApproveAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data: call.data })
-      const [spender, value] = args
+      const [spender, value] = getAddressAndAmountArgs(call.data)
       return value !== 0n
         ? [
             getAction('Grant approval'),
@@ -138,11 +169,7 @@ export const genericErc20Humanizer = (
     },
     [toFunctionSelector(erc20IncreaseAllowanceAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({
-        abi: erc20IncreaseAllowanceAbi,
-        data: call.data
-      })
-      const [spender, addedValue] = args
+      const [spender, addedValue] = getAddressAndAmountArgs(call.data)
       return [
         getAction('Increase allowance'),
         getLabel('of'),
@@ -151,19 +178,37 @@ export const genericErc20Humanizer = (
         getToken(call.to, addedValue)
       ]
     },
+    [toFunctionSelector(erc20IncreaseApprovalAbi[0])]: (call) => {
+      if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
+      const [spender, addedValue] = getAddressAndAmountArgs(call.data)
+      return [
+        getAction('IncreaseApproval'),
+        getLabel('with'),
+        getToken(call.to, addedValue),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ]
+    },
     [toFunctionSelector(erc20DecreaseAllowanceAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({
-        abi: erc20DecreaseAllowanceAbi,
-        data: call.data
-      })
-      const [spender, subtractedValue] = args
+      const [spender, subtractedValue] = getAddressAndAmountArgs(call.data)
       return [
         getAction('Decrease allowance'),
         getLabel('of'),
         getAddressVisualization(spender),
         getLabel('with'),
         getToken(call.to, subtractedValue)
+      ]
+    },
+    [toFunctionSelector(erc20DecreaseApprovalAbi[0])]: (call) => {
+      if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
+      const [spender, subtractedValue] = getAddressAndAmountArgs(call.data)
+      return [
+        getAction('DecreaseApproval'),
+        getLabel('with'),
+        getToken(call.to, subtractedValue),
+        getLabel('to'),
+        getAddressVisualization(spender)
       ]
     },
     [toFunctionSelector(erc20TransferAbi[0])]: (call) => {
@@ -210,6 +255,13 @@ export const genericErc20Humanizer = (
     if (!call.to) return call
     if (!isHexCall(call)) return call
     const sigHash = call.data.substring(0, 10)
-    return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](call) } : call
+    if (!matcher[sigHash]) return call
+
+    const fullVisualization = matcher[sigHash](call)
+    const warnings = isAddressAndAmountArgsTruncated(call.data)
+      ? [...(call.warnings || []), INVALID_TRANSACTION_DATA_WARNING]
+      : call.warnings
+
+    return { ...call, fullVisualization, warnings }
   })
 }

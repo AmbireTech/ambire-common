@@ -353,6 +353,122 @@ describe('Humanizer main function', () => {
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 
+  test('humanizes ERC20 increaseApproval with dirty address padding', async () => {
+    const chainlinkToken = '0x514910771AF9Ca656af840dff83E8264EcF986CA'
+    const spender = '0xbb684c22aa0eb71d10339e5e045cac452c0546d7'
+
+    accountOp.calls = [
+      {
+        to: chainlinkToken,
+        value: 0n,
+        data: '0xd73dd623000010000000000000000000bb684c22aa0eb71d10339e5e045cac452c0546d70000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    expect(irCalls[0]?.isFallback).not.toBe(true)
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('IncreaseApproval'),
+        getLabel('with'),
+        getToken(chainlinkToken, 1n),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ]
+    ])
+  })
+
+  test('humanizes ERC20 decreaseApproval with dirty address padding', async () => {
+    const chainlinkToken = '0x514910771AF9Ca656af840dff83E8264EcF986CA'
+    const spender = '0xbb684c22aa0eb71d10339e5e045cac452c0546d7'
+
+    accountOp.calls = [
+      {
+        to: chainlinkToken,
+        value: 0n,
+        data: '0x66188463000010000000000000000000bb684c22aa0eb71d10339e5e045cac452c0546d70000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    expect(irCalls[0]?.isFallback).not.toBe(true)
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('DecreaseApproval'),
+        getLabel('with'),
+        getToken(chainlinkToken, 1n),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ]
+    ])
+  })
+
+  test('humanizes truncated ERC20 increaseApproval as an approval-shaped call', async () => {
+    const chainlinkToken = '0x514910771AF9Ca656af840dff83E8264EcF986CA'
+    const shiftedSpender = '0x00cd4e0fb96ce878ee69282bc856a3849457c500'
+
+    accountOp.calls = [
+      {
+        to: chainlinkToken,
+        value: 0n,
+        data: '0xd73dd6230000010000000000000000db00cd4e0fb96ce878ee69282bc856a3849457c50000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    expect(irCalls[0]?.isFallback).not.toBe(true)
+    expect(irCalls[0]?.warnings).toEqual([
+      getWarning(
+        'Transaction data seems invalid. Please review it carefully',
+        'TRANSACTION_DATA_INVALID'
+      )
+    ])
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('IncreaseApproval'),
+        getLabel('with'),
+        getToken(chainlinkToken, 256n),
+        getLabel('to'),
+        getAddressVisualization(shiftedSpender)
+      ]
+    ])
+  })
+
+  test('humanizes truncated ERC20 decreaseApproval as an approval-shaped call', async () => {
+    const chainlinkToken = '0x514910771AF9Ca656af840dff83E8264EcF986CA'
+    const shiftedSpender = '0x00cd4e0fb96ce878ee69282bc856a3849457c500'
+
+    accountOp.calls = [
+      {
+        to: chainlinkToken,
+        value: 0n,
+        data: '0x661884630000010000000000000000db00cd4e0fb96ce878ee69282bc856a3849457c50000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    expect(irCalls[0]?.isFallback).not.toBe(true)
+    expect(irCalls[0]?.warnings).toEqual([
+      getWarning(
+        'Transaction data seems invalid. Please review it carefully',
+        'TRANSACTION_DATA_INVALID'
+      )
+    ])
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('DecreaseApproval'),
+        getLabel('with'),
+        getToken(chainlinkToken, 256n),
+        getLabel('to'),
+        getAddressVisualization(shiftedSpender)
+      ]
+    ])
+  })
+
   test('aave not to be parsed by uniswap', async () => {
     // const ir: Ir = []
     const expectedVisualizations = [
