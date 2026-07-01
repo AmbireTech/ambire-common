@@ -1070,13 +1070,7 @@ export class SignAccountOpController
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        // for Safe accounts, always select the first not disabled EOA
-        // or the first EOA if all are disabled
-        if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
-          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
-          this.feeTokenResult = selected.token
-          this.#paidBy = selected.paidBy
-        } else if (payOptionsPaidByUsOrGasTank.length) {
+        if (payOptionsPaidByUsOrGasTank.length) {
           const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank)!
           this.feeTokenResult = selected.token
           this.#paidBy = selected.paidBy
@@ -2939,12 +2933,14 @@ export class SignAccountOpController
       if (
         this.account.safeCreation &&
         this.#accountOp.signed &&
-        this.#accountOp.signed.length >= this.threshold
+        this.#accountOp.signed.length >= this.threshold &&
+        broadcastOption !== BROADCAST_OPTIONS.byBundler
       ) {
         // all's good, proceed to broadcast
-        // TODO<safe-sponsorship>: if the gas tank / sponsored option is chosen,
-        // begin the userOp build and sign process
-      } else if (this.account.safeCreation) {
+      } else if (
+        this.account.safeCreation &&
+        (this.#accountOp.signed?.length || 0) < this.threshold
+      ) {
         // if the Safe txn is not already signed, fetch the latest nonce
         // as we don't have a mechanism for fixing nonces for Safe accounts
         // during the estimation phase itself
@@ -3213,35 +3209,41 @@ export class SignAccountOpController
         if (this.#stopRefetching) return
 
         const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
-        const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
-        if (!isHotEOA) {
-          const typedData = getTypedData(
-            this.#network.chainId,
-            this.accountOp.accountAddr,
-            getUserOpHash(userOperation, this.#network.chainId)
-          )
-          const signature = wrapStandard(
-            await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-              signer.signTypedData(typedData)
+
+        // safe accounts have their signature prepopulated
+        if (!this.account.safeCreation) {
+          const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
+          if (!isHotEOA) {
+            const typedData = getTypedData(
+              this.#network.chainId,
+              this.accountOp.accountAddr,
+              getUserOpHash(userOperation, this.#network.chainId)
             )
-          )
-          userOperation.signature = signature
-          this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else {
-          const typedData = get7702UserOpTypedData(
-            this.#network.chainId,
-            getSignableCalls(this.accountOp),
-            getPackedUserOp(userOperation),
-            getUserOpHash(userOperation, this.#network.chainId)
-          )
-          const signature = wrapUnprotected(
-            await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-              signer.signTypedData(typedData)
+            const signature = wrapStandard(
+              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
+                signer.signTypedData(typedData)
+              )
             )
-          )
-          userOperation.signature = signature
-          this.#updateAccountOp({ signature, asUserOperation: userOperation })
+            userOperation.signature = signature
+            this.#updateAccountOp({ signature })
+          } else {
+            const typedData = get7702UserOpTypedData(
+              this.#network.chainId,
+              getSignableCalls(this.accountOp),
+              getPackedUserOp(userOperation),
+              getUserOpHash(userOperation, this.#network.chainId)
+            )
+            const signature = wrapUnprotected(
+              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
+                signer.signTypedData(typedData)
+              )
+            )
+            userOperation.signature = signature
+            this.#updateAccountOp({ signature })
+          }
         }
+
+        this.#updateAccountOp({ asUserOperation: userOperation })
       } else {
         const signer = await this.#getDefaultSigner()
 
