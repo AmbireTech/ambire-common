@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
+import { AbiCoder, concat, Interface, keccak256, toUtf8Bytes, ZeroAddress } from 'ethers'
 
+import { SAFE_SENDER } from '@/consts/deploy'
+
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
@@ -19,7 +22,7 @@ import {
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
-import { UserOperation } from '../userOperation/types'
+import { privSlot } from '../proxyDeploy/deploy'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -56,7 +59,7 @@ export class Safe extends BaseAccount {
   }
 
   supportsBundlerEstimation() {
-    return false
+    return true
   }
 
   isSponsorable() {
@@ -67,7 +70,10 @@ export class Safe extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    return feePaymentOptions.filter((opt) => isNative(opt.token))
+    const hasPaymaster =
+      estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
+
+    return feePaymentOptions.filter((opt) => isNative(opt.token) || opt.token.flags.onGasTank)
   }
 
   getGasUsed(
@@ -92,6 +98,16 @@ export class Safe extends BaseAccount {
       }
     }
 
+    if (estimation.bundlerEstimation && options.feeToken.flags.onGasTank) {
+      return (
+        ambireBroaddcastGas +
+        BigInt(estimation.bundlerEstimation.callGasLimit) +
+        callToSelfGas +
+        this.EXTRA_ESTIMATION_GAS +
+        nonceGas
+      )
+    }
+
     return (
       ambireBroaddcastGas +
       estimation.ambireEstimation.gasUsed +
@@ -101,12 +117,14 @@ export class Safe extends BaseAccount {
     )
   }
 
-  getBroadcastOption(): string {
+  getBroadcastOption(feeOption: FeePaymentOption): string {
+    if (feeOption.paidBy === this.getAccount().addr) return BROADCAST_OPTIONS.byBundler
+
     return BROADCAST_OPTIONS.byOtherEOA
   }
 
   canUseReceivingNativeForFee(): boolean {
-    return false // because we're always paying with EOA atm
+    return false // because the account cannot pay by itself in native
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {
@@ -140,8 +158,25 @@ export class Safe extends BaseAccount {
     ]) as Hex
   }
 
-  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
-    return undefined
+  /**
+   * We override the state to an ambire smart account so we could
+   * successfully do a bundler estimation. Safe accounts don't have
+   * the 4337 module attached so they revert
+   */
+  getBundlerStateOverride(): BundlerStateOverride | undefined {
+    return {
+      [this.account.addr]: {
+        code: AmbireAccount.binRuntime,
+        stateDiff: {
+          [privSlot(
+            keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
+            'uint256',
+            SAFE_SENDER,
+            'bytes32'
+          )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+        }
+      }
+    }
   }
 
   // should we authorize the entry point;
@@ -155,14 +190,12 @@ export class Safe extends BaseAccount {
   }
 
   getNonceId(): string {
-    // the Safe will move only its own smart account nonce as we don't have 4337
+    // the Safe will move only its own smart account nonce
     return `${this.accountState.nonce.toString()}`
   }
 
   canBroadcastByItself(): boolean {
-    // later, when we enable 4337:
-    // check the account version and enable this for versions > 1.3
-    return false
+    return true
   }
 
   async getBroadcastNonce(

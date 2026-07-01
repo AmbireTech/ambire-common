@@ -47,7 +47,8 @@ describe('User Operation tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: parseEther('10'), data: '0x' }]
+        calls: [{ to, value: parseEther('10'), data: '0x' }],
+        id: 'opt'
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -77,7 +78,8 @@ describe('User Operation tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: parseEther('10'), data: '0x' }]
+        calls: [{ to, value: parseEther('10'), data: '0x' }],
+        id: 'opt'
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -105,7 +107,8 @@ describe('User Operation tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: parseEther('10'), data: '0x' }]
+        calls: [{ to, value: parseEther('10'), data: '0x' }],
+        id: 'opt'
       }
       const usedNetworks = [optimism]
       const providers = {

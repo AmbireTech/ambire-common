@@ -13,7 +13,6 @@ import {
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -132,6 +131,7 @@ import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tra
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
+  getBroadcastCalldata,
   getPackedUserOp,
   getUserOperation,
   getUserOpHash
@@ -2748,11 +2748,7 @@ export class SignAccountOpController
     userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
     userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
     userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
-
-    const ambireAccount = new Interface(AmbireAccount.abi)
-    userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
-      getSignableCalls(this.accountOp)
-    ])
+    userOperation.callData = getBroadcastCalldata(this.account, this.accountOp, accountState)
 
     return userOperation
   }
@@ -2802,6 +2798,25 @@ export class SignAccountOpController
       const paymasterData = response as PaymasterSuccessReponse
       localOp.paymaster = paymasterData.paymaster
       localOp.paymasterData = paymasterData.paymasterData
+
+      // if it's a safe account, add the SAFE_SIGNER signature
+      if (this.account.safeCreation) {
+        if (!paymasterData.signature) {
+          const error = 'Gas tank is currently inavailable'
+          return {
+            required: true,
+            success: false,
+            errorResponse: {
+              success: false,
+              message: error,
+              error: new Error(error)
+            }
+          }
+        }
+
+        localOp.signature = paymasterData.signature
+      }
+
       return {
         userOp: localOp,
         required: true,
@@ -2927,6 +2942,8 @@ export class SignAccountOpController
         this.#accountOp.signed.length >= this.threshold
       ) {
         // all's good, proceed to broadcast
+        // TODO<safe-sponsorship>: if the gas tank / sponsored option is chosen,
+        // begin the userOp build and sign process
       } else if (this.account.safeCreation) {
         // if the Safe txn is not already signed, fetch the latest nonce
         // as we don't have a mechanism for fixing nonces for Safe accounts
@@ -3642,11 +3659,17 @@ export class SignAccountOpController
         })
         await this.broadcastPromise
       }
+      // basically, the logic enters here when we're using a Safe account
+      // with > 1 threshold and allows the user to broadcast
       if (
         this.status &&
         this.status.type === SigningStatus.Queued &&
         (this.accountOp.signed || []).length >= this.threshold
       ) {
+        // TODO<safe-sponsorship>: reset the estimation so the userOp
+        // estimate can happen
+        // extra: check if conditions are met before doing this
+
         this.status.type = SigningStatus.ReadyToSign
         this.emitUpdate()
       }
