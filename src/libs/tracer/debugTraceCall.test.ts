@@ -1,4 +1,13 @@
-import { Interface, MaxUint256, solidityPackedKeccak256 } from 'ethers'
+import {
+  getAddress,
+  Interface,
+  keccak256,
+  MaxUint256,
+  solidityPackedKeccak256,
+  toBeHex,
+  toUtf8Bytes,
+  zeroPadValue
+} from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
@@ -8,12 +17,78 @@ import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
-import { debugTraceCall } from './debugTraceCall'
+import { debugTraceCall, parseCallTracerResult } from './debugTraceCall'
 
 const NFT_ADDRESS = '0x3Bd57Bf93dE179d2e47e86319F144d7482503C7d'
 const USDT_ADDRESS_OPTIMISM = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58'
 const USDC_ADDRESS_OPTIMISM = '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85'
 const ACCOUNT_ADDRESS = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
+
+describe('parseCallTracerResult', () => {
+  const rootAddress = '0x1111111111111111111111111111111111111111'
+  const tokenAddress = '0x2222222222222222222222222222222222222222'
+  const nftAddress = '0x3333333333333333333333333333333333333333'
+  const logEmitterAddress = '0x4444444444444444444444444444444444444444'
+  const nestedAddress = '0x5555555555555555555555555555555555555555'
+  const erc721TransferTopic = keccak256(toUtf8Bytes('Transfer(address,address,uint256)'))
+  const otherLogTopic = keccak256(toUtf8Bytes('Other(address,address,uint256)'))
+  const emptyTopic = zeroPadValue('0x', 32)
+
+  it('recursively discovers call addresses and exact ERC-721 Transfer logs', () => {
+    const result = parseCallTracerResult({
+      to: rootAddress,
+      calls: [
+        {
+          to: tokenAddress,
+          logs: [
+            {
+              address: nftAddress,
+              topics: [erc721TransferTopic, emptyTopic, emptyTopic, zeroPadValue(toBeHex(25), 32)]
+            },
+            {
+              address: logEmitterAddress,
+              topics: [otherLogTopic, emptyTopic, emptyTopic, zeroPadValue(toBeHex(42), 32)]
+            }
+          ],
+          calls: [
+            {
+              to: nestedAddress,
+              logs: [
+                {
+                  address: nftAddress,
+                  topics: [
+                    erc721TransferTopic,
+                    emptyTopic,
+                    emptyTopic,
+                    zeroPadValue(toBeHex(0), 32)
+                  ]
+                },
+                {
+                  address: nftAddress,
+                  topics: [
+                    erc721TransferTopic,
+                    emptyTopic,
+                    emptyTopic,
+                    zeroPadValue(toBeHex(25), 32)
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    })
+
+    expect(result.tokens).toEqual([
+      getAddress(rootAddress),
+      getAddress(tokenAddress),
+      getAddress(nftAddress),
+      getAddress(logEmitterAddress),
+      getAddress(nestedAddress)
+    ])
+    expect(result.nfts).toEqual([[getAddress(nftAddress), [25n, 0n]]])
+  })
+})
 
 // @TODO add minting and burning test
 describe('Debug tracecall detection for transactions', () => {
@@ -45,6 +120,7 @@ describe('Debug tracecall detection for transactions', () => {
       newlyAdded: false
     }
     accountOp = {
+      id: 'test-id',
       accountAddr: ACCOUNT_ADDRESS,
       chainId: 10n,
       signingKeyAddr: '"0x02be1F941b6B777D4c30f110E997704fFc26B379"',
@@ -120,13 +196,13 @@ describe('Debug tracecall detection for transactions', () => {
           2000n
         ])
       },
-      // usdt pull
+      // usdt pull; use a zero amount so the live RPC fixture does not depend on holder balance
       {
         to: USDT_ADDRESS_OPTIMISM,
         value: 0n,
         data: tokenIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          ['0x6969174FD72466430a46e18234D0b530c9FD5f49', account.addr, 100000n]
+          ['0x6969174FD72466430a46e18234D0b530c9FD5f49', account.addr, 0n]
         )
       }
     ]
@@ -150,12 +226,11 @@ describe('Debug tracecall detection for transactions', () => {
     }
 
     const baseAccount = getBaseAccount(account, state, network)
-    const res = await debugTraceCall(baseAccount, accountOp, network, state, true, overrideData)
+    const res = await debugTraceCall(baseAccount, accountOp, network, state, overrideData)
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0]![0]).toBe(NFT_ADDRESS)
     expect(res.nfts[0]![1]).toContain(25n)
-    expect(res.tokens.length).toBe(2)
     expect(res.tokens).toContain(USDC_ADDRESS_OPTIMISM)
     expect(res.tokens).toContain(USDT_ADDRESS_OPTIMISM)
   })

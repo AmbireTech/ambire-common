@@ -115,6 +115,10 @@ export interface Network {
   allowForce4337?: boolean
   disabled?: boolean
   customBundlerUrl?: string
+  /**
+   * Initial polling interval for pending account operation statuses.
+   */
+  refreshInterval?: number
 }
 
 export interface SupportedNetworks extends Network {
@@ -217,6 +221,10 @@ export type RelayerNetwork = {
     }
   }
   disabledByDefault?: boolean
+  /**
+   * Initial polling interval for pending account operation statuses.
+   */
+  refreshInterval?: number
 }
 
 export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

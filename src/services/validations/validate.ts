@@ -3,11 +3,13 @@ import isEmail from 'validator/lib/isEmail'
 
 import { Account, AccountStates } from '@/interfaces/account'
 import { Network } from '@/interfaces/network'
+import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import { getSupportedNetworks } from '@/libs/networks/networks'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import shortenAddress from '../../utils/shortenAddress'
 import { isValidAddress } from '../address'
 
 export type Validation = {
@@ -68,6 +70,39 @@ const NOT_IN_ADDRESS_BOOK_MESSAGE =
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
 
+// Keep poisoning warnings readable with compact address previews.
+// We size the preview based on the strongest symmetric part of the match:
+// 4-left/4-right uses 0x + 6...6, while stronger matches such as 5-left/5-right,
+// 6-left/5-right or 6-left/6-right use 0x + 8...8 for more clarity.
+const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
+const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
+const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
+  `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
+
+const formatAddressPoisoningMatchForMessage = ({
+  matchedAddress,
+  matchedPrefixCharsCount,
+  matchedSuffixCharsCount
+}: AddressPoisoningMatch) => {
+  let normalizedAddress = matchedAddress
+
+  try {
+    normalizedAddress = getAddress(matchedAddress)
+  } catch {
+    // keep original if checksum normalization fails
+  }
+
+  const strongestSymmetricMatch = Math.max(matchedPrefixCharsCount, matchedSuffixCharsCount)
+  const visibleChars =
+    strongestSymmetricMatch >= 5
+      ? ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED
+      : ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT
+
+  const fixedPreviewLength = visibleChars * 2 + 5 // 0x + left + ... + right
+
+  return shortenAddress(normalizedAddress, fixedPreviewLength, visibleChars)
+}
+
 function getTimeAgo(date: Date): string {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
@@ -96,14 +131,15 @@ const validateSendTransferAddress = (
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  isEnsAddress: boolean,
+  isDomain: boolean,
   isRecipientDomainResolving: boolean,
   networks: Network[],
   accountStates: AccountStates,
   recepientAccount?: Account,
   chainId?: bigint,
   isRecipientAddressFirstTimeSend?: boolean,
-  lastRecipientTransactionDate?: Date | null
+  lastRecipientTransactionDate?: Date | null,
+  addressPoisoningMatch?: AddressPoisoningMatch | null
 ): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -139,6 +175,15 @@ const validateSendTransferAddress = (
     }
   }
 
+  if (addressPoisoningMatch) {
+    return {
+      message: getAddressPoisoningWarningMessage(
+        formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
+      ),
+      severity: 'warning'
+    }
+  }
+
   if (isRecipientAddressFirstTimeSend) {
     let message = isRecipientAddressUnknown
       ? FIRST_TIME_SEND_MESSAGE
@@ -156,7 +201,7 @@ const validateSendTransferAddress = (
     isRecipientAddressUnknown &&
     isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
-    !isEnsAddress &&
+    !isDomain &&
     !isRecipientDomainResolving
   ) {
     return {
@@ -169,7 +214,7 @@ const validateSendTransferAddress = (
     isRecipientAddressUnknown &&
     isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
-    isEnsAddress &&
+    isDomain &&
     !isRecipientDomainResolving
   ) {
     return {
@@ -254,11 +299,19 @@ function isValidURL(url: string) {
   return urlRegex.test(url)
 }
 
+const isValidHostname = (str: string) => {
+  // Matches hostnames like "google.com", "app.uniswap.org", etc.
+  const hostnameRegex = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/
+  return hostnameRegex.test(str)
+}
+
 export {
   isEmail,
   isValidCode,
   isValidPassword,
   isValidURL,
+  isValidHostname,
+  getTimeAgo,
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount

@@ -1,17 +1,17 @@
-/* eslint-disable no-underscore-dangle */
 import { formatEther, getAddress, isAddress } from 'ethers'
 
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   ISelectedAccountController,
+  SelectedAccountBalanceByAccount,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
@@ -46,6 +46,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #providers: IProvidersController | null = null
 
+  #banner: IBannerController | null = null
+
   account: Account | null = null
 
   /**
@@ -54,6 +56,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    * It is updated when the portfolio or defi positions controllers are updated.
    */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  balanceByAccounts: SelectedAccountBalanceByAccount = {}
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
@@ -78,20 +82,22 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     eventEmitterRegistry,
     storage,
     accounts,
-    autoLogin
+    autoLogin,
+    banner
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
     autoLogin: IAutoLoginController
+    banner: IBannerController
   }) {
     super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts
     this.#autoLogin = autoLogin
+    this.#banner = banner
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -102,7 +108,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
       this.#storage.get('selectedAccount', null),
-      this.#storage.get('selectedAccountDismissedBannerIds', [])
+      this.#storage.get('selectedAccountDismissedBannerIds', {})
     ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
@@ -217,9 +223,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account) return
 
-    const portfolioAccountState = structuredClone(
-      this.#portfolio.getAccountPortfolioState(this.account.addr)
-    )
+    const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
@@ -330,7 +334,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult = false
     }
 
+    // Update the balanceByAccount only when the portfolio is ready, because
+    // the user may select an account, set a balance of 0 and then switch to another account.
+    // (then the balance of the first account will remain 0 until it's selected again)
+    if (newSelectedAccountPortfolio.isAllReady) {
+      this.balanceByAccounts[this.account.addr] = this.portfolio.totalBalance
+    }
+
     this.portfolio = newSelectedAccountPortfolio
+    if (newSelectedAccountPortfolio.isAllReady) {
+      // since we will have survey banner that are dependant on account balance
+      // we need to make sure that the banners are updated are displayed after the balance is
+      // fully loaded, if the balance satisfies the banners requirements
+      this.#banner?.emitUpdateBanners()
+    }
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {

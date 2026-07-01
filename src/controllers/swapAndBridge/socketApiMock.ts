@@ -6,7 +6,6 @@ import {
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
 
-/* eslint-disable class-methods-use-this */
 export class SocketAPIMock {
   id = 'socket'
 
@@ -440,8 +439,7 @@ export class SocketAPIMock {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getRouteStatus({ txHash }: { txHash: string }) {
-    return 'completed'
+    return { status: 'completed', txnId: txHash }
   }
 }

@@ -1,6 +1,4 @@
-/* eslint-disable no-restricted-syntax */
 import { ZeroAddress } from 'ethers'
-/* eslint-disable guard-for-in */
 import { getAddress } from 'viem'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
@@ -12,6 +10,8 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
+import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
+import { portfolioDebugLog } from './debug'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
@@ -29,7 +29,6 @@ import {
   Limits,
   LimitsOptions,
   PortfolioLibGetResult,
-  TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
@@ -37,49 +36,20 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
-/**
- * Static list of tokens to exclude from display, keyed by chainId.
- * Addresses MUST BE CHECKSUMMED.
- * Symbol patterns are matched case-insensitively as substrings.
- */
-export const STATIC_BLACKLIST: Omit<TokenBlacklist, 'updatedAt'> = {
-  blacklistAddrs: {
-    // Gnosis Chain (xDAI)
-    '100': [
-      '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe - Duplicate
-    ],
-    // Polygon
-    '137': [
-      '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6', // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
-      '0x0B91B07bEb67333225A5bA0259D55AeE10E3A578' // MNEP - scam token
-    ],
-    // Ethereum Mainnet
-    '1': [
-      '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe - Duplicate
-    ],
-    // Hyper EVM
-    '999': [
-      '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE
-    ],
-    // Andromeda
-    '1088': [
-      '0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000' // METIS as an ERC-20 token - Excluded because it's a duplicate of the native token
-    ],
-    // Optimism
-    '10': [
-      '0xDfA2d3a0d32F870D87f8A0d7AA6b9CdEB7bc5AdB' // sUSD - Duplicate of 0x8c6f28f2F1A3C87F0f938b96d27520d9751ec8d9
-    ]
-  },
-  blacklistBySymbols: ['https', 'www.']
-}
-
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
-  deploylessProxyMode: { erc20: 66, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
+  deploylessProxyMode: {
+    erc20: 66,
+    erc20Simulation: 50,
+    erc721: 30,
+    erc721TokensInput: 20,
+    erc721Tokens: 50
+  },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
     erc20: 230,
+    erc20Simulation: 50,
     erc721: 70,
     erc721TokensInput: 70,
     erc721Tokens: 70
@@ -313,7 +283,7 @@ export class Portfolio {
       const tokenDataHint = convertApiTokenDataToTokenDataCache(
         hints.externalApi?.prices[addr] || null
       )
-      // eslint-disable-next-line no-continue
+
       if (!tokenDataHint) continue
 
       tokenDataCache.set(addr, [start, tokenDataHint])
@@ -327,15 +297,16 @@ export class Portfolio {
     const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
-        paginate(hints.erc20s, limits.erc20).map((page, index) =>
-          getTokens(
-            this.network,
-            this.deploylessTokens,
-            { simulation, blockTag, specialErc20Hints },
-            accountAddr,
-            page,
-            index
-          )
+        paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map(
+          (page, index) =>
+            getTokens(
+              this.network,
+              this.deploylessTokens,
+              { simulation, blockTag, specialErc20Hints },
+              accountAddr,
+              page,
+              index
+            )
         )
       ),
       flattenResults(
@@ -395,19 +366,37 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
-    const allBlacklistedSymbols = [
+    const blacklistPatterns = prepareBlacklistPatterns([
       ...STATIC_BLACKLIST.blacklistBySymbols,
       ...(blacklist?.blacklistBySymbols || [])
-    ].map((p) => p.toLowerCase())
+    ])
 
     const tokensWithoutPrices = tokensWithErrResult
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
-        // Symbol-based blacklist: skip custom tokens so user-added assets are never hidden
-        if (allBlacklistedSymbols.length > 0 && !_tokensWithErrResult[1]?.flags?.isCustom) {
-          const symbolLower = _tokensWithErrResult[1].symbol.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return false
+        // Spam filter: hide tokens whose symbol/name matches a blacklisted
+        // pattern. Custom (user-added) tokens are never hidden. We don't run the
+        // embedded-domain check here because token names/symbols legitimately contain domains.
+        const token = _tokensWithErrResult[1]
+        if (
+          isBlacklistedAsset({
+            symbol: token.symbol,
+            name: token.name,
+            isCustom: token.flags?.isCustom,
+            patterns: blacklistPatterns
+          })
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered token ${token.symbol}`,
+            {
+              address: token.address,
+              symbol: token.symbol,
+              name: token.name
+            }
+          )
+          return false
         }
 
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
@@ -442,27 +431,33 @@ export class Portfolio {
         return result
       })
 
-    const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
-      const address = collectionsHints[i]![0] as unknown as string
-      return [
-        error,
-        {
-          ...x,
-          address,
-          // We don't store market data for collections, apart from priceIn
-          priceIn: getTokenDataFromCache(address)?.priceIn || []
-        }
-      ] as [string, CollectionResult]
-    })
-
-    const collections = unfilteredCollections.reduce<CollectionResult[]>(
+    const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
         if (!isValidToken(error, collection)) return acc
 
-        // Never filter custom collections, even tho we don't support them atm
-        if (allBlacklistedSymbols.length > 0 && !collection?.flags?.isCustom) {
-          const symbolLower = collection.symbol.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return acc
+        // Spam filter: hide collections whose symbol/name matches a blacklisted
+        // pattern or embeds a phishing domain. Custom collections are never hidden
+        // (even tho we don't support them atm).
+        if (
+          isBlacklistedAsset({
+            symbol: collection.symbol,
+            name: collection.name,
+            isCustom: collection.flags?.isCustom,
+            patterns: blacklistPatterns,
+            checkForEmbeddedDomain: true
+          })
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered collection ${collection.name}`,
+            {
+              address: collection.address,
+              symbol: collection.symbol,
+              name: collection.name
+            }
+          )
+
+          return acc
         }
 
         // Important note: Collections with 0 collectibles are allow to pass through the filter.
@@ -470,7 +465,10 @@ export class Portfolio {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
-        acc.push(collection)
+        acc.push({
+          ...collection,
+          priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
+        })
         return acc
       },
       []
@@ -596,9 +594,76 @@ export class Portfolio {
       afterNonce,
       blockNumber,
       tokenErrors: tokensWithErrResult
-        .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')
+        .filter(([error, result]: [string, TokenResult]) => !isValidToken(error, result))
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
+      collectionErrors: collectionsWithErrResult
+        .filter(([error, result]: [string, CollectionResult]) => !isValidToken(error, result))
+        .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
+  }
+
+  async getTokensByAddresses(
+    accountAddr: string,
+    tokenAddrs: string[],
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints'>
+  ): Promise<[TokenError, TokenResult][]> {
+    const uniqueTokenAddrs = [...new Set(tokenAddrs)]
+
+    if (!uniqueTokenAddrs.length) return []
+
+    const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
+      ? LIMITS.deploylessProxyMode
+      : LIMITS.deploylessStateOverrideMode
+
+    const [tokensWithErrResult] = await flattenResults(
+      paginate(uniqueTokenAddrs, limits.erc20).map((page, index) =>
+        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)
+      )
+    )
+
+    return tokensWithErrResult.map(([error, token]) => [
+      error,
+      {
+        ...token,
+        priceIn: token.priceIn || [],
+        marketDataIn: token.marketDataIn || []
+      }
+    ])
+  }
+
+  async getTokenPrice(
+    address: string,
+    {
+      baseCurrency = 'usd',
+      tokenDataCache = new Map(),
+      tokenDataRecency = 0
+    }: {
+      baseCurrency?: string
+      tokenDataCache?: TokenDataCache
+      tokenDataRecency?: number
+    } = {}
+  ): Promise<number | undefined> {
+    const cachedTokenData = [...tokenDataCache.entries()].find(
+      ([cachedAddress]) => cachedAddress.toLowerCase() === address.toLowerCase()
+    )?.[1]
+
+    if (cachedTokenData && Date.now() - cachedTokenData[0] <= tokenDataRecency) {
+      return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
+    }
+
+    if (!this.network.platformId) return undefined
+
+    const tokenData = await this.batchedGecko({
+      address,
+      network: this.network,
+      baseCurrency,
+      responseIdentifier: geckoResponseIdentifier(address, this.network)
+    })
+    const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+    tokenDataCache.set(address, [Date.now(), formattedTokenData])
+
+    return formattedTokenData.priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
   }
 }

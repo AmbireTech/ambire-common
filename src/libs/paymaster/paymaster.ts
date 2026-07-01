@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { AbiCoder, Contract, Interface, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -308,14 +307,14 @@ export class Paymaster extends AbstractPaymaster {
         bytecode: acc.creation?.bytecode,
         salt: acc.creation?.salt,
         key: acc.associatedKeys[0],
-        // eslint-disable-next-line no-underscore-dangle
+
         rpcUrl: this.provider!._getConnection().url,
         bundler: userOp.bundler,
         swapSponsorship:
           this.type === 'SwapSponsorship' && this.op?.meta?.swapSponsorship
             ? {
-                price: this.op.meta.swapSponsorship.fromTokenPriceInUsd,
-                decimals: this.op.meta.swapSponsorship.fromTokenDecimals
+                price: this.op.meta.swapSponsorship.feeTokenPriceInUsd,
+                decimals: this.op.meta.swapSponsorship.feeTokenDecimals
               }
             : undefined
       })

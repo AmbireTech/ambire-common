@@ -152,10 +152,14 @@ export async function getDebankEnhancedUniV3Positions(
   const positionsMap = new Map<string, Position>()
 
   uniPosition.positions.forEach((customPos) => {
+    if (!customPos.additionalData.positionIndex) return
+
     positionsMap.set(customPos.additionalData.positionIndex, customPos)
   })
 
   uniPositionFromDebank.positions.forEach((debankPos) => {
+    if (!debankPos.additionalData.positionIndex) return
+
     const existingPos = positionsMap.get(debankPos.additionalData.positionIndex)
 
     if (existingPos) {

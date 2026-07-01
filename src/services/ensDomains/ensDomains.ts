@@ -1,104 +1,198 @@
-import '@ensdomains/ethers-patch-v6'
+import { isAddress } from 'viem'
+import { normalize } from 'viem/ens'
 
-// @ts-ignore
-import constants from 'bip44-constants'
-import { EnsResolver, isAddress } from 'ethers'
+import { RPCProvider } from '@/interfaces/provider'
+import { fromDescriptor } from '@/libs/deployless/deployless'
+import { getViemClientForProvider } from '@/services/provider'
 
-// @ts-ignore
-import { normalize } from '@ensdomains/eth-ens-namehash'
+import EnsGetter from '../../../contracts/compiled/EnsGetter.json'
 
-import { RPCProvider } from '../../interfaces/provider'
-
-const BIP44_BASE_VALUE = 2147483648
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
+const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
+export const NAMOSHI_UNIVERSAL_RESOLVER = '0xc5Ed1fA34AD1F23F0cD2E36DB288290488B1B493'
+const LOCAL_BATCH_GATEWAY_URL = 'x-batch-gateway:true'
 
-const normalizeDomain = (domain: string) => {
-  try {
-    return normalize(domain)
-  } catch (e) {
-    return null
+const ETHEREUM_COIN_TYPE = 60n
+const REVERSE_LOOKUP_CHUNK_SIZE = 50
+
+export type ReverseLookupResult = {
+  [address: string]: {
+    name: string | null
+    failed: boolean
   }
 }
 
-function getNormalisedCoinType(bip44Item: number[][]) {
-  const firstItem = bip44Item[0]
-
-  if (!firstItem) return null
-  return firstItem.length && firstItem[0] ? firstItem[0] - BIP44_BASE_VALUE : null
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
 }
 
-async function resolveForCoin(resolver: any, bip44Item?: number[][]) {
-  if (bip44Item && bip44Item.length === 1) {
-    const coinType = getNormalisedCoinType(bip44Item)
-    if (!coinType) return null
-    return resolver.getAddress(coinType)
-  }
-  return resolver.getAddress()
+export function getIsNamoshiDomain(domain: string) {
+  return domain.endsWith('.btc') || domain.endsWith('.citrea')
 }
 
 export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
+/**
+ * Resolves an ENS/Namoshi domain to an address and avatar.
+ *
+ * Can work with a custom universal resolver if the domain is a Namoshi domain, otherwise it defaults to the ENS universal resolver.
+ */
 async function resolveENSDomain({
   provider,
   domain,
-  bip44Item
+  options
 }: {
   provider: RPCProvider
   domain: string
-  bip44Item?: number[][]
+  options?: {
+    isNamoshiDomain?: boolean
+  }
 }): Promise<{
   address: string
   avatar: string | null
 }> {
-  const normalizedDomainName = normalizeDomain(domain)
+  const normalizedDomainName = normalize(domain)
   if (!normalizedDomainName) return { address: '', avatar: null }
-  const resolver = await EnsResolver.fromName(provider, normalizedDomainName).catch(() => null)
 
-  if (!resolver)
-    return {
-      address: '',
-      avatar: null
-    }
+  const client = getViemClientForProvider(provider)
 
-  try {
-    const [ethAddress, avatar] = await Promise.all([
-      resolver.getAddress().catch(() => null),
-      resolver.getAvatar().catch(() => null)
-    ])
-    const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
+  const [address, avatar] = await Promise.all([
+    client.getEnsAddress({
+      name: normalizedDomainName,
+      universalResolverAddress: !options?.isNamoshiDomain
+        ? ENS_UNIVERSAL_RESOLVER
+        : NAMOSHI_UNIVERSAL_RESOLVER
+    }),
+    client.getEnsAvatar({
+      name: normalizedDomainName,
+      universalResolverAddress: !options?.isNamoshiDomain
+        ? ENS_UNIVERSAL_RESOLVER
+        : NAMOSHI_UNIVERSAL_RESOLVER
+    })
+  ])
 
-    return {
-      address: isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || '',
-      avatar
-    }
-  } catch (e: any) {
-    // If the error comes from an internal server error don't
-    // show it to the user, because it happens when a domain
-    // doesn't exist and we already show a message for that.
-    // https://dnssec-oracle.ens.domains/ 500 (ISE)
-    if (e.message?.includes('500_SERVER_ERROR'))
-      return {
-        address: '',
-        avatar: null
-      }
-
-    throw e
+  return {
+    address: address || '',
+    avatar
   }
 }
 
-function getBip44Items(coinTicker: string) {
-  if (!coinTicker) return null
-  return constants.filter((item: string[]) => item[1] === coinTicker)
+/**
+ * Batches the reverse lookup (address -> primary name) for many addresses into deployless.
+ *
+ * CCIP-read (EIP-3668) reverse records cannot be resolved inside a single `eth_call` (there is
+ * no client-side gateway handling), so the contract flags them as `needsOffchainLookup` and we
+ * fallback to viem's `getEnsName` for just those addresses.
+ */
+async function reverseLookupEns(
+  addresses: string[],
+  provider: RPCProvider,
+  options?: {
+    isNamoshiDomain?: boolean
+  }
+): Promise<ReverseLookupResult> {
+  if (!addresses.length) return {}
+
+  const universalResolverAddress = !options?.isNamoshiDomain
+    ? ENS_UNIVERSAL_RESOLVER
+    : NAMOSHI_UNIVERSAL_RESOLVER
+
+  const result: ReverseLookupResult = {}
+  const offchainLookupAddresses: string[] = []
+
+  const deploylessEnsGetter = fromDescriptor(provider, EnsGetter, true)
+
+  const addressChunks = chunkArray(addresses, REVERSE_LOOKUP_CHUNK_SIZE)
+  const chunkResults = await Promise.allSettled(
+    addressChunks.map((addressChunk) =>
+      deploylessEnsGetter.call('getNames', [
+        universalResolverAddress,
+        addressChunk,
+        ETHEREUM_COIN_TYPE,
+        [LOCAL_BATCH_GATEWAY_URL]
+      ])
+    )
+  )
+
+  addressChunks.forEach((addressChunk, chunkIndex) => {
+    const chunkResult = chunkResults[chunkIndex]
+
+    if (!chunkResult || chunkResult.status === 'rejected') {
+      if (chunkResult?.status === 'rejected') {
+        console.warn('batched reverse lookup chunk failed', chunkResult.reason)
+      }
+      addressChunk.forEach((address) => {
+        result[address] = { name: null, failed: true }
+      })
+      return
+    }
+
+    addressChunk.forEach((address, index) => {
+      if (!chunkResult.value) return
+
+      const reverseResult = chunkResult.value[index] as
+        | { resolvedName: string; hasName: boolean; needsOffchainLookup: boolean }
+        | undefined
+
+      if (reverseResult?.needsOffchainLookup) {
+        offchainLookupAddresses.push(address)
+        return
+      }
+
+      result[address] = {
+        name: reverseResult?.hasName ? reverseResult.resolvedName || null : null,
+        failed: false
+      }
+    })
+  })
+
+  if (offchainLookupAddresses.length) {
+    const client = getViemClientForProvider(provider)
+
+    await Promise.all(
+      offchainLookupAddresses.map(async (address) => {
+        try {
+          const name = await client.getEnsName({
+            address: address as `0x${string}`,
+            universalResolverAddress,
+            coinType: ETHEREUM_COIN_TYPE
+          })
+          result[address] = { name: name || null, failed: false }
+        } catch (e) {
+          console.warn('CCIP-read reverse lookup failed for address', address, e)
+          result[address] = { name: null, failed: true }
+        }
+      })
+    )
+  }
+
+  return result
 }
 
-async function reverseLookupEns(address: string, provider: RPCProvider) {
-  return provider.lookupAddress(address)
+async function getEnsAvatar(
+  name: string,
+  provider: RPCProvider,
+  options?: {
+    isNamoshiDomain?: boolean
+  }
+) {
+  const normalizedName = normalize(name)
+  if (!normalizedName) return null
+
+  const client = getViemClientForProvider(provider)
+
+  return client.getEnsAvatar({
+    name: normalizedName,
+    universalResolverAddress: !options?.isNamoshiDomain
+      ? ENS_UNIVERSAL_RESOLVER
+      : NAMOSHI_UNIVERSAL_RESOLVER
+  })
 }
 
-async function getEnsAvatar(name: string, provider: RPCProvider) {
-  return provider.getAvatar(name)
-}
-
-export { resolveENSDomain, getBip44Items, getEnsAvatar, reverseLookupEns }
+export { resolveENSDomain, getEnsAvatar, reverseLookupEns }

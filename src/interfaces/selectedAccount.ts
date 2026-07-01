@@ -25,6 +25,7 @@ export type SelectedAccountPortfolioState = {
           | 'tokens'
           | 'collections'
           | 'tokenErrors'
+          | 'collectionErrors'
           | 'hintsFromExternalAPI'
           | 'priceCache'
           | 'total'
@@ -74,4 +75,8 @@ export interface SelectedAccountPortfolio {
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
   projectedRewardsStats: ProjectedRewardsStats | null
+}
+
+export type SelectedAccountBalanceByAccount = {
+  [accountId: string]: number
 }

@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Interface, ZeroAddress } from 'ethers'
 
@@ -131,5 +130,13 @@ export class V1 extends BaseAccount {
 
   canBroadcastByOtherEOA(): boolean {
     return true
+  }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
+
+  canSetCustomGas(): boolean {
+    return this.canSetCustomGasPrices()
   }
 }

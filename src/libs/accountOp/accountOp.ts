@@ -1,5 +1,6 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
+import { IrCall } from '@/libs/humanizer/interfaces'
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { EIP7702Auth } from '../../consts/7702'
@@ -9,7 +10,7 @@ import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
 import { UserOperation } from '../userOperation/types'
-import { AccountOpStatus, Call } from './types'
+import { AccountOpStatus, Call, CallTuple } from './types'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -30,6 +31,7 @@ export interface GasFeePayment {
   feeTokenChainId?: bigint
   amount: bigint
   simulatedGasLimit: bigint
+  isCustomGasLimit?: boolean
   gasPrice: bigint
   broadcastOption: string
   maxPriorityFeePerGas?: bigint
@@ -51,6 +53,8 @@ export interface AccountOp {
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
+  // the EOA nonce used for raw transaction broadcast, if applicable
+  eoaNonce?: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   // the feeCall is an extra call we add manually when there's a
@@ -88,17 +92,28 @@ export interface AccountOp {
     fromQuoteId?: string
     /** Used to enable the gas tank if the user is topping up */
     topUpAmount?: bigint
+    /** Allows transfer.ts-owned MAX flows to reserve the fee from the transferred token. */
+    allowTransferFeeTokenSelfReserve?: boolean
     /** Used to enable swap&bridge sponsorship */
     swapSponsorship?: {
       swapFeeInUsd: number
       nativePrice: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
+    speedUp?: {
+      enabled: boolean
+    }
+    /** Descriptor-backed humanization persisted so activity, history and Benzin show the same clear signing details. */
+    clearSigningHumanization?: IrCall[]
   }
   flags?: {
-    hideActivityBanner?: boolean
+    /** Excludes it from the "failed transactions" banner and the Activity counter badge,
+     *  while keeping it in the Activity history. */
+    hiddenFromFailedBanner?: boolean
   }
+  /** Session ID of the dApp that initiated this accountOp, used for phishing context checks. */
+  dappSessionId?: string
 }
 
 /**
@@ -133,7 +148,7 @@ export function toSingletonCall(call: Call): Call {
   }
 }
 
-export function callToTuple(call: Call): [string, string, string] {
+export function callToTuple(call: Call): CallTuple {
   return [call.to, call.value.toString(), call.data]
 }
 
@@ -154,7 +169,7 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   return true
 }
 
-export function getSignableCalls(op: AccountOp): [string, string, string][] {
+export function getSignableCalls(op: AccountOp): CallTuple[] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
@@ -165,7 +180,7 @@ export function getSignableHash(
   addr: AccountId,
   chainId: bigint,
   nonce: bigint,
-  calls: [string, string, string][]
+  calls: CallTuple[]
 ): Uint8Array {
   const abiCoder = new AbiCoder()
   return getBytes(

@@ -30,7 +30,7 @@ export function stringify(obj: any, opts?: Options): string {
         const error: any = {}
 
         Object.getOwnPropertyNames(value).forEach((propName) => {
-          // @ts-ignore
+          // @ts-expect-error
           error[propName] = value[propName]
         })
 
@@ -43,7 +43,24 @@ export function stringify(obj: any, opts?: Options): string {
   )
 }
 
+// Markers that `stringify` writes only when a BigInt or Error is present.
+// If neither appears in the raw string, the reviver below would be a no-op for
+// every node, so we can take the native `JSON.parse` fast path instead. This
+// matters for large all-string blobs (e.g. the multi-MB phishing list), where
+// supplying any reviver forces V8 off its fast internal parser and invokes the
+// callback once per node — hundreds of thousands of wasted calls that froze the
+// mobile worker thread during boot.
+// `$bigint` is the exact wrapper key. `"Error` matches the start of a
+// serialized Error's `stack` value (`"stack": "Error...`) regardless of
+// pretty-print spacing; the reviver still validates with `stack.startsWith`,
+// so a coincidental `"Error` elsewhere only costs a reviver pass, never
+// correctness.
+const RICH_MARKERS = ['$bigint', '"Error']
+
 export function parse(json: string) {
+  const needsReviver = RICH_MARKERS.some((marker) => json.includes(marker))
+  if (!needsReviver) return JSON.parse(json)
+
   return JSON.parse(json, (key, value) => {
     if (value?.$bigint) {
       return BigInt(value.$bigint)
@@ -53,7 +70,7 @@ export function parse(json: string) {
       const error = new Error(value.message)
       Object.getOwnPropertyNames(value).forEach((propName) => {
         if (propName !== 'message') {
-          // @ts-ignore
+          // @ts-expect-error
           error[propName] = value[propName]
         }
       })

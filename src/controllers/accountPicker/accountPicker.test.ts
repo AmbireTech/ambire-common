@@ -1,7 +1,5 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { Wallet } from 'ethers'
 
-/* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -278,49 +276,47 @@ describe('AccountPicker', () => {
       })
   })
 
-  DERIVATION_OPTIONS.forEach(({ label, value }) => {
-    test(`should derive correctly ${label}`, async () => {
-      const { controller } = await prepareTest()
-      const keyIterator = new KeyIterator(process.env.SEED)
-      const pageSize = 5
-      controller.setInitParams({
-        keyIterator,
-        hdPathTemplate: value,
-        pageSize,
-        shouldSearchForLinkedAccounts: false,
-        shouldGetAccountsUsedOnNetworks: false,
-        shouldAddNextAccountAutomatically: false
-      })
-      await controller.init()
+  test.each(DERIVATION_OPTIONS)('should derive correctly $label', async ({ value }) => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const pageSize = 5
+    controller.setInitParams({
+      keyIterator,
+      hdPathTemplate: value,
+      pageSize,
+      shouldSearchForLinkedAccounts: false,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
 
-      // Checks page 1 EOAs
-      await controller.setPage({ page: 1 })
-      const basicAccountsOnFirstPage = controller.accountsOnPage.filter(
-        (x) => !isSmartAccount(x.account)
-      )
-      const key1to5BasicAccPublicAddresses = Array.from(
-        { length: pageSize },
-        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
-      )
-      basicAccountsOnFirstPage.forEach((x) => {
-        const address = x.account.addr
-        expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
-      })
+    // Checks page 1 EOAs
+    await controller.setPage({ page: 1 })
+    const basicAccountsOnFirstPage = controller.accountsOnPage.filter(
+      (x) => !isSmartAccount(x.account)
+    )
+    const key1to5BasicAccPublicAddresses = Array.from(
+      { length: pageSize },
+      (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
+    )
+    basicAccountsOnFirstPage.forEach((x) => {
+      const address = x.account.addr
+      expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
+    })
 
-      // Checks page 2 EOAs
-      await controller.setPage({ page: 2 })
-      const basicAccountsOnSecondPage = controller.accountsOnPage.filter(
-        (x) => !isSmartAccount(x.account)
-      )
-      const key6to10BasicAccPublicAddresses = Array.from(
-        { length: pageSize },
-        (_, i) =>
-          new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
-      )
-      basicAccountsOnSecondPage.forEach((x) => {
-        const address = x.account.addr
-        expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
-      })
+    // Checks page 2 EOAs
+    await controller.setPage({ page: 2 })
+    const basicAccountsOnSecondPage = controller.accountsOnPage.filter(
+      (x) => !isSmartAccount(x.account)
+    )
+    const key6to10BasicAccPublicAddresses = Array.from(
+      { length: pageSize },
+      (_, i) =>
+        new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
+    )
+    basicAccountsOnSecondPage.forEach((x) => {
+      const address = x.account.addr
+      expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
     })
   })
 })

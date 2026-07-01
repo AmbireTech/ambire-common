@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -91,6 +90,10 @@ export abstract class BaseAccount {
   abstract shouldStateOverrideDuringSimulations(): boolean
 
   abstract canBroadcastByOtherEOA(): boolean
+
+  abstract canSetCustomGasPrices(feeOption: FeePaymentOption): boolean
+
+  abstract canSetCustomGas(feeOption: FeePaymentOption, accountOp?: AccountOp): boolean
 
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall(paidBy?: string) {

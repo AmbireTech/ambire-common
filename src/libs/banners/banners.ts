@@ -42,42 +42,49 @@ export const getBridgeBanners = (
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
   const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
   const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
+  // if there is one squid swap on the same chain, label it as such
+  const actionWordUppercase = allRoutes.find(
+    (r) => r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId
+  )
+    ? 'Swap'
+    : 'Bridge'
+  const actionWordLower = actionWordUppercase.toLowerCase()
 
   let title = ''
   let text = ''
   let type: BannerType
   if (inProgressRoutes.length > 0) {
     type = 'info'
-    title = `Bridge${inProgressRoutes.length > 1 ? 's' : ''} in progress`
-    text = `You have ${inProgressRoutes.length} pending bridge${
+    title = `${actionWordUppercase}${inProgressRoutes.length > 1 ? 's' : ''} in progress`
+    text = `You have ${inProgressRoutes.length} pending ${actionWordLower}${
       inProgressRoutes.length > 1 ? 's' : ''
     }`
   } else if (failedRoutes.length > 0) {
     type = 'error'
-    title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
-    text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+    title = `Failed ${actionWordLower}${failedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${failedRoutes.length} failed ${actionWordLower}${failedRoutes.length > 1 ? 's' : ''}${
       completedRoutes.length > 1
-        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        ? ` and ${completedRoutes.length} completed ${actionWordLower}${completedRoutes.length > 1 ? 's' : ''}`
         : ''
     }${
       refundedRoutes.length > 1
-        ? ` and ${refundedRoutes.length} refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+        ? ` and ${refundedRoutes.length} refunded ${actionWordLower}${refundedRoutes.length > 1 ? 's' : ''}`
         : ''
     }`
   } else if (refundedRoutes.length > 0) {
     type = 'warning'
-    title = `Refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
-    text = `You have ${refundedRoutes.length} refunded bridge${
+    title = `Refunded ${actionWordLower}${refundedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${refundedRoutes.length} refunded ${actionWordLower}${
       refundedRoutes.length > 1 ? 's' : ''
     }${
       completedRoutes.length > 1
-        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        ? ` and ${completedRoutes.length} completed ${actionWordLower}${completedRoutes.length > 1 ? 's' : ''}`
         : ''
     }`
   } else {
     type = 'success'
-    title = `Bridge${completedRoutes.length > 1 ? 's' : ''} completed`
-    text = `You have ${completedRoutes.length} completed bridge${
+    title = `${actionWordUppercase}${completedRoutes.length > 1 ? 's' : ''} completed`
+    text = `You have ${completedRoutes.length} completed ${actionWordLower}${
       completedRoutes.length > 1 ? 's' : ''
     }.`
   }
@@ -362,7 +369,6 @@ export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) 
     label = isSingle ? 'token' : 'tokens'
   }
 
-  // eslint-disable-next-line no-nested-ternary
   const prefix = isSingle
     ? `The destination ${label}`
     : `${blacklistedItemsCount} of the destination ${label}`

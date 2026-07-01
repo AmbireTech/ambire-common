@@ -1,7 +1,4 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
-import { ZeroAddress } from 'ethers'
+import { formatUnits, ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
@@ -64,7 +61,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -75,7 +73,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -88,7 +87,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: XWALLET_ADDRESS,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -114,6 +114,80 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.amount).toBe('1')
   })
+  test('should set max amount minus fee when the selected fee token matches the transfer token', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const feeAmount = 1_000_000_000_000_000n
+
+    await transferController.update({
+      selectedToken: nativeToken
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: feeAmount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(
+      formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
+    )
+  })
+  test('should preserve the amount when the fee leaves no transferable max amount', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const initialAmount = '0.001'
+
+    await transferController.update({
+      selectedToken: nativeToken,
+      amount: initialAmount
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: nativeToken.amount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(initialAmount)
+    expect(transferController.amountAdjustmentWarning).toBeNull()
+  })
   test('should set validation form messages', async () => {
     const { transferController, tokens } = await prepareTest()
 
@@ -126,7 +200,8 @@ describe('Transfer Controller', () => {
       selectedToken: xwalletOnEthereum,
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -187,7 +262,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: FEE_COLLECTOR,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -206,7 +282,8 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
-      ensAddress: '',
+      resolvedAddress: '',
+      resolvedAddressType: null,
       isDomainResolving: false
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
@@ -216,8 +293,7 @@ describe('Transfer Controller', () => {
   test('should toJSON()', async () => {
     const { transferController } = await prepareTest()
 
-    const json = transferController.toJSON()
-    expect(json).toBeDefined()
+    expect(transferController.toJSON()).toBeDefined()
   })
 })
 
@@ -283,7 +359,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -368,7 +445,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -410,7 +488,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -486,7 +565,8 @@ describe('Transfer Controller defaults logic', () => {
       amount: '1',
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })

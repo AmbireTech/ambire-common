@@ -5,6 +5,7 @@ export interface SessionInitProps {
   url?: string
   tabId?: number
   windowId?: number
+  wcTopic?: string
 }
 export interface SessionProp {
   icon?: string
@@ -51,6 +52,8 @@ export class Session {
 
   messenger?: Messenger
 
+  wcTopic?: string
+
   lastHandledRequestIds: { [providerId: string]: number }
 
   isWeb3App: boolean = false
@@ -59,20 +62,26 @@ export class Session {
 
   sendMessage(event: any, data: any) {
     if (!this.messenger) {
+      if (this.wcTopic && this.wcTopic.startsWith('temp_wallet_connect_session')) return
+
       console.error(
-        `Cannot send message for session with id: ${this.sessionId} - messenger not initialized`
+        `[Session] Cannot send message for session with id: ${this.sessionId} - messenger not initialized.`
       )
       return
     }
 
+    // SECURITY: include the session origin so platform messengers (e.g. mobile)
+    // can verify the WebView is still on the intended origin before delivering
+    // the broadcast. This prevents accountsChanged/chainChanged leakage to a
+    // page the user has navigated to during an async operation.
     this.messenger.send(
       this.isAmbireNext ? 'broadcast-next' : 'broadcast',
-      { event, data },
+      { event, data, origin: this.origin },
       { tabId: this.tabId }
     )
   }
 
-  constructor({ tabId, windowId, url }: SessionInitProps = {}) {
+  constructor({ tabId, windowId, url, wcTopic }: SessionInitProps = {}) {
     if (url) {
       this.origin = new URL(url).origin
     } else {
@@ -81,6 +90,7 @@ export class Session {
     this.id = getDappIdFromUrl(this.origin)
     this.tabId = tabId || Date.now()
     this.windowId = windowId
+    this.wcTopic = wcTopic
 
     // Track requestIds per providerId, since we inject an EthereumProvider into all frames for the same session
     this.lastHandledRequestIds = new Proxy(
@@ -89,7 +99,6 @@ export class Session {
         get: (target: { [providerId: string]: number }, prop: string) => {
           // When accessing an unknown providerId, initialize it with the default requestId = -1
           if (!(prop in target)) {
-            // eslint-disable-next-line no-param-reassign
             target[prop] = -1
           }
           return target[prop]

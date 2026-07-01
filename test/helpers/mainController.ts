@@ -48,6 +48,8 @@ export interface MakeMainControllerOpts {
     featureFlags?: Partial<FeatureFlags>
     liFiApiKey?: string
     bungeeApiKey?: string
+    squidIntegratorId?: string
+    uniswapApiKey?: string
     externalSignerControllers?: ExternalSignerControllers
     keystoreSigners?: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     relayerUrl?: string
@@ -93,7 +95,7 @@ export const makeMainController = async (
   let accountStateSpy: jest.SpyInstance | undefined
   if (skipAccountStateLoad) {
     accountStateSpy = jest
-      // @ts-ignore
+      // @ts-expect-error
       .spyOn(AccountsController.prototype, 'updateAccountStates')
       .mockImplementation(async () => {
         await wait(1)
@@ -119,7 +121,7 @@ export const makeMainController = async (
   })
 
   if (skipPortfolioFetchBlacklistOnLoad) {
-    // @ts-ignore
+    // @ts-expect-error
     jest.spyOn(PortfolioController.prototype, 'fetchBlacklist').mockImplementation(async () => {
       await wait(1)
     })
@@ -156,6 +158,8 @@ export const makeMainController = async (
     velcroUrl: overrides.velcroUrl ?? velcroUrl,
     liFiApiKey: overrides.liFiApiKey ?? '',
     bungeeApiKey: overrides.bungeeApiKey ?? '',
+    squidIntegratorId: overrides.squidIntegratorId ?? '',
+    uniswapApiKey: overrides.uniswapApiKey ?? '',
     featureFlags,
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},
@@ -164,7 +168,7 @@ export const makeMainController = async (
   })
 
   // Disable simulation in requests' signAccountOps
-  // @ts-ignore
+  // @ts-expect-error
   mainCtrl.requests.shouldSimulateAccountOps = false
 
   // Applied synchronously before any async callbacks run, so the initial load
@@ -174,6 +178,7 @@ export const makeMainController = async (
   }
   if (skipDomainsResolveOnLoad) {
     mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
+    mainCtrl.domains.batchReverseLookup = jest.fn().mockResolvedValue(undefined)
   }
 
   if (awaitInitialLoad) {

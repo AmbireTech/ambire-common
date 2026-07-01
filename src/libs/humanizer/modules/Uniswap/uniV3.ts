@@ -1,9 +1,9 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { type Hex, decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { UniV3Router, UniV3Router2 } from '../../const/abis'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerVisualization } from '../../interfaces'
 import {
+  HexIrCall,
   getAction,
   getAddressVisualization,
   getDeadline,
@@ -14,21 +14,82 @@ import {
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
-const ifaceV32 = new Interface(UniV3Router2)
-const ifaceV3 = new Interface(UniV3Router)
+// UniV3Router2 ABIs
+const multicallDeadlineAbi = parseAbi([
+  'function multicall(uint256 deadline, bytes[] data) payable returns (bytes[])'
+])
+const multicallBytesAbi = parseAbi([
+  'function multicall(bytes[] data) payable returns (bytes[] results)'
+])
+const multicallPrevBlockHashAbi = parseAbi([
+  'function multicall(bytes32 previousBlockhash, bytes[] data) payable returns (bytes[])'
+])
+const exactInputSingleNoDeadlineAbi = parseAbi([
+  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)'
+])
+const exactInputSingleWithDeadlineAbi = parseAbi([
+  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)'
+])
+const exactInputV32Abi = parseAbi([
+  'function exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)'
+])
+const exactOutputSingleNoDeadlineAbi = parseAbi([
+  'function exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountIn)'
+])
+const exactOutputSingleWithDeadlineAbi = parseAbi([
+  'function exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountIn)'
+])
+const refundETHAbi = parseAbi(['function refundETH() payable'])
+const exactOutputV32Abi = parseAbi([
+  'function exactOutput((bytes path, address recipient, uint256 amountOut, uint256 amountInMaximum) params) payable returns (uint256 amountIn)'
+])
+const swapTokensForExactTokensV32Abi = parseAbi([
+  'function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to) payable returns (uint256 amountIn)'
+])
+const swapExactTokensForTokensV32Abi = parseAbi([
+  'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to) payable returns (uint256 amountOut)'
+])
+const unwrapWETH9NoRecipientAbi = parseAbi(['function unwrapWETH9(uint256 amountMinimum) payable'])
+const unwrapWETH9WithRecipientAbi = parseAbi([
+  'function unwrapWETH9(uint256 amountMinimum, address recipient) payable'
+])
+const sweepTokenNoRecipientAbi = parseAbi([
+  'function sweepToken(address token, uint256 amountMinimum) payable'
+])
+const sweepTokenWithRecipientAbi = parseAbi([
+  'function sweepToken(address token, uint256 amountMinimum, address recipient) payable'
+])
+const sweepTokenWithFeeNoRecipientAbi = parseAbi([
+  'function sweepTokenWithFee(address token, uint256 amountMinimum, uint256 feeBips, address feeRecipient) payable'
+])
+const sweepTokenWithFeeWithRecipientAbi = parseAbi([
+  'function sweepTokenWithFee(address token, uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable'
+])
+const mintV32Abi = parseAbi([
+  'function mint((address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint256 amount0Desired, uint256 amount1Desired, uint256 amount0Min, uint256 amount1Min, address recipient, uint256 deadline) params) payable returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)'
+])
+
+// UniV3Router ABIs
+const exactInputV3Abi = parseAbi([
+  'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)'
+])
+const exactOutputV3Abi = parseAbi([
+  'function exactOutput((bytes path, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum) params) payable returns (uint256 amountIn)'
+])
+const unwrapWETH9WithFeeAbi = parseAbi([
+  'function unwrapWETH9WithFee(uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable'
+])
 
 const uniV3Mapping = (): HumanizerUniMatcher => {
   return {
     // 0x5ae401dc
-    [ifaceV32.getFunction('multicall(uint256 deadline,bytes[])')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
+    [toFunctionSelector(multicallDeadlineAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
-      const [deadline, calls] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: multicallDeadlineAbi, data: call.data })
+      const [deadline, calls] = args
       const mappingResult = uniV3Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
-        (data: string): HumanizerVisualization[] => {
+        (data: Hex): HumanizerVisualization[] => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
@@ -40,31 +101,34 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         : [getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)]
     },
     // 0xac9650d8
-    [ifaceV32.getFunction('multicall(bytes[])')?.selector!]: (
+    [toFunctionSelector(multicallBytesAbi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [calls] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: multicallBytesAbi, data: call.data })
+      const [calls] = args
       const mappingResult = uniV3Mapping()
-      const parsed = calls.map((data: string): HumanizerVisualization[] => {
+      const parsed = calls.map((data: Hex): HumanizerVisualization[] => {
         const sigHash = data.slice(0, 10)
-
         const humanizer = mappingResult[sigHash]
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
       })
       return uniReduce(parsed)
     },
     // 0x1f0464d1
-    [ifaceV32.getFunction('multicall(bytes32 prevBlockHash, bytes[])')?.selector!]: (
+    [toFunctionSelector(multicallPrevBlockHashAbi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
       if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
-
-      const [, calls] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({
+        abi: multicallPrevBlockHashAbi,
+        data: call.data
+      })
+      const [, calls] = args
       const mappingResult = uniV3Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
-        (data: string): HumanizerVisualization[] => {
+        (data: Hex): HumanizerVisualization[] => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
@@ -76,179 +140,225 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x04e45aaf
-    [ifaceV32.getFunction(
-      'exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
-      const [params] = ifaceV32.parseTransaction(call)?.args || []
+    [toFunctionSelector(exactInputSingleNoDeadlineAbi[0])]: (
+      accountOp: AccountOp,
+      call: HexIrCall
+    ): HumanizerVisualization[] => {
+      const { args } = decodeFunctionData({
+        abi: exactInputSingleNoDeadlineAbi,
+        data: call.data
+      })
+      const [params] = args
       // @TODO: consider fees
       return [
         getAction('Swap'),
-        getToken(params.tokenIn, params.amountIn),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOutMinimum),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
     // 0x414bf389
-    [ifaceV32.getFunction(
-      'exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
-      const [params] = ifaceV32.parseTransaction(call)?.args || []
-
+    [toFunctionSelector(exactInputSingleWithDeadlineAbi[0])]: (
+      accountOp: AccountOp,
+      call: HexIrCall
+    ): HumanizerVisualization[] => {
+      const { args } = decodeFunctionData({
+        abi: exactInputSingleWithDeadlineAbi,
+        data: call.data
+      })
+      const [params] = args
       return [
         getAction('Swap'),
-        getToken(params.tokenIn, params.amountIn),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOutMinimum),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
     },
     // 0xb858183f
-    [ifaceV32.getFunction('exactInput')?.selector!]: (
+    [toFunctionSelector(exactInputV32Abi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [params] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: exactInputV32Abi, data: call.data })
+      const [params] = args
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
         getAction('Swap'),
-        getToken(path[0], params.amountIn),
+        getToken(path[0]!, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], params.amountOutMinimum),
+        getToken(path[path.length - 1]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
     // 0x5023b4df
-    [ifaceV32.getFunction(
-      'exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params)'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
-      const [params] = ifaceV32.parseTransaction(call)?.args || []
+    [toFunctionSelector(exactOutputSingleNoDeadlineAbi[0])]: (
+      accountOp: AccountOp,
+      call: HexIrCall
+    ): HumanizerVisualization[] => {
+      const { args } = decodeFunctionData({
+        abi: exactOutputSingleNoDeadlineAbi,
+        data: call.data
+      })
+      const [params] = args
       return [
-        getAction('Swap up to'),
-        getToken(params.tokenIn, params.amountInMaximum),
+        getAction('Swap'),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOut),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
     // 0xdb3e2198
-    [ifaceV32.getFunction(
-      'exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params)'
-    )?.selector!]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
-      const [params] = ifaceV32.parseTransaction(call)?.args || []
+    [toFunctionSelector(exactOutputSingleWithDeadlineAbi[0])]: (
+      accountOp: AccountOp,
+      call: HexIrCall
+    ): HumanizerVisualization[] => {
+      const { args } = decodeFunctionData({
+        abi: exactOutputSingleWithDeadlineAbi,
+        data: call.data
+      })
+      const [params] = args
       return [
-        getAction('Swap up to'),
-        getToken(params.tokenIn, params.amountInMaximum),
+        getAction('Swap'),
+        getToken(params.tokenIn, 0n),
         getLabel('for'),
-        getToken(params.tokenOut, params.amountOut),
+        getToken(params.tokenOut, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
     },
 
     // 0x12210e8a
-    [ifaceV32.getFunction('refundETH()')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
+    [toFunctionSelector(refundETHAbi[0])]: (
+      _accountOp: AccountOp,
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      return [getAction('Withdraw'), getToken(ZeroAddress, call.value)]
+      return [getAction('Withdraw'), getToken(zeroAddress, call.value)]
     },
     // 0x09b81346
-    [ifaceV32.getFunction('exactOutput')?.selector!]: (
+    [toFunctionSelector(exactOutputV32Abi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [params] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: exactOutputV32Abi, data: call.data })
+      const [params] = args
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
-        getAction('Swap up to'),
-        getToken(path[path.length - 1], params.amountInMaximum),
+        getAction('Swap'),
+        getToken(path[path.length - 1]!, 0n),
         getLabel('for'),
-        getToken(path[0], params.amountOut),
+        getToken(path[0]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
     // 0x42712a67
-    [ifaceV32.getFunction('swapTokensForExactTokens')?.selector!]: (
+    [toFunctionSelector(swapTokensForExactTokensV32Abi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [amountOut, amountInMax, path, to] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({
+        abi: swapTokensForExactTokensV32Abi,
+        data: call.data
+      })
+      const [, , path, to] = args
+      const firstToken = path[0]
+      const lastToken = path[path.length - 1]
+      if (!firstToken || !lastToken) throw new Error('UniV3: missing tokens in path')
       return [
-        getAction('Swap up to'),
-        getToken(path[0], amountInMax),
+        getAction('Swap'),
+        getToken(firstToken, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], amountOut),
+        getToken(lastToken, 0n),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
     },
     // 0x472b43f3
-    [ifaceV32.getFunction('swapExactTokensForTokens')?.selector!]: (
+    [toFunctionSelector(swapExactTokensForTokensV32Abi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [amountIn, amountOutMin, path, to] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({
+        abi: swapExactTokensForTokensV32Abi,
+        data: call.data
+      })
+      const [, , path, to] = args
+      const firstToken = path[0]
+      const lastToken = path[path.length - 1]
+      if (!firstToken || !lastToken) throw new Error('UniV3: missing tokens in path')
       return [
         getAction('Swap'),
-        getToken(path[0], amountIn),
+        getToken(firstToken, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], amountOutMin),
+        getToken(lastToken, 0n),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
     },
     // 0x49616997
-    [ifaceV32.getFunction('unwrapWETH9(uint256)')?.selector!]: (
-      _accountOp: AccountOp,
-      call: IrCall
-    ): HumanizerVisualization[] => {
-      const [amountMin] = ifaceV32.parseTransaction(call)?.args || []
-      return [getAction('Unwrap'), getToken(ZeroAddress, amountMin)]
+    [toFunctionSelector(unwrapWETH9NoRecipientAbi[0])]: (): HumanizerVisualization[] => {
+      return [getAction('Unwrap'), getToken(zeroAddress, 0n)]
     },
     // 0x49404b7c
-    [ifaceV32.getFunction('unwrapWETH9(uint256,address recipient)')?.selector!]: (
+    [toFunctionSelector(unwrapWETH9WithRecipientAbi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [amountMin, recipient] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({
+        abi: unwrapWETH9WithRecipientAbi,
+        data: call.data
+      })
+      const [, recipient] = args
       return [
         getAction('Unwrap'),
-        getToken(ZeroAddress, amountMin),
+        getToken(zeroAddress, 0n),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
       ]
     },
     // 0xe90a182f
-    [ifaceV32.getFunction('sweepToken(address,uint256)')?.selector!]: (
+    [toFunctionSelector(sweepTokenNoRecipientAbi[0])]: (
       _accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [token, amountMinimum] = ifaceV32.parseTransaction(call)?.args || []
-      return [getAction('Sweep'), getLabel('at least'), getToken(token, amountMinimum)]
+      const { args } = decodeFunctionData({
+        abi: sweepTokenNoRecipientAbi,
+        data: call.data
+      })
+      const [token] = args
+      return [getAction('Sweep'), getToken(token, 0n)]
     },
     // 0xdf2ab5bb
-    [ifaceV32.getFunction('sweepToken(address,uint256,address)')?.selector!]: (
+    [toFunctionSelector(sweepTokenWithRecipientAbi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [token, amountMinimum, recipient] = ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({
+        abi: sweepTokenWithRecipientAbi,
+        data: call.data
+      })
+      const [token, , recipient] = args
       return [
         getAction('Sweep'),
-        getLabel('at least'),
-        getToken(token, amountMinimum),
+        getToken(token, 0n),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
       ]
     },
     // 0x3068c554
-    [ifaceV32.getFunction('sweepTokenWithFee(address,uint256,uint256,address)')?.selector!]: (
+    [toFunctionSelector(sweepTokenWithFeeNoRecipientAbi[0])]: (
       _accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [token, amountMinimum, feeBips, feeRecipient] =
-        ifaceV32.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({
+        abi: sweepTokenWithFeeNoRecipientAbi,
+        data: call.data
+      })
+      const [token, , feeBips, feeRecipient] = args
       return [
         getAction('Sweep'),
-        getLabel('at least'),
-        getToken(token, amountMinimum),
+        getToken(token, 0n),
         getLabel('with fee'),
         getToken(token, feeBips),
         getLabel('to'),
@@ -256,15 +366,18 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       ]
     },
     // 0xe0e189a0
-    [`${
-      ifaceV32.getFunction('sweepTokenWithFee(address,uint256,address,uint256,address)')?.selector
-    }`]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
-      const [token, amountMinimum, recipient, feeBips, feeRecipient] =
-        ifaceV32.parseTransaction(call)?.args || []
+    [toFunctionSelector(sweepTokenWithFeeWithRecipientAbi[0])]: (
+      accountOp: AccountOp,
+      call: HexIrCall
+    ): HumanizerVisualization[] => {
+      const { args } = decodeFunctionData({
+        abi: sweepTokenWithFeeWithRecipientAbi,
+        data: call.data
+      })
+      const [token, , recipient, feeBips, feeRecipient] = args
       return [
         getAction('Sweep'),
-        getLabel('at least'),
-        getToken(token, amountMinimum),
+        getToken(token, 0n),
         getLabel('with fee'),
         getToken(token, feeBips),
         getLabel('to'),
@@ -273,86 +386,71 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       ]
     },
     // 0x88316456
-    [`${
-      ifaceV32.getFunction(
-        'mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))'
-      )?.selector
-    }`]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
-      const [
-        [
-          token0,
-          token1,
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          fee,
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          tickLower,
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          tickUpper,
-          amount0Desired,
-          amount1Desired,
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          amount0Min,
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          amount1Min,
-          recipient,
-          deadline
-        ]
-      ] = ifaceV32.parseTransaction(call)?.args || []
+    [toFunctionSelector(mintV32Abi[0])]: (
+      accountOp: AccountOp,
+      call: HexIrCall
+    ): HumanizerVisualization[] => {
+      const { args } = decodeFunctionData({ abi: mintV32Abi, data: call.data })
+      const [params] = args
       return [
         getAction('Add liquidity'),
-        getToken(token0, amount0Desired),
-        getToken(token1, amount1Desired),
+        getToken(params.token0, params.amount0Desired),
+        getToken(params.token1, params.amount1Desired),
         getLabel('pair'),
-        ...getRecipientText(accountOp.accountAddr, recipient),
-        getDeadline(deadline)
+        ...getRecipientText(accountOp.accountAddr, params.recipient),
+        getDeadline(params.deadline)
       ]
     },
     // -------------------------------------------------------------------------------------------------
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0xc04b8d59
-    [ifaceV3.getFunction('exactInput')?.selector!]: (
+    [toFunctionSelector(exactInputV3Abi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [params] = ifaceV3.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: exactInputV3Abi, data: call.data })
+      const [params] = args
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
         getAction('Swap'),
-        getToken(path[0], params.amountIn),
+        getToken(path[0]!, 0n),
         getLabel('for'),
-        getToken(path[path.length - 1], params.amountOutMinimum),
+        getToken(path[path.length - 1]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
     },
     // 0xf28c0498
-    [ifaceV3.getFunction('exactOutput')?.selector!]: (
+    [toFunctionSelector(exactOutputV3Abi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [params] = ifaceV3.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: exactOutputV3Abi, data: call.data })
+      const [params] = args
       const path = parsePath(params.path)
+      if (!path.length) return []
       return [
-        getAction('Swap up to'),
-        getToken(path[path.length - 1], params.amountInMaximum),
+        getAction('Swap'),
+        getToken(path[path.length - 1]!, 0n),
         getLabel('for'),
-        getToken(path[0], params.amountOut),
+        getToken(path[0]!, 0n),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
       ]
     },
     // 0x9b2c0a37
-    [ifaceV3.getFunction('unwrapWETH9WithFee')?.selector!]: (
+    [toFunctionSelector(unwrapWETH9WithFeeAbi[0])]: (
       accountOp: AccountOp,
-      call: IrCall
+      call: HexIrCall
     ): HumanizerVisualization[] => {
-      const [amountMin, recipient, feeBips, feeRecipient] =
-        ifaceV3.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: unwrapWETH9WithFeeAbi, data: call.data })
+      const [, recipient, feeBips, feeRecipient] = args
       return [
         getAction('Unwrap'),
-        getToken(ZeroAddress, amountMin),
+        getToken(zeroAddress, 0n),
         getLabel('with fee'),
-        getToken(ZeroAddress, feeBips),
+        getToken(zeroAddress, feeBips),
         getLabel('to'),
         getAddressVisualization(feeRecipient),
         ...getUniRecipientText(accountOp.accountAddr, recipient)

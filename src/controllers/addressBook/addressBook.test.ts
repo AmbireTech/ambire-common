@@ -6,10 +6,8 @@ import { Account } from '../../interfaces/account'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 
-let errors = 0
-
 // Mock the emitError method to capture the emitted error
-const mockEmitError = jest.fn(() => errors++)
+const mockEmitError = jest.fn()
 
 const MOCK_ACCOUNTS: Account[] = [
   {
@@ -54,8 +52,11 @@ describe('AddressBookController', () => {
     })
     addressBookController = mainCtrl.addressBook
     selectedAccountCtrl = mainCtrl.selectedAccount
-    // 'any' is on purpose, to override 'emitError' prop (which is protected)
-    ;(addressBookController as any).emitError = mockEmitError
+    jest.spyOn(addressBookController as any, 'emitError').mockImplementation(mockEmitError)
+  })
+
+  beforeEach(() => {
+    mockEmitError.mockClear()
   })
 
   const getContactFromName = (name: string) => {
@@ -113,19 +114,20 @@ describe('AddressBookController', () => {
       '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when adding contact with already existing address', async () => {
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when adding contact with already existing address but lowercased', async () => {
+    // tony already exists from the previous test; both adds below error
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     await addressBookController.addContact('tony', '0xd8da6bf26964af9d7eed9e03e53415d37aa96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(2)
   })
   it('error when renaming wallet account contact', async () => {
     await addressBookController.renameManuallyAddedContact(
@@ -133,13 +135,13 @@ describe('AddressBookController', () => {
       'Account 2'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when removing wallet account contact', async () => {
     await addressBookController.removeManuallyAddedContact(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
 })

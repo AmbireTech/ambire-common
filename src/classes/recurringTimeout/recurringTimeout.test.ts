@@ -257,4 +257,29 @@ describe('RecurringTimeout', () => {
     await jest.advanceTimersByTimeAsync(250)
     expect(fn).toHaveBeenCalledTimes(2)
   })
+  test('should reject stale microtasks when restart() is called in the same tick', async () => {
+    const fn = jest.fn().mockResolvedValue(undefined)
+    const t = new RecurringTimeout(fn, 12000)
+
+    // Call A: Background start (schedules 12s wait in Microtask A)
+    t.start({ runImmediately: false })
+
+    // Call B: Foreground restart (resets sessionId, queues Microtask B with immediate execution)
+    t.restart({ runImmediately: true })
+
+    // Process all microtasks in the same tick
+    await jest.advanceTimersByTimeAsync(0)
+
+    // Verify Call B won (it was immediate) and fn was called once
+    expect(fn).toHaveBeenCalledTimes(1)
+
+    // Ensure no additional call was made BEFORE the timeout
+    // We check 11999 to be safe
+    await jest.advanceTimersByTimeAsync(11999)
+    expect(fn).toHaveBeenCalledTimes(1)
+
+    // The second call (scheduled by B's recurring loop) should happen now
+    await jest.advanceTimersByTimeAsync(1)
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
 })

@@ -39,6 +39,7 @@ import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
+  doesEIP712MessageContainAddress,
   getAmbireReadableTypedData,
   getAuthorizationHash,
   getEIP712Signature,
@@ -178,7 +179,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       {
         addr: new Wallet(eoaSigner.privKey).address,
         privateKey: eoaSigner.privKey,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 1',
         dedicatedToOneSA: true,
         meta: {
@@ -187,7 +188,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       },
       {
         addr: new Wallet(v1siger.privKey).address,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 2',
         privateKey: v1siger.privKey,
         dedicatedToOneSA: false,
@@ -197,7 +198,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       },
       {
         addr: eoaAccountHackedDelegation.addr,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Anvil key 1',
         privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
         dedicatedToOneSA: true,
@@ -710,6 +711,34 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     })
     expect(res).toBe(true)
   })
+  test('Signing [V1 SA]: eip-712 address safety check should handle bigint values', () => {
+    const wallet = '0xcd4d4a1955852c6dc2b8fd7e3feb7724373db9cc'
+    const typedData = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'chainId', type: 'uint256' }
+        ],
+        LoginInfo: [
+          { name: 'wallet', type: 'address' },
+          { name: 'purpose', type: 'string' },
+          { name: 'requestedAt', type: 'string' }
+        ]
+      },
+      domain: {
+        name: 'heyAura login',
+        chainId: 1n
+      },
+      message: {
+        wallet,
+        purpose: 'Wallet login verification',
+        requestedAt: '2026-06-11T09:59:09.592Z'
+      },
+      primaryType: 'LoginInfo'
+    }
+
+    expect(doesEIP712MessageContainAddress(typedData, wallet)).toBe(true)
+  })
   test("Signing [V1 SA]: eip-712, should pass as the verifying contract is Uniswap's permit contract", async () => {
     const accountStates = await getAccountsInfo([v1Account])
     const accountState = accountStates[v1Account.addr]![ethereumNetwork.chainId.toString()]!
@@ -977,7 +1006,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       {
         addr: new Wallet(eoaSigner.privKey).address,
         privateKey: eoaSigner.privKey,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 1',
         dedicatedToOneSA: false,
         meta: {
@@ -1051,7 +1080,7 @@ describe('Sign Message, Safe accounts', () => {
       {
         addr: new Wallet(eoaSigner.privKey).address,
         privateKey: eoaSigner.privKey,
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         label: 'Key 1',
         dedicatedToOneSA: false,
         meta: {

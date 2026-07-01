@@ -1,3 +1,5 @@
+import { IRecurringTimeout } from '@/classes/recurringTimeout/recurringTimeout'
+
 import { AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
 import { BaseAccount } from '../account/BaseAccount'
@@ -202,7 +204,7 @@ export type ExternalHintsAPIResponse = {
  */
 export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
-  chainId: number
+  chainId: number | 'customAppChain'
   accountAddr: string
   erc20s: ExternalHintsAPIResponse['erc20s']
   erc721s: ExternalHintsAPIResponse['erc721s']
@@ -286,6 +288,7 @@ export interface PortfolioLibGetResult {
     erc721s: Hints['erc721s']
   }
   tokenErrors: { error: string; address: string }[]
+  collectionErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
@@ -324,6 +327,7 @@ export type PortfolioNetworkResult = CommonResultProps &
     PortfolioLibGetResult,
     | 'collections'
     | 'tokenErrors'
+    | 'collectionErrors'
     | 'blockNumber'
     | 'tokenDataCache'
     | 'toBeLearned'
@@ -404,11 +408,18 @@ export type ProjectedRewardsStats = {
   | 'reasonToNotDisplayProjectedRewards'
 >
 
+export type PortfolioDefiAppsResult = CommonResultProps & {
+  defiPositions: DefiNetworkState
+}
+
+export type InternalPortfolioChain = 'defiApps' | 'gasTank' | 'rewards' | 'projectedRewards'
+
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
   | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
+  | PortfolioDefiAppsResult
 
 export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
@@ -427,6 +438,11 @@ export type AccountState = {
   rewards?: NetworkState<PortfolioRewardsResult>
   gasTank?: NetworkState<PortfolioGasTankResult>
   projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+  /**
+   * Stores "app" defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets).
+   * Examples: Polymarket and Hyperliquid positions.
+   */
+  defiApps?: NetworkState<PortfolioDefiAppsResult>
 } & {
   [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
@@ -438,6 +454,11 @@ export type PortfolioControllerState = {
 
 export interface LimitsOptions {
   erc20: number
+  // describe the limit during simulation only;
+  // simulation is computational heavy and it costs a lot of gas;
+  // putting a stricter limit allows more txns to succeed albeit having
+  // to send more requests
+  erc20Simulation: number
   erc721: number
   erc721TokensInput: number
   erc721Tokens: number
@@ -474,6 +495,30 @@ export interface TokenBlacklist {
   blacklistAddrs: Record<string, string[]>
   blacklistBySymbols: string[]
   updatedAt: number | null
+}
+
+/**
+ * The portfolio has to be updated after a transaction is confirmed as it may change the balance of assets. Transactions
+ * can also have effects on defi positions, thus we have to call the discovery API to refetch the latest position data.
+ * If done immediately after the transaction confirmation, the server may not have indexed the position changes yet, and
+ * if we bypass the cache at that moment, we 1. have stale data; 2. prevent the user from updating manually for the next X
+ * seconds/minutes (as bypassing has a cooldown on the server to prevent abuse). To solve this, we update the portfolio immediately
+ * after a transaction, but we don't bypass the cache. Then we schedule another update after some time, this time bypassing the cache to get
+ * the latest data.
+ */
+export interface ScheduledUpdates {
+  [accountId: string]: {
+    chainId: bigint
+    // true because the structure is currently only used in this case; added as a flag to make it future proof
+    bypassServerSideCache: true
+    /**
+     * Used to determine whether to execute the update when an interval runs. Updated on subsequent schedules. Why:
+     * - An approval transaction is signed -> confirmed. An update is scheduled for after X seconds
+     * - A new transaction is signed -> confirmed before the scheduled update runs. This time the transaction has effect on defi positions, and if we don't
+     * reset the interval, the approval scheduled update will run for no reason, spending resources
+     */
+    scheduledAt: number
+  }[]
 }
 
 export interface GetOptions {

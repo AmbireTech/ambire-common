@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable max-classes-per-file */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { parseEther } from 'ethers'
@@ -273,7 +271,6 @@ describe('Bundler estimation tests', () => {
 describe('Bundler fallback tests', () => {
   suppressConsoleBeforeEach()
   class BrokenPimlico extends Pimlico {
-    // eslint-disable-next-line class-methods-use-this
     async estimate(userOperation: UserOperation, network: Network): Promise<BundlerEstimateResult> {
       throw new Error('Internal error from bundler')
     }

@@ -1,18 +1,18 @@
-/* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, hexlify, TypedDataDomain, TypedDataField } from 'ethers'
+import { getAddress, getBigInt, hexlify, isAddress, TypedDataDomain, TypedDataField } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
+import { hashTypedData, isHex } from 'viem'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
-import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
+import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
@@ -23,6 +23,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -81,6 +82,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -106,7 +108,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #relayerUrl: string
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #portfolio: IPortfolioController
 
@@ -121,11 +123,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   #accounts: IAccountsController
 
   #networks: INetworksController
 
   #providers: IProvidersController
+
+  #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #selectedAccount: ISelectedAccountController
 
@@ -205,9 +213,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     externalSignerControllers,
     activity,
     phishing,
+    dapps,
     accounts,
     networks,
     providers,
+    storage,
+    signAccountOpPreference,
     selectedAccount,
     keystore,
     transfer,
@@ -226,7 +237,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     relayerUrl: string
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
@@ -236,9 +247,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }>
     activity: IActivityController
     phishing: IPhishingController
+    dapps: IDappsController
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
+    storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     transfer: ITransferController
@@ -264,9 +278,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#externalSignerControllers = externalSignerControllers
     this.#activity = activity
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
+    this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
     this.#transfer = transfer
@@ -314,6 +331,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
     await this.#safe.initialLoadPromise
+    await this.#signAccountOpPreference.initialLoadPromise
   }
 
   get visibleUserRequests(): UserRequest[] {
@@ -375,7 +393,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     let hasTxInProgressErrorShown = false
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
       const { kind, meta, dappPromises } = req
 
@@ -678,6 +695,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
+      // Snapshot IDs synchronously before any awaits so requests that arrive
+      // during async operations below are not incorrectly bulk-rejected.
+      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
@@ -696,11 +717,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         })
       }
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const r of this.userRequests) {
         if (r.kind === 'walletAddEthereumChain') {
           const chainId = r.meta.params[0].chainId
-          // eslint-disable-next-line no-continue
+
           if (!chainId) continue
 
           const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
@@ -709,8 +729,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive
+        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
       )
+
       await this.rejectUserRequests(
         ethErrors.provider.userRejectedRequest().message,
         userRequestsToRejectOnWindowClose.map((r) => r.id),
@@ -776,10 +797,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const activeRouteIdsToRemove = [...paramActiveRouteIds]
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const callId of callIds) {
       const request = findRequestByCall((c) => c.id === callId)
-      // eslint-disable-next-line no-continue
+
       if (!request) continue
 
       const call = request.signAccountOp.accountOp.calls.find((c) => c.id === callId)
@@ -793,20 +813,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           activeRouteIdsToRemove.push(call.activeRouteId)
         }
 
-        // eslint-disable-next-line no-continue
         continue
       }
 
-      // eslint-disable-next-line no-continue
       if (!call) continue
 
       await rejectAndCleanup(request, [call.id])
     }
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const activeRouteId of activeRouteIdsToRemove) {
       const request = findRequestByCall((c) => c.activeRouteId === activeRouteId)
-      // eslint-disable-next-line no-continue
+
       if (!request) continue
 
       const callIdsToRemove = request.signAccountOp.accountOp.calls
@@ -814,7 +831,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         .map((c) => c.id)
         .filter(Boolean) as string[]
 
-      // eslint-disable-next-line no-continue
       if (callIdsToRemove.length === 0) continue
 
       await rejectAndCleanup(request, callIdsToRemove)
@@ -934,12 +950,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const { kind, meta, dappPromises } = userRequest
 
     dappPromises.forEach((p) => {
+      // WE SHOULD NEVER RESOLVE THE PROMISE. It should only be rejected if the user rejects the request
+      // as that destroys the next request
+      if (userRequest.kind === 'switchAccount') return
+
       p.resolve(data)
     })
 
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
-    if (kind === 'unlock' || kind === 'dappConnect' || kind === 'switchAccount') {
+    if (kind === 'unlock' || kind === 'dappConnect') {
       meta.pendingToRemove = true
 
       setTimeout(async () => {
@@ -1081,6 +1101,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].calls
         : [request.params[0]]
 
+      if (calls.some(({ data }) => data && data.length % 2 === 1))
+        throw ethErrors.rpc.invalidParams('A call has uneven number of character in the hex data.')
+      if (calls.some(({ data }) => data && !isHex(data)))
+        throw ethErrors.rpc.invalidParams('A call has invalid data.')
+
+      // we are checking if to exists, because if it does not the call is a
+      // valid contract  deployment
+      if (calls.some(({ to }) => to && !isAddress(to)))
+        throw ethErrors.rpc.invalidParams('A call has invalid "to" field ')
+
       calls = calls.map((c) => ({
         ...c,
         data: c.data || '0x',
@@ -1106,7 +1136,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             walletSendCallsVersion,
             paymasterService
           },
-          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }]
+          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }],
+          dappSessionId: request.session.sessionId
         })) ?? null
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -1142,8 +1173,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
       const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
         rawMessage,
-        request.session.origin,
-        msgAddress
+        request.session.origin
       )
 
       // Handle valid and invalid SIWE messages
@@ -1234,6 +1264,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       try {
         typedData = parse(typedData)
       } catch (error) {
+        console.error('Failed to parse typed data', error)
         throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
       }
 
@@ -1246,6 +1277,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.methodNotSupported(
           'Invalid typedData format - only typedData v4 is supported'
         )
+      }
+
+      const domainChainId = BigInt(typedData.domain.chainId || 0)
+      if (domainChainId !== 0n && domainChainId !== network.chainId)
+        throw ethErrors.rpc.invalidRequest(
+          `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
+        )
+      typedData.domain.chainId = network.chainId
+
+      if (!typedData.types[typedData.primaryType])
+        throw ethErrors.rpc.invalidParams(
+          'The primary data type is missing from the provided types'
+        )
+      try {
+        // we ignore the result because we only care if the func will fail
+        hashTypedData({
+          types: typedData.types,
+          primaryType: typedData.primaryType,
+          message: typedData.message,
+          domain: typedData.domain
+        })
+      } catch (e) {
+        console.error(e)
+        throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
       if (
@@ -1266,7 +1321,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             primaryType: typedData.primaryType
           },
           accountAddr: msgAddress,
-          chainId: network.chainId
+          chainId: typedData.domain.chainId
         },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
@@ -1309,16 +1364,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ? 'open-request-window'
             : 'queue-but-open-request-window'
       })
-      return
-    }
-
-    const accountError = this.#getUserRequestAccountError(
-      dappPromise.session.origin,
-      (userRequest as SignUserRequest).meta.accountAddr
-    )
-
-    if (accountError) {
-      dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
       return
     }
 
@@ -1671,21 +1716,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (userRequest) await this.addUserRequests([userRequest])
   }
 
-  #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
-    if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
-      const isAddressInAccounts = this.#accounts.accounts.some((a) => a.addr === fromAccountAddr)
-
-      if (isAddressInAccounts) return null
-
-      return 'The dApp is trying to sign using an address that is not imported in the extension.'
-    }
-    const isAddressSelected = this.#selectedAccount.account?.addr === fromAccountAddr
-
-    if (isAddressSelected) return null
-
-    return 'The dApp is trying to sign using an address that is not selected in the extension.'
-  }
-
   async #addSwitchAccountUserRequest(req: SignUserRequest) {
     this.userRequestsWaitingAccountSwitch.push(req)
     await this.addUserRequests(
@@ -1729,11 +1759,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     {
       calls,
       meta,
-      dappPromises = []
+      accountOp: providedAccountOp,
+      dappPromises = [],
+      dappSessionId
     }: {
       calls: Call[]
       meta: CallsUserRequest['meta']
+      accountOp?: AccountOp
       dappPromises?: CallsUserRequest['dappPromises']
+      dappSessionId?: string
     },
     executionType: RequestExecutionType = 'open-request-window'
   ) {
@@ -1799,7 +1833,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 ...calls.map((call) => ({
                   ...call,
                   id: uuidv4(),
-                  to: call.to,
+                  // `to` is falsy in contract deployment transactions
+                  to: !!call.to ? getAddress(call.to) : call.to,
                   data: call.data || '0x',
                   value: call.value ? getBigInt(call.value) : 0n
                 }))
@@ -1852,6 +1887,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
+      await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1863,36 +1899,42 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           networks: this.#networks,
           keystore: this.#keystore,
           portfolio: this.#portfolio,
+          signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,
           account,
           network,
           provider: this.#providers.providers[network.chainId.toString()]!,
           phishing: this.#phishing,
+          dapps: this.#dapps,
           fromRequestId: requestId,
-          accountOp: {
-            id: generateUuid(),
-            accountAddr: meta.accountAddr,
-            chainId: meta.chainId,
-            signingKeyAddr: null,
-            signingKeyType: null,
-            gasLimit: null,
-            gasFeePayment: null,
-            nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
-            signature: meta.safeTxnProps?.signature ?? null,
-            txnId: meta.safeTxnProps?.txnId ?? undefined,
-            calls: [
-              ...calls.map((call) => ({
-                ...call,
-                id: uuidv4(),
-                to: call.to,
-                data: call.data || '0x',
-                value: call.value ? getBigInt(call.value) : 0n
-              }))
-            ],
-            safeTx: meta.safeTx,
-            meta
-          },
+          accountOp: providedAccountOp
+            ? { ...providedAccountOp, nonce: meta.safeTxnProps?.nonce ?? accountState.nonce }
+            : {
+                id: generateUuid(),
+                accountAddr: meta.accountAddr,
+                chainId: meta.chainId,
+                signingKeyAddr: null,
+                signingKeyType: null,
+                gasLimit: null,
+                gasFeePayment: null,
+                nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
+                signature: meta.safeTxnProps?.signature ?? null,
+                txnId: meta.safeTxnProps?.txnId ?? undefined,
+                calls: [
+                  ...calls.map((call) => ({
+                    ...call,
+                    id: uuidv4(),
+                    // `to` is falsy in contract deployment transactions
+                    to: !!call.to ? getAddress(call.to) : call.to,
+                    data: call.data || '0x',
+                    value: call.value ? getBigInt(call.value) : 0n
+                  }))
+                ],
+                safeTx: meta.safeTx,
+                meta,
+                dappSessionId
+              },
           shouldSimulate: this.shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
             await this.#portfolio.updateSelectedAccount(account.addr, [network])
@@ -1918,7 +1960,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         if (!callsReq) return
 
-        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.propagateUpdate(forceEmit)
+        if (
+          callsReq.signAccountOp.isSignAndBroadcastInProgress ||
+          callsReq.signAccountOp.gasFeeChangedConfirmationRequired
+        ) {
+          this.propagateUpdate(forceEmit)
+        }
       }, 'requests-ctrl')
     }
 

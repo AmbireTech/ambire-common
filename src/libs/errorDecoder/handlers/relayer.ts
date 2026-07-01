@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../../relayerCall/relayerCall'
 import { isReasonValid } from '../helpers'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'

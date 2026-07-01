@@ -147,6 +147,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message:
       'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
   },
+  // Permit2 / AllowanceHolder: SignatureExpired(uint256 signatureDeadline)
+  {
+    reasons: ['0xcd21db4f'],
+    message:
+      'the token permit or signed approval has expired (Permit2 / AllowanceHolder). Open the dapp again and submit a fresh approval or quote so the signature deadline is renewed.'
+  },
   {
     reasons: ['0x7b36c479'],
     message:

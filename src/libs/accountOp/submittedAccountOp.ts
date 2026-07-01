@@ -13,6 +13,7 @@ import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
 
+import type { TokenResult } from '../portfolio/interfaces'
 /*
  * AccountOpIdentifiedBy
  * The txnId may not neceseraly be final on the moment of broadcast.
@@ -47,6 +48,24 @@ export type PortfoliosToUpdate = {
   [address: string]: Network['chainId'][]
 }
 
+export type BalanceChange = Pick<
+  TokenResult,
+  | 'symbol'
+  | 'name'
+  | 'decimals'
+  | 'address'
+  | 'chainId'
+  | 'priceIn'
+  | 'marketDataIn'
+  | 'meta'
+  | 'flags'
+> & {
+  amount: bigint
+  amountBefore: bigint
+  amountAfter: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -57,6 +76,48 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  balanceChanges?: BalanceChange[]
+  balanceChangesFetchRetryCount?: number
+}
+
+type SubmittedAccountOpActionFields = Pick<
+  SubmittedAccountOp,
+  | 'signingKeyAddr'
+  | 'signingKeyType'
+  | 'nonce'
+  | 'eoaNonce'
+  | 'feeCall'
+  | 'activatorCall'
+  | 'gasLimit'
+  | 'signature'
+  | 'asUserOperation'
+  | 'signers'
+  | 'signed'
+  | 'safeTx'
+  | 'flags'
+>
+
+export interface SubmittedAccountOpLike
+  extends Pick<
+      SubmittedAccountOp,
+      | 'id'
+      | 'accountAddr'
+      | 'chainId'
+      | 'calls'
+      | 'gasFeePayment'
+      | 'txnId'
+      | 'status'
+      | 'meta'
+      | 'timestamp'
+      | 'identifiedBy'
+      | 'blockNumber'
+      | 'blockHash'
+      | 'gasUsed'
+      | 'balanceChanges'
+      | 'balanceChangesFetchRetryCount'
+    >,
+    Partial<SubmittedAccountOpActionFields> {
+  activitySource?: 'internal' | 'external'
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
@@ -252,7 +313,6 @@ export async function fetchTxnId(
   try {
     response = await callRelayer(`/v2/get-txn-id/${id}`)
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.log(`relayer responded with an error when trying to find the txnId: ${e}`)
     return {
       status: 'not_found',
@@ -287,27 +347,22 @@ export function updateOpStatus(
 ): SubmittedAccountOp | null {
   if (opReference.identifiedBy.type === 'MultipleTxns') {
     const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
-    // eslint-disable-next-line no-param-reassign
+
     opReference.calls[callIndex]!.status = status
 
     // if there's a receipt, add the fee
     if (receipt) {
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.fee = {
         inToken: ZeroAddress,
         amount: receipt.fee
       }
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.blockHash = receipt.blockHash
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.blockNumber = receipt.blockNumber
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.blockHash = receipt.blockHash
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.gasUsed = toBeHex(receipt.gasUsed)
     }
 
@@ -315,7 +370,6 @@ export function updateOpStatus(
       (c) => c.status === AccountOpStatus.BroadcastedButNotConfirmed
     )
     if (!left) {
-      // eslint-disable-next-line no-param-reassign
       opReference.status = status
       return opReference
     }
@@ -325,7 +379,6 @@ export function updateOpStatus(
     return null
   }
 
-  // eslint-disable-next-line no-param-reassign
   opReference.status = status
   return opReference
 }

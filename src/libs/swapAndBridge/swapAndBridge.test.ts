@@ -4,7 +4,12 @@ import { describe, expect, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
 import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
-import { calculateAmountWarnings } from './swapAndBridge'
+import {
+  calculateAmountWarnings,
+  enrichRouteWithOutputUsdPrice,
+  getFeeTokenForSponsorship,
+  getIsBridgeRoute
+} from './swapAndBridge'
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({
@@ -88,6 +93,207 @@ const createMockRoute = ({
 }
 
 describe('swapAndBridge lib', () => {
+  describe('getIsBridgeRoute', () => {
+    test('should treat same-chain Squid routes as bridge-like routes', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 0.05,
+        minAmountOut: 99
+      })
+
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+      selectedRoute.providerId = 'squid'
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(true)
+    })
+
+    test('should not treat same-chain non-Squid routes as bridge routes', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 0.05,
+        minAmountOut: 99
+      })
+
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+    })
+  })
+
+  describe('getFeeTokenForSponsorship', () => {
+    test('should calculate the Uniswap output token price in USD', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 100,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.providerId = 'uniswap'
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          toAsset: { decimals: 6 }
+        } as SwapAndBridgeQuote
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 2,
+        decimals: 6
+      })
+    })
+
+    test('should not calculate an infinite Uniswap output token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 100,
+        fromAmount: 1,
+        minAmountOut: 0,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.providerId = 'uniswap'
+      selectedRoute.toAmount = '0'
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          toAsset: { decimals: 6 }
+        } as SwapAndBridgeQuote
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: undefined,
+        decimals: 6
+      })
+    })
+
+    test('should use the source token portfolio price for non-Uniswap providers', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 10,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [{ baseCurrency: 'usd', price: 7 }] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '10'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 7,
+        decimals: 18
+      })
+    })
+
+    test('should calculate the source token price from the quote when it is missing from portfolio', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 4,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '4'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 25,
+        decimals: 18
+      })
+    })
+
+    test('should not calculate an infinite source token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '0'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: undefined,
+        decimals: 18
+      })
+    })
+  })
+
+  describe('enrichRouteWithOutputUsdPrice', () => {
+    test('uses the fetched output token price and preserves the provider gas cost', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+      selectedRoute.outputValueAfterGasInUsd = 90
+
+      const result = enrichRouteWithOutputUsdPrice(selectedRoute, 2)
+
+      expect(result.outputValueInUsd).toBe(100)
+      expect(result.outputValueAfterGasInUsd).toBe(95)
+      expect(result.toToken.priceUSD).toBe('2')
+    })
+
+    test('keeps provider USD values when the fetched token price is unavailable', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      expect(enrichRouteWithOutputUsdPrice(selectedRoute)).toBe(selectedRoute)
+      expect(enrichRouteWithOutputUsdPrice(selectedRoute, null)).toBe(selectedRoute)
+    })
+  })
+
   describe('calculateAmountWarnings', () => {
     test('should return null when selectedRoute is not provided', () => {
       const result = calculateAmountWarnings(undefined, '100', '0.05', 18)
@@ -272,6 +478,56 @@ describe('swapAndBridge lib', () => {
       expect(result?.type).toBe('highPriceImpact')
       if (result?.type === 'highPriceImpact') {
         expect(result.percentageDiff).toBe(5)
+      }
+    })
+
+    test('should return extreme price impact warning when estimated loss exceeds $100k', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 50_000_000,
+        outputValueInUsd: 36_000,
+        fromAmount: 50,
+        minAmountOut: 36_000
+      })
+      const result = calculateAmountWarnings(selectedRoute, '50000000', '50', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('highPriceImpact')
+      if (result?.type === 'highPriceImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('should return extreme slippage warning when slippage loss exceeds $100k', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 5_000_000,
+        outputValueInUsd: 4_950_000,
+        fromAmount: 50,
+        minAmountOut: 3_800_000
+      })
+      const result = calculateAmountWarnings(selectedRoute, '5000000', '50', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('should include elevated severity for existing high price impact warnings', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 0.05,
+        minAmountOut: 95
+      })
+      const result = calculateAmountWarnings(selectedRoute, '100', '0.05', 18)
+
+      expect(result).not.toBeNull()
+      if (result?.type === 'highPriceImpact') {
+        expect(result.severity).toBe('elevated')
+        expect(result.estimatedLossUsd).toBe(5)
       }
     })
 

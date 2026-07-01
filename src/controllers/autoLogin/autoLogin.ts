@@ -1,8 +1,9 @@
 import { isHexString, toUtf8String } from 'ethers'
-import { SiweMessage } from 'siwe'
 import { getDomain } from 'tldts'
 import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
+
+import { SiweMessage } from '@signinwithethereum/siwe'
 
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
@@ -113,7 +114,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       invite
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -133,7 +133,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     const parsedSiweMessageViemFormat: SiweMessageType = {
       ...viemFormatParsedMessage,
       version: parsedSiweMessage.version as '1', // hack to stop viem from whining
-      address: parsedSiweMessage.address as `0x${string}`,
+      // Always convert the address to a checksummed address because all checks later on assume that the address is checksummed.
+      address: getAddress(parsedSiweMessage.address) as `0x${string}`,
       ...(parsedSiweMessage.expirationTime
         ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
         : {}),
@@ -146,8 +147,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static getParsedSiweMessage(
     message: string | `0x${string}`,
-    requestOrigin: string,
-    signerAddress?: string
+    requestOrigin: string
   ): null | {
     parsedSiwe: SiweMessageType
     status: SiweValidityStatus
@@ -167,15 +167,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     try {
       const requestHostname = new URL(requestOrigin).host
-
-      // Some dApps don't use checksum addresses in the SIWE message
-      // Which makes verification by the 'siwe' package fail (as it's very strict)
-      if (signerAddress) {
-        messageString = messageString.replace(
-          signerAddress.toLowerCase(),
-          getAddress(signerAddress)
-        )
-      }
 
       const parsedSiweMessage = new SiweMessage(messageString)
 

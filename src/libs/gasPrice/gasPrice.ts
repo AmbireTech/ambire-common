@@ -1,4 +1,4 @@
-import { Block, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
+import { Interface, JsonRpcProvider, Provider, toBeHex, toQuantity } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -35,6 +35,30 @@ export interface Gas1559Recommendation {
   maxPriorityFeePerGas: bigint
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
+
+type GasPriceTransaction = {
+  gasPrice?: bigint | null
+  maxPriorityFeePerGas?: bigint | null
+}
+
+type GasPriceBlock = {
+  baseFeePerGas?: bigint | null
+  gasLimit: bigint
+  gasUsed: bigint
+  prefetchedTransactions: GasPriceTransaction[]
+}
+
+type RpcTransaction = {
+  gasPrice?: string | null
+  maxPriorityFeePerGas?: string | null
+}
+
+type RpcBlock = {
+  baseFeePerGas?: string | null
+  gasLimit: string
+  gasUsed: string
+  transactions?: (string | RpcTransaction)[]
+}
 
 // https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
 function filterOutliers(data: bigint[]): bigint[] {
@@ -84,7 +108,7 @@ function average(data: bigint[]): bigint {
   return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
 
-function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
+function getNetworkMinBaseFee(network: Network, lastBlock: GasPriceBlock): bigint {
   // if we have a minBaseFee set in our config, use it
   if (network.feeOptions.minBaseFee) return network.feeOptions.minBaseFee
 
@@ -104,21 +128,69 @@ function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
   return lastBlock.baseFeePerGas ?? 0n
 }
 
+function hexToBigInt(value?: string | null): bigint | null {
+  return value ? BigInt(value) : null
+}
+
+async function getRpcBlockTag(provider: Provider, blockTag: string | number): Promise<string> {
+  if (typeof blockTag !== 'number') return blockTag
+
+  if (blockTag >= 0) return toQuantity(blockTag)
+
+  const currentBlockNumber = await provider.getBlockNumber()
+  return toQuantity(Math.max(currentBlockNumber + blockTag, 0))
+}
+
+async function fetchRawBlock(
+  provider: Provider,
+  blockTag: string | number
+): Promise<GasPriceBlock | null> {
+  const rpcBlockTag = await getRpcBlockTag(provider, blockTag)
+  const rawBlock = (await (provider as JsonRpcProvider).send('eth_getBlockByNumber', [
+    rpcBlockTag,
+    true
+  ])) as RpcBlock | null
+
+  if (!rawBlock) return null
+
+  return {
+    baseFeePerGas: hexToBigInt(rawBlock.baseFeePerGas),
+    gasLimit: BigInt(rawBlock.gasLimit),
+    gasUsed: BigInt(rawBlock.gasUsed),
+    prefetchedTransactions: (rawBlock.transactions ?? [])
+      .filter((txn): txn is RpcTransaction => typeof txn !== 'string')
+      .map((txn) => ({
+        gasPrice: hexToBigInt(txn.gasPrice),
+        maxPriorityFeePerGas: hexToBigInt(txn.maxPriorityFeePerGas)
+      }))
+  }
+}
+
+async function fetchBlock(
+  provider: Provider,
+  network: Network,
+  blockTag: string | number
+): Promise<GasPriceBlock | null> {
+  if (network.chainId === 2741n) return fetchRawBlock(provider, blockTag)
+  return await provider.getBlock(blockTag, true)
+}
+
 // if there's an RPC issue, try refetching the block at least
 // 5 times before declaring a failure
 async function refetchBlock(
   provider: Provider,
+  network: Network,
   blockTag: string | number,
   getIsActive?: () => boolean,
   counter = 0
-): Promise<Block> {
+): Promise<GasPriceBlock> {
   if (counter >= 2) throw new Error('unable to retrieve block')
 
   let lastBlock = null
   let timeoutId: NodeJS.Timeout | null = null
   try {
     const response = await Promise.race([
-      provider.getBlock(blockTag, true),
+      fetchBlock(provider, network, blockTag),
       new Promise((_resolve, reject) => {
         timeoutId = setTimeout(
           () => reject(new Error('last block failed to resolve, request too slow')),
@@ -126,19 +198,20 @@ async function refetchBlock(
         )
       })
     ])
-    lastBlock = response as Block
+    lastBlock = response as GasPriceBlock
   } catch (e) {
     lastBlock = null
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
   }
 
   if (getIsActive && !getIsActive()) {
-    if (timeoutId) clearTimeout(timeoutId)
     throw new Error('operation aborted')
   }
 
   if (!lastBlock) {
     const localCounter = counter + 1
-    lastBlock = await refetchBlock(provider, blockTag, getIsActive, localCounter)
+    lastBlock = await refetchBlock(provider, network, blockTag, getIsActive, localCounter)
   }
 
   return lastBlock
@@ -153,7 +226,7 @@ export async function getGasPriceRecommendations(
   const blockTag = _blockTag ?? -1
 
   const [lastBlock, ethGasPrice] = await Promise.all([
-    refetchBlock(provider, blockTag, getIsActive),
+    refetchBlock(provider, network, blockTag, getIsActive),
     (provider as JsonRpcProvider).send('eth_gasPrice', []).catch((e) => {
       console.log('eth_gasPrice failed because of the following reason:')
       console.log(e)

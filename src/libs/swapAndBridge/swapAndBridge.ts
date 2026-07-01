@@ -10,13 +10,22 @@ import {
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
-import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
+import {
+  BRIDGE_STATUS_INTERVAL,
+  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+} from '../../consts/intervals'
+import {
+  HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
+  SLIPPAGE_MIN_QUOTE_DIFF_USD
+} from '../../consts/safeguards/extremeSwapLoss'
+import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FromToken,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
@@ -27,7 +36,6 @@ import {
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
-  AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   FEE_PERCENT,
   JPYC_TOKEN,
@@ -35,12 +43,20 @@ import {
   SOCKET_EXPLORER_URL,
   ZERO_ADDRESS
 } from '../../services/socket/constants'
+import { SQUID_EXPLORER_URL } from '../../services/squid/constants'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
+import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getTokenBalanceInUSD, getTokenUsdPrice } from '../portfolio/helpers'
+import {
+  getSwapEstimatedLossUsd,
+  getSwapQuoteLossUsd,
+  getSwapSlippageLossUsd,
+  isExtremeSwapLoss
+} from '../safeguards/extremeSwapLoss'
 import { getSanitizedAmount } from '../transfer/amount'
 
 /**
@@ -230,14 +246,26 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  */
 export const getIsTokenEligibleForSwapAndBridge = (
   token: TokenResult,
-  requirePositiveBalance: boolean = true
+  requirePositiveBalance: boolean = true,
+  requirePrice: boolean = false
 ) => {
   const flagsRequirement =
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
     // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
     !token.flags.onGasTank &&
     // And exclude the rewards ones (swapping rewards is not supported).
-    !token.flags.rewardsType
+    !token.flags.rewardsType &&
+    // Borrow tokens (e.g. variableDebt tokens) are protocol accounting assets
+    // and are not transferable/swappable by design.
+    token.flags.defiTokenType !== AssetType.Borrow
+
+  // Tokens without a known USD price most prob can't be quoted reliably, so exclude them
+  // from the list when the caller opts in (e.g. the Swap & Bridge "form" tokens).
+  // Custom tokens are exempt - the user explicitly imported them and likely wants
+  // to use them for something (maybe swap or bridge).
+  if (requirePrice && !token.flags.isCustom && getTokenUsdPrice(token) <= 0) {
+    return false
+  }
 
   if (!requirePositiveBalance) {
     return flagsRequirement
@@ -274,13 +302,19 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
 const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]): number => {
   const serviceTimes: number[] = []
 
-  activeRoutes.forEach((r) =>
+  activeRoutes.forEach((r) => {
+    // for squid swaps, make the service time 10s
+    if (r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId) {
+      serviceTimes.push(BRIDGE_STATUS_INTERVAL / 1000)
+      return
+    }
+
     r.route?.userTxs.forEach((tx) => {
       if (tx.serviceTime) {
         serviceTimes.push(tx.serviceTime)
       }
     })
-  )
+  })
 
   const time = serviceTimes.sort((a, b) => a - b)[0]
   if (!time) return UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
@@ -457,7 +491,7 @@ const getSwapAndBridgeRequestParams = async (
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.fromChainId !== route.toChainId
+  return route.providerId === 'squid' || route.fromChainId !== route.toChainId
 }
 
 /**
@@ -515,10 +549,12 @@ const addCustomTokensIfNeeded = ({
     if (shouldAddJPYCToken) newTokens.unshift({ ...JPYC_TOKEN, chainId: 43114 })
   }
   if (chainId === 8453) {
-    const shouldAddAmbireWalletToken = newTokens.every(
-      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
-    )
-    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+    // Disabled (maybe temporarily) as of v2.94.0, because of the decision to remove
+    // $WALLET liquidity on Base and consolidate it into the Ethereum liquidity.
+    //   const shouldAddAmbireWalletToken = newTokens.every(
+    //     (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
+    //   )
+    //   if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
   }
 
   return newTokens
@@ -579,16 +615,7 @@ export const calculateAmountWarnings = (
   fromAmountInFiat: string,
   fromAmount: string,
   fromSelectedTokenDecimals: number
-):
-  | { type: 'highPriceImpact'; percentageDiff: number }
-  | {
-      type: 'slippageImpact'
-      possibleSlippage: number
-      minInUsd: number
-      minInToken: string
-      symbol: string
-    }
-  | null => {
+): SwapAmountWarning | null => {
   if (!selectedRoute) return null
 
   let inputValueInUsd = 0
@@ -609,17 +636,12 @@ export const calculateAmountWarnings = (
     if (bigintFromAmount !== BigInt(selectedRoute.fromAmount)) return null
 
     // Can be negative if the output is higher
-    // (possible during arbitrage swaps)
+    // (possible during arbitrage swaps). We must NOT bail out here: even when
+    // the quote difference is favorable, a very low minAmountOut can still
+    // expose the user to dangerous slippage, which is checked further below.
     const difference = inputValueInUsd - outputValueInUsd
 
     const percentageDiff = (difference / inputValueInUsd) * 100
-
-    if (percentageDiff >= 5) {
-      return {
-        type: 'highPriceImpact',
-        percentageDiff
-      }
-    }
 
     // try to calculate the slippage
     const txn = selectedRoute.userTxs[selectedRoute.userTxs.length - 1]
@@ -631,24 +653,61 @@ export const calculateAmountWarnings = (
       selectedRoute.toToken.decimals,
       Number(selectedRoute.toToken.priceUSD)
     )
+    const minInUsdNumber = Number(minInUsd)
     const allowedSlippage =
       Number(inputValueInUsd) < 400
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
-    const possibleSlippage = (1 - Number(minInUsd) / outputValueInUsd) * 100
+    const possibleSlippage = (1 - minInUsdNumber / outputValueInUsd) * 100
     // @precautionary if
     const diffBetweenQuoteAndMinAmount =
-      outputValueInUsd > Number(minInUsd) ? outputValueInUsd - Number(minInUsd) : 0
+      outputValueInUsd > minInUsdNumber ? outputValueInUsd - minInUsdNumber : 0
 
+    const quoteLossUsd = getSwapQuoteLossUsd(inputValueInUsd, outputValueInUsd)
+    const slippageLossUsd = getSwapSlippageLossUsd(inputValueInUsd, minInUsdNumber)
+    const estimatedLossUsd = getSwapEstimatedLossUsd(
+      inputValueInUsd,
+      outputValueInUsd,
+      minInUsdNumber
+    )
+    const isExtreme = isExtremeSwapLoss(estimatedLossUsd)
+    const isElevatedPriceImpact = percentageDiff >= HIGH_PRICE_IMPACT_PERCENT_THRESHOLD
     // It seems a bit odd to display a slippage warning only if the difference
     // is > $50?
-    if (possibleSlippage > allowedSlippage && diffBetweenQuoteAndMinAmount > 50) {
+    const isElevatedSlippage =
+      possibleSlippage > allowedSlippage &&
+      diffBetweenQuoteAndMinAmount > SLIPPAGE_MIN_QUOTE_DIFF_USD
+
+    if (isExtreme && slippageLossUsd > quoteLossUsd) {
       return {
         type: 'slippageImpact',
         possibleSlippage,
-        minInUsd: Number(minInUsd),
+        minInUsd: minInUsdNumber,
         minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
-        symbol: selectedRoute.toToken.symbol
+        symbol: selectedRoute.toToken.symbol,
+        estimatedLossUsd: slippageLossUsd,
+        severity: 'extreme'
+      }
+    }
+
+    if (isExtreme || isElevatedPriceImpact) {
+      return {
+        type: 'highPriceImpact',
+        percentageDiff,
+        estimatedLossUsd: quoteLossUsd,
+        severity: isExtreme ? 'extreme' : 'elevated'
+      }
+    }
+
+    if (isElevatedSlippage) {
+      return {
+        type: 'slippageImpact',
+        possibleSlippage,
+        minInUsd: minInUsdNumber,
+        minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
+        symbol: selectedRoute.toToken.symbol,
+        estimatedLossUsd: slippageLossUsd,
+        severity: 'elevated'
       }
     }
 
@@ -660,9 +719,10 @@ export const calculateAmountWarnings = (
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
-  return providerId === 'socket'
-    ? `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
-    : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
+  if (providerId === 'socket') return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+  if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
+
+  return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }
 
 const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
@@ -684,45 +744,119 @@ const getSwapSponsorship = ({
   hasConvinienceFee,
   nativePrice,
   fromAmountInUsd,
-  fromTokenPriceInUsd,
-  fromTokenDecimals
+  feeTokenPriceInUsd,
+  feeTokenDecimals,
+  providerId,
+  isBridge
 }: {
   hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
-  fromTokenPriceInUsd: number | undefined
-  fromTokenDecimals: number | undefined
+  feeTokenPriceInUsd: number | undefined
+  feeTokenDecimals: number | undefined
+  providerId: string | undefined
+  isBridge: boolean
 }):
   | {
       nativePrice: number
       swapFeeInUsd: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
   | undefined => {
   if (
     !hasConvinienceFee ||
     !nativePrice ||
     !fromAmountInUsd ||
-    !fromTokenPriceInUsd ||
-    !fromTokenDecimals
+    !feeTokenPriceInUsd ||
+    !feeTokenDecimals ||
+    providerId === 'squid' ||
+    (providerId === 'uniswap' && isBridge)
   )
     return undefined
   return {
     nativePrice,
     swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
-    fromTokenPriceInUsd,
-    fromTokenDecimals
+    feeTokenPriceInUsd,
+    feeTokenDecimals
+  }
+}
+
+const enrichRouteWithOutputUsdPrice = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+): SwapAndBridgeRoute => {
+  if (!outputTokenPriceUSD) return route
+
+  const outputValueInUsd = Number(
+    safeTokenAmountAndNumberMultiplication(
+      BigInt(route.toAmount),
+      route.toToken.decimals,
+      outputTokenPriceUSD
+    )
+  )
+  const gasCostInUsd =
+    route.outputValueAfterGasInUsd === undefined
+      ? undefined
+      : route.outputValueInUsd - route.outputValueAfterGasInUsd
+
+  return {
+    ...route,
+    outputValueInUsd,
+    outputValueAfterGasInUsd:
+      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd,
+    toToken: {
+      ...route.toToken,
+      priceUSD: outputTokenPriceUSD.toString()
+    }
+  }
+}
+
+const getFeeTokenForSponsorship = (
+  fromSelectedToken: FromToken,
+  quote?: SwapAndBridgeQuote | null,
+  fromAmount?: string
+): { feeTokenPriceInUsd: number | undefined; decimals: number | undefined } => {
+  // if the provider is uniswap, we're getting the fee from the output token
+  if (quote?.selectedRoute?.providerId === 'uniswap') {
+    const outputAmount = Number(formatUnits(quote.selectedRoute.toAmount, quote.toAsset.decimals))
+
+    return {
+      feeTokenPriceInUsd: outputAmount
+        ? quote.selectedRoute.outputValueInUsd / outputAmount
+        : undefined,
+      decimals: quote.toAsset.decimals
+    }
+  }
+
+  // try to get from portfolio, if exists
+  // else take from quote
+  let feeTokenPriceInUsd = fromSelectedToken.priceIn.find((p) => p.baseCurrency === 'usd')?.price
+  const normalizedFromAmount = Number(fromAmount)
+  if (
+    !feeTokenPriceInUsd &&
+    quote?.selectedRoute?.inputValueInUsd &&
+    Number.isFinite(normalizedFromAmount) &&
+    normalizedFromAmount > 0
+  ) {
+    feeTokenPriceInUsd = quote.selectedRoute.inputValueInUsd / normalizedFromAmount
+  }
+
+  return {
+    feeTokenPriceInUsd,
+    decimals: quote?.fromAsset.decimals
   }
 }
 
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
   getLink,
   getSlippage,
   getSwapAndBridgeCalls,

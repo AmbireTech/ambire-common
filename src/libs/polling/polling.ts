@@ -34,7 +34,6 @@ export class Polling extends EventEmitter {
   ): Promise<T | null> {
     const execTimeout = pollingtime || 0
     const promise: T | null = await new Promise((resolve) =>
-      // eslint-disable-next-line no-promise-executor-return
       setTimeout(async () => {
         this.state = {
           isError: false,

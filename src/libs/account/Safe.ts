@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
 
@@ -197,5 +196,13 @@ export class Safe extends BaseAccount {
       return getSafeV1TypedData(this.account.addr as Hex, safeTx)
 
     return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)
+  }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
+
+  canSetCustomGas(): boolean {
+    return this.canSetCustomGasPrices()
   }
 }

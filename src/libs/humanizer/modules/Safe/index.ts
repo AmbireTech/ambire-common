@@ -1,9 +1,15 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
+import {
+  decodeFunctionData,
+  getAddress,
+  isAddress,
+  isHex,
+  parseAbi,
+  toFunctionSelector,
+  zeroAddress
+} from 'viem'
 
 import { allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { SafeV2 } from '../../const/abis/Safe'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -15,23 +21,50 @@ import {
   getAddressVisualization,
   getBreak,
   getLabel,
+  getText,
   getToken,
-  getWarning
+  getWarning,
+  HexIrCall,
+  isHexCall
 } from '../../utils'
 
-const iface = new Interface(SafeV2)
+const addOwnerWithThresholdAbi = parseAbi([
+  'function addOwnerWithThreshold(address owner, uint256 _threshold)'
+])
+const changeThresholdAbi = parseAbi(['function changeThreshold(uint256 _threshold)'])
+const removeOwnerAbi = parseAbi([
+  'function removeOwner(address prevOwner, address owner, uint256 _threshold)'
+])
+const swapOwnerAbi = parseAbi([
+  'function swapOwner(address prevOwner, address oldOwner, address newOwner)'
+])
+const enableModuleAbi = parseAbi(['function enableModule(address module)'])
+const disableModuleAbi = parseAbi(['function disableModule(address prevModule, address module)'])
+const setGuardAbi = parseAbi(['function setGuard(address guard)'])
+const setupAbi = parseAbi([
+  'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+])
+const execTransactionAbi = parseAbi([
+  'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
+])
+const MAX_SAFE_SETUP_HOOK_DEPTH = 4
 
-export const getDelegateCallWarning = (operation: bigint, to?: string): HumanizerWarning[] => {
+export const getDelegateCallWarning = (
+  operation: bigint | number,
+  to?: string
+): HumanizerWarning[] => {
   const warnings: HumanizerWarning[] = []
 
   if (
-    operation === 1n &&
+    BigInt(operation) === 1n &&
     (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
   )
     warnings.push(
       getWarning(
         'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
-        'SAFE{WALLET}_DELEGATE_CALL'
+        'SAFE{WALLET}_DELEGATE_CALL',
+        undefined,
+        to && isAddress(to) ? getAddress(to) : undefined
       )
     )
 
@@ -42,9 +75,10 @@ export const getSafeHumanization = (
   safeAddr?: string,
   to?: string,
   value?: string | number | bigint,
-  data?: string
+  data?: string,
+  setupHookDepth = 0
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
-  if (!data) return
+  if (!data || !isHex(data)) return
 
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []
@@ -63,17 +97,82 @@ export const getSafeHumanization = (
   }
 
   const selector = data.substring(0, 10)
-  const addOwnerWithThreshold = iface.getFunction('addOwnerWithThreshold')?.selector
-  if (selector === addOwnerWithThreshold) {
-    const decoded = iface.decodeFunctionData('addOwnerWithThreshold', data)
-    const newOwner = decoded[0]
-    const newThreshold = decoded[1]
+
+  if (selector === toFunctionSelector(setupAbi[0])) {
+    const { args } = decodeFunctionData({ abi: setupAbi, data })
+    const [
+      owners,
+      threshold,
+      setupTo,
+      setupData,
+      fallbackHandler,
+      paymentToken,
+      payment,
+      paymentReceiver
+    ] = args
+    fullVisualization.push(getAction('Account setup'))
+
+    if (owners.length) {
+      fullVisualization.push(
+        getLabel(owners.length === 1 ? 'Owner' : 'Owners'),
+        ...owners.map((owner) => getAddressVisualization(owner))
+      )
+    }
+
+    fullVisualization.push(getLabel('Threshold'), getText(threshold.toString()))
+
+    if (fallbackHandler.toLowerCase() !== zeroAddress) {
+      fullVisualization.push(getLabel('Fallback handler'), getAddressVisualization(fallbackHandler))
+    }
+
+    if (payment) {
+      fullVisualization.push(getLabel('Payment'), getToken(paymentToken, payment))
+    }
+
+    if (paymentReceiver.toLowerCase() !== zeroAddress) {
+      fullVisualization.push(getLabel('Payment receiver'), getAddressVisualization(paymentReceiver))
+    }
+
+    if (
+      setupHookDepth < MAX_SAFE_SETUP_HOOK_DEPTH &&
+      setupTo.toLowerCase() !== zeroAddress &&
+      setupData !== '0x'
+    ) {
+      const setupCallHumanization = getSafeHumanization(
+        safeAddr,
+        setupTo,
+        0n,
+        setupData,
+        setupHookDepth + 1
+      )
+
+      if (setupCallHumanization?.visuals?.length) {
+        fullVisualization.push(getBreak(), getLabel('Setup transaction'))
+        fullVisualization.push(...setupCallHumanization.visuals)
+      }
+      if (setupCallHumanization?.warnings) warnings.push(...setupCallHumanization.warnings)
+    }
+
+    warnings.push(getWarning(`Safe setup configuration detected`, 'SAFE{WALLET}_CONFIG_CHANGE'))
+
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
+    const { args } = decodeFunctionData({
+      abi: addOwnerWithThresholdAbi,
+      data
+    })
+    const [newOwner, newThreshold] = args
     fullVisualization.push(
       ...[
         getAction('Add owner'),
         getAddressVisualization(newOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
@@ -85,10 +184,9 @@ export const getSafeHumanization = (
     }
   }
 
-  const changeThreshold = iface.getFunction('changeThreshold')?.selector
-  if (selector === changeThreshold) {
-    const decoded = iface.decodeFunctionData('changeThreshold', data)
-    const newThreshold = decoded[0]
+  if (selector === toFunctionSelector(changeThresholdAbi[0])) {
+    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data })
+    const [newThreshold] = args
     fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
     warnings.push(
       getWarning(`Threshold configuration changes detected`, 'SAFE{WALLET}_CONFIG_CHANGE')
@@ -99,17 +197,15 @@ export const getSafeHumanization = (
     }
   }
 
-  const removeOwner = iface.getFunction('removeOwner')?.selector
-  if (selector === removeOwner) {
-    const decoded = iface.decodeFunctionData('removeOwner', data)
-    const removedOwner = decoded[1]
-    const newThreshold = decoded[2]
+  if (selector === toFunctionSelector(removeOwnerAbi[0])) {
+    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data })
+    const [, removedOwner, newThreshold] = args
     fullVisualization.push(
       ...[
         getAction('Remove owner'),
         getAddressVisualization(removedOwner),
         getAction('and set threshold to'),
-        getLabel(newThreshold)
+        getLabel(newThreshold.toString())
       ]
     )
     warnings.push(
@@ -121,11 +217,9 @@ export const getSafeHumanization = (
     }
   }
 
-  const swapOwner = iface.getFunction('swapOwner')?.selector
-  if (selector === swapOwner) {
-    const decoded = iface.decodeFunctionData('swapOwner', data)
-    const removedOwner = decoded[1]
-    const newOwner = decoded[2]
+  if (selector === toFunctionSelector(swapOwnerAbi[0])) {
+    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data })
+    const [, removedOwner, newOwner] = args
     fullVisualization.push(
       ...[
         getAction('Remove owner'),
@@ -142,10 +236,9 @@ export const getSafeHumanization = (
     }
   }
 
-  const enableModule = iface.getFunction('enableModule')?.selector
-  if (selector === enableModule) {
-    const decoded = iface.decodeFunctionData('enableModule', data)
-    const module = decoded[0]
+  if (selector === toFunctionSelector(enableModuleAbi[0])) {
+    const { args } = decodeFunctionData({ abi: enableModuleAbi, data })
+    const [module] = args
     fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
     warnings.push(
       getWarning(
@@ -159,20 +252,18 @@ export const getSafeHumanization = (
     }
   }
 
-  const disableModule = iface.getFunction('disableModule')?.selector
-  if (selector === disableModule) {
-    const decoded = iface.decodeFunctionData('disableModule', data)
-    const module = decoded[1]
+  if (selector === toFunctionSelector(disableModuleAbi[0])) {
+    const { args } = decodeFunctionData({ abi: disableModuleAbi, data })
+    const [, module] = args
     fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
     return {
       visuals: fullVisualization
     }
   }
 
-  const setGuard = iface.getFunction('setGuard')?.selector
-  if (selector === setGuard) {
-    const decoded = iface.decodeFunctionData('setGuard', data)
-    const guard = decoded[0]
+  if (selector === toFunctionSelector(setGuardAbi[0])) {
+    const { args } = decodeFunctionData({ abi: setGuardAbi, data })
+    const [guard] = args
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
     return {
       visuals: fullVisualization
@@ -184,25 +275,32 @@ export const getSafeHumanization = (
 
 const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
   const matcher = {
-    [iface.getFunction(
-      'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
-    )?.selector!]: (call: IrCall): IrCall | undefined => {
+    [toFunctionSelector(execTransactionAbi[0])]: (call: HexIrCall): IrCall | undefined => {
       if (!call.to) return
       if (call.value) return
-      const {
-        to,
-        value,
-        data,
-        operation,
-        safeTxGas,
-        baseGas,
-        gasPrice,
-        gasToken,
-        refundReceiver,
-        signatures
-      } = iface.parseTransaction(call)!.args
+      let args: unknown[]
 
-      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, value, data)
+      try {
+        args = [...decodeFunctionData({ abi: execTransactionAbi, data: call.data }).args]
+      } catch {
+        return
+      }
+
+      const [to, value, data, operation] = args
+      if (typeof to !== 'string') return
+      if (typeof data !== 'string') return
+      if (typeof value !== 'bigint' && typeof value !== 'number' && typeof value !== 'string')
+        return
+      if (
+        typeof operation !== 'bigint' &&
+        typeof operation !== 'number' &&
+        typeof operation !== 'string'
+      )
+        return
+      const bigintValue = BigInt(value)
+      const bigintOperation = BigInt(operation)
+
+      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -211,9 +309,9 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         getAddressVisualization(to)
       ]
 
-      if (value)
+      if (bigintValue)
         fullVisualization.push(
-          ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, value)]
+          ...[getLabel('and'), getAction('Send'), getToken(zeroAddress, bigintValue)]
         )
 
       const warnings: HumanizerWarning[] = []
@@ -224,7 +322,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         if (safeSpecificHumanization.warnings) warnings.push(...safeSpecificHumanization.warnings)
       }
 
-      const delegateCallWarnings = getDelegateCallWarning(operation, to)
+      const delegateCallWarnings = getDelegateCallWarning(bigintOperation, to)
       if (delegateCallWarnings.length) warnings.push(...delegateCallWarnings)
 
       return { ...call, fullVisualization, warnings }
@@ -245,6 +343,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
       }
     }
 
+    if (!isHexCall(call)) return call
     const match = matcher[call.data.slice(0, 10)]
     if (call.fullVisualization || !match) return call
     const newCall = match(call)

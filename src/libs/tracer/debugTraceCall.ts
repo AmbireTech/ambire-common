@@ -1,6 +1,10 @@
-import { getAddress, Interface, toQuantity } from 'ethers'
+import { getAddress, Interface, keccak256, toQuantity, toUtf8Bytes } from 'ethers'
+
+import { privSlot } from '@/libs/proxyDeploy/deploy'
+import { getShouldStateOverride } from '@/utils/simulationStateOverride'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
@@ -17,10 +21,111 @@ import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
+const ERC721_TRANSFER_TOPIC = keccak256(toUtf8Bytes('Transfer(address,address,uint256)'))
+
+interface CallTracerLog {
+  address: string
+  topics?: string[]
+}
+
+interface CallTracerFrame {
+  to?: string
+  calls?: CallTracerFrame[]
+  logs?: CallTracerLog[]
+}
+
+export function parseCallTracerResult(result: CallTracerFrame | undefined): {
+  tokens: string[]
+  nfts: [string, bigint[]][]
+} {
+  const tokenAddresses = new Set<string>()
+  const nftTokenIdsByAddress = new Map<string, Set<bigint>>()
+
+  const addTokenAddress = (address: string | undefined) => {
+    if (!address) return
+
+    tokenAddresses.add(getAddress(address))
+  }
+
+  const addNftTransfer = (log: CallTracerLog) => {
+    if (
+      log.topics?.length !== 4 ||
+      log.topics[0]?.toLowerCase() !== ERC721_TRANSFER_TOPIC.toLowerCase()
+    )
+      return
+
+    const address = getAddress(log.address)
+    const tokenId = BigInt(log.topics[3]!)
+    const tokenIds = nftTokenIdsByAddress.get(address) || new Set<bigint>()
+
+    tokenIds.add(tokenId)
+    nftTokenIdsByAddress.set(address, tokenIds)
+  }
+
+  const collectFrameAssets = (frame: CallTracerFrame | undefined) => {
+    if (!frame) return
+
+    addTokenAddress(frame.to)
+    frame.logs?.forEach((log) => {
+      addTokenAddress(log.address)
+      addNftTransfer(log)
+    })
+    frame.calls?.forEach(collectFrameAssets)
+  }
+
+  collectFrameAssets(result)
+
+  return {
+    tokens: Array.from(tokenAddresses),
+    nfts: Array.from(nftTokenIdsByAddress.entries()).map(([address, tokenIds]) => [
+      address,
+      Array.from(tokenIds)
+    ])
+  }
+}
+
+export function getStateOverride(
+  account: Account,
+  op: AccountOp,
+  accountState: AccountOnchainState
+) {
+  // if the account is a Safe,
+  // add an additional state override that gives privileges to the assKey;
+  // also, we changed privs storage slot to ambire.smart.contracts.storage
+  // so privs no longer override slot number 0
+  const stateDiff = !!account.safeCreation
+    ? {
+        [privSlot(
+          keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
+          'uint256',
+          account.associatedKeys[0],
+          'bytes32'
+        )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+      }
+    : undefined
+
+  // add stateOverride when using a Safe as well
+  const stateOverride =
+    !!account.safeCreation || (op.calls.length > 1 && isBasicAccount(account, accountState))
+      ? {
+          [account.addr]: {
+            code: AmbireAccount7702.binRuntime,
+            stateDiff
+          }
+        }
+      : undefined
+
+  return stateOverride
+}
+
 // if using EOA, use the first and only call of the account op
 // if it's SA, make the data execute or deployAndExecute,
 // set the spoof+addr and pass all the calls
-function getFunctionParams(account: Account, op: AccountOp, accountState: AccountOnchainState) {
+export function getFunctionParams(
+  account: Account,
+  op: AccountOp,
+  accountState: AccountOnchainState
+) {
   if (isBasicAccount(account, accountState) && op.calls.length === 1) {
     const call = op.calls[0]!
     return {
@@ -68,12 +173,11 @@ export async function debugTraceCall(
   op: AccountOp,
   network: Network,
   accountState: AccountOnchainState,
-  supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const account = baseAcc.getAccount()
   const opts = {
-    blockTag: 'latest' as 'latest',
+    blockTag: 'latest' as const,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract,
     isEOA: isBasicAccount(account, accountState),
@@ -83,7 +187,7 @@ export async function debugTraceCall(
       state: accountState
     }
   }
-  const deploylessOpts = getDeploylessOpts(account.addr, supportsStateOverride, opts)
+  const deploylessOpts = getDeploylessOpts(account.addr, network, opts)
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const simulationOps = [
     [
@@ -100,73 +204,41 @@ export async function debugTraceCall(
   const params = getFunctionParams(account, op, accountState)
   if (!params) return { tokens: [], nfts: [] }
 
-  const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
-    await provider
-      .send('debug_traceCall', [
-        {
-          to: params.to,
-          value: toQuantity(params.value.toString()),
-          data: params.data,
-          from: params.from
+  const trace: CallTracerFrame = await provider
+    .send('debug_traceCall', [
+      {
+        to: params.to,
+        value: toQuantity(params.value.toString()),
+        data: params.data,
+        from: params.from
+      },
+      'latest',
+      {
+        // we're replacing the custom tracer with the built-in callTracer
+        // because it has broader RPC support. The trade off is that the
+        // data we're pulling from the RPC is a bit bigger compared to the
+        // custom tracer. But at least it works broadly as networks like Base
+        // that use geth only don't support custom tracers, resulting in
+        // bad discovery
+        tracer: 'callTracer',
+        tracerConfig: {
+          withLog: true
         },
-        'latest',
-        {
-          tracer: `{
-          discovered: [],
-          fault: function (log) {},
-          step: function (log) {
-            const found = this.discovered.map(ob => ob.address)
-            if (log.contract && log.contract.getAddress() && found.indexOf(toHex(log.contract.getAddress())) === -1) {
-              this.discovered.push({
-                erc: 20,
-                address: toHex(log.contract.getAddress())
-              })
+        stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
+          ? {
+              [params.from]: {
+                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+              },
+              ...overrideData
             }
-            if (log.op.toString() === 'LOG4') {
-              this.discovered.push({
-                erc: 721,
-                address: toHex(log.contract.getAddress()),
-                tokenId: '0x' + log.stack.peek(5).toString(16)
-              })
-            }
-          },
-          result: function () {
-            return this.discovered
-          }
-        }`,
+          : {}
+      }
+    ])
+    .catch((e) => {
+      throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
+    })
 
-          enableMemory: false,
-          enableReturnData: true,
-          disableStorage: true,
-          stateOverrides: supportsStateOverride
-            ? {
-                // TODO: if it's an EOA, add the EOA state override data
-                [params.from]: {
-                  balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                },
-                ...overrideData
-              }
-            : {}
-        }
-      ])
-      .catch((e) => {
-        // eslint-disable-next-line no-underscore-dangle
-        throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
-      })
-
-  const foundTokens = [
-    ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
-  ]
-  const foundNftTransfersObject = results
-    .filter((i) => i?.erc === 721)
-    .reduce((res: { [address: string]: Set<bigint> }, i: any) => {
-      if (!res[i?.address]) res[i?.address] = new Set()
-      res[i.address]!.add(i.tokenId)
-      return res
-    }, {})
-  const foundNftTransfers: [string, bigint[]][] = Object.entries(foundNftTransfersObject).map(
-    ([address, id]) => [getAddress(address), Array.from(id).map((i) => BigInt(i))]
-  )
+  const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace)
 
   // we set the 3rd param to "true" as we don't need state override
   const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
@@ -201,7 +273,6 @@ export async function debugTraceCall(
   try {
     provider.destroy()
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error(e)
   }
 

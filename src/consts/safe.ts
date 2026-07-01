@@ -21,6 +21,15 @@ const vOneFive = {
   singleton: '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
 }
 
+/**
+ * SimulateTxAccessor addresses by Safe version.
+ */
+export const safeSimulateTxAccessor = {
+  ['v1.3.0']: '0x59AD6735bCd8152B84860Cb256dD9e96b85F69Da',
+  ['v1.4.1']: '0x3d4BA2E0884aa488718476ca2FB8Efc291A46199',
+  ['v1.5.0']: '0x07EfA797c55B5DdE3698d876b277aBb6B893654C'
+}
+
 export const execTransactionAbi = [
   'function execTransaction(address to,uint256 value,bytes calldata data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address payable refundReceiver,bytes memory signatures)'
 ]

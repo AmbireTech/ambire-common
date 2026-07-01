@@ -1,4 +1,3 @@
-/* eslint-disable no-bitwise */
 import { getBytes, keccak256, LangEn, Mnemonic, randomBytes } from 'ethers'
 
 // Custom entropy generator that enhances ethers' randomBytes by incorporating:

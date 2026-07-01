@@ -64,7 +64,11 @@ export class RecurringTimeout implements IRecurringTimeout {
   promise: Promise<void> | undefined
 
   // collapse multiple start/restart calls in the same tick
-  #pendingStart?: RecurringTimeoutStartOptions
+  #pendingStart: RecurringTimeoutStartOptions | undefined
+
+  // we use this id to prevent race conditions where a background-queued 12s wait
+  // would block a foreground-queued immediate execution in the same tick.
+  #internalSessionId = 0
 
   startScheduled = false
 
@@ -89,11 +93,15 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   stop() {
+    this.#internalSessionId += 1
+    this.sessionId = this.#internalSessionId
     this.startScheduled = false
     this.#reset()
   }
 
   restart(opts: RecurringTimeoutStartOptions = {}) {
+    this.#internalSessionId += 1
+    this.sessionId = this.#internalSessionId
     this.#reset()
     this.#scheduleStart(opts)
   }
@@ -132,14 +140,19 @@ export class RecurringTimeout implements IRecurringTimeout {
     if (this.startScheduled) return
     this.startScheduled = true
 
+    const capturedSessionId = this.#internalSessionId
+
     queueMicrotask(() => {
+      // If the session ID changed since we queued this microtask (e.g. stop() or restart() was called),
+      // we self-destruct. This prevents a background-scheduled "wait" from blocking an immediate request.
+      if (this.#internalSessionId !== capturedSessionId) return
+
       this.startScheduled = false
       const { timeout: newTimeout, runImmediately, allowOverlap } = this.#pendingStart || {}
       this.#pendingStart = undefined
 
       this.running = true
       this.startedRunningAt = Date.now()
-      this.sessionId += 1
 
       if (newTimeout) this.updateTimeout({ timeout: newTimeout })
 
@@ -156,8 +169,8 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #reset() {
     this.running = false
-    this.startedRunningAt = 0
-
+    this.startScheduled = false
+    this.promise = undefined
     if (this.#timeoutId) {
       clearTimeout(this.#timeoutId)
       this.#timeoutId = undefined

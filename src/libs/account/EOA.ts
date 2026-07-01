@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
 
@@ -130,5 +129,17 @@ export class EOA extends BaseAccount {
 
   canBroadcastByOtherEOA(): boolean {
     return false
+  }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
+
+  canSetCustomGas(_feeOption?: FeePaymentOption, accountOp?: AccountOp): boolean {
+    // we do not allow custom gas for a bundle as we can estimate
+    // the gas for the next transaction after the first one has completed
+    if (accountOp && accountOp.calls.length > 1) return false
+
+    return this.canSetCustomGasPrices()
   }
 }

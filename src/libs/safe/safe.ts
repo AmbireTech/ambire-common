@@ -9,6 +9,7 @@ import {
   Interface,
   keccak256,
   recoverAddress,
+  solidityPacked,
   toBeHex,
   toUtf8Bytes,
   ZeroAddress,
@@ -53,10 +54,50 @@ const multiCallAbi = [
 
 export type ExtendedSafeMessage = SafeMessage & { isConfirmed: boolean }
 
+const SAFE_CALL_OPERATION = 0
+const SAFE_DELEGATE_CALL_OPERATION = 1
+
 export interface SafeResults {
   [chainId: string]: {
     txns: SafeMultisigTransactionResponse[]
     messages: ExtendedSafeMessage[]
+  }
+}
+
+export function encodeCalls(op: AccountOp): {
+  to: Hex
+  value: bigint
+  data: Hex
+  operation: number
+} {
+  const calls = getSignableCalls(op)
+
+  if (calls.length === 1) {
+    const singleCall = calls[0]!
+    return {
+      to: singleCall[0] as Hex,
+      value: BigInt(singleCall[1]),
+      data: singleCall[2] as Hex,
+      operation: SAFE_CALL_OPERATION
+    }
+  }
+
+  const multiSendData = new Interface(multiCallAbi).encodeFunctionData('multiSend', [
+    concat(
+      calls.map((call) => {
+        return solidityPacked(
+          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+          [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt(getBytes(call[2]).length), call[2]]
+        )
+      })
+    )
+  ])
+
+  return {
+    to: multiSendAddr as Hex,
+    value: 0n,
+    data: multiSendData as Hex,
+    operation: SAFE_DELEGATE_CALL_OPERATION
   }
 }
 
@@ -128,39 +169,7 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
   }
 
   const coder = new AbiCoder()
-  const calls = getSignableCalls(op)
-
-  let to
-  let value
-  let data
-  let operation
-
-  if (calls.length === 1) {
-    const singleCall = calls[0]!
-    to = singleCall[0]
-    value = BigInt(singleCall[1])
-    data = singleCall[2]
-    operation = 0 // static call
-  } else {
-    const multisendInterface = new Interface(multiCallAbi)
-    const multiSendCalls = multisendInterface.encodeFunctionData('multiSend', [
-      concat(
-        calls.map((call) => {
-          return concat([
-            '0x00',
-            zeroPadValue(call[0], 20),
-            zeroPadValue(toBeHex(call[1]), 32),
-            zeroPadValue(toBeHex(call[2].substring(2).length / 2), 32),
-            call[2]
-          ])
-        })
-      )
-    ])
-    to = multiSendAddr
-    value = 0n
-    data = multiSendCalls
-    operation = 1 // delegate call
-  }
+  const { to, value, data, operation } = encodeCalls(op)
 
   return {
     to: to as Hex,
@@ -271,9 +280,23 @@ export async function addMessage(
     apiKey: process.env.SAFE_API_KEY
   })
   return apiKit.addMessage(safeAddress, {
-    message,
+    message: normalizeSafeGlobalMessage(message),
     signature
   })
+}
+
+export function normalizeSafeGlobalMessage(message: string | EIP712TypedData) {
+  if (typeof message === 'string') return message
+  const chainId = (message.domain as { chainId?: unknown }).chainId
+  if (typeof chainId !== 'bigint') return message
+
+  return {
+    ...message,
+    domain: {
+      ...message.domain,
+      chainId: chainId.toString()
+    }
+  } as unknown as EIP712TypedData
 }
 
 export async function getMessage({
@@ -387,7 +410,7 @@ export async function fetchAllPending(
   return results
 }
 
-function decodeMultiSend(transactionsHex: string) {
+export function decodeMultiSend(transactionsHex: string) {
   const bytes = getBytes(transactionsHex)
   let i = 0
   const results = []

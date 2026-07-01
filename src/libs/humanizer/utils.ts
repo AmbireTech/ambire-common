@@ -1,18 +1,35 @@
-import { getAddress, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
+import {
+  HumanizerErc7730Row,
+  HumanizerMeta,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
+
+export type HexIrCall = IrCall & { data: Hex }
+
+/** Type guard that narrows an IrCall to one with a valid hex data field. */
+export function isHexCall(call: IrCall): call is HexIrCall {
+  return isHex(call.data)
+}
 
 export function getWarning(
   content: string,
   code: HumanizerWarning['code'],
-  blocking?: boolean
+  blocking?: boolean,
+  address?: string
 ): HumanizerWarning {
-  return { content, blocking, code }
+  return { content, blocking, code, address }
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
-export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
-  return { type: 'label', content, id: randomId(), isBold }
+export function getLabel(
+  content: string | bigint | number,
+  isBold?: boolean
+): HumanizerVisualization {
+  return { type: 'label', content: content.toString(), id: randomId(), isBold }
 }
 export function getAction(
   content: string,
@@ -26,6 +43,7 @@ export function getImage(content: string): HumanizerVisualization {
 export function getBreak(): HumanizerVisualization {
   return { type: 'break', id: randomId() }
 }
+
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
   return { type: 'address', address, id: randomId() }
@@ -34,7 +52,6 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
 export function getToken(
   _address: string,
   amount: bigint,
-  isHidden?: boolean,
   chainId?: bigint
 ): HumanizerVisualization {
   const address = _address.toLowerCase()
@@ -43,7 +60,6 @@ export function getToken(
     address,
     value: BigInt(amount),
     id: randomId(),
-    isHidden,
     chainId
   }
 }
@@ -52,15 +68,44 @@ export function getTokenWithChain(
   amount: bigint,
   chainId?: bigint
 ): HumanizerVisualization {
-  return getToken(address, amount, undefined, chainId)
+  return getToken(address, amount, chainId)
 }
 
 export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getText(text: string): HumanizerVisualization {
-  return { type: 'text', content: text, id: randomId() }
+export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
+  return { type: 'text', content: text, id: randomId(), mlMi }
+}
+
+export function getErc7730Visualization(
+  title: string | undefined,
+  rows: HumanizerErc7730Row[],
+  dapp?: IrCall['dapp']
+): HumanizerVisualization {
+  return { type: 'erc7730', title, dapp, rows, id: randomId() }
+}
+
+export function flattenHumanizerVisualizations(
+  visualizations: HumanizerVisualization[] = []
+): HumanizerVisualization[] {
+  return visualizations.flatMap((visualization) => {
+    if (visualization.type !== 'erc7730') return [visualization]
+
+    return [
+      visualization,
+      ...flattenHumanizerVisualizations(visualization.rows.flatMap((row) => row.value))
+    ]
+  })
+}
+
+export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
+  return !!humanization?.some((call) =>
+    flattenHumanizerVisualizations(call.fullVisualization).some(
+      (visualization) => visualization.type === 'erc7730'
+    )
+  )
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -127,4 +172,4 @@ export const uintToAddress = (uint: bigint): string =>
   `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
 
 export const eToNative = (address: string): string =>
-  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? zeroAddress : address

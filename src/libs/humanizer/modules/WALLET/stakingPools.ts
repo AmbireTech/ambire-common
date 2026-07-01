@@ -1,8 +1,7 @@
-import { Interface } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
-import { StakingPool } from '../../const/abis'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import { HumanizerVisualization } from '../../interfaces'
+import { HexIrCall, getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
@@ -21,34 +20,46 @@ const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
 }
 // const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 
-export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisualization[] } => {
-  const iface = new Interface(StakingPool)
+const enterAbi = parseAbi(['function enter(uint256 amount)'])
+const leaveAbi = parseAbi(['function leave(uint256 shares, bool skipMint)'])
+const withdrawAbi = parseAbi([
+  'function withdraw(uint256 shares, uint256 unlocksAt, bool skipMint)'
+])
+const rageLeaveAbi = parseAbi(['function rageLeave(uint256 shares, bool skipMint)'])
+
+export const StakingPools = (): { [key: string]: (c: HexIrCall) => HumanizerVisualization[] } => {
   return {
-    [iface.getFunction('enter')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(enterAbi[0])]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
-      const { amount } = iface.parseTransaction(call)!.args
+      const baseToken = STAKING_POOLS[call.to.toLowerCase()]?.baseToken
+      if (!baseToken) throw Error('Humanizer: unknown staking pool')
+      const { args } = decodeFunctionData({ abi: enterAbi, data: call.data })
+      const [amount] = args
       return [
         getAction('Deposit'),
-        getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, amount),
+        getToken(baseToken, amount),
         getLabel('to'),
         getAddressVisualization(call.to)
       ]
     },
-    [iface.getFunction('leave')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(leaveAbi[0])]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
-      const { shares } = iface.parseTransaction(call)!.args
+      const { args } = decodeFunctionData({ abi: leaveAbi, data: call.data })
+      const [shares] = args
 
       return [getAction('Leave'), getLabel('with'), getToken(call.to, shares)]
     },
-    [iface.getFunction('withdraw')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(withdrawAbi[0])]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
-      const { shares } = iface.parseTransaction(call)!.args
+      const { args } = decodeFunctionData({ abi: withdrawAbi, data: call.data })
+      const [shares] = args
       return [getAction('Withdraw'), getToken(call.to, shares)]
     },
 
-    [iface.getFunction('rageLeave')?.selector!]: (call: IrCall) => {
+    [toFunctionSelector(rageLeaveAbi[0])]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
-      const { shares } = iface.parseTransaction(call)!.args
+      const { args } = decodeFunctionData({ abi: rageLeaveAbi, data: call.data })
+      const [shares] = args
       return [getAction('Rage leave'), getLabel('with'), getToken(call.to, shares)]
     }
   }

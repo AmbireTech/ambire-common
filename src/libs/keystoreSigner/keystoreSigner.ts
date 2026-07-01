@@ -1,4 +1,3 @@
-/* eslint-disable new-cap */
 import {
   concat,
   encodeRlp,
@@ -90,7 +89,6 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return transactionRes
   }
 
-  // eslint-disable-next-line class-methods-use-this
   sign7702: KeystoreSignerInterface['sign7702'] = async ({ chainId, contract, nonce }) => {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
@@ -122,7 +120,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
           maxPriorityFeePerGas ? toBeHex(maxPriorityFeePerGas) : '0x',
           maxFeePerGas ? toBeHex(maxFeePerGas) : '0x',
           txnRequest.gasLimit ? toBeHex(txnRequest.gasLimit) : '0x',
-          txnRequest.to,
+          txnRequest.to || '0x',
           txnRequest.value ? toBeHex(txnRequest.value) : '0x',
           txnRequest.data,
           [],
@@ -156,7 +154,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
         maxPriorityFeePerGas ? toBeHex(maxPriorityFeePerGas) : '0x',
         maxFeePerGas ? toBeHex(maxFeePerGas) : '0x',
         txnRequest.gasLimit ? toBeHex(txnRequest.gasLimit) : '0x',
-        txnRequest.to,
+        txnRequest.to || '0x',
         txnRequest.value ? toBeHex(txnRequest.value) : '0x',
         txnRequest.data,
         [],

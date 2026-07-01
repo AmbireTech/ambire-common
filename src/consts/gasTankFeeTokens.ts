@@ -227,6 +227,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/12645/standard/aave-token-round.png?1720472354'
   },
   {
+    chainId: 1n,
+    address: '0x39b8B6385416f4cA36a20319F70D28621895279D',
+    symbol: 'eure',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
+  },
+  {
     address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
     symbol: 'steth',
     chainId: 1n,
@@ -280,7 +287,7 @@ export default [
     symbol: 'wallet',
     chainId: 1n,
     decimals: 18,
-    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/Ambire_logo_250x250.png'
+    icon: 'https://cena.ambire.com/iconProxy/ethereum/0x88800092fF476844f74dC2FC427974BBee2794Ae'
   },
   {
     address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
@@ -290,7 +297,7 @@ export default [
     symbol: 'xwallet',
     chainId: 1n,
     decimals: 18,
-    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/xwallet_250x250.png'
+    icon: 'https://cena.ambire.com/iconProxy/ethereum/0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
   },
   {
     address: '0x028171bCA77440897B824Ca71D1c56caC55b68A3',
@@ -345,6 +352,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/56069/standard/BOLD_logo.png?1748265087'
   },
   {
+    address: '0xB58E61C3098d85632Df34EecfB899A1Ed80921cB',
+    symbol: 'zchf',
+    chainId: 1n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
+  },
+  {
     address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     symbol: 'wmatic',
     chainId: 137n,
@@ -364,6 +378,13 @@ export default [
     chainId: 137n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+  },
+  {
+    chainId: 137n,
+    address: '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d',
+    symbol: 'eure',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
   },
   {
     address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
@@ -481,6 +502,13 @@ export default [
     symbol: 'link',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/877/standard/chainlink-new-logo.png?1696502009'
+  },
+  {
+    chainId: 137n,
+    address: '0xD4dD9e2F021BB459D5A5f6c24C12fE09c5D45553',
+    symbol: 'zchf',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
   },
   {
     address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
@@ -622,6 +650,13 @@ export default [
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
+  {
+    address: '0xD4dD9e2F021BB459D5A5f6c24C12fE09c5D45553',
+    symbol: 'zchf',
+    chainId: 43114n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
+  },
   // commenting these out as they are disabled in the relayer as fee
   // {
   //   address: '0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE',
@@ -742,6 +777,14 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/23354/standard/eur.png'
   },
   {
+    address: '0xD4dD9e2F021BB459D5A5f6c24C12fE09c5D45553',
+    symbol: 'zchf',
+    chainId: 100n,
+    disableGasTankDeposit: true,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
+  },
+  {
     address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
     symbol: 'usdt',
     chainId: 10n,
@@ -777,6 +820,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
   },
   {
+    address: '0xD4dD9e2F021BB459D5A5f6c24C12fE09c5D45553',
+    symbol: 'zchf',
+    chainId: 10n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
+  },
+  {
     address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
     symbol: 'usdt',
     chainId: 42161n,
@@ -789,6 +839,13 @@ export default [
     chainId: 42161n,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+  },
+  {
+    address: '0x0c06cCF38114ddfc35e07427B9424adcca9F44F8',
+    symbol: 'eure',
+    chainId: 42161n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
   },
   {
     address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
@@ -875,6 +932,13 @@ export default [
     currencyIcon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
   },
   {
+    chainId: 42161n,
+    address: '0xD4dD9e2F021BB459D5A5f6c24C12fE09c5D45553',
+    symbol: 'zchf',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
+  },
+  {
     address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
     symbol: 'usdc',
     chainId: 66n,
@@ -907,7 +971,7 @@ export default [
     symbol: 'wallet',
     chainId: 8453n,
     decimals: 18,
-    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/Ambire_logo_250x250.png'
+    icon: 'https://cena.ambire.com/iconProxy/ethereum/0x88800092fF476844f74dC2FC427974BBee2794Ae'
   },
   {
     address: '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452',
@@ -971,6 +1035,13 @@ export default [
     symbol: 'eurc',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/26045/standard/euro.png?1696525125'
+  },
+  {
+    chainId: 8453n,
+    address: '0xD4dD9e2F021BB459D5A5f6c24C12fE09c5D45553',
+    symbol: 'zchf',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
   },
   {
     chainId: 534352n,

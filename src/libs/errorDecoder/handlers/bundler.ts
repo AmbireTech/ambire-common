@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
 class BundlerErrorHandler implements ErrorHandler {

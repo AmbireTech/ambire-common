@@ -1,10 +1,15 @@
+import { CallTuple } from '@/libs/accountOp/types'
+
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-/* eslint-disable no-console */
+
 import { yieldToMain } from '../../utils/scheduler'
-import { getNotAmbireStateOverride } from '../../utils/simulationStateOverride'
+import {
+  getNotAmbireStateOverride,
+  getShouldStateOverride
+} from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
 import { AccountOp, callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
@@ -46,7 +51,7 @@ function handleSimulationError(
   errorData: string,
   beforeNonce: bigint,
   afterNonce: bigint,
-  simulationOps: { nonce: bigint | null; calls: [string, string, string][] }[]
+  simulationOps: { nonce: bigint | null; calls: CallTuple[] }[]
 ) {
   if (errorData !== '0x') {
     const error = new Error(errorData)
@@ -104,22 +109,20 @@ function handleSimulationError(
 
 export function getDeploylessOpts(
   accountAddr: string,
-  supportsStateOverride: boolean,
+  network: Network,
   opts: {
     simulation?: GetOptionsSimulation<AccountOp[]>
     blockTag?: GetOptions['blockTag']
   }
 ) {
   const shouldStateOverride =
-    supportsStateOverride &&
-    opts.simulation &&
-    opts.simulation.baseAccount.shouldStateOverrideDuringSimulations()
+    !!opts.simulation && getShouldStateOverride(network, opts.simulation.baseAccount)
 
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-    stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr) : null
+    stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(accountAddr, network) : null
   }
 }
 
@@ -131,7 +134,7 @@ export async function getNFTs(
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+  const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
     blockTag:
       opts.blockTag === 'pending' || opts.blockTag === 'both'
@@ -139,15 +142,16 @@ export async function getNFTs(
         : opts.blockTag
   })
 
-  const mapNft = (token: any) => {
+  const mapNft = (token: any, address: string) => {
     return {
       name: token.name,
       chainId: network.chainId,
+      address,
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
       collectibles: [...token.nfts]
-    } as CollectionResult
+    } satisfies Omit<CollectionResult, 'flags' | 'priceIn' | 'marketDataIn'>
   }
 
   if (!opts.simulation) {
@@ -162,14 +166,19 @@ export async function getNFTs(
       deploylessOpts
     )
 
-    return [collections.map((token: any) => [token.error, mapNft(token)]), {}]
+    return [
+      collections.map((token: any, index: number) => [
+        token.error,
+        mapNft(token, tokenAddrs[index]![0])
+      ]),
+      {}
+    ]
   }
 
   const { accountOps, baseAccount, state } = opts.simulation
   const account = baseAccount.getAccount()
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const shouldStateOverride =
-    !network.rpcNoStateOverride && baseAccount.shouldStateOverrideDuringSimulations()
+  const shouldStateOverride = getShouldStateOverride(network, baseAccount)
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // state overriden accounts start from a fake, specified nonce
     nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
@@ -199,7 +208,7 @@ export async function getNFTs(
 
   const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
     ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
-        ...mapNft(simulationToken),
+        ...mapNft(simulationToken, deltaAddressesMapping[tokenIndex]),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
@@ -212,7 +221,7 @@ export async function getNFTs(
           )
         : null
 
-      const token = mapNft(beforeToken)
+      const token = mapNft(beforeToken, tokenAddrs[i]![0])
       const receiving: bigint[] = []
       const sending: bigint[] = []
 
@@ -259,7 +268,7 @@ export async function getTokens(
 
   const isFetchingBothBlocks = opts.blockTag === 'both'
 
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+  const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
     blockTag:
       opts.blockTag === 'pending' || isFetchingBothBlocks
@@ -267,26 +276,15 @@ export async function getTokens(
         : opts.blockTag
   })
 
-  // If we are fetching both the pending and latest block, we don't need to fetch the entire token
-  // info twice, just the info from the pending block and the balances from the latest block
-  const getLatestBalances = async () => {
-    if (!isFetchingBothBlocks) return null
-
-    return deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
-      ...deploylessOpts,
-      blockTag: 'latest'
-    })
-  }
-
   const getMainResults = async () => {
-    if (!opts.simulation) {
-      return deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
+    const { accountOps, baseAccount } = opts.simulation || {}
+
+    if (!baseAccount) {
+      throw new Error('Base account is required for simulation')
     }
 
-    const { accountOps, baseAccount, state } = opts.simulation || {}
     const account = baseAccount.getAccount()
-    const shouldStateOverride =
-      !network.rpcNoStateOverride && baseAccount.shouldStateOverrideDuringSimulations()
+    const shouldStateOverride = getShouldStateOverride(network, baseAccount)
     const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
       // state overriden accounts start from a fake, specified nonce
       nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
@@ -311,22 +309,17 @@ export async function getTokens(
     }
   }
 
-  const [mainResults, latestBalances] = await Promise.all([getMainResults(), getLatestBalances()])
-
   if (!opts.simulation) {
-    const [results, blockNumber] = mainResults
+    const [results, blockNumber] = await deployless.call(
+      'getBalances',
+      [accountAddr, tokenAddrs],
+      deploylessOpts
+    )
 
     return [
       results.map((token: any, i: number) => [
-        token.error || (latestBalances && latestBalances[i].error ? latestBalances[i].error : null),
-        mapToken(
-          token,
-          network,
-          tokenAddrs[i]!,
-          opts,
-          undefined,
-          Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
-        )
+        token.error,
+        mapToken(token, network, tokenAddrs[i]!, opts, undefined, token.amount)
       ]),
       {
         blockNumber
@@ -334,11 +327,12 @@ export async function getTokens(
     ]
   }
 
+  const mainResults = await getMainResults()
   const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = mainResults.result
 
   const beforeNonce = before.nonce
   const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps)
+  handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps || [])
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
@@ -371,16 +365,9 @@ export async function getTokens(
       // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
       //   - after.balances, 8 USDC.
       return [
-        token.error || (latestBalances && latestBalances[i].error ? latestBalances[i].error : null),
+        token.error,
         {
-          ...mapToken(
-            token,
-            network,
-            tokenAddrs[i]!,
-            opts,
-            !!simulationAmount,
-            Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
-          ),
+          ...mapToken(token, network, tokenAddrs[i]!, opts, !!simulationAmount, token.amount),
           simulationAmount,
           amountPostSimulation
         }

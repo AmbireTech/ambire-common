@@ -1,6 +1,13 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import assert from 'assert'
-import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
+import {
+  AbiCoder,
+  concat,
+  getBytes,
+  Interface,
+  JsonRpcProvider,
+  Provider,
+  toQuantity
+} from 'ethers'
 import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
@@ -84,7 +91,6 @@ export class Deployless {
     this.abi = abi
 
     if (provider && provider instanceof JsonRpcProvider) {
-      // eslint-disable-next-line no-underscore-dangle
       this.providerUrl = provider._getConnection().url
       this.isProviderInvictus = this.providerUrl?.includes('invictus')
     }
@@ -101,7 +107,6 @@ export class Deployless {
     const isJsonRpcProvider =
       this.provider &&
       typeof (this.provider as JsonRpcProvider).send === 'function' &&
-      // eslint-disable-next-line no-underscore-dangle
       typeof (this.provider as JsonRpcProvider)._send === 'function'
 
     if (!isJsonRpcProvider) {
@@ -146,6 +151,15 @@ export class Deployless {
     return data
   }
 
+  /**
+   * To be able to successfully pass a number as blockTag,
+   * we need to call toQuantity to it, making it a no-leading zeros hex.
+   * This is the standard to make sure RPCs don't revert
+   */
+  private static normalizeRpcBlockTag(blockTag: string | number): string {
+    return typeof blockTag === 'number' ? toQuantity(blockTag) : blockTag
+  }
+
   async call(methodName: string, args: any[], _opts: Partial<CallOptions> = {}): Promise<any> {
     const opts = { ...defaultOptions, ..._opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
@@ -186,14 +200,14 @@ export class Deployless {
               gasPrice: opts?.gasPrice,
               gas: opts?.gasLimit
             },
-            opts.blockTag,
+            Deployless.normalizeRpcBlockTag(opts.blockTag),
             {
               [toAddr]: { code: this.contractRuntimeCode },
               ...(opts.stateToOverride || {})
             }
           ])
         : this.provider.call({
-            blockTag: opts.blockTag,
+            blockTag: Deployless.normalizeRpcBlockTag(opts.blockTag),
             from: opts.from,
             gasPrice: opts?.gasPrice,
             gasLimit: opts?.gasLimit,
