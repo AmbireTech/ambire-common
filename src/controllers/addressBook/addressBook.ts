@@ -122,12 +122,16 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
       return
     }
 
-    this.#manuallyAddedContacts.push({
+    const newContact = {
       name: trimmedName,
       address: checksummedAddress,
       createdAt: Date.now(),
       updatedAt: Date.now()
-    })
+    }
+
+    this.debugLog('Adding a new contact', newContact)
+
+    this.#manuallyAddedContacts.push(newContact)
 
     this.#handleManuallyAddedContactsChange()
   }
@@ -150,6 +154,12 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
 
     this.#manuallyAddedContacts = this.#manuallyAddedContacts.map((contact) => {
       if (contact.address.toLowerCase() === address.toLowerCase()) {
+        this.debugLog('Renaming manually added contact', () => ({
+          oldName: contact.name,
+          newName: trimmedNewName,
+          address: contact.address
+        }))
+
         return { ...contact, name: trimmedNewName, updatedAt: Date.now() }
       }
 
@@ -173,6 +183,8 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
       })
       return
     }
+
+    this.debugLog('Removing manually added contact', checksummedAddress)
 
     this.#manuallyAddedContacts = this.#manuallyAddedContacts.filter(
       (contact) => contact.address.toLowerCase() !== address.toLowerCase()

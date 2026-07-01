@@ -1,7 +1,7 @@
 // Module-level debug logging shared by EventEmitter (controllers) and pure libs
 // (which have no `this`). Logging is per-controller (namespace) on/off, toggled
-// and persisted by DebugController. `flow` is only an embedded tag for console
-// filtering (e.g. "[PortfolioController:simulation]").
+// and persisted by DebugController. `options.flow` is an optional embedded tag
+// for console filtering (e.g. "PortfolioController:simulation").
 //
 // Output goes to the console AND to a capped in-memory ring buffer of *serialized
 // strings* per namespace. Strings (not live objects) are stored so DevTools cannot
@@ -45,6 +45,8 @@ export type DebugLogOptions = {
    */
   traceId?: string
   level?: 'log' | 'warn'
+  /** Optional sub-category tag for console filtering, e.g. "simulation" or "update". */
+  flow?: string
 }
 
 export const debugLoggerRegistry = {
@@ -88,7 +90,6 @@ export const debugLoggerRegistry = {
 
 export function debugLog(
   namespace: string,
-  flow: string,
   message: string,
   payload?: unknown | (() => unknown),
   options?: DebugLogOptions
@@ -100,9 +101,10 @@ export function debugLog(
   try {
     data = (typeof payload === 'function' ? (payload as () => unknown)() : payload) as unknown
   } catch (err) {
-    console.error(`Debug: ${namespace}:${flow} payload function threw`, err)
+    const scope = options?.flow ? `${namespace}:${options.flow}` : namespace
+    console.error(`Debug: ${scope} payload function threw`, err)
   }
-  const scope = `${namespace}:${flow}`
+  const scope = options?.flow ? `${namespace}:${options.flow}` : namespace
   const prefix = options?.traceId ? `${options.traceId}:${scope}` : `${scope}`
   const line = `Debug: ${prefix} (at ${Date.now()}) ${message}${data ? serialize(data) : ' No payload (perhaps an error?)'}`
 
@@ -118,12 +120,8 @@ export function debugLog(
  * don't have to pass the namespace on every call. Example: Used by the portfolio lib to
  * log under the PortfolioController namespace
  */
-export function createScopedDebugLogger<Flow extends string = string>(namespace: string) {
+export function createScopedDebugLogger(namespace: string) {
   debugLoggerRegistry.registerNamespace(namespace)
-  return (
-    flow: Flow,
-    message: string,
-    payload?: unknown | (() => unknown),
-    options?: DebugLogOptions
-  ) => debugLog(namespace, flow, message, payload, options)
+  return (message: string, payload?: unknown | (() => unknown), options?: DebugLogOptions) =>
+    debugLog(namespace, message, payload, options)
 }
