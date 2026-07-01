@@ -116,7 +116,8 @@ export function getEstimationCalldata(account: Account, op: AccountOp) {
       value: 0n,
       data: ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
     }
-    return ambireAccount.encodeFunctionData('executeBySender', [callToTuple(call)])
+    const calls = [callToTuple(call)]
+    return ambireAccount.encodeFunctionData('executeBySender', [calls])
   }
 
   return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])

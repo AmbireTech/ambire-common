@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { AbiCoder, concat, Interface, keccak256, toUtf8Bytes, ZeroAddress } from 'ethers'
+import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
 
 import { SAFE_SENDER } from '@/consts/deploy'
 
@@ -73,7 +73,9 @@ export class Safe extends BaseAccount {
     const hasPaymaster =
       estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
 
-    return feePaymentOptions.filter((opt) => isNative(opt.token) || opt.token.flags.onGasTank)
+    return feePaymentOptions.filter(
+      (opt) => isNative(opt.token) || (hasPaymaster && opt.token.flags.onGasTank)
+    )
   }
 
   getGasUsed(
@@ -168,12 +170,8 @@ export class Safe extends BaseAccount {
       [this.account.addr]: {
         code: AmbireAccount.binRuntime,
         stateDiff: {
-          [privSlot(
-            keccak256(toUtf8Bytes('ambire.smart.contracts.storage')),
-            'uint256',
-            SAFE_SENDER,
-            'bytes32'
-          )]: '0x0000000000000000000000000000000000000000000000000000000000000002'
+          [privSlot(0, 'uint256', SAFE_SENDER, 'uint256')]:
+            '0x0000000000000000000000000000000000000000000000000000000000000002'
         }
       }
     }
