@@ -134,7 +134,7 @@ export function getBroadcastCalldata(account: Account, op: AccountOp, state: Acc
     localOp.feeCall = undefined
     const calls = [getSafeBroadcastTxn(localOp, state), op.feeCall ?? undefined].filter((x) => !!x)
 
-    return ambireAccount.encodeFunctionData('executeBySender', calls)
+    return ambireAccount.encodeFunctionData('executeBySender', [calls])
   }
 
   return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
