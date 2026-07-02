@@ -26,7 +26,11 @@ export const normalizeLedgerMessage = (error?: string): string => {
     error.includes('5515') ||
     error.includes('6b0c') ||
     error.includes('650f') ||
-    error.includes('6511')
+    error.includes('6511') ||
+    // Ethereum app not open (device on the dashboard); the app-specific APDU is
+    // rejected by BOLOS as unknown.
+    error.includes('6d02') ||
+    error.toLowerCase().includes('unknown_apdu')
   ) {
     return 'Cannot connect to your Ledger device. Please make sure it is unlocked and running the Ethereum app.'
   }
