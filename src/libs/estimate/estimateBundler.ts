@@ -21,7 +21,7 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { fetchNonce } from '../userOperation/fetchEntryPointNonce'
 import { UserOperation } from '../userOperation/types'
-import { getEstimationCalldata, getUserOperation } from '../userOperation/userOperation'
+import { getUserOpCalldata, getUserOperation } from '../userOperation/userOperation'
 import { getSigForCalculations } from './estimateHelpers'
 import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
 
@@ -158,10 +158,10 @@ export async function bundlerEstimate(
 
   userOp.signature = getSigForCalculations()
 
-  userOp.callData = getEstimationCalldata(account, op)
+  userOp.callData = getUserOpCalldata(account, op, accountState)
   const paymaster = await paymasterFactory.create(op, userOp, account, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
-  userOp.callData = getEstimationCalldata(account, op)
+  userOp.callData = getUserOpCalldata(account, localOp, accountState)
   const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {

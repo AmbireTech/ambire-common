@@ -104,26 +104,7 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
-export function getEstimationCalldata(account: Account, op: AccountOp) {
-  const ambireAccount = new Interface(AmbireAccount.abi)
-
-  if (account.safeCreation) {
-    // the safe account is state overriden to be an Ambire account
-    // to pass bundler estimation. So we encode a double executeBySender,
-    // one for the safe account execution, and the other for the SAFE_SENDER
-    const call = {
-      to: account.addr,
-      value: 0n,
-      data: ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-    }
-    const calls = [callToTuple(call)]
-    return ambireAccount.encodeFunctionData('executeBySender', [calls])
-  }
-
-  return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-}
-
-export function getBroadcastCalldata(account: Account, op: AccountOp, state: AccountOnchainState) {
+export function getUserOpCalldata(account: Account, op: AccountOp, state: AccountOnchainState) {
   const ambireAccount = new Interface(AmbireAccount.abi)
 
   // executeBySender on SAFE_SENDER + inner call to the safe

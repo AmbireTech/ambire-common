@@ -10,6 +10,7 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
@@ -131,8 +132,8 @@ import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tra
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
-  getBroadcastCalldata,
   getPackedUserOp,
+  getUserOpCalldata,
   getUserOperation,
   getUserOpHash
 } from '../../libs/userOperation/userOperation'
@@ -2028,6 +2029,15 @@ export class SignAccountOpController
 
     if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
 
+    // disable native for safe accounts as it should be visible but not enabled
+    if (
+      this.account.safeCreation &&
+      feeOption.paidBy === this.account.addr &&
+      isNative(feeOption.token)
+    ) {
+      return true
+    }
+
     return false
   }
 
@@ -2735,14 +2745,24 @@ export class SignAccountOpController
       )
     })
 
+    let callGasLimit = BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
+
+    // add the extra gas estimates in case of a safe
+    // re-estimation is not applied here
+    if (!!this.account.safeCreation) {
+      const gasUsed = this.baseAccount.getGasUsed(this.estimation.estimation!, {
+        feeToken: this.selectedOption!.token,
+        op: this.accountOp
+      })
+      callGasLimit += gasUsed
+    }
+
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
-    userOperation.callGasLimit = toBeHex(
-      BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
-    )
+    userOperation.callGasLimit = toBeHex(callGasLimit)
     userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
     userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
     userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
-    userOperation.callData = getBroadcastCalldata(this.account, this.accountOp, accountState)
+    userOperation.callData = getUserOpCalldata(this.account, this.accountOp, accountState)
 
     return userOperation
   }
@@ -2827,7 +2847,7 @@ export class SignAccountOpController
         .catch((e) => console.error(e))
     }
 
-    if (paymaster.isAmbire() && counter === 0) {
+    if (paymaster.isAmbire() && counter === 0 && !this.account.safeCreation) {
       const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
       return this.#getPaymasterUserOp(reestimatedUserOp, paymaster, eip7702Auth, counter + 1)
     }
@@ -3097,7 +3117,8 @@ export class SignAccountOpController
         // In both cases, we re-estimate before broadcast
         // 3) some bundlers require a re-estimate before broadcast
         let shouldReestimate =
-          (!!erc4337Estimation.feeCallType &&
+          (!this.account.safeCreation &&
+            !!erc4337Estimation.feeCallType &&
             paymaster.getFeeCallType([this.selectedOption.token]) !==
               erc4337Estimation.feeCallType) ||
           this.bundlerSwitcher.getBundler().shouldReestimateBeforeBroadcast(this.#network)

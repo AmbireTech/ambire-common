@@ -16,6 +16,7 @@ import {
   zeroPadValue
 } from 'ethers'
 
+import { getSigForCalculations } from '@/libs/estimate/estimateHelpers'
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit, {
   ProposeTransactionProps,
@@ -168,7 +169,6 @@ export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
     }
   }
 
-  const coder = new AbiCoder()
   const { to, value, data, operation } = encodeCalls(op)
 
   return {
@@ -204,7 +204,7 @@ export function getSafeBroadcastTxn(
       safeTxn.gasPrice,
       safeTxn.gasToken,
       safeTxn.refundReceiver,
-      op.signature
+      op.signature || getSigForCalculations()
     ]) as Hex
   }
 }

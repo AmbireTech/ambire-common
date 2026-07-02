@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
 
-import { SAFE_SENDER } from '@/consts/deploy'
-
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import SafeNoSignatureValidation from '../../../contracts/compiled/SafeNoSignatureValidation.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
@@ -22,7 +20,6 @@ import {
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
-import { privSlot } from '../proxyDeploy/deploy'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -102,7 +99,6 @@ export class Safe extends BaseAccount {
 
     if (estimation.bundlerEstimation && options.feeToken.flags.onGasTank) {
       return (
-        ambireBroaddcastGas +
         BigInt(estimation.bundlerEstimation.callGasLimit) +
         callToSelfGas +
         this.EXTRA_ESTIMATION_GAS +
@@ -168,18 +164,13 @@ export class Safe extends BaseAccount {
   getBundlerStateOverride(): BundlerStateOverride | undefined {
     return {
       [this.account.addr]: {
-        code: AmbireAccount.binRuntime,
-        stateDiff: {
-          [privSlot(0, 'uint256', SAFE_SENDER, 'uint256')]:
-            '0x0000000000000000000000000000000000000000000000000000000000000002'
-        }
+        code: SafeNoSignatureValidation.binRuntime
       }
     }
   }
 
-  // should we authorize the entry point;
-  // since we're not using 4337 for Safe accounts for now, we keep it false
-  shouldSignDeployAuth(broadcastOption: string): boolean {
+  // we're not deploying safe accounts
+  shouldSignDeployAuth(): boolean {
     return false
   }
 

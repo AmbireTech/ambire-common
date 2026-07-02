@@ -2,8 +2,8 @@ import { AbiCoder, Interface, parseEther } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { getAccountsInfo } from '../../../test/helpers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
