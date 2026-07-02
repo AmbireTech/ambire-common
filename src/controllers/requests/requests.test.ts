@@ -537,8 +537,7 @@ describe('RequestsController ', () => {
   test('should toJSON()', async () => {
     const { controller } = await prepareTest()
 
-    const json = controller.toJSON()
-    expect(json).toBeDefined()
+    expect(controller.toJSON()).toBeDefined()
   })
 
   describe('call data and "to" field validation', () => {

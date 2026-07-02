@@ -11,6 +11,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
+import { portfolioDebugLog } from './debug'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
@@ -385,8 +386,18 @@ export class Portfolio {
             isCustom: token.flags?.isCustom,
             patterns: blacklistPatterns
           })
-        )
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered token ${token.symbol}`,
+            {
+              address: token.address,
+              symbol: token.symbol,
+              name: token.name
+            }
+          )
           return false
+        }
 
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
         // The portfolio lib is used outside the controller, in which case we want to
@@ -435,8 +446,19 @@ export class Portfolio {
             patterns: blacklistPatterns,
             checkForEmbeddedDomain: true
           })
-        )
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered collection ${collection.name}`,
+            {
+              address: collection.address,
+              symbol: collection.symbol,
+              name: collection.name
+            }
+          )
+
           return acc
+        }
 
         // Important note: Collections with 0 collectibles are allow to pass through the filter.
         if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length > 0) {
