@@ -977,11 +977,20 @@ export class SignAccountOpController
     return undefined
   }
 
-  #getDefaultFeeOption(options: FeePaymentOption[]) {
+  #getDefaultFeeOption(options: FeePaymentOption[], eoaOptions: FeePaymentOption[]) {
+    let selectableOptions = options.concat(eoaOptions)
     const notDisabled = options.filter((option) => !this.#getIsFeeOptionDisabled(option))
-    const selectableOptions = notDisabled.length ? notDisabled : options
-    const preferred = this.#getPreferredFeeOption(selectableOptions)
+    const notDisabledEoa = eoaOptions.filter((option) => !this.#getIsFeeOptionDisabled(option))
 
+    // always try to select a not disabled option, with preference for account options
+    if (notDisabled.length) {
+      selectableOptions = notDisabled
+    } else if (notDisabledEoa.length) {
+      selectableOptions = notDisabledEoa
+    }
+
+    // if the preferred option is not disabled, select it
+    const preferred = this.#getPreferredFeeOption(selectableOptions)
     if (preferred) return preferred
 
     return (
@@ -1071,15 +1080,12 @@ export class SignAccountOpController
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        if (payOptionsPaidByUsOrGasTank.length) {
-          const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank)!
-          this.feeTokenResult = selected.token
-          this.#paidBy = selected.paidBy
-        } else if (payOptionsPaidByEOA.length) {
-          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
-          this.feeTokenResult = selected.token
-          this.#paidBy = selected.paidBy
-        }
+        const selected = this.#getDefaultFeeOption(
+          payOptionsPaidByUsOrGasTank,
+          payOptionsPaidByEOA
+        )!
+        this.feeTokenResult = selected.token
+        this.#paidBy = selected.paidBy
       }
     }
   }
@@ -1370,7 +1376,7 @@ export class SignAccountOpController
     if (this.account.creation && !accountState?.isV2 && WARNINGS.v1Acc)
       warnings.push(WARNINGS.v1Acc)
 
-    const estimationWarnings = this.estimation.calculateWarnings()
+    const estimationWarnings = this.estimation.calculateWarnings(this.account)
 
     this.warnings = warnings.concat(estimationWarnings)
 
