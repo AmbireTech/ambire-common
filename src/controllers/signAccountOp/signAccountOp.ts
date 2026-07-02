@@ -2763,7 +2763,7 @@ export class SignAccountOpController
         feeToken: this.selectedOption!.token,
         op: this.accountOp
       })
-      callGasLimit += gasUsed
+      callGasLimit = gasUsed + this.selectedOption!.gasUsed
     }
 
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas

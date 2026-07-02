@@ -11,7 +11,7 @@ import { execTransactionAbi } from '../../consts/safe'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
-import { getBroadcastCalldata, getUserOperation } from './userOperation'
+import { getUserOpCalldata, getUserOperation } from './userOperation'
 
 const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
@@ -193,7 +193,7 @@ describe('User Operation tests', () => {
 
       const ambireAccount = new Interface(AmbireAccount.abi)
       const safeExec = new Interface(execTransactionAbi)
-      const calldata = getBroadcastCalldata(safeAccDeployed, opOptimism, safeAccountState)
+      const calldata = getUserOpCalldata(safeAccDeployed, opOptimism, safeAccountState)
       const outerCalls = ambireAccount.decodeFunctionData('executeBySender', calldata)[0]
       const safeTxn = safeExec.decodeFunctionData('execTransaction', outerCalls[0].data)
 

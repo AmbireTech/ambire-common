@@ -8,7 +8,10 @@ import { HardhatUserConfig } from 'hardhat/config'
 require('dotenv').config()
 
 const accounts = process.env.PRIVATE_KEY
-  ? [process.env.PRIVATE_KEY, process.env.PAYMASTER_PRIVATE_KEY ?? '']
+  ? [
+      process.env.PRIVATE_KEY,
+      ...(process.env.PAYMASTER_PRIVATE_KEY ? [process.env.PAYMASTER_PRIVATE_KEY] : [])
+    ]
   : undefined
 
 const config: HardhatUserConfig = {
