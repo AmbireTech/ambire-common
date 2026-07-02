@@ -1,14 +1,8 @@
-import { toBeHex } from 'ethers'
-
-import SafeApiKit, {
-  SafeCreationInfoResponse,
-  SafeInfoResponse,
-  SafeMessage
-} from '@safe-global/api-kit'
+import { SafeMessage } from '@safe-global/api-kit'
 import { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
-import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe'
+import { SAFE_NETWORKS } from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -20,6 +14,7 @@ import {
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
+  getSafeImportInfo,
   getMessage,
   SafeResults
 } from '../../libs/safe/safe'
@@ -131,18 +126,12 @@ export class SafeController extends EventEmitter implements ISafeController {
       return
     }
 
-    const apiKit = new SafeApiKit({
+    const safeImportInfo = await getSafeImportInfo({
+      safeAddr,
       chainId: deployedOn.chainId,
-      apiKey: process.env.SAFE_API_KEY
+      deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId)
     })
-    const [safeInfo, safeCreationInfo]: [
-      SafeInfoResponse | Error,
-      SafeCreationInfoResponse | Error
-    ] = await Promise.all([
-      apiKit.getSafeInfo(safeAddr).catch((e) => e),
-      apiKit.getSafeCreationInfo(safeAddr).catch((e) => e)
-    ])
-    if (safeInfo instanceof Error || safeCreationInfo instanceof Error) {
+    if (!safeImportInfo) {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the Safe. Please try again'
@@ -150,20 +139,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       return
     }
 
-    const setupData = safeCreationInfo.setupData as Hex
-    this.safeInfo = {
-      version: safeInfo.version,
-      address: safeInfo.address as Hex,
-      owners: safeInfo.owners as Hex[],
-      deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
-      factoryAddr: safeCreationInfo.factoryAddress as Hex,
-      singleton: safeCreationInfo.singleton as Hex,
-      saltNonce: safeCreationInfo.saltNonce
-        ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
-        : (toBeHex(0, 32) as Hex),
-      setupData,
-      requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
-    }
+    this.safeInfo = safeImportInfo
   }
 
   async findSafe(safeAddr: string) {

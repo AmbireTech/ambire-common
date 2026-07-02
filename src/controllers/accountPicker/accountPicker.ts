@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { getCreate2Address, keccak256 } from 'ethers'
+import { getAddress, getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -10,6 +10,7 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
+import { SAFE_NETWORKS } from '../../consts/safe'
 import {
   Account,
   AccountOnchainState,
@@ -48,6 +49,7 @@ import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { SafeImportInfo, scanSafesByOwners } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_PAGE = 1
@@ -130,6 +132,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   accountsLoading: boolean = false
 
   linkedAccountsLoading: boolean = false
+
+  linkedAccountsScanCompleted: boolean = false
+
+  safeAccountsLoading: boolean = false
+
+  safeAccountsScanCompleted: boolean = false
 
   linkedAccountsError: string = ''
 
@@ -312,9 +320,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     mergedAccounts.sort((a, b) => {
       const prioritizeAccountType = (item: any) => {
         if (!isSmartAccount(item.account)) return -1
-        if (item.isLinked) return 1
+        if (item.account.safeCreation) return 0
+        if (item.isLinked) return 2
 
-        return 0
+        return 1
       }
 
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
@@ -488,6 +497,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.pageError = null
 
     this.linkedAccountsLoading = false
+    this.linkedAccountsScanCompleted = false
+    this.safeAccountsLoading = false
+    this.safeAccountsScanCompleted = false
     this.linkedAccountsError = ''
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
@@ -714,6 +726,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.accountsLoading = true
     this.networksWithAccountStateError = []
     this.linkedAccountsLoading = false
+    this.linkedAccountsScanCompleted = false
+    this.safeAccountsLoading = false
+    this.safeAccountsScanCompleted = false
     this.emitUpdate()
 
     if (page <= 0) {
@@ -776,7 +791,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (this.page !== page) return
 
-    await this.findAndSetLinkedAccounts()
+    if (this.shouldSearchForLinkedAccounts) await this.findAndSetLinkedAccounts()
   }
 
   #updateStateWithTheLatestFromAccounts() {
@@ -1069,42 +1084,55 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
-    const indicesToRetrieve = [
-      { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
-    ]
-    // Since v4.31.0, do not retrieve smart accounts for the private key
-    // type. That's because we can't use the common derivation offset
-    // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
-    // accounts out of the private key (with another approach - salt and
-    // extra entropy) was creating confusion.
-    //
-    // + no smart accounts for QR wallets. Reasons:
-    // - some hws sign only if the signer is imported
-    // - we are generally moving in another direction
-    const shouldRetrieveSmartAccountIndices =
-      this.keyIterator.subType !== 'private-key' && this.type !== 'qr'
-    if (shouldRetrieveSmartAccountIndices) {
-      // Indices for the smart accounts.
-      indicesToRetrieve.push({
-        from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-      })
-    }
-    // Combine the requests for all accounts in one call to the keyIterator.
-    // That's optimization primarily focused on hardware wallets, to reduce the
-    // number of calls to the hardware device. This is important, especially
-    // for Trezor, because it fires a confirmation popup for each call.
-    const combinedBasicAndSmartAccKeys = await this.keyIterator.retrieve(
-      indicesToRetrieve,
+    const basicAccKeys = await this.keyIterator.retrieve(
+      [{ from: startIdx, to: endIdx }],
       this.hdPathTemplate
     )
 
-    const basicAccKeys = combinedBasicAndSmartAccKeys.slice(0, this.pageSize)
-    const smartAccKeys = combinedBasicAndSmartAccKeys.slice(
-      this.pageSize,
-      combinedBasicAndSmartAccKeys.length
+    for (const [index, basicAccKey] of basicAccKeys.entries()) {
+      const slot = startIdx + (index + 1)
+      // The EOA (basic) account on this slot
+      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
+      const result = { account, isLinked: false, slot, index: slot - 1 }
+      accounts.push(result)
+    }
+
+    return accounts
+  }
+
+  async #deriveSmartAccountsForCurrentPage({
+    calledForPage,
+    calledForAbortController
+  }: {
+    calledForPage: number
+    calledForAbortController: AbortController | undefined
+  }) {
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.hdPathTemplate) return this.#throwMissingHdPath()
+    if (this.keyIterator.subType === 'private-key' || this.type === 'qr') return
+
+    const startIdx = (this.page - 1) * this.pageSize
+    const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
+    const startIdxWithOffset = startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+    const endIdxWithOffset = endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+
+    const derivedSmartAccountKeyIndices = new Set(
+      this.#derivedAccounts.filter((acc) => !isSmartAccount(acc.account)).map((acc) => acc.index)
+    )
+    const areSmartAccountKeysAlreadyDerived = Array.from(
+      { length: this.pageSize },
+      (_, index) => startIdxWithOffset + index
+    ).every((index) => derivedSmartAccountKeyIndices.has(index))
+    if (areSmartAccountKeysAlreadyDerived) return
+
+    const smartAccKeys = await this.keyIterator.retrieve(
+      [{ from: startIdxWithOffset, to: endIdxWithOffset }],
+      this.hdPathTemplate
     )
 
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+    const accounts: DerivedAccountWithoutNetworkMeta[] = []
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
@@ -1143,6 +1171,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
     const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
     const smartAccounts = unfilteredSmartAccountsList.filter(
       (x) => x !== null
@@ -1150,15 +1180,24 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     accounts.push(...smartAccounts)
 
-    for (const [index, basicAccKey] of basicAccKeys.entries()) {
-      const slot = startIdx + (index + 1)
-      // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
-      const result = { account, isLinked: false, slot, index: slot - 1 }
-      accounts.push(result)
-    }
+    const accountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
+      accounts,
+      page: calledForPage
+    })
 
-    return accounts
+    if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+    const derivedAccountsByKey = new Map(
+      this.#derivedAccounts.map((acc) => [`${acc.index}-${acc.account.addr}`, acc])
+    )
+    accountsWithUsedOn.forEach((acc) => {
+      derivedAccountsByKey.set(`${acc.index}-${acc.account.addr}`, acc)
+    })
+
+    this.#derivedAccounts = Array.from(derivedAccountsByKey.values()).sort(
+      (a, b) => a.index - b.index
+    )
+    this.emitUpdate()
   }
 
   async #getAccountsUsedOnNetworks({
@@ -1263,9 +1302,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
-    if (!this.shouldSearchForLinkedAccounts) return
-
-    if (accounts.length === 0) return
+    if (accounts.length === 0) {
+      this.linkedAccountsLoading = false
+      this.linkedAccountsScanCompleted = true
+      this.emitUpdate()
+      return
+    }
 
     // Cache the page and the abort controller at the start to use throughout
     // the operation, even if reset() clears them mid-process
@@ -1273,6 +1315,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
     this.linkedAccountsLoading = true
+    this.linkedAccountsScanCompleted = false
     this.linkedAccountsError = ''
     this.emitUpdate()
 
@@ -1371,6 +1414,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.#linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
+    this.linkedAccountsScanCompleted = true
     this.emitUpdate()
   }
 
@@ -1382,23 +1426,163 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     // Create a new AbortController for this operation
     this.#findAndSetLinkedAccountsAbortController = new AbortController()
+    const calledForPage = this.page
+    const calledForAbortController = this.#findAndSetLinkedAccountsAbortController
 
-    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
-      accounts: this.#derivedAccounts
-        .filter(
-          (acc) =>
-            // Since v4.60.0, linked accounts are searched for 1) EOAs
-            // and 2) EOAs derived for Smart Account keys ONLY
-            // (workaround so that the Relayer returns information if the Smart
-            // Account with this key is used (with identity) or not).
-            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
-        )
-        .map((acc) => acc.account)
-    }).finally(() => {
+    this.linkedAccountsLoading = true
+    this.linkedAccountsScanCompleted = false
+    this.linkedAccountsError = ''
+    this.emitUpdate()
+
+    this.findAndSetLinkedAccountsPromise = (async () => {
+      await this.#deriveSmartAccountsForCurrentPage({
+        calledForPage,
+        calledForAbortController
+      })
+
+      if (this.#isFindAndSetLinkedAccountsCancelled(calledForPage, calledForAbortController)) return
+
+      await this.#findAndSetLinkedAccounts({
+        accounts: this.#derivedAccounts
+          .filter(
+            (acc) =>
+              // Since v4.60.0, linked accounts are searched for 1) EOAs
+              // and 2) EOAs derived for Smart Account keys ONLY
+              // (workaround so that the Relayer returns information if the Smart
+              // Account with this key is used (with identity) or not).
+              !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
+          )
+          .map((acc) => acc.account)
+      })
+    })().finally(() => {
       this.findAndSetLinkedAccountsPromise = undefined
       this.#findAndSetLinkedAccountsAbortController = undefined
     })
     await this.findAndSetLinkedAccountsPromise
+  }
+
+  async scanForSafeAccounts(ownerAddrs: string[]) {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    const uniqueOwnerAddrs = Array.from(new Set(ownerAddrs.map((addr) => getAddress(addr))))
+    if (!uniqueOwnerAddrs.length) return
+
+    const safeNetworks = this.#networks.networks.filter(
+      (n) =>
+        SAFE_NETWORKS.includes(Number(n.chainId)) &&
+        !!this.#providers.providers[n.chainId.toString()]
+    )
+
+    if (!safeNetworks.length) {
+      this.linkedAccountsError =
+        'Safe account scanning is unavailable because none of your enabled networks have Safe support.'
+      this.emitUpdate()
+      return
+    }
+
+    const calledForPage = this.page
+    this.safeAccountsLoading = true
+    this.safeAccountsScanCompleted = false
+    this.linkedAccountsError = ''
+    this.emitUpdate()
+
+    const getScannedSafeAccounts = (
+      safeInfos: SafeImportInfo[]
+    ): { account: AccountWithNetworkMeta; isLinked: boolean }[] =>
+      safeInfos.map((safeInfo) => {
+        const addr = getAddress(safeInfo.address)
+        const existingAccount = this.#alreadyImportedAccounts.find((acc) => acc.addr === addr)
+
+        return {
+          account: {
+            addr,
+            associatedKeys: safeInfo.owners.map((owner) => getAddress(owner)),
+            initialPrivileges: safeInfo.owners.map(
+              (owner) => [getAddress(owner), '0x01'] as [string, string]
+            ),
+            creation: null,
+            safeCreation: {
+              factoryAddr: safeInfo.factoryAddr,
+              singleton: safeInfo.singleton,
+              saltNonce: safeInfo.saltNonce,
+              setupData: safeInfo.setupData,
+              version: safeInfo.version
+            },
+            preferences: {
+              label: existingAccount?.preferences.label || 'Safe',
+              pfp: existingAccount?.preferences.pfp || addr
+            }
+          },
+          isLinked: true
+        }
+      })
+
+    const addScannedSafeAccounts = (
+      scannedSafeAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[]
+    ) => {
+      const linkedAccountsByAddress = new Map(
+        this.#linkedAccounts.map((linkedAccount) => [linkedAccount.account.addr, linkedAccount])
+      )
+
+      scannedSafeAccounts.forEach((linkedAccount) => {
+        const existingLinkedAccount = linkedAccountsByAddress.get(linkedAccount.account.addr)
+        linkedAccountsByAddress.set(linkedAccount.account.addr, {
+          ...linkedAccount,
+          account: {
+            ...linkedAccount.account,
+            usedOnNetworks:
+              existingLinkedAccount?.account.usedOnNetworks ?? linkedAccount.account.usedOnNetworks
+          }
+        })
+      })
+
+      this.#linkedAccounts = Array.from(linkedAccountsByAddress.values())
+    }
+
+    const safeScanErrorMessages = new Set<string>()
+
+    for (let i = 0; i < safeNetworks.length; i++) {
+      const network = safeNetworks[i]!
+      const { safeInfos, errorMessage } = await scanSafesByOwners({
+        ownerAddrs: uniqueOwnerAddrs,
+        chainIds: [network.chainId]
+      })
+
+      if (calledForPage !== this.page) return
+
+      if (errorMessage) safeScanErrorMessages.add(errorMessage)
+
+      const scannedSafeAccounts = getScannedSafeAccounts(safeInfos)
+      if (!scannedSafeAccounts.length) continue
+
+      addScannedSafeAccounts(scannedSafeAccounts)
+      this.#verifyLinkedAccounts()
+      this.linkedAccountsError = Array.from(safeScanErrorMessages).join(' ')
+      this.emitUpdate()
+
+      const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
+        accounts: this.#linkedAccounts as any,
+        page: calledForPage
+      })
+
+      if (calledForPage !== this.page) return
+
+      this.#linkedAccounts = Array.from(
+        new Map(
+          [...this.#linkedAccounts, ...(linkedAccountsWithNetworks as any)].map((linkedAccount) => [
+            linkedAccount.account.addr,
+            linkedAccount
+          ])
+        ).values()
+      )
+      this.emitUpdate()
+    }
+
+    this.linkedAccountsError = Array.from(safeScanErrorMessages).join(' ')
+    this.safeAccountsLoading = false
+    this.safeAccountsScanCompleted = true
+    this.emitUpdate()
   }
 
   /**
@@ -1407,23 +1591,25 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * Also, could be an attack vector. So indicate to the user that something is wrong.
    */
   #verifyLinkedAccounts() {
-    this.#linkedAccounts.forEach((linkedAcc) => {
-      const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
-        linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
-      )
+    this.#linkedAccounts
+      .filter((linkedAcc) => !linkedAcc.account.safeCreation)
+      .forEach((linkedAcc) => {
+        const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
+          linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
+        )
 
-      // The `correspondingDerivedAccount` should always be found,
-      // except something is wrong with the data we have stored on the Relayer
-      if (!correspondingDerivedAccount) {
-        this.emitError({
-          level: 'major',
-          message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
-          error: new Error(
-            `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
-          )
-        })
-      }
-    })
+        // The `correspondingDerivedAccount` should always be found,
+        // except something is wrong with the data we have stored on the Relayer
+        if (!correspondingDerivedAccount) {
+          this.emitError({
+            level: 'major',
+            message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
+            error: new Error(
+              `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
+            )
+          })
+        }
+      })
   }
 
   #throwNotInitialized() {

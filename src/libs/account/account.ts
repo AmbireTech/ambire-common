@@ -223,6 +223,7 @@ export const getAccountImportStatus = ({
 }): ImportStatus => {
   const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
   if (!isAlreadyImported) return ImportStatus.NotImported
+  if (account.safeCreation) return ImportStatus.ImportedWithTheSameKeys
 
   // Check if the account has been imported with at least one of the keys
   // that the account was originally associated with, when it was imported.

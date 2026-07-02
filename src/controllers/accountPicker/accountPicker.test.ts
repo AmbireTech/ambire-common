@@ -1,6 +1,6 @@
 import { Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -125,10 +125,12 @@ describe('AccountPicker', () => {
     })
   })
 
-  test('should retrieve 5 basic and one smart account on each page', async () => {
+  test('should retrieve smart account keys only when scanning for smart accounts', async () => {
     const { controller } = await prepareTest()
     const PAGE_SIZE = 5
     const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieveSpy = jest.spyOn(keyIterator, 'retrieve')
+
     controller.setInitParams({
       keyIterator,
       pageSize: PAGE_SIZE,
@@ -139,14 +141,52 @@ describe('AccountPicker', () => {
     })
     await controller.init()
     await controller.setPage({ page: 1 })
-    expect(controller.accountsOnPage).toHaveLength(6)
-    expect(controller.accountsOnPage.filter((a) => isSmartAccount(a.account))).toHaveLength(1)
+    expect(retrieveSpy).toHaveBeenLastCalledWith(
+      [{ from: 0, to: PAGE_SIZE - 1 }],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
+    expect(controller.accountsOnPage).toHaveLength(5)
+    expect(controller.accountsOnPage.filter((a) => isSmartAccount(a.account))).toHaveLength(0)
     expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
 
-    await controller.setPage({ page: 2 })
-    expect(controller.accountsOnPage).toHaveLength(6)
-    expect(controller.accountsOnPage.filter((a) => isSmartAccount(a.account))).toHaveLength(1)
+    await controller.findAndSetLinkedAccounts()
+    expect(retrieveSpy).toHaveBeenCalledWith(
+      [
+        {
+          from: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+          to: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET + PAGE_SIZE - 1
+        }
+      ],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
     expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
+    expect(
+      controller.accountsOnPage.some((a) => isSmartAccount(a.account) && !a.isLinked)
+    ).toBeTruthy()
+
+    await controller.setPage({ page: 2 })
+    expect(retrieveSpy).toHaveBeenLastCalledWith(
+      [{ from: PAGE_SIZE, to: PAGE_SIZE * 2 - 1 }],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
+    expect(controller.accountsOnPage).toHaveLength(5)
+    expect(controller.accountsOnPage.filter((a) => isSmartAccount(a.account))).toHaveLength(0)
+    expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
+
+    await controller.findAndSetLinkedAccounts()
+    expect(retrieveSpy).toHaveBeenCalledWith(
+      [
+        {
+          from: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET + PAGE_SIZE,
+          to: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET + PAGE_SIZE * 2 - 1
+        }
+      ],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
+    expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
+    expect(
+      controller.accountsOnPage.some((a) => isSmartAccount(a.account) && !a.isLinked)
+    ).toBeTruthy()
   })
 
   test('should find linked accounts', async () => {
@@ -262,8 +302,11 @@ describe('AccountPicker', () => {
     })
     await controller.init()
     await controller.setPage({ page: 1 })
+    await controller.findAndSetLinkedAccounts()
 
-    const smartAccount = controller.accountsOnPage.find((x) => isSmartAccount(x.account))
+    const smartAccount = controller.accountsOnPage.find(
+      (x) => isSmartAccount(x.account) && !x.isLinked
+    )
     if (smartAccount) controller.selectAccount(smartAccount.account)
 
     expect(controller.selectedAccounts[0]!.accountKeys)
