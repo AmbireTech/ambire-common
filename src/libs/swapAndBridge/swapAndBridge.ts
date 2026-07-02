@@ -719,7 +719,8 @@ export const calculateAmountWarnings = (
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
-  if (providerId === 'socket') return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+  if (providerId === 'socket' || providerId === 'socketv3')
+    return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
   if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
 
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`

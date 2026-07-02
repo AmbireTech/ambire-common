@@ -450,7 +450,7 @@ export interface BungeeRouteStatus {
   bungeeStatusCode: number
 }
 
-export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
+export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'failed' | 'refunded' | null
 
 export type SwapAndBridgeRouteStatusResult = {
   status: SwapAndBridgeRouteStatus

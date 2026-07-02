@@ -2099,6 +2099,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
+      } else if (status === 'failed') {
+        this.updateActiveRoute(
+          activeRoute.activeRouteId,
+          {
+            routeStatus: 'failed',
+            error: undefined
+          },
+          true
+        )
       }
     }
 
