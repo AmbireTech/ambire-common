@@ -173,7 +173,8 @@ export enum SigningStatus {
   InProgress = 'in-progress',
   WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done',
-  Queued = 'queued'
+  Queued = 'queued',
+  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
 }
 
 export type Status = {
@@ -204,7 +205,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster
+  SigningStatus.WaitingForPaymaster,
+  SigningStatus.SafeQuickBroadcastBundler
 ]
 
 export type SignAccountOpUpdateProps = {
@@ -1336,7 +1338,8 @@ export class SignAccountOpController
       !!this.status &&
       (this.status?.type === SigningStatus.ReadyToSign ||
         this.status?.type === SigningStatus.UpdatesPaused ||
-        this.status?.type === SigningStatus.Queued)
+        this.status?.type === SigningStatus.Queued ||
+        this.status?.type === SigningStatus.SafeQuickBroadcastBundler)
     )
   }
 
@@ -3042,6 +3045,12 @@ export class SignAccountOpController
           signed: allSigners,
           txnId: safeTxnHash
         })
+
+        // change to quick broadcast mode so we could sign immediately
+        // the userOp and broadcast it
+        if (isQuickBroadcast && broadcastOption === BROADCAST_OPTIONS.byBundler) {
+          this.status = { type: SigningStatus.SafeQuickBroadcastBundler }
+        }
       } else if (
         broadcastOption === BROADCAST_OPTIONS.bySelf ||
         broadcastOption === BROADCAST_OPTIONS.bySelf7702
@@ -3297,7 +3306,11 @@ export class SignAccountOpController
         })
       }
 
-      if (!this.status || this.status.type !== SigningStatus.Queued)
+      if (
+        !this.status ||
+        (this.status.type !== SigningStatus.Queued &&
+          this.status.type !== SigningStatus.SafeQuickBroadcastBundler)
+      )
         this.status = { type: SigningStatus.Done }
 
       this.emitUpdate()
@@ -3682,6 +3695,16 @@ export class SignAccountOpController
         this.signPromise = undefined
       })
       await this.signPromise
+
+      // call sign again if the status is SafeQuickBroadcastBundler
+      // as we need to create the userOperation before broadcast
+      if (this.status && this.status.type === SigningStatus.SafeQuickBroadcastBundler) {
+        this.signPromise = this.sign().finally(() => {
+          this.signPromise = undefined
+        })
+        await this.signPromise
+      }
+
       if (this.status && this.status.type === SigningStatus.Done) {
         this.broadcastPromise = this.#broadcast().finally(() => {
           this.broadcastPromise = undefined
@@ -3695,10 +3718,6 @@ export class SignAccountOpController
         this.status.type === SigningStatus.Queued &&
         (this.accountOp.signed || []).length >= this.threshold
       ) {
-        // TODO<safe-sponsorship>: reset the estimation so the userOp
-        // estimate can happen
-        // extra: check if conditions are met before doing this
-
         this.status.type = SigningStatus.ReadyToSign
         this.emitUpdate()
       }
