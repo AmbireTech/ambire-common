@@ -22,7 +22,7 @@ import {
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
-import { IUiController, View } from '../../interfaces/ui'
+import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -1203,7 +1203,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
-    if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
+    if (this.hasPersistedState && !isNavigateOut && isExtensionOverlayView({ type: viewType }))
+      return
 
     this.reset({ destroyAccountOp: true })
   }

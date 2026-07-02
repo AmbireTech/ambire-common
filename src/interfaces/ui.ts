@@ -8,12 +8,15 @@ export type IUiController = ControllerInterface<
 
 export type View = {
   id: string
-  type: 'request-window' | 'tab' | 'popup' | 'mobile'
+  type: 'request-window' | 'tab' | 'popup' | 'side-panel' | 'mobile'
   currentRoute?: string
   previousRoute?: string
   isReady?: boolean
   searchParams?: { [key: string]: string }
 }
+
+export const isExtensionOverlayView = (view: Pick<View, 'type'>) =>
+  view.type === 'popup' || view.type === 'side-panel'
 
 export type UiManager = {
   window: {
