@@ -308,7 +308,9 @@ export class MainController extends EventEmitter implements IMainController {
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
-      networks: this.networks
+      networks: this.networks,
+      fetch: this.fetch,
+      velcroUrl
     })
     this.accounts = new AccountsController(
       this.storage,
