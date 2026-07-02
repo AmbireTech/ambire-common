@@ -12,6 +12,11 @@ export const normalizeLedgerMessage = (error?: string): string => {
   )
     return 'Cannot connect to your Ledger device. Please make sure it is connected.'
 
+  // Android USB: user rejected the "Allow access to USB device?" system dialog
+  // (thrown by @ledgerhq/react-native-hid).
+  if (error.toLowerCase().includes('permission denied by user'))
+    return 'USB access to your Ledger was denied. Please allow Ambire to access the device when prompted, then try again.'
+
   if (error.includes('unlock-device')) return 'Please unlock your Ledger device first.'
 
   if (error.includes('confirm-open-app'))
