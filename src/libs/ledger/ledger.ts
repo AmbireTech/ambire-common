@@ -4,6 +4,14 @@
  * there is a message incoming from Ledger too, it's not self-explanatory and
  * can be difficult for the end users to understand.
  */
+
+const BENIGN_LEDGER_USER_INTERACTIONS = new Set(['', 'none', 'None'])
+
+export const isBenignLedgerUserInteraction = (interaction?: string) => {
+  if (!interaction) return true
+  return BENIGN_LEDGER_USER_INTERACTIONS.has(interaction)
+}
+
 export const normalizeLedgerMessage = (error?: string): string => {
   if (
     !error ||
@@ -11,6 +19,14 @@ export const normalizeLedgerMessage = (error?: string): string => {
     error.toLowerCase().includes('access denied')
   )
     return 'Cannot connect to your Ledger device. Please make sure it is connected.'
+
+  if (
+    error.toLowerCase().includes('no response from device') ||
+    error.toLowerCase() === 'none' ||
+    error.toLowerCase() === '<none>'
+  ) {
+    return 'Cannot connect to your Ledger device. Please make sure it is unlocked and the Ethereum app is open.'
+  }
 
   if (error.includes('unlock-device')) return 'Please unlock your Ledger device first.'
 
