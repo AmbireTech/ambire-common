@@ -1,4 +1,6 @@
+import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
@@ -6,11 +8,23 @@ import {
   getDefaultColibriProverUrl,
   isColibriProviderAvailable
 } from '../../libs/networks/colibri'
+import { GetOptions, Portfolio } from '../../libs/portfolio'
+import {
+  PortfolioLibGetResult,
+  PortfolioVerification,
+  TokenDataCache
+} from '../../libs/portfolio/interfaces'
 import { getColibriRpcProvider } from '../../services/provider/colibri'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const SYNC_HEALTH_CHECK_RETRY_INTERVAL = 10000
+
+// When comparing the RPC head with the Colibri head, allow a small gap before
+// declaring the data non-comparable. Ethereum blocks are ~12s apart, so a
+// smaller threshold is enough; faster chains need a larger one.
+const ETHEREUM_COLIBRI_BLOCK_DIFF_THRESHOLD = 5
+const DEFAULT_COLIBRI_BLOCK_DIFF_THRESHOLD = 10
 
 type VerifierProvider = {
   connectionUrl: string
@@ -22,11 +36,28 @@ type VerifierConfig = {
   proverUrl: string
 }
 
+export type VerifyPortfolioParams = {
+  account: Account
+  network: Network
+  // The RPC portfolio result to be verified. Its `blockNumber` is the block the
+  // balances were fetched at and the exact block Colibri will be asked to prove.
+  rpcResult: PortfolioLibGetResult
+  // Everything the RPC `get` was called with, except `blockTag` and
+  // `tokenDataCache` (those are supplied by the verifier itself), so Colibri
+  // discovers the exact same token set.
+  getOptions: Partial<GetOptions>
+  tokenDataCache: TokenDataCache
+}
+
 const isOutOfSyncError = (error: any) =>
   (error?.message || error?.toString?.() || '').toLowerCase().includes('out of sync')
 
 export class VerificationController extends EventEmitter {
   #networks: INetworksController
+
+  #fetch: Fetch
+
+  #velcroUrl: string
 
   initialLoadPromise?: Promise<void>
 
@@ -35,6 +66,9 @@ export class VerificationController extends EventEmitter {
   #providers: { [chainId: string]: VerifierProvider | undefined } = {}
 
   #connectionUrls: { [chainId: string]: string | undefined } = {}
+
+  // Reused Colibri-backed portfolio libs, keyed by `${chainId}:${accountId}`.
+  #verificationPortfolioLibs: Map<string, Portfolio> = new Map()
 
   #syncPromises: {
     [chainId: string]:
@@ -47,13 +81,19 @@ export class VerificationController extends EventEmitter {
 
   constructor({
     eventEmitterRegistry,
-    networks
+    networks,
+    fetch,
+    velcroUrl
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
+    fetch: Fetch
+    velcroUrl: string
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
+    this.#fetch = fetch
+    this.#velcroUrl = velcroUrl
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -84,6 +124,160 @@ export class VerificationController extends EventEmitter {
     }
 
     return provider
+  }
+
+  #getVerificationPortfolioLib(
+    account: Account,
+    network: Network,
+    provider: RPCProvider
+  ): Portfolio {
+    const key = `${network.chainId}:${account.addr}`
+    const libForKey = this.#verificationPortfolioLibs.get(key)
+
+    // Recreate the lib when the underlying Colibri provider was swapped (e.g. after a resync)
+    if (!libForKey || libForKey.provider !== provider) {
+      this.#verificationPortfolioLibs.set(
+        key,
+        new Portfolio(this.#fetch, provider, network, this.#velcroUrl)
+      )
+    }
+
+    return this.#verificationPortfolioLibs.get(key)!
+  }
+
+  /**
+   * Cryptographically verify an already-fetched RPC portfolio result against Colibri.
+   *
+   * This runs off the portfolio's critical path (the balances are already shown
+   * by the time this is called). Because Colibri can prove state for any block up
+   * to its head, we verify at the exact block the RPC used (`rpcResult.blockNumber`)
+   * instead of coordinating a shared block before fetching. The head gap only
+   * decides whether a fresh, comparable result is possible at all:
+   * - RPC far behind Colibri -> `stale` (the shown balances are old)
+   * - Colibri far behind the RPC -> `warning` (cannot verify)
+   * - Colibri slightly behind the RPC -> `loading` (retry on the next update)
+   */
+  async verifyPortfolio(params: VerifyPortfolioParams): Promise<PortfolioVerification> {
+    const { account, network, rpcResult, getOptions, tokenDataCache } = params
+    const updatedAt = Date.now()
+
+    const provider = this.getReadyProvider(network.chainId)
+    if (!provider) {
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: 'Colibri verifier is not ready',
+        updatedAt
+      }
+    }
+
+    const blockDiffThreshold =
+      network.chainId === 1n
+        ? ETHEREUM_COLIBRI_BLOCK_DIFF_THRESHOLD
+        : DEFAULT_COLIBRI_BLOCK_DIFF_THRESHOLD
+
+    let verificationBlockNumber: number
+    try {
+      verificationBlockNumber = await provider.getBlockNumber()
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Error while resolving the Colibri head block on ${network.name} (${network.chainId}).`,
+        error
+      })
+
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: error?.message || 'Colibri could not resolve its latest block',
+        updatedAt
+      }
+    }
+
+    const rpcBlockNumber = rpcResult.blockNumber
+    const blockDiff = Math.abs(rpcBlockNumber - verificationBlockNumber)
+
+    if (rpcBlockNumber < verificationBlockNumber && blockDiff > blockDiffThreshold) {
+      return { provider: 'colibri', status: 'stale', blockDiff, updatedAt }
+    }
+
+    if (verificationBlockNumber < rpcBlockNumber) {
+      if (blockDiff > blockDiffThreshold) {
+        return {
+          provider: 'colibri',
+          status: 'warning',
+          error: `Colibri is ${blockDiff} blocks behind the RPC latest block`,
+          updatedAt
+        }
+      }
+
+      // Colibri cannot prove a block it hasn't reached yet; retry on the next update.
+      return { provider: 'colibri', status: 'loading', updatedAt }
+    }
+
+    const portfolioLib = this.#getVerificationPortfolioLib(account, network, provider)
+
+    let verifiedResult: PortfolioLibGetResult
+    try {
+      verifiedResult = await portfolioLib.get(account.addr, {
+        ...getOptions,
+        tokenDataCache: new Map(tokenDataCache),
+        blockTag: rpcBlockNumber,
+        disableAutoDiscovery: true
+      })
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Error while verifying portfolio through Colibri on ${network.name} (${network.chainId}).`,
+        error
+      })
+
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: error?.message || 'Colibri could not verify portfolio balances',
+        updatedAt
+      }
+    }
+
+    return this.#comparePortfolioBalances(rpcResult, verifiedResult)
+  }
+
+  #comparePortfolioBalances(
+    rpcResult: PortfolioLibGetResult,
+    verifiedResult: PortfolioLibGetResult
+  ): PortfolioVerification {
+    const updatedAt = Date.now()
+    const rpcTokenAmounts = new Map(
+      rpcResult.tokens.map((token) => [
+        token.address.toLowerCase(),
+        token.latestAmount ?? token.amount
+      ])
+    )
+    const verifiedTokenAmounts = new Map(
+      verifiedResult.tokens.map((token) => [token.address.toLowerCase(), token.amount])
+    )
+    const mismatches: string[] = []
+
+    rpcTokenAmounts.forEach((rpcAmount, address) => {
+      const verifiedAmount = verifiedTokenAmounts.get(address) ?? 0n
+      if (rpcAmount !== verifiedAmount) mismatches.push(address)
+    })
+
+    verifiedTokenAmounts.forEach((verifiedAmount, address) => {
+      if (!rpcTokenAmounts.has(address) && verifiedAmount !== 0n) mismatches.push(address)
+    })
+
+    if (mismatches.length) {
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: `${mismatches.length} balance(s) differed from the Colibri verified result`,
+        updatedAt
+      }
+    }
+
+    return { provider: 'colibri', status: 'success', updatedAt }
   }
 
   updateNetworks(networks: Network[]) {
