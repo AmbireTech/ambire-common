@@ -1073,9 +1073,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           !fromSelectedToken ||
           this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
+        // This branch is invoked when the from token is changed, but also when the form is initialized.
+        // We want to persist the fromAmountFieldMode across sessions, but reset it when the user changes
+        // the token and has entered a value.
+        if (this.fromAmount !== '') this.fromAmountFieldMode = 'token'
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
-        this.fromAmountFieldMode = 'token'
       }
 
       // Always update to reflect portfolio amount (or other props) changes
@@ -1131,7 +1134,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // while resetting all other state related to the form.
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
-    this.fromAmountFieldMode = 'token'
     this.toSelectedToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
