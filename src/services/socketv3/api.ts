@@ -594,7 +594,7 @@ export class SocketV3API implements SwapProvider {
 
     const status = (response.status || response.statusCode || '').toUpperCase()
     const statusCode = (response.statusCode || '').toUpperCase()
-    if (status === 'COMPLETED' || status === 'FULFILLED' || statusCode === 'FULFILLED')
+    if (status === 'COMPLETED' || statusCode === 'FULFILLED')
       return { status: 'completed', txnId: getStatusTxnId(response, txHash) }
     if (status === 'REFUNDED')
       return { status: 'refunded', txnId: getStatusTxnId(response, txHash) }
