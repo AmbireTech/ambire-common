@@ -45,6 +45,30 @@ const config: HardhatUserConfig = {
       url: 'https://rpc.monad.xyz',
       accounts
     },
+    polygon: {
+      url: 'https://invictus.ambire.com/polygon',
+      accounts
+    },
+    mantle: {
+      url: 'https://invictus.ambire.com/mantle',
+      accounts
+    },
+    plasma: {
+      url: 'https://rpc.plasma.to',
+      accounts
+    },
+    avalanche: {
+      url: 'https://invictus.ambire.com/avalanche',
+      accounts
+    },
+    ink: {
+      url: 'https://invictus.ambire.com/ink',
+      accounts
+    },
+    hype: {
+      url: 'https://invictus.ambire.com/hyperevm',
+      accounts
+    },
     baseSepolia: {
       url: 'https://sepolia.base.org',
       accounts
@@ -275,6 +299,30 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.monadvision.com',
           browserURL: 'https://monadvision.com'
+        }
+      },
+      {
+        network: 'polygon',
+        chainId: 137,
+        urls: {
+          apiURL: 'https://api.polygonscan.com/api',
+          browserURL: 'https://api.polygonscan.com'
+        }
+      },
+      {
+        network: 'mantle',
+        chainId: 5000,
+        urls: {
+          apiURL: 'https://api.mantlescan.xyz/api',
+          browserURL: 'https://api.mantlescan.xyz'
+        }
+      },
+      {
+        network: 'plasma',
+        chainId: 9745,
+        urls: {
+          apiURL: 'https://api.plasmascan.to/api',
+          browserURL: 'https://plasmascan.to'
         }
       },
       {
