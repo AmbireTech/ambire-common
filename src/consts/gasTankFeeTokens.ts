@@ -53,9 +53,9 @@ export default [
     address: '0x0000000000000000000000000000000000000000',
     symbol: 'glmr',
     chainId: 1284n,
+    disableGasTankDeposit: true,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/22459/large/glmr.png',
-    disableGasTankDeposit: true
+    icon: 'https://assets.coingecko.com/coins/images/22459/large/glmr.png'
   },
   {
     address: '0x0000000000000000000000000000000000000000',
@@ -163,17 +163,11 @@ export default [
   },
   {
     address: '0x0000000000000000000000000000000000000000',
-    symbol: 'matic',
-    chainId: 80001n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
     symbol: 'eth',
     chainId: 11155111n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
+    icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
+    disableGasTankDeposit: true
   },
   {
     address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -691,6 +685,7 @@ export default [
     address: '0xeFAeeE334F0Fd1712f9a8cc375f427D9Cdd40d73',
     symbol: 'usdt',
     chainId: 1284n,
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },
@@ -698,6 +693,7 @@ export default [
     address: '0x765277EebeCA2e31912C9946eAe1021199B39C61',
     symbol: 'dai',
     chainId: 1284n,
+    disableGasTankDeposit: true,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
@@ -705,6 +701,7 @@ export default [
     address: '0xB44a9B6905aF7c801311e8F4E76932ee959c663C',
     symbol: 'usdt',
     chainId: 1285n,
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },
@@ -713,6 +710,7 @@ export default [
     symbol: 'dai',
     chainId: 1285n,
     decimals: 18,
+    disableGasTankDeposit: true,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
   {
