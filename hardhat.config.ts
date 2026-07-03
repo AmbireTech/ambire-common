@@ -136,6 +136,22 @@ const config: HardhatUserConfig = {
     celo: {
       url: 'https://forno.celo.org',
       accounts
+    },
+    robinhood: {
+      url: 'https://rpc.mainnet.chain.robinhood.com',
+      accounts
+    },
+    megaeth: {
+      url: 'https://mainnet.megaeth.com/rpc',
+      accounts
+    },
+    scroll: {
+      url: 'https://invictus.ambire.com/scroll',
+      accounts
+    },
+    kaia: {
+      url: 'https://public-en.node.kaia.io',
+      accounts
     }
   },
   etherscan: {
