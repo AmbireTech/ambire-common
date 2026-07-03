@@ -4,7 +4,7 @@ import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
-import * as ensDomainsModule from '../../services/ensDomains'
+import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
 import { getRpcProvider } from '../../services/provider'
 import {
   DomainsController,
