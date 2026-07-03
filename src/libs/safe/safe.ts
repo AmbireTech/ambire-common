@@ -17,18 +17,7 @@ import {
 } from 'ethers'
 
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
-import SafeApiKit, {
-  ProposeTransactionProps,
-  SafeCreationInfoResponse,
-  SafeMessage,
-  SafeMessageListResponse,
-  SafeMultisigTransactionListResponse
-} from '@safe-global/api-kit'
-import {
-  EIP712TypedData,
-  SafeMultisigConfirmationResponse,
-  SafeMultisigTransactionResponse
-} from '@safe-global/types-kit'
+import SafeApiKit from '@safe-global/api-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
@@ -40,6 +29,19 @@ import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/user
 import wait from '../../utils/wait'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
+
+import type {
+  ProposeTransactionProps,
+  SafeCreationInfoResponse,
+  SafeMessage,
+  SafeMessageListResponse,
+  SafeMultisigTransactionListResponse
+} from '@safe-global/api-kit'
+import type {
+  EIP712TypedData,
+  SafeMultisigConfirmationResponse,
+  SafeMultisigTransactionResponse
+} from '@safe-global/types-kit'
 
 const multiCallAbi = [
   { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },

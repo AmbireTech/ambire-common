@@ -1,5 +1,5 @@
 import { isAddress } from 'viem'
-import { normalize } from 'viem/ens'
+import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, normalize } from 'viem/ens'
 
 import { RPCProvider } from '@/interfaces/provider'
 import { fromDescriptor } from '@/libs/deployless/deployless'
@@ -63,13 +63,13 @@ async function resolveENSDomain({
   const client = getViemClientForProvider(provider)
 
   const [address, avatar] = await Promise.all([
-    client.getEnsAddress({
+    getEnsAddress(client, {
       name: normalizedDomainName,
       universalResolverAddress: !options?.isNamoshiDomain
         ? ENS_UNIVERSAL_RESOLVER
         : NAMOSHI_UNIVERSAL_RESOLVER
     }),
-    client.getEnsAvatar({
+    viemGetEnsAvatar(client, {
       name: normalizedDomainName,
       universalResolverAddress: !options?.isNamoshiDomain
         ? ENS_UNIVERSAL_RESOLVER
@@ -187,7 +187,7 @@ async function getEnsAvatar(
 
   const client = getViemClientForProvider(provider)
 
-  return client.getEnsAvatar({
+  return viemGetEnsAvatar(client, {
     name: normalizedName,
     universalResolverAddress: !options?.isNamoshiDomain
       ? ENS_UNIVERSAL_RESOLVER

@@ -4,7 +4,6 @@ import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-
 import { yieldToMain } from '../../utils/scheduler'
 import {
   getNotAmbireStateOverride,
@@ -16,7 +15,6 @@ import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
-import { mapToken } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -26,6 +24,7 @@ import {
   TokenError,
   TokenResult
 } from './interfaces'
+import { mapToken } from './tokenProcessing'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string

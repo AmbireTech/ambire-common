@@ -54,10 +54,13 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FeeSpeed,
   HardwareWalletSigningRequest,
   ISignAccountOpController,
+  noStateUpdateStatuses,
   SignAccountOpBanner,
   SignAccountOpError,
+  SigningStatus,
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
@@ -160,51 +163,11 @@ import {
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
 
-export enum SigningStatus {
-  EstimationError = 'estimation-error',
-  UnableToSign = 'unable-to-sign',
-  ReadyToSign = 'ready-to-sign',
-  /**
-   * Used to prevent state updates while the user is resolving warnings, connecting a hardware wallet, etc.
-   * Signing is allowed in this state, but the state of the controller should not change.
-   */
-  UpdatesPaused = 'updates-paused',
-  InProgress = 'in-progress',
-  WaitingForPaymaster = 'waiting-for-paymaster-response',
-  Done = 'done',
-  Queued = 'queued'
-}
+import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 
-export type Status = {
-  // @TODO: get rid of the object and just use the type
-  type: SigningStatus
-}
-
-export enum FeeSpeed {
-  Slow = 'slow',
-  Medium = 'medium',
-  Fast = 'fast',
-  Ape = 'ape'
-}
-
-export type SpeedCalc = {
-  type: FeeSpeed
-  amount: bigint
-  simulatedGasLimit: bigint
-  amountFormatted: string
-  amountUsd: string
-  gasPrice: bigint
-  disabled: boolean
-  maxPriorityFeePerGas?: bigint
-}
-
-// declare the statuses we don't want state updates on
-export const noStateUpdateStatuses = [
-  SigningStatus.InProgress,
-  SigningStatus.Done,
-  SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster
-]
+// Re-exporting for backwards compatibility with existing importers
+export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
+export type { SpeedCalc, Status }
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds

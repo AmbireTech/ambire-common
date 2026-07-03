@@ -4,6 +4,51 @@ export type ISignAccountOpController = ControllerInterface<
   InstanceType<typeof import('../controllers/signAccountOp/signAccountOp').SignAccountOpController>
 >
 
+export enum SigningStatus {
+  EstimationError = 'estimation-error',
+  UnableToSign = 'unable-to-sign',
+  ReadyToSign = 'ready-to-sign',
+  /**
+   * Used to prevent state updates while the user is resolving warnings, connecting a hardware wallet, etc.
+   * Signing is allowed in this state, but the state of the controller should not change.
+   */
+  UpdatesPaused = 'updates-paused',
+  InProgress = 'in-progress',
+  WaitingForPaymaster = 'waiting-for-paymaster-response',
+  Done = 'done',
+  Queued = 'queued'
+}
+
+export type Status = {
+  // @TODO: get rid of the object and just use the type
+  type: SigningStatus
+}
+
+export enum FeeSpeed {
+  Slow = 'slow',
+  Medium = 'medium',
+  Fast = 'fast',
+  Ape = 'ape'
+}
+
+export type SpeedCalc = {
+  type: FeeSpeed
+  amount: bigint
+  simulatedGasLimit: bigint
+  amountFormatted: string
+  amountUsd: string
+  gasPrice: bigint
+  disabled: boolean
+  maxPriorityFeePerGas?: bigint
+}
+
+export const noStateUpdateStatuses = [
+  SigningStatus.InProgress,
+  SigningStatus.Done,
+  SigningStatus.UpdatesPaused,
+  SigningStatus.WaitingForPaymaster
+]
+
 type Warning = {
   id: string
   title: string
