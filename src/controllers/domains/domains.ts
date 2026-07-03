@@ -9,6 +9,7 @@ import { RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getEnsAvatar,
+  getIsGweiDomain,
   getIsNamoshiDomain,
   resolveENSDomain,
   reverseLookupEns,
@@ -45,7 +46,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   domainToAddresses: {
     [domain: string]: {
       address: string | undefined
-      type: 'ens' | 'namoshi'
+      type: 'ens' | 'namoshi' | 'gwei'
     }
   } = {}
 
@@ -189,6 +190,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    */
   async resolveDomain({ domain }: { domain: string }) {
     const isNamoshiDomain = getIsNamoshiDomain(domain)
+    const isGweiDomain = getIsGweiDomain(domain)
+    const domainType = isNamoshiDomain ? 'namoshi' : isGweiDomain ? 'gwei' : 'ens'
     const providerChainId = isNamoshiDomain
       ? '4114'
       : this.#defaultNetworksMode === 'mainnet'
@@ -228,19 +231,19 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     await resolveENSDomain({
       provider: provider,
       domain,
-      options: { isNamoshiDomain }
+      options: { isNamoshiDomain, isGweiDomain }
     })
       .then(async ({ address, avatar }) => {
         if (address) {
           this.domainToAddresses[domain] = {
             address: getAddress(address),
-            type: isNamoshiDomain ? 'namoshi' : 'ens'
+            type: domainType
           }
           this.#saveResolvedDomain({
             address,
             ensAvatar: avatar,
             domain,
-            type: isNamoshiDomain ? 'namoshi' : 'ens'
+            type: domainType
           })
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
@@ -272,7 +275,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     address: string
     domain: string
     ensAvatar: string | null
-    type: 'ens' | 'namoshi'
+    type: 'ens' | 'namoshi' | 'gwei'
   }) {
     const checksummedAddress = getAddress(address)
     const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null }
@@ -284,6 +287,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
       ens: type === 'ens' ? domain : prevEns,
       namoshi: type === 'namoshi' ? domain : (existing?.namoshi ?? null),
+      gwei: type === 'gwei' ? domain : (existing?.gwei ?? null),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
     }
@@ -368,7 +372,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     if (hasBeenResolvedOnce) {
       this.domains[address]!.updateFailedAt = Date.now()
     } else {
-      this.domains[address] = { ens: null, namoshi: null, updateFailedAt: Date.now() }
+      this.domains[address] = { ens: null, namoshi: null, gwei: null, updateFailedAt: Date.now() }
     }
   }
 
@@ -395,7 +399,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.emitUpdate()
 
     try {
-      const [ensByAddress, namoshiByAddress] = await Promise.all([
+      const [ensByAddress, namoshiByAddress, gweiByAddress] = await Promise.all([
         withTimeout(() => reverseLookupEns(addressesToLookup, ethereumProvider), {
           timeoutMs: 15000
         }),
@@ -410,6 +414,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           {
             timeoutMs: 15000
           }
+        ),
+        withTimeout(
+          () => reverseLookupEns(addressesToLookup, ethereumProvider, { isGweiDomain: true }),
+          {
+            timeoutMs: 15000
+          }
         )
       ])
 
@@ -418,11 +428,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         if (!ensEntry || ensEntry.failed) return { address, failed: true as const }
 
         const namoshiEntry = namoshiByAddress[address]
+        const gweiEntry = gweiByAddress[address]
         return {
           address,
           failed: false as const,
           ens: ensEntry.name,
-          namoshi: namoshiEntry && !namoshiEntry.failed ? namoshiEntry.name : null
+          namoshi: namoshiEntry && !namoshiEntry.failed ? namoshiEntry.name : null,
+          gwei: gweiEntry && !gweiEntry.failed ? gweiEntry.name : null
         }
       })
 
@@ -450,6 +462,15 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
             return [entry.address, avatar] as const
           }
 
+          const gweiName = entry.gwei
+          if (gweiName) {
+            const avatar = await withTimeout(
+              () => getEnsAvatar(gweiName, ethereumProvider, { isGweiDomain: true }),
+              { timeoutMs: 15000 }
+            ).catch(() => null)
+            return [entry.address, avatar] as const
+          }
+
           return [entry.address, null] as const
         })
       )
@@ -461,12 +482,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           continue
         }
 
-        const { address, ens, namoshi } = entry
+        const { address, ens, namoshi, gwei } = entry
 
         if (ens) {
           this.domainToAddresses[ens] = { address, type: 'ens' }
         } else if (namoshi && citreaProvider) {
           this.domainToAddresses[namoshi] = { address, type: 'namoshi' }
+        } else if (gwei) {
+          this.domainToAddresses[gwei] = { address, type: 'gwei' }
         }
 
         const now = Date.now()
@@ -474,13 +497,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         this.domains[address] = {
           ens,
           namoshi,
+          gwei,
           ensAvatar: avatarByAddress[address] ?? null,
           createdAt: existing?.createdAt ?? now,
           updatedAt: now
         }
       }
     } catch (e: any) {
-      console.warn('reverse ENS/Namoshi lookup failed', e)
+      console.warn('reverse ENS/Namoshi/GNS lookup failed', e)
 
       addressesToLookup.forEach((address) => this.#setLookupFailure(address))
     } finally {

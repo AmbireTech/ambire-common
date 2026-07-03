@@ -10,6 +10,7 @@ import EnsGetter from '../../../contracts/compiled/EnsGetter.json'
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
 export const NAMOSHI_UNIVERSAL_RESOLVER = '0xc5Ed1fA34AD1F23F0cD2E36DB288290488B1B493'
+export const GNS_UNIVERSAL_RESOLVER = '0xD658131FFB6D732335d37f199374289F1b31564F'
 const LOCAL_BATCH_GATEWAY_URL = 'x-batch-gateway:true'
 
 const ETHEREUM_COIN_TYPE = 60n
@@ -34,14 +35,18 @@ export function getIsNamoshiDomain(domain: string) {
   return domain.endsWith('.btc') || domain.endsWith('.citrea')
 }
 
+export function getIsGweiDomain(domain: string) {
+  return domain.endsWith('.gwei')
+}
+
 export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
 /**
- * Resolves an ENS/Namoshi domain to an address and avatar.
+ * Resolves an ENS/Namoshi/GNS domain to an address and avatar.
  *
- * Can work with a custom universal resolver if the domain is a Namoshi domain, otherwise it defaults to the ENS universal resolver.
+ * Can work with a custom universal resolver if the domain is a Namoshi or GNS (.gwei) domain, otherwise it defaults to the ENS universal resolver.
  */
 async function resolveENSDomain({
   provider,
@@ -52,6 +57,7 @@ async function resolveENSDomain({
   domain: string
   options?: {
     isNamoshiDomain?: boolean
+    isGweiDomain?: boolean
   }
 }): Promise<{
   address: string
@@ -65,15 +71,19 @@ async function resolveENSDomain({
   const [address, avatar] = await Promise.all([
     client.getEnsAddress({
       name: normalizedDomainName,
-      universalResolverAddress: !options?.isNamoshiDomain
-        ? ENS_UNIVERSAL_RESOLVER
-        : NAMOSHI_UNIVERSAL_RESOLVER
+      universalResolverAddress: options?.isNamoshiDomain
+        ? NAMOSHI_UNIVERSAL_RESOLVER
+        : options?.isGweiDomain
+          ? GNS_UNIVERSAL_RESOLVER
+          : ENS_UNIVERSAL_RESOLVER
     }),
     client.getEnsAvatar({
       name: normalizedDomainName,
-      universalResolverAddress: !options?.isNamoshiDomain
-        ? ENS_UNIVERSAL_RESOLVER
-        : NAMOSHI_UNIVERSAL_RESOLVER
+      universalResolverAddress: options?.isNamoshiDomain
+        ? NAMOSHI_UNIVERSAL_RESOLVER
+        : options?.isGweiDomain
+          ? GNS_UNIVERSAL_RESOLVER
+          : ENS_UNIVERSAL_RESOLVER
     })
   ])
 
@@ -95,13 +105,16 @@ async function reverseLookupEns(
   provider: RPCProvider,
   options?: {
     isNamoshiDomain?: boolean
+    isGweiDomain?: boolean
   }
 ): Promise<ReverseLookupResult> {
   if (!addresses.length) return {}
 
-  const universalResolverAddress = !options?.isNamoshiDomain
-    ? ENS_UNIVERSAL_RESOLVER
-    : NAMOSHI_UNIVERSAL_RESOLVER
+  const universalResolverAddress = options?.isNamoshiDomain
+    ? NAMOSHI_UNIVERSAL_RESOLVER
+    : options?.isGweiDomain
+      ? GNS_UNIVERSAL_RESOLVER
+      : ENS_UNIVERSAL_RESOLVER
 
   const result: ReverseLookupResult = {}
   const offchainLookupAddresses: string[] = []
@@ -180,6 +193,7 @@ async function getEnsAvatar(
   provider: RPCProvider,
   options?: {
     isNamoshiDomain?: boolean
+    isGweiDomain?: boolean
   }
 ) {
   const normalizedName = normalize(name)
@@ -189,9 +203,11 @@ async function getEnsAvatar(
 
   return client.getEnsAvatar({
     name: normalizedName,
-    universalResolverAddress: !options?.isNamoshiDomain
-      ? ENS_UNIVERSAL_RESOLVER
-      : NAMOSHI_UNIVERSAL_RESOLVER
+    universalResolverAddress: options?.isNamoshiDomain
+      ? NAMOSHI_UNIVERSAL_RESOLVER
+      : options?.isGweiDomain
+        ? GNS_UNIVERSAL_RESOLVER
+        : ENS_UNIVERSAL_RESOLVER
   })
 }
 

@@ -13,7 +13,12 @@ export type Domains = {
      */
     namoshi: string | null
     /**
-     * ENS or Namoshi avatar URL
+     * GNS domains are fully compatible with the ENS implementation, they just use a different universal resolver contract
+     * and have a different TLD (.gwei).
+     */
+    gwei: string | null
+    /**
+     * ENS, Namoshi or GNS avatar URL
      */
     ensAvatar?: string | null
     createdAt?: number
@@ -35,7 +40,7 @@ type ReverseLookupOptions = {
 type AddressState = {
   fieldValue: string
   resolvedAddress: string
-  resolvedAddressType: 'ens' | 'namoshi' | null
+  resolvedAddressType: 'ens' | 'namoshi' | 'gwei' | null
   isDomainResolving: boolean
 }
 

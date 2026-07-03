@@ -77,6 +77,11 @@ const ENS2 = {
 
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
+const GNS_TEST = {
+  address: '0xC04689227Fa24785609B1174698DBe481437f1A3',
+  name: 'donnoh.gwei'
+}
+
 const makeStorage = (initial: Record<string, any> = {}) => {
   const store: Record<string, any> = { domainsCache: initial }
   return {
@@ -251,7 +256,8 @@ describe('Domains', () => {
         ENS_LATEST_RESOLVER.address
       ])
 
-      expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+      // One ENS lookup and one GNS lookup for the batch
+      expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
       const firstCallArgs = reverseLookupEnsSpy.mock.calls[0]
       expect(firstCallArgs).toBeDefined()
@@ -278,6 +284,8 @@ describe('Domains', () => {
     const reverseLookupEnsSpy = jest
       .spyOn(ensDomainsModule, 'reverseLookupEns')
       .mockReturnValueOnce(deferred)
+      // The GNS leg of the same lookup resolves immediately
+      .mockResolvedValueOnce({})
     const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
 
     // First call starts the lookup; the second one is fired while the first is
@@ -291,9 +299,10 @@ describe('Domains', () => {
 
     await Promise.all([first, second])
 
-    // A single underlying lookup despite two reverseLookup calls, and both
-    // calls only resolved once the data was written to state.
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    // A single underlying lookup per name service (ENS + GNS) despite two
+    // reverseLookup calls, and both calls only resolved once the data was
+    // written to state.
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
     expect(controller.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
 
     reverseLookupEnsSpy.mockRestore()
@@ -313,10 +322,13 @@ describe('Domains', () => {
       .spyOn(ensDomainsModule, 'reverseLookupEns')
       // First lookup (addressInFlight) stays pending until we resolve it
       .mockReturnValueOnce(deferred)
+      // ...while its GNS leg resolves immediately
+      .mockResolvedValueOnce({})
       // Batch lookup for the remaining address resolves immediately
       .mockResolvedValueOnce({
         [addressInBatch]: { name: ENS_LATEST_RESOLVER.name, failed: false }
       })
+      .mockResolvedValueOnce({})
     const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
 
     const inFlight = controller.reverseLookup(addressInFlight)
@@ -330,8 +342,9 @@ describe('Domains', () => {
 
     expect(controller.domains[addressInFlight]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
     expect(controller.domains[addressInBatch]!.ens).toBe(ENS_LATEST_RESOLVER.name)
-    // One lookup for the in-flight address, one for the rest of the batch — no duplicate.
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    // One ENS + one GNS lookup for the in-flight address, and one pair for the
+    // rest of the batch — no duplicate.
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
 
     reverseLookupEnsSpy.mockRestore()
     getEnsAvatarSpy.mockRestore()
@@ -395,6 +408,34 @@ describe('Domains', () => {
     expect(domainsController.domainToAddresses[TEST.name]?.type).toBe('namoshi')
     expect(domainsController.domains[TEST.address]!.namoshi).toBe(TEST.name)
   })
+  it('should resolve .gwei domain (GNS) on ethereum', async () => {
+    await domainsController.resolveDomain({ domain: GNS_TEST.name })
+
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.address).toBe(GNS_TEST.address)
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.type).toBe('gwei')
+    expect(domainsController.domains[GNS_TEST.address]!.gwei).toBe(GNS_TEST.name)
+  })
+  it('should reverse lookup (GNS .gwei)', async () => {
+    domainsController.domains = {}
+
+    await domainsController.reverseLookup(GNS_TEST.address)
+
+    expect(domainsController.domains[GNS_TEST.address]!.gwei).toBe(GNS_TEST.name)
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.address).toBe(GNS_TEST.address)
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.type).toBe('gwei')
+  })
+  it('should not resolve an unregistered .gwei domain', async () => {
+    const UNREGISTERED_NAME = 'surely-not-registered-1x2y.gwei'
+
+    await domainsController.resolveDomain({ domain: UNREGISTERED_NAME })
+
+    expect(domainsController.domainToAddresses[UNREGISTERED_NAME]).toBeUndefined()
+  })
+  it('should set gwei to null if no domain is found', async () => {
+    await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
+
+    expect(domainsController.domains[NO_DOMAINS_ADDRESS]!.gwei).toBe(null)
+  })
 
   it('privacy mode: a whenStale lookup refreshes once the cached value is older than the TTL', async () => {
     const controller = new DomainsController({
@@ -413,17 +454,18 @@ describe('Domains', () => {
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
 
     await controller.reverseLookup(address)
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    // Each refresh performs two lookups: ENS and GNS
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     // Before the TTL even a whenStale lookup serves from cache.
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
     await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     // After the TTL a whenStale lookup refreshes.
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
     await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
 
     nowSpy.mockRestore()
     reverseLookupEnsSpy.mockRestore()
@@ -447,12 +489,13 @@ describe('Domains', () => {
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
 
     await controller.reverseLookup(address)
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    // Each refresh performs two lookups: ENS and GNS
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     // Passive lookup past the TTL refreshes
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
     await controller.reverseLookup(address)
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
 
     nowSpy.mockRestore()
     reverseLookupEnsSpy.mockRestore()
