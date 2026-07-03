@@ -7,13 +7,16 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+// Import directly from ensDomains.ts, not the barrel (./index.ts). With tslib 2,
+// `export *` re-exports become getter-only bindings that jest.spyOn cannot override,
+// so domains.test.ts must spy on this same direct-file module instance.
 import {
   getEnsAvatar,
   getIsNamoshiDomain,
   resolveENSDomain,
   reverseLookupEns,
   ReverseLookupResult
-} from '../../services/ensDomains'
+} from '../../services/ensDomains/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
