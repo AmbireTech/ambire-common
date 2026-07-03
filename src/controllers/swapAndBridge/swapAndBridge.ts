@@ -873,7 +873,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#fetchSupportedChainsIfNeeded()
 
     if (activeRouteIdToDelete) {
-      this.removeActiveRoute(activeRouteIdToDelete, false)
+      await this.removeFailedRouteAndHideBanner(activeRouteIdToDelete)
     }
 
     this.#emitUpdateIfNeeded()
@@ -983,6 +983,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       toChainId?: bigint | number
       toSelectedTokenAddr?: SwapAndBridgeToToken['address'] | null
       routePriority?: 'output' | 'time'
+      activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId']
     },
     updateProps?: {
       emitUpdate?: boolean
@@ -996,7 +997,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmountFieldMode,
       toChainId,
       shouldSetMaxAmount,
-      routePriority
+      routePriority,
+      activeRouteIdToDelete
     } = props
 
     const fromSelectedToken = props.fromSelectedToken
@@ -1071,9 +1073,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           !fromSelectedToken ||
           this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
+        // This branch is invoked when the from token is changed, but also when the form is initialized.
+        // We want to persist the fromAmountFieldMode across sessions, but reset it when the user changes
+        // the token and has entered a value.
+        if (this.fromAmount !== '') this.fromAmountFieldMode = 'token'
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
-        this.fromAmountFieldMode = 'token'
       }
 
       // Always update to reflect portfolio amount (or other props) changes
@@ -1103,6 +1108,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    if (activeRouteIdToDelete) {
+      await this.removeFailedRouteAndHideBanner(activeRouteIdToDelete)
+    }
+
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
@@ -1125,7 +1134,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // while resetting all other state related to the form.
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
-    this.fromAmountFieldMode = 'token'
     this.toSelectedToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
@@ -2091,6 +2099,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
+      } else if (status === 'failed') {
+        this.updateActiveRoute(
+          activeRoute.activeRouteId,
+          {
+            routeStatus: 'failed',
+            error: undefined
+          },
+          true
+        )
       }
     }
 
@@ -2244,6 +2261,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // Purposely not using `this.#emitUpdateIfNeeded()` here, as this should always emit to update banners
     if (shouldEmitUpdate) this.emitUpdate()
+  }
+
+  /**
+   * Removes failed active routes and hides the failed txn banner
+   */
+  async removeFailedRouteAndHideBanner(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']) {
+    const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
+    if (!route) return
+
+    if (!route.identifiedBy || !route.route) return
+
+    const op = this.#activity.findByIdentifiedBy(
+      route.identifiedBy,
+      route.sender,
+      BigInt(route.route.fromChainId)
+    )
+
+    if (op) {
+      this.#activity.setDashboardBannersSeen('dashboard', route.sender, {
+        accountOpIds: [op.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+    }
+
+    this.removeActiveRoute(activeRouteId)
   }
 
   /**
@@ -2615,9 +2658,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       nonce: accountState.nonce,
       signature: null,
       calls,
-      flags: {
-        hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
-      },
       meta: {
         swapTxn: userTxn,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
@@ -21,6 +20,7 @@ import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/con
 import { ContractInfoController } from '@/controllers/contractInfo/contractInfo'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
+import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
 import { EstimationStatus } from '@/controllers/estimation/types'
@@ -55,6 +55,7 @@ import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractInfoController } from '@/interfaces/contractInfo'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
+import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
 import { IEmailVaultController } from '@/interfaces/emailVault'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
@@ -104,6 +105,7 @@ import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketAPI } from '@/services/socket/api'
+import { SocketV3API } from '@/services/socketv3/api'
 import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
@@ -138,6 +140,8 @@ export class MainController extends EventEmitter implements IMainController {
   signAccountOpPreference: SignAccountOpPreferenceController
 
   featureFlags: IFeatureFlagsController
+
+  debug: IDebugController
 
   invite: IInviteController
 
@@ -247,6 +251,8 @@ export class MainController extends EventEmitter implements IMainController {
     this.#appVersion = appVersion
     this.fetch = fetch
     this.storage = new StorageController(this.#storageAPI, eventEmitterRegistry)
+    // Constructed early so debug-log toggles are hydrated before other controllers start logging
+    this.debug = new DebugController(this.storage, eventEmitterRegistry)
     this.signAccountOpPreference = new SignAccountOpPreferenceController({
       eventEmitterRegistry,
       storage: this.storage
@@ -479,7 +485,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry
     })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
-    const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
+    const SocketLegacyProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
+    const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
@@ -558,7 +565,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
-      defaultNetworksMode: this.networks.defaultNetworksMode
+      defaultNetworksMode: this.networks.defaultNetworksMode,
+      storage: this.storage,
+      featureFlags: this.featureFlags
     })
 
     this.contractNames = new ContractNamesController({
@@ -713,12 +722,21 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       const ONE_HOUR = 1000 * 60 * 60
-      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      // Passively bulk-resolving ENS for all accounts links them together, so we
+      // only do it when the user opts out of privacy. Otherwise accounts are
+      // refreshed on interaction (see DomainsController).
+      if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+        this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      } else {
+        this.domains.reverseLookup(selectedAccountAddr, true, { privacyUpdateMode: 'whenStale' })
+      }
+      const THIRTY_MINUTES = 1000 * 60 * 30
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
           maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR
+          maxDataAgeMsUnused: ONE_HOUR,
+          defiMaxDataAgeMs: THIRTY_MINUTES
         })
       }
 
@@ -745,6 +763,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
     await this.contractInfo.initialLoadPromise
+    await this.addressBook.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -753,9 +772,18 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.selectedAccount.initialLoadPromise
+    await this.domains.init(this.addressBook.contacts)
 
     this.updateSelectedAccountPortfolio()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    // Only passively bulk-resolve ENS for all accounts when the user opts out of
+    // privacy (see onPopupOpen and DomainsController for the default behaviour).
+    if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    } else if (this.selectedAccount.account?.addr) {
+      this.domains.reverseLookup(this.selectedAccount.account.addr, true, {
+        privacyUpdateMode: 'whenStale'
+      })
+    }
 
     await this.survey.initialLoadPromise
 
@@ -805,6 +833,9 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
+    // Update reverse lookup data
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.domains.reverseLookup(toAccountAddr, true, { privacyUpdateMode: 'whenStale' })
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
@@ -1505,7 +1536,7 @@ export class MainController extends EventEmitter implements IMainController {
     const {
       chainIds,
       isManualReload = false,
-      defiMaxDataAgeMs,
+      defiMaxDataAgeMs = 30 * 60 * 1000,
       maxDataAgeMsUnused,
       maxDataAgeMs
     } = options || {}

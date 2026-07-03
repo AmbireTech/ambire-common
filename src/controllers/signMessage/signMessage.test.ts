@@ -1,5 +1,3 @@
-import { hexlify, randomBytes } from 'ethers'
-
 import { clearErc7730RegistryCache } from '@/libs/humanizer'
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
@@ -15,55 +13,19 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
-import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { SignMessageController } from './signMessage'
-
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    s
-  ) => '0x'
-}
 
 const account: Account = {
   addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',

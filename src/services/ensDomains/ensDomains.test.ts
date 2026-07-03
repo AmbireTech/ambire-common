@@ -15,7 +15,7 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
     jest.restoreAllMocks()
   })
 
-  it('chunks the addresses into batched eth_calls of at most 100', async () => {
+  it('chunks the addresses into batched eth_calls of at most 50', async () => {
     const callMock = jest
       .fn<(method: string, args: any[]) => Promise<any>>()
       .mockImplementation(async (_method, args) => {
@@ -33,8 +33,8 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
     const addresses = Array.from({ length: 150 }, (_, i) => makeAddress(i))
     const result = await reverseLookupEns(addresses, STUB_PROVIDER)
 
-    expect(callMock).toHaveBeenCalledTimes(2)
-    expect((callMock.mock.calls[0]![1][1] as string[]).length).toBe(100)
+    expect(callMock).toHaveBeenCalledTimes(3)
+    expect((callMock.mock.calls[0]![1][1] as string[]).length).toBe(50)
     expect((callMock.mock.calls[1]![1][1] as string[]).length).toBe(50)
     expect(Object.keys(result).length).toBe(150)
     expect(result[addresses[0]!]).toEqual({ name: null, failed: false })
@@ -59,9 +59,9 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
     const addresses = Array.from({ length: 150 }, (_, i) => makeAddress(i))
     const result = await reverseLookupEns(addresses, STUB_PROVIDER)
 
-    // First chunk (100) succeeded, second chunk (50) failed.
+    // First chunk (50) succeeded, second chunk (50) failed.
     expect(result[addresses[0]!]).toEqual({ name: null, failed: false })
-    expect(result[addresses[100]!]).toEqual({ name: null, failed: true })
+    expect(result[addresses[50]!]).toEqual({ name: null, failed: true })
     restore()
   })
 
