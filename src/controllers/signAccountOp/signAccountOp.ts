@@ -2397,7 +2397,9 @@ export class SignAccountOpController
           nativeRatio,
           feeTokenDecimals: option.token.decimals,
           addedNative: broadcastOption === BROADCAST_OPTIONS.byBundler ? 0n : option.addedNative,
-          usesPaymaster
+          usesPaymaster,
+          isAccountSafe: !!this.account.safeCreation,
+          network: this.#network
         })
 
         const feeSpeed: SpeedCalc = {
