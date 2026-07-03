@@ -1,10 +1,5 @@
 import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
 
-export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-// Some services (like Socket) use the null token address to represent the
-// native token as the ZERO_ADDRESS is not standard for it.
-export const NULL_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
-
 export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000'
 
 /**
@@ -64,12 +59,3 @@ export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
 }
 
 export const SOCKET_EXPLORER_URL = 'https://www.socketscan.io'
-
-export const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
-  'stargate',
-  'stargate-v2',
-  'arbitrum-bridge',
-  'zksync-native',
-  'Stargate V2',
-  'Stargate'
-]

@@ -1,4 +1,5 @@
 import { getAddress } from 'ethers'
+import { ethAddress, zeroAddress } from 'viem'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
@@ -23,9 +24,7 @@ import { CITREA_CHAIN_ID } from '../squid/constants'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT,
-  NULL_ADDRESS,
-  ZERO_ADDRESS
+  FEE_PERCENT
 } from './constants'
 
 type SocketV3Protocol = {
@@ -130,7 +129,7 @@ type SocketV3StatusResponse = {
 }
 
 const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
-  addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
+  addr === zeroAddress ? ethAddress : addr
 
 const normalizeIncomingSocketTokenAddress = (address: string) =>
   // incoming token addresses from Socket are all lowercased
@@ -168,7 +167,8 @@ const getRouteProtocol = (route: SocketV3Route): SocketV3Protocol => {
 const getNativeValue = (route: SocketV3Route) => {
   try {
     return BigInt(route.txData?.object.value || '0')
-  } catch {
+  } catch (e) {
+    console.error(e)
     return 0n
   }
 }
@@ -361,7 +361,7 @@ export class SocketV3API implements SwapProvider {
     // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
     if (toChainId === 1)
-      tokens = tokens.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+      tokens = tokens.filter((token: SocketAPIToken) => token.address !== zeroAddress)
 
     tokens = tokens.map(normalizeIncomingSocketToken)
 
@@ -453,7 +453,7 @@ export class SocketV3API implements SwapProvider {
       const protocol = getRouteProtocol(route)
       const nativeValue = getNativeValue(route)
       const hasNativeValueFee =
-        nativeValue > 0n && normalizeOutgoingSocketTokenAddress(fromTokenAddress) !== NULL_ADDRESS
+        nativeValue > 0n && normalizeOutgoingSocketTokenAddress(fromTokenAddress) !== ethAddress
       const serviceFee: SwapAndBridgeRoute['serviceFee'] = hasNativeValueFee
         ? {
             amount: nativeValue.toString(),
@@ -506,20 +506,20 @@ export class SocketV3API implements SwapProvider {
         serviceFee,
         userTxs,
         userAddress,
-        isOnlySwapRoute: fromChainId === route.output.token.chainId,
+        isOnlySwapRoute: fromChainId === normalizedToAsset.chainId,
         currentUserTxIndex: 0,
         serviceTime: route.estimatedTime ?? 1,
         fromChainId,
-        toChainId: route.output.token.chainId,
+        toChainId: normalizedToAsset.chainId,
         inputValueInUsd: response.input.valueInUsd,
         toToken: {
-          address: route.output.token.address,
-          chainId: route.output.token.chainId,
+          address: normalizedToAsset.address,
+          chainId: normalizedToAsset.chainId,
           priceUSD: route.output.priceInUsd.toString(),
-          symbol: route.output.token.symbol,
-          decimals: route.output.token.decimals,
-          name: route.output.token.name,
-          logoURI: route.output.token.logoURI
+          symbol: normalizedToAsset.symbol,
+          decimals: normalizedToAsset.decimals,
+          name: normalizedToAsset.name,
+          logoURI: normalizedToAsset.logoURI
         },
         approvalData: route.approval || undefined,
         txData: route.txData
@@ -533,8 +533,8 @@ export class SocketV3API implements SwapProvider {
         rawRoute: route as any,
         withConvenienceFee: shouldIncludeConvenienceFee,
         usedBridgeNames:
-          fromChainId !== route.output.token.chainId ? [protocol.name.toLowerCase()] : [''],
-        usedDexName: fromChainId === route.output.token.chainId ? protocol.displayName : undefined
+          fromChainId !== normalizedToAsset.chainId ? [protocol.name.toLowerCase()] : [''],
+        usedDexName: fromChainId === normalizedToAsset.chainId ? protocol.displayName : undefined
       }
 
       return swapAndBridgeRoute
