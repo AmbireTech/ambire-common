@@ -763,15 +763,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#awaitPendingPromises()
     if (!this.currentUserRequest) return
 
-    // In the side panel there is no window to close; apply the same queue semantics as
-    // closing the request window (keep calls queued, clear the active request).
-    if (this.#isSidePanelOpen) {
-      await this.#onActiveRequestDismissed()
-      return
-    }
+    try {
+      // In the side panel there is no window to close; apply the same queue semantics as
+      // closing the request window (keep calls queued, clear the active request).
+      if (this.#isSidePanelOpen) {
+        await this.#onActiveRequestDismissed()
+        return
+      }
 
-    if (this.requestWindow.windowProps) {
-      await this.closeRequestWindow()
+      if (this.requestWindow.windowProps) {
+        await this.closeRequestWindow()
+      }
+    } catch (err) {
+      this.emitError({
+        message: 'Failed to dismiss the active request. Please try again.',
+        level: 'major',
+        error: err as Error
+      })
     }
   }
 
