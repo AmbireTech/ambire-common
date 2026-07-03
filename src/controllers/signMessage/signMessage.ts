@@ -44,9 +44,9 @@ import {
   getEIP712Signature,
   getPlainTextSignature,
   getSafeMessageTypedData,
-  getVerifyMessageSignature,
-  verifyMessage
+  getVerifyMessageSignature
 } from '../../libs/signMessage/signMessage'
+import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'

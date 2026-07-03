@@ -105,12 +105,12 @@ import {
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
   getNonce,
-  getSafeTxn,
   getSafeTxnHash,
   getSigs,
   propose,
   sortSigs
 } from '../../libs/safe/safe'
+import { getSafeTxn } from '../../libs/safe/helpers'
 import {
   get7702AuthorizationSigningRequest,
   getEIP712SigningRequest,
