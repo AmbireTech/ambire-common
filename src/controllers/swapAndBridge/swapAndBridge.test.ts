@@ -56,6 +56,54 @@ const accounts = [
   }
 ]
 
+const getSubmittedAccountOp = (
+  txnId: string,
+  activeRouteId: string,
+  status = 'broadcasted-but-not-confirmed'
+) =>
+  ({
+    accountAddr: accounts[0]!.addr,
+    signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+    gasLimit: null,
+    gasFeePayment: {
+      isGasTank: false,
+      paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      inToken: '0x0000000000000000000000000000000000000000',
+      amount: 1n,
+      simulatedGasLimit: 1n,
+      gasPrice: 1n
+    },
+    chainId: 10n,
+    nonce: 225n,
+    signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+    calls: [
+      {
+        id: 'safe-request-call-id',
+        to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+        value: BigInt(0),
+        data: '0x'
+      }
+    ],
+    txnId,
+    status,
+    timestamp: Date.now(),
+    identifiedBy: {
+      type: 'Transaction',
+      identifier: txnId
+    },
+    meta: {
+      swapTxn: {
+        activeRouteId,
+        approvalData: null,
+        chainId: 10,
+        txData: '0x',
+        txTarget: '0x0000000000000000000000000000000000000000',
+        userTxIndex: 0,
+        value: '0'
+      }
+    }
+  }) as any
+
 // Notice
 // The status of swapAndBridge.ts is a bit more difficult to test
 // as we now have this code:
@@ -617,6 +665,56 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('ready')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
+  })
+  test('should update an existing activeRoute when adding the same route again', async () => {
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
+
+    swapAndBridgeController.addActiveRoute({
+      userTxIndex: swapAndBridgeController.activeRoutes[0]!.userTxIndex,
+      routeStatus: 'in-progress'
+    })
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
+      userTxHash: 'test'
+    })
+
+    expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
+    expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toEqual('test')
+    expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(1)
+  })
+  test('should update an activeRoute userTxHash from submitted account op swapTxn meta', async () => {
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
+    const submittedAccountOp = getSubmittedAccountOp('test', activeRouteId)
+
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
+      routeStatus: 'in-progress',
+      userTxHash: null,
+      identifiedBy: null
+    })
+    swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+      submittedAccountOp
+    )
+
+    expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toEqual('test')
+    expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(1)
+  })
+  test('should fail an activeRoute from submitted account op swapTxn meta', async () => {
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
+    const submittedAccountOp = getSubmittedAccountOp('test', activeRouteId, 'failure')
+
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
+      routeStatus: 'in-progress',
+      userTxHash: 'test'
+    })
+    swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+      submittedAccountOp
+    )
+
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('failed')
+    expect(swapAndBridgeController.activeRoutes[0]!.error).toEqual(
+      'The transaction failed onchain'
+    )
+    expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId

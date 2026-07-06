@@ -2149,7 +2149,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     try {
       const route = finalQuote.selectedRoute
-      this.activeRoutes.push({
+      const activeRoute: SwapAndBridgeActiveRoute = {
         serviceProviderId: finalQuote.selectedRoute.providerId,
         activeRouteId: route.routeId.toString(),
         userTxIndex,
@@ -2175,7 +2175,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           routeStatus,
           transactionData: null
         }
-      })
+      }
+
+      const activeRouteIndex = this.activeRoutes.findIndex(
+        (r) => r.activeRouteId === activeRoute.activeRouteId
+      )
+
+      this.activeRoutes =
+        activeRouteIndex === -1
+          ? [...this.activeRoutes, activeRoute]
+          : this.activeRoutes.map((r, i) => (i === activeRouteIndex ? activeRoute : r))
 
       this.emitUpdate()
     } catch (error: any) {
@@ -2305,6 +2314,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    this.#handleUpdateActiveRouteFromSwapTxnMeta(op)
+
     op.calls.forEach((call) => {
       this.#handleActiveRouteBroadcastedTransaction(call.id, op.status)
       this.#handleActiveRouteBroadcastedApproval(call.id, op.status)
@@ -2312,6 +2323,35 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#handleUpdateActiveRoutesUserTxData(call.id, op)
       this.#handleActiveRoutesCompleted(call.id, op.status)
     })
+  }
+
+  #handleUpdateActiveRouteFromSwapTxnMeta(submittedAccountOp: SubmittedAccountOp) {
+    const swapTxn = submittedAccountOp.meta?.swapTxn
+    if (!swapTxn) return
+
+    const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === swapTxn.activeRouteId)
+    if (!activeRoute) return
+
+    if (!activeRoute.userTxHash && submittedAccountOp.txnId) {
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        userTxHash: submittedAccountOp.txnId,
+        identifiedBy: submittedAccountOp.identifiedBy
+      })
+    }
+
+    if (
+      submittedAccountOp.status === AccountOpStatus.Failure ||
+      submittedAccountOp.status === AccountOpStatus.Rejected
+    ) {
+      const errorMessage =
+        submittedAccountOp.status === AccountOpStatus.Rejected
+          ? 'The transaction was rejected'
+          : 'The transaction failed onchain'
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        routeStatus: 'failed',
+        error: errorMessage
+      })
+    }
   }
 
   #handleActiveRouteBroadcastedTransaction(
