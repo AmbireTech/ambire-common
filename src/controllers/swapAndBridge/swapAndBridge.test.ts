@@ -58,12 +58,12 @@ const accounts = [
 
 const getSubmittedAccountOp = (
   txnId: string,
-  activeRouteId = 'test-active-route-id',
+  activeRouteId?: string,
   status = 'broadcasted-but-not-confirmed',
-  chainId = 10n
+  chainId?: bigint
 ) =>
   ({
-    id: `submitted-account-op-${txnId}`,
+    id: 'submitted-account-op-id',
     accountAddr: accounts[0]!.addr,
     signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
     gasLimit: null,
@@ -75,12 +75,11 @@ const getSubmittedAccountOp = (
       simulatedGasLimit: 1n,
       gasPrice: 1n
     },
-    chainId,
+    chainId: chainId ? chainId : activeRouteId ? 10n : 1n,
     nonce: 225n,
     signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
     calls: [
       {
-        id: 'safe-request-call-id',
         to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
         value: BigInt(0),
         data: '0x'
@@ -93,17 +92,19 @@ const getSubmittedAccountOp = (
       type: 'Transaction',
       identifier: txnId
     },
-    meta: {
-      swapTxn: {
-        activeRouteId,
-        approvalData: null,
-        chainId: Number(chainId),
-        txData: '0x',
-        txTarget: '0x0000000000000000000000000000000000000000',
-        userTxIndex: 0,
-        value: '0'
-      }
-    }
+    meta: activeRouteId
+      ? {
+          swapTxn: {
+            activeRouteId,
+            approvalData: null,
+            chainId: 10,
+            txData: '0x',
+            txTarget: '0x0000000000000000000000000000000000000000',
+            userTxIndex: 0,
+            value: '0'
+          }
+        }
+      : {}
   }) as any
 
 // Notice
@@ -818,7 +819,7 @@ describe('SwapAndBridge Controller', () => {
       'failure',
       1n
     )
-    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP as any)
+    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP)
 
     swapAndBridgeController.activeRoutes = [
       {
