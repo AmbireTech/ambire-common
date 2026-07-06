@@ -50,6 +50,14 @@ export class Safe extends BaseAccount {
    */
   NONCE_GAS = 5000n
 
+  /**
+   * A one time gas addition if the txn is an userOp.
+   * This accounts for the missing signature validation data as we're
+   * doing a state override during estimation and replacing the original
+   * Safe code with one that allows all signatures to pass
+   */
+  BUNDLER_OVERHEAD = 40000n
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
@@ -102,6 +110,7 @@ export class Safe extends BaseAccount {
         BigInt(estimation.bundlerEstimation.callGasLimit) +
         callToSelfGas +
         this.EXTRA_ESTIMATION_GAS +
+        this.BUNDLER_OVERHEAD +
         nonceGas
       )
     }
