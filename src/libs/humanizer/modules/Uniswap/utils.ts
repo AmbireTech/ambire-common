@@ -1,4 +1,3 @@
-/* eslint-disable no-continue */
 import { zeroAddress } from 'viem'
 
 import { networks } from '../../../../consts/networks'

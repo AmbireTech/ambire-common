@@ -112,10 +112,20 @@ const getFeeTokenPriceUnavailableWarning = (
   return WARNINGS.feeTokenPriceUnavailable
 }
 
+const isUnderpriced = (msg: string): boolean => {
+  return (
+    msg.includes('underpriced') ||
+    msg.includes('Fee confirmation failed') ||
+    msg.includes('maxFeePerGas') ||
+    msg.includes('maxPriorityFeePerGas')
+  )
+}
+
 export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
-  getUnknownTokenWarning
+  getUnknownTokenWarning,
+  isUnderpriced
 }

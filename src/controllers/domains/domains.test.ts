@@ -4,8 +4,8 @@ import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
+import * as ensDomainsModule from '../../services/ensDomains'
 import { getRpcProvider } from '../../services/provider'
-import * as withTimeoutModule from '../../utils/with-timeout'
 import {
   DomainsController,
   PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS,
@@ -139,13 +139,11 @@ describe('Domains', () => {
     const nowSpy = jest.spyOn(Date, 'now')
     nowSpy.mockReturnValue(start)
 
-    const withTimeoutSpy = jest
-      .spyOn(withTimeoutModule, 'withTimeout')
-      .mockImplementation(async () => {
-        throw new Error('forced failure')
-      })
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockRejectedValue(new Error('forced failure'))
 
-    const FAIL_ADDRESS = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF'
+    const FAIL_ADDRESS = getAddress(ENS_OLD_RESOLVER.address)
 
     // Initial failed lookup sets updateFailedAt
     await domainsController.reverseLookup(FAIL_ADDRESS)
@@ -164,7 +162,7 @@ describe('Domains', () => {
       start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000
     )
 
-    withTimeoutSpy.mockRestore()
+    reverseLookupEnsSpy.mockRestore()
     nowSpy.mockRestore()
     restore()
   })
@@ -194,13 +192,150 @@ describe('Domains', () => {
       ENS_LATEST_RESOLVER.address
     ])
 
-    expect(domainsController.domains[ENS_OLDEST_RESOLVER.address]!.ens).toBe(
+    expect(domainsController.domains[getAddress(ENS_OLDEST_RESOLVER.address)]!.ens).toBe(
       ENS_OLDEST_RESOLVER.name
     )
-    expect(domainsController.domains[ENS_OLD_RESOLVER.address]!.ens).toBe(ENS_OLD_RESOLVER.name)
-    expect(domainsController.domains[ENS_LATEST_RESOLVER.address]!.ens).toBe(
+    expect(domainsController.domains[getAddress(ENS_OLD_RESOLVER.address)]!.ens).toBe(
+      ENS_OLD_RESOLVER.name
+    )
+    expect(domainsController.domains[getAddress(ENS_LATEST_RESOLVER.address)]!.ens).toBe(
       ENS_LATEST_RESOLVER.name
     )
+  })
+  it('batchReverseLookup should use deployless batched reverse lookup', async () => {
+    const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
+    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
+    reverseLookupEnsSpy
+      .mockResolvedValueOnce({
+        [getAddress(ENS_OLDEST_RESOLVER.address)]: {
+          name: ENS_OLDEST_RESOLVER.name,
+          failed: false
+        },
+        [getAddress(ENS_OLD_RESOLVER.address)]: {
+          name: ENS_OLD_RESOLVER.name,
+          failed: false
+        },
+        [getAddress(ENS_LATEST_RESOLVER.address)]: {
+          name: ENS_LATEST_RESOLVER.name,
+          failed: false
+        }
+      })
+      .mockResolvedValueOnce({})
+
+    try {
+      await controller.batchReverseLookup([
+        ENS_OLDEST_RESOLVER.address,
+        ENS_OLD_RESOLVER.address,
+        ENS_LATEST_RESOLVER.address
+      ])
+
+      expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+      const firstCallArgs = reverseLookupEnsSpy.mock.calls[0]
+      expect(firstCallArgs).toBeDefined()
+      if (!firstCallArgs) throw new Error('Expected reverse lookup call args')
+
+      expect(firstCallArgs[0]).toEqual([
+        ENS_OLDEST_RESOLVER.address,
+        ENS_OLD_RESOLVER.address,
+        ENS_LATEST_RESOLVER.address
+      ])
+    } finally {
+      reverseLookupEnsSpy.mockRestore()
+    }
+  })
+  it('reverseLookup awaits an in-flight lookup instead of starting a duplicate', async () => {
+    const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
+    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const address = getAddress(ENS_OLDEST_RESOLVER.address)
+
+    let resolveLookup!: (value: ensDomainsModule.ReverseLookupResult) => void
+    const deferred = new Promise<ensDomainsModule.ReverseLookupResult>((res) => {
+      resolveLookup = res
+    })
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockReturnValueOnce(deferred)
+    const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+
+    // First call starts the lookup; the second one is fired while the first is
+    // still in flight and must await the same promise rather than duplicating it.
+    const first = controller.reverseLookup(address)
+    const second = controller.reverseLookup(address)
+
+    expect(controller.domains[address]).toBeUndefined()
+
+    resolveLookup({ [address]: { name: ENS_OLDEST_RESOLVER.name, failed: false } })
+
+    await Promise.all([first, second])
+
+    // A single underlying lookup despite two reverseLookup calls, and both
+    // calls only resolved once the data was written to state.
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    expect(controller.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+
+    reverseLookupEnsSpy.mockRestore()
+    getEnsAvatarSpy.mockRestore()
+  })
+  it('batchReverseLookup awaits an address already in flight from reverseLookup', async () => {
+    const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
+    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const addressInFlight = getAddress(ENS_OLDEST_RESOLVER.address)
+    const addressInBatch = getAddress(ENS_LATEST_RESOLVER.address)
+
+    let resolveInFlight!: (value: ensDomainsModule.ReverseLookupResult) => void
+    const deferred = new Promise<ensDomainsModule.ReverseLookupResult>((res) => {
+      resolveInFlight = res
+    })
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      // First lookup (addressInFlight) stays pending until we resolve it
+      .mockReturnValueOnce(deferred)
+      // Batch lookup for the remaining address resolves immediately
+      .mockResolvedValueOnce({
+        [addressInBatch]: { name: ENS_LATEST_RESOLVER.name, failed: false }
+      })
+    const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+
+    const inFlight = controller.reverseLookup(addressInFlight)
+    // The batch includes the already in-flight address; it must await that
+    // existing promise rather than skip it or start a duplicate lookup.
+    const batch = controller.batchReverseLookup([addressInFlight, addressInBatch])
+
+    resolveInFlight({ [addressInFlight]: { name: ENS_OLDEST_RESOLVER.name, failed: false } })
+
+    await Promise.all([inFlight, batch])
+
+    expect(controller.domains[addressInFlight]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(controller.domains[addressInBatch]!.ens).toBe(ENS_LATEST_RESOLVER.name)
+    // One lookup for the in-flight address, one for the rest of the batch — no duplicate.
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+
+    reverseLookupEnsSpy.mockRestore()
+    getEnsAvatarSpy.mockRestore()
+  })
+  it('marks the address as failed (updateFailedAt) when the lookup returns a failed entry', async () => {
+    const { restore } = suppressConsole(true)
+    const controller = new DomainsController({
+      providers: { ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n) }
+    })
+    const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
+    const FAILED_ADDRESS = getAddress(ENS2.address)
+
+    // A failed chunk yields a resolved (not rejected) entry with `failed: true`; the controller
+    // must treat it as a transient failure (set updateFailedAt) rather than caching "no name".
+    reverseLookupEnsSpy.mockResolvedValueOnce({
+      [FAILED_ADDRESS]: { name: null, failed: true }
+    })
+
+    await controller.reverseLookup(FAILED_ADDRESS)
+
+    expect(typeof controller.domains[FAILED_ADDRESS]!.updateFailedAt).toBe('number')
+    expect(controller.domains[FAILED_ADDRESS]!.ens).toBe(null)
+
+    reverseLookupEnsSpy.mockRestore()
+    restore()
   })
   it('should use the universal resolver contract', async () => {
     const UNIVERSAL_RESOLVER_TEST = {

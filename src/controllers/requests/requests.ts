@@ -23,6 +23,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -81,6 +82,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -128,6 +130,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #networks: INetworksController
 
   #providers: IProvidersController
+
+  #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #selectedAccount: ISelectedAccountController
 
@@ -211,6 +217,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     accounts,
     networks,
     providers,
+    storage,
+    signAccountOpPreference,
     selectedAccount,
     keystore,
     transfer,
@@ -243,6 +251,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
+    storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     transfer: ITransferController
@@ -272,6 +282,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
+    this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
     this.#transfer = transfer
@@ -319,6 +331,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
     await this.#safe.initialLoadPromise
+    await this.#signAccountOpPreference.initialLoadPromise
   }
 
   get visibleUserRequests(): UserRequest[] {
@@ -1123,7 +1136,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             walletSendCallsVersion,
             paymasterService
           },
-          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }]
+          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }],
+          dappSessionId: request.session.sessionId
         })) ?? null
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -1746,12 +1760,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       calls,
       meta,
       accountOp: providedAccountOp,
-      dappPromises = []
+      dappPromises = [],
+      dappSessionId
     }: {
       calls: Call[]
       meta: CallsUserRequest['meta']
       accountOp?: AccountOp
       dappPromises?: CallsUserRequest['dappPromises']
+      dappSessionId?: string
     },
     executionType: RequestExecutionType = 'open-request-window'
   ) {
@@ -1871,6 +1887,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
+      await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
         kind: 'calls',
@@ -1882,6 +1899,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           networks: this.#networks,
           keystore: this.#keystore,
           portfolio: this.#portfolio,
+          signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,
           account,
@@ -1914,7 +1932,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                   }))
                 ],
                 safeTx: meta.safeTx,
-                meta
+                meta,
+                dappSessionId
               },
           shouldSimulate: this.shouldSimulateAccountOps,
           onUpdateAfterTraceCallSuccess: async () => {
@@ -1941,7 +1960,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         if (!callsReq) return
 
-        if (callsReq.signAccountOp.isSignAndBroadcastInProgress) this.propagateUpdate(forceEmit)
+        if (
+          callsReq.signAccountOp.isSignAndBroadcastInProgress ||
+          callsReq.signAccountOp.gasFeeChangedConfirmationRequired
+        ) {
+          this.propagateUpdate(forceEmit)
+        }
       }, 'requests-ctrl')
     }
 
