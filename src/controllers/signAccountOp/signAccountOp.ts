@@ -1082,12 +1082,15 @@ export class SignAccountOpController
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        const selected = this.#getDefaultFeeOption(
-          payOptionsPaidByUsOrGasTank,
-          payOptionsPaidByEOA
-        )!
-        this.feeTokenResult = selected.token
-        this.#paidBy = selected.paidBy
+        const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank, payOptionsPaidByEOA)
+        if (selected) {
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
+        } else {
+          console.error(
+            'Failed to set a default selected option. Perhaps native is not always returned for the account?'
+          )
+        }
       }
     }
   }
@@ -2827,7 +2830,7 @@ export class SignAccountOpController
       // if it's a safe account, add the SAFE_SIGNER signature
       if (this.account.safeCreation) {
         if (!paymasterData.signature) {
-          const error = 'Gas tank is currently inavailable'
+          const error = 'Gas tank is currently unavailable'
           return {
             required: true,
             success: false,

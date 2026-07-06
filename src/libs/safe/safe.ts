@@ -204,7 +204,7 @@ export function getSafeBroadcastTxn(
       safeTxn.gasPrice,
       safeTxn.gasToken,
       safeTxn.refundReceiver,
-      op.signature || getSigForCalculations()
+      op.signature && op.signature !== '0x' ? op.signature : getSigForCalculations()
     ]) as Hex
   }
 }
