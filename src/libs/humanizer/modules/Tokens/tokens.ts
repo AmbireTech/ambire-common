@@ -36,6 +36,13 @@ const erc20IncreaseAllowanceAbi = parseAbi([
 const erc20DecreaseAllowanceAbi = parseAbi([
   'function decreaseAllowance(address spender, uint256 subtractedValue) returns (bool)'
 ])
+// legacy naming used by some tokens (e.g. OMG) instead of increaseAllowance/decreaseAllowance
+const erc20IncreaseApprovalAbi = parseAbi([
+  'function increaseApproval(address _spender, uint256 _addedValue) returns (bool)'
+])
+const erc20DecreaseApprovalAbi = parseAbi([
+  'function decreaseApproval(address _spender, uint256 _subtractedValue) returns (bool)'
+])
 
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -155,6 +162,36 @@ export const genericErc20Humanizer = (
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20DecreaseAllowanceAbi,
+        data: call.data
+      })
+      const [spender, subtractedValue] = args
+      return [
+        getAction('Decrease allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(call.to, subtractedValue)
+      ]
+    },
+    [toFunctionSelector(erc20IncreaseApprovalAbi[0])]: (call) => {
+      if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
+      const { args } = decodeFunctionData({
+        abi: erc20IncreaseApprovalAbi,
+        data: call.data
+      })
+      const [spender, addedValue] = args
+      return [
+        getAction('Increase allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(call.to, addedValue)
+      ]
+    },
+    [toFunctionSelector(erc20DecreaseApprovalAbi[0])]: (call) => {
+      if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
+      const { args } = decodeFunctionData({
+        abi: erc20DecreaseApprovalAbi,
         data: call.data
       })
       const [spender, subtractedValue] = args
