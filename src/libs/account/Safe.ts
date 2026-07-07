@@ -76,7 +76,11 @@ export class Safe extends BaseAccount {
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
     const hasPaymaster =
-      estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
+      estimation.bundlerEstimation &&
+      estimation.bundlerEstimation.paymaster.isUsable() &&
+      // disable the Safe gas tank for megaeth for now as we need a special
+      // estimation implementation for it to make it work
+      this.network.chainId !== 4326n
 
     return feePaymentOptions.filter(
       (opt) => isNative(opt.token) || (hasPaymaster && opt.token.flags.onGasTank)
