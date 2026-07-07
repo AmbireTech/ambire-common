@@ -16,54 +16,66 @@ import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
-const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+// TODO: TEMPORARY — kept in sync with the temp URL in the controller while the endpoint is
+// being finalized. Revert to 'https://cena.ambire.com/api/v3/trending/' before merge.
+const TRENDING_TOKENS_URL = 'https://termbin.com/u75d'
 
 // Two valid entries plus one invalid (no price) to exercise normalization + filtering.
-const mockTrending = [
-  {
-    id: 'bitcoin',
-    name: 'Bitcoin',
-    symbol: 'BTC',
-    market_cap_rank: 1,
-    thumb: 'https://example.com/btc-thumb.png',
-    small: 'https://example.com/btc-small.png',
-    large: 'https://example.com/btc-large.png',
-    data: {
-      price: 65000.5,
-      price_change_percentage_24h: { usd: 1.23, eur: 1.1 },
-      market_cap: '$1,200,000,000',
-      total_volume: '$45,000,000',
-      content: { title: 'About Bitcoin', description: 'The first cryptocurrency.' }
+// Mirrors the new endpoint shape: a { tokens: [...] } wrapper of full CoinGecko coin objects.
+const mockTrending = {
+  tokens: [
+    {
+      id: 'bitcoin',
+      name: 'Bitcoin',
+      symbol: 'BTC',
+      market_cap_rank: 1,
+      thumb: 'https://example.com/btc-thumb.png',
+      small: 'https://example.com/btc-small.png',
+      large: 'https://example.com/btc-large.png',
+      asset_platform_id: 'ethereum',
+      contract_address: '0xbtc',
+      platforms: { ethereum: '0xbtc' },
+      decimals: { ethereum: 8 },
+      links: { homepage: ['https://bitcoin.org'] },
+      tickers: [
+        { market: { identifier: 'binance' } },
+        { market: { identifier: 'binance' } },
+        { market: { identifier: 'coinbase' } }
+      ],
+      usd: 65000.5,
+      usd_24h_change: 1.23,
+      usd_market_cap: 1200000000,
+      usd_24h_vol: 45000000,
+      usd_fully_diluted_valuation: 1300000000,
+      total_supply: 21000000,
+      description: { en: 'The first cryptocurrency.' }
+    },
+    {
+      id: 'ethereum',
+      name: 'Ethereum',
+      symbol: 'ETH',
+      market_cap_rank: 2,
+      thumb: 'https://example.com/eth-thumb.png',
+      small: 'https://example.com/eth-small.png',
+      large: 'https://example.com/eth-large.png',
+      usd: 3200,
+      usd_24h_change: -2.5,
+      usd_market_cap: 400000000,
+      usd_24h_vol: 20000000,
+      description: null
+    },
+    // Invalid: missing price → must be filtered out by normalizeTrendingTokens.
+    {
+      id: 'no-price-coin',
+      name: 'No Price Coin',
+      symbol: 'NPC',
+      market_cap_rank: 999,
+      thumb: '',
+      small: '',
+      large: ''
     }
-  },
-  {
-    id: 'ethereum',
-    name: 'Ethereum',
-    symbol: 'ETH',
-    market_cap_rank: 2,
-    thumb: 'https://example.com/eth-thumb.png',
-    small: 'https://example.com/eth-small.png',
-    large: 'https://example.com/eth-large.png',
-    data: {
-      price: 3200,
-      price_change_percentage_24h: { usd: -2.5 },
-      market_cap: '$400,000,000',
-      total_volume: '$20,000,000',
-      content: null
-    }
-  },
-  // Invalid: missing data.price → must be filtered out by normalizeTrendingTokens.
-  {
-    id: 'no-price-coin',
-    name: 'No Price Coin',
-    symbol: 'NPC',
-    market_cap_rank: 999,
-    thumb: '',
-    small: '',
-    large: '',
-    data: { price_change_percentage_24h: { usd: 0 } }
-  }
-]
+  ]
+}
 
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
@@ -1660,13 +1672,23 @@ describe('DappsController', () => {
       expect(btc.priceChange24hUSD).toBe(1.23)
       expect(btc.marketCapRank).toBe(1)
       expect(btc.icon).toBe('https://example.com/btc-large.png') // prefers `large`
-      expect(btc.marketCap).toBe('$1,200,000,000')
-      expect(btc.totalVolume).toBe('$45,000,000')
+      expect(btc.marketCapUSD).toBe(1200000000)
+      expect(btc.totalVolumeUSD).toBe(45000000)
+      expect(btc.fullyDilutedValuationUSD).toBe(1300000000)
+      expect(btc.totalSupply).toBe(21000000)
       expect(btc.description).toBe('The first cryptocurrency.')
+      expect(btc.address).toBe('0xbtc')
+      expect(btc.platformId).toBe('ethereum')
+      expect(btc.decimals).toBe(8)
+      expect(btc.website).toBe('https://bitcoin.org')
+      // Duplicate tickers collapse to unique exchange ids.
+      expect(btc.exchangeIds).toEqual(['binance', 'coinbase'])
 
       const eth = controller.trendingTokens.find((tt) => tt.symbol === 'ETH')!
       expect(eth.priceChange24hUSD).toBe(-2.5)
-      expect(eth.description).toBeNull() // content was null
+      expect(eth.description).toBeNull() // description was null
+      expect(eth.address).toBeNull() // no contract/platform provided
+      expect(eth.exchangeIds).toEqual([])
     })
 
     test('persists fetched trending tokens to storage', async () => {
@@ -1688,9 +1710,16 @@ describe('DappsController', () => {
         priceUSD: 150,
         priceChange24hUSD: 5,
         marketCapRank: 5,
-        marketCap: '$70,000,000',
-        totalVolume: '$3,000,000',
-        description: 'A fast L1.'
+        description: 'A fast L1.',
+        address: null,
+        platformId: null,
+        decimals: null,
+        marketCapUSD: 70000000,
+        totalVolumeUSD: 3000000,
+        fullyDilutedValuationUSD: null,
+        totalSupply: null,
+        website: null,
+        exchangeIds: []
       }
       const { controller } = await prepareTest(async (storageCtrl) => {
         await seedStorage(storageCtrl)

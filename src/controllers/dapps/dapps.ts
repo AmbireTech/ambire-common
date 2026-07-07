@@ -59,7 +59,9 @@ import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+// TODO: TEMPORARY — points at a fixed sample of the NEW trending data format while the endpoint
+// is being finalized. Revert to 'https://cena.ambire.com/api/v3/trending/' before merge.
+const TRENDING_TOKENS_URL = 'https://termbin.com/u75d'
 
 const mergeSource = (
   existing: ConnectionSource[] | undefined,
@@ -594,7 +596,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       throw new Error(`Failed to update trending tokens (status: ${res.status}, url: ${res.url})`)
     }
 
-    const raw: RawTrendingToken[] = await res.json()
+    const json = await res.json()
+    // The new endpoint returns { tokens: [...] }; the legacy prod endpoint returns a bare array.
+    // Support both so the app keeps working across the endpoint migration.
+    const raw: RawTrendingToken[] = Array.isArray(json) ? json : json?.tokens
     if (!Array.isArray(raw)) {
       throw new Error('Trending tokens response is not an array')
     }

@@ -151,26 +151,57 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
   return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 }
 }
 
-// Maps the raw cena trending response to the minimal, UI-ready shape kept in state.
+// Maps the raw cena trending response to the UI-ready shape kept in state.
 // Items without a usable id or price are dropped — they can't be keyed or displayed meaningfully.
 function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
   return raw
-    .filter((token) => !!token?.id && typeof token?.data?.price === 'number')
-    .map((token) => ({
-      id: token.id,
-      name: token.name,
-      symbol: token.symbol,
-      icon: token.large || token.small || token.thumb || '',
-      priceUSD: token.data!.price!,
-      priceChange24hUSD:
-        typeof token.data?.price_change_percentage_24h?.usd === 'number'
-          ? token.data.price_change_percentage_24h.usd
-          : null,
-      marketCapRank: token.market_cap_rank ?? null,
-      marketCap: token.data?.market_cap ?? null,
-      totalVolume: token.data?.total_volume ?? null,
-      description: token.data?.content?.description ?? null
-    }))
+    .filter(
+      (token) =>
+        !!token?.id && (typeof token.usd === 'number' || typeof token.data?.price === 'number')
+    )
+    .map((token) => {
+      const platformId = token.asset_platform_id ?? null
+      const address =
+        token.contract_address ?? (platformId ? token.platforms?.[platformId] : undefined) ?? null
+      const decimals =
+        (platformId ? token.decimals?.[platformId] : undefined) ??
+        (platformId ? token.detail_platforms?.[platformId]?.decimal_place : undefined) ??
+        null
+      const priceUSD = token.usd ?? token.data?.price ?? 0
+      const priceChange24hUSD =
+        typeof token.usd_24h_change === 'number'
+          ? token.usd_24h_change
+          : typeof token.data?.price_change_percentage_24h?.usd === 'number'
+            ? token.data.price_change_percentage_24h.usd
+            : null
+      const exchangeIds = Array.from(
+        new Set(
+          (token.tickers ?? [])
+            .map((ticker) => ticker?.market?.identifier)
+            .filter((id): id is string => !!id)
+        )
+      )
+
+      return {
+        id: token.id,
+        name: token.name,
+        symbol: token.symbol,
+        icon: token.large || token.small || token.thumb || '',
+        priceUSD,
+        priceChange24hUSD,
+        marketCapRank: token.market_cap_rank ?? null,
+        description: token.description?.en ?? token.data?.content?.description ?? null,
+        address,
+        platformId,
+        decimals,
+        marketCapUSD: token.usd_market_cap ?? null,
+        totalVolumeUSD: token.usd_24h_vol ?? null,
+        fullyDilutedValuationUSD: token.usd_fully_diluted_valuation ?? null,
+        totalSupply: token.total_supply ?? null,
+        website: token.links?.homepage?.find((url) => !!url) ?? null,
+        exchangeIds
+      }
+    })
 }
 
 export {

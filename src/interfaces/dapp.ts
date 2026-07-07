@@ -75,6 +75,25 @@ export interface RawTrendingToken {
   thumb: string
   small: string
   large: string
+  // Primary CoinGecko asset platform (e.g. 'ethereum') plus the per-platform contract addresses
+  // and decimals. Used to reuse the portfolio token-details components and match held balances.
+  asset_platform_id?: string | null
+  contract_address?: string
+  platforms?: { [platform: string]: string }
+  decimals?: { [platform: string]: number }
+  detail_platforms?: { [platform: string]: { decimal_place: number; contract_address: string } }
+  links?: { homepage?: string[] }
+  // Exchanges the token is traded on. We only read the CoinGecko exchange identifier.
+  tickers?: { market?: { identifier?: string } }[]
+  // Fresh coin-detail USD values (flat). Preferred over the `data` block below, which is the
+  // trending-widget snapshot and can be stale.
+  usd?: number
+  usd_24h_change?: number
+  usd_market_cap?: number
+  usd_24h_vol?: number
+  usd_fully_diluted_valuation?: number
+  total_supply?: number
+  description?: { en?: string } | null
   data?: {
     price?: number
     // Percentage change keyed by fiat/crypto currency (usd, eur, btc, ...). We only read `usd`.
@@ -96,9 +115,22 @@ export interface TrendingToken {
   priceUSD: number
   priceChange24hUSD: number | null
   marketCapRank: number | null
-  marketCap: string | null
-  totalVolume: string | null
   description: string | null
+  // Contract of the token on its primary CoinGecko asset platform, and that platform's CoinGecko
+  // id (e.g. 'ethereum'). Used to derive the chainId, resolve the token icon and match a held
+  // balance in the account portfolio. Null when the token has no on-chain contract (e.g. BTC).
+  address: string | null
+  platformId: string | null
+  decimals: number | null
+  // USD market data, mapped into the same numeric fields the portfolio "About" section reads.
+  marketCapUSD: number | null
+  totalVolumeUSD: number | null
+  fullyDilutedValuationUSD: number | null
+  totalSupply: number | null
+  website: string | null
+  // CoinGecko exchange ids the token is traded on; resolved against the PortfolioController's
+  // exchange registry when rendering the supported-exchanges row.
+  exchangeIds: string[]
 }
 
 export interface DefiLlamaProtocol {
