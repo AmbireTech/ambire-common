@@ -17,12 +17,8 @@ import { Account, AccountId, AccountPreferences } from './account'
 import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
 import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
-<<<<<<< HEAD
 import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
-=======
-import { Dapp, RecentDappEntry } from './dapp'
 import { Domains } from './domains'
->>>>>>> v2
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
