@@ -202,7 +202,9 @@ export async function bundlerEstimate(
     // try again if the error is 4337_INVALID_NONCE and network is not ETH
     if (
       estimations.nonFatalErrors.length &&
-      estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
+      estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
+      // this does not apply for safe accounts
+      !account.safeCreation
     ) {
       flags.has4337NonceDiscrepancy = true
 
