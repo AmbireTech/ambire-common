@@ -178,7 +178,16 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
 
     // runs all modules and takes the first non empty array
     const { fullVisualization, warnings, canHideDropdownArrow } =
-      humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
+      humanizerTMModules
+        .map((m) => {
+          try {
+            return m(message)
+          } catch (error) {
+            console.error(error)
+            return {}
+          }
+        })
+        .filter((p) => p.fullVisualization?.length)[0] || {}
 
     return { ...message, fullVisualization, warnings, canHideDropdownArrow }
   } catch (error) {
@@ -187,6 +196,6 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   }
 }
 
-export { humanizeAccountOp, humanizeMessage }
 export * from './erc7730'
+export { humanizeAccountOp, humanizeMessage }
 export type { HumanizeAccountOpOptions, HumanizeMessageOptions }

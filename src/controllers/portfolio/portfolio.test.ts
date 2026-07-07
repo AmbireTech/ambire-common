@@ -352,6 +352,7 @@ const prepareTest = async (opts?: {
   }
 }
 
+// @TODO: Divide into multiple files (.blacklisting, .hints, .simulation, .tokens, .defiPositions, etc.)
 describe('Portfolio Controller ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -818,7 +819,7 @@ describe('Portfolio Controller ', () => {
 
       // Mock getAllHints error which will cause the update to fail
       // @ts-expect-error test
-      jest.spyOn(controller, 'getAllHints').mockImplementationOnce(() => {
+      jest.spyOn(controller.hints, 'getAllHints').mockImplementationOnce(() => {
         throw new Error('Failed to get hints')
       })
 
@@ -1034,12 +1035,14 @@ describe('Portfolio Controller ', () => {
       }
     })
 
-    // The forceUpdateDefi flags from the batchedPortfolioDiscovery calls. Only the per-network
-    // discovery sets the flag; the defi-apps (customAppChain) call doesn't, so it's filtered out.
+    // The force state derived from the defiUpdateMode passed to batchedPortfolioDiscovery. Only the
+    // per-network discovery sets the mode; the defi-apps (customAppChain) call doesn't, so it's
+    // filtered out.
     const getForceFlags = (discoverySpy: any): boolean[] =>
       discoverySpy.mock.calls
-        .map((call: any[]) => call[0].forceUpdateDefi)
-        .filter((flag: unknown) => flag !== undefined)
+        .map((call: any[]) => call[0].defiUpdateMode)
+        .filter((mode: unknown) => mode !== undefined)
+        .map((mode: string) => mode === defiPositionsLib.DefiUpdateMode.Force)
 
     test('a pending scheduled update suppresses the server-side bypass on the next update', async () => {
       const { controller } = await prepareTest()
@@ -1104,7 +1107,7 @@ describe('Portfolio Controller ', () => {
 
         // And it actually forces the defi discovery.
         const forcedDiscovery = discoverySpy.mock.calls.some(
-          (call: any[]) => call[0]?.forceUpdateDefi === true
+          (call: any[]) => call[0]?.defiUpdateMode === defiPositionsLib.DefiUpdateMode.Force
         )
         expect(forcedDiscovery).toBe(true)
 
@@ -1342,7 +1345,7 @@ describe('Portfolio Controller ', () => {
       controller.addErc721sToBeLearned([[NFT_ADDR, [1n]]], account2.addr, 1n)
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account2.addr, 1n)
+      const allHints = controller.hints.getAllHints(account2.addr, 1n)
 
       expect(allHints.specialErc721Hints.learn[NFT_ADDR]).toContain(1n)
     })
@@ -1352,7 +1355,7 @@ describe('Portfolio Controller ', () => {
       const { controller } = await prepareTest()
 
       // @ts-expect-error test
-      await controller.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
+      await controller.hints.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -1390,7 +1393,7 @@ describe('Portfolio Controller ', () => {
       const allCurrentlyOwned = [...firstBatchOf50.slice(0, 20), ...nextBatchOf30]
 
       // @ts-expect-error test
-      await controller.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
+      await controller.hints.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
 
       // Expect the oldest 10 to be removed
       const learnedAssets: LearnedAssets = await storageCtrl.get(
@@ -1450,7 +1453,7 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
+      await controller.hints.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
 
       // Expect the oldest 10 to be removed
       const learnedAssets: LearnedAssets = await storageCtrl.get(
@@ -1498,7 +1501,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account.addr, 1n)
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       expect(
         allHints.specialErc20Hints.learn.filter(
@@ -1523,7 +1526,7 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnTokens(
+      await controller.hints.learnTokens(
         [
           DUPLICATE_TOKEN_ADDR,
           '0x4c9edd5852cd905f086c759e8383e09bff1e68b3',
@@ -1534,7 +1537,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      await controller.learnTokens(
+      await controller.hints.learnTokens(
         [
           '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
           DUPLICATE_TOKEN_ADDR,
@@ -1545,10 +1548,10 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
       // @ts-expect-error test
-      await controller.learnNfts(
+      await controller.hints.learnNfts(
         [
           [DUPLICATE_COLLECTION[0], [1n, 2n]],
           ['0x0a1bbd57033f57e7b6743621b79fcb9eb2ce3676', [1n, 2n]]
@@ -1584,10 +1587,10 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
       // @ts-expect-error test
-      await controller.learnNfts(
+      await controller.hints.learnNfts(
         [
           // Empty array makes it enumerable
           [DUPLICATE_COLLECTION[0], []]
@@ -1609,7 +1612,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      const { additionalErc721Hints } = controller.getAllHints(account.addr, 1n)
+      const { additionalErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       // Enumerable is with priority
       expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
@@ -1624,7 +1627,7 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnNfts(
+      await controller.hints.learnNfts(
         [
           // Empty array makes it enumerable
           [DUPLICATE_COLLECTION[0], []]
@@ -1634,7 +1637,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
       const learnedAssets: LearnedAssets = await storageCtrl.get(
         'learnedAssets',
@@ -1649,7 +1652,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      const { additionalErc721Hints } = controller.getAllHints(account.addr, 1n)
+      const { additionalErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       // Enumerable is with priority
       expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
@@ -1896,7 +1899,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account.addr, 1n)
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       expect(allHints.additionalErc20Hints).toContain(STETH)
       expect(allHints.additionalErc20Hints).not.toContain(CHAINLINK)
@@ -1916,7 +1919,7 @@ describe('Portfolio Controller ', () => {
       ).not.toBeDefined()
 
       // @ts-expect-error test
-      await controller.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
+      await controller.hints.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
 
@@ -1951,7 +1954,7 @@ describe('Portfolio Controller ', () => {
         1n
       )
       // @ts-expect-error test
-      const { specialErc721Hints } = controller.getAllHints(account.addr, 1n)
+      const { specialErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       expect(hasLearned).toBeFalsy()
       expect(specialErc721Hints).toEqual({
@@ -1966,7 +1969,10 @@ describe('Portfolio Controller ', () => {
         1n
       )
       // @ts-expect-error test
-      const { specialErc721Hints: specialErc721Hints2 } = controller.getAllHints(account.addr, 1n)
+      const { specialErc721Hints: specialErc721Hints2 } = controller.hints.getAllHints(
+        account.addr,
+        1n
+      )
 
       expect(hasLearned2).toBeTruthy()
       expect(specialErc721Hints2.learn).toEqual({
@@ -2079,7 +2085,7 @@ describe('Portfolio Controller ', () => {
       expect(learnedAssets).toBe(null)
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account.addr, 1n)
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       Object.keys(previousHints.learnedTokens['1']!).forEach((addr) => {
         expect(allHints.specialErc20Hints.learn.find((toBeLearned) => addr === toBeLearned))
@@ -2093,7 +2099,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(account.addr)
 
       // @ts-expect-error test
-      const allHints2 = controller.getAllHints(account.addr, 1n)
+      const allHints2 = controller.hints.getAllHints(account.addr, 1n)
 
       expect(allHints2.specialErc20Hints.learn.length).toBe(0)
       expect(Object.keys(allHints2.specialErc721Hints.learn).length).toBe(0)
@@ -2110,7 +2116,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const hints = controller.getAllHints(account.addr, 1n, true)
+      const hints = controller.hints.getAllHints(account.addr, 1n, undefined, true)
       const key = `${1n}:${account.addr}`
 
       expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
@@ -2130,7 +2136,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const hints = controller.getAllHints(account.addr, 1n)
+      const hints = controller.hints.getAllHints(account.addr, 1n)
       const key = `${1n}:${account.addr}`
 
       expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
@@ -2150,7 +2156,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const hints = controller.getAllHints(account.addr, 1n, true)
+      const hints = controller.hints.getAllHints(account.addr, 1n, undefined, true)
       const key = `${1n}:${account.addr}`
       const key2 = `${1n}:${account2.addr}`
 
@@ -3407,7 +3413,7 @@ describe('Portfolio Controller ', () => {
         return Promise.resolve(createJsonResponse({}))
       }) as unknown as typeof fetch
 
-    test('Should add update=true even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with forceUpdateDefi=true', async () => {
+    test('Should send defi=force even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with the Force mode', async () => {
       const discoveryUrls: string[] = []
       const fetchOverride = createDiscoveryFetchOverride(async (url) => {
         discoveryUrls.push(url)
@@ -3425,7 +3431,7 @@ describe('Portfolio Controller ', () => {
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       // @ts-expect-error test
@@ -3433,16 +3439,16 @@ describe('Portfolio Controller ', () => {
         chainId: 137n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: true
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Force
       })
 
       await Promise.allSettled([firstCall, secondCall])
 
       expect(discoveryUrls).toHaveLength(1)
-      expect(new URL(discoveryUrls[0]!).searchParams.get('update')).toBe('true')
+      expect(new URL(discoveryUrls[0]!).searchParams.get('defi')).toBe('force')
     })
 
-    test('update=true is account-pair specific', async () => {
+    test('defi=force is account-pair specific', async () => {
       const discoveryUrls: string[] = []
       const fetchOverride = createDiscoveryFetchOverride(async (url) => {
         discoveryUrls.push(url)
@@ -3461,14 +3467,14 @@ describe('Portfolio Controller ', () => {
           chainId: 1n,
           accountAddr: account.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: false
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
         }),
         // @ts-expect-error test
         controller.batchedPortfolioDiscovery({
           chainId: 137n,
           accountAddr: account.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: true
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Force
         })
       ]
 
@@ -3478,7 +3484,7 @@ describe('Portfolio Controller ', () => {
           chainId: 1n,
           accountAddr: account2.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: false
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
         })
       ]
 
@@ -3495,8 +3501,8 @@ describe('Portfolio Controller ', () => {
       expect(pairWithForceUpdate).toBeDefined()
       expect(pairWithoutForceUpdate).toBeDefined()
 
-      expect(new URL(pairWithForceUpdate!).searchParams.get('update')).toBe('true')
-      expect(new URL(pairWithoutForceUpdate!).searchParams.get('update')).toBeNull()
+      expect(new URL(pairWithForceUpdate!).searchParams.get('defi')).toBe('force')
+      expect(new URL(pairWithoutForceUpdate!).searchParams.get('defi')).toBe('default')
     })
 
     test('Malformed array length mismatch should trigger mismatch rejection', async () => {
@@ -3512,7 +3518,7 @@ describe('Portfolio Controller ', () => {
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       // @ts-expect-error test
@@ -3520,7 +3526,7 @@ describe('Portfolio Controller ', () => {
         chainId: 137n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       const [firstResult, secondResult] = await Promise.allSettled([firstCall, secondCall])
@@ -3559,7 +3565,7 @@ describe('Portfolio Controller ', () => {
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       // @ts-expect-error test
@@ -3567,7 +3573,7 @@ describe('Portfolio Controller ', () => {
         chainId: 'customAppChain',
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       await Promise.allSettled([firstCall, secondCall])

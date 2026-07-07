@@ -3,7 +3,8 @@ import { expect } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { fetchWithAppVersion as fetch, produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { InternalSigner } from '../../../test/keystore'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
@@ -11,39 +12,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { EmailVaultController, EmailVaultState } from './emailVault'
-
-class InternalSigner implements KeystoreSignerInterface {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    throw new Error('not supported')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
 
 const keystoreSigners = { internal: InternalSigner }
 
@@ -193,18 +161,24 @@ describe('happy cases', () => {
     expect(keystore2.keys.length).toBe(2)
   })
 
-  test('cancel login attempt', (done) => {
+  test('cancel login attempt', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore)
 
-    setTimeout(() => {
-      expect(ev.currentState).toBe(EmailVaultState.WaitingEmailConfirmation)
-      ev.cancelEmailConfirmation()
-      expect(ev.currentState).toBe(EmailVaultState.Ready)
-      expect(Object.keys(ev.emailVaultStates.email).length).toBe(0)
-      done()
-    }, 4000)
+    const waitingForConfirmation = new Promise<void>((resolve) => {
+      const unsub = ev.onUpdate(() => {
+        if (ev.currentState === EmailVaultState.WaitingEmailConfirmation) {
+          unsub()
+          resolve()
+        }
+      })
+    })
+    void ev.handleMagicLinkKey(email, () => {})
+    await waitingForConfirmation
 
-    void ev.handleMagicLinkKey(email, () => console.log('ready'))
+    expect(ev.currentState).toBe(EmailVaultState.WaitingEmailConfirmation)
+    ev.cancelEmailConfirmation()
+    expect(ev.currentState).toBe(EmailVaultState.Ready)
+    expect(Object.keys(ev.emailVaultStates.email).length).toBe(0)
   })
   test('remove keyStoreSecret', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)

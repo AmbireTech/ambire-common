@@ -67,12 +67,12 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
     try {
       this.#manuallyAddedContacts = await this.#storage.get('contacts', [])
       this.emitUpdate()
-    } catch (e) {
+    } catch (error: any) {
       this.emitError({
         message:
           'Something went wrong when loading the Address Book. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('Address Book: failed to load contacts from the Address Book')
+        error
       })
     }
   }

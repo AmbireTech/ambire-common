@@ -98,6 +98,7 @@ The networks controller that reads the network list from storage (which is async
 - If a controller depends on the state of the UI (e.g., which screen it is on), it should subscribe to `this.ui.uiEvent.on`
 - When retrying failed background fetches, use a retry counter with a maximum number of attempts (reset on success) and an increasing delay. For periodic polling with retry, use `RecurringTimeout` with adaptive intervals (shorter on failure, longer on success). See `PortfolioController.updateExchangeList()`, `DappsController.#retryFetchAndUpdateInterval`, and `ContractNamesController`'s `retryAfter` timestamps for examples.
 - ALWAYS guard async operations that update state with appropriate stale-data checks, such as debounce, unique ID/version checks, or cancellation with `AbortController`, to prevent state corruption from out-of-order or concurrent operations. Examples of these patterns can be found in `SwapAndBridgeController` and `AccountPickerController`.
+- ALWAYS Write to storage AFTER updating the in-memory state and emitting updates so the UI updates asap, NEVER before.
 
 ## Controller list
 ALWAYS update this list when creating a new controller, and provide a one-sentence description of its responsibilities. 
@@ -114,11 +115,13 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **ContinuousUpdatesController** – Orchestrates periodic background updates for multiple controllers (e.g., portfolio and activity)
 - **ContractNamesController** – Resolves human-readable names for smart-contract addresses via the relayer.
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
+- **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
 - **DomainsController** – Resolves and caches ENS and Namoshi names (and avatars) for addresses.
 - **EmailVaultController** – Handles email-based recovery, magic-link flows, and vault secret management.
 - **FeatureFlagsController** – Toggles application features at runtime for roll-outs and A/B testing.
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.
 - **GasPriceController** – Fetches and formats gas-price recommendations and bundler gas speeds.
+- **HintsController** – Owns the portfolio's token/NFT hints (learned assets, to-be-learned assets, custom tokens, token preferences) and their storage; a sub-controller of the PortfolioController.
 - **InviteController** – Manages invite codes and OG status (legacy; now used for status tracking only).
 - **KeystoreController** – Encrypts seeds and private keys under a multi-secret–wrapped main key, manages unlock state, and routes signing to internal or hardware-backed keys.
 - **NetworksController** – Manages blockchain networks and their configuration

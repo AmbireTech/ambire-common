@@ -1,11 +1,16 @@
+import type { Network } from '../../interfaces/network'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 
-export type FeeBroadcaster = 'paymaster' | 'relayer'
+type FeeNetwork = Pick<Network, 'chainId'>
 
-export function increaseFee(amount: bigint, broadcaster: FeeBroadcaster = 'relayer'): bigint {
-  if (broadcaster === 'paymaster') return amount + amount / 10n
+export function increaseFee(amount: bigint, isAccountSafe: boolean, network: FeeNetwork): bigint {
+  if (isAccountSafe) {
+    if (network.chainId === 1n) return amount + amount / 4n
 
-  return amount + amount / 20n
+    return amount + amount / 2n
+  }
+
+  return amount + amount / 10n
 }
 
 function getAmountAfterFeeTokenConvert(
@@ -37,7 +42,9 @@ export function calculateFeeAmount({
   nativeRatio,
   feeTokenDecimals,
   addedNative,
-  usesPaymaster
+  usesPaymaster,
+  isAccountSafe,
+  network
 }: {
   broadcastOption: string
   simulatedGasLimit: bigint
@@ -46,6 +53,8 @@ export function calculateFeeAmount({
   feeTokenDecimals: number
   addedNative: bigint
   usesPaymaster?: boolean
+  isAccountSafe: boolean
+  network: FeeNetwork
 }): bigint {
   if (
     broadcastOption === BROADCAST_OPTIONS.bySelf ||
@@ -64,9 +73,7 @@ export function calculateFeeAmount({
   )
 
   if (broadcastOption === BROADCAST_OPTIONS.byBundler && usesPaymaster) {
-    amount = increaseFee(amount, 'paymaster')
-  } else if (broadcastOption !== BROADCAST_OPTIONS.byBundler) {
-    amount = increaseFee(amount)
+    amount = increaseFee(amount, isAccountSafe, network)
   }
 
   return amount

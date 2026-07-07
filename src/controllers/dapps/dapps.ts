@@ -433,6 +433,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
+        accountPreferences: prevStoredDapp?.accountPreferences,
         grantedPermissionId: prevStoredDapp?.grantedPermissionId,
         grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
       }
@@ -471,7 +472,8 @@ export class DappsController extends EventEmitter implements IDappsController {
           favorite: prevStoredDapp?.favorite ?? false,
           blacklisted: 'LOADING',
           twitter: pd.twitter || null,
-          geckoId: null
+          geckoId: null,
+          accountPreferences: prevStoredDapp?.accountPreferences
         })
       }
     }
@@ -856,12 +858,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     if (existing) {
       const mergedSources = mergeSource(existing.connectedSources, source)
-      this.updateDapp(dapp.id, {
+      const dappUpdate: Partial<Dapp> = {
         chainId: dapp.chainId,
         connectedSources: mergedSources,
-        isConnected: mergedSources.length > 0,
-        accountPreferences: dapp.accountPreferences
-      })
+        isConnected: mergedSources.length > 0
+      }
+
+      if (dapp.accountPreferences) dappUpdate.accountPreferences = dapp.accountPreferences
+
+      this.updateDapp(dapp.id, dappUpdate)
       return
     }
 
@@ -1063,6 +1068,41 @@ export class DappsController extends EventEmitter implements IDappsController {
       connectedSources: nextSources,
       isConnected: nextSources.length > 0
     })
+  }
+
+  async disconnectAllDapps(source?: ConnectionSource): Promise<Dapp[]> {
+    if (!this.isReady) return []
+
+    const connectedDapps = this.dapps.filter((dapp) => dapp.isConnected)
+    if (!connectedDapps.length) return []
+
+    for (const dapp of connectedDapps) {
+      const existing = this.#dapps.get(dapp.id)
+      if (!existing) continue
+
+      const current = existing.connectedSources ?? []
+      if (source && !current.includes(source)) continue
+
+      const nextSources = source ? current.filter((s) => s !== source) : []
+
+      await this.broadcastDappSessionEvent('disconnect', undefined, dapp.id, false, source)
+
+      // Mirror `updateDapp`: a custom dapp that loses its last source is removed.
+      if (existing.isCustom && nextSources.length === 0) {
+        this.#dapps.delete(dapp.id)
+      } else {
+        this.#dapps.set(dapp.id, {
+          ...existing,
+          connectedSources: nextSources,
+          isConnected: nextSources.length > 0
+        })
+      }
+    }
+
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    this.emitUpdate()
+
+    return connectedDapps
   }
 
   removeDapp(id: string) {

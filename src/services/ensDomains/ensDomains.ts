@@ -13,7 +13,7 @@ export const NAMOSHI_UNIVERSAL_RESOLVER = '0xc5Ed1fA34AD1F23F0cD2E36DB288290488B
 const LOCAL_BATCH_GATEWAY_URL = 'x-batch-gateway:true'
 
 const ETHEREUM_COIN_TYPE = 60n
-const REVERSE_LOOKUP_CHUNK_SIZE = 100
+const REVERSE_LOOKUP_CHUNK_SIZE = 50
 
 export type ReverseLookupResult = {
   [address: string]: {
@@ -134,6 +134,8 @@ async function reverseLookupEns(
     }
 
     addressChunk.forEach((address, index) => {
+      if (!chunkResult.value) return
+
       const reverseResult = chunkResult.value[index] as
         | { resolvedName: string; hasName: boolean; needsOffchainLookup: boolean }
         | undefined

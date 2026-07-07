@@ -1,6 +1,9 @@
-import { Interface, toBeHex } from 'ethers'
+/* eslint-disable no-await-in-loop */
+/* eslint-disable no-continue */
+/* eslint-disable no-constant-condition */
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { toBeHex } from 'ethers'
+
 import { EIP7702Auth } from '../../consts/7702'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -10,7 +13,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import wait from '../../utils/wait'
 import { BaseAccount } from '../account/BaseAccount'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp } from '../accountOp/accountOp'
 import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { DecodedError } from '../errorDecoder/types'
@@ -18,7 +21,7 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { fetchNonce } from '../userOperation/fetchEntryPointNonce'
 import { UserOperation } from '../userOperation/types'
-import { getUserOperation } from '../userOperation/userOperation'
+import { getUserOpCalldata, getUserOperation } from '../userOperation/userOperation'
 import { getSigForCalculations } from './estimateHelpers'
 import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
 
@@ -153,13 +156,12 @@ export async function bundlerEstimate(
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
-  const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.signature = getSigForCalculations()
 
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  userOp.callData = getUserOpCalldata(account, op, accountState)
   const paymaster = await paymasterFactory.create(op, userOp, account, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  userOp.callData = getUserOpCalldata(account, localOp, accountState)
   const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {
@@ -200,7 +202,9 @@ export async function bundlerEstimate(
     // try again if the error is 4337_INVALID_NONCE and network is not ETH
     if (
       estimations.nonFatalErrors.length &&
-      estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
+      estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
+      // this does not apply for safe accounts
+      !account.safeCreation
     ) {
       flags.has4337NonceDiscrepancy = true
 

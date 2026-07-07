@@ -17,7 +17,12 @@ import { Account, AccountId, AccountPreferences } from './account'
 import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
 import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
+<<<<<<< HEAD
 import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
+=======
+import { Dapp, RecentDappEntry } from './dapp'
+import { Domains } from './domains'
+>>>>>>> v2
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
@@ -105,12 +110,17 @@ export type StorageProps = {
     addresses: string[]
   }
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
+  // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
+  // don't need to be re-resolved after a service worker restart.
+  domainsCache: Domains
   flags: Partial<FeatureFlags>
   isDefaultWallet: boolean
   shouldSkipTransactionQueuedModal: boolean
   isBatchingEnabled: boolean
   surveysRespondedTo: string[]
   functionSelectors: Selectors
+  // Per-controller debug logging toggles. Only enabled ones are stored
+  debugLogNamespaces: Record<string, boolean>
 }
 
 export interface Storage {
