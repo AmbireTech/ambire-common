@@ -1936,13 +1936,13 @@ export class SignAccountOpController
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
     const { haveCallsChanged = false } = opts || {}
 
-    // we want to restart the interval if signAccountOp is for a signed Safe.
-    // the reason for this: there could be multiple signed Safe txns with
+    // we want to restart the interval if signAccountOp is for a Safe.
+    // the reason for this: there could be multiple Safe txns with
     // the same nonce waiting to be broadcast. The may want to check each
     // out in quick succession. If he does 1 -> 2 -> 1, calls would not
     // have changed on 1, but the simulation from 2 will persist as sadly,
     // the simulation is account based, not accountOp based
-    const isSignedSafe = !!this.account.safeCreation && !!this.accountOp.signed?.length
+    const isSafe = !!this.account.safeCreation
 
     this.#stopRefetching = false
     this.#reestimateCounter = 0
@@ -1952,7 +1952,7 @@ export class SignAccountOpController
         !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
     })
 
-    if (haveCallsChanged || isSignedSafe) {
+    if (haveCallsChanged || isSafe) {
       // The simulateAndEstimateOrSimulateInterval must be restarted if the calls have changed
       // as that forces an immediate reestimation. start() does nothing
       // if the interval is already running.
