@@ -127,6 +127,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   static convertSiweToViemFormat(parsedSiweMessage: SiweMessage): SiweMessageType {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { expirationTime, notBefore, issuedAt, address, ...viemFormatParsedMessage } =
       parsedSiweMessage
 
@@ -162,6 +163,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       // Quick check to see if it looks like a SIWE message at all
       if (messageString.match(prefixRegex) === null) return null
     } catch (e) {
+      console.error('Error parsing message:', e, 'Original message:', message)
       return null
     }
 
@@ -336,6 +338,11 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
       if (accountPolicies.length === 0) return
 
+      this.debugLog(
+        `Revoking auto-login policy for ${accountAddress} on ${policyDomain}`,
+        policyUriPrefix
+      )
+
       this.#policiesByAccount[accountAddress] = accountPolicies.filter(
         (p) => !(p.domain === policyDomain && p.uriPrefix === policyUriPrefix)
       )
@@ -348,6 +355,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     await this.initialLoadPromise
 
     await this.withStatus('revokeAllPoliciesForDomain', async () => {
+      this.debugLog(`Revoking all auto-login policies for ${policyDomain}`, policyUriPrefix)
+
       Object.keys(this.#policiesByAccount).forEach((accountAddress) => {
         const accountPolicies = this.#policiesByAccount[accountAddress] || []
 
@@ -380,6 +389,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     }
 
     const policy = this.#createOrUpdatePolicyFromSiwe(parsedSiwe, { autoLoginDuration })
+    this.debugLog(
+      `Auto-login policy created/updated for ${parsedSiwe.address} on ${parsedSiwe.domain}`,
+      policy
+    )
     await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
     this.emitUpdate()
 
@@ -394,6 +407,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     const accountKeys = this.#keystore.getAccountKeys(accountData)
 
     const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys, accountData)
+
+    this.debugLog(
+      `Auto-login status for ${parsedSiwe.address} on ${parsedSiwe.domain}: ${policyStatus}`
+    )
 
     switch (policyStatus) {
       case 'valid-policy':
@@ -441,6 +458,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     this.#signMessage.setSigners([{ addr: key.addr, type: key.type }])
 
     await this.#signMessage.sign()
+
+    this.debugLog(
+      `Auto-login signed message for ${messageToSign.accountAddr} on chain ${messageToSign.chainId}`
+    )
 
     return this.#signMessage.signedMessage
   }

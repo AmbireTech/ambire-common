@@ -1,6 +1,7 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+import { TransferDebugFlow } from '@/libs/transfer/debug'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
@@ -88,7 +89,10 @@ type SignAccountOpControllerMethods = {
     : never]: SignAccountOpController[K]
 }
 
-export class TransferController extends EventEmitter implements ITransferController {
+export class TransferController
+  extends EventEmitter<TransferDebugFlow>
+  implements ITransferController
+{
   #callRelayer: BindedRelayerCall
 
   #storage: IStorageController
@@ -293,6 +297,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.emitUpdate()
       }
 
+      this.debugLog('Keeping existing form state on transfer enter', view)
+
       return
     }
 
@@ -303,6 +309,13 @@ export class TransferController extends EventEmitter implements ITransferControl
             chainId: String(searchParams.chainId)
           }
         : undefined
+
+    this.debugLog('Entering transfer screen, resetting form state', () => ({
+      view,
+      prevIsTopUp: this.isTopUp,
+      nextIsTopUp,
+      tokenParams
+    }))
 
     this.isTopUp = nextIsTopUp
     this.#setTokens()
@@ -512,6 +525,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (shouldDestroyAccountOp) {
       this.destroySignAccountOp()
     }
+
+    this.debugLog(
+      'Form reset with resetForm',
+      {
+        shouldDestroyAccountOp
+      },
+      { flow: 'lifecycle' }
+    )
 
     this.emitUpdate()
   }
@@ -928,6 +949,20 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (desiredAmount === 0n || currentAmount === desiredAmount) return false
 
+    this.debugLog(
+      'Syncing amount with fee reservation',
+      () => ({
+        currentAmount: formatUnits(currentAmount, this.selectedToken!.decimals),
+        desiredAmount: formatUnits(desiredAmount, this.selectedToken!.decimals),
+        totalTokenAmount: formatUnits(totalTokenAmount, this.selectedToken!.decimals),
+        fee: formatUnits(fee, this.selectedToken!.decimals),
+        reservedFee: formatUnits(reservedFee, this.selectedToken!.decimals),
+        shouldReserveFee,
+        isMaxAmountSelected: this.#isMaxAmountSelected
+      }),
+      { flow: 'accountOp' }
+    )
+
     this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.syncSignAccountOp()
@@ -1014,6 +1049,19 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress) || !this.isFormValid)
       return
 
+    this.debugLog(
+      'Syncing signAccountOpController',
+      () => ({
+        selectedAccount: this.#selectedAccount.account?.addr,
+        selectedToken: this.#selectedToken,
+        amount: this.amount,
+        amountInFiat: this.amountInFiat,
+        recipientAddress,
+        willUpdateExistingSignAccountOp: !!this.signAccountOpController
+      }),
+      { flow: 'accountOp' }
+    )
+
     const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
     const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
     const userRequestParams = getTransferRequestParams({
@@ -1055,6 +1103,15 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
+    this.debugLog(
+      'initSignAccOp() called',
+      () => ({
+        calls,
+        topUpAmount,
+        hasSignAccountOpController: !!this.signAccountOpController
+      }),
+      { flow: 'accountOp' }
+    )
     if (!this.#selectedAccount.account || this.signAccountOpController) return
 
     const network = this.#networks.networks.find(
@@ -1175,11 +1232,26 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   setUserProceeded(hasProceeded: boolean) {
+    this.debugLog(
+      'hasProceed changed',
+      () => ({
+        hasProceeded,
+        signAccountOpController: !!this.signAccountOpController
+      }),
+      { flow: 'accountOp' }
+    )
     this.hasProceeded = hasProceeded
     this.emitUpdate()
   }
 
   destroySignAccountOp() {
+    this.debugLog(
+      'destroySignAccountOp() called',
+      () => ({
+        hasSignAccountOpController: !!this.signAccountOpController
+      }),
+      { flow: 'accountOp' }
+    )
     if (this.signAccountOpController) {
       this.signAccountOpController.destroy()
       this.signAccountOpController = null
@@ -1189,6 +1261,15 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   destroyLatestBroadcastedAccountOp(skipUpdate: boolean = false) {
+    this.debugLog(
+      'latestBroadcastedAccountOp destroyed',
+      () => ({
+        latestBroadcastedAccountOp: this.latestBroadcastedAccountOp,
+        latestBroadcastedToken: this.latestBroadcastedToken,
+        skipUpdate
+      }),
+      { flow: 'accountOp' }
+    )
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
 
@@ -1203,13 +1284,36 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
-    if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
+    const shouldSkipUnload = this.hasPersistedState && !isNavigateOut && viewType === 'popup'
+
+    this.debugLog(
+      'Unloading transfer screen',
+      () => ({
+        shouldSkipUnload,
+        isNavigateOut,
+        viewType,
+        hasPersistedState: this.hasPersistedState
+      }),
+      { flow: 'lifecycle' }
+    )
+
+    if (shouldSkipUnload) return
 
     this.reset({ destroyAccountOp: true })
   }
 
   reset(opts?: { destroyAccountOp: boolean }) {
     const { destroyAccountOp = false } = opts || {}
+
+    this.debugLog(
+      'Resetting transfer controller with reset()',
+      () => ({
+        destroyAccountOp,
+        hasSignAccountOpController: !!this.signAccountOpController,
+        hasPersistedState: this.hasPersistedState
+      }),
+      { flow: 'lifecycle' }
+    )
 
     this.#tokens = []
     this.selectedToken = null

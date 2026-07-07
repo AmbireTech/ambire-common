@@ -41,7 +41,12 @@ describe('debugLogger', () => {
 
   describe('toggle gating', () => {
     it('stays completely silent for a controller that is switched off', () => {
-      debugLog('PortfolioController', 'simulation', 'simulating account op', { accountOps: 2 })
+      debugLog(
+        'PortfolioController',
+        'simulating account op',
+        { accountOps: 2 },
+        { flow: 'simulation' }
+      )
 
       expect(logSpy).not.toHaveBeenCalled()
       expect(debugLoggerRegistry.read('PortfolioController')).toHaveLength(0)
@@ -50,18 +55,18 @@ describe('debugLogger', () => {
     it('does not evaluate the lazy payload function while disabled', () => {
       const buildExpensivePayload = jest.fn(() => ({ tokens: 5000 }))
 
-      debugLog('PortfolioController', 'fetch', 'portfolio fetched', buildExpensivePayload)
+      debugLog('PortfolioController', 'portfolio fetched', buildExpensivePayload, { flow: 'fetch' })
 
       expect(buildExpensivePayload).not.toHaveBeenCalled()
     })
 
     it('starts logging the moment the controller is enabled and goes quiet again when disabled', () => {
       debugLoggerRegistry.setEnabled('AccountsController', true)
-      debugLog('AccountsController', 'update', 'accounts reloaded', { count: 3 })
+      debugLog('AccountsController', 'accounts reloaded', { count: 3 }, { flow: 'update' })
       expect(logSpy).toHaveBeenCalledTimes(1)
 
       debugLoggerRegistry.setEnabled('AccountsController', false)
-      debugLog('AccountsController', 'update', 'accounts reloaded again', { count: 4 })
+      debugLog('AccountsController', 'accounts reloaded again', { count: 4 }, { flow: 'update' })
       expect(logSpy).toHaveBeenCalledTimes(1)
     })
   })
@@ -70,7 +75,7 @@ describe('debugLogger', () => {
     beforeEach(() => debugLoggerRegistry.setEnabled('PortfolioController', true))
 
     it('tags the line with the Controller:flow scope and appends the serialized payload', () => {
-      debugLog('PortfolioController', 'blacklist', 'filtered token', USDC)
+      debugLog('PortfolioController', 'filtered token', USDC, { flow: 'blacklist' })
 
       const expected =
         `Debug: PortfolioController:blacklist (at ${NOW}) filtered token ` +
@@ -79,18 +84,18 @@ describe('debugLogger', () => {
       expect(debugLoggerRegistry.read('PortfolioController')).toEqual([expected])
     })
 
-    it('marks the line as having no payload when none is given', () => {
-      debugLog('PortfolioController', 'update', 'update queued')
+    it('omits the flow tag when no flow is given', () => {
+      debugLog('PortfolioController', 'update queued')
 
       expect(logSpy).toHaveBeenCalledWith(
-        `Debug: PortfolioController:update (at ${NOW}) update queued No payload (perhaps an error?)`
+        `Debug: PortfolioController (at ${NOW}) update queued No payload (perhaps an error?)`
       )
     })
 
     it('resolves a thunk payload so callers can defer building it until logging is on', () => {
       const buildPayload = jest.fn(() => ({ symbol: 'DAI', chainId: '1' }))
 
-      debugLog('PortfolioController', 'learnedTokens', 'token learned', buildPayload)
+      debugLog('PortfolioController', 'token learned', buildPayload, { flow: 'learnedTokens' })
 
       expect(buildPayload).toHaveBeenCalledTimes(1)
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
@@ -103,10 +108,9 @@ describe('debugLogger', () => {
 
       debugLog(
         'SignAccountOpController',
-        'broadcast',
         'user op submitted',
         { hash: '0xfeed' },
-        { traceId: 'op-7f3a' }
+        { flow: 'broadcast', traceId: 'op-7f3a' }
       )
 
       expect(debugLoggerRegistry.read('SignAccountOpController')[0]).toBe(
@@ -117,7 +121,10 @@ describe('debugLogger', () => {
     it('routes warn-level lines to console.warn instead of console.log', () => {
       debugLoggerRegistry.setEnabled('GasPriceController', true)
 
-      debugLog('GasPriceController', 'fetch', 'rpc gas estimate slow', undefined, { level: 'warn' })
+      debugLog('GasPriceController', 'rpc gas estimate slow', undefined, {
+        flow: 'fetch',
+        level: 'warn'
+      })
 
       expect(warnSpy).toHaveBeenCalledWith(
         `Debug: GasPriceController:fetch (at ${NOW}) rpc gas estimate slow No payload (perhaps an error?)`
@@ -127,7 +134,7 @@ describe('debugLogger', () => {
 
     it('stores the serialized string in the buffer, not the live object reference', () => {
       const mutablePayload = { symbol: 'USDC', chainId: '1' }
-      debugLog('PortfolioController', 'fetch', 'fetched', mutablePayload)
+      debugLog('PortfolioController', 'fetched', mutablePayload, { flow: 'fetch' })
       mutablePayload.symbol = 'MUTATED'
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toContain('"symbol":"USDC"')
@@ -139,7 +146,12 @@ describe('debugLogger', () => {
     beforeEach(() => debugLoggerRegistry.setEnabled('PortfolioController', true))
 
     it('serializes a bigint amount without throwing', () => {
-      debugLog('PortfolioController', 'fetch', 'native balance', { wei: 1500000000000000000n })
+      debugLog(
+        'PortfolioController',
+        'native balance',
+        { wei: 1500000000000000000n },
+        { flow: 'fetch' }
+      )
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
         `Debug: PortfolioController:fetch (at ${NOW}) native balance {"wei":{"$bigint":"1500000000000000000"}}`
@@ -152,7 +164,7 @@ describe('debugLogger', () => {
       })
 
       expect(() =>
-        debugLog('PortfolioController', 'fetch', 'reading balances', explodingThunk)
+        debugLog('PortfolioController', 'reading balances', explodingThunk, { flow: 'fetch' })
       ).not.toThrow()
 
       expect(errorSpy).toHaveBeenCalledWith(
@@ -171,7 +183,7 @@ describe('debugLogger', () => {
         }
       }
 
-      debugLog('PortfolioController', 'fetch', 'reading balance', payloadThatThrowsOnRead)
+      debugLog('PortfolioController', 'reading balance', payloadThatThrowsOnRead, { flow: 'fetch' })
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
         `Debug: PortfolioController:fetch (at ${NOW}) reading balance [unserializable payload]`
@@ -179,11 +191,16 @@ describe('debugLogger', () => {
     })
 
     it('preserves nested objects and arrays - the token list a portfolio "fetch" log is meant to show', () => {
-      debugLog('PortfolioController', 'fetch', 'portfolio fetched', {
-        chainId: '1',
-        tokens: [USDC, WETH],
-        totalMs: 42
-      })
+      debugLog(
+        'PortfolioController',
+        'portfolio fetched',
+        {
+          chainId: '1',
+          tokens: [USDC, WETH],
+          totalMs: 42
+        },
+        { flow: 'fetch' }
+      )
 
       expect(debugLoggerRegistry.read('PortfolioController')[0]).toBe(
         `Debug: PortfolioController:fetch (at ${NOW}) portfolio fetched ` +
@@ -199,7 +216,7 @@ describe('debugLogger', () => {
     it('caps a namespace at 200 lines, evicting the oldest first', () => {
       debugLoggerRegistry.setEnabled('ActivityController', true)
       for (let i = 0; i < 220; i++) {
-        debugLog('ActivityController', 'submitted', `tx #${i} broadcast`)
+        debugLog('ActivityController', `tx #${i} broadcast`, undefined, { flow: 'submitted' })
       }
 
       const buffer = debugLoggerRegistry.read('ActivityController')
@@ -212,8 +229,8 @@ describe('debugLogger', () => {
       debugLoggerRegistry.setEnabled('PortfolioController', true)
       debugLoggerRegistry.setEnabled('ActivityController', true)
 
-      debugLog('PortfolioController', 'fetch', 'portfolio fetched')
-      debugLog('ActivityController', 'submitted', 'tx broadcast')
+      debugLog('PortfolioController', 'portfolio fetched', undefined, { flow: 'fetch' })
+      debugLog('ActivityController', 'tx broadcast', undefined, { flow: 'submitted' })
 
       expect(debugLoggerRegistry.read('PortfolioController')).toHaveLength(1)
       expect(debugLoggerRegistry.read('ActivityController')).toHaveLength(1)
@@ -222,8 +239,8 @@ describe('debugLogger', () => {
     it('clears one namespace without disturbing the others, and clears everything when called bare', () => {
       debugLoggerRegistry.setEnabled('PortfolioController', true)
       debugLoggerRegistry.setEnabled('ActivityController', true)
-      debugLog('PortfolioController', 'fetch', 'portfolio fetched')
-      debugLog('ActivityController', 'submitted', 'tx broadcast')
+      debugLog('PortfolioController', 'portfolio fetched', undefined, { flow: 'fetch' })
+      debugLog('ActivityController', 'tx broadcast', undefined, { flow: 'submitted' })
 
       debugLoggerRegistry.clear('PortfolioController')
       expect(debugLoggerRegistry.read('PortfolioController')).toHaveLength(0)
@@ -246,7 +263,7 @@ describe('debugLogger', () => {
       const swapAndBridgeLog = createScopedDebugLogger('SwapAndBridgeController')
       debugLoggerRegistry.setEnabled('SwapAndBridgeController', true)
 
-      swapAndBridgeLog('quote', 'fetched route', { provider: 'socket' })
+      swapAndBridgeLog('fetched route', { provider: 'socket' }, { flow: 'quote' })
 
       expect(debugLoggerRegistry.catalog()).toContain('SwapAndBridgeController')
       expect(debugLoggerRegistry.read('SwapAndBridgeController')[0]).toBe(

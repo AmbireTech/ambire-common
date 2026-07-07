@@ -707,11 +707,11 @@ export class PortfolioController
   async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
     this.debugLog(
-      'simulation',
       `${chainId.toString()}: Overriding simulation results for ${accountAddr}`,
       () => ({
         accountOpId: accountOp.id
-      })
+      }),
+      { flow: 'simulation' }
     )
 
     const updatePromise = async () => {
@@ -842,20 +842,24 @@ export class PortfolioController
       networkAlreadyScheduledForAccount.scheduledAt = Date.now()
 
       this.debugLog(
-        'simulation',
         `${chainId.toString()} Debounced scheduled update for ${accountId}`,
         () => ({
           bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
           scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
-        })
+        }),
+        { flow: 'simulation' }
       )
       return
     }
 
-    this.debugLog('simulation', `${chainId.toString()} Scheduled update for ${accountId}`, () => ({
-      bypassServerSideCache,
-      scheduledAt: Date.now()
-    }))
+    this.debugLog(
+      `${chainId.toString()} Scheduled update for ${accountId}`,
+      () => ({
+        bypassServerSideCache,
+        scheduledAt: Date.now()
+      }),
+      { flow: 'simulation' }
+    )
 
     this.#scheduledUpdates[accountId] = [
       ...(this.#scheduledUpdates[accountId] || []),
@@ -910,10 +914,14 @@ export class PortfolioController
     })
 
     if (!accountAddrToUpdate || networksToUpdate.length === 0) return
-    this.debugLog('simulation', `Discarding simulation for ${accountAddrToUpdate}`, () => ({
-      discardedOpIds: accountOps.map((op) => op.id),
-      chainIds: networksToUpdate.map((n) => n.chainId.toString())
-    }))
+    this.debugLog(
+      `Discarding simulation for ${accountAddrToUpdate}`,
+      () => ({
+        discardedOpIds: accountOps.map((op) => op.id),
+        chainIds: networksToUpdate.map((n) => n.chainId.toString())
+      }),
+      { flow: 'simulation' }
+    )
     await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
       accountOps: accountOpsAfterUpdate
     })
@@ -1321,7 +1329,6 @@ export class PortfolioController
     // Request can be skipped altogether
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
       this.debugLog(
-        'discovery',
         `${chainId.toString()}: Skipping portfolio discovery for ${account.addr}`,
         () => ({
           lastUpdate: externalApiHintsResponse?.lastUpdate,
@@ -1329,7 +1336,8 @@ export class PortfolioController
           isManualUpdate,
           bypassServerSideCache,
           hasNonceChangedSinceLastUpdate
-        })
+        }),
+        { flow: 'discovery' }
       )
 
       return null
@@ -1459,14 +1467,14 @@ export class PortfolioController
 
     if (canSkipUpdate) {
       this.debugLog(
-        'update',
         `${network.chainId.toString()} update skipped for ${account.addr}`,
         () => ({
           lastSuccessfulUpdate: accountState[network.chainId.toString()]?.lastSuccessfulUpdate,
           maxDataAgeMs,
           isManualUpdate,
           isLoading: accountState[network.chainId.toString()]?.isLoading
-        })
+        }),
+        { flow: 'update' }
       )
       return [true, null]
     }
@@ -1651,11 +1659,15 @@ export class PortfolioController
       PortfolioController.#getCanSkipUpdate(accountState['defiApps'], defiMaxDataAgeMs)
 
     if (canSkipUpdate) {
-      this.debugLog('defi', 'Skipping DeFi apps update for account', () => ({
-        account: account.addr,
-        lastSuccessfulUpdate: accountState['defiApps']?.lastSuccessfulUpdate,
-        defiMaxDataAgeMs
-      }))
+      this.debugLog(
+        'Skipping DeFi apps update for account',
+        () => ({
+          account: account.addr,
+          lastSuccessfulUpdate: accountState['defiApps']?.lastSuccessfulUpdate,
+          defiMaxDataAgeMs
+        }),
+        { flow: 'defi' }
+      )
       return
     }
 
@@ -1833,14 +1845,14 @@ export class PortfolioController
     learnedTokensHints.push(...defiHints)
 
     this.debugLog(
-      'hints',
       `${chainId.toString()}: hints for ${accountId} (${!isManualUpdate ? 'not ' : ''}enhanced with those of other accounts)`,
       () => ({
         specialErc20Hints,
         specialErc721Hints,
         learnedTokensHints,
         learnedNftsHints
-      })
+      }),
+      { flow: 'hints' }
     )
 
     return {
@@ -1950,11 +1962,15 @@ export class PortfolioController
     const accountState = this.#state[accountId]
 
     const networksToUpdate = networks || this.#networks.networks
-    this.debugLog('update', `Update queued for ${accountId}`, () => ({
-      chainIds: networksToUpdate.map((n) => n.chainId.toString()),
-      hasSimulation: !!simulation,
-      opts
-    }))
+    this.debugLog(
+      `Update queued for ${accountId}`,
+      () => ({
+        chainIds: networksToUpdate.map((n) => n.chainId.toString()),
+        hasSimulation: !!simulation,
+        opts
+      }),
+      { flow: 'update' }
+    )
     await Promise.all([
       this.#getAdditionalPortfolio(accountId, paramsMaxDataAgeMs),
       ...networksToUpdate.map(async (network) => {
@@ -2022,20 +2038,20 @@ export class PortfolioController
 
           if (accountOpsToSimulate?.length)
             this.debugLog(
-              'simulation',
               `${network.chainId.toString()}: Simulated ${accountOpsToSimulate.length} account op(s)`,
               () => ({
                 accountOpIds: accountOpsToSimulate.map((op) => op.id),
                 isSuccessful
-              })
+              }),
+              { flow: 'simulation' }
             )
 
           this.debugLog(
-            'update',
             `${network.chainId.toString()}: Portfolio updated on ${network.name}`,
             () => ({
               isSuccessful
-            })
+            }),
+            { flow: 'update' }
           )
 
           // Learn tokens and nfts from the portfolio lib
@@ -2250,11 +2266,9 @@ export class PortfolioController
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
-    this.debugLog(
-      'learning',
-      `${chainId.toString()}: Added ERC-20 tokens to be learned`,
-      tokensToLearn
-    )
+    this.debugLog(`${chainId.toString()}: Added ERC-20 tokens to be learned`, tokensToLearn, {
+      flow: 'learning'
+    })
 
     this.#toBeLearnedAssets.erc20s[chainIdString] = networkToBeLearnedTokens
     return true
@@ -2343,11 +2357,15 @@ export class PortfolioController
 
           if (tokenId) toBeLearnedAssets[collectionAddress].push(tokenId)
 
-          this.debugLog('learning', `${chainId.toString()}: Added ERC-721 to be learned`, () => ({
-            collectionAddress,
-            tokenId: tokenId.toString(),
-            accountAddr
-          }))
+          this.debugLog(
+            `${chainId.toString()}: Added ERC-721 to be learned`,
+            () => ({
+              collectionAddress,
+              tokenId: tokenId.toString(),
+              accountAddr
+            }),
+            { flow: 'learning' }
+          )
         })
       })
 
@@ -2438,10 +2456,14 @@ export class PortfolioController
       .sort(([, timestampA], [, timestampB]) => timestampB - timestampA)
       .map(([address]) => address)
 
-    this.debugLog('learning', `${chainId.toString()}: Tokens learned for ${key}`, () => ({
-      learned: tokensWithBalance.filter((addr) => addr !== ZeroAddress),
-      currentlyTracked: Object.keys(learnedTokens).length
-    }))
+    this.debugLog(
+      `${chainId.toString()}: Tokens learned for ${key}`,
+      () => ({
+        learned: tokensWithBalance.filter((addr) => addr !== ZeroAddress),
+        currentlyTracked: Object.keys(learnedTokens).length
+      }),
+      { flow: 'learning' }
+    )
 
     // Remove the oldest no longer owned tokens
     if (noLongerOwnedTokens.length > LEARNED_UNOWNED_LIMITS.erc20s) {
@@ -2450,13 +2472,13 @@ export class PortfolioController
         delete learnedTokens[address]
       })
       this.debugLog(
-        'learning',
         `${chainId.toString()}: Discarded learned tokens for ${key}`,
         () => ({
           discarded,
           limit: LEARNED_UNOWNED_LIMITS.erc20s,
           noLongerOwned: noLongerOwnedTokens.length
-        })
+        }),
+        { flow: 'learning' }
       )
     }
 

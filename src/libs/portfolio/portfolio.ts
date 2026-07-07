@@ -388,13 +388,13 @@ export class Portfolio {
           })
         ) {
           portfolioDebugLog(
-            'blacklist',
             `${this.network.chainId.toString()}: Filtered token ${token.symbol}`,
             {
               address: token.address,
               symbol: token.symbol,
               name: token.name
-            }
+            },
+            { flow: 'blacklist' }
           )
           return false
         }
@@ -448,13 +448,13 @@ export class Portfolio {
           })
         ) {
           portfolioDebugLog(
-            'blacklist',
             `${this.network.chainId.toString()}: Filtered collection ${collection.name}`,
             {
               address: collection.address,
               symbol: collection.symbol,
               name: collection.name
-            }
+            },
+            { flow: 'blacklist' }
           )
 
           return acc
