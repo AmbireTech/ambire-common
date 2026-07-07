@@ -65,6 +65,20 @@ export interface SafeResults {
   }
 }
 
+function getTxServiceUrl(chainId: bigint) {
+  if (chainId === 8217n) return 'https://api.safe.global/tx-service/kaia/api'
+  if (chainId === 4663n) return 'https://api.safe.global/tx-service/robinhood/api'
+  return undefined
+}
+
+export function getApiKit(chainId: bigint) {
+  return new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY,
+    txServiceUrl: getTxServiceUrl(chainId)
+  })
+}
+
 export function encodeCalls(op: AccountOp): {
   to: Hex
   value: bigint
@@ -237,11 +251,7 @@ export async function propose(
   ownerSig: Hex,
   safeTxHash: string
 ) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const proposeTransactionProps: ProposeTransactionProps = {
     safeAddress: getAddress(safeAddress),
     safeTxHash: safeTxHash,
@@ -262,10 +272,7 @@ export async function propose(
 }
 
 export async function confirm(chainId: bigint, ownerSig: Hex, safeTxHash: string) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.confirmTransaction(safeTxHash, ownerSig)
 }
 
@@ -275,10 +282,7 @@ export async function addMessage(
   message: string | EIP712TypedData,
   signature: string
 ) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.addMessage(safeAddress, {
     message: normalizeSafeGlobalMessage(message),
     signature
@@ -308,10 +312,7 @@ export async function getMessage({
   threshold: number
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
-  const apiKit = new SafeApiKit({
-    chainId: chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   const msg = await apiKit.getMessage(messageHash).catch((e) => null)
   if (!msg) return null
   return {
@@ -321,10 +322,7 @@ export async function getMessage({
 }
 
 export async function addMessageSignature(chainId: bigint, hash: string, signature: string) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.addMessageSignature(hash, signature)
 }
 
@@ -332,11 +330,7 @@ export async function getPendingTransactions(
   chainId: bigint,
   safeAddress: Hex
 ): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const response = await apiKit.getPendingTransactions(safeAddress, {
     ordering: 'nonce'
   })
@@ -354,11 +348,7 @@ export async function getLatestMessages(
   chainId: bigint,
   safeAddress: Hex
 ): Promise<SafeMessageListResponse & { chainId: bigint; type: string }> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const response = await apiKit.getMessages(safeAddress, {
     ordering: '-created',
     limit: 15
@@ -376,11 +366,7 @@ export async function getTransaction(
   chainId: bigint,
   safeTxnHash: Hex
 ): Promise<SafeMultisigTransactionResponse> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   return apiKit.getTransaction(safeTxnHash)
 }
 
