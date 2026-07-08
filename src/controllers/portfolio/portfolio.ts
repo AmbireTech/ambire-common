@@ -106,8 +106,6 @@ const EXTERNAL_API_HINTS_TTL = {
   static: 60 * 60 * 1000
 }
 const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
-const ETHEREUM_COLIBRI_BLOCK_DIFF_THRESHOLD = 5
-const DEFAULT_COLIBRI_BLOCK_DIFF_THRESHOLD = 10
 
 /**
  * The portfolio controller is responsible for managing and updating the portfolio state.
@@ -143,30 +141,6 @@ const DEFAULT_COLIBRI_BLOCK_DIFF_THRESHOLD = 10
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
-type PortfolioVerificationAttempt =
-  | {
-      status: 'success'
-      result: PortfolioLibGetResult
-    }
-  | {
-      status: 'warning'
-      error: string
-    }
-  | {
-      status: 'stale'
-      blockDiff: number
-    }
-  | null
-
-type SharedPortfolioVerificationBlockTagResult =
-  | {
-      blockTag: number
-    }
-  | Exclude<
-      PortfolioVerificationAttempt,
-      { status: 'success'; result: PortfolioLibGetResult } | null
-    >
-
 export class PortfolioController
   extends EventEmitter<PortfolioDebugFlow>
   implements IPortfolioController
@@ -193,8 +167,6 @@ export class PortfolioController
   hasFundedHotAccount: boolean = false
 
   #portfolioLibs: Map<string, Portfolio>
-
-  #verificationPortfolioLibs: Map<string, Portfolio>
 
   #banner: IBannerController
 
@@ -301,7 +273,6 @@ export class PortfolioController
     this.#state = {}
     this.#queue = {}
     this.#portfolioLibs = new Map()
-    this.#verificationPortfolioLibs = new Map()
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -1030,181 +1001,6 @@ export class PortfolioController
     return this.#portfolioLibs.get(key)!
   }
 
-  initializeVerificationPortfolioLibIfReady(
-    accountId: AccountId,
-    chainId: bigint,
-    network: Network
-  ): Portfolio | null {
-    const provider = this.#verification?.getReadyProvider(chainId)
-    if (!provider) return null
-
-    const key = `${chainId}:${accountId}`
-    const libForKey = this.#verificationPortfolioLibs.get(key)
-
-    if (!libForKey || !libForKey.provider || libForKey.provider !== provider) {
-      this.#verificationPortfolioLibs.set(
-        key,
-        new Portfolio(this.#fetch, provider, network, this.#velcroUrl)
-      )
-    }
-
-    return this.#verificationPortfolioLibs.get(key)!
-  }
-
-  async #verifyPortfolioRequest(
-    account: Account,
-    network: Network,
-    portfolioProps: Partial<GetOptions>,
-    opts: {
-      allHints: Partial<GetOptions>
-      blockTag?: GetOptions['blockTag']
-      fetchPinned: boolean
-      tokenDataCache: TokenDataCache
-      portfolioLib?: Portfolio | null
-    }
-  ): Promise<PortfolioVerificationAttempt> {
-    const portfolioLib =
-      opts.portfolioLib ??
-      this.initializeVerificationPortfolioLibIfReady(account.addr, network.chainId, network)
-    if (!portfolioLib) {
-      return {
-        status: 'warning',
-        error: 'Colibri verifier is not ready'
-      }
-    }
-
-    try {
-      const result = await portfolioLib.get(account.addr, {
-        tokenDataRecency: 60000 * 5,
-        tokenDataCache: new Map(opts.tokenDataCache),
-        fetchPinned: opts.fetchPinned,
-        ...opts.allHints,
-        ...portfolioProps,
-        blockTag: opts.blockTag ?? 'latest',
-        disableAutoDiscovery: true,
-        blacklist: this.#blacklist
-      })
-
-      return {
-        status: 'success',
-        result
-      }
-    } catch (error: any) {
-      this.emitError({
-        level: 'silent',
-        message: `Error while verifying portfolio through Colibri on ${network.name} (${network.chainId}).`,
-        error
-      })
-
-      return {
-        status: 'warning',
-        error: error?.message || 'Colibri could not verify portfolio balances'
-      }
-    }
-  }
-
-  /**
-   * The goal here is to pass the same block tag to the portfolio
-   * for both the RPC call and the colibri verifier call.
-   * Otherwise, token balances might be different and verification fails.
-   *
-   * A larger head gap means the two providers cannot produce a fresh,
-   * comparable result: Colibri lag is a warning, RPC lag is stale balance data.
-   */
-  async #getSharedPortfolioVerificationBlockTag(
-    portfolioLib: Portfolio,
-    verificationPortfolioLib: Portfolio,
-    network: Network
-  ): Promise<SharedPortfolioVerificationBlockTagResult> {
-    const [portfolioBlockNumber, verificationBlockNumber] = await Promise.all([
-      portfolioLib.provider.getBlockNumber(),
-      verificationPortfolioLib.provider.getBlockNumber()
-    ])
-    const blockDiff = Math.abs(portfolioBlockNumber - verificationBlockNumber)
-    const blockDiffThreshold =
-      network.chainId === 1n
-        ? ETHEREUM_COLIBRI_BLOCK_DIFF_THRESHOLD
-        : DEFAULT_COLIBRI_BLOCK_DIFF_THRESHOLD
-
-    if (blockDiff > blockDiffThreshold && portfolioBlockNumber < verificationBlockNumber) {
-      return {
-        status: 'stale',
-        blockDiff
-      }
-    }
-
-    if (blockDiff > blockDiffThreshold && verificationBlockNumber < portfolioBlockNumber) {
-      return {
-        status: 'warning',
-        error: `Colibri is ${blockDiff} blocks behind the RPC latest block`
-      }
-    }
-
-    return {
-      blockTag: Math.min(portfolioBlockNumber, verificationBlockNumber)
-    }
-  }
-
-  #getPortfolioVerificationStatus(
-    portfolioResult: PortfolioLibGetResult,
-    verificationResult: PortfolioVerificationAttempt
-  ): PortfolioVerification | undefined {
-    if (!verificationResult) return undefined
-
-    if (verificationResult.status === 'warning') {
-      return {
-        provider: 'colibri',
-        status: 'warning',
-        error: verificationResult.error,
-        updatedAt: Date.now()
-      }
-    }
-
-    if (verificationResult.status === 'stale') {
-      return {
-        provider: 'colibri',
-        status: 'stale',
-        blockDiff: verificationResult.blockDiff,
-        updatedAt: Date.now()
-      }
-    }
-
-    const rpcTokenAmounts = new Map(
-      portfolioResult.tokens.map((token) => [
-        token.address.toLowerCase(),
-        token.latestAmount ?? token.amount
-      ])
-    )
-    const verifiedTokenAmounts = new Map(
-      verificationResult.result.tokens.map((token) => [token.address.toLowerCase(), token.amount])
-    )
-    const mismatches: string[] = []
-
-    rpcTokenAmounts.forEach((rpcAmount, address) => {
-      const verifiedAmount = verifiedTokenAmounts.get(address) ?? 0n
-      if (rpcAmount !== verifiedAmount) mismatches.push(address)
-    })
-
-    verifiedTokenAmounts.forEach((verifiedAmount, address) => {
-      if (!rpcTokenAmounts.has(address) && verifiedAmount !== 0n) mismatches.push(address)
-    })
-
-    if (mismatches.length) {
-      return {
-        provider: 'colibri',
-        status: 'warning',
-        error: `${mismatches.length} balance(s) differed from the Colibri verified result`,
-        updatedAt: Date.now()
-      }
-    }
-
-    return {
-      provider: 'colibri',
-      status: 'success',
-      updatedAt: Date.now()
-    }
-  }
-
   async getTokenBalancesOnBlock(
     accountId: AccountId,
     chainId: bigint,
@@ -1719,79 +1515,28 @@ export class PortfolioController
       )
       const shouldVerifyPortfolio = !!network.isColibriEnabled && !portfolioProps.simulation
 
+      // Colibri verification runs off the critical path (see below). Show a
+      // loading badge immediately so the UI reflects that a verification is pending.
+      const verification: PortfolioVerification | undefined = shouldVerifyPortfolio
+        ? { provider: 'colibri', status: 'loading', updatedAt: Date.now() }
+        : undefined
+
       if (shouldVerifyPortfolio) {
-        state.verification = {
-          provider: 'colibri',
-          status: 'loading',
-          updatedAt: Date.now()
-        }
+        state.verification = verification
         this.emitUpdate()
       } else {
         delete state.verification
       }
 
-      const verificationPortfolioLib = shouldVerifyPortfolio
-        ? this.initializeVerificationPortfolioLibIfReady(account.addr, network.chainId, network)
-        : null
-      let sharedPortfolioBlockTag: GetOptions['blockTag'] | undefined
-      let verificationSetupAttempt: PortfolioVerificationAttempt = null
-
-      if (shouldVerifyPortfolio && !verificationPortfolioLib) {
-        verificationSetupAttempt = {
-          status: 'warning',
-          error: 'Colibri verifier is not ready'
-        }
-      }
-
-      if (shouldVerifyPortfolio && verificationPortfolioLib) {
-        try {
-          const sharedPortfolioBlockTagResult = await this.#getSharedPortfolioVerificationBlockTag(
-            portfolioLib,
-            verificationPortfolioLib,
-            network
-          )
-
-          if ('blockTag' in sharedPortfolioBlockTagResult) {
-            sharedPortfolioBlockTag = sharedPortfolioBlockTagResult.blockTag
-          } else {
-            verificationSetupAttempt = sharedPortfolioBlockTagResult
-          }
-        } catch (error: any) {
-          this.emitError({
-            level: 'silent',
-            message: `Error while resolving a shared portfolio verification block on ${network.name} (${network.chainId}).`,
-            error
-          })
-
-          verificationSetupAttempt = {
-            status: 'warning',
-            error: error?.message || 'Colibri could not resolve a shared verification block'
-          }
-        }
-      }
-
-      const getVerificationPromise = () =>
-        verificationSetupAttempt
-          ? Promise.resolve(verificationSetupAttempt)
-          : shouldVerifyPortfolio
-            ? this.#verifyPortfolioRequest(account, network, portfolioProps, {
-                allHints,
-                blockTag: sharedPortfolioBlockTag,
-                fetchPinned: !hasNonZeroTokens,
-                tokenDataCache: networkTokenDataCache,
-                portfolioLib: verificationPortfolioLib
-              })
-            : Promise.resolve(null)
-
       // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, customPositionsResult, verificationResult] = await Promise.all([
+      const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           tokenDataCache: networkTokenDataCache,
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
-          blockTag: sharedPortfolioBlockTag ?? 'both',
+          blockTag: 'both',
           disableAutoDiscovery: true,
           blacklist: this.#blacklist
         }),
@@ -1803,10 +1548,8 @@ export class PortfolioController
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
           getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
-        ),
-        getVerificationPromise()
+        )
       ])
-      const verification = this.#getPortfolioVerificationStatus(portfolioResult, verificationResult)
 
       const stkWalletToken =
         portfolioResult.tokens.find(
@@ -1870,8 +1613,44 @@ export class PortfolioController
           defiPositions: newDefiState
         }
       }
+      const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      // Fire-and-forget: verify the just-fetched balances against Colibri without
+      // blocking the portfolio update (balances are already emitted above). The
+      // verdict is written back only if this exact state slot is still current,
+      // guarding against a newer update having replaced it in the meantime.
+      if (shouldVerifyPortfolio && verifiedState && this.#verification) {
+        this.#verification
+          .verifyPortfolio({
+            account,
+            network,
+            rpcResult: portfolioResult,
+            getOptions: {
+              tokenDataRecency: 60000 * 5,
+              fetchPinned: !hasNonZeroTokens,
+              ...allHints,
+              ...portfolioProps,
+              blacklist: this.#blacklist
+            },
+            tokenDataCache: portfolioResult.tokenDataCache
+          })
+          .then((verificationResult) => {
+            if (this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState) return
+
+            verifiedState.verification = verificationResult
+            this.emitUpdate()
+          })
+          .catch((error) => {
+            this.emitError({
+              level: 'silent',
+              message: `Unexpected error while verifying portfolio through Colibri on ${network.name} (${network.chainId}).`,
+              error
+            })
+          })
+      }
+
       return [true, discoveryData]
     } catch (e: any) {
       this.emitError({

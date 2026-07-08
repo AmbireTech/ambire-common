@@ -404,6 +404,8 @@ describe('Portfolio Controller ', () => {
   }
 
   test('Colibri portfolio verification warns on changed balances, stale RPCs and succeeds on matching balances', async () => {
+    // The Colibri head. Its relation to the RPC result block decides whether a
+    // fresh, comparable verification is possible (see VerificationController).
     const verifiedProvider = {
       destroyed: false,
       getBlockNumber: jest.fn<() => Promise<number>>().mockResolvedValue(122)
@@ -412,6 +414,8 @@ describe('Portfolio Controller ', () => {
     const tokenAddress = getAddress('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')
     const rpcAmount = 100n
     let verifiedAmount = 99n
+    // The block the RPC balances were fetched at. Colibri verifies at this exact block.
+    let rpcResultBlockNumber = 122
     const makeToken = (amount: bigint): TokenResult => ({
       symbol: 'USDC',
       name: 'USD Coin',
@@ -428,7 +432,7 @@ describe('Portfolio Controller ', () => {
         isFeeToken: false
       }
     })
-    const makePortfolioLibResult = (amount: bigint): PortfolioLibGetResult => ({
+    const makePortfolioLibResult = (amount: bigint, blockNumber: number): PortfolioLibGetResult => ({
       updateStarted: Date.now(),
       discoveryTime: 0,
       oracleCallTime: 0,
@@ -441,7 +445,7 @@ describe('Portfolio Controller ', () => {
       collectionErrors: [],
       collections: [],
       errors: [],
-      blockNumber: 0,
+      blockNumber,
       beforeNonce: 0n,
       afterNonce: 0n
     })
@@ -469,13 +473,10 @@ describe('Portfolio Controller ', () => {
         })
       )
     ) as unknown as typeof fetch
-    const { controller, verificationCtrl, providersCtrl } = await prepareTest({
+    const { controller, verificationCtrl } = await prepareTest({
       fetchOverride,
       featureFlags: { tokenAndDefiAutoDiscovery: false }
     })
-    const rpcGetBlockNumberMock = jest
-      .spyOn(providersCtrl.providers['1']!, 'getBlockNumber')
-      .mockResolvedValue(123)
 
     jest.spyOn(verificationCtrl, 'getReadyProvider').mockReturnValue(verifiedProvider)
     jest.spyOn(controller as any, 'batchedPortfolioDiscovery').mockResolvedValue({
@@ -486,67 +487,72 @@ describe('Portfolio Controller ', () => {
     jest
       .spyOn(defiPositionsLib, 'getCustomProviderPositions')
       .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
-    const portfolioGetCalls: any[] = []
+    const portfolioGetCalls: { isColibri: boolean; blockTag: unknown }[] = []
     jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
-      portfolioGetCalls.push({ provider: this.provider, blockTag: opts?.blockTag })
+      const isColibri = this.provider === verifiedProvider
+      portfolioGetCalls.push({ isColibri, blockTag: opts?.blockTag })
 
       return Promise.resolve(
-        makePortfolioLibResult(this.provider === verifiedProvider ? verifiedAmount : rpcAmount)
+        isColibri
+          ? makePortfolioLibResult(verifiedAmount, rpcResultBlockNumber)
+          : makePortfolioLibResult(rpcAmount, rpcResultBlockNumber)
       )
     })
 
-    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    // Verification is fire-and-forget, so it resolves after updateSelectedAccount returns.
+    const waitForVerification = async () => {
+      for (let i = 0; i < 50; i += 1) {
+        const current = controller.getAccountPortfolioState(account.addr)['1']?.verification
+        if (current && current.status !== 'loading') return current
+        // eslint-disable-next-line no-await-in-loop
+        await wait(10)
+      }
 
-    expect(portfolioGetCalls).toHaveLength(2)
+      return controller.getAccountPortfolioState(account.addr)['1']?.verification
+    }
+
+    // 1) Balances differ between RPC and Colibri at the same block -> warning.
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const warningVerification = await waitForVerification()
+
+    // The RPC fetch is a plain 'both'; Colibri re-fetches at the RPC result's block.
     expect(portfolioGetCalls).toEqual(
       expect.arrayContaining([
-        { provider: providersCtrl.providers['1'], blockTag: 122 },
-        { provider: verifiedProvider, blockTag: 122 }
+        { isColibri: false, blockTag: 'both' },
+        { isColibri: true, blockTag: 122 }
       ])
     )
-
-    const warningVerification = controller.getAccountPortfolioState(account.addr)['1']?.verification
     expect(warningVerification?.status).toBe('warning')
-    expect(warningVerification?.error).toBe(
-      '1 balance(s) differed from the Colibri verified result'
-    )
+    expect(warningVerification?.error).toBe('1 balance(s) differed from the Colibri verified result')
 
+    // 2) Matching balances -> success.
     verifiedAmount = rpcAmount
     portfolioGetCalls.length = 0
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const successfulVerification = await waitForVerification()
 
-    const successfulVerification = controller.getAccountPortfolioState(account.addr)['1']
-      ?.verification
     expect(successfulVerification?.status).toBe('success')
     expect(successfulVerification?.error).toBeUndefined()
 
+    // 3) Colibri is more than the threshold behind the RPC block -> warning, no Colibri fetch.
+    rpcResultBlockNumber = 123
     verifiedProvider.getBlockNumber.mockResolvedValue(117)
     portfolioGetCalls.length = 0
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const colibriBehindVerification = await waitForVerification()
 
-    expect(portfolioGetCalls).toHaveLength(1)
-    expect(portfolioGetCalls[0]).toEqual({
-      provider: providersCtrl.providers['1'],
-      blockTag: 'both'
-    })
-
-    const colibriBehindVerification = controller.getAccountPortfolioState(account.addr)['1']
-      ?.verification
+    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
     expect(colibriBehindVerification?.status).toBe('warning')
     expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
 
-    rpcGetBlockNumberMock.mockResolvedValue(100)
+    // 4) RPC is more than the threshold behind Colibri -> stale, no Colibri fetch.
+    rpcResultBlockNumber = 100
     verifiedProvider.getBlockNumber.mockResolvedValue(111)
     portfolioGetCalls.length = 0
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const staleVerification = await waitForVerification()
 
-    expect(portfolioGetCalls).toHaveLength(1)
-    expect(portfolioGetCalls[0]).toEqual({
-      provider: providersCtrl.providers['1'],
-      blockTag: 'both'
-    })
-
-    const staleVerification = controller.getAccountPortfolioState(account.addr)['1']?.verification
+    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
     expect(staleVerification?.status).toBe('stale')
     expect(staleVerification?.blockDiff).toBe(11)
   })
