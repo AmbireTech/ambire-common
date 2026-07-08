@@ -11,7 +11,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -41,6 +41,7 @@ import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
+import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
 import { PortfolioController } from './portfolio'
 
 import type { FeatureFlags } from '../../consts/featureFlags'
@@ -55,6 +56,46 @@ networks.forEach((network) => {
 })
 
 const ethereum = networks.find((network) => network.chainId === 1n)!
+const gnosis: Network = {
+  ...ethereum,
+  name: 'Gnosis',
+  nativeAssetSymbol: 'xDAI',
+  nativeAssetName: 'xDAI',
+  rpcUrls: ['https://invictus.ambire.com/gnosis'],
+  selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
+  rpcNoStateOverride: true,
+  chainId: 100n,
+  explorerUrl: 'https://gnosisscan.io',
+  platformId: 'xdai',
+  nativeAssetId: 'xdai',
+  feeOptions: { is1559: false, feeIncrease: 100n },
+  wrappedAddr: '0x6A023ccd1ff6f2045C3309768eAd9E68F978f6e1'
+}
+
+const getAccountOnchainState = (
+  stateAccount: Account,
+  overrides?: Partial<AccountOnchainState>
+): AccountOnchainState => ({
+  accountAddr: stateAccount.addr,
+  isDeployed: true,
+  eoaNonce: null,
+  nonce: 0n,
+  erc4337Nonce: 0n,
+  associatedKeys: stateAccount.associatedKeys,
+  importedAccountKeys: [],
+  balance: 0n,
+  isEOA: false,
+  isErc4337Enabled: false,
+  isErc4337Nonce: false,
+  isV2: false,
+  currentBlock: 0n,
+  isSmarterEoa: false,
+  delegatedContract: null,
+  delegatedContractName: null,
+  threshold: 1,
+  updatedAt: 0,
+  ...overrides
+})
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
@@ -417,12 +458,12 @@ describe('Portfolio Controller ', () => {
     let verifiedAmount = 99n
     // The block the RPC balances were fetched at. Colibri verifies at this exact block.
     let rpcResultBlockNumber = 122
-    const makeToken = (amount: bigint): TokenResult => ({
+    const makeToken = (amount: bigint, chainId: bigint): TokenResult => ({
       symbol: 'USDC',
       name: 'USD Coin',
       decimals: 6,
       address: tokenAddress,
-      chainId: 1n,
+      chainId,
       amount,
       priceIn: [{ baseCurrency: 'usd', price: 1 }],
       marketDataIn: [],
@@ -435,14 +476,15 @@ describe('Portfolio Controller ', () => {
     })
     const makePortfolioLibResult = (
       amount: bigint,
-      blockNumber: number
+      blockNumber: number,
+      chainId: bigint
     ): PortfolioLibGetResult => ({
       updateStarted: Date.now(),
       discoveryTime: 0,
       oracleCallTime: 0,
       priceUpdateTime: 0,
       tokenDataCache: new Map(),
-      tokens: [makeToken(amount)],
+      tokens: [makeToken(amount, chainId)],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
       tokenErrors: [],
@@ -477,12 +519,13 @@ describe('Portfolio Controller ', () => {
         })
       )
     ) as unknown as typeof fetch
-    const { controller, verificationCtrl } = await prepareTest({
+    const { controller, providersCtrl, verificationCtrl } = await prepareTest({
       fetchOverride,
       featureFlags: { tokenAndDefiAutoDiscovery: false }
     })
 
     jest.spyOn(verificationCtrl, 'getReadyProvider').mockReturnValue(verifiedProvider)
+    const verifyPortfolioSpy = jest.spyOn(verificationCtrl, 'verifyPortfolio')
     jest.spyOn(controller as any, 'batchedPortfolioDiscovery').mockResolvedValue({
       data: { hints: null, defi: null, otherNetworksDefiCounts: {} },
       discoveryTime: 0,
@@ -494,25 +537,26 @@ describe('Portfolio Controller ', () => {
     const portfolioGetCalls: { isColibri: boolean; blockTag: unknown }[] = []
     jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
       const isColibri = this.provider === verifiedProvider
+      const chainId = this.network.chainId
       portfolioGetCalls.push({ isColibri, blockTag: opts?.blockTag })
 
       return Promise.resolve(
         isColibri
-          ? makePortfolioLibResult(verifiedAmount, rpcResultBlockNumber)
-          : makePortfolioLibResult(rpcAmount, rpcResultBlockNumber)
+          ? makePortfolioLibResult(verifiedAmount, rpcResultBlockNumber, chainId)
+          : makePortfolioLibResult(rpcAmount, rpcResultBlockNumber, chainId)
       )
     })
 
     // Verification is fire-and-forget, so it resolves after updateSelectedAccount returns.
-    const waitForVerification = async () => {
+    const waitForVerification = async (chainId = '1') => {
       for (let i = 0; i < 50; i += 1) {
-        const current = controller.getAccountPortfolioState(account.addr)['1']?.verification
+        const current = controller.getAccountPortfolioState(account.addr)[chainId]?.verification
         if (current && current.status !== 'loading') return current
 
         await wait(10)
       }
 
-      return controller.getAccountPortfolioState(account.addr)['1']?.verification
+      return controller.getAccountPortfolioState(account.addr)[chainId]?.verification
     }
 
     // 1) Balances differ between RPC and Colibri at the same block -> warning.
@@ -540,7 +584,35 @@ describe('Portfolio Controller ', () => {
     expect(successfulVerification?.status).toBe('success')
     expect(successfulVerification?.error).toBeUndefined()
 
-    // 3) Colibri is more than the threshold behind the RPC block -> warning, no Colibri fetch.
+    // 3) If Colibri is slightly behind, wait for it to catch up and verify the RPC block.
+    verifiedProvider.getBlockNumber.mockReset()
+    verifiedProvider.getBlockNumber.mockResolvedValueOnce(121).mockResolvedValueOnce(122)
+    rpcResultBlockNumber = 122
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    jest.useFakeTimers()
+    try {
+      await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+      await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
+      await Promise.resolve()
+
+      const catchUpVerification =
+        controller.getAccountPortfolioState(account.addr)['1']?.verification
+      expect(catchUpVerification?.status).toBe('success')
+      expect(catchUpVerification?.error).toBeUndefined()
+      expect(verifiedProvider.getBlockNumber).toHaveBeenCalledTimes(2)
+      expect(portfolioGetCalls).toEqual(
+        expect.arrayContaining([
+          { isColibri: false, blockTag: 'both' },
+          { isColibri: true, blockTag: 122 }
+        ])
+      )
+    } finally {
+      jest.useRealTimers()
+    }
+
+    // 4) Colibri is more than the threshold behind the RPC block -> warning, no Colibri fetch.
     rpcResultBlockNumber = 123
     verifiedProvider.getBlockNumber.mockResolvedValue(117)
     portfolioGetCalls.length = 0
@@ -551,7 +623,7 @@ describe('Portfolio Controller ', () => {
     expect(colibriBehindVerification?.status).toBe('warning')
     expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
 
-    // 4) RPC is more than the threshold behind Colibri -> stale, no Colibri fetch.
+    // 5) RPC is more than the threshold behind Colibri -> stale, no Colibri fetch.
     rpcResultBlockNumber = 100
     verifiedProvider.getBlockNumber.mockResolvedValue(111)
     portfolioGetCalls.length = 0
@@ -561,6 +633,78 @@ describe('Portfolio Controller ', () => {
     expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
     expect(staleVerification?.status).toBe('stale')
     expect(staleVerification?.blockDiff).toBe(11)
+
+    // 6) Gnosis is also Colibri-supported: changed balances warn.
+    const colibriGnosis = { ...gnosis, isColibriEnabled: true }
+    await providersCtrl.setProvider(colibriGnosis)
+    verifiedProvider.getBlockNumber.mockResolvedValue(222)
+    rpcResultBlockNumber = 222
+    verifiedAmount = 99n
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(account.addr, [colibriGnosis])
+    const gnosisWarningVerification = await waitForVerification('100')
+
+    expect(portfolioGetCalls).toEqual(
+      expect.arrayContaining([
+        { isColibri: false, blockTag: 'both' },
+        { isColibri: true, blockTag: 222 }
+      ])
+    )
+    expect(gnosisWarningVerification?.status).toBe('warning')
+    expect(gnosisWarningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
+
+    // 7) Gnosis matching balances succeed.
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriGnosis])
+    const gnosisSuccessfulVerification = await waitForVerification('100')
+
+    expect(gnosisSuccessfulVerification?.status).toBe('success')
+    expect(gnosisSuccessfulVerification?.error).toBeUndefined()
+
+    // 8) Simulated portfolio updates must skip Colibri verification.
+    const verifyCallsBeforeSimulation = verifyPortfolioSpy.mock.calls.length
+    const simulatedAccountOp: AccountOp = {
+      id: 'colibri-simulation-skip',
+      accountAddr: account.addr,
+      signingKeyAddr: account.associatedKeys[0]!,
+      signingKeyType: 'internal',
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce: 0n,
+      signature: '0x',
+      calls: []
+    }
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(
+      account.addr,
+      [colibriEthereum],
+      {
+        accountOps: { ['1']: [simulatedAccountOp] },
+        states: { ['1']: getAccountOnchainState(account) }
+      },
+      { isManualUpdate: true }
+    )
+
+    expect(verifyPortfolioSpy).toHaveBeenCalledTimes(verifyCallsBeforeSimulation)
+    expect(controller.getAccountPortfolioState(account.addr)['1']?.verification).toBeUndefined()
+    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
+
+    // 9) Unexpected verifier failures should resolve the pending loading state to a warning.
+    verifyPortfolioSpy.mockRejectedValueOnce(new Error('Colibri verification crashed'))
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const rejectedVerification = await waitForVerification()
+
+    expect(rejectedVerification?.status).toBe('warning')
+    expect(rejectedVerification?.error).toBe('Colibri could not verify portfolio balances')
+    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
   })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {

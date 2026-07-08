@@ -16,6 +16,8 @@ import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const SYNC_HEALTH_CHECK_RETRY_INTERVAL = 10000
+export const COLIBRI_CATCH_UP_RETRY_INTERVAL = 3000
+export const COLIBRI_CATCH_UP_RETRIES = 5
 
 // When comparing the RPC head with the Colibri head, allow a small gap before
 // declaring the data non-comparable. Ethereum blocks are ~12s apart, so a
@@ -152,10 +154,12 @@ export class VerificationController extends EventEmitter {
    * decides whether a fresh, comparable result is possible at all:
    * - RPC far behind Colibri -> `stale` (the shown balances are old)
    * - Colibri far behind the RPC -> `warning` (cannot verify)
-   * - Colibri slightly behind the RPC -> `loading` (retry on the next update)
+   * - Colibri slightly behind the RPC -> wait briefly for Colibri to catch up,
+   *   then verify or report a warning
    */
   async verifyPortfolio(params: VerifyPortfolioParams): Promise<PortfolioVerification> {
     const { account, network, rpcResult, getOptions, tokenDataCache } = params
+    const rpcBlockNumber = BigInt(rpcResult.blockNumber)
     const updatedAt = Date.now()
 
     const provider = this.getReadyProvider(network.chainId)
@@ -173,9 +177,19 @@ export class VerificationController extends EventEmitter {
         ? ETHEREUM_COLIBRI_BLOCK_DIFF_THRESHOLD
         : DEFAULT_COLIBRI_BLOCK_DIFF_THRESHOLD
 
-    let verificationBlockNumber: number
+    let verificationBlockNumber = 0n
     try {
-      verificationBlockNumber = await provider.getBlockNumber()
+      for (let retry = 0; retry <= COLIBRI_CATCH_UP_RETRIES; retry += 1) {
+        verificationBlockNumber = BigInt(await provider.getBlockNumber())
+
+        if (verificationBlockNumber >= rpcResult.blockNumber) break
+
+        const blockDiff = rpcBlockNumber - verificationBlockNumber
+        if (blockDiff > blockDiffThreshold) break
+        if (retry === COLIBRI_CATCH_UP_RETRIES) break
+
+        await wait(COLIBRI_CATCH_UP_RETRY_INTERVAL)
+      }
     } catch (error: any) {
       this.emitError({
         level: 'silent',
@@ -186,30 +200,24 @@ export class VerificationController extends EventEmitter {
       return {
         provider: 'colibri',
         status: 'warning',
-        error: error?.message || 'Colibri could not resolve its latest block',
+        error: 'Colibri could not resolve its latest block',
         updatedAt
       }
     }
 
-    const rpcBlockNumber = rpcResult.blockNumber
-    const blockDiff = Math.abs(rpcBlockNumber - verificationBlockNumber)
+    const blockDiff = Math.abs(Number(rpcBlockNumber - verificationBlockNumber))
 
     if (rpcBlockNumber < verificationBlockNumber && blockDiff > blockDiffThreshold) {
       return { provider: 'colibri', status: 'stale', blockDiff, updatedAt }
     }
 
     if (verificationBlockNumber < rpcBlockNumber) {
-      if (blockDiff > blockDiffThreshold) {
-        return {
-          provider: 'colibri',
-          status: 'warning',
-          error: `Colibri is ${blockDiff} blocks behind the RPC latest block`,
-          updatedAt
-        }
+      return {
+        provider: 'colibri',
+        status: 'warning',
+        error: `Colibri is ${blockDiff} blocks behind the RPC latest block`,
+        updatedAt
       }
-
-      // Colibri cannot prove a block it hasn't reached yet; retry on the next update.
-      return { provider: 'colibri', status: 'loading', updatedAt }
     }
 
     const portfolioLib = this.#getVerificationPortfolioLib(account, network, provider)
@@ -219,7 +227,7 @@ export class VerificationController extends EventEmitter {
       verifiedResult = await portfolioLib.get(account.addr, {
         ...getOptions,
         tokenDataCache: new Map(tokenDataCache),
-        blockTag: rpcBlockNumber,
+        blockTag: Number(rpcBlockNumber),
         disableAutoDiscovery: true
       })
     } catch (error: any) {
@@ -232,7 +240,7 @@ export class VerificationController extends EventEmitter {
       return {
         provider: 'colibri',
         status: 'warning',
-        error: error?.message || 'Colibri could not verify portfolio balances',
+        error: 'Colibri could not verify portfolio balances',
         updatedAt
       }
     }

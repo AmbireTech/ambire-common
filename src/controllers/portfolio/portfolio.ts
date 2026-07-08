@@ -1583,6 +1583,16 @@ export class PortfolioController
               message: `Unexpected error while verifying portfolio through Colibri on ${network.name} (${network.chainId}).`,
               error
             })
+
+            if (this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState) return
+
+            verifiedState.verification = {
+              provider: 'colibri',
+              status: 'warning',
+              error: 'Colibri could not verify portfolio balances',
+              updatedAt: Date.now()
+            }
+            this.emitUpdate()
           })
       }
 
