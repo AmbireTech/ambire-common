@@ -47,9 +47,9 @@ import {
   getSafeTypedData,
   getTypedData,
   getVerifyMessageSignature,
-  verifyMessage,
   wrapWallet
 } from './signMessage'
+import { verifyMessage } from './verifyMessage'
 
 const ethereumNetwork = networks.find((n) => n.chainId === 1n)!
 const polygonNetwork = networks.find((n) => n.chainId === 137n)!
