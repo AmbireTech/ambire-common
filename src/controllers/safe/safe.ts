@@ -1,10 +1,6 @@
 import { toBeHex } from 'ethers'
 
-import SafeApiKit, {
-  SafeCreationInfoResponse,
-  SafeInfoResponse,
-  SafeMessage
-} from '@safe-global/api-kit'
+import { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
 import { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
@@ -20,6 +16,7 @@ import {
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
+  getApiKit,
   getMessage,
   SafeResults
 } from '../../libs/safe/safe'
@@ -131,10 +128,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       return
     }
 
-    const apiKit = new SafeApiKit({
-      chainId: deployedOn.chainId,
-      apiKey: process.env.SAFE_API_KEY
-    })
+    const apiKit = getApiKit(deployedOn.chainId)
     const [safeInfo, safeCreationInfo]: [
       SafeInfoResponse | Error,
       SafeCreationInfoResponse | Error

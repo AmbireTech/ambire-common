@@ -261,7 +261,8 @@ export class Paymaster extends AbstractPaymaster {
       return {
         success: true,
         paymaster: isAmbirePaymaster ? AMBIRE_PAYMASTER : response.paymaster,
-        paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData
+        paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData,
+        signature: isAmbirePaymaster ? response.data.signature : undefined
       }
     } catch (e: any) {
       if (e.message === 'Ambire relayer error timeout') {
