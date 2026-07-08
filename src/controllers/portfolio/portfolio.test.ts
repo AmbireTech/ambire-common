@@ -433,7 +433,10 @@ describe('Portfolio Controller ', () => {
         isFeeToken: false
       }
     })
-    const makePortfolioLibResult = (amount: bigint, blockNumber: number): PortfolioLibGetResult => ({
+    const makePortfolioLibResult = (
+      amount: bigint,
+      blockNumber: number
+    ): PortfolioLibGetResult => ({
       updateStarted: Date.now(),
       discoveryTime: 0,
       oracleCallTime: 0,
@@ -505,7 +508,7 @@ describe('Portfolio Controller ', () => {
       for (let i = 0; i < 50; i += 1) {
         const current = controller.getAccountPortfolioState(account.addr)['1']?.verification
         if (current && current.status !== 'loading') return current
-        // eslint-disable-next-line no-await-in-loop
+
         await wait(10)
       }
 
@@ -524,7 +527,9 @@ describe('Portfolio Controller ', () => {
       ])
     )
     expect(warningVerification?.status).toBe('warning')
-    expect(warningVerification?.error).toBe('1 balance(s) differed from the Colibri verified result')
+    expect(warningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
 
     // 2) Matching balances -> success.
     verifiedAmount = rpcAmount

@@ -72,7 +72,6 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
-  PortfolioLibGetResult,
   PortfolioVerification,
   ScheduledUpdates,
   TemporaryTokens,

@@ -4,10 +4,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
-import {
-  getDefaultColibriProverUrl,
-  isColibriProviderAvailable
-} from '../../libs/networks/colibri'
+import { getDefaultColibriProverUrl, isColibriProviderAvailable } from '../../libs/networks/colibri'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 import {
   PortfolioLibGetResult,
