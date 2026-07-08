@@ -1383,6 +1383,117 @@ describe('DappsController', () => {
     })
   })
 
+  describe('disconnectAllDapps', () => {
+    const connectedNonCustomDapp = (id: string): Dapp =>
+      makeDapp({
+        id,
+        name: id,
+        url: `https://${id}`,
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    test('disconnects every connected dapp and returns the previously connected ones', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(connectedNonCustomDapp('one.com'), 'injected')
+      await controller.addDapp(connectedNonCustomDapp('two.com'), 'wc')
+
+      const disconnected = await controller.disconnectAllDapps()
+
+      expect(disconnected.map((d) => d.id).sort()).toEqual(['one.com', 'two.com'])
+      expect(controller.hasPermission('one.com')).toBe(false)
+      expect(controller.hasPermission('two.com')).toBe(false)
+      expect(controller.dapps.filter((d) => d.isConnected)).toHaveLength(0)
+    })
+
+    test('emits a single update and writes storage once for many dapps', async () => {
+      const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      await controller.addDapp(connectedNonCustomDapp('one.com'), 'injected')
+      await controller.addDapp(connectedNonCustomDapp('two.com'), 'injected')
+      await controller.addDapp(connectedNonCustomDapp('three.com'), 'injected')
+
+      let updateCount = 0
+      const unsubscribe = controller.onUpdate(() => {
+        updateCount += 1
+      })
+      const storageSpy = jest.spyOn(mainCtrl.storage, 'set')
+
+      await controller.disconnectAllDapps()
+      unsubscribe()
+
+      expect(updateCount).toBe(1)
+      expect(storageSpy.mock.calls.filter(([key]) => key === 'dappsV2')).toHaveLength(1)
+    })
+
+    test('with a source, tears down only that channel for every dapp', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const multiSource = connectedNonCustomDapp('multi.com')
+      await controller.addDapp(multiSource, 'injected')
+      await controller.addDapp(multiSource, 'wc')
+      await controller.addDapp(connectedNonCustomDapp('injected-only.com'), 'injected')
+
+      await controller.disconnectAllDapps('injected')
+
+      expect(controller.getDapp('multi.com')!.connectedSources).toEqual(['wc'])
+      expect(controller.hasPermission('injected-only.com')).toBe(false)
+    })
+
+    test('removes custom dapps that lose their last source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      const customDapp = makeDapp({
+        id: 'custom.com',
+        name: 'Custom',
+        url: 'https://custom.com',
+        isCustom: true,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+      await controller.addDapp(customDapp, 'wc')
+      expect(controller.getDapp('custom.com')).toBeDefined()
+
+      await controller.disconnectAllDapps()
+
+      expect(controller.getDapp('custom.com')).toBeUndefined()
+    })
+
+    test('is a no-op (returns []) when nothing is connected', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      let updateCount = 0
+      const unsubscribe = controller.onUpdate(() => {
+        updateCount += 1
+      })
+
+      const disconnected = await controller.disconnectAllDapps()
+      unsubscribe()
+
+      expect(disconnected).toEqual([])
+      expect(updateCount).toBe(0)
+    })
+  })
+
   describe('WalletConnect chainId selection', () => {
     // 137 (Polygon) is a predefined, enabled network in the test harness; 5115 (Citrea) and
     // 9999 are not present in the networks list.
