@@ -1,5 +1,7 @@
 import { concat, getBytes, hexlify, Interface, solidityPacked, toBeHex, ZeroAddress } from 'ethers'
 
+import { getSigForCalculations } from '@/libs/estimate/estimateHelpers'
+
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
@@ -113,7 +115,7 @@ export function getSafeBroadcastTxn(
       safeTxn.gasPrice,
       safeTxn.gasToken,
       safeTxn.refundReceiver,
-      op.signature
+      op.signature && op.signature !== '0x' ? op.signature : getSigForCalculations()
     ]) as Hex
   }
 }

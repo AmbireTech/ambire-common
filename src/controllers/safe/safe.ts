@@ -1,7 +1,5 @@
 import { toBeHex } from 'ethers'
 
-import SafeApiKit from '@safe-global/api-kit'
-
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
@@ -15,6 +13,7 @@ import {
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
+  getApiKit,
   getMessage,
   SafeResults
 } from '../../libs/safe/safe'
@@ -129,10 +128,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       return
     }
 
-    const apiKit = new SafeApiKit({
-      chainId: deployedOn.chainId,
-      apiKey: process.env.SAFE_API_KEY
-    })
+    const apiKit = getApiKit(deployedOn.chainId)
     const [safeInfo, safeCreationInfo]: [
       SafeInfoResponse | Error,
       SafeCreationInfoResponse | Error

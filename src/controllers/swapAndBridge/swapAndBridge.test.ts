@@ -60,7 +60,8 @@ const accounts = [
 const getSubmittedAccountOp = (
   txnId: string,
   activeRouteId?: string,
-  status = 'broadcasted-but-not-confirmed'
+  status = 'broadcasted-but-not-confirmed',
+  chainId?: bigint
 ) =>
   ({
     id: 'submitted-account-op-id',
@@ -75,7 +76,7 @@ const getSubmittedAccountOp = (
       simulatedGasLimit: 1n,
       gasPrice: 1n
     },
-    chainId: activeRouteId ? 10n : 1n,
+    chainId: chainId ? chainId : activeRouteId ? 10n : 1n,
     nonce: 225n,
     signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
     calls: [
@@ -713,9 +714,7 @@ describe('SwapAndBridge Controller', () => {
     )
 
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('failed')
-    expect(swapAndBridgeController.activeRoutes[0]!.error).toEqual(
-      'The transaction failed onchain'
-    )
+    expect(swapAndBridgeController.activeRoutes[0]!.error).toEqual('The transaction failed onchain')
     expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
@@ -816,7 +815,10 @@ describe('SwapAndBridge Controller', () => {
       .mockImplementationOnce(() => Promise.resolve())
 
     const SUBMITTED_ACCOUNT_OP = getSubmittedAccountOp(
-      '0xbe0a59b6b409f9e61f96f2a18be67d8caf086e59785a24120f0df54693e8a197'
+      '0xbe0a59b6b409f9e61f96f2a18be67d8caf086e59785a24120f0df54693e8a197',
+      'failed-route-id',
+      'failure',
+      1n
     )
     await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP)
 

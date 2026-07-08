@@ -1778,8 +1778,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
-        (!r.signAccountOp.accountOp.txnId ||
-          meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId)
+        // find an accountOp with no txnId, if the meta does not have a Safe
+        // txnId. If it has, it should not get the existingUserRequest
+        ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
+          // if meta has txnId, the accountOp should have the same txnId
+          (meta.safeTxnProps?.txnId &&
+            r.signAccountOp.accountOp.txnId &&
+            meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {

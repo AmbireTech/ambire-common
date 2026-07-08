@@ -16,7 +16,8 @@ export enum SigningStatus {
   InProgress = 'in-progress',
   WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done',
-  Queued = 'queued'
+  Queued = 'queued',
+  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
 }
 
 export type Status = {
@@ -46,7 +47,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster
+  SigningStatus.WaitingForPaymaster,
+  SigningStatus.SafeQuickBroadcastBundler
 ]
 
 type Warning = {

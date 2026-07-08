@@ -8,12 +8,14 @@ import {
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
-  ERC_4337_ENTRYPOINT
+  ERC_4337_ENTRYPOINT,
+  SAFE_SENDER
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { AccountOp, callToTuple } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
+import { getSafeBroadcastTxn } from '../safe/helpers'
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -102,6 +104,44 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
+export function getUserOpCalldata(account: Account, op: AccountOp, state: AccountOnchainState) {
+  const ambireAccount = new Interface(AmbireAccount.abi)
+
+  // executeBySender on SAFE_SENDER + inner call to the safe
+  if (account.safeCreation) {
+    // rotations
+    // the fee call should not be a part of the safe txn as it will revert
+    // it should be a part of the SAFE_SIGNER commitment though
+    const localOp = { ...op }
+    localOp.feeCall = undefined
+    const calls = [getSafeBroadcastTxn(localOp, state), op.feeCall ?? undefined].filter((x) => !!x)
+
+    return ambireAccount.encodeFunctionData('executeBySender', [calls])
+  }
+
+  return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+}
+
+/**
+ * Safe user operations are sent by the SAFE_SENDER.
+ * Also, they always use an unique nonce to prevent race conditions
+ * between safe users in Ambire
+ */
+function getSafeUserOperation(bundler: BUNDLER): UserOperation {
+  return {
+    sender: SAFE_SENDER,
+    nonce: concat([randomBytes(24), toBeHex(0, 8)]), // 1 / 10 ^ −52 collision chance,
+    callData: '0x',
+    callGasLimit: toBeHex(0),
+    verificationGasLimit: toBeHex(0),
+    preVerificationGas: toBeHex(0),
+    maxFeePerGas: toBeHex(0),
+    maxPriorityFeePerGas: toBeHex(0),
+    signature: '0x',
+    bundler
+  }
+}
+
 export function getUserOperation({
   account,
   accountState,
@@ -119,6 +159,8 @@ export function getUserOperation({
   eip7702Auth?: EIP7702Auth
   hasPendingUserOp?: boolean
 }): UserOperation {
+  if (account.safeCreation) return getSafeUserOperation(bundler)
+
   const uniqueNonce = concat([randomBytes(24), toBeHex(0, 8)]) // 1 / 10 ^ −52 collision chance
   const nonce = hasPendingUserOp ? uniqueNonce : toBeHex(accountState.erc4337Nonce)
   const userOp: UserOperation = {
