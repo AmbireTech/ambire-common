@@ -16,8 +16,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
-// Must stay in sync with TRENDING_TOKENS_URL in dapps.ts (the fetch mock matches by URL).
-const TRENDING_TOKENS_URL = 'http://localhost:1930/api/v3/trending'
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
 // Two valid entries plus one invalid (no price) to exercise normalization + filtering.
 // Mirrors the trimmed endpoint shape: a { tokens: [...] } wrapper of minimal coin objects
