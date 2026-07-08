@@ -72,21 +72,18 @@ export interface RawTrendingToken {
   name: string
   symbol: string
   market_cap_rank: number | null
-  thumb: string
-  small: string
   large: string
   // Primary CoinGecko asset platform (e.g. 'ethereum') plus the per-platform contract addresses
   // and decimals. Used to reuse the portfolio token-details components and match held balances.
+  // Null/absent for native coins without an on-chain contract (e.g. BNB).
   asset_platform_id?: string | null
   contract_address?: string
   platforms?: { [platform: string]: string }
   decimals?: { [platform: string]: number }
-  detail_platforms?: { [platform: string]: { decimal_place: number; contract_address: string } }
-  links?: { homepage?: string[] }
-  // Exchanges the token is traded on. We only read the CoinGecko exchange identifier.
-  tickers?: { market?: { identifier?: string } }[]
-  // Fresh coin-detail USD values (flat). Preferred over the `data` block below, which is the
-  // trending-widget snapshot and can be stale.
+  homepage?: string[]
+  // CoinGecko exchange identifiers the token is traded on, deduped server-side.
+  exchanges?: string[]
+  // USD market data (flat).
   usd?: number
   usd_24h_change?: number
   usd_market_cap?: number
@@ -94,15 +91,6 @@ export interface RawTrendingToken {
   usd_fully_diluted_valuation?: number
   total_supply?: number
   description?: { en?: string } | null
-  data?: {
-    price?: number
-    // Percentage change keyed by fiat/crypto currency (usd, eur, btc, ...). We only read `usd`.
-    price_change_percentage_24h?: { [currency: string]: number }
-    // Pre-formatted, currency-prefixed strings from the server (e.g. "$74,041,107").
-    market_cap?: string
-    total_volume?: string
-    content?: { title: string; description: string } | null
-  }
 }
 
 // Normalized trending token kept in the DappsController state and rendered by the UI.
