@@ -169,6 +169,14 @@ describe('Domains', () => {
       expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
       expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
       expect(controller.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+
+      getReadyProvider.mockReturnValue(undefined as any)
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
     } finally {
       resolveENSDomainSpy.mockRestore()
       restore()

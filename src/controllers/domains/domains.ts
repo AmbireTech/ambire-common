@@ -290,6 +290,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     this.resolveDomainsStatus[domain] = 'LOADING'
     delete this.resolveDomainsErrors[domain]
+    delete this.verifiedDomainsStatus[domain]
     await this.forceEmitUpdate()
 
     if (this.domainToAddresses[domain]) {
