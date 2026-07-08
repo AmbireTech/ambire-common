@@ -31,16 +31,25 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
+export const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS = 24 * 60 * 60 * 1000
 // Once a name is within the warn window, re-poll its expiry at most this often to catch a renewal.
 export const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS = 1 * 60 * 60 * 1000
 
 /**
- * Decides whether to (re)fetch a name's ENS expiry. A registration expiry can only be extended, never
- * shortened, so once fetched and far from the deadline the cached value is safe and we don't refetch.
- * Only after the name enters the warn window do we re-poll (at most hourly) to catch a renewal and
- * avoid showing a false-positive "expiring" warning.
+ * Decides whether to (re)fetch a name's ENS expiry.
  */
 export const shouldRefetchEnsExpiry = (entry?: Domains[string]): boolean => {
+  const isEnsSubname = entry?.ens && entry.ens.split('.').length > 1
+
+  // Subnames wrapped via the NameWrapper, the parent name's owner can set an arbitrary expiry on a
+  // child/subname via setChildFuses, and that expiry is not constrained to only increase.
+  if (isEnsSubname && entry) {
+    return (
+      !entry.ensExpiry ||
+      entry.ensExpiry.updatedAt + PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS < Date.now()
+    )
+  }
+
   const cached = entry?.ensExpiry
   if (!cached) return true
 
@@ -145,7 +154,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
         const isExpired = data.ensExpiry && data.ensExpiry.gracePeriodEndsAt < Date.now()
 
-        if (isExpired) return false
+        if (isExpired && data) {
+          // Delete all ens data for expired domains (but not that of other providers)
+          data.ens = null
+          delete data.ensAvatar
+          delete data.ensExpiry
+          // If we don't delete it the update may be skipped if it's within the TTL
+          delete data.updatedAt
+        }
 
         const isInContacts = contacts.some(({ address }) => address === addressInDomains)
 
