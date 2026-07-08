@@ -3,7 +3,7 @@ import { Contacts } from '@/interfaces/addressBook'
 import { EmailVaultData } from '@/interfaces/emailVault'
 
 import { FeatureFlags } from '../consts/featureFlags'
-import { SignedMessage } from '../controllers/activity/types'
+import { SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
@@ -42,6 +42,7 @@ export type StorageProps = {
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
+  sentToHistory: SentToHistory
   // Migrations
   passedMigrations: string[]
   migrations: string[]

@@ -1,3 +1,4 @@
+import { NameExpiry } from '../services/ensDomains'
 import { ControllerInterface } from './controller'
 
 export type IDomainsController = ControllerInterface<
@@ -19,8 +20,21 @@ export type Domains = {
     createdAt?: number
     updatedAt?: number
     updateFailedAt?: number
+    /**
+     * ENS registration expiry:
+     * - undefined: not fetched yet
+     * - a value: fetched; the name has a registration expiry
+     * - null: fetched, but not relevant (no primary `.eth` 2LD name / unregistered)
+     */
+    ensExpiry?: NameExpiry | null
   }
 }
+
+export type ResolvedReverseEntry =
+  | { address: string; failed: true }
+  | { address: string; failed: false; ens: string | null; namoshi: string | null }
+
+export type ExtraReverseData = { avatar: string | null; ensExpiry: NameExpiry | null | undefined }
 
 type ReverseLookupOptions = {
   /**
@@ -30,6 +44,7 @@ type ReverseLookupOptions = {
    * never - Never trigger a lookup; serve from cache only (used for address lists to avoid linking accounts)
    */
   privacyUpdateMode: 'whenStale' | 'never'
+  updateExpiry?: boolean
 }
 
 type AddressState = {

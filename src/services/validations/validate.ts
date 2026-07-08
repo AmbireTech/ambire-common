@@ -139,13 +139,24 @@ const validateSendTransferAddress = (
   chainId?: bigint,
   isRecipientAddressFirstTimeSend?: boolean,
   lastRecipientTransactionDate?: Date | null,
-  addressPoisoningMatch?: AddressPoisoningMatch | null
+  addressPoisoningMatch?: AddressPoisoningMatch | null,
+  recipientDomainAddressChange?: { previousAddress: string } | null
 ): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
       message: '',
       severity: 'success'
+    }
+  }
+
+  // A domain the user sent to before now resolves to a different address - it may have expired and
+  // been re-pointed.
+  if (recipientDomainAddressChange) {
+    return {
+      message:
+        'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
+      severity: 'warning'
     }
   }
 
