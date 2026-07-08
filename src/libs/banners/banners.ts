@@ -1,3 +1,4 @@
+import { FEE_COLLECTOR } from '@/consts/addresses'
 import { ENS_EXPIRY_WARN_WINDOW_IN_MS } from '@/services/ensDomains'
 
 import { Account, AccountId } from '../../interfaces/account'
@@ -318,8 +319,9 @@ export const getEnsExpiryBanner = ({
     actions: [
       {
         actionName: 'open-external-url',
-        // @TODO: Possibly add an affiliate address
-        meta: { url: `https://app.ens.domains/${ens}` },
+        meta: {
+          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`
+        },
         label: 'Renew'
       }
     ],
