@@ -39,15 +39,17 @@ export const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS = 1 * 60 * 60 * 1000
  * Decides whether to (re)fetch a name's ENS expiry.
  */
 export const shouldRefetchEnsExpiry = (entry?: Domains[string]): boolean => {
-  const isEnsSubname = entry?.ens && entry.ens.split('.').length > 1
+  const isEnsSubname = entry?.ens && entry.ens.split('.').length > 2
 
   // Subnames wrapped via the NameWrapper, the parent name's owner can set an arbitrary expiry on a
   // child/subname via setChildFuses, and that expiry is not constrained to only increase.
-  if (isEnsSubname && entry) {
-    return (
-      !entry.ensExpiry ||
-      entry.ensExpiry.updatedAt + PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS < Date.now()
-    )
+  if (
+    isEnsSubname &&
+    entry &&
+    entry.ensExpiry &&
+    entry.ensExpiry.updatedAt + PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS < Date.now()
+  ) {
+    return true
   }
 
   const cached = entry?.ensExpiry

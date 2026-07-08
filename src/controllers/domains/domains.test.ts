@@ -11,6 +11,7 @@ import {
   PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS,
   PERSIST_DOMAIN_FOR_IN_MS,
   PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS,
+  PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS,
   shouldRefetchEnsExpiry
 } from './domains'
 
@@ -565,7 +566,7 @@ describe('Domains', () => {
       }
     ])
 
-    expect(controller.domains[ENS_OLDEST_RESOLVER.address]).toBeUndefined()
+    expect(controller.domains[ENS_OLDEST_RESOLVER.address]).toEqual({ ens: null })
   })
 
   it('controller works without a citrea provider', async () => {
@@ -738,5 +739,48 @@ describe('shouldRefetchEnsExpiry', () => {
       updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS - 60_000
     }
     expect(shouldRefetchEnsExpiry(makeEntry(closeStale))).toBe(true)
+  })
+
+  describe('subnames', () => {
+    // A subname's expiry (set via NameWrapper `setChildFuses`) can be shortened at any time by the
+    // parent name's owner, unlike a .eth 2LD's registrar expiry which can only increase.
+    const makeSubnameEntry = (ensExpiry: ensDomainsModule.NameExpiry | null | undefined) =>
+      ({ ens: 'someone.ambire.eth', namoshi: null, ensExpiry }) as any
+
+    it('refetches once the subname TTL elapses, even far from the deadline', () => {
+      const staleFar = {
+        expiresAt: Date.now() + WARN_WINDOW * 2,
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
+        updatedAt: Date.now() - PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS - 60_000
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(staleFar))).toBe(true)
+    })
+
+    it('does NOT refetch before the subname TTL elapses, when far from the deadline', () => {
+      const freshFar = {
+        expiresAt: Date.now() + WARN_WINDOW * 2,
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
+        updatedAt: Date.now() - PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS + 60_000
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(freshFar))).toBe(false)
+    })
+
+    it('still refetches close to the deadline via the hourly check, even while within the subname TTL', () => {
+      const closeStaleWithinSubnameTtl = {
+        expiresAt: Date.now(),
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
+        updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS - 60_000
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(closeStaleWithinSubnameTtl))).toBe(true)
+    })
+
+    it('does NOT refetch when within both the subname TTL and the hourly close-to-deadline window', () => {
+      const closeFreshWithinSubnameTtl = {
+        expiresAt: Date.now(),
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
+        updatedAt: Date.now()
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(closeFreshWithinSubnameTtl))).toBe(false)
+    })
   })
 })
