@@ -7,6 +7,14 @@ import {
   parseUnits,
   ZeroAddress
 } from 'ethers'
+import { ethAddress, zeroAddress } from 'viem'
+
+import {
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  FEE_PERCENT,
+  JPYC_TOKEN,
+  SOCKET_EXPLORER_URL
+} from '@/services/socketv3/constants'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
@@ -35,14 +43,6 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
-import {
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  FEE_PERCENT,
-  JPYC_TOKEN,
-  NULL_ADDRESS,
-  SOCKET_EXPLORER_URL,
-  ZERO_ADDRESS
-} from '../../services/socket/constants'
 import { SQUID_EXPLORER_URL } from '../../services/squid/constants'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
@@ -719,7 +719,8 @@ export const calculateAmountWarnings = (
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
-  if (providerId === 'socket') return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+  if (providerId === 'socket' || providerId === 'socketv3')
+    return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
   if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
 
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
@@ -730,7 +731,7 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
 }
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
+  addr === ethAddress ? zeroAddress : addr
 
 /**
  * Get the swap sponsorship details.

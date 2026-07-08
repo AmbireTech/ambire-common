@@ -1,5 +1,5 @@
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
-import { IAccountsController } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -256,7 +256,7 @@ export class EstimationController extends EventEmitter {
     return this.status === EstimationStatus.Loading || this.error instanceof Error
   }
 
-  calculateWarnings() {
+  calculateWarnings(acc: Account) {
     const warnings: Warning[] = []
 
     if (this.estimationRetryError && this.status === EstimationStatus.Success) {
@@ -267,7 +267,13 @@ export class EstimationController extends EventEmitter {
       })
     }
 
-    if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
+    if (
+      this.#notFatalBundlerError?.cause === '4337_ESTIMATION' &&
+      // do not show the warning for safe accounts that don't have a gas tank
+      (!acc.safeCreation ||
+        (this.availableFeeOptions.find((opt) => opt.token.flags.onGasTank)?.availableAmount || 0) >
+          0)
+    ) {
       warnings.push({
         id: 'bundler-failure',
         title: 'Fee options are temporarily limited',

@@ -10,10 +10,10 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -133,6 +133,7 @@ import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
   getPackedUserOp,
+  getUserOpCalldata,
   getUserOperation,
   getUserOpHash
 } from '../../libs/userOperation/userOperation'
@@ -172,7 +173,8 @@ export enum SigningStatus {
   InProgress = 'in-progress',
   WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done',
-  Queued = 'queued'
+  Queued = 'queued',
+  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
 }
 
 export type Status = {
@@ -203,7 +205,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster
+  SigningStatus.WaitingForPaymaster,
+  SigningStatus.SafeQuickBroadcastBundler
 ]
 
 export type SignAccountOpUpdateProps = {
@@ -976,11 +979,20 @@ export class SignAccountOpController
     return undefined
   }
 
-  #getDefaultFeeOption(options: FeePaymentOption[]) {
+  #getDefaultFeeOption(options: FeePaymentOption[], eoaOptions: FeePaymentOption[]) {
+    let selectableOptions = options.concat(eoaOptions)
     const notDisabled = options.filter((option) => !this.#getIsFeeOptionDisabled(option))
-    const selectableOptions = notDisabled.length ? notDisabled : options
-    const preferred = this.#getPreferredFeeOption(selectableOptions)
+    const notDisabledEoa = eoaOptions.filter((option) => !this.#getIsFeeOptionDisabled(option))
 
+    // always try to select a not disabled option, with preference for account options
+    if (notDisabled.length) {
+      selectableOptions = notDisabled
+    } else if (notDisabledEoa.length) {
+      selectableOptions = notDisabledEoa
+    }
+
+    // if the preferred option is not disabled, select it
+    const preferred = this.#getPreferredFeeOption(selectableOptions)
     if (preferred) return preferred
 
     return (
@@ -1070,20 +1082,14 @@ export class SignAccountOpController
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
-        // for Safe accounts, always select the first not disabled EOA
-        // or the first EOA if all are disabled
-        if (!!this.account.safeCreation && payOptionsPaidByEOA.length) {
-          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
+        const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank, payOptionsPaidByEOA)
+        if (selected) {
           this.feeTokenResult = selected.token
           this.#paidBy = selected.paidBy
-        } else if (payOptionsPaidByUsOrGasTank.length) {
-          const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank)!
-          this.feeTokenResult = selected.token
-          this.#paidBy = selected.paidBy
-        } else if (payOptionsPaidByEOA.length) {
-          const selected = this.#getDefaultFeeOption(payOptionsPaidByEOA)!
-          this.feeTokenResult = selected.token
-          this.#paidBy = selected.paidBy
+        } else {
+          console.error(
+            'Failed to set a default selected option. Perhaps native is not always returned for the account?'
+          )
         }
       }
     }
@@ -1335,7 +1341,8 @@ export class SignAccountOpController
       !!this.status &&
       (this.status?.type === SigningStatus.ReadyToSign ||
         this.status?.type === SigningStatus.UpdatesPaused ||
-        this.status?.type === SigningStatus.Queued)
+        this.status?.type === SigningStatus.Queued ||
+        this.status?.type === SigningStatus.SafeQuickBroadcastBundler)
     )
   }
 
@@ -1375,7 +1382,7 @@ export class SignAccountOpController
     if (this.account.creation && !accountState?.isV2 && WARNINGS.v1Acc)
       warnings.push(WARNINGS.v1Acc)
 
-    const estimationWarnings = this.estimation.calculateWarnings()
+    const estimationWarnings = this.estimation.calculateWarnings(this.account)
 
     this.warnings = warnings.concat(estimationWarnings)
 
@@ -1929,13 +1936,13 @@ export class SignAccountOpController
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
     const { haveCallsChanged = false } = opts || {}
 
-    // we want to restart the interval if signAccountOp is for a signed Safe.
-    // the reason for this: there could be multiple signed Safe txns with
+    // we want to restart the interval if signAccountOp is for a Safe.
+    // the reason for this: there could be multiple Safe txns with
     // the same nonce waiting to be broadcast. The may want to check each
     // out in quick succession. If he does 1 -> 2 -> 1, calls would not
     // have changed on 1, but the simulation from 2 will persist as sadly,
     // the simulation is account based, not accountOp based
-    const isSignedSafe = !!this.account.safeCreation && !!this.accountOp.signed?.length
+    const isSafe = !!this.account.safeCreation
 
     this.#stopRefetching = false
     this.#reestimateCounter = 0
@@ -1945,7 +1952,7 @@ export class SignAccountOpController
         !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
     })
 
-    if (haveCallsChanged || isSignedSafe) {
+    if (haveCallsChanged || isSafe) {
       // The simulateAndEstimateOrSimulateInterval must be restarted if the calls have changed
       // as that forces an immediate reestimation. start() does nothing
       // if the interval is already running.
@@ -2033,6 +2040,15 @@ export class SignAccountOpController
     const canNotBecomeSmarter = !canBecomeSmarter(this.account, this.accountKeyStoreKeys)
 
     if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
+
+    // disable native for safe accounts as it should be visible but not enabled
+    if (
+      this.account.safeCreation &&
+      feeOption.paidBy === this.account.addr &&
+      isNative(feeOption.token)
+    ) {
+      return true
+    }
 
     return false
   }
@@ -2384,7 +2400,9 @@ export class SignAccountOpController
           nativeRatio,
           feeTokenDecimals: option.token.decimals,
           addedNative: broadcastOption === BROADCAST_OPTIONS.byBundler ? 0n : option.addedNative,
-          usesPaymaster
+          usesPaymaster,
+          isAccountSafe: !!this.account.safeCreation,
+          network: this.#network
         })
 
         const feeSpeed: SpeedCalc = {
@@ -2741,18 +2759,24 @@ export class SignAccountOpController
       )
     })
 
+    let callGasLimit = BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
+
+    // add the extra gas estimates in case of a safe
+    // re-estimation is not applied here
+    if (!!this.account.safeCreation) {
+      const gasUsed = this.baseAccount.getGasUsed(this.estimation.estimation!, {
+        feeToken: this.selectedOption!.token,
+        op: this.accountOp
+      })
+      callGasLimit = gasUsed + this.selectedOption!.gasUsed
+    }
+
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
-    userOperation.callGasLimit = toBeHex(
-      BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
-    )
+    userOperation.callGasLimit = toBeHex(callGasLimit)
     userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
     userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
     userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
-
-    const ambireAccount = new Interface(AmbireAccount.abi)
-    userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
-      getSignableCalls(this.accountOp)
-    ])
+    userOperation.callData = getUserOpCalldata(this.account, this.accountOp, accountState)
 
     return userOperation
   }
@@ -2802,6 +2826,25 @@ export class SignAccountOpController
       const paymasterData = response as PaymasterSuccessReponse
       localOp.paymaster = paymasterData.paymaster
       localOp.paymasterData = paymasterData.paymasterData
+
+      // if it's a safe account, add the SAFE_SIGNER signature
+      if (this.account.safeCreation) {
+        if (!paymasterData.signature) {
+          const error = 'Gas tank is currently unavailable'
+          return {
+            required: true,
+            success: false,
+            errorResponse: {
+              success: false,
+              message: error,
+              error: new Error(error)
+            }
+          }
+        }
+
+        localOp.signature = paymasterData.signature
+      }
+
       return {
         userOp: localOp,
         required: true,
@@ -2818,7 +2861,7 @@ export class SignAccountOpController
         .catch((e) => console.error(e))
     }
 
-    if (paymaster.isAmbire() && counter === 0) {
+    if (paymaster.isAmbire() && counter === 0 && !this.account.safeCreation) {
       const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
       return this.#getPaymasterUserOp(reestimatedUserOp, paymaster, eip7702Auth, counter + 1)
     }
@@ -2924,10 +2967,14 @@ export class SignAccountOpController
       if (
         this.account.safeCreation &&
         this.#accountOp.signed &&
-        this.#accountOp.signed.length >= this.threshold
+        this.#accountOp.signed.length >= this.threshold &&
+        broadcastOption !== BROADCAST_OPTIONS.byBundler
       ) {
         // all's good, proceed to broadcast
-      } else if (this.account.safeCreation) {
+      } else if (
+        this.account.safeCreation &&
+        (this.#accountOp.signed?.length || 0) < this.threshold
+      ) {
         // if the Safe txn is not already signed, fetch the latest nonce
         // as we don't have a mechanism for fixing nonces for Safe accounts
         // during the estimation phase itself
@@ -3003,6 +3050,12 @@ export class SignAccountOpController
           signed: allSigners,
           txnId: safeTxnHash
         })
+
+        // change to quick broadcast mode so we could sign immediately
+        // the userOp and broadcast it
+        if (isQuickBroadcast && broadcastOption === BROADCAST_OPTIONS.byBundler) {
+          this.status = { type: SigningStatus.SafeQuickBroadcastBundler }
+        }
       } else if (
         broadcastOption === BROADCAST_OPTIONS.bySelf ||
         broadcastOption === BROADCAST_OPTIONS.bySelf7702
@@ -3084,7 +3137,8 @@ export class SignAccountOpController
         // In both cases, we re-estimate before broadcast
         // 3) some bundlers require a re-estimate before broadcast
         let shouldReestimate =
-          (!!erc4337Estimation.feeCallType &&
+          (!this.account.safeCreation &&
+            !!erc4337Estimation.feeCallType &&
             paymaster.getFeeCallType([this.selectedOption.token]) !==
               erc4337Estimation.feeCallType) ||
           this.bundlerSwitcher.getBundler().shouldReestimateBeforeBroadcast(this.#network)
@@ -3196,35 +3250,41 @@ export class SignAccountOpController
         if (this.#stopRefetching) return
 
         const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
-        const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
-        if (!isHotEOA) {
-          const typedData = getTypedData(
-            this.#network.chainId,
-            this.accountOp.accountAddr,
-            getUserOpHash(userOperation, this.#network.chainId)
-          )
-          const signature = wrapStandard(
-            await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-              signer.signTypedData(typedData)
+
+        // safe accounts have their signature prepopulated
+        if (!this.account.safeCreation) {
+          const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
+          if (!isHotEOA) {
+            const typedData = getTypedData(
+              this.#network.chainId,
+              this.accountOp.accountAddr,
+              getUserOpHash(userOperation, this.#network.chainId)
             )
-          )
-          userOperation.signature = signature
-          this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else {
-          const typedData = get7702UserOpTypedData(
-            this.#network.chainId,
-            getSignableCalls(this.accountOp),
-            getPackedUserOp(userOperation),
-            getUserOpHash(userOperation, this.#network.chainId)
-          )
-          const signature = wrapUnprotected(
-            await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-              signer.signTypedData(typedData)
+            const signature = wrapStandard(
+              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
+                signer.signTypedData(typedData)
+              )
             )
-          )
-          userOperation.signature = signature
-          this.#updateAccountOp({ signature, asUserOperation: userOperation })
+            userOperation.signature = signature
+            this.#updateAccountOp({ signature })
+          } else {
+            const typedData = get7702UserOpTypedData(
+              this.#network.chainId,
+              getSignableCalls(this.accountOp),
+              getPackedUserOp(userOperation),
+              getUserOpHash(userOperation, this.#network.chainId)
+            )
+            const signature = wrapUnprotected(
+              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
+                signer.signTypedData(typedData)
+              )
+            )
+            userOperation.signature = signature
+            this.#updateAccountOp({ signature })
+          }
         }
+
+        this.#updateAccountOp({ asUserOperation: userOperation })
       } else {
         const signer = await this.#getDefaultSigner()
 
@@ -3251,7 +3311,11 @@ export class SignAccountOpController
         })
       }
 
-      if (!this.status || this.status.type !== SigningStatus.Queued)
+      if (
+        !this.status ||
+        (this.status.type !== SigningStatus.Queued &&
+          this.status.type !== SigningStatus.SafeQuickBroadcastBundler)
+      )
         this.status = { type: SigningStatus.Done }
 
       this.emitUpdate()
@@ -3636,12 +3700,24 @@ export class SignAccountOpController
         this.signPromise = undefined
       })
       await this.signPromise
+
+      // call sign again if the status is SafeQuickBroadcastBundler
+      // as we need to create the userOperation before broadcast
+      if (this.status && this.status.type === SigningStatus.SafeQuickBroadcastBundler) {
+        this.signPromise = this.sign().finally(() => {
+          this.signPromise = undefined
+        })
+        await this.signPromise
+      }
+
       if (this.status && this.status.type === SigningStatus.Done) {
         this.broadcastPromise = this.#broadcast().finally(() => {
           this.broadcastPromise = undefined
         })
         await this.broadcastPromise
       }
+      // basically, the logic enters here when we're using a Safe account
+      // with > 1 threshold and allows the user to broadcast
       if (
         this.status &&
         this.status.type === SigningStatus.Queued &&
