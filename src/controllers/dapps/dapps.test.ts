@@ -28,7 +28,11 @@ const mockTrending = {
       name: 'Bitcoin',
       symbol: 'BTC',
       market_cap_rank: 1,
-      large: 'https://example.com/btc-large.png',
+      image: {
+        thumb: 'https://example.com/btc-thumb.png',
+        small: 'https://example.com/btc-small.png',
+        large: 'https://example.com/btc-large.png'
+      },
       asset_platform_id: 'ethereum',
       contract_address: '0xbtc',
       platforms: { ethereum: '0xbtc' },
@@ -48,7 +52,8 @@ const mockTrending = {
       name: 'Ethereum',
       symbol: 'ETH',
       market_cap_rank: 2,
-      large: 'https://example.com/eth-large.png',
+      // No `large` → the normalizer falls back to `small`.
+      image: { small: 'https://example.com/eth-small.png' },
       usd: 3200,
       usd_24h_change: -2.5,
       usd_market_cap: 400000000,
@@ -60,8 +65,7 @@ const mockTrending = {
       id: 'no-price-coin',
       name: 'No Price Coin',
       symbol: 'NPC',
-      market_cap_rank: 999,
-      large: ''
+      market_cap_rank: 999
     }
   ]
 }

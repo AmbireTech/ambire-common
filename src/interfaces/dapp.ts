@@ -72,7 +72,7 @@ export interface RawTrendingToken {
   name: string
   symbol: string
   market_cap_rank: number | null
-  large: string
+  image?: { thumb?: string; small?: string; large?: string }
   // Primary CoinGecko asset platform (e.g. 'ethereum') plus the per-platform contract addresses
   // and decimals. Used to reuse the portfolio token-details components and match held balances.
   // Null/absent for native coins without an on-chain contract (e.g. BNB).

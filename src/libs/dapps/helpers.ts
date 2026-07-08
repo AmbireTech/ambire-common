@@ -166,7 +166,7 @@ function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
         id: token.id,
         name: token.name,
         symbol: token.symbol,
-        icon: token.large || '',
+        icon: token.image?.large || token.image?.small || token.image?.thumb || '',
         priceUSD: token.usd ?? 0,
         priceChange24hUSD: typeof token.usd_24h_change === 'number' ? token.usd_24h_change : null,
         marketCapRank: token.market_cap_rank ?? null,
