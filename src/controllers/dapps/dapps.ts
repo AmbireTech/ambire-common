@@ -59,9 +59,7 @@ import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-// TODO: TEMPORARY — points at a fixed sample of the NEW trending data format while the endpoint
-// is being finalized. Revert to 'https://cena.ambire.com/api/v3/trending/' before merge.
-const TRENDING_TOKENS_URL = 'https://termbin.com/u75d'
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
 const mergeSource = (
   existing: ConnectionSource[] | undefined,

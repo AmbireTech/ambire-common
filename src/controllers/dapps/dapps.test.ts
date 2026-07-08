@@ -16,9 +16,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
-// TODO: TEMPORARY — kept in sync with the temp URL in the controller while the endpoint is
-// being finalized. Revert to 'https://cena.ambire.com/api/v3/trending/' before merge.
-const TRENDING_TOKENS_URL = 'https://termbin.com/u75d'
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
 // Two valid entries plus one invalid (no price) to exercise normalization + filtering.
 // Mirrors the new endpoint shape: a { tokens: [...] } wrapper of full CoinGecko coin objects.
