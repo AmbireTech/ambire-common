@@ -68,4 +68,21 @@ export interface IActivityIdbStorage {
    * Check if IDB has any data (used to detect if migration is needed).
    */
   isEmpty(): Promise<boolean>
+
+  /**
+   * Write a single new op and optionally delete the op evicted by the in-memory trim.
+   * Use instead of putOpsForAccountAndChain when adding one op at a time.
+   */
+  putSingleOp(
+    accountAddr: string,
+    chainId: bigint | string,
+    op: SubmittedAccountOp,
+    trimmedId?: string
+  ): Promise<void>
+
+  /**
+   * Update existing rows in place (e.g. status or balance-change updates).
+   * Only the provided ops are written — no range-delete.
+   */
+  updateOps(ops: SubmittedAccountOp[]): Promise<void>
 }

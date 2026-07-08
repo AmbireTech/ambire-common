@@ -339,7 +339,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
     }
 
-    console.log('[ActivityController] Constructor: activityIdb =', !!this.#activityIdb)
     this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#selectedAccount = selectedAccount
@@ -382,19 +381,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (this.#activityIdb) {
       try {
         console.time('[ActivityController] startup-load:idb')
-        console.log('[ActivityController] Loading startup ops from IDB...')
         accountsOps = await this.#activityIdb.loadStartupOps()
         console.timeEnd('[ActivityController] startup-load:idb')
-        console.log('[ActivityController] Loaded startup ops from IDB')
       } catch (error) {
         console.error('[ActivityController] Failed to load from IDB, falling back to storage', error)
         console.time('[ActivityController] startup-load:storage-fallback')
         accountsOps = await this.#storage.get('accountsOps', {})
         console.timeEnd('[ActivityController] startup-load:storage-fallback')
-        console.log('[ActivityController] Loaded from chrome.storage.local fallback')
       }
     } else {
-      console.log('[ActivityController] IDB not available, using chrome.storage.local')
       console.time('[ActivityController] startup-load:storage')
       accountsOps = await this.#storage.get('accountsOps', {})
       console.timeEnd('[ActivityController] startup-load:storage')
@@ -409,11 +404,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#accountsOps = accountsOps
     this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
-
-    console.log('[ActivityController] Storage snapshot:')
-    console.log('accountsOps:', JSON.stringify(accountsOps, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2))
-
-    console.log('[ActivityController] Load complete, emitting update')
     this.emitUpdate()
   }
 
@@ -725,37 +715,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await Promise.all(promises)
   }
 
-  private async persistAccountsOps() {
-    if (this.#activityIdb) {
-      try {
-        // Collect all (accountAddr, chainId) records to persist
-        const recordsToPersist: Array<{
-          accountAddr: string
-          chainId: bigint | string
-          ops: SubmittedAccountOp[]
-        }> = []
-
-        for (const [accountAddr, chainMap] of Object.entries(this.#accountsOps)) {
-          for (const [chainIdString, ops] of Object.entries(chainMap)) {
-            recordsToPersist.push({
-              accountAddr,
-              chainId: chainIdString,
-              ops
-            })
-          }
-        }
-
-        if (recordsToPersist.length > 0) {
-          await this.#activityIdb.putMultiple(recordsToPersist)
-        }
-      } catch (error) {
-        console.error('ActivityController: Failed to persist to IDB, falling back to storage', error)
-        await this.#storage.set('accountsOps', this.#accountsOps)
-      }
-    } else {
+  /**
+   * Writes accountsOps via IDB if available, otherwise falls back to chrome.storage.local.
+   * When IDB is available, errors are logged but do NOT fall back to storage — writing
+   * this.#accountsOps (startup subset) to storage would permanently truncate full history.
+   */
+  async #persistToIdb(fn: () => Promise<void>): Promise<void> {
+    if (!this.#activityIdb) {
       await this.#storage.set('accountsOps', this.#accountsOps)
+      return
     }
+    try {
+      await fn()
+    } catch (error) {
+      console.error('ActivityController: Failed to persist to IDB', error)
+    }
+  }
 
+  /**
+   * Persist changed ops to IDB (or storage fallback), sync filtered views, and emit an update.
+   */
+  private async persistAccountsOps(changedOps: SubmittedAccountOp[]) {
+    await this.#persistToIdb(() => this.#activityIdb!.updateOps(changedOps))
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -863,34 +844,26 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#initialLoadPromise
 
     const { accountAddr, chainId } = accountOp
-    console.log(`[ActivityController] addAccountOp: ${accountAddr} chain=${chainId} id=${accountOp.id} status=${accountOp.status} txnId=${accountOp.txnId}`)
 
     if (!this.#accountsOps[accountAddr]) this.#accountsOps[accountAddr] = {}
     if (!this.#accountsOps[accountAddr][chainId.toString()])
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
+    // Capture the oldest op's id before mutating — it becomes the trimmed id if the
+    // group is already at capacity (trim() removes exactly one op via .pop()).
+    const group = this.#accountsOps[accountAddr][chainId.toString()]!
+    const trimmedId = group.length >= 1000 ? group[group.length - 1]?.id : undefined
+
     // newest SubmittedAccountOp goes first in the list
-    this.#accountsOps[accountAddr]![chainId.toString()]!.unshift({ ...accountOp })
-    trim(this.#accountsOps[accountAddr][chainId.toString()]!)
+    group.unshift({ ...accountOp })
+    trim(group)
 
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
 
-    // Write to IDB if available, otherwise fallback to chrome.storage.local
-    if (this.#activityIdb) {
-      try {
-        await this.#activityIdb.putOpsForAccountAndChain(
-          accountAddr,
-          chainId,
-          this.#accountsOps[accountAddr][chainId.toString()]!
-        )
-      } catch (error) {
-        console.error('ActivityController: Failed to write to IDB, falling back to storage', error)
-        await this.#storage.set('accountsOps', this.#accountsOps)
-      }
-    } else {
-      await this.#storage.set('accountsOps', this.#accountsOps)
-    }
+    await this.#persistToIdb(() =>
+      this.#activityIdb!.putSingleOp(accountAddr, chainId, accountOp, trimmedId)
+    )
   }
 
   async addExternalAccountOp({
@@ -1078,7 +1051,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    */
   async backfillAccountOpBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
     await Promise.all(accountOps.map((accOp) => this.backfillAccountOpBalanceChanges(accOp)))
-    await this.persistAccountsOps()
+    await this.persistAccountsOps(accountOps)
   }
 
   /**
@@ -1247,7 +1220,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           )
       )
     )
-    await this.persistAccountsOps()
+    await this.persistAccountsOps(balanceChangesTasks.map((t) => t.accountOp))
   }
 
   /**
@@ -1560,7 +1533,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (shouldEmitUpdate) {
       // remove duplicates if encountered during a race condition
       await this.#removeExternalAccountOpsMatchingInternalOps(updatedAccountsOps)
-      await this.persistAccountsOps()
+      await this.persistAccountsOps(updatedAccountsOps)
     }
 
     // record the balance changes but do not await them

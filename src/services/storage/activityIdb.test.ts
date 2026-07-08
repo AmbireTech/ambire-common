@@ -1,10 +1,12 @@
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
+import 'fake-indexeddb/auto'
 
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { beforeEach, describe, expect, test } from '@jest/globals'
 
 import { SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { ActivityIdbStorage } from './activityIdb'
+import { BaseIdbStore } from './baseIdbStore'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test constants
@@ -39,7 +41,8 @@ function makeOp(
 }
 
 beforeEach(() => {
-  // Give each test a completely isolated IndexedDB environment.
+  // Reset the shared DB connection so each test gets a completely isolated environment.
+  BaseIdbStore.resetDb('ambire')
   global.indexedDB = new IDBFactory()
   global.IDBKeyRange = IDBKeyRange
   // checkQuota() reads navigator.storage — stub it to avoid ReferenceError in Node.
