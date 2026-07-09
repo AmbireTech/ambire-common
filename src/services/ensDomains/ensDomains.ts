@@ -8,8 +8,7 @@ import { getViemClientForProvider } from '@/services/provider'
 import EnsGetter from '../../../contracts/compiled/EnsGetter.json'
 
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
-const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
-export const NAMOSHI_UNIVERSAL_RESOLVER = '0xc5Ed1fA34AD1F23F0cD2E36DB288290488B1B493'
+export const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
 export const ENS_EXPIRY_WARN_WINDOW_IN_MS = 60 * 24 * 60 * 60 * 1000
 const LOCAL_BATCH_GATEWAY_URL = 'x-batch-gateway:true'
 
@@ -26,7 +25,10 @@ export const ENS_NAME_WRAPPER_SEPOLIA = '0x0635513f179D50A207757E05759CbD106d7dF
 export type NameExpiry = {
   /** Registration expiry, in ms. Renewal is due at this point. */
   expiresAt: number
-  /** End of the grace period, in ms. The name can be sniped only after this. */
+  /**
+   * End of the grace period, in ms. The name can be sniped only after this.
+   * If there isn't a grace window it matches `expiresAt`.
+   *  */
   gracePeriodEndsAt: number
   updatedAt: number
 }
@@ -46,18 +48,14 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks
 }
 
-export function getIsNamoshiDomain(domain: string) {
-  return domain.endsWith('.btc') || domain.endsWith('.citrea')
-}
-
 export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
 /**
- * Resolves an ENS/Namoshi domain to an address, avatar and (for ENS) its registration expiry.
- *
- * Can work with a custom universal resolver if the domain is a Namoshi domain, otherwise it defaults to the ENS universal resolver.
+ * Resolves an ENS(-compatible) domain to an address, avatar and, for services that have an ENS
+ * registrar/NameWrapper, its registration expiry. The universal resolver to query defaults to the
+ * ENS one; ENS-compatible services (Namoshi, GNS) pass their own.
  */
 async function resolveENSDomain({
   provider,
@@ -67,9 +65,13 @@ async function resolveENSDomain({
   provider: RPCProvider
   domain: string
   options?: {
-    isNamoshiDomain?: boolean
-    /** NameWrapper override forwarded to `getEnsExpiry` (mainnet default, sepolia on testnet). */
-    nameWrapperAddress?: string
+    /** Universal resolver to query. Defaults to the ENS one. */
+    universalResolverAddress?: string
+    /**
+     * Registrar/NameWrapper config for reading the registration expiry. Omit to use the ENS
+     * defaults; pass `null` for services without an ENS registrar (they have no expiry to read).
+     */
+    expiry?: { baseRegistrar?: string; nameWrapper?: string } | null
   }
 }): Promise<{
   address: string
@@ -80,20 +82,20 @@ async function resolveENSDomain({
   if (!normalizedDomainName) return { address: '', avatar: null, expiry: null }
 
   const client = getViemClientForProvider(provider)
-  const universalResolverAddress = !options?.isNamoshiDomain
-    ? ENS_UNIVERSAL_RESOLVER
-    : NAMOSHI_UNIVERSAL_RESOLVER
+  const universalResolverAddress = options?.universalResolverAddress ?? ENS_UNIVERSAL_RESOLVER
+  const skipExpiry = options?.expiry === null
 
   const [address, avatar, expiry] = await Promise.all([
     client.getEnsAddress({ name: normalizedDomainName, universalResolverAddress }),
     client.getEnsAvatar({ name: normalizedDomainName, universalResolverAddress }),
-    // Namoshi domains live on a different chain without the ENS registrar/NameWrapper, so they have
-    // no ENS expiry to read.
-    options?.isNamoshiDomain
+    skipExpiry
       ? Promise.resolve(null)
       : getEnsExpiry(provider, {
           name: normalizedDomainName,
-          addresses: { nameWrapper: options?.nameWrapperAddress }
+          addresses: {
+            baseRegistrar: options?.expiry?.baseRegistrar,
+            nameWrapper: options?.expiry?.nameWrapper
+          }
         })
   ])
 
@@ -115,14 +117,12 @@ async function reverseLookupEns(
   addresses: string[],
   provider: RPCProvider,
   options?: {
-    isNamoshiDomain?: boolean
+    universalResolverAddress?: string
   }
 ): Promise<ReverseLookupResult> {
   if (!addresses.length) return {}
 
-  const universalResolverAddress = !options?.isNamoshiDomain
-    ? ENS_UNIVERSAL_RESOLVER
-    : NAMOSHI_UNIVERSAL_RESOLVER
+  const universalResolverAddress = options?.universalResolverAddress ?? ENS_UNIVERSAL_RESOLVER
 
   const result: ReverseLookupResult = {}
   const offchainLookupAddresses: string[] = []
@@ -200,7 +200,7 @@ async function getEnsAvatar(
   name: string,
   provider: RPCProvider,
   options?: {
-    isNamoshiDomain?: boolean
+    universalResolverAddress?: string
   }
 ) {
   const normalizedName = normalize(name)
@@ -210,9 +210,7 @@ async function getEnsAvatar(
 
   return client.getEnsAvatar({
     name: normalizedName,
-    universalResolverAddress: !options?.isNamoshiDomain
-      ? ENS_UNIVERSAL_RESOLVER
-      : NAMOSHI_UNIVERSAL_RESOLVER
+    universalResolverAddress: options?.universalResolverAddress ?? ENS_UNIVERSAL_RESOLVER
   })
 }
 

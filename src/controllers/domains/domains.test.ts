@@ -4,15 +4,14 @@ import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
+// The resolvers call the ensDomains primitives through this barrel, so spying here intercepts what
+// the controller ultimately runs during a reverse lookup.
 import * as ensDomainsModule from '../../services/ensDomains'
 import { getRpcProvider } from '../../services/provider'
 import {
   DomainsController,
   PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS,
-  PERSIST_DOMAIN_FOR_IN_MS,
-  PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS,
-  PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS,
-  shouldRefetchEnsExpiry
+  PERSIST_DOMAIN_FOR_IN_MS
 } from './domains'
 
 const citrea = {
@@ -78,6 +77,11 @@ const ENS2 = {
   name: 'josh.eth'
 }
 
+const GNS_TEST = {
+  address: '0xC04689227Fa24785609B1174698DBe481437f1A3',
+  name: 'donnoh.gwei'
+}
+
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
 const makeStorage = (initial: Record<string, any> = {}) => {
@@ -89,10 +93,12 @@ const makeStorage = (initial: Record<string, any> = {}) => {
     })
   } as any
 }
+// Only `keepEnsProfilesUpToDate` varies per test; the per-service flags (namoshiDomains,
+// gnsDomains) default to enabled
 const makeFeatureFlags = (keepEnsProfilesUpToDate: boolean) =>
   ({
     isFeatureEnabled: (flag: string) =>
-      flag === 'keepEnsProfilesUpToDate' ? keepEnsProfilesUpToDate : false
+      flag === 'keepEnsProfilesUpToDate' ? keepEnsProfilesUpToDate : true
   }) as any
 const mainnetProvider = () => getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
 
@@ -107,14 +113,14 @@ describe('Domains', () => {
   it('should reverse lookup (ENS)', async () => {
     await domainsController.reverseLookup(ENS_OLDEST_RESOLVER.address)
 
-    expect(domainsController.domains[ENS_OLDEST_RESOLVER.address]!.ens).toBe(
+    expect(domainsController.domains[ENS_OLDEST_RESOLVER.address]!.names.ens).toBe(
       ENS_OLDEST_RESOLVER.name
     )
   })
   it('should reverse lookup ENS with the latest resolver', async () => {
     await domainsController.reverseLookup(ENS_LATEST_RESOLVER.address)
 
-    expect(domainsController.domains[ENS_LATEST_RESOLVER.address]!.ens).toBe(
+    expect(domainsController.domains[ENS_LATEST_RESOLVER.address]!.names.ens).toBe(
       ENS_LATEST_RESOLVER.name
     )
   })
@@ -136,7 +142,7 @@ describe('Domains', () => {
     const { address, name } = ENS2
 
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address]!.ens).toBe(name)
+    expect(domainsController.domains[address]!.names.ens).toBe(name)
 
     // 1 min before expiry
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
@@ -163,6 +169,7 @@ describe('Domains', () => {
     const nowSpy = jest.spyOn(Date, 'now')
     nowSpy.mockReturnValue(start)
 
+    // Fail every service call so the address is flagged as a transient failure.
     const reverseLookupEnsSpy = jest
       .spyOn(ensDomainsModule, 'reverseLookupEns')
       .mockRejectedValue(new Error('forced failure'))
@@ -203,7 +210,7 @@ describe('Domains', () => {
   it('should set ens to null if no domain is found', async () => {
     await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
 
-    expect(domainsController.domains[NO_DOMAINS_ADDRESS]!.ens).toBe(null)
+    expect(domainsController.domains[NO_DOMAINS_ADDRESS]!.names.ens).toBe(null)
   })
   it('should reverse multiple addresses and work with all resolvers', async () => {
     domainsController.domains = {}
@@ -216,13 +223,13 @@ describe('Domains', () => {
       ENS_LATEST_RESOLVER.address
     ])
 
-    expect(domainsController.domains[getAddress(ENS_OLDEST_RESOLVER.address)]!.ens).toBe(
+    expect(domainsController.domains[getAddress(ENS_OLDEST_RESOLVER.address)]!.names.ens).toBe(
       ENS_OLDEST_RESOLVER.name
     )
-    expect(domainsController.domains[getAddress(ENS_OLD_RESOLVER.address)]!.ens).toBe(
+    expect(domainsController.domains[getAddress(ENS_OLD_RESOLVER.address)]!.names.ens).toBe(
       ENS_OLD_RESOLVER.name
     )
-    expect(domainsController.domains[getAddress(ENS_LATEST_RESOLVER.address)]!.ens).toBe(
+    expect(domainsController.domains[getAddress(ENS_LATEST_RESOLVER.address)]!.names.ens).toBe(
       ENS_LATEST_RESOLVER.name
     )
   })
@@ -230,6 +237,8 @@ describe('Domains', () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
     const controller = new DomainsController({ providers: { ['1']: provider } })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
+    // ENS and GNS both run on Ethereum, so the batch performs two lookups (ENS then GNS); Namoshi is
+    // skipped because there is no Citrea provider.
     reverseLookupEnsSpy
       .mockResolvedValueOnce({
         [getAddress(ENS_OLDEST_RESOLVER.address)]: {
@@ -254,7 +263,7 @@ describe('Domains', () => {
         ENS_LATEST_RESOLVER.address
       ])
 
-      expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+      expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
       const firstCallArgs = reverseLookupEnsSpy.mock.calls[0]
       expect(firstCallArgs).toBeDefined()
@@ -280,7 +289,9 @@ describe('Domains', () => {
     })
     const reverseLookupEnsSpy = jest
       .spyOn(ensDomainsModule, 'reverseLookupEns')
+      // The ENS call stays pending; the GNS call (same Ethereum provider) resolves immediately.
       .mockReturnValueOnce(deferred)
+      .mockResolvedValueOnce({})
     const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
 
     // First call starts the lookup; the second one is fired while the first is
@@ -294,10 +305,10 @@ describe('Domains', () => {
 
     await Promise.all([first, second])
 
-    // A single underlying lookup despite two reverseLookup calls, and both
+    // A single underlying lookup per service (ENS + GNS) despite two reverseLookup calls, and both
     // calls only resolved once the data was written to state.
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
-    expect(controller.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    expect(controller.domains[address]!.names.ens).toBe(ENS_OLDEST_RESOLVER.name)
 
     reverseLookupEnsSpy.mockRestore()
     getEnsAvatarSpy.mockRestore()
@@ -314,12 +325,14 @@ describe('Domains', () => {
     })
     const reverseLookupEnsSpy = jest
       .spyOn(ensDomainsModule, 'reverseLookupEns')
-      // First lookup (addressInFlight) stays pending until we resolve it
+      // First lookup (addressInFlight): ENS call pending, its GNS call resolves immediately.
       .mockReturnValueOnce(deferred)
-      // Batch lookup for the remaining address resolves immediately
+      .mockResolvedValueOnce({})
+      // Batch lookup for the remaining address: ENS then GNS.
       .mockResolvedValueOnce({
         [addressInBatch]: { name: ENS_LATEST_RESOLVER.name, failed: false }
       })
+      .mockResolvedValueOnce({})
     const getEnsAvatarSpy = jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
 
     const inFlight = controller.reverseLookup(addressInFlight)
@@ -331,10 +344,11 @@ describe('Domains', () => {
 
     await Promise.all([inFlight, batch])
 
-    expect(controller.domains[addressInFlight]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
-    expect(controller.domains[addressInBatch]!.ens).toBe(ENS_LATEST_RESOLVER.name)
-    // One lookup for the in-flight address, one for the rest of the batch - no duplicate.
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    expect(controller.domains[addressInFlight]!.names.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(controller.domains[addressInBatch]!.names.ens).toBe(ENS_LATEST_RESOLVER.name)
+    // One ENS + one GNS lookup for the in-flight address, and one pair for the rest of the batch -
+    // no duplicate.
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
 
     reverseLookupEnsSpy.mockRestore()
     getEnsAvatarSpy.mockRestore()
@@ -349,14 +363,14 @@ describe('Domains', () => {
 
     // A failed chunk yields a resolved (not rejected) entry with `failed: true`; the controller
     // must treat it as a transient failure (set updateFailedAt) rather than caching "no name".
-    reverseLookupEnsSpy.mockResolvedValueOnce({
+    reverseLookupEnsSpy.mockResolvedValue({
       [FAILED_ADDRESS]: { name: null, failed: true }
     })
 
     await controller.reverseLookup(FAILED_ADDRESS)
 
     expect(typeof controller.domains[FAILED_ADDRESS]!.updateFailedAt).toBe('number')
-    expect(controller.domains[FAILED_ADDRESS]!.ens).toBe(null)
+    expect(controller.domains[FAILED_ADDRESS]!.names.ens).toBeUndefined()
 
     reverseLookupEnsSpy.mockRestore()
     restore()
@@ -396,7 +410,77 @@ describe('Domains', () => {
 
     expect(domainsController.domainToAddresses[TEST.name]?.address).toBe(TEST.address)
     expect(domainsController.domainToAddresses[TEST.name]?.type).toBe('namoshi')
-    expect(domainsController.domains[TEST.address]!.namoshi).toBe(TEST.name)
+    expect(domainsController.domains[TEST.address]!.names.namoshi).toBe(TEST.name)
+  })
+  it('should resolve .gwei domain (GNS) on ethereum', async () => {
+    await domainsController.resolveDomain({ domain: GNS_TEST.name })
+
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.address).toBe(GNS_TEST.address)
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.type).toBe('gns')
+    expect(domainsController.domains[GNS_TEST.address]!.names.gns).toBe(GNS_TEST.name)
+  })
+  it('should reverse lookup (GNS .gwei)', async () => {
+    domainsController.domains = {}
+
+    await domainsController.reverseLookup(GNS_TEST.address)
+
+    expect(domainsController.domains[GNS_TEST.address]!.names.gns).toBe(GNS_TEST.name)
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.address).toBe(GNS_TEST.address)
+    expect(domainsController.domainToAddresses[GNS_TEST.name]?.type).toBe('gns')
+  })
+  it('should not resolve an unregistered .gwei domain', async () => {
+    const UNREGISTERED_NAME = 'surely-not-registered-1x2y.gwei'
+
+    await domainsController.resolveDomain({ domain: UNREGISTERED_NAME })
+
+    expect(domainsController.domainToAddresses[UNREGISTERED_NAME]).toBeUndefined()
+  })
+  it('should set gwei to null if no domain is found', async () => {
+    await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
+
+    expect(domainsController.domains[NO_DOMAINS_ADDRESS]!.names.gns).toBe(null)
+  })
+
+  it('does not resolve a service disabled by a feature flag', async () => {
+    const { restore } = suppressConsole(true)
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      featureFlags: { isFeatureEnabled: (flag: string) => flag !== 'gnsDomains' } as any
+    })
+    const reverseLookupEnsSpy = jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({})
+
+    // Reverse: with GNS disabled and no Citrea provider, only ENS is fetched.
+    await controller.reverseLookup(GNS_TEST.address)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+
+    reverseLookupEnsSpy.mockRestore()
+    restore()
+  })
+
+  it('emits a FAILED status (instead of hanging) when no resolver owns the domain', async () => {
+    // A resolver set without a fallback is the only way `matchNameResolver` returns nothing; the
+    // default set always has ENS as the fallback. The UI resolves the caller's promise off this
+    // status, so it must be emitted rather than silently returned.
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      resolvers: []
+    })
+
+    const domain = 'orphan.eth'
+    const emittedStatuses: (string | undefined)[] = []
+    const unsubscribe = controller.onUpdate(() => {
+      emittedStatuses.push(controller.resolveDomainsStatus[domain])
+    })
+
+    await controller.resolveDomain({ domain })
+
+    expect(emittedStatuses).toContain('FAILED')
+    // The in-memory status is reset afterwards so a later retry can run.
+    expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+
+    unsubscribe()
   })
 
   it('privacy mode: a whenStale lookup refreshes once the cached value is older than the TTL', async () => {
@@ -415,18 +499,19 @@ describe('Domains', () => {
     const start = Date.now()
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
 
+    // Each refresh performs two Ethereum lookups: ENS and GNS.
     await controller.reverseLookup(address)
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     // Before the TTL even a whenStale lookup serves from cache.
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
     await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     // After the TTL a whenStale lookup refreshes.
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
     await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
 
     nowSpy.mockRestore()
     reverseLookupEnsSpy.mockRestore()
@@ -449,13 +534,14 @@ describe('Domains', () => {
     const start = Date.now()
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start)
 
+    // Each refresh performs two Ethereum lookups: ENS and GNS.
     await controller.reverseLookup(address)
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(1)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     // Passive lookup past the TTL refreshes
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
     await controller.reverseLookup(address)
-    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
+    expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
 
     nowSpy.mockRestore()
     reverseLookupEnsSpy.mockRestore()
@@ -480,7 +566,9 @@ describe('Domains', () => {
     expect(storage.set).toHaveBeenCalledWith(
       'domainsCache',
       expect.objectContaining({
-        [address]: expect.objectContaining({ ens: ENS_OLDEST_RESOLVER.name })
+        [address]: expect.objectContaining({
+          names: expect.objectContaining({ ens: ENS_OLDEST_RESOLVER.name })
+        })
       })
     )
 
@@ -499,7 +587,7 @@ describe('Domains', () => {
         isWalletAccount: true
       }
     ])
-    expect(second.domains[address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(second.domains[address]!.names.ens).toBe(ENS_OLDEST_RESOLVER.name)
 
     const callsBefore = reverseLookupEnsSpy.mock.calls.length
     await second.reverseLookup(address)
@@ -512,11 +600,11 @@ describe('Domains', () => {
   it('removes resolved domains from storage that are not in the wallet and the address book', async () => {
     const storage = makeStorage({
       [ENS_OLDEST_RESOLVER.address]: {
-        ens: ENS_OLDEST_RESOLVER.name,
+        names: { ens: ENS_OLDEST_RESOLVER.name },
         updatedAt: Date.now()
       },
       [ENS_OLD_RESOLVER.address]: {
-        ens: ENS_OLD_RESOLVER.name,
+        names: { ens: ENS_OLD_RESOLVER.name },
         updatedAt: Date.now()
       }
     })
@@ -535,16 +623,18 @@ describe('Domains', () => {
       }
     ])
 
-    expect(controller.domains[ENS_OLDEST_RESOLVER.address]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
+    expect(controller.domains[ENS_OLDEST_RESOLVER.address]!.names.ens).toBe(
+      ENS_OLDEST_RESOLVER.name
+    )
     expect(controller.domains[ENS_OLD_RESOLVER.address]).toBeUndefined()
   })
 
   it('removes resolved domains from storage that are past the grace period of the ENS expiry', async () => {
     const storage = makeStorage({
       [ENS_OLDEST_RESOLVER.address]: {
-        ens: ENS_OLDEST_RESOLVER.name,
+        names: { ens: ENS_OLDEST_RESOLVER.name },
         updatedAt: Date.now(),
-        ensExpiry: {
+        expiry: {
           expiresAt: Date.now() - 1000,
           gracePeriodEndsAt: Date.now() - 1000,
           updatedAt: Date.now()
@@ -566,7 +656,7 @@ describe('Domains', () => {
       }
     ])
 
-    expect(controller.domains[ENS_OLDEST_RESOLVER.address]).toEqual({ ens: null })
+    expect(controller.domains[ENS_OLDEST_RESOLVER.address]).toEqual({ names: { ens: null } })
   })
 
   it('controller works without a citrea provider', async () => {
@@ -601,13 +691,12 @@ describe('Domains - ENS expiry', () => {
   // The expiry is fetched during a reverse lookup (when `updateExpiry` is set) and only for an address
   // that already has an entry. Seed a stale entry (past the name TTL) so the lookup re-runs and the
   // entry exists when the expiry fetch is attempted - mirroring how the selected account is refreshed.
-  const seedStaleEntry = (ensExpiry?: ensDomainsModule.NameExpiry) =>
+  const seedStaleEntry = (expiry?: ensDomainsModule.NameExpiry) =>
     makeStorage({
       [ADDR]: {
-        ens: 'vitalik.eth',
-        namoshi: null,
+        names: { ens: 'vitalik.eth', namoshi: null },
         updatedAt: Date.now() - PERSIST_DOMAIN_FOR_IN_MS - 1000,
-        ...(ensExpiry ? { ensExpiry } : {})
+        ...(expiry ? { expiry } : {})
       }
     })
 
@@ -636,7 +725,7 @@ describe('Domains - ENS expiry', () => {
       updateExpiry: true
     })
 
-    expect(controller.domains[ADDR]!.ensExpiry).toEqual(expiry)
+    expect(controller.domains[ADDR]!.expiry).toEqual(expiry)
   })
 
   it('stores the ENS expiry fetched during a forward resolveDomain', async () => {
@@ -652,7 +741,7 @@ describe('Domains - ENS expiry', () => {
     const controller = makeController(makeStorage({}))
     await controller.resolveDomain({ domain: 'vitalik.eth' })
 
-    expect(controller.domains[ADDR]!.ensExpiry).toEqual(expiry)
+    expect(controller.domains[ADDR]!.expiry).toEqual(expiry)
   })
 
   it('does not refetch the expiry when a fresh one is already cached', async () => {
@@ -684,7 +773,7 @@ describe('Domains - ENS expiry', () => {
     })
 
     expect(getEnsExpirySpy).not.toHaveBeenCalled()
-    expect(controller.domains[ADDR]!.ensExpiry).toEqual(cachedExpiry)
+    expect(controller.domains[ADDR]!.expiry).toEqual(cachedExpiry)
   })
 
   it('does not fetch the expiry when updateExpiry is not requested', async () => {
@@ -698,89 +787,6 @@ describe('Domains - ENS expiry', () => {
     await controller.reverseLookup(ADDR, true, { privacyUpdateMode: 'whenStale' })
 
     expect(getEnsExpirySpy).not.toHaveBeenCalled()
-    expect(controller.domains[ADDR]!.ensExpiry).toBeUndefined()
-  })
-})
-
-describe('shouldRefetchEnsExpiry', () => {
-  const WARN_WINDOW = ensDomainsModule.ENS_EXPIRY_WARN_WINDOW_IN_MS
-  const makeEntry = (ensExpiry: ensDomainsModule.NameExpiry | null | undefined) =>
-    ({ ens: 'vitalik.eth', namoshi: null, ensExpiry }) as any
-
-  it('refetches when never fetched (no entry / undefined / null)', () => {
-    expect(shouldRefetchEnsExpiry(undefined)).toBe(true)
-    expect(shouldRefetchEnsExpiry(makeEntry(undefined))).toBe(true)
-    expect(shouldRefetchEnsExpiry(makeEntry(null))).toBe(true)
-  })
-
-  it('does NOT refetch when far from the deadline, even if the cache is old', () => {
-    const farExpiry = {
-      expiresAt: Date.now() + WARN_WINDOW * 2,
-      gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
-      // Old cache, but it must not matter while far from the deadline.
-      updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS * 2
-    }
-    expect(shouldRefetchEnsExpiry(makeEntry(farExpiry))).toBe(false)
-  })
-
-  it('does NOT refetch when close to the deadline but freshly fetched', () => {
-    const closeFresh = {
-      expiresAt: Date.now(),
-      gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
-      updatedAt: Date.now()
-    }
-    expect(shouldRefetchEnsExpiry(makeEntry(closeFresh))).toBe(false)
-  })
-
-  it('refetches when close to the deadline and the cache is stale', () => {
-    const closeStale = {
-      expiresAt: Date.now(),
-      gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
-      updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS - 60_000
-    }
-    expect(shouldRefetchEnsExpiry(makeEntry(closeStale))).toBe(true)
-  })
-
-  describe('subnames', () => {
-    // A subname's expiry (set via NameWrapper `setChildFuses`) can be shortened at any time by the
-    // parent name's owner, unlike a .eth 2LD's registrar expiry which can only increase.
-    const makeSubnameEntry = (ensExpiry: ensDomainsModule.NameExpiry | null | undefined) =>
-      ({ ens: 'someone.ambire.eth', namoshi: null, ensExpiry }) as any
-
-    it('refetches once the subname TTL elapses, even far from the deadline', () => {
-      const staleFar = {
-        expiresAt: Date.now() + WARN_WINDOW * 2,
-        gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
-        updatedAt: Date.now() - PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS - 60_000
-      }
-      expect(shouldRefetchEnsExpiry(makeSubnameEntry(staleFar))).toBe(true)
-    })
-
-    it('does NOT refetch before the subname TTL elapses, when far from the deadline', () => {
-      const freshFar = {
-        expiresAt: Date.now() + WARN_WINDOW * 2,
-        gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
-        updatedAt: Date.now() - PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS + 60_000
-      }
-      expect(shouldRefetchEnsExpiry(makeSubnameEntry(freshFar))).toBe(false)
-    })
-
-    it('still refetches close to the deadline via the hourly check, even while within the subname TTL', () => {
-      const closeStaleWithinSubnameTtl = {
-        expiresAt: Date.now(),
-        gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
-        updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS - 60_000
-      }
-      expect(shouldRefetchEnsExpiry(makeSubnameEntry(closeStaleWithinSubnameTtl))).toBe(true)
-    })
-
-    it('does NOT refetch when within both the subname TTL and the hourly close-to-deadline window', () => {
-      const closeFreshWithinSubnameTtl = {
-        expiresAt: Date.now(),
-        gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
-        updatedAt: Date.now()
-      }
-      expect(shouldRefetchEnsExpiry(makeSubnameEntry(closeFreshWithinSubnameTtl))).toBe(false)
-    })
+    expect(controller.domains[ADDR]!.expiry).toBeUndefined()
   })
 })
