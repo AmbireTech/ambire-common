@@ -45,6 +45,7 @@ export type BuildRequest =
         amount: string
         amountInFiat: bigint
         recipientAddress: string
+        recipientDomain: string | undefined
         selectedToken: TokenResult
         executionType: RequestExecutionType
       }
