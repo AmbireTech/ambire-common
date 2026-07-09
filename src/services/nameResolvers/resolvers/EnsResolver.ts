@@ -22,6 +22,7 @@ export class EnsResolver extends EnsCompatibleResolver {
   constructor() {
     super({
       id: 'ens',
+      label: 'ENS',
       universalResolver: ENS_UNIVERSAL_RESOLVER,
       chainId: ETHEREUM_CHAIN_ID,
       isFallback: true,

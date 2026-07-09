@@ -11,6 +11,7 @@ export class NamoshiResolver extends EnsCompatibleResolver {
   constructor() {
     super({
       id: 'namoshi',
+      label: 'Namoshi',
       universalResolver: NAMOSHI_UNIVERSAL_RESOLVER,
       chainId: CITREA_CHAIN_ID,
       featureFlag: 'namoshiDomains'

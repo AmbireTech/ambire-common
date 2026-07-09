@@ -10,6 +10,7 @@ export class GnsResolver extends EnsCompatibleResolver {
   constructor() {
     super({
       id: 'gns',
+      label: 'GNS',
       universalResolver: GNS_UNIVERSAL_RESOLVER,
       chainId: ETHEREUM_CHAIN_ID,
       featureFlag: 'gnsDomains'

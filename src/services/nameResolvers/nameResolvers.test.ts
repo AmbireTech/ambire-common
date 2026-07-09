@@ -2,7 +2,14 @@ import { ENS_EXPIRY_WARN_WINDOW_IN_MS, NameExpiry } from '@/services/ensDomains'
 import { expect } from '@jest/globals'
 
 import { EXPIRY_CLOSE_TO_DEADLINE_POLL_IN_MS, isNameExpiryStale } from './expiry'
-import { getNameService, getPrimaryName, matchNameResolver } from './helpers'
+import {
+  getNameService,
+  getPrimaryName,
+  getSearchableNames,
+  matchNameResolver,
+  NAME_SERVICE_IDS,
+  NAME_SERVICE_LABELS
+} from './helpers'
 import { DEFAULT_RESOLVERS } from './resolvers'
 import { ENS_SUBNAME_EXPIRY_TTL_IN_MS } from './resolvers/EnsResolver'
 
@@ -48,6 +55,46 @@ describe('getPrimaryName', () => {
     expect(getPrimaryName(undefined)).toBe(null)
     expect(getPrimaryName({})).toBe(null)
     expect(getPrimaryName({ ens: null, namoshi: null, gns: null })).toBe(null)
+  })
+})
+
+describe('name service metadata (derived from resolvers)', () => {
+  it('exposes an id and a human-readable label for every resolver', () => {
+    ;[ensResolver, namoshiResolver, gnsResolver].forEach((resolver) => {
+      expect(resolver.label).toBeTruthy()
+    })
+    expect(ensResolver.label).toBe('ENS')
+    expect(namoshiResolver.label).toBe('Namoshi')
+    expect(gnsResolver.label).toBe('GNS')
+  })
+
+  it('lists every service id in resolver (display-priority) order', () => {
+    expect(NAME_SERVICE_IDS).toEqual(DEFAULT_RESOLVERS.map((r) => r.id))
+  })
+
+  it('maps each id to its resolver label', () => {
+    expect(NAME_SERVICE_LABELS).toEqual({ ens: 'ENS', namoshi: 'Namoshi', gns: 'GNS' })
+    // Kept in sync with the id list, so a new service is covered without extra edits.
+    expect(Object.keys(NAME_SERVICE_LABELS).sort()).toEqual([...NAME_SERVICE_IDS].sort())
+  })
+})
+
+describe('getSearchableNames', () => {
+  it('joins every resolved name, lowercased and trimmed, in priority order', () => {
+    expect(
+      getSearchableNames({ ens: 'Vitalik.eth', namoshi: ' Satoshi.BTC ', gns: 'Donnoh.gwei' })
+    ).toBe('vitalik.eth satoshi.btc donnoh.gwei')
+  })
+
+  it('skips missing/null names', () => {
+    expect(getSearchableNames({ ens: 'a.eth', namoshi: null })).toBe('a.eth')
+    expect(getSearchableNames({ gns: 'c.gwei' })).toBe('c.gwei')
+  })
+
+  it('returns an empty string when there is nothing to search', () => {
+    expect(getSearchableNames(undefined)).toBe('')
+    expect(getSearchableNames({})).toBe('')
+    expect(getSearchableNames({ ens: null, namoshi: null, gns: null })).toBe('')
   })
 })
 

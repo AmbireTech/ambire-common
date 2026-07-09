@@ -31,3 +31,20 @@ export const getPrimaryName = (
 
   return null
 }
+
+/** Every name service id, in display-priority order. */
+export const NAME_SERVICE_IDS: NameServiceId[] = DEFAULT_RESOLVERS.map((resolver) => resolver.id)
+
+/** Human-readable label per name service, keyed by id (e.g. `{ ens: 'ENS' }`). */
+export const NAME_SERVICE_LABELS = Object.fromEntries(
+  DEFAULT_RESOLVERS.map((resolver) => [resolver.id, resolver.label])
+) as Record<NameServiceId, string>
+
+/**
+ * Joins every resolved name for an address into a single lowercased, space-separated string for
+ * fuzzy search. Automatically covers all name services, so search keeps working when one is added.
+ */
+export const getSearchableNames = (names: ResolvedNames | undefined): string =>
+  NAME_SERVICE_IDS.map((id) => names?.[id]?.toLowerCase().trim())
+    .filter(Boolean)
+    .join(' ')

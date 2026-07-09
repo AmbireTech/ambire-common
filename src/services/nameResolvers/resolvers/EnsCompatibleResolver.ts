@@ -15,6 +15,7 @@ export const ETHEREUM_CHAIN_ID = { mainnet: '1', testnet: '11155111' }
 
 export type EnsCompatibleConfig = {
   id: NameServiceId
+  label: string
   universalResolver: string
   chainId: { mainnet: string; testnet: string }
   featureFlag?: keyof FeatureFlags
@@ -30,6 +31,8 @@ export type EnsCompatibleConfig = {
 export abstract class EnsCompatibleResolver implements NameResolver {
   readonly id: NameServiceId
 
+  readonly label: string
+
   readonly featureFlag?: keyof FeatureFlags
 
   readonly isFallback: boolean
@@ -44,6 +47,7 @@ export abstract class EnsCompatibleResolver implements NameResolver {
 
   constructor(config: EnsCompatibleConfig) {
     this.id = config.id
+    this.label = config.label
     this.featureFlag = config.featureFlag
     this.isFallback = config.isFallback ?? false
     this.universalResolver = config.universalResolver

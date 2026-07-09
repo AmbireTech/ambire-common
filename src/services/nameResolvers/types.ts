@@ -34,6 +34,8 @@ export type ForwardResolution = {
  */
 export interface NameResolver {
   readonly id: NameServiceId
+  /** Human-readable service name shown to the user (e.g. 'ENS'). */
+  readonly label: string
   /** Omit to always enable; otherwise the service is gated by this feature flag. */
   readonly featureFlag?: keyof FeatureFlags
   /**
