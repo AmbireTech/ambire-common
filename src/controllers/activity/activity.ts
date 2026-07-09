@@ -89,7 +89,6 @@ export interface Filters {
   identifiedBy?: AccountOpIdentifiedBy
 }
 
-
 export interface ExternalAccountOps {
   [account: string]: { [network: string]: SubmittedAccountOpLike[] }
 }
@@ -384,7 +383,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
         accountsOps = await this.#activityIdb.loadStartupOps()
         console.timeEnd('[ActivityController] startup-load:idb')
       } catch (error) {
-        console.error('[ActivityController] Failed to load from IDB, falling back to storage', error)
+        console.error(
+          '[ActivityController] Failed to load from IDB, falling back to storage',
+          error
+        )
         console.time('[ActivityController] startup-load:storage-fallback')
         accountsOps = await this.#storage.get('accountsOps', {})
         console.timeEnd('[ActivityController] startup-load:storage-fallback')
@@ -396,7 +398,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     // Always load externalAccountOps from storage (not migrated to IDB yet)
-    [externalAccountOps, signedMessages] = await Promise.all([
+    ;[externalAccountOps, signedMessages] = await Promise.all([
       this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {})
     ])
@@ -727,6 +729,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
     try {
       await fn()
+      console.log('ActivityController: IDB persist succeeded')
     } catch (error) {
       console.error('ActivityController: Failed to persist to IDB', error)
     }
@@ -1013,7 +1016,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     trim(externalAccountOps)
 
     // externalAccountOps: using chrome.storage.local only (not migrated to IDB yet)
-    await this.#storage.set('externalAccountOps', this.#externalAccountOps);
+    await this.#storage.set('externalAccountOps', this.#externalAccountOps)
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -1630,7 +1633,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
       try {
         await this.#activityIdb.deleteAccount(address)
       } catch (error) {
-        console.error('ActivityController: Failed to delete from IDB, falling back to storage', error)
+        console.error(
+          'ActivityController: Failed to delete from IDB, falling back to storage',
+          error
+        )
         await this.#storage.set('accountsOps', this.#accountsOps)
         await this.#storage.set('signedMessages', this.#signedMessages)
       }

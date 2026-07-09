@@ -290,13 +290,7 @@ describe('ActivityIdbStorage', () => {
         makeOp(`fin-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i * 10)
       )
       const pending = Array.from({ length: 3 }, (_, i) =>
-        makeOp(
-          `pend-${i}`,
-          ACC_A,
-          CHAIN_1,
-          AccountOpStatus.BroadcastedButNotConfirmed,
-          1000 + i
-        )
+        makeOp(`pend-${i}`, ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000 + i)
       )
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [...finalized, ...pending])
 
@@ -382,5 +376,4 @@ describe('ActivityIdbStorage', () => {
       expect((retrieved as any).nonce).toBe(42n)
     })
   })
-
 })

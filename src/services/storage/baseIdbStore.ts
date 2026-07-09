@@ -102,15 +102,17 @@ export class BaseIdbStore {
           // When oldVersion > 0 and the store already exists, add migration branches here.
         }
       }
-    }).then((db) => {
-      registry.db = db
-      console.log(`[BaseIdbStore] Opened "${dbName}" v${version}`)
-      return db
-    }).catch((error) => {
-      // Allow a subsequent openDB attempt after a transient failure.
-      registry.openPromise = null
-      throw error
     })
+      .then((db) => {
+        registry.db = db
+        console.log(`[BaseIdbStore] Opened "${dbName}" v${version}`)
+        return db
+      })
+      .catch((error) => {
+        // Allow a subsequent openDB attempt after a transient failure.
+        registry.openPromise = null
+        throw error
+      })
 
     return registry.openPromise
   }
@@ -137,12 +139,20 @@ export class BaseIdbStore {
     if (this.db) return
     if (this.initPromise) return this.initPromise
 
+    console.log(
+      `[BaseIdbStore] init() starting for "${this.config.dbName}/${this.config.storeName}"`
+    )
     this.initPromise = this.doInit().catch((error) => {
       // Allow a subsequent init() call to retry after a transient failure.
+      console.error(
+        `[BaseIdbStore] init() failed for "${this.config.dbName}/${this.config.storeName}", will retry on next call`,
+        error
+      )
       this.initPromise = null
       throw error
     })
     await this.initPromise
+    console.log(`[BaseIdbStore] init() ready for "${this.config.dbName}/${this.config.storeName}"`)
   }
 
   protected async doInit(): Promise<void> {
@@ -185,22 +195,25 @@ export class BaseIdbStore {
   protected checkQuota(): void {
     if (!navigator.storage?.estimate) return
 
-    navigator.storage.estimate().then((estimate) => {
-      if (!estimate.quota || !estimate.usage) return
+    navigator.storage
+      .estimate()
+      .then((estimate) => {
+        if (!estimate.quota || !estimate.usage) return
 
-      const percentUsed = (estimate.usage / estimate.quota) * 100
-      const usedMB = (estimate.usage / 1024 / 1024).toFixed(1)
-      const quotaMB = (estimate.quota / 1024 / 1024).toFixed(1)
+        const percentUsed = (estimate.usage / estimate.quota) * 100
+        const usedMB = (estimate.usage / 1024 / 1024).toFixed(1)
+        const quotaMB = (estimate.quota / 1024 / 1024).toFixed(1)
 
-      console.log(
-        `[BaseIdbStore] ${this.config.storeName} quota: ${usedMB}MB / ${quotaMB}MB (${percentUsed.toFixed(1)}%)`
-      )
-
-      if (percentUsed > 80) {
-        console.warn(
-          `[BaseIdbStore] ${this.config.storeName} quota usage high (${percentUsed.toFixed(1)}%)`
+        console.log(
+          `[BaseIdbStore] ${this.config.storeName} quota: ${usedMB}MB / ${quotaMB}MB (${percentUsed.toFixed(1)}%)`
         )
-      }
-    }).catch(() => {})
+
+        if (percentUsed > 80) {
+          console.warn(
+            `[BaseIdbStore] ${this.config.storeName} quota usage high (${percentUsed.toFixed(1)}%)`
+          )
+        }
+      })
+      .catch(() => {})
   }
 }

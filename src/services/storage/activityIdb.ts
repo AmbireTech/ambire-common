@@ -158,10 +158,14 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     // Fire put before any await so the transaction has a pending request.
     // .catch(() => {}) suppresses unhandled-rejection warnings; tx.done still
     // rejects on failure and is awaited below.
+    console.log(`[ActivityIdbStorage] putSingleOp ${accountAddr}:${chainIdStr} op=${op.id}`)
     store.put(this.#opToRow(accountAddr, chainIdStr, op)).catch(() => {})
 
     if (trimmedId) {
       // In-memory trim already identified the op to evict.
+      console.log(
+        `[ActivityIdbStorage] putSingleOp evicting in-memory trimmed op=${trimmedId} for ${accountAddr}:${chainIdStr}`
+      )
       store.delete([accountAddr, chainIdStr, trimmedId]).catch(() => {})
     } else {
       // The in-memory group is within its cap, but IDB may have accumulated more
@@ -173,6 +177,9 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
         [accountAddr, chainIdStr, RANGE_HIGH]
       )
       const count = await store.count(groupRange)
+      console.log(
+        `[ActivityIdbStorage] putSingleOp IDB group size after put: ${count} for ${accountAddr}:${chainIdStr}`
+      )
       if (count > MAX_IDB_GROUP_SIZE) {
         const tsIndex = store.index('by-account-chain-timestamp')
         const cursor = await tsIndex.openCursor(
@@ -182,12 +189,16 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
           )
         )
         if (cursor) {
+          console.log(
+            `[ActivityIdbStorage] putSingleOp IDB cap hit (${count}/${MAX_IDB_GROUP_SIZE}) — evicting oldest op id=${cursor.value.id} ts=${cursor.value.timestamp} for ${accountAddr}:${chainIdStr}`
+          )
           store.delete(cursor.primaryKey as IDBValidKey).catch(() => {})
         }
       }
     }
 
     await tx.done
+    console.log(`[ActivityIdbStorage] putSingleOp committed for ${accountAddr}:${chainIdStr}`)
     this.checkQuota()
   }
 
@@ -199,12 +210,16 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     if (ops.length === 0) return
     await this.init()
 
+    console.log(
+      `[ActivityIdbStorage] updateOps ${ops.length} op(s): ${ops.map((o) => o.id).join(', ')}`
+    )
     const tx = this.db!.transaction(this.config.storeName, 'readwrite')
     const store = tx.objectStore(this.config.storeName)
     for (const op of ops) {
       store.put(this.#opToRow(op.accountAddr, op.chainId.toString(), op)).catch(() => {})
     }
     await tx.done
+    console.log(`[ActivityIdbStorage] updateOps committed`)
   }
 
   /**
