@@ -10,6 +10,7 @@ import {
 } from './erc7730'
 import { HumanizerCallModule, HumanizerMeta, IrCall, IrMessage } from './interfaces'
 import {
+  cowSwapModule,
   eip7702AuthorizationModule,
   ensMessageModule,
   entryPointModule,
@@ -105,6 +106,7 @@ const humanizerTMModules = [
   erc20Module,
   erc721Module,
   permit2Module,
+  cowSwapModule,
   entryPointModule,
   legendsMessageModule,
   ensMessageModule,
