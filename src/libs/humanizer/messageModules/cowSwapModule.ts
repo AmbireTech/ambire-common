@@ -1,4 +1,4 @@
-import { isAddress, zeroAddress } from 'viem'
+import { isAddress, isHex, zeroAddress } from 'viem'
 
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
@@ -6,25 +6,24 @@ import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } f
 
 const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
 
-const toBigInt = (value: unknown): bigint | null => {
-  try {
-    if (typeof value === 'bigint' || typeof value === 'number' || typeof value === 'string') {
-      return BigInt(value)
-    }
-
-    if (
-      value &&
-      typeof value === 'object' &&
-      '$bigint' in value &&
-      typeof value.$bigint === 'string'
-    ) {
-      return BigInt(value.$bigint)
-    }
-  } catch {
-    return null
+const getOrderUidVisualization = (
+  orderUid: string,
+  accountAddr: string
+): HumanizerVisualization[] => {
+  if (!isHex(orderUid) || orderUid.length !== 114) {
+    return [getLabel(`with order ID ${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`)]
   }
 
-  return null
+  const owner = `0x${orderUid.slice(66, 106)}`
+  const validTo = BigInt(`0x${orderUid.slice(106)}`)
+
+  return [
+    getLabel(`with order ID ${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`),
+    ...(owner.toLowerCase() !== accountAddr.toLowerCase()
+      ? [getLabel('owned by'), getAddressVisualization(owner)]
+      : []),
+    getDeadline(validTo)
+  ]
 }
 
 export const cowSwapModule: HumanizerTypedMessageModule = (message: Message) => {
@@ -37,12 +36,27 @@ export const cowSwapModule: HumanizerTypedMessageModule = (message: Message) => 
     !isAddress(verifyingContract) ||
     verifyingContract.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS ||
     tm.domain.name !== 'Gnosis Protocol' ||
-    tm.domain.version !== 'v2' ||
-    tm.primaryType !== 'Order' ||
-    !tm.types.Order
+    tm.domain.version !== 'v2'
   ) {
     return { fullVisualization: [] }
   }
+
+  if (tm.primaryType === 'OrderCancellations' && tm.types.OrderCancellations) {
+    const { orderUids } = tm.message
+    if (!Array.isArray(orderUids) || !orderUids.length) return { fullVisualization: [] }
+
+    return {
+      fullVisualization: [
+        getAction(orderUids.length === 1 ? 'Cancel CowSwap order' : 'Cancel CowSwap orders'),
+        ...orderUids.flatMap((orderUid, index) => [
+          ...(index ? [getLabel('and')] : []),
+          ...getOrderUidVisualization(orderUid, message.accountAddr)
+        ])
+      ]
+    }
+  }
+
+  if (tm.primaryType !== 'Order' || !tm.types.Order) return { fullVisualization: [] }
 
   const {
     sellToken,
@@ -54,11 +68,11 @@ export const cowSwapModule: HumanizerTypedMessageModule = (message: Message) => 
     receiver,
     feeAmount: rawFeeAmount
   } = tm.message
-  const sellAmount = toBigInt(rawSellAmount)
-  const buyAmount = toBigInt(rawBuyAmount)
-  const validTo = toBigInt(rawValidTo)
-  const feeAmount = toBigInt(rawFeeAmount) || 0n
-  const chainId = toBigInt(tm.domain.chainId) || message.chainId
+  const sellAmount = BigInt(rawSellAmount)
+  const buyAmount = BigInt(rawBuyAmount)
+  const validTo = BigInt(rawValidTo)
+  const feeAmount = rawFeeAmount ? BigInt(rawFeeAmount) : 0n
+  const chainId = tm.domain.chainId ? BigInt(tm.domain.chainId) : message.chainId
 
   if (
     !isAddress(sellToken) ||

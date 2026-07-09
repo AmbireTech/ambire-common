@@ -284,6 +284,46 @@ describe('typed message tests', () => {
     compareVisualizations(irMessage.fullVisualization!, expectedVisualization)
   })
 
+  test('cowswap module order cancellations', () => {
+    const accountAddr = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const orderUid =
+      '0x6ebba3d3f1ee5a04be5c4a6fd2e13bc3a8bbda2f8caae7b5e420ad8b99473242d8293ad21678c6f09da139b4b62d38e514a03b786a4f91c9'
+    const validTo = BigInt('0x6a4f91c9')
+    const expectedVisualization = [
+      getAction('Cancel CowSwap order'),
+      getLabel(`with order ID ${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`),
+      getDeadline(validTo)
+    ]
+
+    messageTemplate.accountAddr = accountAddr
+    messageTemplate.chainId = 8453n
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).domain = {
+      name: 'Gnosis Protocol',
+      version: 'v2',
+      chainId: 8453n,
+      verifyingContract: '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' }
+      ],
+      OrderCancellations: [{ name: 'orderUids', type: 'bytes[]' }]
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'OrderCancellations'
+    messageTemplate.content.message = { orderUids: [orderUid] }
+
+    const { fullVisualization } = cowSwapModule(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+
+    const irMessage = humanizeMessage(messageTemplate)
+    compareVisualizations(irMessage.fullVisualization!, expectedVisualization)
+  })
+
   test('Entry point module', () => {
     messageTemplate.fromRequestId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
     const { fullVisualization: received } = entryPointModule(messageTemplate)
