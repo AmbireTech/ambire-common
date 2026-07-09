@@ -4,7 +4,7 @@ import Colibri, { Strategy } from '@corpus-core/colibri-stateless'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { getDefaultColibriProverUrl, isColibriProviderAvailable } from '../../libs/networks/colibri'
+import { getDefaultColibriProverUrls } from '../../libs/networks/colibri'
 
 const assertSupportedBlockTag = (method: string, params: any[] | Record<string, any>) => {
   if (!Array.isArray(params)) return
@@ -17,13 +17,17 @@ const assertSupportedBlockTag = (method: string, params: any[] | Record<string, 
 class ColibriRpcProvider extends JsonRpcProvider {
   #colibri: Colibri
 
-  constructor(network: NetworkInterface, proverUrl: string, options?: JsonRpcApiProviderOptions) {
+  constructor(
+    network: NetworkInterface,
+    proverUrls: string[],
+    options?: JsonRpcApiProviderOptions
+  ) {
     super(network.selectedRpcUrl, Network.from(Number(network.chainId)), options)
 
     this.#colibri = new Colibri({
       chainId: Number(network.chainId),
       rpcs: [network.selectedRpcUrl],
-      prover: [proverUrl],
+      prover: [...proverUrls],
       proofStrategy: Strategy.VerifiedOnly,
       prover_mode: 'remote',
       zk_proof: true
@@ -46,16 +50,11 @@ export const getColibriRpcProvider = (
   network: NetworkInterface,
   options?: JsonRpcApiProviderOptions
 ): RPCProvider => {
-  const colibriProverUrl =
-    network.colibriProverUrl?.trim() || getDefaultColibriProverUrl(network.chainId)
+  const colibriProverUrls = getDefaultColibriProverUrls(network.chainId)
 
-  if (
-    !network.isColibriEnabled ||
-    !colibriProverUrl ||
-    !isColibriProviderAvailable(network.chainId)
-  ) {
+  if (!network.isColibriEnabled || !colibriProverUrls.length) {
     throw new Error('Colibri verifier is not configured for this network')
   }
 
-  return new ColibriRpcProvider(network, colibriProverUrl, options) as RPCProvider
+  return new ColibriRpcProvider(network, colibriProverUrls, options) as RPCProvider
 }

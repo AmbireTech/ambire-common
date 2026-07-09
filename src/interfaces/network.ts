@@ -116,7 +116,6 @@ export interface Network {
   disabled?: boolean
   customBundlerUrl?: string
   isColibriEnabled?: boolean
-  colibriProverUrl?: string
   /**
    * Initial polling interval for pending account operation statuses.
    */
@@ -139,7 +138,6 @@ export interface AddNetworkRequestParams {
   iconUrls: Network['iconUrls']
   customBundlerUrl?: Network['customBundlerUrl']
   isColibriEnabled?: Network['isColibriEnabled']
-  colibriProverUrl?: Network['colibriProverUrl']
 }
 
 export interface ChainlistNetwork {

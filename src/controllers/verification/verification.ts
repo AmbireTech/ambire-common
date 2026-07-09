@@ -6,7 +6,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
 import { DeploylessMode } from '../../libs/deployless/deployless'
-import { getDefaultColibriProverUrl, isColibriProviderAvailable } from '../../libs/networks/colibri'
+import { getDefaultColibriProverUrls } from '../../libs/networks/colibri'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 import {
   PortfolioLibGetResult,
@@ -34,7 +34,6 @@ type VerifierProvider = {
 
 type VerifierConfig = {
   connectionUrl: string
-  proverUrl: string
 }
 
 export type VerifyPortfolioParams = {
@@ -335,15 +334,12 @@ export class VerificationController extends EventEmitter {
   #getVerifierConfig(network: Network): VerifierConfig | null {
     if (network.disabled) return null
     if (!network.isColibriEnabled) return null
-    if (!isColibriProviderAvailable(network.chainId)) return null
 
-    const proverUrl =
-      network.colibriProverUrl?.trim() || getDefaultColibriProverUrl(network.chainId)
-    if (!proverUrl) return null
+    const proverUrls = getDefaultColibriProverUrls(network.chainId)
+    if (!proverUrls.length) return null
 
     return {
-      proverUrl,
-      connectionUrl: `colibri:${network.selectedRpcUrl}:${proverUrl}`
+      connectionUrl: `colibri:${network.selectedRpcUrl}:${proverUrls.join(',')}`
     }
   }
 
@@ -359,7 +355,7 @@ export class VerificationController extends EventEmitter {
       return
     }
 
-    const { connectionUrl, proverUrl } = verifierConfig
+    const { connectionUrl } = verifierConfig
     const currentConnectionUrl = this.#connectionUrls[stringChainId]
     const currentStatus = this.statusesByChainId[stringChainId]?.status
 
@@ -394,12 +390,7 @@ export class VerificationController extends EventEmitter {
       let provider: RPCProvider | null = null
 
       try {
-        provider = await Promise.resolve(
-          getColibriRpcProvider({
-            ...network,
-            colibriProverUrl: proverUrl
-          })
-        )
+        provider = await Promise.resolve(getColibriRpcProvider(network))
 
         if (this.#syncPromises[stringChainId]?.promise !== syncPromise) {
           this.#destroyRpcProvider(provider)
