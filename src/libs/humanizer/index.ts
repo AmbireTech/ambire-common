@@ -31,6 +31,7 @@ import { airdropsModule } from './modules/Airdrops'
 import AllowanceModule from './modules/Allowance'
 import asciiModule from './modules/AsciiModule'
 import Bundler3Module from './modules/Bundler3'
+import CowSwapModule from './modules/CowSwap'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
 import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
@@ -75,6 +76,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   curveModule,
   traderJoeModule,
   KyberSwap,
+  CowSwapModule,
   SocketModule,
   LifiModule,
   AcrossModule,
