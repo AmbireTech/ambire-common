@@ -8,6 +8,7 @@ import { getNonce } from '../../../test/helpers'
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
@@ -22,12 +23,14 @@ import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
+import { DeploylessMode } from '../../libs/deployless/deployless'
 import {
   erc721CollectionToLearnedAssetKeys,
   learnedErc721sToHints
 } from '../../libs/portfolio/helpers'
 import {
   CollectionResult,
+  GetOptions,
   Hints,
   LearnedAssets,
   PortfolioGasTankResult,
@@ -534,11 +537,25 @@ describe('Portfolio Controller ', () => {
     jest
       .spyOn(defiPositionsLib, 'getCustomProviderPositions')
       .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
-    const portfolioGetCalls: { isColibri: boolean; blockTag: unknown }[] = []
+    const portfolioGetCalls: {
+      isColibri: boolean
+      blockTag: unknown
+      rpcNoStateOverride: boolean
+    }[] = []
+    const verifierPortfolioGetOptions: Partial<GetOptions>[] = []
+    const expectedVerifierDeployless = {
+      erc20: { mode: DeploylessMode.Verifier, to: BALANCE_GETTER },
+      erc721: { mode: DeploylessMode.Verifier, to: NFT_GETTER }
+    }
     jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
       const isColibri = this.provider === verifiedProvider
       const chainId = this.network.chainId
-      portfolioGetCalls.push({ isColibri, blockTag: opts?.blockTag })
+      if (isColibri) verifierPortfolioGetOptions.push(opts || {})
+      portfolioGetCalls.push({
+        isColibri,
+        blockTag: opts?.blockTag,
+        rpcNoStateOverride: this.network.rpcNoStateOverride
+      })
 
       return Promise.resolve(
         isColibri
@@ -566,10 +583,11 @@ describe('Portfolio Controller ', () => {
     // The RPC fetch is a plain 'both'; Colibri re-fetches at the RPC result's block.
     expect(portfolioGetCalls).toEqual(
       expect.arrayContaining([
-        { isColibri: false, blockTag: 'both' },
-        { isColibri: true, blockTag: 122 }
+        { isColibri: false, blockTag: 'both', rpcNoStateOverride: false },
+        { isColibri: true, blockTag: 122, rpcNoStateOverride: true }
       ])
     )
+    expect(verifierPortfolioGetOptions[0]?.deployless).toEqual(expectedVerifierDeployless)
     expect(warningVerification?.status).toBe('warning')
     expect(warningVerification?.error).toBe(
       '1 balance(s) differed from the Colibri verified result'
@@ -604,8 +622,8 @@ describe('Portfolio Controller ', () => {
       expect(verifiedProvider.getBlockNumber).toHaveBeenCalledTimes(2)
       expect(portfolioGetCalls).toEqual(
         expect.arrayContaining([
-          { isColibri: false, blockTag: 'both' },
-          { isColibri: true, blockTag: 122 }
+          { isColibri: false, blockTag: 'both', rpcNoStateOverride: false },
+          { isColibri: true, blockTag: 122, rpcNoStateOverride: true }
         ])
       )
     } finally {
@@ -619,7 +637,9 @@ describe('Portfolio Controller ', () => {
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
     const colibriBehindVerification = await waitForVerification()
 
-    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
     expect(colibriBehindVerification?.status).toBe('warning')
     expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
 
@@ -630,7 +650,9 @@ describe('Portfolio Controller ', () => {
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
     const staleVerification = await waitForVerification()
 
-    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
     expect(staleVerification?.status).toBe('stale')
     expect(staleVerification?.blockDiff).toBe(11)
 
@@ -641,16 +663,18 @@ describe('Portfolio Controller ', () => {
     rpcResultBlockNumber = 222
     verifiedAmount = 99n
     portfolioGetCalls.length = 0
+    verifierPortfolioGetOptions.length = 0
 
     await controller.updateSelectedAccount(account.addr, [colibriGnosis])
     const gnosisWarningVerification = await waitForVerification('100')
 
     expect(portfolioGetCalls).toEqual(
       expect.arrayContaining([
-        { isColibri: false, blockTag: 'both' },
-        { isColibri: true, blockTag: 222 }
+        { isColibri: false, blockTag: 'both', rpcNoStateOverride: true },
+        { isColibri: true, blockTag: 222, rpcNoStateOverride: true }
       ])
     )
+    expect(verifierPortfolioGetOptions[0]?.deployless).toEqual(expectedVerifierDeployless)
     expect(gnosisWarningVerification?.status).toBe('warning')
     expect(gnosisWarningVerification?.error).toBe(
       '1 balance(s) differed from the Colibri verified result'
@@ -693,7 +717,9 @@ describe('Portfolio Controller ', () => {
 
     expect(verifyPortfolioSpy).toHaveBeenCalledTimes(verifyCallsBeforeSimulation)
     expect(controller.getAccountPortfolioState(account.addr)['1']?.verification).toBeUndefined()
-    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
 
     // 9) Unexpected verifier failures should resolve the pending loading state to a warning.
     verifyPortfolioSpy.mockRejectedValueOnce(new Error('Colibri verification crashed'))
@@ -704,7 +730,9 @@ describe('Portfolio Controller ', () => {
 
     expect(rejectedVerification?.status).toBe('warning')
     expect(rejectedVerification?.error).toBe('Colibri could not verify portfolio balances')
-    expect(portfolioGetCalls).toEqual([{ isColibri: false, blockTag: 'both' }])
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
   })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {

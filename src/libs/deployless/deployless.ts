@@ -29,7 +29,9 @@ const abiCoder = new AbiCoder()
 export enum DeploylessMode {
   Detect,
   ProxyContract,
-  StateOverride
+  StateOverride,
+  // Verifier mode calls an already deployed contract and must not use state overrides.
+  Verifier
 }
 export type CallOptions = {
   mode: DeploylessMode
@@ -45,7 +47,7 @@ const defaultOptions: CallOptions = {
   mode: DeploylessMode.Detect,
   blockTag: 'latest',
   from: undefined,
-  to: arbitraryAddr,
+  to: undefined,
   stateToOverride: null
 }
 
@@ -160,9 +162,58 @@ export class Deployless {
     return typeof blockTag === 'number' ? toQuantity(blockTag) : blockTag
   }
 
+  private getCallPromise(callData: string, opts: CallOptions): Promise<string> {
+    const blockTag = Deployless.normalizeRpcBlockTag(opts.blockTag)
+
+    if (opts.mode === DeploylessMode.Verifier) {
+      if (!opts.to) throw new Error('verifier mode requires a deployed contract address')
+
+      return this.provider.call({
+        blockTag,
+        from: opts.from,
+        to: opts.to,
+        gasPrice: opts?.gasPrice,
+        gasLimit: opts?.gasLimit,
+        data: callData
+      })
+    }
+
+    const toAddr = opts.to ?? arbitraryAddr
+    if (!!this.stateOverrideSupported && opts.mode !== DeploylessMode.ProxyContract) {
+      return (this.provider as JsonRpcProvider).send('eth_call', [
+        {
+          to: toAddr,
+          data: callData,
+          from: opts.from,
+          gasPrice: opts?.gasPrice,
+          gas: opts?.gasLimit
+        },
+        blockTag,
+        {
+          [toAddr]: { code: this.contractRuntimeCode },
+          ...(opts.stateToOverride || {})
+        }
+      ])
+    }
+
+    return this.provider.call({
+      blockTag,
+      from: opts.from,
+      gasPrice: opts?.gasPrice,
+      gasLimit: opts?.gasLimit,
+      data: Deployless.checkDataSize(
+        concat([
+          deploylessProxyBin,
+          abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
+        ])
+      )
+    })
+  }
+
   async call(methodName: string, args: any[], _opts: Partial<CallOptions> = {}): Promise<any> {
     const opts = { ...defaultOptions, ..._opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
+    const forceVerifier = opts.mode === DeploylessMode.Verifier
 
     // First, start by detecting which modes are available, unless we're forcing the proxy mode
     // if we use state override, we do need detection to run still so it can populate contractRuntimeCode
@@ -170,6 +221,7 @@ export class Deployless {
       this.stateOverrideSupported &&
       !this.detectionPromise &&
       !forceProxy &&
+      !forceVerifier &&
       this.contractRuntimeCode === undefined
     ) {
       this.detectionPromise = this.detectStateOverride()
@@ -189,43 +241,17 @@ export class Deployless {
       args
     })
 
-    const toAddr = opts.to ?? arbitraryAddr
-    const callPromise =
-      !!this.stateOverrideSupported && !forceProxy
-        ? (this.provider as JsonRpcProvider).send('eth_call', [
-            {
-              to: toAddr,
-              data: callData,
-              from: opts.from,
-              gasPrice: opts?.gasPrice,
-              gas: opts?.gasLimit
-            },
-            Deployless.normalizeRpcBlockTag(opts.blockTag),
-            {
-              [toAddr]: { code: this.contractRuntimeCode },
-              ...(opts.stateToOverride || {})
-            }
-          ])
-        : this.provider.call({
-            blockTag: Deployless.normalizeRpcBlockTag(opts.blockTag),
-            from: opts.from,
-            gasPrice: opts?.gasPrice,
-            gasLimit: opts?.gasLimit,
-            data: Deployless.checkDataSize(
-              concat([
-                deploylessProxyBin,
-                abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
-              ])
-            )
-          })
+    const callPromise = this.getCallPromise(callData, opts)
+    const timeoutMs =
+      opts.mode === DeploylessMode.Verifier ? 40000 : this.isProviderInvictus ? 15000 : 20000
 
     // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
-    // To prevent prolonged retries, we use Promise.race to set a 10-second timeout. This way, the callPromise will either resolve
-    // or the timeout promise will reject after 10 seconds, whichever occurs first.
+    // To prevent prolonged retries, we use Promise.race to set a timeout. This way, the callPromise will either resolve
+    // or the timeout promise will reject, whichever occurs first.
     const returnDataRaw = await Deployless.handleResponse(
       Promise.race([
         callPromise,
-        new Promise((_resolve, reject) => {
+        new Promise<string>((_resolve, reject) => {
           // Custom providers may take longer to respond, so we set a longer timeout for them.
           setTimeout(
             () =>
@@ -234,7 +260,7 @@ export class Deployless {
                   `rpc-timeout. Rpc: ${this.isProviderInvictus ? this.providerUrl : 'custom'}`
                 )
               ),
-            this.isProviderInvictus ? 15000 : 20000
+            timeoutMs
           )
         })
       ]),

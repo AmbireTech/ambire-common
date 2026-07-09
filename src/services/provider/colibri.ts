@@ -1,12 +1,10 @@
-import Colibri from '@corpus-core/colibri-stateless'
 import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
+
+import Colibri, { Strategy } from '@corpus-core/colibri-stateless'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import {
-  getDefaultColibriProverUrl,
-  isColibriProviderAvailable
-} from '../../libs/networks/colibri'
+import { getDefaultColibriProverUrl, isColibriProviderAvailable } from '../../libs/networks/colibri'
 
 const assertSupportedBlockTag = (method: string, params: any[] | Record<string, any>) => {
   if (!Array.isArray(params)) return
@@ -26,6 +24,7 @@ class ColibriRpcProvider extends JsonRpcProvider {
       chainId: Number(network.chainId),
       rpcs: [network.selectedRpcUrl],
       prover: [proverUrl],
+      proofStrategy: Strategy.VerifiedOnly,
       zk_proof: true
     })
   }

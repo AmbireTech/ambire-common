@@ -1,9 +1,11 @@
+import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
+import { DeploylessMode } from '../../libs/deployless/deployless'
 import { getDefaultColibriProverUrl, isColibriProviderAvailable } from '../../libs/networks/colibri'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 import {
@@ -137,7 +139,15 @@ export class VerificationController extends EventEmitter {
     if (!libForKey || libForKey.provider !== provider) {
       this.#verificationPortfolioLibs.set(
         key,
-        new Portfolio(this.#fetch, provider, network, this.#velcroUrl)
+        new Portfolio(
+          this.#fetch,
+          provider,
+          // Colibri verification must not use state overrides or deployless
+          // contract-creation calls. The actual verifier calls are routed to
+          // deployed getter contracts through GetOptions.deployless below.
+          { ...network, rpcNoStateOverride: true },
+          this.#velcroUrl
+        )
       )
     }
 
@@ -228,7 +238,11 @@ export class VerificationController extends EventEmitter {
         ...getOptions,
         tokenDataCache: new Map(tokenDataCache),
         blockTag: Number(rpcBlockNumber),
-        disableAutoDiscovery: true
+        disableAutoDiscovery: true,
+        deployless: {
+          erc20: { mode: DeploylessMode.Verifier, to: BALANCE_GETTER },
+          erc721: { mode: DeploylessMode.Verifier, to: NFT_GETTER }
+        }
       })
     } catch (error: any) {
       this.emitError({

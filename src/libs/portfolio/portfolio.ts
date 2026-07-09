@@ -218,7 +218,8 @@ export class Portfolio {
       tokenDataCache: paramsTokenDataCache,
       tokenDataRecency,
       blacklist,
-      preventTokenBlacklisting
+      preventTokenBlacklisting,
+      deployless
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
@@ -302,7 +303,7 @@ export class Portfolio {
             getTokens(
               this.network,
               this.deploylessTokens,
-              { simulation, blockTag, specialErc20Hints },
+              { simulation, blockTag, specialErc20Hints, deployless },
               accountAddr,
               page,
               index
@@ -314,7 +315,7 @@ export class Portfolio {
           getNFTs(
             this.network,
             this.deploylessNfts,
-            { simulation, blockTag },
+            { simulation, blockTag, deployless },
             accountAddr,
             page,
             limits
@@ -606,7 +607,7 @@ export class Portfolio {
   async getTokensByAddresses(
     accountAddr: string,
     tokenAddrs: string[],
-    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints'>
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints' | 'deployless'>
   ): Promise<[TokenError, TokenResult][]> {
     const uniqueTokenAddrs = [...new Set(tokenAddrs)]
 
