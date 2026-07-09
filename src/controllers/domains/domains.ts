@@ -2,14 +2,25 @@ import { getAddress, isAddress } from 'ethers'
 
 import { Contacts } from '@/interfaces/addressBook'
 
-import { Domains, IDomainsController, ReverseLookupOptions } from '../../interfaces/domains'
+import {
+  Domains,
+  ExtraReverseData,
+  IDomainsController,
+  ResolvedReverseEntry,
+  ReverseLookupOptions
+} from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
-import { RPCProviders } from '../../interfaces/provider'
+import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
+  ENS_EXPIRY_WARN_WINDOW_IN_MS,
+  ENS_NAME_WRAPPER,
+  ENS_NAME_WRAPPER_SEPOLIA,
   getEnsAvatar,
+  getEnsExpiry,
   getIsNamoshiDomain,
+  NameExpiry,
   resolveENSDomain,
   reverseLookupEns,
   ReverseLookupResult
@@ -20,6 +31,41 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
+export const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS = 24 * 60 * 60 * 1000
+// Once a name is within the warn window, re-poll its expiry at most this often to catch a renewal.
+export const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS = 1 * 60 * 60 * 1000
+
+/**
+ * Decides whether to (re)fetch a name's ENS expiry.
+ */
+export const shouldRefetchEnsExpiry = (entry?: Domains[string]): boolean => {
+  const isEnsSubname = entry?.ens && entry.ens.split('.').length > 2
+
+  // Subnames wrapped via the NameWrapper, the parent name's owner can set an arbitrary expiry on a
+  // child/subname via setChildFuses, and that expiry is not constrained to only increase.
+  if (
+    isEnsSubname &&
+    entry &&
+    entry.ensExpiry &&
+    entry.ensExpiry.updatedAt + PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS < Date.now()
+  ) {
+    return true
+  }
+
+  const cached = entry?.ensExpiry
+  if (!cached) return true
+
+  const isCloseToDeadline = cached.gracePeriodEndsAt - Date.now() < ENS_EXPIRY_WARN_WINDOW_IN_MS
+  if (!isCloseToDeadline) return false
+
+  return cached.updatedAt + PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS < Date.now()
+}
+
+/**
+ * Keep the cached expiry only while the primary name is unchanged; otherwise drop it so it refetches.
+ */
+const carryOverEnsExpiry = (existing: Domains[string] | undefined, nextEns: string | null) =>
+  existing?.ens === nextEns ? existing?.ensExpiry : undefined
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -108,7 +154,16 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       Object.entries(domainsFromStorage).filter(([addressInDomains, data]) => {
         if (!data) return false
 
-        // @TODO: Filter out expired entries
+        const isExpired = data.ensExpiry && data.ensExpiry.gracePeriodEndsAt < Date.now()
+
+        if (isExpired && data) {
+          // Delete all ens data for expired domains (but not that of other providers)
+          data.ens = null
+          delete data.ensAvatar
+          delete data.ensExpiry
+          // If we don't delete it the update may be skipped if it's within the TTL
+          delete data.updatedAt
+        }
 
         const isInContacts = contacts.some(({ address }) => address === addressInDomains)
 
@@ -154,12 +209,16 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
   }
 
-  async batchReverseLookup(addresses: string[]) {
+  async batchReverseLookup(addresses: string[], updateExpiryForAddresses?: string[]) {
     const normalizedAddresses = this.#normalizeAddresses(addresses)
     const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
 
     if (addressesToLookup.length) {
-      const batchPromise = this.#reverseLookup(addressesToLookup, false).finally(() => {
+      const batchPromise = this.#reverseLookup(
+        addressesToLookup,
+        false,
+        updateExpiryForAddresses
+      ).finally(() => {
         addressesToLookup.forEach((address) => {
           this.#reverseLookupPromises[address] = undefined
         })
@@ -225,12 +284,15 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
+    const nameWrapperAddress =
+      this.#defaultNetworksMode === 'mainnet' ? ENS_NAME_WRAPPER : ENS_NAME_WRAPPER_SEPOLIA
+
     await resolveENSDomain({
       provider: provider,
       domain,
-      options: { isNamoshiDomain }
+      options: { isNamoshiDomain, nameWrapperAddress }
     })
-      .then(async ({ address, avatar }) => {
+      .then(async ({ address, avatar, expiry }) => {
         if (address) {
           this.domainToAddresses[domain] = {
             address: getAddress(address),
@@ -239,6 +301,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           this.#saveResolvedDomain({
             address,
             ensAvatar: avatar,
+            ensExpiry: expiry,
             domain,
             type: isNamoshiDomain ? 'namoshi' : 'ens'
           })
@@ -266,12 +329,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   #saveResolvedDomain({
     address,
     ensAvatar,
+    ensExpiry,
     domain,
     type
   }: {
     address: string
     domain: string
     ensAvatar: string | null
+    ensExpiry?: NameExpiry | null
     type: 'ens' | 'namoshi'
   }) {
     const checksummedAddress = getAddress(address)
@@ -279,13 +344,18 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     const existing = this.domains[checksummedAddress]
     const now = Date.now()
+    const nextEns = type === 'ens' ? domain : prevEns
 
     this.domains[checksummedAddress] = {
       ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
-      ens: type === 'ens' ? domain : prevEns,
+      ens: nextEns,
       namoshi: type === 'namoshi' ? domain : (existing?.namoshi ?? null),
       createdAt: existing?.createdAt ?? now,
-      updatedAt: now
+      updatedAt: now,
+      ensExpiry:
+        type === 'ens' && ensExpiry !== undefined
+          ? ensExpiry
+          : carryOverEnsExpiry(existing, nextEns)
     }
   }
 
@@ -309,7 +379,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     this.#reverseLookupPromises[addressToLookup] = this.#reverseLookup(
       [addressToLookup],
-      emitUpdate
+      emitUpdate,
+      opts?.updateExpiry ? [addressToLookup] : undefined
     ).finally(() => {
       this.#reverseLookupPromises[addressToLookup] = undefined
     })
@@ -375,7 +446,11 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   /**
    * Resolves ENS names for one or multiple addresses.
    */
-  async #reverseLookup(addressesToLookup: string[], emitUpdate = true) {
+  async #reverseLookup(
+    addressesToLookup: string[],
+    emitUpdate = true,
+    updateExpiryForAddresses?: string[]
+  ) {
     if (!addressesToLookup.length) return
 
     const ethereumProvider =
@@ -426,34 +501,25 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         }
       })
 
-      // Avatars can't be resolved in a batch because there is additional handling
-      // for NFT/ipfs avatars. It's not that big of a deal anyway, because most accounts
-      // won't have ENS names
-      const avatarEntries = await Promise.all(
-        resolved.map(async (entry) => {
-          if (entry.failed) return [entry.address, null] as const
-
-          const ensName = entry.ens
-          if (ensName) {
-            const avatar = await withTimeout(() => getEnsAvatar(ensName, ethereumProvider), {
-              timeoutMs: 15000
-            }).catch(() => null)
-            return [entry.address, avatar] as const
-          }
-
-          const namoshiName = entry.namoshi
-          if (namoshiName && citreaProvider) {
-            const avatar = await withTimeout(
-              () => getEnsAvatar(namoshiName, citreaProvider, { isNamoshiDomain: true }),
-              { timeoutMs: 15000 }
-            ).catch(() => null)
-            return [entry.address, avatar] as const
-          }
-
-          return [entry.address, null] as const
-        })
+      // Avatars (and, for the selected account, the ENS expiry) can't be resolved in the reverse-lookup
+      // batch - avatars need extra NFT/ipfs handling, expiry needs a separate registrar read. Resolve
+      // them per address here. It's not a big deal, since most accounts won't have ENS names.
+      const extraDataByAddress = Object.fromEntries(
+        await Promise.all(
+          resolved.map(
+            async (entry) =>
+              [
+                entry.address,
+                await this.#resolveExtraData(
+                  entry,
+                  ethereumProvider,
+                  citreaProvider,
+                  !!updateExpiryForAddresses?.includes(entry.address)
+                )
+              ] as const
+          )
+        )
       )
-      const avatarByAddress = Object.fromEntries(avatarEntries)
 
       for (const entry of resolved) {
         if (entry.failed) {
@@ -471,12 +537,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
         const now = Date.now()
         const existing = this.domains[address]
+        const extra = extraDataByAddress[address]
         this.domains[address] = {
           ens,
           namoshi,
-          ensAvatar: avatarByAddress[address] ?? null,
+          ensAvatar: extra?.avatar ?? null,
           createdAt: existing?.createdAt ?? now,
-          updatedAt: now
+          updatedAt: now,
+          ensExpiry: extra?.ensExpiry ?? carryOverEnsExpiry(existing, ens)
         }
       }
     } catch (e: any) {
@@ -492,6 +560,73 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
       // Don't slow down the UI
       await this.#persistDomains()
+    }
+  }
+
+  /**
+   * Resolves the avatar (and, when requested, the ENS expiry) for a single reverse-lookup result.
+   */
+  async #resolveExtraData(
+    entry: ResolvedReverseEntry,
+    ethereumProvider: RPCProvider,
+    citreaProvider: RPCProvider | undefined,
+    updateExpiry: boolean
+  ): Promise<ExtraReverseData> {
+    if (entry.failed) return { avatar: null, ensExpiry: undefined }
+
+    if (entry.ens) {
+      const ensName = entry.ens
+      const [avatar, ensExpiry] = await Promise.all([
+        withTimeout(() => getEnsAvatar(ensName, ethereumProvider), { timeoutMs: 15000 }).catch(
+          () => null
+        ),
+        updateExpiry
+          ? this.#fetchEnsExpiryIfStale(entry.address, ensName, ethereumProvider)
+          : Promise.resolve(undefined)
+      ])
+      return { avatar, ensExpiry }
+    }
+
+    if (entry.namoshi && citreaProvider) {
+      const namoshiName = entry.namoshi
+      const avatar = await withTimeout(
+        () => getEnsAvatar(namoshiName, citreaProvider, { isNamoshiDomain: true }),
+        { timeoutMs: 15000 }
+      ).catch(() => null)
+      return { avatar, ensExpiry: undefined }
+    }
+
+    return { avatar: null, ensExpiry: undefined }
+  }
+
+  /**
+   * Fetches a name's ENS expiry only when the cached value is missing or stale (see
+   * `shouldRefetchEnsExpiry`). Returns `undefined` when the cache is still good or the read fails, so
+   * the caller falls back to the cached value rather than overwriting it.
+   */
+  async #fetchEnsExpiryIfStale(
+    checksummedAddress: string,
+    ens: string,
+    provider: RPCProvider
+  ): Promise<NameExpiry | null | undefined> {
+    if (!shouldRefetchEnsExpiry(this.domains[checksummedAddress])) return undefined
+
+    const nameWrapperAddress =
+      this.#defaultNetworksMode === 'mainnet' ? ENS_NAME_WRAPPER : ENS_NAME_WRAPPER_SEPOLIA
+
+    try {
+      return await getEnsExpiry(provider, {
+        name: ens,
+        addresses: { nameWrapper: nameWrapperAddress }
+      })
+    } catch (e) {
+      this.emitError({
+        error: e as Error,
+        message: `Failed to fetch ENS expiry for ${ens}`,
+        level: 'silent'
+      })
+
+      return undefined
     }
   }
 

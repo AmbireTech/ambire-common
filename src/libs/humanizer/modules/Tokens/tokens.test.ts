@@ -1,13 +1,15 @@
 import { ethers } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { beforeEach, describe, test } from '@jest/globals'
 
 import { genericErc20Humanizer, genericErc721Humanizer } from '.'
-import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization } from '../../interfaces'
+import { IrCall } from '../../interfaces'
+import { compareHumanizerVisualizations } from '../../testHelpers'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 const accountOp: AccountOp = {
+  id: '1',
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   chainId: 1n,
   // this may not be defined, in case the user has not picked a key yet
@@ -25,6 +27,10 @@ const accountOp: AccountOp = {
   // "remembered" at the time of signing in order to visualize history properly
   // humanizerMeta: {}
 }
+
+const USDT = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+
 const transactions = {
   generic: [
     // simple transafer
@@ -40,19 +46,45 @@ const transactions = {
   erc20: [
     // approve erc-20 token USDT
     {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      to: USDT,
       value: BigInt(0),
       data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
     },
     // revoke approval  erc-20 token USDT
     {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      to: USDT,
       value: BigInt(0),
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: `0x095ea7b3000000000000000000000000${spender.substring(
+        2
+      )}0000000000000000000000000000000000000000000000000000000000000000`
+    },
+    // increaseAllowance erc-20 token USDT
+    {
+      to: USDT,
+      value: BigInt(0),
+      data: '0x3950935100000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
+    // decreaseAllowance erc-20 token USDT
+    {
+      to: USDT,
+      value: BigInt(0),
+      data: '0xa457c2d700000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
+    // increaseApproval erc-20 token (legacy naming, e.g. OMG)
+    {
+      to: USDT,
+      value: BigInt(0),
+      data: '0xd73dd62300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
+    // decreaseApproval erc-20 token (legacy naming, e.g. OMG)
+    {
+      to: USDT,
+      value: BigInt(0),
+      data: '0x6618846300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
     },
     // transferFrom A to me  erc-20 token USDT
     {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      to: USDT,
       value: BigInt(0),
       data: `0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000${accountOp.accountAddr.substring(
         2
@@ -60,13 +92,13 @@ const transactions = {
     },
     // transferFrom A to B (bad example - B is USDT) erc-20 token USDT
     {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      to: USDT,
       value: BigInt(0),
       data: '0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000003b9aca00'
     },
     // transferFrom me to A  erc-20 token USDT (bad example, in such case transfer will be used)
     {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      to: USDT,
       value: BigInt(0),
       data: `0x23b872dd000000000000000000000000${accountOp.accountAddr.substring(
         2
@@ -74,7 +106,7 @@ const transactions = {
     },
     // transfer erc-20 tokens USDT
     {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      to: USDT,
       value: BigInt(0),
       data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
     }
@@ -127,49 +159,145 @@ const transactions = {
   ]
 }
 
-// @TODO add proper test expected visualizations
 describe('Tokens', () => {
   beforeEach(async () => {
     accountOp.calls = []
   })
 
-  // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const irCalls = genericErc20Humanizer(
-      accountOp,
-      accountOp.calls,
-      humanizerInfo as HumanizerMeta,
-      {
-        chainId: 1n
-      }
+    const irCalls: IrCall[] = genericErc20Humanizer(
+      { accountAddr: accountOp.accountAddr },
+      accountOp.calls
     )
-    expect(irCalls.length).toBe(transactions.erc20.length)
-    irCalls.forEach((c) => {
-      expect(
-        c?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'token')
-      ).toMatchObject({
-        type: 'token',
-        address: expect.anything(),
-        value: expect.anything()
-      })
-    })
+    const addedValue = 1000000000n
+
+    const expectedHumanization = [
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(USDT, addedValue),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Revoke approval'),
+        getToken(USDT, 0n),
+        getLabel('for'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Increase allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(USDT, addedValue)
+      ],
+      [
+        getAction('Decrease allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(USDT, addedValue)
+      ],
+      [
+        getAction('Increase allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(USDT, addedValue)
+      ],
+      [
+        getAction('Decrease allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(USDT, addedValue)
+      ],
+      [
+        getAction('Take'),
+        getToken(USDT, addedValue),
+        getLabel('from'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Move'),
+        getToken(USDT, addedValue),
+        getLabel('from'),
+        getAddressVisualization(spender),
+        getLabel('to'),
+        getAddressVisualization(USDT)
+      ],
+      [
+        getAction('Transfer'),
+        getToken(USDT, addedValue),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Send'),
+        getToken(USDT, addedValue),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ]
+    ]
+
+    compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    const irCalls = genericErc721Humanizer(
-      accountOp,
-      accountOp.calls,
-      humanizerInfo as HumanizerMeta,
-      {
-        chainId: 1n
-      }
-    )
+    const irCalls = genericErc721Humanizer(accountOp, accountOp.calls)
 
-    expect(irCalls.length).toBe(transactions.erc721.length)
-    irCalls.forEach((c) => {
-      expect(c?.fullVisualization).not.toBeNull()
-    })
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 1n),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Revoke approval'),
+        getLabel('for'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 1n)
+      ],
+      [
+        getAction('Grant approval', { warning: true }),
+        getLabel('for all NFTs of'),
+        getAddressVisualization('0x59468516a8259058bad1ca5f8f4bff190d30e066'),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Revoke approval'),
+        getLabel('for all nfts from'),
+        getAddressVisualization('0x59468516a8259058bad1ca5f8f4bff190d30e066'),
+        getLabel('for'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Send'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 0n),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Transfer'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 0n),
+        getLabel('from'),
+        getAddressVisualization('0xC89B38119C58536d818f3Bf19a9E3870828C1994'),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Transfer'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 0n),
+        getLabel('from'),
+        getAddressVisualization('0xC89B38119C58536d818f3Bf19a9E3870828C1994'),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ]
+    ])
   })
 })
