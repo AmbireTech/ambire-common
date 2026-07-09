@@ -25,6 +25,7 @@ class ColibriRpcProvider extends JsonRpcProvider {
       rpcs: [network.selectedRpcUrl],
       prover: [proverUrl],
       proofStrategy: Strategy.VerifiedOnly,
+      prover_mode: 'remote',
       zk_proof: true
     })
   }
