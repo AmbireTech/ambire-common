@@ -12,6 +12,54 @@ import {
   isHexCall
 } from '../../utils'
 
+const settleAbi = [
+  {
+    type: 'function',
+    name: 'settle',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {
+        name: 'tokens',
+        type: 'address[]',
+        internalType: 'address[]'
+      },
+      {
+        name: 'clearingPrices',
+        type: 'uint256[]',
+        internalType: 'uint256[]'
+      },
+      {
+        name: 'trades',
+        type: 'tuple[]',
+        internalType: 'tuple[]',
+        components: [
+          { name: 'sellTokenIndex', type: 'uint256', internalType: 'uint256' },
+          { name: 'buyTokenIndex', type: 'uint256', internalType: 'uint256' },
+          { name: 'receiver', type: 'address', internalType: 'address' },
+          { name: 'sellAmount', type: 'uint256', internalType: 'uint256' },
+          { name: 'buyAmount', type: 'uint256', internalType: 'uint256' },
+          { name: 'validTo', type: 'uint32', internalType: 'uint32' },
+          { name: 'appData', type: 'bytes32', internalType: 'bytes32' },
+          { name: 'feeAmount', type: 'uint256', internalType: 'uint256' },
+          { name: 'flags', type: 'uint256', internalType: 'uint256' },
+          { name: 'executedAmount', type: 'uint256', internalType: 'uint256' },
+          { name: 'signature', type: 'bytes', internalType: 'bytes' }
+        ]
+      },
+      {
+        name: 'interactions',
+        type: 'tuple[][3]',
+        internalType: 'tuple[][3]',
+        components: [
+          { name: 'target', type: 'address', internalType: 'address' },
+          { name: 'value', type: 'uint256', internalType: 'uint256' },
+          { name: 'callData', type: 'bytes', internalType: 'bytes' }
+        ]
+      }
+    ],
+    outputs: []
+  }
+] as const
 const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
 
 const tradeTuple =
@@ -19,9 +67,7 @@ const tradeTuple =
 const swapAbi = parseAbi([
   `function swap((bytes32 poolId,uint256 assetIn,uint256 assetOut,uint256 amount,bytes userData)[] swaps,address[] tokens,${tradeTuple} order)`
 ])
-const settleAbi = parseAbi([
-  `function settle(address[] tokens,uint256[] clearingPrices,${tradeTuple}[] trades,(address target,uint256 value,bytes callData)[][3] interactions)`
-])
+
 const setPreSignatureAbi = parseAbi(['function setPreSignature(bytes orderUid,bool signed)'])
 const invalidateOrderAbi = parseAbi(['function invalidateOrder(bytes orderUid)'])
 const freeFilledAmountStorageAbi = parseAbi(['function freeFilledAmountStorage(bytes[] orderUids)'])
@@ -43,19 +89,17 @@ const getTokenAtIndex = (tokens: readonly string[], index: bigint): string | nul
   return tokens[Number(index)] || null
 }
 
-const getShortOrderUid = (orderUid: string): string =>
-  `${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`
+const getOrderUidVisualization = (orderUid: string): HumanizerVisualization[] => {
+  const orderDeadine: null | HumanizerVisualization =
+    !isHex(orderUid) || orderUid.length !== 114
+      ? null
+      : getDeadline(BigInt(`0x${orderUid.slice(-8)}`))
 
-const getOrderUidDeadline = (orderUid: string): HumanizerVisualization | null => {
-  if (!isHex(orderUid) || orderUid.length !== 114) return null
-
-  return getDeadline(BigInt(`0x${orderUid.slice(-8)}`))
+  const shortOrderUid = `${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`
+  const label = getLabel(`with order ID ${shortOrderUid}`)
+  if (orderDeadine) return [label, orderDeadine]
+  else return [label]
 }
-
-const getOrderUidVisualization = (orderUid: string): HumanizerVisualization[] =>
-  [getLabel(`with order ID ${getShortOrderUid(orderUid)}`), getOrderUidDeadline(orderUid)].filter(
-    Boolean
-  ) as HumanizerVisualization[]
 
 const getOrderVisualization = (
   accountOp: AccountOp,
@@ -110,13 +154,7 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, calls: IrCall[
     },
     [toFunctionSelector(settleAbi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: settleAbi, data: call.data })
-      const [tokens, , trades] = args as unknown as [
-        readonly string[],
-        readonly bigint[],
-        readonly CowSwapOrder[],
-        unknown
-      ]
-
+      const [tokens, , trades] = args
       return getSettlementVisualization(accountOp, tokens, trades)
     },
     [toFunctionSelector(setPreSignatureAbi[0])]: (call) => {
