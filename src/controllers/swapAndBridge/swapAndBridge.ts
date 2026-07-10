@@ -2659,6 +2659,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const swapSponsorship = getSwapSponsorship({
+      isErc4337Enabled: this.#featureFlags.isFeatureEnabled('erc4337'),
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),

@@ -3546,14 +3546,17 @@ export class SignAccountOpController
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
-          // record the EOA txn
-          this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-            rawTxn: signedTxn
-          }).catch((e: any) => {
-            console.log('failed to record EOA txn to relayer', accountOp.chainId)
+          // record the EOA txn only if isErc4337Enabled as
+          // we need this for the gas tank
+          if (this.isErc4337Enabled) {
+            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
+              rawTxn: signedTxn
+            }).catch((e: any) => {
+              console.log('failed to record EOA txn to relayer', accountOp.chainId)
 
-            console.log(e)
-          })
+              console.log(e)
+            })
+          }
         }
 
         transactionRes = {

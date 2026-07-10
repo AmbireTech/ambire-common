@@ -690,10 +690,15 @@ export class MainController extends EventEmitter implements IMainController {
         })
       })
     }
-    paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
-      if (this.requests.currentUserRequest?.kind !== 'calls') return
-      this.emitError(e)
-    })
+    paymasterFactory.init(
+      relayerUrl,
+      fetch,
+      (e: ErrorRef) => {
+        if (this.requests.currentUserRequest?.kind !== 'calls') return
+        this.emitError(e)
+      },
+      () => this.featureFlags.isFeatureEnabled('erc4337')
+    )
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
