@@ -97,7 +97,7 @@ describe('1559 Network gas price tests', () => {
     provider.destroy()
   })
 
-  test('should not return a base fee below the network minimum', async () => {
+  test('should use fee history base fee even when below the network minimum', async () => {
     const provider = MockProvider.init({
       baseFeePerGas: ethers.parseUnits('2', 'gwei'),
       feeHistory: {
@@ -116,10 +116,10 @@ describe('1559 Network gas price tests', () => {
     const gasPriceData = await getGasPriceRecommendations(provider, baseNetwork)
     const gasPrice = gasPriceData.gasPrice as Gas1559Recommendation[]
 
-    expect(getByName(gasPrice, 'slow').baseFeePerGas).toBe(ethers.parseUnits('2', 'gwei'))
-    expect(getByName(gasPrice, 'medium').baseFeePerGas).toBe(ethers.parseUnits('2.1', 'gwei'))
-    expect(getByName(gasPrice, 'fast').baseFeePerGas).toBe(ethers.parseUnits('2.2', 'gwei'))
-    expect(getByName(gasPrice, 'ape').baseFeePerGas).toBe(ethers.parseUnits('2.3', 'gwei'))
+    expect(getByName(gasPrice, 'slow').baseFeePerGas).toBe(ethers.parseUnits('1', 'gwei'))
+    expect(getByName(gasPrice, 'medium').baseFeePerGas).toBe(ethers.parseUnits('1.05', 'gwei'))
+    expect(getByName(gasPrice, 'fast').baseFeePerGas).toBe(ethers.parseUnits('1.1', 'gwei'))
+    expect(getByName(gasPrice, 'ape').baseFeePerGas).toBe(ethers.parseUnits('1.15', 'gwei'))
     provider.destroy()
   })
 })
