@@ -1,5 +1,4 @@
-import { Interface, JsonRpcProvider, toBeHex, toQuantity } from 'ethers'
-import type { PublicClient } from 'viem'
+import { Interface, JsonRpcProvider, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -10,6 +9,8 @@ import { getViemClientForProvider } from '../../services/provider'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getActivatorCall } from '../userOperation/userOperation'
+
+import type { PublicClient } from 'viem'
 
 // a 1 gwei min for gas price, non1559 networks
 export const MIN_GAS_PRICE = 1000000000n
@@ -36,30 +37,6 @@ export interface Gas1559Recommendation {
   maxPriorityFeePerGas: bigint
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
-
-type GasPriceTransaction = {
-  gasPrice?: bigint | null
-  maxPriorityFeePerGas?: bigint | null
-}
-
-type GasPriceBlock = {
-  baseFeePerGas?: bigint | null
-  gasLimit: bigint
-  gasUsed: bigint
-  prefetchedTransactions: GasPriceTransaction[]
-}
-
-type RpcTransaction = {
-  gasPrice?: string | null
-  maxPriorityFeePerGas?: string | null
-}
-
-type RpcBlock = {
-  baseFeePerGas?: string | null
-  gasLimit: string
-  gasUsed: string
-  transactions?: (string | RpcTransaction)[]
-}
 
 // https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
 function filterOutliers(data: bigint[]): bigint[] {
@@ -95,120 +72,6 @@ function filterOutliers(data: bigint[]): bigint[] {
 function average(data: bigint[]): bigint {
   if (data.length === 0) return 0n
   return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
-}
-
-function getNetworkMinBaseFee(network: Network, lastBlock: GasPriceBlock): bigint {
-  // if we have a minBaseFee set in our config, use it
-  if (network.feeOptions.minBaseFee) return network.feeOptions.minBaseFee
-
-  // if we don't have a config, we return 0
-  if (network.predefined && !network.feeOptions.minBaseFeeEqualToLastBlock) return 0n
-
-  // if it's a custom network and it has EIP-1559, set the minimum
-  // to the lastBlock's baseFeePerGas. Every chain is free to tweak
-  // its EIP-1559 implementation as it deems fit. Therefore, we have no
-  // guarantee the 12.5% block base fee reduction will actually happen.
-  // if it doesn't and we reduce the baseFee with our calculations,
-  // most often than not the transaction will just get stuck.
-  //
-  // Transaction fees are no longer an issue on L2s.
-  // Having the user spend a fraction of the cent more is way better
-  // than having his txns constantly getting stuck
-  return lastBlock.baseFeePerGas ?? 0n
-}
-
-function hexToBigInt(value?: string | null): bigint | null {
-  return value ? BigInt(value) : null
-}
-
-async function getRpcBlockTag(
-  provider: JsonRpcProvider,
-  blockTag: string | number
-): Promise<string> {
-  if (typeof blockTag !== 'number') return blockTag
-
-  if (blockTag >= 0) return toQuantity(blockTag)
-
-  const currentBlockNumber = await provider.getBlockNumber()
-  return toQuantity(Math.max(currentBlockNumber + blockTag, 0))
-}
-
-async function fetchRawBlock(
-  provider: JsonRpcProvider,
-  blockTag: string | number,
-  includeTransactions = false
-): Promise<GasPriceBlock | null> {
-  const rpcBlockTag = await getRpcBlockTag(provider, blockTag)
-  const rawBlock = (await provider.send('eth_getBlockByNumber', [
-    rpcBlockTag,
-    includeTransactions
-  ])) as RpcBlock | null
-
-  if (!rawBlock) return null
-
-  return {
-    baseFeePerGas: hexToBigInt(rawBlock.baseFeePerGas),
-    gasLimit: BigInt(rawBlock.gasLimit),
-    gasUsed: BigInt(rawBlock.gasUsed),
-    prefetchedTransactions: (rawBlock.transactions ?? [])
-      .filter((txn): txn is RpcTransaction => typeof txn !== 'string')
-      .map((txn) => ({
-        gasPrice: hexToBigInt(txn.gasPrice),
-        maxPriorityFeePerGas: hexToBigInt(txn.maxPriorityFeePerGas)
-      }))
-  }
-}
-
-async function fetchBlock(
-  provider: JsonRpcProvider,
-  network: Network,
-  blockTag: string | number,
-  includeTransactions = false
-): Promise<GasPriceBlock | null> {
-  if (network.chainId === 2741n) return fetchRawBlock(provider, blockTag, includeTransactions)
-  return await provider.getBlock(blockTag, includeTransactions)
-}
-
-// if there's an RPC issue, try refetching the block before declaring a failure
-async function refetchBlock(
-  provider: JsonRpcProvider,
-  network: Network,
-  blockTag: string | number,
-  getIsActive?: () => boolean,
-  counter = 0
-): Promise<GasPriceBlock> {
-  if (counter >= 2) throw new Error('unable to retrieve block')
-
-  let lastBlock = null
-  let timeoutId: NodeJS.Timeout | null = null
-  try {
-    const response = await Promise.race([
-      fetchBlock(provider, network, blockTag),
-      new Promise((_resolve, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error('last block failed to resolve, request too slow')),
-          30000
-        )
-      })
-    ])
-    lastBlock = response as GasPriceBlock
-  } catch (e) {
-    console.error('refetch block failed', e)
-    lastBlock = null
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
-
-  if (getIsActive && !getIsActive()) {
-    throw new Error('operation aborted')
-  }
-
-  if (!lastBlock) {
-    const localCounter = counter + 1
-    lastBlock = await refetchBlock(provider, network, blockTag, getIsActive, localCounter)
-  }
-
-  return lastBlock
 }
 
 function increaseByBps(value: bigint, bps: bigint): bigint {
@@ -250,9 +113,7 @@ async function getLegacyViemFees(client: PublicClient) {
 }
 
 async function get1559GasPriceRecommendations(
-  client: PublicClient,
-  network: Network,
-  lastBlock: GasPriceBlock
+  client: PublicClient
 ): Promise<Gas1559Recommendation[]> {
   const [estimatedFees, feeHistory] = await Promise.all([
     get1559ViemFees(client),
@@ -263,12 +124,9 @@ async function get1559GasPriceRecommendations(
   ])
 
   const estimatedBaseFee = estimatedFees.maxFeePerGas - estimatedFees.maxPriorityFeePerGas
-  let expectedBaseFee = feeHistory
+  const expectedBaseFee = feeHistory
     ? (getLastBaseFeeFromHistory(feeHistory.baseFeePerGas) ?? estimatedBaseFee)
     : estimatedBaseFee
-
-  const minBaseFee = getNetworkMinBaseFee(network, lastBlock)
-  if (expectedBaseFee < minBaseFee) expectedBaseFee = minBaseFee
 
   const priorityFees = feeHistory ? getAveragePriorityFeesFromHistory(feeHistory.reward ?? []) : []
   const fee: Gas1559Recommendation[] = []
@@ -329,21 +187,14 @@ export async function getGasPriceRecommendations(
   _blockTag?: string | number,
   getIsActive?: () => boolean
 ): Promise<{ gasPrice: GasRecommendation[] }> {
-  const blockTag = _blockTag ?? -1
-  const client = getViemClientForProvider(provider)
-
-  const lastBlock = await refetchBlock(provider, network, blockTag, getIsActive)
-
   if (getIsActive && !getIsActive()) {
     throw new Error('operation aborted')
   }
 
-  if (
-    network.feeOptions.is1559 &&
-    lastBlock.baseFeePerGas != null &&
-    lastBlock.baseFeePerGas !== 0n
-  ) {
-    return { gasPrice: await get1559GasPriceRecommendations(client, network, lastBlock) }
+  const client = getViemClientForProvider(provider)
+
+  if (network.feeOptions.is1559) {
+    return { gasPrice: await get1559GasPriceRecommendations(client) }
   }
 
   return { gasPrice: await getLegacyGasPriceRecommendations(client, network) }
