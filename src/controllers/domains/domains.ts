@@ -44,6 +44,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
+  #isNetworkEnabled: (chainId: bigint) => boolean
+
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
 
@@ -68,16 +70,19 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   constructor({
     eventEmitterRegistry,
     providers,
-    defaultNetworksMode
+    defaultNetworksMode,
+    isNetworkEnabled
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
     defaultNetworksMode?: 'mainnet' | 'testnet'
+    isNetworkEnabled: (chainId: bigint) => boolean
   }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
+    this.#isNetworkEnabled = isNetworkEnabled
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -120,17 +125,23 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       : this.#defaultNetworksMode === 'mainnet'
         ? '1'
         : '11155111'
-    const provider = this.#providers[providerChainId]
+    const provider =
+      this.#isNetworkEnabled(BigInt(providerChainId)) && this.#providers[providerChainId]
 
     if (!provider) {
       // Don't emit an error if the citrea provider is missing
-      if (isNamoshiDomain) return
+      if (!isNamoshiDomain) {
+        this.emitError({
+          error: new Error('domains.resolveDomain: Ethereum provider is not available'),
+          message: 'The RPC provider for Ethereum is not available.',
+          level: 'major'
+        })
+      }
 
-      this.emitError({
-        error: new Error('domains.resolveDomain: Ethereum provider is not available'),
-        message: 'The RPC provider for Ethereum is not available.',
-        level: 'major'
-      })
+      this.resolveDomainsStatus[domain] = 'FAILED'
+      await this.forceEmitUpdate()
+      this.resolveDomainsStatus[domain] = undefined
+
       return
     }
 
@@ -289,7 +300,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     const ethereumProvider =
       this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
-    const citreaProvider = this.#providers['4114']
+    const citreaProvider = this.#isNetworkEnabled(4114n) && this.#providers['4114']
 
     if (!ethereumProvider) {
       this.emitError({
