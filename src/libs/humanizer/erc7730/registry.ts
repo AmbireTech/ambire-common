@@ -247,12 +247,6 @@ const getErc20ApproveDescriptor = (
               format: 'tokenAmount',
               params: { tokenPath: '@.to' },
               visible: 'always'
-            },
-            {
-              path: '@.value',
-              label: 'Send',
-              format: 'amount',
-              visible: { ifNotIn: ['0'] }
             }
           ]
         }
@@ -322,12 +316,6 @@ const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730Resol
               format: 'tokenAmount',
               params: { tokenPath: '#.token' },
               visible: 'always'
-            },
-            {
-              path: '@.value',
-              label: 'Send',
-              format: 'amount',
-              visible: { ifNotIn: ['0'] }
             },
             {
               path: '#.expiration',

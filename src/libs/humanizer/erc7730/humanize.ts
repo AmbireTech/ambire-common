@@ -1293,13 +1293,15 @@ const appendNativeValueRow = (
   fullVisualization: HumanizerVisualization[],
   nativeValue: bigint,
   chainId: bigint
-): HumanizerVisualization[] => {
-  if (nativeValue === 0n) return fullVisualization
-  if (hasDisplayedNativeTransactionValue(fullVisualization, nativeValue)) return fullVisualization
+): { fullVisualization: HumanizerVisualization[]; didAppendNativeValueRow: boolean } => {
+  if (nativeValue === 0n) return { fullVisualization, didAppendNativeValueRow: false }
+  if (hasDisplayedNativeTransactionValue(fullVisualization, nativeValue)) {
+    return { fullVisualization, didAppendNativeValueRow: false }
+  }
 
   let didFindErc7730Visualization = false
 
-  return fullVisualization.map((visualization) => {
+  const visualizationWithNativeValue = fullVisualization.map((visualization) => {
     if (didFindErc7730Visualization || visualization.type !== 'erc7730') return visualization
 
     didFindErc7730Visualization = true
@@ -1314,31 +1316,19 @@ const appendNativeValueRow = (
       ]
     }
   })
+
+  return {
+    fullVisualization: visualizationWithNativeValue,
+    didAppendNativeValueRow: didFindErc7730Visualization
+  }
 }
 
 const getNativeValueWarnings = (
-  fullVisualization: HumanizerVisualization[],
+  didAppendNativeValueRow: boolean,
   nativeAssetSymbol?: string
 ): HumanizerWarning[] => {
   if (!nativeAssetSymbol) return []
-
-  const hasNativeValue = fullVisualization.some(
-    (visualization) =>
-      visualization.type === 'erc7730' &&
-      visualization.rows.some(
-        (row) =>
-          row.label === 'Send' &&
-          row.value.some(
-            (value) =>
-              value.type === 'token' &&
-              value.address === ZeroAddress &&
-              value.value !== undefined &&
-              value.value > 0n
-          )
-      )
-  )
-
-  return hasNativeValue
+  return didAppendNativeValueRow
     ? [
         getWarning(
           `This transaction will send ${nativeAssetSymbol}`,
@@ -1562,14 +1552,17 @@ export const humanizeCallWithErc7730 = (
     ? appendNativeValueRow(oneInchVisualization, call.value, chainId)
     : null
 
-  return visualizationWithNativeValue?.length
+  return visualizationWithNativeValue?.fullVisualization.length
     ? {
         ...call,
-        fullVisualization: visualizationWithNativeValue,
+        fullVisualization: visualizationWithNativeValue.fullVisualization,
         warnings: dedupeWarnings([
           ...getSafeCallWarnings(call, accountAddr),
           ...getSafeExecTransactionWarnings(match),
-          ...getNativeValueWarnings(visualizationWithNativeValue, nativeAssetSymbol)
+          ...getNativeValueWarnings(
+            visualizationWithNativeValue.didAppendNativeValueRow,
+            nativeAssetSymbol
+          )
         ])
       }
     : null
