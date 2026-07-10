@@ -667,6 +667,51 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('adds a native value row and warning for ERC-20 approve with transaction value', async () => {
+    const token = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+    const spender = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const nativeValue = ethers.parseEther('0.000000000001')
+    const approveAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: token,
+          value: nativeValue,
+          data: '0x095ea7b3000000000000000000000000d8293ad21678c6f09da139b4b62d38e514a03b780000000000000000000000000000000000000000000000000000000000000001'
+        }
+      ]
+    }
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(approveAccountOp)
+    const irCalls = humanizeAccountOp(approveAccountOp, {
+      erc7730Descriptors: descriptors,
+      nativeAssetSymbol: 'ETH'
+    })
+
+    expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
+    expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Approve',
+      rows: [
+        {
+          label: 'Spender',
+          value: [expect.objectContaining({ address: spender })]
+        },
+        {
+          label: 'Amount',
+          value: [expect.objectContaining({ address: token.toLowerCase(), value: 1n })]
+        },
+        {
+          label: 'Send',
+          value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+        }
+      ]
+    })
+    expect(irCalls[0]!.warnings).toEqual([
+      getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
+    ])
+  })
+
   test('adds the native transaction value when an unrelated native amount is displayed', async () => {
     accountOp.calls = [
       {
@@ -1106,7 +1151,7 @@ describe('ERC-7730 descriptors', () => {
               {
                 label: 'Referral',
                 path: '#._referral',
-                visible: 'never'
+                visible: 'never' as const
               }
             ]
           }
@@ -1133,6 +1178,58 @@ describe('ERC-7730 descriptors', () => {
     ])
     expect(irCalls[0]!.warnings).toEqual([])
   })
+
+  test('does not warn when an ERC-7730 descriptor displays the native transaction value', () => {
+    accountOp.calls = [
+      {
+        to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        value: ethers.parseEther('0.001'),
+        data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+      }
+    ]
+
+    const descriptor = {
+      display: {
+        formats: {
+          'submit(address _referral)': {
+            intent: 'Stake ETH',
+            fields: [
+              {
+                label: 'Send',
+                format: 'amount',
+                path: '@.value'
+              },
+              {
+                label: 'Referral',
+                path: '#._referral',
+                visible: 'never' as const
+              }
+            ]
+          }
+        }
+      }
+    }
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      nativeAssetSymbol: 'ETH',
+      erc7730Descriptors: {
+        0: { descriptor }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization('Stake ETH', [
+          {
+            label: 'Send',
+            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+          }
+        ])
+      ]
+    ])
+    expect(irCalls[0]!.warnings).toEqual([])
+  })
+
   test('humanizes nested calldata in execute with permit descriptors', async () => {
     const router = '0x111111125421cA6dc452d289314280a0f8842A65'
     const aave = '0x76fb31fb4af56892a25e32cfc43de717950c9278'
@@ -1680,11 +1777,11 @@ describe('ERC-7730 descriptors', () => {
       rows: [
         { label: 'Spender' },
         { label: 'Amount' },
+        { label: 'Approval expires' },
         {
           label: 'Send',
           value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
-        },
-        { label: 'Approval expires' }
+        }
       ]
     })
     expect(irCalls[1]!.warnings).toEqual([
