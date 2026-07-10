@@ -30,7 +30,7 @@ describe('Deployless', () => {
     ).rejects.toThrow('state override passed but not requested')
   })
 
-  test('should require a deployed contract address in verifier mode', async () => {
+  test('should require a deployed contract address in predeployed mode', async () => {
     const fakeProvider = {
       call: jest.fn(),
       send: jest.fn()
@@ -41,13 +41,13 @@ describe('Deployless', () => {
       localDeployless.call('helloWorld', [], {
         mode: DeploylessMode.Predeployed
       })
-    ).rejects.toThrow('verifier mode requires a deployed contract address')
+    ).rejects.toThrow('Predeployed mode requires a deployed contract address')
 
     expect(fakeProvider.call).not.toHaveBeenCalled()
     expect(fakeProvider.send).not.toHaveBeenCalled()
   })
 
-  test('should call a deployed contract directly in verifier mode', async () => {
+  test('should call a deployed contract directly in predeployed mode', async () => {
     const helloWorldIface = new Interface(helloWorld.abi)
     const fakeProvider = {
       call: jest
