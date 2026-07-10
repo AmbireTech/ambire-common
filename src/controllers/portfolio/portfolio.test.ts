@@ -544,8 +544,8 @@ describe('Portfolio Controller ', () => {
     }[] = []
     const verifierPortfolioGetOptions: Partial<GetOptions>[] = []
     const expectedVerifierDeployless = {
-      erc20: { mode: DeploylessMode.Verifier, to: BALANCE_GETTER },
-      erc721: { mode: DeploylessMode.Verifier, to: NFT_GETTER }
+      erc20: { mode: DeploylessMode.Predeployed, to: BALANCE_GETTER },
+      erc721: { mode: DeploylessMode.Predeployed, to: NFT_GETTER }
     }
     jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
       const isColibri = this.provider === verifiedProvider
@@ -615,8 +615,8 @@ describe('Portfolio Controller ', () => {
       await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
       await Promise.resolve()
 
-      const catchUpVerification =
-        controller.getAccountPortfolioState(account.addr)['1']?.verification
+      const catchUpVerification = controller.getAccountPortfolioState(account.addr)['1']
+        ?.verification
       expect(catchUpVerification?.status).toBe('success')
       expect(catchUpVerification?.error).toBeUndefined()
       expect(verifiedProvider.getBlockNumber).toHaveBeenCalledTimes(2)

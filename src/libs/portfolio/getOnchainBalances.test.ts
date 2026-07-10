@@ -14,7 +14,7 @@ describe('getDeploylessOpts', () => {
       getDeploylessOpts('0x0000000000000000000000000000000000000001', network, {
         blockTag: 123,
         deployless: {
-          mode: DeploylessMode.Verifier,
+          mode: DeploylessMode.Predeployed,
           to: verifierTo
         },
         simulation: {} as any
@@ -22,7 +22,7 @@ describe('getDeploylessOpts', () => {
     ).toEqual({
       blockTag: 123,
       from: DEPLOYLESS_SIMULATION_FROM,
-      mode: DeploylessMode.Verifier,
+      mode: DeploylessMode.Predeployed,
       to: verifierTo,
       stateToOverride: null
     })

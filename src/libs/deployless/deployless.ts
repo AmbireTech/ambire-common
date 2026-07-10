@@ -30,8 +30,8 @@ export enum DeploylessMode {
   Detect,
   ProxyContract,
   StateOverride,
-  // Verifier mode calls an already deployed contract and must not use state overrides.
-  Verifier
+  // Predeployed mode calls an already deployed contract and must not use state overrides.
+  Predeployed
 }
 export type CallOptions = {
   mode: DeploylessMode
@@ -165,8 +165,8 @@ export class Deployless {
   private getCallPromise(callData: string, opts: CallOptions): Promise<string> {
     const blockTag = Deployless.normalizeRpcBlockTag(opts.blockTag)
 
-    if (opts.mode === DeploylessMode.Verifier) {
-      if (!opts.to) throw new Error('verifier mode requires a deployed contract address')
+    if (opts.mode === DeploylessMode.Predeployed) {
+      if (!opts.to) throw new Error('Predeployed mode requires a deployed contract address')
 
       return this.provider.call({
         blockTag,
@@ -213,7 +213,7 @@ export class Deployless {
   async call(methodName: string, args: any[], _opts: Partial<CallOptions> = {}): Promise<any> {
     const opts = { ...defaultOptions, ..._opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
-    const forceVerifier = opts.mode === DeploylessMode.Verifier
+    const forcePredeployed = opts.mode === DeploylessMode.Predeployed
 
     // First, start by detecting which modes are available, unless we're forcing the proxy mode
     // if we use state override, we do need detection to run still so it can populate contractRuntimeCode
@@ -221,7 +221,7 @@ export class Deployless {
       this.stateOverrideSupported &&
       !this.detectionPromise &&
       !forceProxy &&
-      !forceVerifier &&
+      !forcePredeployed &&
       this.contractRuntimeCode === undefined
     ) {
       this.detectionPromise = this.detectStateOverride()
@@ -243,7 +243,7 @@ export class Deployless {
 
     const callPromise = this.getCallPromise(callData, opts)
     const timeoutMs =
-      opts.mode === DeploylessMode.Verifier ? 40000 : this.isProviderInvictus ? 15000 : 20000
+      opts.mode === DeploylessMode.Predeployed ? 40000 : this.isProviderInvictus ? 15000 : 20000
 
     // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
     // To prevent prolonged retries, we use Promise.race to set a timeout. This way, the callPromise will either resolve

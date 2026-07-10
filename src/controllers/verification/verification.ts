@@ -239,8 +239,8 @@ export class VerificationController extends EventEmitter {
         blockTag: Number(rpcBlockNumber),
         disableAutoDiscovery: true,
         deployless: {
-          erc20: { mode: DeploylessMode.Verifier, to: BALANCE_GETTER },
-          erc721: { mode: DeploylessMode.Verifier, to: NFT_GETTER }
+          erc20: { mode: DeploylessMode.Predeployed, to: BALANCE_GETTER },
+          erc721: { mode: DeploylessMode.Predeployed, to: NFT_GETTER }
         }
       })
     } catch (error: any) {

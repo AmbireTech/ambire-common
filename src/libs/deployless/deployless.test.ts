@@ -39,7 +39,7 @@ describe('Deployless', () => {
 
     await expect(
       localDeployless.call('helloWorld', [], {
-        mode: DeploylessMode.Verifier
+        mode: DeploylessMode.Predeployed
       })
     ).rejects.toThrow('verifier mode requires a deployed contract address')
 
@@ -57,7 +57,7 @@ describe('Deployless', () => {
     }
     const localDeployless = new Deployless(fakeProvider as any, helloWorld.abi, helloWorld.bin)
     const result = await localDeployless.call('helloWorld', [], {
-      mode: DeploylessMode.Verifier,
+      mode: DeploylessMode.Predeployed,
       to: addressOne,
       blockTag: 123
     })
@@ -86,7 +86,7 @@ describe('Deployless', () => {
     try {
       const callPromise = localDeployless
         .call('helloWorld', [], {
-          mode: DeploylessMode.Verifier,
+          mode: DeploylessMode.Predeployed,
           to: addressOne
         })
         .catch((error) => error)
