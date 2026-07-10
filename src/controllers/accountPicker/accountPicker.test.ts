@@ -125,6 +125,24 @@ describe('AccountPicker', () => {
     })
   })
 
+  test('should clear accountsLoading when an invalid page is requested', async () => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    controller.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+    await controller.setPage({ page: 0 })
+
+    expect(controller.accountsLoading).toBe(false)
+    expect(controller.pageError).toBeTruthy()
+    expect(controller.page).toEqual(DEFAULT_PAGE)
+  })
+
   test('should retrieve 5 basic and one smart account on each page', async () => {
     const { controller } = await prepareTest()
     const PAGE_SIZE = 5

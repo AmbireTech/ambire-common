@@ -161,6 +161,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    */
   #findAndSetLinkedAccountsAbortController?: AbortController
 
+  /**
+   * Incremented on each setPage() call and on reset() to invalidate in-flight
+   * page loads. Prevents stale async work from leaving accountsLoading stuck.
+   */
+  #setPageGeneration = 0
+
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   #addAccountsOnKeystoreReady: {
@@ -419,6 +425,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     shouldAddNextAccountAutomatically?: boolean
   }) {
     this.initParams = params
+    if (params.pageSize) this.pageSize = params.pageSize
     this.emitUpdate()
   }
 
@@ -477,6 +484,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.#findAndSetLinkedAccountsAbortController.abort()
       this.#findAndSetLinkedAccountsAbortController = undefined
     }
+    this.#setPageGeneration += 1
+    this.accountsLoading = false
     if (resetInitParams) this.initParams = null
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
@@ -680,6 +689,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     )
   }
 
+  /**
+   * Guard to ensure we only proceed with data that matches the current page load
+   * request. Similar to #isFindAndSetLinkedAccountsCancelled.
+   */
+  #isSetPageRequestStale(calledForPage: number, calledForGeneration: number): boolean {
+    return calledForGeneration !== this.#setPageGeneration || calledForPage !== this.page
+  }
+
   async setPage({
     page = this.page,
     pageSize,
@@ -707,6 +724,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.page = page
     } else if (page === this.page && this.#derivedAccounts.length) return
 
+    const setPageGeneration = ++this.#setPageGeneration
+
     this.page = page
     this.pageError = null
     this.#derivedAccounts = []
@@ -719,6 +738,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (page <= 0) {
       this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`
       this.page = DEFAULT_PAGE // fallback to the default (initial) page
+      this.accountsLoading = false
       this.emitUpdate()
       return
     }
@@ -726,14 +746,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     try {
       const derivedAccounts = await this.#deriveAccounts()
 
-      if (this.page !== page) return
+      if (this.#isSetPageRequestStale(page, setPageGeneration)) return
 
       this.#derivedAccounts = derivedAccounts
 
       // The used on information is not critical. Allow the user to proceed after
       // 1 second. It will get popuplated in the background.
       const minWaitTimeout = setTimeout(() => {
-        if (this.page !== page) return
+        if (this.#isSetPageRequestStale(page, setPageGeneration)) return
 
         this.accountsLoading = false
         this.emitUpdate()
@@ -744,11 +764,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         page
       })
 
-      if (this.page !== page) return
+      if (this.#isSetPageRequestStale(page, setPageGeneration)) return
 
       this.#derivedAccounts = derivedAccountsWithUsedOn
 
-      if (minWaitTimeout) clearTimeout(minWaitTimeout)
+      clearTimeout(minWaitTimeout)
 
       this.accountsLoading = false
       this.emitUpdate()
@@ -767,14 +787,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         }
       }
     } catch (e: any) {
-      if (this.page !== page) return
+      if (this.#isSetPageRequestStale(page, setPageGeneration)) return
       const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`
       this.accountsLoading = false
       this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage
       this.emitUpdate()
     }
 
-    if (this.page !== page) return
+    if (this.#isSetPageRequestStale(page, setPageGeneration)) return
 
     await this.findAndSetLinkedAccounts()
   }
