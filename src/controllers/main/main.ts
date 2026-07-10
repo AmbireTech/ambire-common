@@ -46,6 +46,7 @@ import { TransactionManagerController } from '@/controllers/transaction/transact
 import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
+import { VerificationController } from '@/controllers/verification/verification'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
@@ -88,6 +89,7 @@ import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
+import { IVerificationController } from '@/interfaces/verification'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
@@ -104,7 +106,6 @@ import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/lib
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
-import { SocketAPI } from '@/services/socket/api'
 import { SocketV3API } from '@/services/socketv3/api'
 import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
@@ -150,6 +151,8 @@ export class MainController extends EventEmitter implements IMainController {
   networks: INetworksController
 
   providers: IProvidersController
+
+  verification: IVerificationController
 
   accountPicker: IAccountPickerController
 
@@ -286,7 +289,10 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
+        await Promise.all(
+          networks.filter((net) => !net.disabled).map((n) => this.providers.setProvider(n))
+        )
+        this.verification?.updateNetworks(networks)
         await this.reloadSelectedAccount({ chainIds: networks.map((n) => n.chainId) })
       },
       onReady: async () => {
@@ -299,6 +305,12 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
       sendUiMessage: this.ui.message.sendUiMessage
+    })
+    this.verification = new VerificationController({
+      eventEmitterRegistry,
+      networks: this.networks,
+      fetch: this.fetch,
+      velcroUrl
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -394,7 +406,8 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.verification
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -485,7 +498,6 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry
     })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
-    const SocketLegacyProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
@@ -565,6 +577,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
+      verification: this.verification,
       defaultNetworksMode: this.networks.defaultNetworksMode,
       storage: this.storage,
       featureFlags: this.featureFlags

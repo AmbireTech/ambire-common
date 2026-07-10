@@ -13,6 +13,7 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IVerificationController } from '../../interfaces/verification'
 import {
   ENS_EXPIRY_WARN_WINDOW_IN_MS,
   ENS_NAME_WRAPPER,
@@ -31,6 +32,16 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
+const USER_FACING_RESOLUTION_ERROR_PREFIX = 'ENS resolution mismatch for'
+
+const getUserFacingResolutionError = (error: any) => {
+  const message = error?.message
+  if (typeof message !== 'string') return undefined
+  if (!message.startsWith(USER_FACING_RESOLUTION_ERROR_PREFIX)) return undefined
+
+  return message
+}
+
 export const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS = 24 * 60 * 60 * 1000
 // Once a name is within the warn window, re-poll its expiry at most this often to catch a renewal.
 export const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS = 1 * 60 * 60 * 1000
@@ -74,6 +85,8 @@ const carryOverEnsExpiry = (existing: Domains[string] | undefined, nextEns: stri
 export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
 
+  #verification?: IVerificationController
+
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
   #storage?: IStorageController
@@ -99,6 +112,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   resolveDomainsStatus: { [domain: string]: 'LOADING' | 'RESOLVED' | 'FAILED' | undefined } = {}
 
+  resolveDomainsErrors: { [domain: string]: string | undefined } = {}
+
+  verifiedDomainsStatus: { [domain: string]: 'VERIFIED' | undefined } = {}
+
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
   #persisting = false
@@ -108,12 +125,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   constructor({
     eventEmitterRegistry,
     providers,
+    verification,
     defaultNetworksMode,
     storage,
     featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
+    verification?: IVerificationController
     defaultNetworksMode?: 'mainnet' | 'testnet'
     // Not needed for rewards/benzin as they are used for persistence and privacy opt-outs,
     // which are not relevant there
@@ -123,6 +142,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     super(eventEmitterRegistry)
 
     this.#providers = providers
+    this.#verification = verification
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#featureFlags = featureFlags
@@ -209,6 +229,60 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
   }
 
+  async #verifyEnsResolution({
+    providerChainId,
+    domain,
+    address,
+    isNamoshiDomain
+  }: {
+    providerChainId: string
+    domain: string
+    address: string
+    isNamoshiDomain: boolean
+  }) {
+    if (isNamoshiDomain) return false
+
+    const verificationProvider = this.#verification?.getReadyProvider(BigInt(providerChainId))
+    if (!verificationProvider) return false
+
+    const verifiedResult = await withTimeout(
+      () =>
+        resolveENSDomain({
+          provider: verificationProvider,
+          domain,
+          options: { isNamoshiDomain }
+        }),
+      { timeoutMs: 15000 }
+    )
+
+    if (!verifiedResult.address && !address) return false
+    if (
+      verifiedResult.address &&
+      address &&
+      getAddress(verifiedResult.address) === getAddress(address)
+    ) {
+      return true
+    }
+
+    throw new Error(
+      `ENS resolution mismatch for ${domain}: RPC returned ${address}, Colibri returned ${verifiedResult.address}`
+    )
+  }
+
+  #setResolveDomainFailure(domain: string, error: any) {
+    const message = getUserFacingResolutionError(error)
+
+    if (message) {
+      this.resolveDomainsErrors = {
+        ...this.resolveDomainsErrors,
+        [domain]: message
+      }
+    } else {
+      delete this.resolveDomainsErrors[domain]
+    }
+    this.resolveDomainsStatus[domain] = 'FAILED'
+  }
+
   async batchReverseLookup(addresses: string[], updateExpiryForAddresses?: string[]) {
     const normalizedAddresses = this.#normalizeAddresses(addresses)
     const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
@@ -275,12 +349,35 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     this.resolveDomainsStatus[domain] = 'LOADING'
+    delete this.resolveDomainsErrors[domain]
+    delete this.verifiedDomainsStatus[domain]
     await this.forceEmitUpdate()
 
     if (this.domainToAddresses[domain]) {
-      this.resolveDomainsStatus[domain] = 'RESOLVED'
-      await this.forceEmitUpdate()
-      this.resolveDomainsStatus[domain] = undefined
+      try {
+        if (this.domainToAddresses[domain]?.address) {
+          const isEnsVerifiedByColibri = await this.#verifyEnsResolution({
+            providerChainId,
+            domain,
+            address: this.domainToAddresses[domain]!.address!,
+            isNamoshiDomain
+          })
+          if (isEnsVerifiedByColibri) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+        }
+
+        this.resolveDomainsStatus[domain] = 'RESOLVED'
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      } catch (e: any) {
+        this.emitError({
+          error: e,
+          message: `ENS resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        this.#setResolveDomainFailure(domain, e)
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      }
       return
     }
 
@@ -294,6 +391,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     })
       .then(async ({ address, avatar, expiry }) => {
         if (address) {
+          const isEnsVerifiedByColibri = await this.#verifyEnsResolution({
+            providerChainId,
+            domain,
+            address,
+            isNamoshiDomain
+          })
+          if (isEnsVerifiedByColibri) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+
           this.domainToAddresses[domain] = {
             address: getAddress(address),
             type: isNamoshiDomain ? 'namoshi' : 'ens'
@@ -307,6 +412,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           })
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
+        delete this.resolveDomainsErrors[domain]
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
 
@@ -317,7 +423,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       })
       .catch(async (e) => {
         console.error(`Failed to resolve ENS domain: ${domain}`, e)
-        this.resolveDomainsStatus[domain] = 'FAILED'
+        this.emitError({
+          error: e,
+          message: `ENS resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        this.#setResolveDomainFailure(domain, e)
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
       })
