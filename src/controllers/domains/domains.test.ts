@@ -101,7 +101,8 @@ describe('Domains', () => {
   // Privacy mode (the default, no TTL refresh) is covered by its own tests.
   const domainsController = new DomainsController({
     providers,
-    featureFlags: makeFeatureFlags(true)
+    featureFlags: makeFeatureFlags(true),
+    isNetworkEnabled: () => true
   })
 
   it('should reverse lookup (ENS)', async () => {
@@ -287,7 +288,10 @@ describe('Domains', () => {
   })
   it('batchReverseLookup should use deployless batched reverse lookup', async () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      isNetworkEnabled: () => true
+    })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
     reverseLookupEnsSpy
       .mockResolvedValueOnce({
@@ -330,7 +334,10 @@ describe('Domains', () => {
   })
   it('reverseLookup awaits an in-flight lookup instead of starting a duplicate', async () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      isNetworkEnabled: () => true
+    })
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
 
     let resolveLookup!: (value: ensDomainsModule.ReverseLookupResult) => void
@@ -363,7 +370,10 @@ describe('Domains', () => {
   })
   it('batchReverseLookup awaits an address already in flight from reverseLookup', async () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      isNetworkEnabled: () => true
+    })
     const addressInFlight = getAddress(ENS_OLDEST_RESOLVER.address)
     const addressInBatch = getAddress(ENS_LATEST_RESOLVER.address)
 
@@ -401,7 +411,8 @@ describe('Domains', () => {
   it('marks the address as failed (updateFailedAt) when the lookup returns a failed entry', async () => {
     const { restore } = suppressConsole(true)
     const controller = new DomainsController({
-      providers: { ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n) }
+      providers: { ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n) },
+      isNetworkEnabled: () => true
     })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
     const FAILED_ADDRESS = getAddress(ENS2.address)
@@ -462,7 +473,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
@@ -496,7 +508,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
-      featureFlags: makeFeatureFlags(true)
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
     })
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
@@ -532,7 +545,8 @@ describe('Domains', () => {
     const first = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
     await first.reverseLookup(address)
 
@@ -548,7 +562,8 @@ describe('Domains', () => {
     const second = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     await second.init([
@@ -583,7 +598,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     await controller.init([
@@ -632,7 +648,8 @@ describe('Domains', () => {
     const controllerWithoutCitrea = new DomainsController({
       providers: {
         ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-      }
+      },
+      isNetworkEnabled: () => true
     })
 
     const TEST = {

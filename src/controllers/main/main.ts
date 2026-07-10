@@ -580,7 +580,9 @@ export class MainController extends EventEmitter implements IMainController {
       verification: this.verification,
       defaultNetworksMode: this.networks.defaultNetworksMode,
       storage: this.storage,
-      featureFlags: this.featureFlags
+      featureFlags: this.featureFlags,
+      isNetworkEnabled: (chainId: bigint) =>
+        !!this.networks.networks.find((n) => n.chainId === chainId)
     })
 
     this.contractNames = new ContractNamesController({
