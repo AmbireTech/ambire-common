@@ -558,7 +558,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
-      defaultNetworksMode: this.networks.defaultNetworksMode
+      defaultNetworksMode: this.networks.defaultNetworksMode,
+      isNetworkEnabled: (chainId: bigint) =>
+        !!this.networks.networks.find((n) => n.chainId === chainId)
     })
 
     this.contractNames = new ContractNamesController({
