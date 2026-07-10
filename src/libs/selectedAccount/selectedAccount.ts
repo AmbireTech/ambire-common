@@ -80,6 +80,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isReloading: false,
   networkSimulatedAccountOp: {},
   portfolioState: {},
+  verification: null,
   projectedRewardsStats: null
 }
 
