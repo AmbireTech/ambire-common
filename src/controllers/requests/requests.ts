@@ -14,6 +14,7 @@ import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogi
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -111,6 +112,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #callRelayer: BindedRelayerCall
 
   #portfolio: IPortfolioController
+
+  #featureFlags: IFeatureFlagsController
 
   #externalSignerControllers: Partial<{
     internal: ExternalSignerController
@@ -210,6 +213,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     relayerUrl,
     callRelayer,
     portfolio,
+    featureFlags,
     externalSignerControllers,
     activity,
     phishing,
@@ -239,6 +243,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     relayerUrl: string
     callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
+    featureFlags: IFeatureFlagsController
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
       trezor: ExternalSignerController
@@ -275,6 +280,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#relayerUrl = relayerUrl
     this.#callRelayer = callRelayer
     this.#portfolio = portfolio
+    this.#featureFlags = featureFlags
     this.#externalSignerControllers = externalSignerControllers
     this.#activity = activity
     this.#phishing = phishing
@@ -1907,6 +1913,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           networks: this.#networks,
           keystore: this.#keystore,
           portfolio: this.#portfolio,
+          featureFlags: this.#featureFlags,
           signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,

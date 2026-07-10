@@ -612,7 +612,8 @@ const init = async (
     provider,
     portfolio,
     bundlerSwitcher,
-    activity
+    activity,
+    featureFlagsCtrl
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -664,6 +665,7 @@ const init = async (
     networks: networksCtrl,
     keystore,
     portfolio,
+    featureFlags: featureFlagsCtrl,
     signAccountOpPreference,
     externalSignerControllers: {},
     account,

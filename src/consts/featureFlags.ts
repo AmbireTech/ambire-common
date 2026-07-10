@@ -5,6 +5,7 @@ export interface FeatureFlags {
   testnetMode: boolean
   tokenAndDefiAutoDiscovery: boolean
   apiForFunctionSelectors: boolean
+  erc4337: boolean
   /**
    * Off by default for privacy: passively bulk-resolving ENS/Namoshi for all
    * accounts links them together. When enabled, the wallet keeps every account's
@@ -20,5 +21,6 @@ export const defaultFeatureFlags: FeatureFlags = {
   testnetMode: false,
   tokenAndDefiAutoDiscovery: true,
   apiForFunctionSelectors: true,
+  erc4337: true,
   keepEnsProfilesUpToDate: false
 }

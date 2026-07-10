@@ -2,6 +2,7 @@ import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { ErrorRef } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -29,6 +30,8 @@ export class EstimationController extends EventEmitter {
   #provider: RPCProvider
 
   #portfolio: IPortfolioController
+
+  #featureFlags: IFeatureFlagsController
 
   status: EstimationStatus = EstimationStatus.Initial
 
@@ -65,7 +68,8 @@ export class EstimationController extends EventEmitter {
     provider: RPCProvider,
     portfolio: IPortfolioController,
     bundlerSwitcher: BundlerSwitcher,
-    activity: IActivityController
+    activity: IActivityController,
+    featureFlags: IFeatureFlagsController
   ) {
     super()
     this.#keystore = keystore
@@ -73,6 +77,7 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#provider = provider
     this.#portfolio = portfolio
+    this.#featureFlags = featureFlags
     this.#bundlerSwitcher = bundlerSwitcher
     this.#activity = activity
   }
@@ -112,7 +117,12 @@ export class EstimationController extends EventEmitter {
       return
     }
 
-    const baseAcc = getBaseAccount(account, accountState, network)
+    const baseAcc = getBaseAccount(
+      account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
 
     // Take the fee tokens from two places: the user's tokens and his gasTank
     // The gasTank tokens participate on each network as they belong everywhere

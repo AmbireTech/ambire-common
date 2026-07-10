@@ -14,6 +14,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -275,6 +276,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
+  #featureFlags: IFeatureFlagsController
+
   #serviceProviderAPI: SwapProvider
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
@@ -425,6 +428,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity,
     storage,
     signAccountOpPreference,
+    featureFlags,
     phishing,
     dapps,
     portfolioUpdate,
@@ -449,6 +453,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity: IActivityController
     storage: IStorageController
     signAccountOpPreference: SignAccountOpPreferenceController
+    featureFlags: IFeatureFlagsController
     phishing: IPhishingController
     dapps: IDappsController
     relayerUrl: string
@@ -478,6 +483,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
     this.#signAccountOpPreference = signAccountOpPreference
+    this.#featureFlags = featureFlags
     this.#phishing = phishing
     this.#dapps = dapps
     this.#relayerUrl = relayerUrl
@@ -2714,6 +2720,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      featureFlags: this.#featureFlags,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,

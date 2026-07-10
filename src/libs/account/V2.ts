@@ -45,7 +45,7 @@ export class V2 extends BaseAccount {
   }
 
   supportsBundlerEstimation() {
-    return !this.#isTransitioningTo4337()
+    return this.isErc4337Enabled && !this.#isTransitioningTo4337()
   }
 
   getAvailableFeeOptions(
@@ -53,6 +53,10 @@ export class V2 extends BaseAccount {
     feePaymentOptions: FeePaymentOption[],
     op: AccountOp
   ): FeePaymentOption[] {
+    if (!this.isErc4337Enabled) {
+      return feePaymentOptions.filter((opt) => opt.paidBy !== this.account.addr)
+    }
+
     const hasPaymaster =
       estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
 
@@ -168,6 +172,10 @@ export class V2 extends BaseAccount {
 
   isSponsorable(): boolean {
     return this.network.chainId === 100n
+  }
+
+  canUseErc4337(): boolean {
+    return true
   }
 
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {

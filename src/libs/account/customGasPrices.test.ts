@@ -58,6 +58,15 @@ const eoaNativeFeeOption = {
   paidBy: '0x2222222222222222222222222222222222222222'
 } as FeePaymentOption
 
+const eoaTokenFeeOption = {
+  ...eoaNativeFeeOption,
+  token: {
+    ...nativeFeeOption.token,
+    address: '0x4444444444444444444444444444444444444444',
+    symbol: 'DAI'
+  }
+} as FeePaymentOption
+
 const tokenFeeOption = {
   ...nativeFeeOption,
   token: {
@@ -105,9 +114,29 @@ describe('custom gas price support', () => {
   })
 
   test('non-EOA custom gas support follows custom gas price support', () => {
-    expect(new V1(account, network, accountState).canSetCustomGas(nativeFeeOption)).toBe(true)
-    expect(new Safe(account, network, accountState).canSetCustomGas(nativeFeeOption)).toBe(true)
+    expect(new V1(account, network, accountState).canSetCustomGas()).toBe(true)
+    expect(new Safe(account, network, accountState).canSetCustomGas()).toBe(true)
     expect(new EOA7702(account, network, accountState).canSetCustomGas(tokenFeeOption)).toBe(false)
     expect(new V2(account, network, accountState).canSetCustomGas(eoaNativeFeeOption)).toBe(true)
+  })
+
+  test('ERC-4337 capable accounts do not support bundler estimation when the feature is disabled', () => {
+    expect(new EOA7702(account, network, accountState, false).supportsBundlerEstimation()).toBe(
+      false
+    )
+    expect(new V2(account, network, accountState, false).supportsBundlerEstimation()).toBe(false)
+    expect(new Safe(account, network, accountState, false).supportsBundlerEstimation()).toBe(false)
+  })
+
+  test('V2 returns only external fee payment options when ERC-4337 is disabled', () => {
+    const v2 = new V2(account, network, accountState, false)
+
+    expect(
+      v2.getAvailableFeeOptions(
+        {} as any,
+        [nativeFeeOption, eoaNativeFeeOption, tokenFeeOption, eoaTokenFeeOption],
+        accountOp
+      )
+    ).toEqual([eoaNativeFeeOption, eoaTokenFeeOption])
   })
 })

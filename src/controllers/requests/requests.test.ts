@@ -127,6 +127,7 @@ const prepareTest = async (seedTestDapp = false) => {
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,
       portfolio: mainCtrl.portfolio,
+      featureFlags: mainCtrl.featureFlags,
       signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
       activity: mainCtrl.activity,
