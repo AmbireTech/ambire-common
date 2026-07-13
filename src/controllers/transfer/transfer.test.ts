@@ -1,4 +1,4 @@
-import { formatUnits, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
@@ -7,6 +7,8 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { TokenResult } from '../../libs/portfolio'
+import * as ensDomainsModule from '../../services/ensDomains'
+import { DomainsController } from '../domains/domains'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -234,6 +236,48 @@ describe('Transfer Controller', () => {
     await transferController.update({
       amount: transferController.maxAmount
     })
+  })
+  test('should allow proceeding with a Colibri-verified ENS recipient', async () => {
+    const { transferController, tokens } = await prepareTest()
+    const domain = '0xbobby.eth'
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    const provider = {} as any
+    const verificationProvider = { destroyed: false } as any
+    const domainsController = new DomainsController({
+      providers: { ['1']: provider },
+      verification: {
+        getReadyProvider: jest.fn(() => verificationProvider)
+      } as any,
+      isNetworkEnabled: () => true
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await domainsController.resolveDomain({ domain })
+
+      expect(domainsController.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(domainsController.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+
+      const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+      await transferController.update({
+        amount: '0.0001',
+        selectedToken: nativeToken,
+        addressState: {
+          fieldValue: domain,
+          resolvedAddress,
+          resolvedAddressType: 'ens',
+          isDomainResolving: false
+        }
+      })
+
+      expect(transferController.recipientAddress).toBe(resolvedAddress)
+      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+      expect(transferController.isFormValid).toBe(true)
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
   })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const { transferController, tokens } = await prepareTest()

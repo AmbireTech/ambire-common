@@ -13,6 +13,7 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IVerificationController } from '../../interfaces/verification'
 import { NameExpiry, ReverseLookupResult } from '../../services/ensDomains'
 import {
   DEFAULT_RESOLVERS,
@@ -32,6 +33,23 @@ export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
 
 const REVERSE_LOOKUP_TIMEOUT_MS = 15000
+const RESOLUTION_VERIFY_TIMEOUT_MS = 15000
+// A resolution mismatch (the RPC and Colibri returned different addresses) is the only user-facing
+// resolution error. The service name in the message varies (ENS, GNS, ...), so match on the shared
+// marker rather than a fixed, ENS-specific prefix.
+const RESOLUTION_MISMATCH_ERROR_MARKER = 'resolution mismatch for'
+
+const getUserFacingResolutionError = (error: any) => {
+  const message = error?.message
+  if (typeof message !== 'string') return undefined
+  if (!message.includes(RESOLUTION_MISMATCH_ERROR_MARKER)) return undefined
+
+  return message
+}
+
+export const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS = 24 * 60 * 60 * 1000
+// Once a name is within the warn window, re-poll its expiry at most this often to catch a renewal.
+export const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS = 1 * 60 * 60 * 1000
 
 /**
  * Keep the cached expiry only while the primary name it belongs to is unchanged; otherwise drop it
@@ -52,6 +70,8 @@ const carryOverExpiry = (existing: Domains[string] | undefined, nextNames: Resol
 export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
 
+  #verification?: IVerificationController
+
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
   #storage?: IStorageController
@@ -60,6 +80,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   /** Name services the controller resolves against. Defaults to the built-in set; overridable for tests. */
   #resolvers: NameResolver[]
+
+  #isNetworkEnabled: (chainId: bigint) => boolean
 
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
@@ -80,6 +102,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   resolveDomainsStatus: { [domain: string]: 'LOADING' | 'RESOLVED' | 'FAILED' | undefined } = {}
 
+  resolveDomainsErrors: { [domain: string]: string | undefined } = {}
+
+  verifiedDomainsStatus: { [domain: string]: 'VERIFIED' | undefined } = {}
+
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
 
   #persisting = false
@@ -89,27 +115,33 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   constructor({
     eventEmitterRegistry,
     providers,
+    verification,
     defaultNetworksMode,
     storage,
     featureFlags,
-    resolvers
+    resolvers,
+    isNetworkEnabled
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
+    verification?: IVerificationController
     defaultNetworksMode?: 'mainnet' | 'testnet'
     // Not needed for rewards/benzin as they are used for persistence and privacy opt-outs,
     // which are not relevant there
     storage?: IStorageController
     featureFlags?: IFeatureFlagsController
     resolvers?: NameResolver[]
+    isNetworkEnabled: (chainId: bigint) => boolean
   }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers
+    this.#verification = verification
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#featureFlags = featureFlags
     this.#resolvers = resolvers ?? DEFAULT_RESOLVERS
+    this.#isNetworkEnabled = isNetworkEnabled
   }
 
   /**
@@ -177,7 +209,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   #context(): ResolveContext {
     return {
-      getProvider: (chainId: string) => this.#providers[chainId],
+      getProvider: (chainId: string) =>
+        this.#isNetworkEnabled(BigInt(chainId)) ? this.#providers[chainId] : undefined,
       networkMode: this.#defaultNetworksMode
     }
   }
@@ -213,6 +246,57 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
         void this.#persistDomains()
       }
     }
+  }
+
+  /**
+   * A resolve context backed by the Colibri verifier providers instead of the app's RPC providers.
+   * Resolving a domain through it re-runs the exact same service against Colibri's proven state.
+   * A service whose chain has no ready verifier (e.g. Namoshi on Citrea) gets `undefined` here, so
+   * its `resolve` returns null and verification is skipped rather than special-cased per service.
+   */
+  #verificationContext(): ResolveContext {
+    return {
+      getProvider: (chainId: string) =>
+        this.#verification?.getReadyProvider(BigInt(chainId)) ?? undefined,
+      networkMode: this.#defaultNetworksMode
+    }
+  }
+
+  /**
+   * Cross-checks an RPC-resolved address by re-resolving the domain through the same service against
+   * Colibri's proven state. Returns true on a match, false when no ready verifier exists for the
+   * service's chain (verification is skipped), and throws a user-facing error on a genuine mismatch.
+   */
+  async #verifyResolvedAddress(resolver: NameResolver, domain: string, address: string) {
+    const verified = await withTimeout(
+      () => resolver.resolve(domain, this.#verificationContext()),
+      { timeoutMs: RESOLUTION_VERIFY_TIMEOUT_MS }
+    )
+
+    if (!verified) return false
+
+    if (!verified.address && !address) return false
+    if (verified.address && address && getAddress(verified.address) === getAddress(address)) {
+      return true
+    }
+
+    throw new Error(
+      `${resolver.label} resolution mismatch for ${domain}: RPC returned ${address}, Colibri returned ${verified.address}`
+    )
+  }
+
+  #setResolveDomainFailure(domain: string, error: any) {
+    const message = getUserFacingResolutionError(error)
+
+    if (message) {
+      this.resolveDomainsErrors = {
+        ...this.resolveDomainsErrors,
+        [domain]: message
+      }
+    } else {
+      delete this.resolveDomainsErrors[domain]
+    }
+    this.resolveDomainsStatus[domain] = 'FAILED'
   }
 
   async batchReverseLookup(addresses: string[], updateExpiryForAddresses?: string[]) {
@@ -276,12 +360,31 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     this.resolveDomainsStatus[domain] = 'LOADING'
+    delete this.resolveDomainsErrors[domain]
+    delete this.verifiedDomainsStatus[domain]
     await this.forceEmitUpdate()
 
     if (this.domainToAddresses[domain]) {
-      this.resolveDomainsStatus[domain] = 'RESOLVED'
-      await this.forceEmitUpdate()
-      this.resolveDomainsStatus[domain] = undefined
+      try {
+        const cachedAddress = this.domainToAddresses[domain]?.address
+        if (cachedAddress) {
+          const isVerified = await this.#verifyResolvedAddress(resolver, domain, cachedAddress)
+          if (isVerified) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+        }
+
+        this.resolveDomainsStatus[domain] = 'RESOLVED'
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      } catch (e: any) {
+        this.emitError({
+          error: e,
+          message: `${resolver.label} resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        this.#setResolveDomainFailure(domain, e)
+        await this.forceEmitUpdate()
+        this.resolveDomainsStatus[domain] = undefined
+      }
       return
     }
 
@@ -289,6 +392,10 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       .resolve(domain, this.#context())
       .then(async (result) => {
         if (result?.address) {
+          // Verify before caching, so a mismatch throws into the catch and nothing bad is persisted.
+          const isVerified = await this.#verifyResolvedAddress(resolver, domain, result.address)
+          if (isVerified) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+
           this.domainToAddresses[domain] = {
             address: getAddress(result.address),
             type: resolver.id
@@ -302,6 +409,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           })
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
+        delete this.resolveDomainsErrors[domain]
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
 
@@ -312,7 +420,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       })
       .catch(async (e) => {
         console.error(`Failed to resolve domain: ${domain}`, e)
-        this.resolveDomainsStatus[domain] = 'FAILED'
+        this.emitError({
+          error: e,
+          message: `${resolver.label} resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        this.#setResolveDomainFailure(domain, e)
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
       })
@@ -454,6 +567,19 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     const reverseResolvers = this.#activeResolvers.filter(
       (resolver) => resolver.capabilities.reverse
     )
+
+    // const ethereumProvider =
+    //   this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+    // const citreaProvider = this.#isNetworkEnabled(4114n) && this.#providers['4114']
+
+    // if (!ethereumProvider) {
+    //   this.emitError({
+    //     error: new Error('domains.reverseLookup: Ethereum provider is not available'),
+    //     message: 'The RPC provider for Ethereum is not available.',
+    //     level: 'major'
+    //   })
+    //   return
+    // }
 
     this.loadingAddresses.push(...addressesToLookup)
     this.emitUpdate()

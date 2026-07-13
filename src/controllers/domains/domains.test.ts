@@ -107,7 +107,8 @@ describe('Domains', () => {
   // Privacy mode (the default, no TTL refresh) is covered by its own tests.
   const domainsController = new DomainsController({
     providers,
-    featureFlags: makeFeatureFlags(true)
+    featureFlags: makeFeatureFlags(true),
+    isNetworkEnabled: () => true
   })
 
   it('should reverse lookup (ENS)', async () => {
@@ -131,6 +132,120 @@ describe('Domains', () => {
 
     expect(domainsController.domainToAddresses[name]?.address).toBe(address)
     expect(domainsController.domainToAddresses[name]?.type).toBe('ens')
+  })
+  it('should fail Colibri verification for a changed ENS address and succeed for the resolved address', async () => {
+    const domain = '0xbobby.eth'
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    const changedAddress = getAddress('0x0000000000000000000000000000000000000001')
+    const provider = {} as any
+    const verificationProvider = {} as any
+    const getReadyProvider = jest.fn(() => undefined as any)
+    const { restore } = suppressConsole()
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      verification: { getReadyProvider } as any,
+      isNetworkEnabled: () => true
+    })
+    // The ENS resolver runs both the RPC resolve and the Colibri verification through
+    // `resolveENSDomain`, so this single spy stands in for both.
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await controller.resolveDomain({ domain })
+
+      expect(controller.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+
+      getReadyProvider.mockReturnValue(verificationProvider)
+      controller.domainToAddresses[domain] = {
+        address: changedAddress,
+        type: 'ens'
+      }
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBe(
+        `ENS resolution mismatch for ${domain}: RPC returned ${changedAddress}, Colibri returned ${resolvedAddress}`
+      )
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+
+      controller.domainToAddresses[domain] = {
+        address: resolvedAddress,
+        type: 'ens'
+      }
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+
+      getReadyProvider.mockReturnValue(undefined as any)
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+      restore()
+    }
+  })
+  it('verifies a GNS (.gwei) name through Colibri, since it resolves on Ethereum mainnet', async () => {
+    const { name } = GNS_TEST
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    // Colibri proves Ethereum mainnet state, so a GNS name (chain 1) gets a ready verifier for free.
+    const getReadyProvider = jest.fn((chainId: bigint) => (chainId === 1n ? ({} as any) : null))
+    const controller = new DomainsController({
+      providers: { ['1']: {} as any },
+      verification: { getReadyProvider } as any,
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await controller.resolveDomain({ domain: name })
+
+      expect(controller.domainToAddresses[name]?.type).toBe('gns')
+      expect(controller.domainToAddresses[name]?.address).toBe(resolvedAddress)
+      expect(controller.resolveDomainsErrors[name]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[name]).toBe('VERIFIED')
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
+  })
+  it('resolves a Namoshi (.citrea) name but skips verification (no Colibri verifier on Citrea)', async () => {
+    const name = 'nemo.citrea'
+    const resolvedAddress = getAddress('0x4f0b5579136f88135572010276c2a4a884729e7b')
+    // A verifier is ready for Ethereum but not for Citrea (4114), so Namoshi can't be verified.
+    const getReadyProvider = jest.fn((chainId: bigint) => (chainId === 1n ? ({} as any) : null))
+    const controller = new DomainsController({
+      providers: { ['1']: {} as any, ['4114']: {} as any },
+      verification: { getReadyProvider } as any,
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await controller.resolveDomain({ domain: name })
+
+      expect(controller.domainToAddresses[name]?.type).toBe('namoshi')
+      expect(controller.domainToAddresses[name]?.address).toBe(resolvedAddress)
+      expect(controller.resolveDomainsErrors[name]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[name]).toBeUndefined()
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
   })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
@@ -235,7 +350,10 @@ describe('Domains', () => {
   })
   it('batchReverseLookup should use deployless batched reverse lookup', async () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      isNetworkEnabled: () => true
+    })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
     // ENS and GNS both run on Ethereum, so the batch performs two lookups (ENS then GNS); Namoshi is
     // skipped because there is no Citrea provider.
@@ -280,7 +398,10 @@ describe('Domains', () => {
   })
   it('reverseLookup awaits an in-flight lookup instead of starting a duplicate', async () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      isNetworkEnabled: () => true
+    })
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
 
     let resolveLookup!: (value: ensDomainsModule.ReverseLookupResult) => void
@@ -315,7 +436,10 @@ describe('Domains', () => {
   })
   it('batchReverseLookup awaits an address already in flight from reverseLookup', async () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-    const controller = new DomainsController({ providers: { ['1']: provider } })
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      isNetworkEnabled: () => true
+    })
     const addressInFlight = getAddress(ENS_OLDEST_RESOLVER.address)
     const addressInBatch = getAddress(ENS_LATEST_RESOLVER.address)
 
@@ -356,7 +480,8 @@ describe('Domains', () => {
   it('marks the address as failed (updateFailedAt) when the lookup returns a failed entry', async () => {
     const { restore } = suppressConsole(true)
     const controller = new DomainsController({
-      providers: { ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n) }
+      providers: { ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n) },
+      isNetworkEnabled: () => true
     })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
     const FAILED_ADDRESS = getAddress(ENS2.address)
@@ -445,7 +570,8 @@ describe('Domains', () => {
     const { restore } = suppressConsole(true)
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
-      featureFlags: { isFeatureEnabled: (flag: string) => flag !== 'gnsDomains' } as any
+      featureFlags: { isFeatureEnabled: (flag: string) => flag !== 'gnsDomains' } as any,
+      isNetworkEnabled: () => true
     })
     const reverseLookupEnsSpy = jest
       .spyOn(ensDomainsModule, 'reverseLookupEns')
@@ -465,7 +591,8 @@ describe('Domains', () => {
     // status, so it must be emitted rather than silently returned.
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
-      resolvers: []
+      resolvers: [],
+      isNetworkEnabled: () => true
     })
 
     const domain = 'orphan.eth'
@@ -487,7 +614,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
@@ -522,7 +650,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
-      featureFlags: makeFeatureFlags(true)
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
     })
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
@@ -559,7 +688,8 @@ describe('Domains', () => {
     const first = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
     await first.reverseLookup(address)
 
@@ -577,7 +707,8 @@ describe('Domains', () => {
     const second = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     await second.init([
@@ -612,7 +743,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     await controller.init([
@@ -645,7 +777,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     await controller.init([
@@ -663,7 +796,8 @@ describe('Domains', () => {
     const controllerWithoutCitrea = new DomainsController({
       providers: {
         ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
-      }
+      },
+      isNetworkEnabled: () => true
     })
 
     const TEST = {
@@ -704,7 +838,8 @@ describe('Domains - ENS expiry', () => {
     new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(true)
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
     })
 
   it('fetches and stores the ENS expiry on a reverse lookup with updateExpiry', async () => {
