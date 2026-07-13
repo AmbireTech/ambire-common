@@ -521,6 +521,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     })
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
+      if (view.type === 'side-panel') {
+        if (isSwapAndBridge(view.currentRoute)) {
+          this.#isOnSwapAndBridgeRoute = false
+          this.updateQuoteInterval.stop()
+        }
+
+        if (this.sessionIds.includes('side-panel')) {
+          this.unloadScreen('side-panel', true)
+        }
+
+        return
+      }
+
       if (!isSwapAndBridge(view.currentRoute)) return
       this.#isOnSwapAndBridgeRoute = false
       this.updateQuoteInterval.stop()
