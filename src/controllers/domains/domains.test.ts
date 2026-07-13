@@ -137,11 +137,12 @@ describe('Domains', () => {
     const { restore } = suppressConsole()
     const controller = new DomainsController({
       providers: { ['1']: provider },
-      verification: { getReadyProvider } as any
+      verification: { getReadyProvider } as any,
+      isNetworkEnabled: () => true
     })
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
-      .mockResolvedValue({ address: resolvedAddress, avatar: null })
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
 
     try {
       await controller.resolveDomain({ domain })
@@ -630,7 +631,8 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(false)
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
     })
 
     await controller.init([
@@ -691,7 +693,8 @@ describe('Domains - ENS expiry', () => {
     new DomainsController({
       providers: { ['1']: mainnetProvider() },
       storage,
-      featureFlags: makeFeatureFlags(true)
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
     })
 
   it('fetches and stores the ENS expiry on a reverse lookup with updateExpiry', async () => {
