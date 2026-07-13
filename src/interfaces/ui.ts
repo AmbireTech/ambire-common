@@ -18,6 +18,8 @@ export type View = {
 export const isExtensionOverlayView = (view: Pick<View, 'type'>) =>
   view.type === 'popup' || view.type === 'side-panel'
 
+export const isSidePanelView = (view: Pick<View, 'type'>) => view.type === 'side-panel'
+
 export type UiManager = {
   window: {
     event: EventEmitter
@@ -53,6 +55,8 @@ export type UiManager = {
     sendUiMessage: (params: {}) => void
     sendNavigateMessage: (viewId: string, route: string, params: { [key: string]: any }) => void
   }
+  // Extension-only: nudge a dapp tab after side-panel requests so React Query refetches.
+  dispatchDappTabFocus?: (targets: { tabId: number; windowId?: number }[]) => void
 }
 
 export type WindowId = number

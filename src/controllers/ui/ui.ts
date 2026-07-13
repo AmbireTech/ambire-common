@@ -15,6 +15,8 @@ export class UiController extends EventEmitter implements IUiController {
 
   message: UiManager['message']
 
+  dispatchDappTabFocus?: UiManager['dispatchDappTabFocus']
+
   constructor({
     eventEmitterRegistry,
     uiManager
@@ -28,6 +30,7 @@ export class UiController extends EventEmitter implements IUiController {
     this.window = uiManager.window
     this.notification = uiManager.notification
     this.message = uiManager.message
+    this.dispatchDappTabFocus = uiManager.dispatchDappTabFocus
   }
 
   addView(view: View) {
