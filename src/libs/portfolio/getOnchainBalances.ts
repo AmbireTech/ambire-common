@@ -4,7 +4,6 @@ import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-
 import { yieldToMain } from '../../utils/scheduler'
 import {
   getNotAmbireStateOverride,
@@ -16,9 +15,9 @@ import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
-import { mapToken } from './helpers'
 import {
   CollectionResult,
+  DeploylessContractOptions,
   GetOptions,
   GetOptionsSimulation,
   LimitsOptions,
@@ -26,6 +25,7 @@ import {
   TokenError,
   TokenResult
 } from './interfaces'
+import { mapToken } from './tokenProcessing'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -113,8 +113,19 @@ export function getDeploylessOpts(
   opts: {
     simulation?: GetOptionsSimulation<AccountOp[]>
     blockTag?: GetOptions['blockTag']
+    deployless?: DeploylessContractOptions
   }
 ) {
+  if (opts.deployless) {
+    return {
+      blockTag: opts.blockTag,
+      from: DEPLOYLESS_SIMULATION_FROM,
+      mode: opts.deployless.mode,
+      to: opts.deployless.to,
+      stateToOverride: null
+    }
+  }
+
   const shouldStateOverride =
     !!opts.simulation && getShouldStateOverride(network, opts.simulation.baseAccount)
 
@@ -129,7 +140,7 @@ export function getDeploylessOpts(
 export async function getNFTs(
   network: Network,
   deployless: Deployless,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag'>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'deployless'>,
   accountAddr: string,
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
@@ -139,7 +150,8 @@ export async function getNFTs(
     blockTag:
       opts.blockTag === 'pending' || opts.blockTag === 'both'
         ? getPendingBlockTagIfSupported(network)
-        : opts.blockTag
+        : opts.blockTag,
+    deployless: opts.deployless?.erc721
   })
 
   const mapNft = (token: any, address: string) => {
@@ -175,7 +187,7 @@ export async function getNFTs(
     ]
   }
 
-  const { accountOps, baseAccount, state } = opts.simulation
+  const { accountOps, baseAccount } = opts.simulation
   const account = baseAccount.getAccount()
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const shouldStateOverride = getShouldStateOverride(network, baseAccount)
@@ -255,7 +267,7 @@ export async function getNFTs(
 export async function getTokens(
   network: Network,
   deployless: Deployless,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints'>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints' | 'deployless'>,
   accountAddr: string,
   tokenAddrs: string[],
   pageIndex?: number
@@ -273,7 +285,8 @@ export async function getTokens(
     blockTag:
       opts.blockTag === 'pending' || isFetchingBothBlocks
         ? getPendingBlockTagIfSupported(network)
-        : opts.blockTag
+        : opts.blockTag,
+    deployless: opts.deployless?.erc20
   })
 
   const getMainResults = async () => {

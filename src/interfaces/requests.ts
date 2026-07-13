@@ -1,4 +1,4 @@
-import { EIP712TypedData } from '@safe-global/types-kit'
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 import { AccountOp } from '../libs/accountOp/accountOp'
 import { TokenResult } from '../libs/portfolio'
@@ -45,6 +45,7 @@ export type BuildRequest =
         amount: string
         amountInFiat: bigint
         recipientAddress: string
+        recipientDomain: string | undefined
         selectedToken: TokenResult
         executionType: RequestExecutionType
       }

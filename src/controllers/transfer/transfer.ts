@@ -44,7 +44,7 @@ import {
   Validation
 } from '../../services/validations'
 import { getIsViewOnly } from '../../utils/accounts'
-import { getAddressFromAddressState } from '../../utils/domains'
+import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
@@ -167,6 +167,12 @@ export class TransferController extends EventEmitter implements ITransferControl
   // Set only for first-time sends when the recipient matches a known address
   // by both prefix and suffix, which may indicate address poisoning.
   addressPoisoningMatch: AddressPoisoningMatch | null = null
+
+  /**
+   * Set when the recipient is a domain (ENS/Namoshi) the user has sent to before, but it now resolves
+   * to a DIFFERENT address than last time (possible expiry/snipe).
+   */
+  recipientDomainAddressChange: { previousAddress: string } | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -560,7 +566,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt,
-        this.addressPoisoningMatch
+        this.addressPoisoningMatch,
+        this.recipientDomainAddressChange
       )
     }
 
@@ -708,6 +715,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
       this.addressPoisoningMatch = null
+      this.recipientDomainAddressChange = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -997,6 +1005,29 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.lastSentToRecipientAt = lastTransactionDate
 
     this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
+
+    this.#updateRecipientDomainAddressChange()
+  }
+
+  /**
+   * When the recipient was entered as a domain (ENS/Namoshi) the user has sent to before, warn if it
+   * now resolves to a different address than last time — the name may have expired and been re-pointed.
+   */
+  #updateRecipientDomainAddressChange() {
+    const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
+
+    // Don't warn if the user is sending to the address directly
+    if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) {
+      this.recipientDomainAddressChange = null
+      return
+    }
+
+    const previousAddress = this.#activity.getSentToDomainAddress(fieldValue)
+
+    this.recipientDomainAddressChange =
+      previousAddress && previousAddress.toLowerCase() !== resolvedAddress.toLowerCase()
+        ? { previousAddress }
+        : null
   }
 
   get hasPersistedState() {
@@ -1022,7 +1053,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
       recipientAddress,
-      amountInFiat: amountInFiatBigInt
+      amountInFiat: amountInFiatBigInt,
+      recipientDomain: getDomainFromAddressState(this.addressState)
     })
 
     if (!userRequestParams) {

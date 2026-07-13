@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { hashTypedData, isHex } from 'viem'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { EIP712TypedData } from '@safe-global/types-kit'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -83,7 +83,8 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -1565,12 +1566,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amount,
     amountInFiat,
     recipientAddress,
+    recipientDomain,
     selectedToken,
     executionType = 'open-request-window'
   }: {
     amount: string
     amountInFiat: bigint
     recipientAddress: string
+    recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
   }) {
@@ -1608,7 +1611,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       amountInFiat,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      recipientDomain
     })
 
     if (!callsRequestParams) {
@@ -1823,8 +1827,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
-        (!r.signAccountOp.accountOp.txnId ||
-          meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId)
+        // find an accountOp with no txnId, if the meta does not have a Safe
+        // txnId. If it has, it should not get the existingUserRequest
+        ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
+          // if meta has txnId, the accountOp should have the same txnId
+          (meta.safeTxnProps?.txnId &&
+            r.signAccountOp.accountOp.txnId &&
+            meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {
