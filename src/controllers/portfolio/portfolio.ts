@@ -21,6 +21,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IVerificationController } from '../../interfaces/verification'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -70,6 +71,7 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
+  PortfolioVerification,
   ScheduledUpdates,
   TemporaryTokens,
   TokenBlacklist,
@@ -171,6 +173,8 @@ export class PortfolioController
 
   #providers: IProvidersController
 
+  #verification?: IVerificationController
+
   #networks: INetworksController
 
   #accounts: IAccountsController
@@ -233,7 +237,8 @@ export class PortfolioController
     velcroUrl: string,
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    verification?: IVerificationController
   ) {
     super(eventEmitterRegistry)
 
@@ -245,6 +250,7 @@ export class PortfolioController
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#velcroUrl = velcroUrl
     this.#providers = providers
+    this.#verification = verification
     this.#networks = networks
     this.#accounts = accounts
     this.#keystore = keystore
@@ -1442,16 +1448,30 @@ export class PortfolioController
         isManualUpdate,
         discoveryData?.data?.hints
       )
+      const shouldVerifyPortfolio = !!network.isColibriEnabled && !portfolioProps.simulation
+
+      // Colibri verification runs off the critical path (see below). Show a
+      // loading badge immediately so the UI reflects that a verification is pending.
+      const verification: PortfolioVerification | undefined = shouldVerifyPortfolio
+        ? { provider: 'colibri', status: 'loading', updatedAt: Date.now() }
+        : undefined
+
+      if (shouldVerifyPortfolio) {
+        state.verification = verification
+        this.emitUpdate()
+      } else {
+        delete state.verification
+      }
 
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           tokenDataCache: networkTokenDataCache,
-          blockTag: 'both',
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
+          blockTag: 'both',
           disableAutoDiscovery: true,
           blacklist: this.#blacklist
         }),
@@ -1511,6 +1531,7 @@ export class PortfolioController
         isLoading: false,
         errors: combinedErrors,
         lastSuccessfulUpdate,
+        verification,
         result: {
           ...portfolioResult,
           // Overwrite the discovery time from the portfolio lib
@@ -1527,8 +1548,54 @@ export class PortfolioController
           defiPositions: newDefiState
         }
       }
+      const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      // Fire-and-forget: verify the just-fetched balances against Colibri without
+      // blocking the portfolio update (balances are already emitted above). The
+      // verdict is written back only if this exact state slot is still current,
+      // guarding against a newer update having replaced it in the meantime.
+      if (shouldVerifyPortfolio && verifiedState && this.#verification) {
+        this.#verification
+          .verifyPortfolio({
+            account,
+            network,
+            rpcResult: portfolioResult,
+            getOptions: {
+              tokenDataRecency: 60000 * 5,
+              fetchPinned: !hasNonZeroTokens,
+              ...allHints,
+              ...portfolioProps,
+              blacklist: this.#blacklist
+            },
+            tokenDataCache: portfolioResult.tokenDataCache
+          })
+          .then((verificationResult) => {
+            if (this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState) return
+
+            verifiedState.verification = verificationResult
+            this.emitUpdate()
+          })
+          .catch((error) => {
+            this.emitError({
+              level: 'silent',
+              message: `Unexpected error while verifying portfolio through Colibri on ${network.name} (${network.chainId}).`,
+              error
+            })
+
+            if (this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState) return
+
+            verifiedState.verification = {
+              provider: 'colibri',
+              status: 'warning',
+              error: 'Colibri could not verify portfolio balances',
+              updatedAt: Date.now()
+            }
+            this.emitUpdate()
+          })
+      }
+
       return [true, discoveryData]
     } catch (e: any) {
       this.emitError({
@@ -1538,6 +1605,14 @@ export class PortfolioController
       })
       state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
+      if (state.verification?.status === 'loading') {
+        state.verification = {
+          provider: 'colibri',
+          status: 'warning',
+          error: e?.message || 'Portfolio failed before Colibri verification completed',
+          updatedAt: Date.now()
+        }
+      }
       // Convert the error to an object because the portfolio state is cloned
       // using structuredClone() which doesn't preserve custom error properties
       // like simulationErrorMsg

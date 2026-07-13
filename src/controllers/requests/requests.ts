@@ -1520,12 +1520,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amount,
     amountInFiat,
     recipientAddress,
+    recipientDomain,
     selectedToken,
     executionType = 'open-request-window'
   }: {
     amount: string
     amountInFiat: bigint
     recipientAddress: string
+    recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
   }) {
@@ -1563,7 +1565,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       amountInFiat,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      recipientDomain
     })
 
     if (!callsRequestParams) {
