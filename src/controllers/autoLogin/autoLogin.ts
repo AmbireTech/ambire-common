@@ -1,5 +1,5 @@
 import { isHexString, toUtf8String } from 'ethers'
-import { getDomain } from 'tldts'
+import { getHostname } from 'tldts'
 import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
@@ -33,6 +33,25 @@ export const STATUS_WRAPPED_METHODS = {
 // Taken from viem's parseSiweMessage.ts
 const prefixRegex =
   /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/
+
+// Normalizes a SIWE domain/host authority (host, optionally with a port) for comparison.
+// tldts.getHostname() lowercases and validates the hostname (also handles localhost/IPs,
+// unlike tldts.getDomain() which returns null for those), but it always strips the port,
+// so the port is normalized and compared separately to preserve origin security boundaries.
+const normalizeSiweAuthority = (hostAndPort: string): string | null => {
+  const [host, port] = hostAndPort.split(':')
+
+  if (!host) return null
+
+  const normalizedHostname = getHostname(host)
+  if (!normalizedHostname) return null
+
+  const hostnameWithoutWww = normalizedHostname.startsWith('www.')
+    ? normalizedHostname.slice(4)
+    : normalizedHostname
+
+  return port ? `${hostnameWithoutWww}:${port}` : hostnameWithoutWww
+}
 
 /**
  * A list of default policies for popular apps
@@ -172,7 +191,17 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
       if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
 
-      if (getDomain(parsedSiweMessage.domain) !== getDomain(requestHostname))
+      // ERC-4361 requires comparing the SIWE domain against the full request
+      // authority (host + port), not the registrable domain, otherwise sibling
+      // subdomains (e.g. evil.example.com vs app.example.com) would pass as a match.
+      const normalizedSiweDomain = normalizeSiweAuthority(parsedSiweMessage.domain)
+      const normalizedRequestAuthority = normalizeSiweAuthority(requestHostname)
+
+      if (
+        !normalizedSiweDomain ||
+        !normalizedRequestAuthority ||
+        normalizedSiweDomain !== normalizedRequestAuthority
+      )
         return {
           parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
           status: 'domain-mismatch'
