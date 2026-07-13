@@ -1,96 +1,51 @@
-import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import {
-  mockInternalKeys,
-  produceMemoryStore,
-  waitForAccountsCtrlFirstLoad
-} from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { mockInternalKeys } from '../../../test/helpers'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { IAccountsController } from '../../interfaces/account'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { AccountsController } from './accounts'
+
+const accounts = [
+  {
+    addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
+    associatedKeys: ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'],
+    initialPrivileges: [],
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+    }
+  },
+  {
+    addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+    associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
+    initialPrivileges: [],
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae'
+    }
+  }
+]
 
 describe('AccountsController', () => {
-  const storage: Storage = produceMemoryStore()
-  const accounts = [
-    {
-      addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
-      associatedKeys: ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'],
-      initialPrivileges: [],
-      creation: null,
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
-      }
-    },
-    {
-      addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
-      associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
-      initialPrivileges: [],
-      creation: null,
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae'
-      }
-    }
-  ]
-
-  const mockKeys = mockInternalKeys(accounts)
-
-  storage.set('keystoreKeys', mockKeys)
-
-  let providersCtrl: IProvidersController
-  const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-
   let accountsCtrl: IAccountsController
-  test('should init AccountsController', async () => {
-    await storageCtrl.set('accounts', accounts)
-    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
 
-    accountsCtrl = new AccountsController(
-      storageCtrl,
-      providersCtrl,
-      networksCtrl,
-      new KeystoreController('default', storageCtrl, {}, uiCtrl),
-      () => {},
-      () => {},
-      () => {},
-      relayerUrl,
-      fetch
+  test('should init AccountsController', async () => {
+    const mockKeys = mockInternalKeys(accounts)
+    const { mainCtrl } = await makeMainController(
+      async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+        await storageCtrl.set('selectedAccount', accounts[0]!.addr)
+        await storageCtrl.set('keystoreKeys', mockKeys)
+      },
+      { skipAccountStateLoad: false }
     )
+
+    accountsCtrl = mainCtrl.accounts
 
     expect(accountsCtrl).toBeDefined()
 
-    await waitForAccountsCtrlFirstLoad(accountsCtrl)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)
   })
   test('update account preferences', async () => {
@@ -116,9 +71,9 @@ describe('AccountsController', () => {
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)
 
-    await accountsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+    accountsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
 
-    await accountsCtrl.removeAccountData('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
+    accountsCtrl.removeAccountData('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
 
     expect(accountsCtrl.accounts.length).toEqual(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toEqual(0)

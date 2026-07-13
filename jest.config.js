@@ -3,6 +3,10 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testTimeout: 25000,
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '^@test/(.*)$': '<rootDir>/test/$1'
+  },
   // For services/validate.ts https://stackoverflow.com/a/61785012/13840636
   transform: {
     'node_modules/validator/.+\\.(j|t)sx?$': 'ts-jest'

@@ -1,17 +1,26 @@
-import { Interface } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { Pancake } from '../../const/abis/Pancake'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  isHexCall
+} from '../../utils'
 
-const iface = new Interface(Pancake)
+const approveAbi = parseAbi([
+  'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+])
 
 const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const matcher = {
-    [iface.getFunction('approve(address token, address spender, uint160 amount, uint48 expiration)')
-      ?.selector!]: (call: IrCall) => {
-      const { token, spender, amount, expiration } = iface.parseTransaction(call)!.args
+  const matcher: Record<string, (call: HexIrCall) => any> = {
+    [toFunctionSelector(approveAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: approveAbi, data: call.data })
+      const [token, spender, amount, expiration] = args
       const expirationHumanization = expiration > 0 ? getDeadline(expiration) : getLabel('now')
 
       if (amount > 0)
@@ -31,8 +40,9 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     }
   }
   const newCalls = calls.map((call) => {
-    if (call.fullVisualization || !matcher[call.data.slice(0, 10)]) return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
+    const selector = call.data.slice(0, 10)
+    if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
+    return { ...call, fullVisualization: matcher[selector](call) }
   })
 
   return newCalls

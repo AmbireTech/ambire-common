@@ -19,7 +19,7 @@ const accountOp: AccountOp = {
   gasLimit: null,
   signature: null,
   gasFeePayment: null
-}
+} as any
 const transactions = [
   { to: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', value: 0n, data: '0x68656c6c6f' },
   { to: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', value: 1n, data: '0x68656c6c6f' },
@@ -41,14 +41,8 @@ describe('asciiHumanizer', () => {
     const irCalls = asciiModule(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
 
     compareVisualizations(irCalls[0]!.fullVisualization!, [...humanizationPrefix, getText('hello')])
-    compareVisualizations(irCalls[1]!.fullVisualization!, [
-      ...humanizationPrefix,
-      getText('hello'),
-      getLabel('and'),
-      getAction('Send'),
-      getToken(ZeroAddress, 1n)
-    ])
-    compareVisualizations(irCalls[2].fullVisualization!, [
+    compareVisualizations(irCalls[1]!.fullVisualization!, [...humanizationPrefix, getText('hello')])
+    compareVisualizations(irCalls[2]!.fullVisualization!, [
       ...humanizationPrefix,
       getText('Some example onchain text message')
     ])

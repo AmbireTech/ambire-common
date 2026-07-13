@@ -1,6 +1,5 @@
-/* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
-import { IAccountsController } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -8,9 +7,10 @@ import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
+import { isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -82,7 +82,7 @@ export class EstimationController extends EventEmitter {
 
     return baseAcc.getAvailableFeeOptions(
       estimation,
-      // eslint-disable-next-line no-nested-ternary
+
       estimation.ambireEstimation
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
@@ -92,7 +92,7 @@ export class EstimationController extends EventEmitter {
     )
   }
 
-  async estimate(op: AccountOpWithId) {
+  async estimate(op: AccountOp) {
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 
@@ -112,12 +112,7 @@ export class EstimationController extends EventEmitter {
       return
     }
 
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.#keystore.getAccountKeys(account),
-      network
-    )
+    const baseAcc = getBaseAccount(account, accountState, network)
 
     // Take the fee tokens from two places: the user's tokens and his gasTank
     // The gasTank tokens participate on each network as they belong everywhere
@@ -156,14 +151,26 @@ export class EstimationController extends EventEmitter {
     // in all cases EXCEPT the case where we're making an estimation for
     // the view only account itself. In all other, view only accounts options
     // should not be present as the user cannot pay the fee with them (no key)
-    const nativeToCheck = account.creation
+    const nativeToCheck = baseAcc.canBroadcastByOtherEOA()
       ? this.#accounts.accounts
           .filter(
             (acc) =>
-              !acc.creation &&
+              !isSmartAccount(acc) &&
               (acc.addr === op.accountAddr ||
                 !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
           )
+          // internal keys first
+          .sort((a, b) => {
+            const aKeyInternal = this.#keystore.keys.find(
+              (k) => k.type === 'internal' && k.addr === a.addr
+            )
+            const bKeyInternal = this.#keystore.keys.find(
+              (k) => k.type === 'internal' && k.addr === b.addr
+            )
+            if (aKeyInternal && !bKeyInternal) return -1
+            if (!aKeyInternal && bKeyInternal) return 1
+            return 0
+          })
           .map((acc) => acc.addr)
       : []
 
@@ -208,7 +215,9 @@ export class EstimationController extends EventEmitter {
       this.estimationRetryError = null
       this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
       this.#notFatalBundlerError =
-        estimation.bundler instanceof Error ? estimation.bundler : undefined
+        estimation.bundler instanceof Error
+          ? new Error(estimation.bundler.message, { cause: '4337_ESTIMATION' })
+          : undefined
     } else {
       this.estimation = null
       this.error = estimation instanceof Error ? estimation : estimation.criticalError
@@ -225,7 +234,7 @@ export class EstimationController extends EventEmitter {
       // continue on error here as the flags are more like app helpers
       this.#accounts
         .updateAccountState(op.accountAddr, 'pending', [op.chainId])
-        // eslint-disable-next-line no-console
+
         .catch((e) => console.error(e))
     }
 
@@ -247,7 +256,7 @@ export class EstimationController extends EventEmitter {
     return this.status === EstimationStatus.Loading || this.error instanceof Error
   }
 
-  calculateWarnings() {
+  calculateWarnings(acc: Account) {
     const warnings: Warning[] = []
 
     if (this.estimationRetryError && this.status === EstimationStatus.Success) {
@@ -258,11 +267,17 @@ export class EstimationController extends EventEmitter {
       })
     }
 
-    if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
+    if (
+      this.#notFatalBundlerError?.cause === '4337_ESTIMATION' &&
+      // do not show the warning for safe accounts that don't have a gas tank
+      (!acc.safeCreation ||
+        (this.availableFeeOptions.find((opt) => opt.token.flags.onGasTank)?.availableAmount || 0) >
+          0)
+    ) {
       warnings.push({
         id: 'bundler-failure',
-        title:
-          'You can proceed safely, but fee payment options are limited due to temporary provider issues'
+        title: 'Fee options are temporarily limited',
+        text: 'Use the "Retry" button to try again, or pay the fee with the native token"'
       })
     }
 

@@ -1,12 +1,15 @@
 import {
   SelectedAccountPortfolio,
+  SelectedAccountPortfolioVerification,
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
 import {
+  InternalPortfolioChain,
   NetworkState,
+  PortfolioDefiAppsResult,
   PortfolioGasTankResult,
   PortfolioNetworkResult,
   PortfolioRewardsResult
@@ -31,6 +34,8 @@ export default class PortfolioViewBuilder {
   private isAllReady = true
 
   private isReloading = false
+
+  private verification: SelectedAccountPortfolioVerification | null = null
 
   /**
    * If there is an emit update from the portfolio where only the additional
@@ -91,18 +96,70 @@ export default class PortfolioViewBuilder {
     return tokens.some((t) => t.amount > 0n && !t.flags.isHidden)
   }
 
+  private addVerificationData(chainId: string, networkData: NetworkState): void {
+    if (!networkData.verification) return
+
+    if (!this.verification) {
+      this.verification = {
+        provider: networkData.verification.provider,
+        status: networkData.verification.status,
+        blockDiff: networkData.verification.blockDiff,
+        verifiedChains: [],
+        failedChains: []
+      }
+    }
+
+    if (networkData.verification.status === 'success') {
+      this.verification.verifiedChains.push(chainId)
+    }
+
+    if (networkData.verification.status === 'warning') {
+      this.verification.failedChains.push(chainId)
+    }
+
+    if (networkData.verification.status === 'stale') {
+      this.verification.blockDiff = Math.max(
+        this.verification.blockDiff || 0,
+        networkData.verification.blockDiff || 0
+      )
+    }
+
+    if (this.verification.status === 'warning') return
+
+    if (networkData.verification.status === 'warning') {
+      this.verification.status = 'warning'
+      return
+    }
+
+    if (this.verification.status === 'stale') return
+
+    if (networkData.verification.status === 'stale') {
+      this.verification.status = 'stale'
+      return
+    }
+
+    if (this.verification.status === 'loading') return
+
+    if (networkData.verification.status === 'loading') {
+      this.verification.status = 'loading'
+      return
+    }
+
+    this.verification.status = 'success'
+  }
+
   /**
    * Add a network's data to the portfolio view
    */
   addNetworkData(
-    chainId: string,
+    chainId: InternalPortfolioChain | string,
     networkData: NetworkState | undefined,
     isManualUpdate: boolean
   ): void {
     if (chainId === 'projectedRewards') {
       return
     }
-    if (chainId !== 'gasTank' && chainId !== 'rewards') {
+    if (chainId !== 'gasTank' && chainId !== 'rewards' && chainId !== 'defiApps') {
       this.isNonInternalNetworkAdded = true
     }
 
@@ -111,10 +168,13 @@ export default class PortfolioViewBuilder {
       return
     }
 
+    this.addVerificationData(chainId, networkData)
+
     const networkResult = networkData.result as
       | PortfolioGasTankResult
       | PortfolioRewardsResult
       | PortfolioNetworkResult
+      | PortfolioDefiAppsResult
     const loadingFromScratch = PortfolioViewBuilder.isLoadingFromScratch(
       networkData,
       isManualUpdate
@@ -169,6 +229,7 @@ export default class PortfolioViewBuilder {
       isReadyToVisualize,
       shouldShowPartialResult: this.isAllReady ? false : shouldShowPartialResult,
       projectedRewardsStats: null,
+      verification: this.verification,
       portfolioState: strippedPortfolioState,
       defiPositions: this.defiPositions.sort((a, b) => {
         if (b.providerName === 'Ambire' && a.providerName !== 'Ambire') return 1

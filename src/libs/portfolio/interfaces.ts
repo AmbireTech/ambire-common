@@ -1,24 +1,43 @@
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Price } from '../../interfaces/assets'
+import { IRecurringTimeout } from '@/classes/recurringTimeout/recurringTimeout'
+
+import { AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   AssetType,
   NetworkState as DefiNetworkState,
   PositionsByProvider
 } from '../defiPositions/types'
+import type { DeploylessMode } from '../deployless/deployless'
 
 // @TODO: Move most of these interfaces to src/interfaces and
 // figure out how to restructure portfolio/defiPositions types
 
-export interface GetOptionsSimulation {
-  accountOps: AccountOp[]
-  account: Account
+export interface GetOptionsSimulation<T = AccountOp[]> {
+  accountOps: T
+  baseAccount: BaseAccount
   state: AccountOnchainState
+}
+export type DeploylessContractOptions = {
+  mode: DeploylessMode
+  to: string
 }
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
 export type SuspectedType = 'suspected' | null
+
+export type ExchangeInfo = {
+  id: string
+  name: string
+  url: string
+  image: string
+}
+
+export type ExchangeInfoMap = {
+  [exchangeId: string]: ExchangeInfo
+}
 
 export type TokenResult = {
   symbol: string
@@ -32,6 +51,14 @@ export type TokenResult = {
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
+  marketDataIn: TokenMarketDataByCurrency[]
+  meta?: {
+    /**
+     * Ids of exchanges where the token is traded.
+     */
+    exchanges?: string[]
+    website?: string
+  }
   flags: {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
@@ -65,11 +92,13 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
+export type TokenDataCacheValue = Pick<TokenResult, 'marketDataIn' | 'priceIn' | 'meta'>
+
 /**
- * Cache for prices, used to avoid redundant price fetches
- * Map<tokenAddress, [timestamp, prices]>
+ * Cache for token data
+ * <tokenAddress>: [timestamp, data]
  */
-export type PriceCache = Map<string, [number, Price[]]>
+export type TokenDataCache = Map<string, [number, TokenDataCacheValue]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
 
@@ -98,6 +127,31 @@ export interface ERC721s {
   [collectionAddress: string]: bigint[]
 }
 
+export type ExternalAPITokenMarketDataResponse = {
+  /**
+   * The relayer returns baseCurrency and price, while cena returns only usd.
+   */
+  baseCurrency?: string
+  /**
+   * The relayer returns the price in [price]
+   */
+  price?: number
+  /**
+   * cena returns the price in [usd]
+   */
+  usd?: number
+  /**
+   * Despite the name, this is a percentage, not USD value change.
+   */
+  usd_fully_diluted_valuation?: number
+  usd_24h_change: number
+  usd_market_cap: number
+  usd_24h_vol: number
+  total_supply?: number
+  exchanges: string[]
+  homepage?: string[]
+}
+
 /**
  * The portfolio fetches tokens using deployless. We provide
  * "hints" to deployless, so it knows where to look for assets. Hints are
@@ -122,7 +176,7 @@ export interface Hints {
      * not make separate requests for prices.
      */
     prices: {
-      [addr: string]: Price
+      [addr: string]: ExternalAPITokenMarketDataResponse
     }
     /**
      * When true, either the account is empty and static hints are returned,
@@ -155,7 +209,7 @@ export type ExternalHintsAPIResponse = {
  */
 export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
-  chainId: number
+  chainId: number | 'customAppChain'
   accountAddr: string
   erc20s: ExternalHintsAPIResponse['erc20s']
   erc721s: ExternalHintsAPIResponse['erc721s']
@@ -227,7 +281,7 @@ export interface PortfolioLibGetResult {
   discoveryTime: number
   oracleCallTime: number
   priceUpdateTime: number
-  priceCache: PriceCache
+  tokenDataCache: TokenDataCache
   tokens: TokenResult[]
   feeTokens: TokenResult[]
   /**
@@ -239,11 +293,22 @@ export interface PortfolioLibGetResult {
     erc721s: Hints['erc721s']
   }
   tokenErrors: { error: string; address: string }[]
+  collectionErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
   afterNonce: bigint
+}
+
+export type PortfolioVerificationStatus = 'loading' | 'success' | 'warning' | 'stale'
+
+export type PortfolioVerification = {
+  provider: 'colibri'
+  status: PortfolioVerificationStatus
+  error?: string
+  blockDiff?: number
+  updatedAt?: number
 }
 
 export interface Total {
@@ -277,8 +342,9 @@ export type PortfolioNetworkResult = CommonResultProps &
     PortfolioLibGetResult,
     | 'collections'
     | 'tokenErrors'
+    | 'collectionErrors'
     | 'blockNumber'
-    | 'priceCache'
+    | 'tokenDataCache'
     | 'toBeLearned'
     | 'feeTokens'
     | 'priceUpdateTime'
@@ -357,11 +423,18 @@ export type ProjectedRewardsStats = {
   | 'reasonToNotDisplayProjectedRewards'
 >
 
+export type PortfolioDefiAppsResult = CommonResultProps & {
+  defiPositions: DefiNetworkState
+}
+
+export type InternalPortfolioChain = 'defiApps' | 'gasTank' | 'rewards' | 'projectedRewards'
+
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
   | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
+  | PortfolioDefiAppsResult
 
 export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
@@ -369,6 +442,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
   lastSuccessfulUpdate?: number
+  verification?: PortfolioVerification
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -380,6 +454,11 @@ export type AccountState = {
   rewards?: NetworkState<PortfolioRewardsResult>
   gasTank?: NetworkState<PortfolioGasTankResult>
   projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+  /**
+   * Stores "app" defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets).
+   * Examples: Polymarket and Hyperliquid positions.
+   */
+  defiApps?: NetworkState<PortfolioDefiAppsResult>
 } & {
   [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
@@ -391,6 +470,11 @@ export type PortfolioControllerState = {
 
 export interface LimitsOptions {
   erc20: number
+  // describe the limit during simulation only;
+  // simulation is computational heavy and it costs a lot of gas;
+  // putting a stricter limit allows more txns to succeed albeit having
+  // to send more requests
+  erc20Simulation: number
   erc721: number
   erc721TokensInput: number
   erc721Tokens: number
@@ -418,6 +502,41 @@ export type TemporaryTokens = {
 
 type SpecialHintType = 'custom' | 'hidden' | 'learn'
 
+/**
+ * Addresses and symbol patterns that should be excluded from the portfolio.
+ * Addresses are keyed by chainId (string) and must be checksummed.
+ * Symbol patterns are matched case-insensitively as substrings.
+ */
+export interface TokenBlacklist {
+  blacklistAddrs: Record<string, string[]>
+  blacklistBySymbols: string[]
+  updatedAt: number | null
+}
+
+/**
+ * The portfolio has to be updated after a transaction is confirmed as it may change the balance of assets. Transactions
+ * can also have effects on defi positions, thus we have to call the discovery API to refetch the latest position data.
+ * If done immediately after the transaction confirmation, the server may not have indexed the position changes yet, and
+ * if we bypass the cache at that moment, we 1. have stale data; 2. prevent the user from updating manually for the next X
+ * seconds/minutes (as bypassing has a cooldown on the server to prevent abuse). To solve this, we update the portfolio immediately
+ * after a transaction, but we don't bypass the cache. Then we schedule another update after some time, this time bypassing the cache to get
+ * the latest data.
+ */
+export interface ScheduledUpdates {
+  [accountId: string]: {
+    chainId: bigint
+    // true because the structure is currently only used in this case; added as a flag to make it future proof
+    bypassServerSideCache: true
+    /**
+     * Used to determine whether to execute the update when an interval runs. Updated on subsequent schedules. Why:
+     * - An approval transaction is signed -> confirmed. An update is scheduled for after X seconds
+     * - A new transaction is signed -> confirmed before the scheduled update runs. This time the transaction has effect on defi positions, and if we don't
+     * reset the interval, the approval scheduled update will run for no reason, spending resources
+     */
+    scheduledAt: number
+  }[]
+}
+
 export interface GetOptions {
   baseCurrency: string
   /**
@@ -428,9 +547,9 @@ export interface GetOptions {
    */
   blockTag: 'latest' | 'pending' | 'both' | number
   simulation?: GetOptionsSimulation
-  priceCache?: PriceCache
-  priceRecency: number
-  priceRecencyOnFailure?: number
+  tokenDataCache?: TokenDataCache
+  tokenDataRecency: number
+  tokenDataRecencyOnFailure?: number
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type
@@ -455,7 +574,21 @@ export interface GetOptions {
   }
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
+  deployless?: {
+    erc20?: DeploylessContractOptions
+    erc721?: DeploylessContractOptions
+  }
   disableAutoDiscovery?: boolean
+  /**
+   * Dynamic token blacklist fetched from the API, merged with the static
+   * blacklist defined in the portfolio library.
+   */
+  blacklist?: TokenBlacklist
+  /**
+   * Used to prevent blacklisting of Monerium Euro so the assetInfo service can get symbol
+   * and decimals from the portfolio
+   */
+  preventTokenBlacklisting?: true
 }
 
 /**

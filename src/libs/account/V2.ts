@@ -1,6 +1,6 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -20,8 +20,9 @@ import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
 import { privSlot } from '../proxyDeploy/deploy'
 import { UserOperation } from '../userOperation/types'
-import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
+import { BaseAccount } from './BaseAccount'
+import { isTransferredTokenFeeOption } from './feeOptions'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
@@ -49,7 +50,8 @@ export class V2 extends BaseAccount {
 
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    feePaymentOptions: FeePaymentOption[]
+    feePaymentOptions: FeePaymentOption[],
+    op: AccountOp
   ): FeePaymentOption[] {
     const hasPaymaster =
       estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
@@ -60,7 +62,8 @@ export class V2 extends BaseAccount {
         (isNative(opt.token) && opt.paidBy === this.account.addr) ||
         // show EOA native only if it has amount to pay the fee
         (isNative(opt.token) && opt.availableAmount > 0n) ||
-        (opt.availableAmount > 0n && (this.network.hasRelayer || hasPaymaster))
+        ((opt.availableAmount > 0n || isTransferredTokenFeeOption(opt, op)) &&
+          (this.network.hasRelayer || hasPaymaster))
     )
   }
 
@@ -110,7 +113,16 @@ export class V2 extends BaseAccount {
     return BROADCAST_OPTIONS.byBundler
   }
 
-  shouldIncludeActivatorCall() {
+  shouldIncludeActivatorCall(paidBy?: string) {
+    // if the account is not deployed and we're paying with an EOA,
+    // include the 4337 priv
+    if (
+      !this.accountState.isDeployed &&
+      paidBy &&
+      paidBy.toLowerCase() !== this.account.addr.toLowerCase()
+    )
+      return true
+
     return this.#isTransitioningTo4337()
   }
 
@@ -173,5 +185,27 @@ export class V2 extends BaseAccount {
     provider: RPCProvider
   ): Promise<bigint> {
     return op.nonce as bigint
+  }
+
+  /**
+   * The Ambire estimation is made to work perfectly with Ambire SA
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return false
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return true
+  }
+
+  canSetCustomGasPrices(feeOption: FeePaymentOption): boolean {
+    return (
+      feeOption.token.address === ZeroAddress &&
+      feeOption.paidBy.toLowerCase() !== this.account.addr.toLowerCase()
+    )
+  }
+
+  canSetCustomGas(feeOption: FeePaymentOption): boolean {
+    return this.canSetCustomGasPrices(feeOption)
   }
 }

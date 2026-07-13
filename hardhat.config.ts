@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import '@nomicfoundation/hardhat-chai-matchers'
 import '@nomicfoundation/hardhat-ethers'
 import '@nomicfoundation/hardhat-verify'
@@ -7,6 +6,13 @@ import 'hardhat-gas-reporter'
 import { HardhatUserConfig } from 'hardhat/config'
 
 require('dotenv').config()
+
+const accounts = process.env.PRIVATE_KEY
+  ? [
+      process.env.PRIVATE_KEY,
+      ...(process.env.PAYMASTER_PRIVATE_KEY ? [process.env.PAYMASTER_PRIVATE_KEY] : [])
+    ]
+  : undefined
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -33,75 +39,119 @@ const config: HardhatUserConfig = {
   networks: {
     base: {
       url: 'https://mainnet.base.org',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     monad: {
       url: 'https://rpc.monad.xyz',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
+    },
+    polygon: {
+      url: 'https://invictus.ambire.com/polygon',
+      accounts
+    },
+    mantle: {
+      url: 'https://invictus.ambire.com/mantle',
+      accounts
+    },
+    plasma: {
+      url: 'https://rpc.plasma.to',
+      accounts
+    },
+    avalanche: {
+      url: 'https://invictus.ambire.com/avalanche',
+      accounts
+    },
+    ink: {
+      url: 'https://invictus.ambire.com/ink',
+      accounts
+    },
+    hype: {
+      url: 'https://invictus.ambire.com/hyperevm',
+      accounts
     },
     baseSepolia: {
       url: 'https://sepolia.base.org',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     opSepolia: {
       url: 'https://sepolia.optimism.io',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     sepolia: {
       url: 'https://invictus.ambire.com/sepolia',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     arbSepolia: {
       url: 'https://sepolia-rollup.arbitrum.io/rpc',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     optimism: {
       url: 'https://invictus.ambire.com/optimism',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     odyssey: {
       url: 'https://odyssey.ithaca.xyz',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
+    },
+    linea: {
+      url: 'https://linea-rpc.publicnode.com',
+      accounts
     },
     binance: {
       url: 'https://invictus.ambire.com/binance-smart-chain',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     gnosis: {
       url: 'https://rpc.gnosischain.com',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     unichain: {
       url: 'https://unichain-rpc.publicnode.com',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     berachain: {
       url: 'https://rpc.berachain-apis.com',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     arbitrum: {
       url: 'https://invictus.ambire.com/arbitrum',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     berachainBepolia: {
       url: 'https://bepolia.rpc.berachain.com',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     katana: {
       url: 'https://rpc.katana.network',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     world: {
       url: 'https://invictus.ambire.com/world',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
     },
     celo: {
       url: 'https://forno.celo.org',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+      accounts
+    },
+    robinhood: {
+      url: 'https://rpc.mainnet.chain.robinhood.com',
+      accounts
+    },
+    megaeth: {
+      url: 'https://mainnet.megaeth.com/rpc',
+      accounts
+    },
+    scroll: {
+      url: 'https://invictus.ambire.com/scroll',
+      accounts
+    },
+    kaia: {
+      url: 'https://public-en.node.kaia.io',
+      accounts
     }
   },
   etherscan: {
@@ -268,11 +318,43 @@ const config: HardhatUserConfig = {
         }
       },
       {
+        network: 'polygon',
+        chainId: 137,
+        urls: {
+          apiURL: 'https://api.polygonscan.com/api',
+          browserURL: 'https://api.polygonscan.com'
+        }
+      },
+      {
+        network: 'mantle',
+        chainId: 5000,
+        urls: {
+          apiURL: 'https://api.mantlescan.xyz/api',
+          browserURL: 'https://api.mantlescan.xyz'
+        }
+      },
+      {
+        network: 'plasma',
+        chainId: 9745,
+        urls: {
+          apiURL: 'https://api.plasmascan.to/api',
+          browserURL: 'https://plasmascan.to'
+        }
+      },
+      {
         network: 'world',
         chainId: 480,
         urls: {
           apiURL: 'https://api.worldscan.org/',
           browserURL: 'https://worldscan.org/'
+        }
+      },
+      {
+        network: 'linea',
+        chainId: 59144,
+        urls: {
+          apiURL: 'https://api.lineascan.build/api',
+          browserURL: 'https://lineascan.build'
         }
       }
     ]

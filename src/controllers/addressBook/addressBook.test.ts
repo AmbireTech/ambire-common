@@ -1,32 +1,13 @@
-import fetch from 'node-fetch'
-
 import { expect, jest } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account } from '../../interfaces/account'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
-import { AccountsController } from '../accounts/accounts'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { AddressBookController } from './addressBook'
-
-const storage: Storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-
-let errors = 0
+import { IAddressBookController } from '../../interfaces/addressBook'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 
 // Mock the emitError method to capture the emitted error
-const mockEmitError = jest.fn(() => errors++)
+const mockEmitError = jest.fn()
 
 const MOCK_ACCOUNTS: Account[] = [
   {
@@ -61,73 +42,30 @@ const MOCK_ACCOUNTS: Account[] = [
   }
 ]
 
-storage.set('accounts', MOCK_ACCOUNTS)
-
 describe('AddressBookController', () => {
-  let providersCtrl: IProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
+  let addressBookController: IAddressBookController
+  let selectedAccountCtrl: ISelectedAccountController
+
+  beforeAll(async () => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', MOCK_ACCOUNTS)
+    })
+    addressBookController = mainCtrl.addressBook
+    selectedAccountCtrl = mainCtrl.selectedAccount
+    jest.spyOn(addressBookController as any, 'emitError').mockImplementation(mockEmitError)
   })
 
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore,
-    autoLogin: autoLoginCtrl
+  beforeEach(() => {
+    mockEmitError.mockClear()
   })
-  const addressBookController = new AddressBookController(
-    storageCtrl,
-    accountsCtrl,
-    selectedAccountCtrl
-  )
 
   const getContactFromName = (name: string) => {
     return addressBookController.contacts.find((contact) => contact.name === name)
   }
 
-  // 'any' is on purpose, to override 'emitError' prop (which is protected)
-  ;(addressBookController as any).emitError = mockEmitError
-
   it('wallet accounts are in contacts', async () => {
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0])
+    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0]!)
     expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
     expect(getContactFromName('Account 1')?.address).toEqual(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
@@ -176,19 +114,20 @@ describe('AddressBookController', () => {
       '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when adding contact with already existing address', async () => {
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when adding contact with already existing address but lowercased', async () => {
+    // tony already exists from the previous test; both adds below error
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     await addressBookController.addContact('tony', '0xd8da6bf26964af9d7eed9e03e53415d37aa96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(2)
   })
   it('error when renaming wallet account contact', async () => {
     await addressBookController.renameManuallyAddedContact(
@@ -196,13 +135,13 @@ describe('AddressBookController', () => {
       'Account 2'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when removing wallet account contact', async () => {
     await addressBookController.removeManuallyAddedContact(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
 })

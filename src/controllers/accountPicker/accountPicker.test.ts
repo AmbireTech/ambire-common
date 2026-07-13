@@ -1,14 +1,9 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { Wallet } from 'ethers'
-import fetch from 'node-fetch'
 
-/* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -16,18 +11,10 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
 
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },
@@ -64,61 +51,12 @@ const basicAccount: Account = {
 }
 
 const prepareTest = async () => {
-  const storage: Storage = produceMemoryStore()
-  let providersCtrl: IProvidersController
-  const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
-  })
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
+  const { mainCtrl } = await makeMainController()
 
-  const keystoreController = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystoreController,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-
-  await accountsCtrl.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  await networksCtrl.initialLoadPromise
-
-  const controller: AccountPickerController = new AccountPickerController({
-    accounts: accountsCtrl,
-    keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl),
-    networks: networksCtrl,
-    providers: providersCtrl,
-    relayerUrl,
-    fetch,
-    externalSignerControllers: {},
-    onAddAccountsSuccessCallback: () => Promise.resolve()
-  })
+  await mainCtrl.keystore.initialLoadPromise
 
   return {
-    controller,
-    storageCtrl
+    controller: mainCtrl.accountPicker
   }
 }
 
@@ -238,12 +176,11 @@ describe('AccountPicker', () => {
       .filter(({ slot }) => slot === 3)
       .map(({ account }) => account.addr)
 
-    // These accounts was manually added as signers to our test accounts
+    // These accounts were manually added as signers to our test accounts
     expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
     expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
-    expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
-    expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
-    expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
+    expect(accountsOnSlot3).toContain('0xbEC6dB2638b29ffEf42df2B5B76B531d420FF18E')
+    expect(accountsOnSlot3).toContain('0x997dF27B04C89796254e61B71c112250dE87a803')
   })
 
   test('should be able to select and then deselect an account', async () => {
@@ -339,49 +276,47 @@ describe('AccountPicker', () => {
       })
   })
 
-  DERIVATION_OPTIONS.forEach(({ label, value }) => {
-    test(`should derive correctly ${label}`, async () => {
-      const { controller } = await prepareTest()
-      const keyIterator = new KeyIterator(process.env.SEED)
-      const pageSize = 5
-      controller.setInitParams({
-        keyIterator,
-        hdPathTemplate: value,
-        pageSize,
-        shouldSearchForLinkedAccounts: false,
-        shouldGetAccountsUsedOnNetworks: false,
-        shouldAddNextAccountAutomatically: false
-      })
-      await controller.init()
+  test.each(DERIVATION_OPTIONS)('should derive correctly $label', async ({ value }) => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const pageSize = 5
+    controller.setInitParams({
+      keyIterator,
+      hdPathTemplate: value,
+      pageSize,
+      shouldSearchForLinkedAccounts: false,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
 
-      // Checks page 1 EOAs
-      await controller.setPage({ page: 1 })
-      const basicAccountsOnFirstPage = controller.accountsOnPage.filter(
-        (x) => !isSmartAccount(x.account)
-      )
-      const key1to5BasicAccPublicAddresses = Array.from(
-        { length: pageSize },
-        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
-      )
-      basicAccountsOnFirstPage.forEach((x) => {
-        const address = x.account.addr
-        expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
-      })
+    // Checks page 1 EOAs
+    await controller.setPage({ page: 1 })
+    const basicAccountsOnFirstPage = controller.accountsOnPage.filter(
+      (x) => !isSmartAccount(x.account)
+    )
+    const key1to5BasicAccPublicAddresses = Array.from(
+      { length: pageSize },
+      (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
+    )
+    basicAccountsOnFirstPage.forEach((x) => {
+      const address = x.account.addr
+      expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
+    })
 
-      // Checks page 2 EOAs
-      await controller.setPage({ page: 2 })
-      const basicAccountsOnSecondPage = controller.accountsOnPage.filter(
-        (x) => !isSmartAccount(x.account)
-      )
-      const key6to10BasicAccPublicAddresses = Array.from(
-        { length: pageSize },
-        (_, i) =>
-          new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
-      )
-      basicAccountsOnSecondPage.forEach((x) => {
-        const address = x.account.addr
-        expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
-      })
+    // Checks page 2 EOAs
+    await controller.setPage({ page: 2 })
+    const basicAccountsOnSecondPage = controller.accountsOnPage.filter(
+      (x) => !isSmartAccount(x.account)
+    )
+    const key6to10BasicAccPublicAddresses = Array.from(
+      { length: pageSize },
+      (_, i) =>
+        new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
+    )
+    basicAccountsOnSecondPage.forEach((x) => {
+      const address = x.account.addr
+      expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
     })
   })
 })

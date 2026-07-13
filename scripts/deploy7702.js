@@ -1,5 +1,5 @@
 require('dotenv').config()
-// eslint-disable-next-line import/no-extraneous-dependencies
+
 const { ethers } = require('hardhat')
 const { Interface } = require('ethers')
 const ambireAccount7702 = require('../contracts/compiled/AmbireAccount7702.json')

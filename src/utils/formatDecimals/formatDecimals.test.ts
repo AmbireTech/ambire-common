@@ -7,6 +7,7 @@ type TestCases = {
 }[]
 
 const TEST_CASES: TestCases = [
+  { value: 10001.1234, type: 'value', expected: '$10,001' },
   { value: 1234.5678, type: 'value', expected: '$1,234.56' },
   { value: 1234.5678, type: 'price', expected: '$1,234.56' },
   { value: 1234.5678, type: 'amount', expected: '1,234.56' },

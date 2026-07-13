@@ -1,12 +1,17 @@
-/* eslint-disable no-restricted-syntax */
 import { v4 as uuidv4 } from 'uuid'
 
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import {
+  debugLog as moduleDebugLog,
+  debugLoggerRegistry,
+  DebugLogOptions
+} from '../../libs/debugLogger/debugLogger'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-export default class EventEmitter {
+// Can be overwritten by controllers to narrow the flow tags for better console filtering and type safety.
+export default class EventEmitter<DebugFlow extends string = string> {
   id: string
 
   #registry: IEventEmitterRegistryController | null = null
@@ -39,6 +44,9 @@ export default class EventEmitter {
    */
   constructor(registry?: IEventEmitterRegistryController, registerImmediately: boolean = true) {
     this.id = uuidv4()
+
+    // Register the controller on construction
+    debugLoggerRegistry.registerNamespace(this.name)
 
     if (registry) {
       this.#registry = registry
@@ -83,16 +91,15 @@ export default class EventEmitter {
     await wait(1)
 
     // Passing `true` to the cb will bypass React batching
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const i of this.#callbacksWithId) i.cb(true)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#callbacks) cb(true)
   }
 
   protected emitUpdate() {
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb()
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#callbacks) cb()
   }
 
@@ -123,10 +130,25 @@ export default class EventEmitter {
    *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
    */
   protected propagateUpdate(forceEmit?: boolean) {
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb(forceEmit)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#callbacks) cb(forceEmit)
+  }
+
+  /** True when this controller's debug logging is toggled on. */
+  get isDebugLogEnabled(): boolean {
+    return debugLoggerRegistry.isEnabled(this.name)
+  }
+
+  /** Per-controller gated debug log. No-op unless this controller's namespace is
+   *  toggled on via DebugController. */
+  protected debugLog(
+    flow: DebugFlow,
+    message: string,
+    payload?: unknown | (() => unknown),
+    options?: DebugLogOptions
+  ): void {
+    moduleDebugLog(this.name, flow, message, payload, options)
   }
 
   protected emitError(error: ErrorRef) {
@@ -137,9 +159,8 @@ export default class EventEmitter {
       this.#errors
     )
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#errorCallbacksWithId) i.cb(error)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
@@ -165,16 +186,23 @@ export default class EventEmitter {
     // simultaneous actions can lead to unintended side effects. The 'allowConcurrentActions' flag is provided to enable
     // concurrent execution at the main controller level. This is useful when multiple actions need to modify the state
     // of different sub-controllers simultaneously.
-    if ((someStatusIsLoading && !allowConcurrentActions) || this.statuses[callName] !== 'INITIAL') {
+    if (
+      (someStatusIsLoading && !allowConcurrentActions) ||
+      !['INITIAL', 'SUCCESS'].includes(this.statuses[callName] as any)
+    ) {
       this.emitError({
         level: errorLevel,
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        message: `Please wait for the completion of the previous action before initiating another one, ${callName}`,
         error: new Error(
           'Another function is already being handled by withStatus refrain from invoking a second function.'
         )
       })
 
       return
+    }
+
+    if (this.statuses[callName] === 'SUCCESS') {
+      await wait(2) // to let the INITIAL status be fired from the prev session
     }
 
     this.statuses[callName] = 'LOADING'
@@ -292,6 +320,10 @@ export default class EventEmitter {
     if (!this.#registry) return
 
     this.#registry?.delete(this.id)
+  }
+
+  isInRegistry(): boolean {
+    return !!this.#registry?.has(this.id)
   }
 
   toJSON() {

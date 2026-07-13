@@ -10,9 +10,9 @@ export function paginate(input: string[] | [string, bigint[]][], limit: number):
   return pages
 }
 
-export function flattenResults(
-  everything: Promise<[[string, TokenResult | CollectionResult][], MetaData][]>[]
-): Promise<[[TokenError, TokenResult | CollectionResult][], MetaData | {}]> {
+export function flattenResults<T>(
+  everything: Promise<[[string, T][], MetaData][]>[]
+): Promise<[[TokenError, T][], MetaData | {}]> {
   return Promise.all(everything).then((results) => {
     if (!results || !results.length) {
       return [[], {}]

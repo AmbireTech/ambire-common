@@ -64,7 +64,11 @@ export class RecurringTimeout implements IRecurringTimeout {
   promise: Promise<void> | undefined
 
   // collapse multiple start/restart calls in the same tick
-  #pendingStart?: RecurringTimeoutStartOptions
+  #pendingStart: RecurringTimeoutStartOptions | undefined
+
+  // we use this id to prevent race conditions where a background-queued 12s wait
+  // would block a foreground-queued immediate execution in the same tick.
+  #internalSessionId = 0
 
   startScheduled = false
 
@@ -89,11 +93,15 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   stop() {
+    this.#internalSessionId += 1
+    this.sessionId = this.#internalSessionId
     this.startScheduled = false
     this.#reset()
   }
 
   restart(opts: RecurringTimeoutStartOptions = {}) {
+    this.#internalSessionId += 1
+    this.sessionId = this.#internalSessionId
     this.#reset()
     this.#scheduleStart(opts)
   }
@@ -108,8 +116,10 @@ export class RecurringTimeout implements IRecurringTimeout {
     } catch (err: any) {
       if (!this.promise) return
       console.error('Recurring task error:', err)
-      if (this.#emitError)
-        this.#emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
+      if (this.#emitError) {
+        // set level to silent as we don't want the user to see 'Recurring task failed'
+        this.#emitError({ error: err, message: 'Recurring task failed', level: 'silent' })
+      }
     } finally {
       // If fnExecutionsCount has changed, it means `restart` was called during the execution of fn,
       // so we shouldn't schedule the next loop here.
@@ -130,14 +140,19 @@ export class RecurringTimeout implements IRecurringTimeout {
     if (this.startScheduled) return
     this.startScheduled = true
 
+    const capturedSessionId = this.#internalSessionId
+
     queueMicrotask(() => {
+      // If the session ID changed since we queued this microtask (e.g. stop() or restart() was called),
+      // we self-destruct. This prevents a background-scheduled "wait" from blocking an immediate request.
+      if (this.#internalSessionId !== capturedSessionId) return
+
       this.startScheduled = false
       const { timeout: newTimeout, runImmediately, allowOverlap } = this.#pendingStart || {}
       this.#pendingStart = undefined
 
       this.running = true
       this.startedRunningAt = Date.now()
-      this.sessionId += 1
 
       if (newTimeout) this.updateTimeout({ timeout: newTimeout })
 
@@ -154,8 +169,8 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #reset() {
     this.running = false
-    this.startedRunningAt = 0
-
+    this.startScheduled = false
+    this.promise = undefined
     if (this.#timeoutId) {
       clearTimeout(this.#timeoutId)
       this.#timeoutId = undefined

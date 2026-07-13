@@ -1,5 +1,8 @@
 import { toBeHex } from 'ethers'
 
+import { Account, AccountStates } from '@/interfaces/account'
+import { isAmbireV1LinkedAccount } from '@/libs/account/account'
+
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -9,7 +12,8 @@ import {
   NetworkFeature,
   NetworkInfo,
   NetworkInfoLoading,
-  RelayerNetwork
+  RelayerNetwork,
+  SupportedNetworks
 } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -84,8 +88,7 @@ export function getProviderBatchMaxCount(network: Network, rpcUrl: string): numb
   // if the RPC hasn't changed
   if (!hasUserChangedRpc && network.suggestedRpcBatchCount) return network.suggestedRpcBatchCount
 
-  // No limit for invictus if suggestedRpcBatchCount is not provied
-  if (rpcUrl.includes('invictus.ambire.com')) return undefined
+  if (rpcUrl.includes('invictus.ambire.com')) return 20
 
   // no batching for custom networks
   if (!network.predefinedConfigVersion) return 1
@@ -506,6 +509,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
         suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
         suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
+        refreshInterval: relayerNetwork.refreshInterval,
         iconUrls: relayerNetwork.iconUrls,
         predefined: relayerNetwork.predefined
       }
@@ -551,4 +555,116 @@ export const networkChainIdToHex = (chainId: number | bigint) => {
   } catch (error) {
     return `0x${chainId.toString(16)}`
   }
+}
+
+export const getAccountNetworks = (
+  networks: Network[],
+  accountStates: AccountStates,
+  acc?: Account | null
+) => {
+  if (!acc) return []
+
+  // NOT a [Gnosis] Safe account
+  if (!acc.safeCreation) {
+    // EOA
+    if (!acc.creation) return networks
+
+    // v1 SA
+    if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+      // v1s don't work without the relayer
+      return networks.filter((network) => !!network.hasRelayer)
+    }
+
+    // v2 SA
+    return networks.filter(
+      (network) => network.areContractsDeployed && (network.hasRelayer || network.erc4337.enabled)
+    )
+  }
+  if (!accountStates[acc.addr]) return networks
+
+  return networks.filter((n) => {
+    const networkAccState = accountStates[acc.addr]?.[n.chainId.toString()]
+    if (!networkAccState) return true
+    return networkAccState.isDeployed
+  })
+}
+
+export const getAccountNotSupportedReason = (acc?: Account | null) => {
+  if (!acc?.addr) return ''
+  if (!acc.safeCreation) {
+    if (!acc.creation) return '' // EOA
+    if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+      return 'Ambire v1 accounts are not supported on this network'
+    }
+    // v2
+    return 'Ambire smart accounts are not supported on this network'
+  }
+  // safe
+  return 'Safe account is not activated on this network'
+}
+
+export const getSupportedNetworks = (
+  networks: Network[],
+  accountStates: AccountStates,
+  acc?: Account | null,
+  additionalCheck?: {
+    chainIds: bigint[]
+    reason: string
+  }
+): SupportedNetworks[] => {
+  if (!acc) return []
+
+  let checkedNetworks = networks
+
+  // apply the additionalChecks, if any
+  if (additionalCheck) {
+    checkedNetworks = networks.map((n) => {
+      if (!!additionalCheck.chainIds.includes(n.chainId)) return { ...n }
+      return {
+        ...n,
+        isNotSupported: true,
+        notSupportedReason: additionalCheck.reason
+      }
+    })
+  }
+
+  // NOT a [Gnosis] Safe account
+  if (!acc.safeCreation) {
+    // EOA
+    if (!acc.creation) return checkedNetworks
+
+    // v1 SA
+    if (isAmbireV1LinkedAccount(acc.creation.factoryAddr)) {
+      // v1s don't work without the relayer
+      return checkedNetworks.map((n) => {
+        if (!!n.hasRelayer) return { ...n }
+        return {
+          ...n,
+          isNotSupported: true,
+          notSupportedReason: 'Ambire v1 accounts are not supported on this network'
+        }
+      })
+    }
+
+    // v2 SA
+    return checkedNetworks.map((n) => {
+      if (n.areContractsDeployed && (n.hasRelayer || n.erc4337.enabled)) return { ...n }
+      return {
+        ...n,
+        isNotSupported: true,
+        notSupportedReason: 'Ambire smart accounts are not supported on this network'
+      }
+    })
+  }
+  if (!accountStates[acc.addr]) return checkedNetworks
+
+  return checkedNetworks.map((n) => {
+    const networkAccState = accountStates[acc.addr]?.[n.chainId.toString()]
+    if (!networkAccState || networkAccState.isDeployed) return { ...n }
+    return {
+      ...n,
+      isNotSupported: true,
+      notSupportedReason: 'Safe account is not activated on this network'
+    }
+  })
 }

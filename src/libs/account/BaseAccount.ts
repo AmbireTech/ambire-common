@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -88,8 +87,16 @@ export abstract class BaseAccount {
    */
   abstract getNonceId(): string
 
+  abstract shouldStateOverrideDuringSimulations(): boolean
+
+  abstract canBroadcastByOtherEOA(): boolean
+
+  abstract canSetCustomGasPrices(feeOption: FeePaymentOption): boolean
+
+  abstract canSetCustomGas(feeOption: FeePaymentOption, accountOp?: AccountOp): boolean
+
   // this is specific for v2 accounts, hardcoding a false for all else
-  shouldIncludeActivatorCall() {
+  shouldIncludeActivatorCall(paidBy?: string) {
     return false
   }
 
@@ -115,6 +122,13 @@ export abstract class BaseAccount {
 
   isSponsorable(): boolean {
     return false
+  }
+
+  /**
+   * Do we allow the account to broadcast by itself
+   */
+  canBroadcastByItself(): boolean {
+    return true
   }
 
   /**

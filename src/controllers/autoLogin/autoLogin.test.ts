@@ -1,48 +1,13 @@
 import { hexlify, toUtf8Bytes, ZeroAddress } from 'ethers'
-import fetch from 'node-fetch'
 import { createSiweMessage, CreateSiweMessageParameters } from 'viem/siwe'
 
-import { relayerUrl } from '../../../test/config'
-import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
+import { mockInternalKeys } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AutoLoginPolicy, AutoLoginSettings } from '../../interfaces/autoLogin'
-import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { AccountsController } from '../accounts/accounts'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { AutoLoginController } from './autoLogin'
-
-const storage: Storage = produceMemoryStore()
-let providersCtrl: IProvidersController
-const storageCtrl = new StorageController(storage)
-const networksCtrl = new NetworksController({
-  storage: storageCtrl,
-  fetch,
-  relayerUrl,
-  useTempProvider: (props, cb) => {
-    return providersCtrl.useTempProvider(props, cb)
-  },
-  onAddOrUpdateNetworks: () => {},
-  onReady: async () => {
-    await providersCtrl.init({ networks: networksCtrl.allNetworks })
-  }
-})
-
-const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
-providersCtrl = new ProvidersController({
-  storage: storageCtrl,
-  getNetworks: () => networksCtrl.allNetworks,
-  sendUiMessage: () => uiCtrl.message.sendUiMessage
-})
 
 const EOA_ACC = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -67,60 +32,19 @@ const prepareTest = async (
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
 ) => {
   const mockEOAKeys = mockInternalKeys([EOA_ACC])
-  await storage.set('keystoreKeys', mockEOAKeys)
-  await storage.set('accounts', accounts)
-
-  const keystore = new KeystoreController(
-    'default',
-    storageCtrl,
-    { internal: KeystoreSigner },
-    uiCtrl
-  )
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-
-  await networksCtrl.initialLoadPromise
-  await accountsCtrl.initialLoadPromise
-  await keystore.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  if (initialSetStorage) await initialSetStorage(storageCtrl)
-
-  await accountsCtrl.addAccounts(accounts)
-
-  const autoLogin = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({
-      relayerUrl,
-      fetch,
-      storage: storageCtrl
-    })
-  )
-
-  await autoLogin.initialLoadPromise
+  const { mainCtrl, storageCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('keystoreKeys', mockEOAKeys)
+    await storageCtrl.set('accounts', accounts)
+    if (initialSetStorage) await initialSetStorage(storageCtrl)
+  })
 
   return {
-    storage,
-    controller: autoLogin
+    controller: mainCtrl.autoLogin,
+    storageCtrl
   }
 }
 
 const generateSiweMessage = (
-  // eslint-disable-next-line default-param-last
   overrides: Partial<CreateSiweMessageParameters> = {},
   modifyFunc?: (message: string) => string
 ) => {
@@ -145,16 +69,6 @@ const generateSiweMessage = (
 
 describe('AutoLoginController', () => {
   suppressConsoleBeforeEach()
-  /**
-   * Test cases:
-   * - Should load policies and settings from storage
-   * - autoLogin throws an error if there isn't an internal key
-   * - getAutoLoginStatus - test each status (active, no-policy, expired, unsupported)
-   * - onSiweMessageSigned creates a policy
-   * - onSiweMessageSigned updates existing policies
-   * - revokePolicy works
-   * - getParsedSiweMessage - text message, invalid siwe, expired siwe, typed message
-   */
 
   it('Should load policies and settings from storage', async () => {
     const POLICIES: AutoLoginPolicy[] = [
@@ -244,6 +158,22 @@ URI: https://docs.fileverse.io
       )
 
       expect(message2).toBeNull()
+    })
+    it('lowercase address - should still parse the message', async () => {
+      const malformedMessage = generateSiweMessage(undefined, (message) => {
+        const newMessage = message.replace(EOA_ACC.addr, EOA_ACC.addr.toLowerCase())
+        expect(newMessage).toContain(EOA_ACC.addr.toLowerCase())
+        expect(newMessage).not.toContain(EOA_ACC.addr)
+
+        return newMessage
+      })
+
+      const parsed = AutoLoginController.getParsedSiweMessage(
+        malformedMessage,
+        'https://docs.fileverse.io'
+      )
+
+      expect(parsed).toBeDefined()
     })
     it('non utf8 hex message - should return null', async () => {
       const message = AutoLoginController.getParsedSiweMessage(
@@ -677,5 +607,65 @@ URI: https://docs.fileverse.io
     // Verify the shared policy is removed from both accounts, but other policies remain
     expect(controller.getAccountPolicies(EOA_ACC.addr)).toEqual([EOA_POLICY])
     expect(controller.getAccountPolicies(HW_ACC.addr)).toEqual([HW_POLICY])
+  })
+
+  it('handles messages with different address casing correctly', async () => {
+    const { controller, storageCtrl } = await prepareTest()
+
+    const siweWithChecksummedAddress = generateSiweMessage()
+
+    const parsedSiwe1 = AutoLoginController.getParsedSiweMessage(
+      siweWithChecksummedAddress,
+      'https://docs.fileverse.io'
+    )!.parsedSiwe
+
+    const policy1 = await controller.onSiweMessageSigned(
+      parsedSiwe1,
+      true,
+      controller.settings.duration
+    )
+
+    if (!policy1) throw new Error('Policy not created')
+
+    expect(policy1).toBeDefined()
+
+    const siweWithLowercaseAddress = generateSiweMessage(undefined, (message) => {
+      const newMessage = message.replace(EOA_ACC.addr, EOA_ACC.addr.toLowerCase())
+      expect(newMessage).toContain(EOA_ACC.addr.toLowerCase())
+      expect(newMessage).not.toContain(EOA_ACC.addr)
+
+      return newMessage
+    })
+
+    const parsedSiwe2 = AutoLoginController.getParsedSiweMessage(
+      siweWithLowercaseAddress,
+      'https://docs.fileverse.io'
+    )!.parsedSiwe
+
+    const policy2 = await controller.onSiweMessageSigned(
+      parsedSiwe2,
+      true,
+      controller.settings.duration
+    )
+
+    if (!policy2) throw new Error('Policy not created')
+
+    expect(policy2).toBeDefined()
+
+    expect(controller.getAccountPolicies(EOA_ACC.addr).length).toBe(1)
+    expect(controller.getAccountPolicies(EOA_ACC.addr.toLowerCase()).length).toBe(0)
+    expect(await storageCtrl.get('autoLoginPolicies')).toEqual({
+      [EOA_ACC.addr]: [
+        {
+          domain: 'docs.fileverse.io',
+          uriPrefix: 'https://docs.fileverse.io/login',
+          allowedChains: [1],
+          allowedResources: ['https://privy.io'],
+          supportsEIP6492: false,
+          expiresAt: policy1.expiresAt,
+          lastAuthenticated: policy2.lastAuthenticated
+        }
+      ]
+    })
   })
 })

@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-
 import { toBeHex } from 'ethers'
 import { createPublicClient, defineChain, http } from 'viem'
 import { BUNDLER, CUSTOM } from '../../consts/bundlers'
@@ -67,11 +65,10 @@ export class CustomBundler extends Bundler {
     const provider = this.getProvider(network)
 
     const status = await provider.send('eth_getUserOperationReceipt', [userOpHash]).catch((e) => {
-      // eslint-disable-next-line no-console
       console.log(
         `custom bundler with url ${this.getUrl(network)} failed to find the status of the user op`
       )
-      // eslint-disable-next-line no-console
+
       console.log(e)
 
       return null

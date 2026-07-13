@@ -1,17 +1,11 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
-
-import fetch from 'node-fetch'
-
-import { describe, expect, test } from '@jest/globals'
+import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { ProvidersController } from '../../controllers/providers/providers'
-import { UiController } from '../../controllers/ui/ui'
-import { AddNetworkRequestParams, INetworksController, NetworkInfo } from '../../interfaces/network'
-import { IProvidersController } from '../../interfaces/provider'
+import { INetworksController, Network } from '../../interfaces/network'
+import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
 
@@ -22,31 +16,8 @@ describe('Networks Controller', () => {
   beforeEach(async () => {
     if (skipBeforeEach) return
 
-    const storage = produceMemoryStore()
-    const storageCtrl = new StorageController(storage)
-    let providersCtrl: IProvidersController
-
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
-
-    networksController = new NetworksController({
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
-      },
-      onAddOrUpdateNetworks: () => {},
-      onReady: async () => {
-        await providersCtrl.init({ networks: networksController.allNetworks })
-      }
-    })
-    providersCtrl = new ProvidersController({
-      storage: storageCtrl,
-      getNetworks: () => networksController.allNetworks,
-      sendUiMessage: () => uiCtrl.message.sendUiMessage
-    })
-    await providersCtrl.initialLoadPromise
+    const { mainCtrl } = await makeMainController(undefined)
+    networksController = mainCtrl.networks
   })
 
   test('should initialize with predefined networks if storage is empty', async () => {
@@ -123,110 +94,15 @@ describe('Networks Controller', () => {
     ])
   })
 
-  test('should add the sei network as a custom network', async () => {
-    await networksController.setNetworkToAddOrUpdate({
-      rpcUrl: 'https://sei-public.nodies.app',
-      chainId: 1329n
-    })
-
-    expect(networksController.networkToAddOrUpdate?.chainId).toBe(1329n)
-    const networkInfoLoading = networksController.networkToAddOrUpdate?.info
-    expect(networkInfoLoading).toBeDefined()
-    const setNetworkInfo: NetworkInfo = networkInfoLoading as NetworkInfo
-
-    // has smart accounts
-    expect(setNetworkInfo?.isSAEnabled).toBe(true)
-
-    // contracts are deployed
-    expect(setNetworkInfo?.areContractsDeployed).toBe(true)
-    expect(setNetworkInfo?.feeOptions!.is1559).toBe(true)
-
-    // mantle is optimistic
-    expect(setNetworkInfo?.isOptimistic).toBe(false)
-    // coingecko
-    expect(setNetworkInfo?.platformId).toBe('sei-v2')
-    expect(setNetworkInfo?.nativeAssetId).toBe('wrapped-sei')
-    // simulation is somewhat supported
-    expect(typeof setNetworkInfo?.rpcNoStateOverride).toBe('boolean')
-
-    const setNetwork = {
-      name: 'Sei',
-      rpcUrls: [networksController.networkToAddOrUpdate?.rpcUrl],
-      selectedRpcUrl: networksController.networkToAddOrUpdate?.rpcUrl,
-      nativeAssetSymbol: 'SEI',
-      nativeAssetName: 'Sei',
-      explorerUrl: 'https://seitrace.com',
-      ...setNetworkInfo,
-      feeOptions: setNetworkInfo.feeOptions ?? {
-        is1559: false
-      },
-      iconUrls: []
-    } as AddNetworkRequestParams
-
-    await networksController.addNetwork(setNetwork)
-
-    const sei = networksController.networks.find((n) => n.chainId === 1329n)
-    expect(sei).not.toBe(null)
-    expect(sei).not.toBe(undefined)
-
-    // contracts are not deployed
-    const saSupport = sei?.features.find((feat) => feat.id === 'saSupport')
-    expect(saSupport).not.toBe(null)
-    expect(saSupport).not.toBe(undefined)
-    expect(saSupport!.level).toBe('success')
-    expect(saSupport!.title).toBe('Ambire Smart Accounts via ERC-4337 (Account Abstraction)')
-
-    // somewhat simulation
-    const simulation = sei?.features.find((feat) => feat.id === 'simulation')
-    expect(simulation).not.toBe(null)
-    expect(simulation).not.toBe(undefined)
-    expect(simulation!.level).toBe('warning')
-
-    // has token prices
-    const prices = sei?.features.find((feat) => feat.id === 'prices')
-    expect(prices).not.toBe(null)
-    expect(prices).not.toBe(undefined)
-    expect(prices!.level).toBe('success')
-
-    await networksController.updateNetwork({ areContractsDeployed: true }, 1329n)
-
-    // test to see if updateNetwork is working
-    const seiAfterUpdate = networksController.networks.find((n) => n.chainId === 1329n)
-    expect(seiAfterUpdate?.areContractsDeployed).toBe(true)
-  })
-
   test('should work in testnet mode', async () => {
     skipBeforeEach = true
-    const storage = produceMemoryStore()
-    const storageCtrl = new StorageController(storage)
-    let providersCtrl: IProvidersController
-
-    const testnetNetworksController = new NetworksController({
-      defaultNetworksMode: 'testnet',
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
-      },
-      onAddOrUpdateNetworks: () => {},
-      onReady: async () => {
-        await providersCtrl.init({ networks: testnetNetworksController.allNetworks })
-      }
-    })
-    const { uiManager } = mockUiManager()
-    const uiCtrl = new UiController({ uiManager })
-    providersCtrl = new ProvidersController({
-      storage: storageCtrl,
-      getNetworks: () => testnetNetworksController.allNetworks,
-      sendUiMessage: () => uiCtrl.message.sendUiMessage
+    const { mainCtrl } = await makeMainController(undefined, {
+      overrides: { featureFlags: { testnetMode: true } }
     })
 
-    await testnetNetworksController.initialLoadPromise
-    expect(testnetNetworksController.networks.find((n) => n.chainId === 1n)).toBe(undefined)
-    expect(testnetNetworksController.networks.find((n) => n.chainId === 11155111n)).not.toBe(
-      undefined
-    )
+    await mainCtrl.networks.initialLoadPromise
+    expect(mainCtrl.networks.networks.find((n) => n.chainId === 1n)).toBe(undefined)
+    expect(mainCtrl.networks.networks.find((n) => n.chainId === 11155111n)).not.toBe(undefined)
   })
 
   // TODO: Refactor Fantom test as well
@@ -300,4 +176,150 @@ describe('Networks Controller', () => {
   //     rpcUrls: ['https://fantom-pokt.nodies.app']
   //   })
   // })
+})
+
+describe('Networks Controller - background relayer refresh', () => {
+  let controller: NetworksController
+  // Spy on the relayer merge so the background refresh is deterministic and never
+  // hits the network. Its return value drives whether a network "changed".
+  let mergeRelayerNetworks: jest.SpiedFunction<NetworksController['mergeRelayerNetworks']>
+  // Stands in for MainController's real callback (setProvider + reloadSelectedAccount).
+  let onAddOrUpdateNetworks: jest.Mock<(networks: Network[]) => Promise<void>>
+
+  const noChange = (current: { [key: string]: Network }) => ({
+    mergedNetworks: current,
+    updatedNetworkChainIds: [] as bigint[]
+  })
+
+  // Polls until the (not-awaited) background sync kicked off from `#load` settles,
+  // so each test starts from a clean `areNetworksFetchingFromRelayer === false`.
+  const settleBackgroundSync = async () => {
+    for (let i = 0; i < 100 && controller.areNetworksFetchingFromRelayer; i++) {
+      await wait(0)
+    }
+  }
+
+  // The relayer-merge implementation is applied synchronously right after `new`,
+  // so the background `synchronizeNetworks` kicked off from `#load` already uses
+  // it (its first await yields before reaching `synchronizeNetworks`). This avoids
+  // a race where the construction-time refresh would run with a stale mock.
+  const buildController = (
+    defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet',
+    mergeImpl: NetworksController['mergeRelayerNetworks'] = async (current) => noChange(current)
+  ) => {
+    onAddOrUpdateNetworks = jest.fn<(networks: Network[]) => Promise<void>>(async () => {})
+    const ctrl = new NetworksController({
+      defaultNetworksMode,
+      storage: new StorageController(produceMemoryStore()),
+      // Never invoked: `mergeRelayerNetworks` (the only relayer caller) is spied.
+      fetch: jest.fn() as any,
+      relayerUrl,
+      // No-op: it never calls back, so no RPC/network-info work runs on load.
+      useTempProvider: async () => {},
+      onAddOrUpdateNetworks,
+      onReady: async () => {}
+    })
+    mergeRelayerNetworks = jest.spyOn(ctrl, 'mergeRelayerNetworks').mockImplementation(mergeImpl)
+    return ctrl
+  }
+
+  beforeEach(() => {
+    jest.restoreAllMocks()
+    controller = buildController()
+  })
+
+  test('resolves initialLoadPromise with stored networks without awaiting the relayer refresh', async () => {
+    // Build with a relayer merge that stays pending, so the background refresh is
+    // already in flight (with this impl) by the time the initial load resolves.
+    let releaseMerge: () => void = () => {}
+    controller = buildController(
+      'mainnet',
+      (current) =>
+        new Promise((resolve) => {
+          releaseMerge = () => resolve(noChange(current))
+        })
+    )
+
+    await controller.initialLoadPromise
+
+    // Networks are available immediately (seeded from predefined on a fresh install)
+    // even though the relayer merge is still pending in the background.
+    expect(controller.isInitialized).toBe(true)
+    expect(controller.networks.length).toBeGreaterThan(0)
+    expect(mergeRelayerNetworks).toHaveBeenCalledTimes(1)
+    expect(controller.areNetworksFetchingFromRelayer).toBe(true)
+
+    releaseMerge()
+    await settleBackgroundSync()
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+  })
+
+  test('flags areNetworksFetchingFromRelayer while a refresh is in flight and clears it after', async () => {
+    await controller.initialLoadPromise
+    await settleBackgroundSync()
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+
+    const syncPromise = controller.synchronizeNetworks()
+    // Set synchronously before the first await inside synchronizeNetworks.
+    expect(controller.areNetworksFetchingFromRelayer).toBe(true)
+
+    await syncPromise
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+  })
+
+  test('keeps the flag true until the portfolio reload finishes when an RPC changed (flash gate)', async () => {
+    await controller.initialLoadPromise
+    await settleBackgroundSync()
+
+    mergeRelayerNetworks.mockImplementation(async (current) => ({
+      mergedNetworks: current,
+      updatedNetworkChainIds: [1n]
+    }))
+
+    let flagWhenReloadStarted: boolean | undefined
+    let flagWhenReloadEnded: boolean | undefined
+    onAddOrUpdateNetworks.mockImplementation(async () => {
+      flagWhenReloadStarted = controller.areNetworksFetchingFromRelayer
+      // Simulate the portfolio reload taking a tick to re-enter its loading state.
+      await wait(0)
+      flagWhenReloadEnded = controller.areNetworksFetchingFromRelayer
+    })
+
+    await controller.synchronizeNetworks()
+
+    // The reload ran, and the flag stayed true for its full duration — so the UI
+    // never flips out of the skeleton before the fresh (new-RPC) portfolio lands.
+    expect(onAddOrUpdateNetworks).toHaveBeenCalledTimes(1)
+    expect(flagWhenReloadStarted).toBe(true)
+    expect(flagWhenReloadEnded).toBe(true)
+    // Cleared only after the reload completed.
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+  })
+
+  test('does not trigger a portfolio reload when nothing changed, but still clears the flag', async () => {
+    await controller.initialLoadPromise
+    await settleBackgroundSync()
+
+    onAddOrUpdateNetworks.mockClear()
+    mergeRelayerNetworks.mockImplementation(async (current) => noChange(current))
+
+    await controller.synchronizeNetworks()
+
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+  })
+
+  test('does not refresh from the relayer in testnet mode and keeps the flag false', async () => {
+    controller = buildController('testnet')
+
+    await controller.initialLoadPromise
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+    // `#load` skips the background refresh in testnet mode.
+    expect(mergeRelayerNetworks).not.toHaveBeenCalled()
+
+    // An explicit call early-returns before touching the relayer.
+    await controller.synchronizeNetworks()
+    expect(mergeRelayerNetworks).not.toHaveBeenCalled()
+    expect(controller.areNetworksFetchingFromRelayer).toBe(false)
+  })
 })

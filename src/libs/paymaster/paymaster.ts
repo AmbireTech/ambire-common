@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { AbiCoder, Contract, Interface, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -25,12 +24,12 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
-import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
+import { getFeeTokenForEstimate, getSigForCalculations } from '../estimate/estimateHelpers'
 import { BundlerEstimateResult } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { UserOperation } from '../userOperation/types'
-import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
+import { getCleanUserOp } from '../userOperation/userOperation'
 import { AbstractPaymaster } from './abstractPaymaster'
 
 /**
@@ -63,7 +62,7 @@ function getSwapSponsorshipEstimationData(): PaymasterEstimationData {
     ...paymasterData,
     sponsor: {
       name: 'Ambire Wallet',
-      icon: 'https://velcro.ambire.com/public/ambire-logos/symbol-color.svg'
+      icon: 'https://cena.ambire.com/public/ambire-logos/symbol-color.svg'
     }
   }
 }
@@ -262,7 +261,8 @@ export class Paymaster extends AbstractPaymaster {
       return {
         success: true,
         paymaster: isAmbirePaymaster ? AMBIRE_PAYMASTER : response.paymaster,
-        paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData
+        paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData,
+        signature: isAmbirePaymaster ? response.data.signature : undefined
       }
     } catch (e: any) {
       if (e.message === 'Ambire relayer error timeout') {
@@ -308,14 +308,14 @@ export class Paymaster extends AbstractPaymaster {
         bytecode: acc.creation?.bytecode,
         salt: acc.creation?.salt,
         key: acc.associatedKeys[0],
-        // eslint-disable-next-line no-underscore-dangle
+
         rpcUrl: this.provider!._getConnection().url,
         bundler: userOp.bundler,
         swapSponsorship:
           this.type === 'SwapSponsorship' && this.op?.meta?.swapSponsorship
             ? {
-                price: this.op.meta.swapSponsorship.fromTokenPriceInUsd,
-                decimals: this.op.meta.swapSponsorship.fromTokenDecimals
+                price: this.op.meta.swapSponsorship.feeTokenPriceInUsd,
+                decimals: this.op.meta.swapSponsorship.feeTokenDecimals
               }
             : undefined
       })

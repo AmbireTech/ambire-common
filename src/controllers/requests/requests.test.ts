@@ -1,49 +1,27 @@
-import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeDapp } from '../../../test/helpers/dapps'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Account } from '../../interfaces/account'
-import { IRequestsController } from '../../interfaces/requests'
 import {
   BenzinUserRequest,
   CallsUserRequest,
   DappConnectRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { EventEmitterRegistryController } from '../eventEmitterRegistry/eventEmitterRegistry'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PhishingController } from '../phishing/phishing'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { StorageController } from '../storage/storage'
-import { SocketAPIMock } from '../swapAndBridge/socketApiMock'
-import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
-import { TransferController } from '../transfer/transfer'
-import { UiController } from '../ui/ui'
-import { RequestsController } from './requests'
-
-const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+const TEST_DAPP = makeDapp({
+  id: MOCK_SESSION.id,
+  name: 'Test Dapp',
+  url: MOCK_SESSION.origin,
+  chainId: 1,
+  chainIds: [1]
+})
 
-const accounts: Account[] = [
+const accounts = [
   {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
     associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
@@ -91,159 +69,41 @@ const accounts: Account[] = [
   }
 ]
 
-const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) => {
-  return new Promise<void>((resolve) => {
-    const unsubscribe = accountsCtrl.onUpdate(() => {
-      if (
-        accountsCtrl.accounts.length &&
-        Object.keys(accountsCtrl.accountStates).length &&
-        !accountsCtrl.areAccountStatesLoading
-      ) {
-        unsubscribe()
-        resolve()
-      }
-    })
-  })
-}
-
-const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  await storage.set('accounts', accounts)
-  await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-  const storageCtrl = new StorageController(storage)
-  const uiCtrl = new UiController({ uiManager })
-  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
+const prepareTest = async (seedTestDapp = false) => {
+  const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+      if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
     }
-  })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
   )
 
-  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystoreCtrl,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore: keystoreCtrl,
-    autoLogin: autoLoginCtrl
-  })
-
-  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
-
-  await addressBookCtrl.initialLoadPromise
-
-  const phishingCtrl = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    addressBook: addressBookCtrl
-  })
-
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const portfolioCtrl = new PortfolioController(
-    storageCtrl,
-    fetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystore,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl
-  )
-  const callRelayer = relayerCall.bind({ url: '', fetch })
-  const activityCtrl = new ActivityController(
-    storageCtrl,
-    fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioCtrl,
-    () => Promise.resolve()
-  )
-
-  const transferCtrl = new TransferController(
-    () => {},
-    storageCtrl,
-    humanizerInfo as HumanizerMeta,
-    selectedAccountCtrl,
-    networksCtrl,
-    addressBookCtrl,
-    accountsCtrl,
-    keystoreCtrl,
-    portfolioCtrl,
-    activityCtrl,
-    {},
-    providersCtrl,
-    phishingCtrl,
-    relayerUrl,
-    () => Promise.resolve(),
-    uiCtrl
-  )
-
-  const requestsController: IRequestsController = {} as IRequestsController
-
-  const swapAndBridgeCtrl = new SwapAndBridgeController({
-    callRelayer: () => {},
-    selectedAccount: selectedAccountCtrl,
-    networks: networksCtrl,
-    accounts: accountsCtrl,
-    activity: activityCtrl,
-    storage: storageCtrl,
-    swapProvider: new SocketAPIMock({ fetch, apiKey: '' }) as any,
-    keystore,
-    portfolio: portfolioCtrl,
-    providers: providersCtrl,
-    phishing: phishingCtrl,
-    externalSignerControllers: {},
-    relayerUrl,
-    getUserRequests: () => {
-      return requestsController?.userRequests || []
-    },
-    getVisibleUserRequests: () => {
-      return requestsController?.visibleUserRequests || []
-    },
-    onBroadcastSuccess: () => Promise.resolve(),
-    onBroadcastFailed: () => {}
-  })
-
-  const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
+  // Mock account states for all accounts
+  for (const account of mainCtrl.accounts.accounts) {
+    mainCtrl.accounts.accountStates[account.addr] = {}
+    for (const network of mainCtrl.networks.networks) {
+      mainCtrl.accounts.accountStates[account.addr]![network.chainId.toString()] = {
+        accountAddr: account.addr,
+        isDeployed: true,
+        eoaNonce: null,
+        nonce: 0n,
+        erc4337Nonce: 0n,
+        associatedKeys: [],
+        importedAccountKeys: [],
+        balance: 0n,
+        isEOA: false,
+        isErc4337Enabled: false,
+        isErc4337Nonce: false,
+        isV2: true,
+        currentBlock: 0n,
+        isSmarterEoa: false,
+        delegatedContract: null,
+        delegatedContractName: null,
+        threshold: 1,
+        updatedAt: 0
+      } as any
+    }
+  }
 
   const getSignAccountOp = async ({
     addr,
@@ -254,28 +114,31 @@ const prepareTest = async () => {
     chainId: bigint
     requestId: string
   }) => {
-    await accountsCtrl.initialLoadPromise
-    await waitForAccountsCtrlFirstLoad(accountsCtrl)
-    await networksCtrl.initialLoadPromise
-    const account = accountsCtrl.accounts.find((a) => a.addr === addr)!
-    const network = networksCtrl.networks.find((n) => n.chainId === chainId)!
+    await mainCtrl.accounts.initialLoadPromise
+    await mainCtrl.networks.initialLoadPromise
+    await mainCtrl.signAccountOpPreference.initialLoadPromise
+    const account = mainCtrl.accounts.accounts.find((a) => a.addr === addr)!
+    const network = mainCtrl.networks.networks.find((n) => n.chainId === chainId)!
 
-    return new SignAccountOpController({
+    const signAccountOp = new SignAccountOpController({
       type: 'default',
-      callRelayer,
-      accounts: accountsCtrl,
-      networks: networksCtrl,
-      keystore: keystoreCtrl,
-      portfolio: portfolioCtrl,
+      callRelayer: mainCtrl.callRelayer,
+      accounts: mainCtrl.accounts,
+      networks: mainCtrl.networks,
+      keystore: mainCtrl.keystore,
+      portfolio: mainCtrl.portfolio,
+      signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
-      activity: activityCtrl,
+      activity: mainCtrl.activity,
       account,
       network,
       eventEmitterRegistry,
-      provider: providersCtrl.providers[network.chainId.toString()]!,
-      phishing: phishingCtrl,
+      provider: mainCtrl.providers.providers[network.chainId.toString()]!,
+      phishing: mainCtrl.phishing,
+      dapps: mainCtrl.dapps,
       fromRequestId: requestId,
       accountOp: {
+        id: generateUuid(),
         accountAddr: addr,
         signingKeyAddr: null,
         signingKeyType: null,
@@ -298,6 +161,10 @@ const prepareTest = async () => {
       onBroadcastSuccess: async () => {},
       onBroadcastFailed: () => {}
     })
+    // Prevent the recurring estimation timer from reaching V1.getAvailableFeeOptions
+    // (which throws for accounts with no ETH on the test networks).
+    jest.spyOn(signAccountOp.estimation, 'estimate').mockResolvedValue(undefined)
+    return signAccountOp
   }
 
   const getCallsRequest = async ({ addr, chainId }: { addr: string; chainId: bigint }) => {
@@ -325,34 +192,13 @@ const prepareTest = async () => {
   }
 
   return {
-    selectedAccountCtrl,
-    controller: new RequestsController({
-      relayerUrl,
-      callRelayer,
-      portfolio: portfolioCtrl,
-      externalSignerControllers: {},
-      activity: activityCtrl,
-      phishing: phishingCtrl,
-      accounts: accountsCtrl,
-      networks: networksCtrl,
-      providers: providersCtrl,
-      selectedAccount: selectedAccountCtrl,
-      keystore: keystoreCtrl,
-      transfer: transferCtrl,
-      swapAndBridge: swapAndBridgeCtrl,
-      ui: uiCtrl,
-      autoLogin: autoLoginCtrl,
-      getDapp: async () => undefined,
-      updateSelectedAccountPortfolio: () => Promise.resolve(),
-      addTokensToBeLearned: () => {},
-      onSetCurrentUserRequest: () => {},
-      onBroadcastSuccess: async () => {},
-      onBroadcastFailed: () => {},
-      eventEmitterRegistry,
-      shouldSimulateAccountOps: false
-    }),
+    selectedAccountCtrl: mainCtrl.selectedAccount,
+    controller: mainCtrl.requests,
     getSignAccountOp,
-    getCallsRequest
+    getCallsRequest,
+    event: eventEmitter,
+    getWindowId,
+    uiCtrl: mainCtrl.ui
   }
 }
 
@@ -374,11 +220,6 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
 describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
-  })
-  test('Init controller', async () => {
-    const { controller } = await prepareTest()
-    expect(controller.initialLoadPromise).toBeInstanceOf(Promise)
-    await expect(controller.initialLoadPromise).resolves.toBeUndefined()
   })
 
   test('Add and then remove a user request', async () => {
@@ -421,6 +262,7 @@ describe('RequestsController ', () => {
       type: 'transferRequest',
       params: {
         selectedToken: {
+          marketDataIn: [],
           address: '0x0000000000000000000000000000000000000000',
           amount: 1n,
           symbol: 'ETH',
@@ -438,12 +280,47 @@ describe('RequestsController ', () => {
         amount: '1',
         amountInFiat: 100000n,
         executionType: 'open-request-window',
-        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        recipientDomain: undefined
       }
     })
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+  test('build contract deployment dapp request', async () => {
+    const { controller } = await prepareTest(true)
+
+    await expect(
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [
+              {
+                from: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+                value: '0x0',
+                data: '0x6080604052348015600e575f5ffd5b50600080fd'
+              }
+            ],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+    ).resolves.toBeUndefined()
+
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0]!.kind).toBe('calls')
+    expect(
+      (controller.userRequests[0] as CallsUserRequest).signAccountOp.accountOp.calls[0]!.to
+    ).toBeUndefined()
   })
   test('resolve user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
@@ -603,7 +480,7 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
   })
   test('should focus out and then focus on the current request window', async () => {
-    const { controller } = await prepareTest()
+    const { controller, event, getWindowId } = await prepareTest()
 
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
     event.emit('windowFocusChange', 'random-window-id')
@@ -661,7 +538,247 @@ describe('RequestsController ', () => {
   test('should toJSON()', async () => {
     const { controller } = await prepareTest()
 
-    const json = controller.toJSON()
-    expect(json).toBeDefined()
+    expect(controller.toJSON()).toBeDefined()
+  })
+
+  describe('call data and "to" field validation', () => {
+    const FROM = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const VALID_TO = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+    const buildEthSendTx = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      txParams: { from: string; to?: string; value?: string; data?: string }
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [txParams],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+
+    const buildWalletSendCalls = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      calls: { to?: string; value?: string; data?: string }[]
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'wallet_sendCalls',
+            params: [{ from: FROM, chainId: '0x1', calls }],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+
+    test('rejects eth_sendTransaction with odd-length hex data', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: '0x1' })
+      ).rejects.toThrow('A call has uneven number of character in the hex data.')
+    })
+
+    test('rejects eth_sendTransaction with non-hex data (even length, no 0x prefix)', async () => {
+      const { controller } = await prepareTest(true)
+
+      // Even length so it passes the odd-length check; no 0x prefix so isHex returns false
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: 'aabbccdd' })
+      ).rejects.toThrow('A call has invalid data.')
+    })
+
+    test('rejects eth_sendTransaction with invalid "to" address', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: 'not-an-address', value: '0x0' })
+      ).rejects.toThrow('A call has invalid "to" field ')
+    })
+
+    test('accepts eth_sendTransaction without a "to" field (contract deployment)', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, value: '0x0', data: '0x6080604052' })
+      ).resolves.toBeUndefined()
+    })
+
+    test('accepts eth_sendTransaction without a data field', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0' })
+      ).resolves.toBeUndefined()
+    })
+
+    test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x0', data: '0x1234' },
+          { to: VALID_TO, value: '0x0', data: '0x1' }
+        ])
+      ).rejects.toThrow('A call has uneven number of character in the hex data.')
+    })
+
+    test('rejects wallet_sendCalls when any call has an invalid "to" address', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x0' },
+          { to: 'bad-address', value: '0x0' }
+        ])
+      ).rejects.toThrow('A call has invalid "to" field ')
+    })
+
+    test('accepts wallet_sendCalls where a call omits "to" (contract deployment within batch)', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x0' },
+          { value: '0x0', data: '0x6080604052' }
+        ])
+      ).resolves.toBeUndefined()
+    })
+  })
+
+  describe('eth_signTypedData_v4 typed data validation', () => {
+    const FROM = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+    const VALID_TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' }
+        ],
+        Mail: [
+          { name: 'from', type: 'address' },
+          { name: 'to', type: 'address' },
+          { name: 'contents', type: 'string' }
+        ]
+      },
+      primaryType: 'Mail',
+      domain: { name: 'Test Mail', version: '1', chainId: 1 },
+      message: {
+        from: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        to: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
+        contents: 'Hello!'
+      }
+    }
+
+    const buildSignTypedDataRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      typedData: object
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_signTypedData_v4',
+            params: [FROM, JSON.stringify(typedData)],
+            session: MOCK_SESSION
+          },
+          dappPromise: {
+            id: 'testID',
+            resolve: () => {},
+            reject: () => {},
+            session: MOCK_SESSION
+          }
+        }
+      })
+
+    test('rejects when primaryType is missing from types', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: { EIP712Domain: VALID_TYPED_DATA.types.EIP712Domain }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The primary data type is missing from the provided types'
+      )
+    })
+
+    test('rejects when message contents do not match the declared types', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        message: {
+          from: 'not-a-valid-address',
+          to: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
+          contents: 'Hello!'
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The message contents did not match the provided types.'
+      )
+    })
+
+    test('accepts valid typed data and creates a typedMessage user request', async () => {
+      const { controller } = await prepareTest(true)
+      await expect(buildSignTypedDataRequest(controller, VALID_TYPED_DATA)).resolves.toBeUndefined()
+      expect(controller.userRequests.length).toBe(1)
+      expect(controller.userRequests[0]!.kind).toBe('typedMessage')
+    })
+
+    test('rejects when domain.chainId does not match the current network chainId', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, chainId: 999 }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The domain chainId (999) does not match the current network chainId (1)'
+      )
+    })
+
+    test('replaces domain.chainId with current network chainId when domain.chainId is 0', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, chainId: 0 }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      expect(controller.userRequests.length).toBe(1)
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.domain.chainId).toBe(1n)
+    })
+
+    test('accepts typed data with no domain.chainId regardless of current network', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          EIP712Domain: VALID_TYPED_DATA.types.EIP712Domain.filter((f) => f.name !== 'chainId')
+        },
+        domain: { name: VALID_TYPED_DATA.domain.name, version: VALID_TYPED_DATA.domain.version }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      expect(controller.userRequests.length).toBe(1)
+      const req = controller.userRequests[0]! as any
+      expect(req.kind).toBe('typedMessage')
+      expect(req.meta.params.domain.chainId).toBe(1n)
+    })
   })
 })

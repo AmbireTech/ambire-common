@@ -1,6 +1,6 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
+
 import { Hex } from '../../interfaces/hex'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
@@ -116,5 +116,30 @@ export class EOA extends BaseAccount {
   getNonceId(): string {
     // EOAs have only an execution layer nonce
     return this.accountState.eoaNonce!.toString()
+  }
+
+  /**
+   * We always state override when using an EOA as otherwise,
+   * we won't be able to perform the ambire estimation as it works
+   * only with smart accounts
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return true
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return false
+  }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
+
+  canSetCustomGas(_feeOption?: FeePaymentOption, accountOp?: AccountOp): boolean {
+    // we do not allow custom gas for a bundle as we can estimate
+    // the gas for the next transaction after the first one has completed
+    if (accountOp && accountOp.calls.length > 1) return false
+
+    return this.canSetCustomGasPrices()
   }
 }

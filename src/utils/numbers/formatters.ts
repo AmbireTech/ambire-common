@@ -72,8 +72,32 @@ const getSafeAmountFromFieldValue = (fieldValue: string, tokenDecimals?: number)
   return getSanitizedAmount(parsedFieldValue, tokenDecimals)
 }
 
+const textToValidDecimal = (text: string) => {
+  let formatted = text
+
+  // Remove invalid chars (only digits and dots allowed)
+  formatted = formatted.replace(/[^0-9.]/g, '')
+
+  // If input starts with ".", prefix with "0"
+  if (formatted.startsWith('.')) {
+    formatted = `0${formatted}`
+  }
+
+  // Prevent multiple decimals
+  const parts = formatted.split('.')
+  if (parts.length > 2) {
+    formatted = `${parts[0]}.${parts.slice(1).join('')}`
+  }
+
+  formatted = formatted.replace(/^0+(?=\d)/, '')
+  if (formatted === '') formatted = '0'
+
+  return formatted
+}
+
 export {
   convertTokenPriceToBigInt,
+  getSafeAmountFromFieldValue,
   safeTokenAmountAndNumberMultiplication,
-  getSafeAmountFromFieldValue
+  textToValidDecimal
 }

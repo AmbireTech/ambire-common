@@ -1,7 +1,18 @@
+import { toUtf8String } from 'ethers'
+
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+import { EIP712TypedData } from '@safe-global/types-kit'
+
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
+import {
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappVerificationBanner,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import {
   ExternalSignerControllers,
@@ -11,29 +22,51 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import { ISignMessageController, SignMessageUpdateParams } from '../../interfaces/signMessage'
+import {
+  ISignMessageController,
+  SignMessageStatus,
+  SignMessageUpdateParams
+} from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
+import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import {
+  addMessage,
+  addMessageSignature,
+  getImportedSignersThatHaveNotSigned,
+  sortSigs
+} from '../../libs/safe/safe'
+import {
+  getEIP712SigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
 import {
   getAppFormatted,
+  getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
+  getSafeMessageTypedData,
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import HumanizationController from '../humanization/humanization'
 
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
+import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter implements ISignMessageController {
+export class SignMessageController
+  extends HumanizationController
+  implements ISignMessageController
+{
   #keystore: IKeystoreController
 
   #providers: IProvidersController
 
-  #networks: INetworksController
+  networks: INetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -41,7 +74,11 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #invite: IInviteController
 
-  #signer: KeystoreSignerInterface | undefined
+  #dapps?: IDappsController
+
+  #callRelayer?: BindedRelayerCall
+
+  signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
 
@@ -50,15 +87,42 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   dapp: {
     name: string
     icon: string
+    url?: string
+    sessionId?: string
   } | null = null
 
   messageToSign: Message | null = null
 
-  signingKeyAddr: Key['addr'] | null = null
+  humanizedMessage?: IrMessage
 
-  signingKeyType: Key['type'] | null = null
+  isHumanizing = false
+
+  safeEip712Data: unknown | null = null
+
+  hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
   signedMessage: SignedMessage | null = null
+
+  #account?: Account
+
+  network?: Network
+
+  // who are the signers that already signed this message
+  // applicable on Safe message
+  signed: string[] = []
+
+  // the already signed signatures
+  // applicable on Safe message
+  signatures: Hex[] = []
+
+  signers?: { addr: Key['addr']; type: Key['type'] }[]
+
+  /**
+   * the signed hash
+   */
+  hash?: Hex
+
+  status: SignMessageStatus
 
   constructor(
     keystore: IKeystoreController,
@@ -67,24 +131,46 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    dapps?: IDappsController,
+    callRelayer?: BindedRelayerCall
   ) {
     super(eventEmitterRegistry)
 
     this.#keystore = keystore
     this.#providers = providers
-    this.#networks = networks
+    this.networks = networks
     this.#externalSignerControllers = externalSignerControllers
     this.#accounts = accounts
     this.#invite = invite
+    this.#dapps = dapps
+    this.#callRelayer = callRelayer
+    this.status = SignMessageStatus.Initial
+
+    // `banners` is derived from DappsController state (the dapp verification status), so its
+    // updates must be propagated - otherwise a banner computed before the status resolves
+    // (e.g. right after a service worker restart) would stay stale in the UI until this
+    // controller happens to emit for another reason.
+    // NOTE: No unsubscribe needed - both controllers are singletons living for the app lifetime.
+    this.#dapps?.onUpdate((forceEmit) => {
+      if (this.dapp?.url) this.propagateUpdate(forceEmit)
+    }, 'sign-message-dapps-verification')
   }
 
   async init({
     dapp,
-    messageToSign
+    messageToSign,
+    signed,
+    hash,
+    signatures
   }: {
-    dapp?: { name: string; icon: string }
+    dapp?: { name: string; icon: string; url?: string; sessionId?: string }
     messageToSign: Message
+    // who are the signers that already signed this message
+    // applicable on Safe message
+    signed?: string[]
+    hash?: Hex
+    signatures?: Hex[]
   }) {
     // In the unlikely case that the signMessage controller was already
     // initialized, but not reset, force reset it to prevent misleadingly
@@ -98,8 +184,59 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
+      this.signed = signed || []
+      this.signatures = signatures || []
       this.isInitialized = true
+
+      this.#account = this.#accounts.accounts.find(
+        (acc) => acc.addr === this.messageToSign?.accountAddr
+      )
+      if (!this.#account) {
+        throw new Error(
+          'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
+        )
+      }
+      this.network = this.networks.networks.find(
+        (n: Network) => n.chainId === this.messageToSign!.chainId
+      )
+      if (!this.network) {
+        throw new Error('Network not supported on Ambire. Please contract support.')
+      }
+
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.#account.addr,
+        this.network.chainId
+      )
+      if (!accountState) {
+        if (this.network.disabled) {
+          throw new Error(
+            `Please enable ${this.network.name} from settings -> networks to sign messages on it`
+          )
+        }
+        throw new Error(`Account details missing. Please try again`)
+      }
+
+      if (this.#account.safeCreation) {
+        this.#updateSafeEip712Data()
+        const notSigned = getImportedSignersThatHaveNotSigned(
+          this.signed,
+          accountState.importedAccountKeys.map((k) => k.addr)
+        )
+        if (this.signed.length && notSigned.length === 0) this.status = SignMessageStatus.Partial
+        this.hash = hash
+      } else {
+        // if the account is not safe & view only, set a default signer
+        // the default signer should be the internal key if any
+        this.signers = accountState.importedAccountKeys
+          ? [
+              accountState.importedAccountKeys.find((k) => k.type === 'internal') ||
+                accountState.importedAccountKeys[0]!
+            ]
+          : undefined
+      }
+
       this.emitUpdate()
+      this.humanize()
     } else {
       this.emitError({
         level: 'major',
@@ -119,10 +256,147 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
+    this.humanizedMessage = undefined
+    this.isHumanizing = false
+    this.safeEip712Data = null
+    this.hardwareWalletSigningRequest = null
     this.signedMessage = null
-    this.signingKeyAddr = null
-    this.signingKeyType = null
+    this.#account = undefined
+    this.network = undefined
+    this.signed = []
+    this.signers = undefined
+    this.signer = undefined
+    this.status = SignMessageStatus.Initial
     this.emitUpdate()
+  }
+
+  #updateSafeEip712Data() {
+    if (!this.#account?.safeCreation || !this.messageToSign || !this.network) {
+      this.safeEip712Data = null
+      return
+    }
+
+    const { content } = this.messageToSign
+
+    try {
+      const message = content.kind === 'typedMessage' ? content : content.message
+      const typedData = getSafeMessageTypedData(
+        message,
+        this.network.chainId,
+        this.#account.addr as Hex
+      )
+      const safeMessageHash = getEIP712Hash(typedData)
+
+      this.safeEip712Data = getSigningRequestDisplayData(
+        getEIP712SigningRequest({ ...typedData, safeMessageHash })
+      )
+    } catch (error) {
+      this.safeEip712Data = null
+      this.emitError({
+        message: 'Error calculating Safe EIP-712 data',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
+  #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
+    let serializedRequestData: unknown = null
+
+    try {
+      if (request) serializedRequestData = getSigningRequestDisplayData(request)
+    } catch {
+      serializedRequestData = null
+    }
+
+    this.hardwareWalletSigningRequest =
+      request && serializedRequestData !== null
+        ? {
+            ...request,
+            data: serializedRequestData
+          }
+        : null
+    this.emitUpdate()
+  }
+
+  async #withHardwareWalletSigningRequest<T>(
+    request: HardwareWalletSigningRequest,
+    sign: () => Promise<T>
+  ) {
+    this.#setHardwareWalletSigningRequest(request)
+
+    try {
+      return await sign()
+    } finally {
+      this.#setHardwareWalletSigningRequest(null)
+    }
+  }
+
+  #startHumanization() {
+    return this.startHumanization(() => {
+      this.isHumanizing = true
+      this.humanizedMessage = undefined
+    })
+  }
+
+  #setHumanizedMessage(humanizedMessage: IrMessage, humanizationId: number) {
+    if (!this.isCurrentHumanization(humanizationId)) return false
+
+    this.humanizedMessage = humanizedMessage
+    this.isHumanizing = false
+    this.emitUpdate()
+
+    return true
+  }
+
+  #setFallbackHumanization(humanizationId: number) {
+    if (!this.messageToSign) return false
+
+    return this.#setHumanizedMessage(humanizeMessage(this.messageToSign), humanizationId)
+  }
+
+  async #applyDescriptorFirstHumanization(humanizationId: number) {
+    const messageToSign = this.messageToSign
+    const callRelayer = this.#callRelayer
+
+    if (!messageToSign) return
+    if (messageToSign.content.kind !== 'typedMessage' || !callRelayer) {
+      this.#setFallbackHumanization(humanizationId)
+      return
+    }
+
+    await this.applyDescriptorFirstHumanization({
+      humanizationId,
+      fetchDescriptor: async () => {
+        const provider = this.network
+          ? this.#providers.providers[this.network.chainId.toString()]
+          : undefined
+
+        return fetchErc7730DescriptorForMessage(messageToSign, callRelayer, provider)
+      },
+      applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
+        if (!erc7730Descriptor) return false
+
+        const erc7730Humanization = humanizeMessage(messageToSign, { erc7730Descriptor })
+
+        return this.#setHumanizedMessage(erc7730Humanization, currentHumanizationId)
+      },
+      applyFallbackHumanization: (currentHumanizationId) =>
+        this.#setFallbackHumanization(currentHumanizationId)
+    })
+  }
+
+  humanize() {
+    if (!this.messageToSign) return
+
+    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
+      const currentHumanizationId = this.#startHumanization()
+      this.#setFallbackHumanization(currentHumanizationId)
+      return
+    }
+
+    const currentHumanizationId = this.#startHumanization()
+    void this.#applyDescriptorFirstHumanization(currentHumanizationId)
   }
 
   update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
@@ -146,9 +420,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.emitUpdate()
   }
 
-  setSigningKey(signingKeyAddr: Key['addr'], signingKeyType: Key['type']) {
-    this.signingKeyAddr = signingKeyAddr
-    this.signingKeyType = signingKeyType
+  setSigners(signers: { addr: Key['addr']; type: Key['type'] }[]) {
+    this.signers = signers
     this.emitUpdate()
   }
 
@@ -158,6 +431,23 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
    */
   #isSigningOperationValidAfterAsyncOperation() {
     return this.isInitialized && !!this.messageToSign
+  }
+
+  async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
+    if (!this.network || !this.#account) return
+
+    // send only to Safe Global if it doesn't already exists and if the threshold is not met
+    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
+  }
+
+  async addSigToSafeGlobal(sig: string, hash: string) {
+    if (!this.network) return
+
+    await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
   }
 
   /*
@@ -174,32 +464,43 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       return SignMessageController.#throwMissingMessage()
     }
 
-    if (!this.signingKeyAddr || !this.signingKeyType) {
+    if (!this.signers?.length) {
       return SignMessageController.#throwMissingSigningKey()
     }
 
+    // we're always signing with the first signer
+    // the goal was to have an array of signers that sign simultaneously
+    // but it was too confusing, so we threw it away
+    // the array of signers should be changed back to a single signer
+    const signerKey = this.signers[0]!
+    this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    if (this.signer.init) {
+      this.signer.init(this.#externalSignerControllers[signerKey.type])
+    }
+    this.emitUpdate() // pass the signer to the UI
+
     try {
-      this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
       if (!this.#isSigningOperationValidAfterAsyncOperation()) return
-
-      if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
-
-      const account = this.#accounts.accounts.find(
-        (acc) => acc.addr === this.messageToSign?.accountAddr
-      )
-      if (!account) {
+      if (!this.#account) {
         throw new Error(
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-      const network = this.#networks.networks.find(
-        (n: Network) => n.chainId === this.messageToSign!.chainId
-      )
-      if (!network) {
+      if (!this.network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()]
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.#account.addr,
+        this.network.chainId
+      )
+      if (!accountState) {
+        throw new Error(`Account details missing. Please try again`)
+      }
+
+      const provider = this.#providers.providers[this.network.chainId.toString()]
+      if (!provider) throw new Error(`Network details missing. Please try again`)
+
       let signature
 
       try {
@@ -207,38 +508,85 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           this.messageToSign.content.kind === 'message' ||
           this.messageToSign.content.kind === 'siwe'
         ) {
-          signature = await getPlainTextSignature(
+          const signed = await getPlainTextSignature(
             this.messageToSign.content.message,
-            network,
-            account,
+            this.network,
+            this.#account,
             accountState,
-            this.#signer,
-            this.#invite.isOG
+            this.signer,
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
           )
+          this.signatures.push(signed.signature)
+          this.signed.push(signerKey.addr)
+
+          if (accountState.threshold > 1) {
+            if (!!this.#account.safeCreation && signed.hash) {
+              this.hash = signed.hash
+              if (this.signed.length === 1) {
+                await this.addMsgToSafeGlobal(
+                  signed.signature,
+                  toUtf8String(this.messageToSign.content.message)
+                )
+              } else {
+                await this.addSigToSafeGlobal(signed.signature, signed.hash)
+              }
+            }
+          }
+
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+
+          // get the final signature
+          signature =
+            this.signatures.length === 1 || !signed.hash
+              ? this.signatures[0]!
+              : sortSigs(this.signatures, signed.hash)
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
-          if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
+          if (this.#account.creation && this.messageToSign.content.primaryType === 'Permit') {
             throw new Error(
               'It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.'
             )
           }
 
-          signature = await getEIP712Signature(
+          const signed = await getEIP712Signature(
             this.messageToSign.content,
-            account,
+            this.#account,
             accountState,
-            this.#signer,
-            network,
-            this.#invite.isOG
+            this.signer,
+            this.network,
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
           )
+          this.signatures.push(signed.signature)
+          this.signed.push(signerKey.addr)
+
+          if (accountState.threshold > 1) {
+            if (!!this.#account.safeCreation && signed.hash) {
+              this.hash = signed.hash
+              if (this.signed.length === 1) {
+                await this.addMsgToSafeGlobal(
+                  signed.signature,
+                  this.messageToSign.content as EIP712TypedData
+                )
+              } else {
+                await this.addSigToSafeGlobal(signed.signature, signed.hash)
+              }
+            }
+          }
+
           if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+
+          signature =
+            this.signatures.length === 1 || !signed.hash
+              ? this.signatures[0]!
+              : sortSigs(this.signatures, signed.hash)
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
           // TODO: Deprecated. Sync with the latest sign7702 method changes if used
-          // signature = this.#signer.sign7702(this.messageToSign.content.message)
+          // signature = this.signer.sign7702(this.messageToSign.content.message)
           throw new ExternalSignerError(
             'Signing EIP-7702 authorization via this flow is not implemented',
             { sendCrashReport: true }
@@ -260,48 +608,60 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
 
-      const verifyMessageParams = {
-        provider: this.#providers.providers[network?.chainId.toString() || '1'],
-        // the signer is always the account even if the actual
-        // signature is from a key that has privs to the account
-        signer: this.messageToSign.accountAddr,
-        signature: getVerifyMessageSignature(signature, account, accountState),
-        // eslint-disable-next-line no-nested-ternary
-        ...(this.messageToSign.content.kind === 'message' ||
-        this.messageToSign.content.kind === 'siwe'
-          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
-          : this.messageToSign.content.kind === 'typedMessage'
-          ? {
-              typedData: {
-                domain: this.messageToSign.content.domain,
-                types: this.messageToSign.content.types,
-                message: this.messageToSign.content.message,
-                primaryType: this.messageToSign.content.primaryType
-              }
-            }
-          : {
-              authorization: (
-                this.messageToSign.content as AuthorizationUserRequest['meta']['params'] & {
-                  kind: AuthorizationUserRequest['kind']
-                }
-              ).message
-            })
-      }
-      const isValidSignature = await verifyMessage(verifyMessageParams)
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+      // skip the message verification for safe accounts & EOAs. Reasons:
+      // * for EOAs: bcz it's a privacy issue
+      // * for Safes: bcz the Safe API will return an error on invalid sig
+      if (!this.#account.safeCreation && !accountState.isEOA) {
+        const verifyMessageParams = {
+          provider,
+          // the signer is always the account even if the actual
+          // signature is from a key that has privs to the account
+          signer: this.messageToSign.accountAddr,
+          signature: getVerifyMessageSignature(signature, this.#account, accountState),
 
-      if (!isValidSignature) {
-        throw new Error(
-          'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
-        )
+          ...(this.messageToSign.content.kind === 'message' ||
+          this.messageToSign.content.kind === 'siwe'
+            ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
+            : this.messageToSign.content.kind === 'typedMessage'
+              ? {
+                  typedData: {
+                    domain: this.messageToSign.content.domain,
+                    types: this.messageToSign.content.types,
+                    message: this.messageToSign.content.message,
+                    primaryType: this.messageToSign.content.primaryType
+                  }
+                }
+              : {
+                  authorization: (
+                    this.messageToSign.content as AuthorizationUserRequest['meta']['params'] & {
+                      kind: AuthorizationUserRequest['kind']
+                    }
+                  ).message
+                })
+        }
+        const isValidSignature = await verifyMessage(verifyMessageParams)
+        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+
+        if (!isValidSignature) {
+          throw new Error(
+            'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
+          )
+        }
       }
 
       this.signedMessage = {
         ...this.messageToSign,
         timestamp: new Date().getTime(),
-        signature: getAppFormatted(signature, account, accountState),
+        // todo: configure
+        signature: getAppFormatted(signature, this.#account, accountState),
         dapp: this.dapp
       }
+
+      // update the status to Partial if signing has not concluded
+      this.status =
+        this.signed.length >= accountState.threshold
+          ? SignMessageStatus.Done
+          : SignMessageStatus.Partial
 
       return this.signedMessage
     } catch (e: any) {
@@ -330,9 +690,20 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     }
   }
 
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.statuses.sign = 'INITIAL'
+    this.hardwareWalletSigningRequest = null
+    this.emitUpdate()
+  }
+
   #onAbortOperation() {
-    if (this.#signer?.signingCleanup) {
-      this.#signer.signingCleanup()
+    if (this.signer?.signingCleanup) {
+      void this.signer.signingCleanup()
     }
   }
 
@@ -353,9 +724,40 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   static #throwMissingSigningKey() {
-    const message = 'Please select a signing key and try again.'
-    const error = new Error('signMessage: missing selected signing key')
+    const message = 'Please select a signer.'
+    const error = new Error('signMessage: missing selected signer')
 
     return Promise.reject(new EmittableError({ level: 'major', message, error }))
+  }
+
+  #getDappVerificationBanner(): DappVerificationBanner | null {
+    if (!this.#dapps || !this.dapp?.url) return null
+
+    const banner = this.#dapps.getDappVerificationBanner([this.dapp.url.toLowerCase()], {
+      // SignMessage operates on a single dApp, and the request window already shows it,
+      // so repeating the dApp name in the banner text adds noise.
+      includeDappNamesInText: false,
+      sessionId: this.dapp.sessionId
+    })
+    if (!banner) return null
+    // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.
+    if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) return null
+
+    return banner
+  }
+
+  get banners(): DappVerificationBanner[] {
+    const banner = this.#getDappVerificationBanner()
+    if (!banner) return []
+
+    return [banner]
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      banners: this.banners
+    }
   }
 }

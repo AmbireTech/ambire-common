@@ -1,5 +1,7 @@
-import { getAddress, ZeroAddress } from 'ethers'
+import { getAddress, parseUnits, ZeroAddress } from 'ethers'
 import { isHex } from 'viem'
+
+import { getSanitizedAmount } from '@/libs/transfer/amount'
 
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -26,6 +28,7 @@ import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
   Position,
+  PositionAsset,
   PositionsByProvider,
   ProviderError
 } from './types'
@@ -258,33 +261,56 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
   return result.map((p) => ({
     ...p,
     source: 'debank' as const,
-    chainId: BigInt(p.chainId),
+    chainId: !p.chainId ? undefined : BigInt(p.chainId),
     positions: p.positions
       .map((pos) => {
         try {
+          const isCustomAppChain = !p.chainId
           if (pos.additionalData.name === 'Deposit') {
-            // eslint-disable-next-line no-param-reassign
             pos.additionalData.name = 'Deposit pool'
-            // eslint-disable-next-line no-param-reassign
-            pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+
+            if (pos.additionalData.pool?.id) {
+              pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+            }
           }
 
           return {
             ...pos,
-            assets: pos.assets.map((asset) => ({
-              ...asset,
-              // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
-              address: isHex(asset.address) ? getAddress(asset.address) : ZeroAddress,
-              amount: BigInt(asset.amount),
-              protocolAsset: asset.protocolAsset
-                ? {
-                    ...asset.protocolAsset,
-                    address: isHex(asset.protocolAsset.address)
-                      ? getAddress(asset.protocolAsset.address)
-                      : ZeroAddress
-                  }
-                : undefined
-            }))
+            assets: pos.assets.map(
+              (
+                asset: PositionAsset & {
+                  logo_url?: string
+                }
+              ) => {
+                let amount = asset.amount
+
+                if (isCustomAppChain) {
+                  // Amount should be formatted with decimals and turned to bigint after that
+                  amount = parseUnits(
+                    String(getSanitizedAmount(String(amount), asset.decimals)),
+                    asset.decimals
+                  )
+                  // In else because app assets don't have addresses and we don't want to set them as zero addresses
+                } else {
+                  // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
+                  asset.address = isHex(asset.address) ? getAddress(asset.address) : ZeroAddress
+                }
+
+                return {
+                  ...asset,
+                  iconUrl: asset.iconUrl || asset.logo_url || undefined,
+                  amount: BigInt(amount),
+                  protocolAsset: asset.protocolAsset
+                    ? {
+                        ...asset.protocolAsset,
+                        address: isHex(asset.protocolAsset.address)
+                          ? getAddress(asset.protocolAsset.address)
+                          : ZeroAddress
+                      }
+                    : undefined
+                }
+              }
+            )
           }
         } catch (error) {
           console.error('DeFi error when mapping positions: ', error, 'position', pos)
@@ -324,6 +350,10 @@ const enhancePortfolioTokensWithDefiPositions = (
     const notYetHandledTokensToAdd: TokenResult[] = []
 
     defiPositionsState.positionsByProvider.forEach((posByProvider) => {
+      // Skip app providers
+      const posChainId = posByProvider.chainId
+      if (!posChainId) return
+
       posByProvider.positions.forEach((pos) => {
         try {
           const controllerAddress = pos.additionalData?.pool?.controller as string | undefined
@@ -339,10 +369,8 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            if (!protocolAsset) return
-
             const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
-              const isSameAddress = t.address === protocolAsset.address
+              const isSameAddress = t.address === protocolAsset?.address
 
               if (isSameAddress) return true
 
@@ -360,7 +388,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                   )
                 : undefined
 
-              if (protocolAsset.address) {
+              if (protocolAsset?.address) {
                 return (
                   !t.flags.rewardsType &&
                   !t.flags.onGasTank &&
@@ -394,6 +422,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                 priceIn: asset.priceIn ? [asset.priceIn] : []
               })
             } else if (
+              protocolAsset &&
               'address' in protocolAsset &&
               'decimals' in protocolAsset &&
               'symbol' in protocolAsset &&
@@ -405,6 +434,7 @@ const enhancePortfolioTokensWithDefiPositions = (
               notYetHandledTokensToAdd.push({
                 amount: asset.amount,
                 latestAmount: asset.amount,
+                marketDataIn: [],
                 // Only list the borrowed asset with no price
                 priceIn:
                   asset.type === AssetType.Collateral && asset.priceIn ? [asset.priceIn] : [],
@@ -412,7 +442,7 @@ const enhancePortfolioTokensWithDefiPositions = (
                 address: protocolAsset.address,
                 symbol: protocolAsset.symbol,
                 name: protocolAsset.name,
-                chainId: BigInt(posByProvider.chainId),
+                chainId: BigInt(posChainId),
                 flags: {
                   canTopUpGasTank: false,
                   isFeeToken: false,
@@ -483,39 +513,93 @@ const getHasNonceChangedSinceLastUpdate = (
 }
 
 /**
- * Whether the portfolio defi positions data should be updated
+ * Describes how fresh the DeFi positions data should be when fetched, based on various factors such as:
+ * - Whether the user explicitly requested a refresh (isManualUpdate)
+ * - Whether there has been a nonce change since the last update, indicating on-chain activity
+ * - Whether there is a scheduled update coming soon (hasScheduledUpdate)
+ * - The age of the currently cached data (maxDataAgeMs)
  */
-const getCanSkipUpdate = (
-  previousState: PortfolioNetworkResult['defiPositions'] | undefined,
-  hasNonceChangedSinceLastUpdate: boolean,
-  maxDataAgeMs: number = 60000
-): boolean => {
-  if (!previousState || !previousState.lastSuccessfulUpdate) return false
-
-  // Always update if the nonce has changed
-  if (hasNonceChangedSinceLastUpdate) return false
-
-  return Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs
+export enum DefiUpdateMode {
+  /** Serve cached data regardless of its age */
+  StaleOk = 'staleOk',
+  /** Serve cached data if it is fresh enough, otherwise refetch */
+  Default = 'default',
+  /** Bypass the server-side cache and refetch fresh data (was: `update=true`) */
+  Force = 'force'
 }
 
-const getShouldBypassServerSideCache = (
-  previousState: PortfolioNetworkResult['defiPositions'] | undefined,
-  isManualUpdate: boolean,
-  hasKeys: boolean,
-  sessionIds: string[],
+const DEFI_UPDATE_MODE_RANK: Record<DefiUpdateMode, number> = {
+  [DefiUpdateMode.StaleOk]: 0,
+  [DefiUpdateMode.Default]: 1,
+  [DefiUpdateMode.Force]: 2
+}
+
+// The server-side defi cache has a per-account cooldown; we only force a bypass once per window.
+const FORCE_API_UPDATE_COOLDOWN_MS = 30000
+
+const getDefiUpdateMode = (params: {
+  previousState: PortfolioNetworkResult['defiPositions'] | undefined
+  bypassServerSideCache: boolean
+  isManualUpdate: boolean
+  hasKeys: boolean
+  sessionIds: string[]
   hasNonceChangedSinceLastUpdate: boolean
-): boolean => {
-  // Always bypass cache if the nonce has changed
-  if (hasNonceChangedSinceLastUpdate) return true
+  hasScheduledUpdate: boolean
+  maxDataAgeMs: number
+}): DefiUpdateMode => {
+  const {
+    previousState,
+    bypassServerSideCache,
+    isManualUpdate,
+    hasKeys,
+    sessionIds,
+    hasNonceChangedSinceLastUpdate,
+    hasScheduledUpdate,
+    maxDataAgeMs
+  } = params
 
-  const hasForceApiUpdatePrerequisites = isManualUpdate && sessionIds.length && hasKeys
+  // An explicit override always bypasses the server-side cache.
+  if (bypassServerSideCache) return DefiUpdateMode.Force
 
-  if (!hasForceApiUpdatePrerequisites) return false
+  // There is a scheduled update coming soon that will update defi positions
+  const shouldDeferToScheduledUpdate = hasScheduledUpdate && !isManualUpdate
 
-  // Bypass the server-side cache if the last force update was more than 30s ago
-  const HALF_MINUTE_MS = 30000
+  // A nonce change means on-chain state changed, so refetch fresh.
+  if (hasNonceChangedSinceLastUpdate && !shouldDeferToScheduledUpdate) return DefiUpdateMode.Force
 
-  return Date.now() - (previousState?.lastForceApiUpdate || 0) >= HALF_MINUTE_MS
+  // Manual update with additional conditions
+  const isThrottledManualForceDue =
+    isManualUpdate &&
+    !!sessionIds.length &&
+    hasKeys &&
+    Date.now() - (previousState?.lastForceApiUpdate || 0) >= FORCE_API_UPDATE_COOLDOWN_MS
+  if (isThrottledManualForceDue) return DefiUpdateMode.Force
+
+  // If there isn't a successful update yet do a default update
+  // Example: extension boot
+  if (!previousState || !previousState.lastSuccessfulUpdate || isManualUpdate)
+    return DefiUpdateMode.Default
+
+  // In this case we don't care about defi positions so the age of the data doesn't matter, we can serve stale data from cache
+  // Example: background update
+  if (maxDataAgeMs < 0) return DefiUpdateMode.StaleOk
+
+  // If a specific maxDataAgeMs is set, then we rely on it instead of the default server-side cache age.
+  if (Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs) return DefiUpdateMode.StaleOk
+
+  return DefiUpdateMode.Default
+}
+
+/**
+ * Combines the modes of several batched requests into one (most aggressive mode wins because the request is shared)
+ */
+const mergeDefiUpdateModes = (modes: (DefiUpdateMode | undefined)[]): DefiUpdateMode => {
+  const definedModes = modes.filter((mode): mode is DefiUpdateMode => !!mode)
+  if (!definedModes.length) return DefiUpdateMode.Default
+
+  return definedModes.reduce((strongest, mode) =>
+    DEFI_UPDATE_MODE_RANK[mode] > DEFI_UPDATE_MODE_RANK[strongest] ? mode : strongest
+  )
 }
 
 /**
@@ -563,12 +647,12 @@ export {
   getAccountNetworksWithPositions,
   getAllAssetsAsHints,
   getAssetValue,
-  getCanSkipUpdate,
   getCustomProviderPositions,
+  getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
   getNewDefiState,
-  getShouldBypassServerSideCache,
   getUniqueMergedPositions,
+  mergeDefiUpdateModes,
   updatePositionsByProviderAssetPrices
 }

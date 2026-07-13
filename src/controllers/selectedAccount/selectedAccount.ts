@@ -1,25 +1,27 @@
-/* eslint-disable no-underscore-dangle */
 import { formatEther, getAddress, isAddress } from 'ethers'
 
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
+import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   ISelectedAccountController,
+  SelectedAccountBalanceByAccount,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
-  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
+  ensExpiryBannerId,
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
+  getEnsExpiryBanner
 } from '../../libs/banners/banners'
 import { AssetType } from '../../libs/defiPositions/types'
 import {
@@ -45,9 +47,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #networks: INetworksController | null = null
 
-  #keystore: IKeystoreController | null = null
-
   #providers: IProvidersController | null = null
+
+  #banner: IBannerController | null = null
+
+  #domains: IDomainsController | null = null
 
   account: Account | null = null
 
@@ -57,6 +61,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    * It is updated when the portfolio or defi positions controllers are updated.
    */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  balanceByAccounts: SelectedAccountBalanceByAccount = {}
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
@@ -81,23 +87,22 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     eventEmitterRegistry,
     storage,
     accounts,
-    keystore,
-    autoLogin
+    autoLogin,
+    banner
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
-    keystore: IKeystoreController
     autoLogin: IAutoLoginController
+    banner: IBannerController
   }) {
     super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts
-    this.#keystore = keystore
     this.#autoLogin = autoLogin
+    this.#banner = banner
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -108,7 +113,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
       this.#storage.get('selectedAccount', null),
-      this.#storage.get('selectedAccountDismissedBannerIds', [])
+      this.#storage.get('selectedAccountDismissedBannerIds', {})
     ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
@@ -120,15 +125,18 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   initControllers({
     portfolio,
     networks,
-    providers
+    providers,
+    domains
   }: {
     portfolio: IPortfolioController
     networks: INetworksController
     providers: IProvidersController
+    domains: IDomainsController
   }) {
     this.#portfolio = portfolio
     this.#networks = networks
     this.#providers = providers
+    this.#domains = domains
 
     this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
@@ -138,6 +146,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         this.updateSelectedAccountPortfolio()
       })
     }, 'selectedAccount')
+
+    this.#domains.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateDomainData', () => {
+        if (this.account) this.propagateUpdate()
+      })
+    })
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateErrors', () => {
@@ -223,9 +237,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account) return
 
-    const portfolioAccountState = structuredClone(
-      this.#portfolio.getAccountPortfolioState(this.account.addr)
-    )
+    const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
@@ -336,7 +348,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult = false
     }
 
+    // Update the balanceByAccount only when the portfolio is ready, because
+    // the user may select an account, set a balance of 0 and then switch to another account.
+    // (then the balance of the first account will remain 0 until it's selected again)
+    if (newSelectedAccountPortfolio.isAllReady) {
+      this.balanceByAccounts[this.account.addr] = this.portfolio.totalBalance
+    }
+
     this.portfolio = newSelectedAccountPortfolio
+    if (newSelectedAccountPortfolio.isAllReady) {
+      // since we will have survey banner that are dependant on account balance
+      // we need to make sure that the banners are updated are displayed after the balance is
+      // fully loaded, if the balance satisfies the banners requirements
+      this.#banner?.emitUpdateBanners()
+    }
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
@@ -480,38 +505,80 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
+  async dismissEnsExpiryBannerForTheSelectedAccount() {
+    if (!this.account) return
+
+    const expiry = this.#domains?.domains[getAddress(this.account.addr)]?.ensExpiry
+    if (!expiry) return
+
+    // Key the dismissal by expiry timestamp so a renewed name (new expiry) shows the banner again.
+    const dismissKey = `${this.account.addr}-${expiry.expiresAt}`
+
+    if (!this.dismissedBannerIds[ensExpiryBannerId]) this.dismissedBannerIds[ensExpiryBannerId] = []
+    if (!this.dismissedBannerIds[ensExpiryBannerId]!.includes(dismissKey))
+      this.dismissedBannerIds[ensExpiryBannerId]!.push(dismissKey)
+
+    await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds)
+    this.emitUpdate()
+  }
+
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
+    if (!this.account) return []
+
+    const banners: Banner[] = []
+
+    // ENS expiry banner
+    const ownDomainEntry = this.#domains?.domains[getAddress(this.account.addr)]
+    const ensExpiry = ownDomainEntry?.ensExpiry
+    if (ensExpiry && ownDomainEntry?.ens) {
+      const dismissKey = `${this.account.addr}-${ensExpiry.expiresAt}`
+      const isDismissed = !!this.dismissedBannerIds[ensExpiryBannerId]?.includes(dismissKey)
+
+      const ensExpiryBanner = isDismissed
+        ? null
+        : getEnsExpiryBanner({
+            accountAddr: this.account.addr,
+            ens: ownDomainEntry.ens,
+            expiresAt: ensExpiry.expiresAt,
+            gracePeriodEndsAt: ensExpiry.gracePeriodEndsAt
+          })
+      if (ensExpiryBanner) banners.push(ensExpiryBanner)
+    }
+
+    // DeFi positions banner
     if (
-      !this.account ||
-      !this.#networks ||
-      !this.#portfolio ||
-      !this.#networks.isInitialized ||
-      !this.portfolio.isAllReady
-    )
-      return []
+      this.#networks &&
+      this.#portfolio &&
+      this.#networks.isInitialized &&
+      this.portfolio.isAllReady
+    ) {
+      const defiPositionsCountOnDisabledNetworks =
+        this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
 
-    const defiPositionsCountOnDisabledNetworks =
-      this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
+      const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+        ? this.#networks.allNetworks.filter(
+            (n) =>
+              !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
+                `${this.account!.addr}-${n.chainId}`
+              )
+          )
+        : this.#networks.allNetworks
 
-    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
-      ? this.#networks.allNetworks.filter(
-          (n) =>
-            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
-              `${this.account!.addr}-${n.chainId}`
-            )
-        )
-      : this.#networks.allNetworks
+      banners.push(
+        ...getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+          defiPositionsCountOnDisabledNetworks,
+          networks: notDismissedNetworks,
+          accountAddr: this.account.addr
+        })
+      )
+    }
 
-    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
-      defiPositionsCountOnDisabledNetworks,
-      networks: notDismissedNetworks,
-      accountAddr: this.account.addr
-    })
+    return banners
   }
 
   toJSON() {

@@ -1,6 +1,8 @@
 import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
+import { createPublicClient, custom, PublicClient } from 'viem'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import getRootDomain from '../../utils/getRootDomain'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
@@ -10,6 +12,8 @@ const RPC_BATCH_CONFIG: Record<string, number> = {
   // Keep tatum.io config disabled - if restricted to 1 it hits their limit of 5 requests per minute anyways
   // 'tatum.io': 1 // batch calls are available for paid plans only (response 402)
 }
+
+const viemClientByProvider = new WeakMap<RPCProvider, PublicClient>()
 
 /** Some RPCs limit batching which causes immediate failures on our end, so configure the known ones */
 const getBatchCountFromUrl = (rpcUrl: string): number | undefined => {
@@ -56,4 +60,22 @@ const getRpcProvider = (
   return new JsonRpcProvider(rpcUrl, undefined, providerOptions)
 }
 
-export { getRpcProvider }
+const getProviderConnectionUrl = (network: NetworkInterface) => {
+  return network.selectedRpcUrl
+}
+
+const getViemClientForProvider = (provider: RPCProvider): PublicClient => {
+  const cached = viemClientByProvider.get(provider)
+  if (cached) return cached
+
+  const client = createPublicClient({
+    transport: custom({
+      request: ({ method, params }) => provider.send(method, params || [])
+    })
+  })
+
+  viemClientByProvider.set(provider, client)
+  return client
+}
+
+export { getProviderConnectionUrl, getRpcProvider, getViemClientForProvider }

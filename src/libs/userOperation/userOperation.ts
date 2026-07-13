@@ -8,16 +8,14 @@ import {
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
-  ERC_4337_ENTRYPOINT
+  ERC_4337_ENTRYPOINT,
+  SAFE_SENDER
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-//  TODO: dependency cycle
-// eslint-disable-next-line import/no-cycle
-import { AccountOp, callToTuple } from '../accountOp/accountOp'
-//  TODO: dependency cycle
-// eslint-disable-next-line import/no-cycle
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
+import { getSafeBroadcastTxn } from '../safe/safe'
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -33,10 +31,6 @@ export function getPaymasterSpoof() {
   const spoofSig = abiCoder.encode(['address'], [AMBIRE_PAYMASTER_SIGNER]) + SPOOF_SIGTYPE
   const simulationData = abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, spoofSig])
   return hexlify(concat([AMBIRE_PAYMASTER, simulationData]))
-}
-
-export function getSigForCalculations() {
-  return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
 }
 
 // get the call to give privileges to the entry point
@@ -110,6 +104,44 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
+export function getUserOpCalldata(account: Account, op: AccountOp, state: AccountOnchainState) {
+  const ambireAccount = new Interface(AmbireAccount.abi)
+
+  // executeBySender on SAFE_SENDER + inner call to the safe
+  if (account.safeCreation) {
+    // rotations
+    // the fee call should not be a part of the safe txn as it will revert
+    // it should be a part of the SAFE_SIGNER commitment though
+    const localOp = { ...op }
+    localOp.feeCall = undefined
+    const calls = [getSafeBroadcastTxn(localOp, state), op.feeCall ?? undefined].filter((x) => !!x)
+
+    return ambireAccount.encodeFunctionData('executeBySender', [calls])
+  }
+
+  return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+}
+
+/**
+ * Safe user operations are sent by the SAFE_SENDER.
+ * Also, they always use an unique nonce to prevent race conditions
+ * between safe users in Ambire
+ */
+function getSafeUserOperation(bundler: BUNDLER): UserOperation {
+  return {
+    sender: SAFE_SENDER,
+    nonce: concat([randomBytes(24), toBeHex(0, 8)]), // 1 / 10 ^ −52 collision chance,
+    callData: '0x',
+    callGasLimit: toBeHex(0),
+    verificationGasLimit: toBeHex(0),
+    preVerificationGas: toBeHex(0),
+    maxFeePerGas: toBeHex(0),
+    maxPriorityFeePerGas: toBeHex(0),
+    signature: '0x',
+    bundler
+  }
+}
+
 export function getUserOperation({
   account,
   accountState,
@@ -127,6 +159,8 @@ export function getUserOperation({
   eip7702Auth?: EIP7702Auth
   hasPendingUserOp?: boolean
 }): UserOperation {
+  if (account.safeCreation) return getSafeUserOperation(bundler)
+
   const uniqueNonce = concat([randomBytes(24), toBeHex(0, 8)]) // 1 / 10 ^ −52 collision chance
   const nonce = hasPendingUserOp ? uniqueNonce : toBeHex(accountState.erc4337Nonce)
   const userOp: UserOperation = {
@@ -232,7 +266,7 @@ export const parseLogs = (
     try {
       if (
         log.topics.length === 4 &&
-        (log.topics[1].toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
+        (log.topics[1]!.toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
       ) {
         // decode data for UserOperationEvent:
         // 'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'

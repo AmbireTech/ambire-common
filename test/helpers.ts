@@ -131,19 +131,13 @@ function produceMemoryStore(): Storage {
   }
 
   return {
-    get: (key?: string, defaultValue?: any): any => {
-      if (!key) {
-        return Object.fromEntries(
-          Object.entries(Object.fromEntries(storage)).map(([k, value]) => [k, formatValue(value)])
-        )
-      }
-
+    get: (async (key: string, defaultValue?: any): Promise<any> => {
       const serialized = storage.get(key)
 
       if (!serialized) return defaultValue
 
       return formatValue(serialized, defaultValue)
-    },
+    }) as Storage['get'],
     set: (key, value) => {
       storage.set(key, typeof value === 'string' ? value : stringify(value))
       return Promise.resolve(null)
@@ -270,7 +264,7 @@ const getAccountsInfo = async (
 ): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()], network, accounts)
+      getAccountState(providers[network.chainId.toString()]!, network, accounts, [])
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -278,7 +272,7 @@ const getAccountsInfo = async (
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.chainId, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex]![accIndex]]
         })
       )
     ]
@@ -412,6 +406,7 @@ const fetchWithAppVersion: Fetch = (input: RequestInfo, init?: RequestInitWithCu
 
 export {
   buildUserOp,
+  fetchWithAppVersion,
   getAccountGasLimits,
   getAccountsInfo,
   getDKIMValidatorData,
@@ -426,6 +421,5 @@ export {
   mockInternalKeys,
   produceMemoryStore,
   sendFunds,
-  waitForAccountsCtrlFirstLoad,
-  fetchWithAppVersion
+  waitForAccountsCtrlFirstLoad
 }

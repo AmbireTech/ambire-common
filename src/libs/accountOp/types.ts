@@ -8,12 +8,20 @@ export enum AccountOpStatus {
   Failure = 'failure',
   Rejected = 'rejected',
   UnknownButPastNonce = 'unknown-but-past-nonce',
-  BroadcastButStuck = 'broadcast-but-stuck'
+  BroadcastButStuck = 'broadcast-but-stuck',
+  // use this status as representational in activity/history
+  // only for non-atomic batches that have incompleted transactions
+  PartiallyComplete = 'partially-complete'
 }
+
+export type CallTuple = [string | undefined, string, string]
 
 export interface Call {
   id?: string
-  to: string
+  /**
+   * Omitted in case of contract deployment transactions
+   */
+  to?: string
   value: bigint
   data: string
   txnId?: Hex
@@ -29,4 +37,10 @@ export interface Call {
   dapp?: Dapp
   dappPromiseId?: string
   activeRouteId?: string
+  /**
+   * Added for transfer requests, to keep track of the domain that was used to
+   * resolve the recipient address. We store this address after the txn is confirmed
+   * and then use it to warn the user if the ENS resolves to a different address in the future.
+   */
+  recipientDomain?: string
 }

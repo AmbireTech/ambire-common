@@ -4,17 +4,21 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-/* eslint-disable no-underscore-dangle */
+import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
-import { getRpcProvider } from '../../services/provider'
+import { getProviderConnectionUrl, getRpcProvider } from '../../services/provider'
+import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 const STATUS_WRAPPED_METHODS = {
   toggleBatching: 'INITIAL'
 } as const
 
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
+
+const batchMaxSize = 24576
 
 /**
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
@@ -30,6 +34,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   #providers: RPCProviders = {}
 
   #providersProxy: RPCProviders
+
+  #providerInitPromises: {
+    [chainId: string]:
+      | {
+          connectionUrl: string
+          promise: Promise<void>
+        }
+      | undefined
+  } = {}
 
   #scheduledResolveAssetInfoActions: {
     [chainId: string]:
@@ -84,7 +97,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
           const chainId = BigInt(prop.toString())
           const network = getNetworks().find((n) => n.chainId === chainId)
-          if (network) this.#autoInitProvider(chainId)
+          if (network) void this.#autoInitProvider(chainId)
         } catch (error) {
           console.error(`Failed to auto set provider for chainId: ${prop.toString()}`, error)
         }
@@ -113,7 +126,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       }
     })
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -136,15 +148,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   async init({ networks }: { networks: Network[] }) {
     await this.initialLoadPromise
 
-    networks.forEach((n) => this.setProvider(n))
+    await Promise.all(networks.map((n) => this.setProvider(n)))
     this.emitUpdate()
   }
 
-  #autoInitProvider(chainId: bigint, rpcUrl?: string) {
+  async #autoInitProvider(chainId: bigint, rpcUrl?: string) {
     const network = this.#getNetworks().find((n) => n.chainId === chainId)
 
     if (network) {
-      this.setProvider(network)
+      await this.setProvider(network)
     } else if (rpcUrl) {
       this.#providers[chainId.toString()] = getRpcProvider([rpcUrl], chainId, rpcUrl)
     }
@@ -152,38 +164,80 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     this.emitUpdate()
   }
 
-  setProvider(network: Network, opts?: { forceUpdate: boolean }) {
+  async setProvider(network: Network, opts?: { forceUpdate: boolean }) {
     const { forceUpdate = false } = opts || {}
     const stringChainId = network.chainId.toString()
     const provider = this.#providers[stringChainId]
-    const isRpcUrlChanged = provider?._getConnection().url !== network.selectedRpcUrl
+    const providerConnectionUrl = getProviderConnectionUrl(network)
+    const isRpcUrlChanged = provider?._getConnection().url !== providerConnectionUrl
 
-    if (!provider || isRpcUrlChanged || forceUpdate) {
+    if (provider && !isRpcUrlChanged && !forceUpdate) return
+
+    const initPromise = this.#providerInitPromises[stringChainId]
+    if (initPromise) {
+      await initPromise.promise.catch(() => {})
+
+      const initializedProvider = this.#providers[stringChainId]
+      if (
+        initializedProvider &&
+        initializedProvider._getConnection().url === providerConnectionUrl &&
+        !forceUpdate
+      ) {
+        return
+      }
+    }
+
+    const nextInitPromise = (async () => {
       const oldRPC = this.#providers[stringChainId]
+      const batchMaxCount = this.isBatchingEnabled
+        ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
+        : 1
+
+      let nextProvider: RPCProvider
 
       try {
         if (oldRPC) oldRPC.destroy()
+        delete this.#providers[stringChainId]
       } catch (error: any) {
         if (error?.message !== 'provider destroyed; cancelled request') {
           this.emitError({ error, message: error.message, level: 'silent', sendCrashReport: true })
         }
       }
 
-      const batchMaxCount = this.isBatchingEnabled
-        ? getProviderBatchMaxCount(network, network.selectedRpcUrl)
-        : 1
-
-      this.#providers[stringChainId] = getRpcProvider(
-        network.rpcUrls,
-        network.chainId,
-        network.selectedRpcUrl,
-        {
+      try {
+        nextProvider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
           batchMaxCount,
-          batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
-        }
-      )
+          batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
+        })
+      } catch (error: any) {
+        this.emitError({
+          error,
+          message: `Failed to initialize provider for ${network.name}`,
+          level: 'major',
+          sendCrashReport: true
+        })
+        nextProvider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
+          batchMaxCount,
+          batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
+        })
+      }
+
+      this.#providers[stringChainId] = nextProvider
       this.#providers[stringChainId].isWorking = true
       this.#providers[stringChainId]!.batchMaxCount = batchMaxCount
+    })()
+
+    this.#providerInitPromises[stringChainId] = {
+      connectionUrl: providerConnectionUrl,
+      promise: nextInitPromise
+    }
+
+    try {
+      await nextInitPromise
+    } finally {
+      if (this.#providerInitPromises[stringChainId]?.promise === nextInitPromise) {
+        delete this.#providerInitPromises[stringChainId]
+      }
     }
   }
 
@@ -209,7 +263,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       this.isBatchingEnabled = !this.isBatchingEnabled
       await this.#storage.set('isBatchingEnabled', this.isBatchingEnabled)
 
-      this.#getNetworks().forEach((n) => this.setProvider(n, { forceUpdate: true }))
+      await Promise.all(this.#getNetworks().map((n) => this.setProvider(n, { forceUpdate: true })))
       this.emitUpdate()
     })
   }
@@ -232,7 +286,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
     const provider: RPCProvider = getRpcProvider([rpcUrl], chainId, rpcUrl, {
       batchMaxCount,
-      batchMaxSize: network?.rpcNoStateOverride ? 24576 : undefined
+      batchMaxSize: network?.rpcNoStateOverride ? batchMaxSize : undefined
     })
     provider.isWorking = true
     provider.batchMaxCount = batchMaxCount
@@ -266,7 +320,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
 
       return this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: false,
         error: 'Provider not found'
@@ -283,7 +336,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
 
       return this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: false,
         error: `${method} is not a valid JsonRpcProvider method`
@@ -294,7 +346,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       const result = await (fn as Function).apply(provider, args)
 
       this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: true,
         res: result
@@ -302,7 +353,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     } catch (error: any) {
       this.emitError({ error, message: error.message, level: 'major' })
       this.#sendUiMessage({
-        type: 'RpcCallRes',
         requestId,
         ok: false,
         error: error.message
@@ -334,7 +384,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         level: 'silent'
       })
       return this.#sendUiMessage({
-        type: 'CallContract',
         requestId,
         ok: false,
         error: `Network with chainId: ${chainId} not found`
@@ -343,7 +392,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
     const provider = this.providers[network.chainId.toString()]
     const contract = new Contract(address, [abi], provider)
-    let error: any = undefined
 
     if (typeof contract[method] !== 'function') {
       this.emitError({
@@ -353,21 +401,113 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       })
 
       return this.#sendUiMessage({
-        type: 'CallContract',
         requestId,
         ok: false,
         error: `${method.toString()} is not a valid Contract method`
       })
     }
-    const result = await (contract[method] as Function).apply(contract, args)
 
-    this.#sendUiMessage({
-      type: 'CallContract',
-      requestId,
-      ok: !!result,
-      res: result ?? undefined,
-      error: error?.message ?? undefined
-    })
+    try {
+      const result = await contract[method](...args)
+
+      this.#sendUiMessage({
+        requestId,
+        ok: true,
+        res: result ?? undefined
+      })
+    } catch (error: any) {
+      this.emitError({ error, message: error.message, level: 'silent' })
+      this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: error.message
+      })
+    }
+  }
+
+  /**
+   * Use this to communicate balanche changes for a transaction
+   * to the external benzin
+   */
+  async getTokenBalancesOnBlockAndSendResToUi(
+    {
+      accountId,
+      chainId,
+      tokenAddrs,
+      blockTag,
+      accountAddr,
+      receipts
+    }: {
+      accountId: string
+      chainId: bigint
+      tokenAddrs: string[]
+      blockTag: number
+      accountAddr?: string
+      receipts?: BalanceChangesReceipt[]
+    },
+    requestId: string
+  ) {
+    const network = this.#getNetworks().find((n) => n.chainId === chainId)
+
+    if (!network) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: `Network with chainId: ${chainId} not found`
+      })
+    }
+
+    const provider = this.providers[network.chainId.toString()]!
+
+    if (!provider) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: `Provider for chainId: ${chainId} not found`
+      })
+    }
+
+    try {
+      const portfolio = new Portfolio(fetch as any, provider, network)
+
+      // create a wrapper function so that we could pass it correctly
+      // to the required type for getAccountOpBalanceChanges.
+      // the final goal is just calling portfolio.getTokensByAddresses
+      const getTokenBalancesOnBlock = (
+        portfolioAccountId: string,
+        _chainId: bigint,
+        portfolioTokenAddrs: string[],
+        portfolioBlockTag: GetOptions['blockTag'],
+        portfolioAccountAddr?: string
+      ) =>
+        portfolio.getTokensByAddresses(
+          portfolioAccountAddr || portfolioAccountId,
+          portfolioTokenAddrs,
+          { blockTag: portfolioBlockTag }
+        )
+
+      const result = await getAccountOpBalanceChanges({
+        accountAddr: accountAddr || accountId,
+        chainId,
+        tokenAddrs,
+        receiptBlockNumber: blockTag,
+        getTokenBalancesOnBlock,
+        receipts,
+        debugTraceTransaction: getDebugTraceTransaction(chainId, provider)
+      })
+
+      return this.#sendUiMessage({
+        requestId,
+        ok: true,
+        res: result
+      })
+    } catch (error: any) {
+      return this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: error?.message || 'Failed to get token balances on block'
+      })
+    }
   }
 
   async #executeBatchedFetch(network: Network): Promise<void> {

@@ -1,38 +1,38 @@
-import { Account } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
-import { UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 
 export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
-export const getAccountOpsForSimulation = (
-  account: Account,
-  visibleUserRequests: UserRequest[],
-  networks: Network[]
-): { [key: string]: AccountOp[] } | undefined => {
-  const isSmart = isSmartAccount(account)
-  const accountOps = visibleUserRequests
-    .filter((r) => r.kind === 'calls')
-    .map((a) => a.signAccountOp.accountOp)
-    .filter((op) => {
-      if (op.accountAddr !== account.addr) return false
+const getNonce = (req: CallsUserRequest): bigint | null => {
+  const nonce = req.signAccountOp.accountOp.safeTx?.nonce ?? req.signAccountOp.accountOp.nonce
 
-      const networkData = networks.find((n) => n.chainId === op.chainId)
+  return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)
+}
 
-      // We cannot simulate if the account isn't smart and the network's RPC doesn't support
-      // state override
-      return isSmart || (networkData && !networkData.rpcNoStateOverride)
-    })
+/**
+ * Whether to simulate account ops if the request window is closed or the current
+ * request is different.
+ */
+export const getShouldSimulateInTheBackground = (
+  currentReq: CallsUserRequest,
+  callUserRequests: CallsUserRequest[]
+) => {
+  // simulations should get persisted for all non-Safe accounts
+  if (!currentReq.signAccountOp.account.safeCreation) return true
 
-  if (!accountOps.length) return undefined
+  // check if there are other requests with a conflicting nonce to this one.
+  // If there are, do not simulate this in the background
+  const currentReqNonce = getNonce(currentReq)
+  const hasConflictingNonceUserRequest = callUserRequests.some((r) => {
+    const nonce = getNonce(r)
 
-  return accountOps.reduce((acc: any, accountOp) => {
-    const { chainId } = accountOp
+    return (
+      currentReqNonce !== null &&
+      nonce !== null &&
+      r.id !== currentReq.id &&
+      r.signAccountOp.accountOp.chainId === currentReq.signAccountOp.accountOp.chainId &&
+      nonce === currentReqNonce
+    )
+  })
 
-    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
-
-    acc[chainId.toString()].push(accountOp)
-    return acc
-  }, {})
+  return !hasConflictingNonceUserRequest
 }

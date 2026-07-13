@@ -148,7 +148,8 @@ export const getProjectedRewardsStatsAndToken = (
         rewardsType: 'wallet-projected-rewards' as const,
         canTopUpGasTank: false,
         isFeeToken: false
-      }
+      },
+      marketDataIn: []
     },
     data
   }

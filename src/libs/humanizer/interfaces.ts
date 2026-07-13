@@ -4,6 +4,18 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
+export interface HumanizerErc7730Row {
+  label: string
+  value: HumanizerVisualization[]
+}
+
+export interface HumanizerErc7730Visualization {
+  type: 'erc7730'
+  title?: string
+  dapp?: Call['dapp']
+  rows: HumanizerErc7730Row[]
+}
+
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
@@ -17,6 +29,7 @@ export type HumanizerVisualization = (
         | 'image'
         | 'link'
         | 'text'
+        | 'break'
       url?: string
       address?: string
       content?: string
@@ -24,6 +37,7 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
     }
+  | HumanizerErc7730Visualization
   | {
       type: 'token'
       address: string
@@ -31,25 +45,33 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
 ) & {
-  isHidden?: boolean
   id: number
+  url?: string
+  address?: string
   content?: string
+  value?: bigint
   isBold?: boolean
+  warning?: boolean
+  chainId?: bigint
   verification?: BlacklistedStatus
+  mlMi?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  isFallback?: boolean
   to?: string
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  canHideDropdownArrow?: boolean
 }
 export interface HumanizerWarning {
   content: string
   blocking?: boolean
   code: string
+  address?: string
 }
 export interface Ir {
   calls: IrCall[]
@@ -58,7 +80,7 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta): IrCall[]
+  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta?: HumanizerMeta): IrCall[]
 }
 
 export interface HumanizerTypedMessageModule {
@@ -72,6 +94,7 @@ export interface AbiFragment {
 }
 
 export interface HumanizerMetaAddress {
+  logo?: string
   name?: string
   // undefined means it is not a token
   token?: { symbol: string; decimals?: number }

@@ -23,12 +23,6 @@ interface NFT {
 }
 
 contract NFTGetter is Simulation {
-  // During simulation, we return the delta between the collection before and after the simulation.
-  // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
-  // While returning the token address directly in the before/after collection would be more straightforward,
-  // it would result in heavier data for larger token portfolios, making it more CPU-intensive to parse with ethers.
-  address[] private deltaAddressesMapping;
-
   struct NFTCollectionMetadata {
     string name;
     string symbol;
@@ -117,7 +111,7 @@ contract NFTGetter is Simulation {
     NFTCollectionMetadata[] memory collectionsA,
     NFTCollectionMetadata[] memory collectionsB,
     NFT[] memory collections
-  ) public returns (NFTCollectionMetadata[] memory) {
+  ) internal pure returns (NFTCollectionMetadata[] memory, address[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < collectionsA.length; i++) {
@@ -130,7 +124,7 @@ contract NFTGetter is Simulation {
     }
 
     NFTCollectionMetadata[] memory delta = new NFTCollectionMetadata[](deltaSize);
-    deltaAddressesMapping = new address[](deltaSize);
+    address[] memory deltaAddressesMapping = new address[](deltaSize);
 
     // Second loop to populate the delta array
     // Separate index for the delta array
@@ -146,7 +140,7 @@ contract NFTGetter is Simulation {
       }
     }
 
-    return delta;
+    return (delta, deltaAddressesMapping);
   }
 
   function simulateAndGetAllNFTs(
@@ -170,6 +164,7 @@ contract NFTGetter is Simulation {
       address[] memory // deltaAddressesMapping
     )
   {
+    address[] memory deltaAddressesMapping = new address[](0);
     before.collections = getAllNFTs(account, collections, tokenIds, tokenPerCollectionLimit);
 
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
@@ -194,12 +189,11 @@ contract NFTGetter is Simulation {
         tokenPerCollectionLimit
       );
 
-      NFTCollectionMetadata[] memory deltaAfter = getDelta(
+      (afterSimulation.collections, deltaAddressesMapping) = getDelta(
         before.collections,
         afterSimulation.collections,
         collections
       );
-      afterSimulation.collections = deltaAfter;
     }
 
     return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);

@@ -1,220 +1,282 @@
-// @ts-ignore
-import constants from 'bip44-constants'
-import {
-  BigNumberish,
-  Contract,
-  dnsEncode,
-  EnsResolver,
-  getBigInt,
-  isAddress,
-  isError,
-  isHexString,
-  namehash
-} from 'ethers'
+import { isAddress, labelhash, namehash } from 'viem'
+import { normalize } from 'viem/ens'
 
-// @ts-ignore
-import { normalize } from '@ensdomains/eth-ens-namehash'
+import { RPCProvider } from '@/interfaces/provider'
+import { fromDescriptor } from '@/libs/deployless/deployless'
+import { getViemClientForProvider } from '@/services/provider'
 
-import { RPCProvider } from '../../interfaces/provider'
+import EnsGetter from '../../../contracts/compiled/EnsGetter.json'
 
-const BIP44_BASE_VALUE = 2147483648
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
+const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
+export const NAMOSHI_UNIVERSAL_RESOLVER = '0xc5Ed1fA34AD1F23F0cD2E36DB288290488B1B493'
+export const ENS_EXPIRY_WARN_WINDOW_IN_MS = 60 * 24 * 60 * 60 * 1000
+const LOCAL_BATCH_GATEWAY_URL = 'x-batch-gateway:true'
 
-const normalizeDomain = (domain: string) => {
-  try {
-    return normalize(domain)
-  } catch (e) {
-    return null
+const ETHEREUM_COIN_TYPE = 60n
+const REVERSE_LOOKUP_CHUNK_SIZE = 50
+
+// .eth BaseRegistrar (mainnet and sepolia share the same address).
+export const ENS_BASE_REGISTRAR = '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85'
+// NameWrapper. Stores expiry for wrapped names, including subnames. For a wrapped `.eth` 2LD, its
+// expiry already includes the grace-period offset, so no extra grace is added on that path.
+export const ENS_NAME_WRAPPER = '0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401'
+export const ENS_NAME_WRAPPER_SEPOLIA = '0x0635513f179D50A207757E05759CbD106d7dFcE8'
+
+export type NameExpiry = {
+  /** Registration expiry, in ms. Renewal is due at this point. */
+  expiresAt: number
+  /** End of the grace period, in ms. The name can be sniped only after this. */
+  gracePeriodEndsAt: number
+  updatedAt: number
+}
+
+export type ReverseLookupResult = {
+  [address: string]: {
+    name: string | null
+    failed: boolean
   }
 }
 
-function getNormalisedCoinType(bip44Item: number[][]) {
-  const firstItem = bip44Item[0]
-
-  if (!firstItem) return null
-  return firstItem.length && firstItem[0] ? firstItem[0] - BIP44_BASE_VALUE : null
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
 }
 
-async function resolveForCoin(resolver: any, bip44Item?: number[][]) {
-  if (bip44Item && bip44Item.length === 1) {
-    const coinType = getNormalisedCoinType(bip44Item)
-    if (!coinType) return null
-    return resolver.getAddress(coinType)
-  }
-  return resolver.getAddress()
+export function getIsNamoshiDomain(domain: string) {
+  return domain.endsWith('.btc') || domain.endsWith('.citrea')
 }
 
 export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
-// @TODO: Get RPC provider url from settings controller
+/**
+ * Resolves an ENS/Namoshi domain to an address, avatar and (for ENS) its registration expiry.
+ *
+ * Can work with a custom universal resolver if the domain is a Namoshi domain, otherwise it defaults to the ENS universal resolver.
+ */
 async function resolveENSDomain({
+  provider,
   domain,
-  bip44Item,
-  getResolver
+  options
 }: {
+  provider: RPCProvider
   domain: string
-  bip44Item?: number[][]
-  getResolver: (domainName: string) => Promise<EnsResolver | null>
+  options?: {
+    isNamoshiDomain?: boolean
+    /** NameWrapper override forwarded to `getEnsExpiry` (mainnet default, sepolia on testnet). */
+    nameWrapperAddress?: string
+  }
 }): Promise<{
   address: string
   avatar: string | null
+  expiry: NameExpiry | null
 }> {
-  const normalizedDomainName = normalizeDomain(domain)
-  if (!normalizedDomainName) return { address: '', avatar: null }
-  const resolver = await getResolver(normalizedDomainName)
+  const normalizedDomainName = normalize(domain)
+  if (!normalizedDomainName) return { address: '', avatar: null, expiry: null }
 
-  if (!resolver)
-    return {
-      address: '',
-      avatar: null
-    }
+  const client = getViemClientForProvider(provider)
+  const universalResolverAddress = !options?.isNamoshiDomain
+    ? ENS_UNIVERSAL_RESOLVER
+    : NAMOSHI_UNIVERSAL_RESOLVER
 
-  try {
-    const [ethAddress, avatar] = await Promise.all([
-      resolver.getAddress().catch(() => null),
-      resolver.getAvatar().catch(() => null)
-    ])
-    const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
+  const [address, avatar, expiry] = await Promise.all([
+    client.getEnsAddress({ name: normalizedDomainName, universalResolverAddress }),
+    client.getEnsAvatar({ name: normalizedDomainName, universalResolverAddress }),
+    // Namoshi domains live on a different chain without the ENS registrar/NameWrapper, so they have
+    // no ENS expiry to read.
+    options?.isNamoshiDomain
+      ? Promise.resolve(null)
+      : getEnsExpiry(provider, {
+          name: normalizedDomainName,
+          addresses: { nameWrapper: options?.nameWrapperAddress }
+        })
+  ])
 
-    return {
-      address: isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || '',
-      avatar
-    }
-  } catch (e: any) {
-    // If the error comes from an internal server error don't
-    // show it to the user, because it happens when a domain
-    // doesn't exist and we already show a message for that.
-    // https://dnssec-oracle.ens.domains/ 500 (ISE)
-    if (e.message?.includes('500_SERVER_ERROR'))
-      return {
-        address: '',
-        avatar: null
-      }
-
-    throw e
+  return {
+    address: address || '',
+    avatar,
+    expiry
   }
 }
 
-function getBip44Items(coinTicker: string) {
-  if (!coinTicker) return null
-  return constants.filter((item: string[]) => item[1] === coinTicker)
-}
-
 /**
- * Returns the reverse name for an address and coin type
- * Following ENSIP-19: https://docs.ens.domains/ensip/19
+ * Batches the reverse lookup (address -> primary name) for many addresses into deployless.
+ *
+ * CCIP-read (EIP-3668) reverse records cannot be resolved inside a single `eth_call` (there is
+ * no client-side gateway handling), so the contract flags them as `needsOffchainLookup` and we
+ * fallback to viem's `getEnsName` for just those addresses.
  */
-function getReverseName(address: string, paramCoinType: BigNumberish = 60) {
-  let coinType = paramCoinType
+async function reverseLookupEns(
+  addresses: string[],
+  provider: RPCProvider,
+  options?: {
+    isNamoshiDomain?: boolean
+  }
+): Promise<ReverseLookupResult> {
+  if (!addresses.length) return {}
 
-  if (!(address.length > 2 && isHexString(address)))
-    throw new Error('address must be non-empty hex string')
+  const universalResolverAddress = !options?.isNamoshiDomain
+    ? ENS_UNIVERSAL_RESOLVER
+    : NAMOSHI_UNIVERSAL_RESOLVER
 
-  coinType = getBigInt(coinType, 'coinType')
-  return `${address.toLowerCase().slice(2)}.${
-    // eslint-disable-next-line no-nested-ternary
-    coinType === 60n ? 'addr' : coinType === 0x80000000n ? 'default' : coinType.toString(16)
-  }.reverse`
-}
+  const result: ReverseLookupResult = {}
+  const offchainLookupAddresses: string[] = []
 
-/**
- * Get the name from a reverse resolver, handling wildcard resolvers (ENSIP-10)
- * This replicates the logic from the ethers.js PR #4632
- */
-async function getNameFromResolver(
-  resolver: EnsResolver,
-  reverseName: string
-): Promise<null | string> {
-  // Create a new resolver contract with the latest ABI
-  // as Ether's doesn't include the name(bytes32) function
-  const resolverContract = new Contract(
-    resolver.address,
-    [
-      'function supportsInterface(bytes4) view returns (bool)',
-      'function resolve(bytes, bytes) view returns (bytes)',
-      'function name(bytes32) view returns (string)'
-    ],
-    resolver.provider
+  const deploylessEnsGetter = fromDescriptor(provider, EnsGetter, true)
+
+  const addressChunks = chunkArray(addresses, REVERSE_LOOKUP_CHUNK_SIZE)
+  const chunkResults = await Promise.allSettled(
+    addressChunks.map((addressChunk) =>
+      deploylessEnsGetter.call('getNames', [
+        universalResolverAddress,
+        addressChunk,
+        ETHEREUM_COIN_TYPE,
+        [LOCAL_BATCH_GATEWAY_URL]
+      ])
+    )
   )
 
-  const node = namehash(reverseName)
+  addressChunks.forEach((addressChunk, chunkIndex) => {
+    const chunkResult = chunkResults[chunkIndex]
 
-  // Check if this is a wildcard resolver (ENSIP-10) https://docs.ens.domains/ensip/10
-  let isWildcard = false
-  try {
-    isWildcard = await resolverContract.supportsInterface!('0x9061b923')
-  } catch {
-    // If supportsInterface fails, assume it's not a wildcard resolver
-    isWildcard = false
-  }
+    if (!chunkResult || chunkResult.status === 'rejected') {
+      if (chunkResult?.status === 'rejected') {
+        console.warn('batched reverse lookup chunk failed', chunkResult.reason)
+      }
+      addressChunk.forEach((address) => {
+        result[address] = { name: null, failed: true }
+      })
+      return
+    }
 
-  let name: string
-  if (isWildcard) {
-    // For wildcard resolvers, use resolve(bytes,bytes)
-    const calldata = resolverContract.interface.encodeFunctionData('name', [node])
+    addressChunk.forEach((address, index) => {
+      if (!chunkResult.value) return
 
-    const result = await resolverContract.resolve!(dnsEncode(reverseName), calldata, {
-      enableCcipRead: true
+      const reverseResult = chunkResult.value[index] as
+        | { resolvedName: string; hasName: boolean; needsOffchainLookup: boolean }
+        | undefined
+
+      if (reverseResult?.needsOffchainLookup) {
+        offchainLookupAddresses.push(address)
+        return
+      }
+
+      result[address] = {
+        name: reverseResult?.hasName ? reverseResult.resolvedName || null : null,
+        failed: false
+      }
     })
+  })
 
-    name = resolverContract.interface.decodeFunctionResult('name', result)[0]
-  } else {
-    // For regular resolvers, call name(bytes32) directly
-    name = await resolverContract.name!(node, {
-      enableCcipRead: true
-    })
+  if (offchainLookupAddresses.length) {
+    const client = getViemClientForProvider(provider)
+
+    await Promise.all(
+      offchainLookupAddresses.map(async (address) => {
+        try {
+          const name = await client.getEnsName({
+            address: address as `0x${string}`,
+            universalResolverAddress,
+            coinType: ETHEREUM_COIN_TYPE
+          })
+          result[address] = { name: name || null, failed: false }
+        } catch (e) {
+          console.warn('CCIP-read reverse lookup failed for address', address, e)
+          result[address] = { name: null, failed: true }
+        }
+      })
+    )
   }
 
-  if (name == null || name === '0x' || name === '') {
-    return null
+  return result
+}
+
+async function getEnsAvatar(
+  name: string,
+  provider: RPCProvider,
+  options?: {
+    isNamoshiDomain?: boolean
   }
-  return name
+) {
+  const normalizedName = normalize(name)
+  if (!normalizedName) return null
+
+  const client = getViemClientForProvider(provider)
+
+  return client.getEnsAvatar({
+    name: normalizedName,
+    universalResolverAddress: !options?.isNamoshiDomain
+      ? ENS_UNIVERSAL_RESOLVER
+      : NAMOSHI_UNIVERSAL_RESOLVER
+  })
 }
 
-async function reverseLookupEns(address: string, provider: RPCProvider) {
-  const reverseName = getReverseName(address)
+// Clamp to the max MS a JS Date
+const MAX_SAFE_MS = 8_640_000_000_000_000
 
-  try {
-    const revResolver = await provider.getResolver(reverseName)
+const toMs = (seconds: bigint): number => {
+  const ms = seconds * 1000n
+  return ms > BigInt(MAX_SAFE_MS) ? MAX_SAFE_MS : Number(ms)
+}
 
-    if (!revResolver) {
-      return null
-    }
+const isDotEth2ld = (labels: string[]): boolean => labels.length === 2 && labels[1] === 'eth'
 
-    const name = await getNameFromResolver(revResolver, reverseName)
+export type GetEnsExpiryParams = {
+  /** The name, e.g. `name.eth`, `sub.name.eth`, `name.com`. */
+  name: string
+  /**
+   * Force a specific source contract.
+   * Omit to let the name shape decide (.eth 2LD -> registrar, else -> nameWrapper).
+   */
+  contract?: 'registrar' | 'nameWrapper'
+  /** Override contract addresses (defaults are Ethereum mainnet). */
+  addresses?: { baseRegistrar?: string; nameWrapper?: string }
+}
 
-    if (!name) return null
+/**
+ * Returns the expiry of an ENS name.
+ * Does two things depending on the name:
+ *   - `.eth` 2LD (e.g. `name.eth`): read from the .eth BaseRegistrar, which gives the true
+ *     registration expiry plus a separate GRACE_PERIOD. This holds whether or not the 2LD is wrapped.
+ *   - everything else (subnames like `sub.name.eth`, wrapped DNS names like `name.com`): read from
+ *     the NameWrapper via `getData`, which has no grace period, so `gracePeriodEndsAt === expiresAt`.
+ */
+async function getEnsExpiry(
+  provider: RPCProvider,
+  { name, contract, addresses }: GetEnsExpiryParams
+): Promise<NameExpiry | null> {
+  const normalized = normalize(name)
+  const labels = normalized.split('.')
+  const [firstLabel = ''] = labels
 
-    // Perform roundtrip check: name -> address should match original address
-    // As per https://docs.ens.domains/resolution#reverse-resolution
-    const resolver = await provider.getResolver(name)
+  const useRegistrar = contract === 'registrar' || (contract === undefined && isDotEth2ld(labels))
 
-    if (!resolver) return null
+  const baseRegistrar = addresses?.baseRegistrar ?? ENS_BASE_REGISTRAR
+  const nameWrapper = addresses?.nameWrapper ?? ENS_NAME_WRAPPER
 
-    const expect = await resolver.getAddress(60)
+  // labelhash(first label) is the registrar token id; namehash(full name) is the wrapper node.
+  const id = useRegistrar ? BigInt(labelhash(firstLabel)) : BigInt(namehash(normalized))
 
-    if (expect && expect.toLowerCase() === address.toLowerCase()) {
-      return name
-    }
+  const deploylessEnsGetter = fromDescriptor(provider, EnsGetter, true)
+  const { expiry, gracePeriod, blockTimestamp } = (await deploylessEnsGetter.call('getExpiry', [
+    useRegistrar,
+    baseRegistrar,
+    nameWrapper,
+    id
+  ])) as { expiry: bigint; gracePeriod: bigint; blockTimestamp: bigint }
 
-    return null
-  } catch (error) {
-    // No data was returned from the resolver
-    if (isError(error, 'BAD_DATA') && error.value === '0x') {
-      return null
-    }
-    // Something reverted
-    if (isError(error, 'CALL_EXCEPTION')) {
-      return null
-    }
-    throw error
+  if (expiry === 0n) return null
+
+  return {
+    expiresAt: toMs(expiry),
+    gracePeriodEndsAt: toMs(expiry + gracePeriod),
+    updatedAt: toMs(blockTimestamp)
   }
 }
 
-async function getEnsAvatar(name: string, provider: RPCProvider) {
-  return provider.getAvatar(name)
-}
-
-export { resolveENSDomain, getBip44Items, getEnsAvatar, reverseLookupEns }
+export { resolveENSDomain, getEnsAvatar, reverseLookupEns, getEnsExpiry }

@@ -9,9 +9,14 @@ import {
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
+import { CallsUserRequest } from '../../interfaces/userRequest'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
+import { sortSigs } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -31,6 +36,17 @@ export class ContinuousUpdatesController extends EventEmitter {
     return this.#accountsOpsStatusesInterval
   }
 
+  restartAccountsOpsStatusesInterval({ runImmediately = false } = {}) {
+    const allBroadcastedButNotConfirmed = Object.values(
+      this.#main.activity.broadcastedButNotConfirmed
+    ).flat()
+
+    this.#accountsOpsStatusesInterval.restart({
+      timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed),
+      runImmediately
+    })
+  }
+
   #accountStateLatestInterval: IRecurringTimeout
 
   get accountStateLatestInterval() {
@@ -46,6 +62,10 @@ export class ContinuousUpdatesController extends EventEmitter {
   #accountStateRetriesByNetwork: {
     [chainId: string]: number
   } = {}
+
+  #safeGlobalTxnInterval: IRecurringTimeout
+
+  #safeGlobalMessageInterval: IRecurringTimeout
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -88,7 +108,9 @@ export class ContinuousUpdatesController extends EventEmitter {
       }
     })
     this.#main.ui.uiEvent.on('removeView', () => {
-      if (!this.#main.ui.views.length) {
+      // Don't restart the timeout of the extension is locked to not overwrite the longer timeout set on lock
+      // How it could happen: the user locks the extension manually and closes the popup
+      if (!this.#main.ui.views.length && this.#main.keystore.isUnlocked) {
         this.#updatePortfolioInterval.restart({
           timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         })
@@ -120,6 +142,20 @@ export class ContinuousUpdatesController extends EventEmitter {
       8000,
       this.emitError.bind(this),
       'fastAccountStateReFetchTimeout'
+    )
+
+    this.#safeGlobalTxnInterval = new RecurringTimeout(
+      this.#resolveConfirmedSafeTxns.bind(this),
+      10000,
+      this.emitError.bind(this),
+      'safeGlobalTxnInterval'
+    )
+
+    this.#safeGlobalMessageInterval = new RecurringTimeout(
+      this.#resolveConfirmedSafeMessages.bind(this),
+      11000,
+      this.emitError.bind(this),
+      'resolveConfirmedSafeMessages'
     )
 
     this.#main.swapAndBridge.onUpdate(() => {
@@ -163,7 +199,9 @@ export class ContinuousUpdatesController extends EventEmitter {
       ).flat()
 
       if (allBroadcastedButNotConfirmed.length) {
-        this.#accountsOpsStatusesInterval.start()
+        this.#accountsOpsStatusesInterval.start({
+          timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed)
+        })
       } else {
         this.#accountsOpsStatusesInterval.stop()
       }
@@ -178,15 +216,13 @@ export class ContinuousUpdatesController extends EventEmitter {
     await this.#main.initialLoadPromise
 
     this.#accountStateLatestInterval.start()
+    this.#safeGlobalTxnInterval.start()
+    this.#safeGlobalMessageInterval.start()
   }
 
   async #updatePortfolio() {
     await this.initialLoadPromise
 
-    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
-      : []
-    if (selectedAccountBroadcastedButNotConfirmed?.length) return
     await this.#main.updateSelectedAccountPortfolio({
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
@@ -194,13 +230,42 @@ export class ContinuousUpdatesController extends EventEmitter {
   }
 
   async #updateAccountsOpsStatuses() {
-    await this.initialLoadPromise
-    await this.#main.updateAccountsOpsStatuses()
+    try {
+      await this.initialLoadPromise
+      await this.#main.updateAccountsOpsStatuses()
+    } finally {
+      this.#accountsOpsStatusesInterval.updateTimeout({
+        timeout: Math.min(
+          this.#accountsOpsStatusesInterval.currentTimeout + 1000,
+          ACTIVITY_REFRESH_INTERVAL
+        )
+      })
+    }
+  }
+
+  #getAccountsOpsStatusesRefreshInterval(accountOps: SubmittedAccountOp[]) {
+    return accountOps.reduce((refreshInterval, accountOp) => {
+      const networkRefreshInterval = this.#main.networks.networks.find(
+        ({ chainId }) => chainId === accountOp.chainId
+      )?.refreshInterval
+
+      if (
+        !networkRefreshInterval ||
+        !Number.isFinite(networkRefreshInterval) ||
+        networkRefreshInterval <= 0
+      ) {
+        return refreshInterval
+      }
+
+      return Math.min(refreshInterval, networkRefreshInterval)
+    }, ACTIVITY_REFRESH_INTERVAL)
   }
 
   async #updateAccountStateLatest() {
     await this.initialLoadPromise
     await this.#main.accounts.accountStateInitialLoadPromise
+
+    if (!this.#main.accounts.accounts.length) return // no accounts imported yet
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
@@ -331,5 +396,155 @@ export class ContinuousUpdatesController extends EventEmitter {
     const updateTime = networksNotYetRetried.length ? 8000 : 20000
 
     this.#fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
+  }
+
+  async #resolveConfirmedSafeTxns() {
+    await this.initialLoadPromise
+
+    // call only if the selected account is a safe
+    if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
+      return
+
+    // do not make Safe requests if the extension is locked
+    if (!this.#main.keystore.isUnlocked) return
+
+    const pendingSafeTxns = this.#main.requests.userRequests
+      .filter(
+        (r) =>
+          r.meta.accountAddr === this.#main.selectedAccount.account?.addr &&
+          r.kind === 'calls' &&
+          !!r.signAccountOp.account.safeCreation &&
+          r.signAccountOp.accountOp.txnId &&
+          r.signAccountOp.accountOp.signed?.length
+      )
+      .map((r) => {
+        const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
+        return {
+          chainId: accountOp.chainId,
+          safeTxnHash: accountOp.txnId as Hex
+        }
+      })
+    if (!pendingSafeTxns.length) return
+
+    const confirmed = await this.#main.safe.fetchExecuted(pendingSafeTxns).catch((e) => {
+      console.log('failed to retrieve executed Safe txns')
+      return []
+    })
+    if (!confirmed.length) return
+
+    // resolve each request
+    for (let i = 0; i < confirmed.length; i++) {
+      const oneConfirmed = confirmed[i]!
+      const userR = this.#main.requests.userRequests.find(
+        (r) =>
+          r.kind === 'calls' &&
+          !!r.signAccountOp.account.safeCreation &&
+          oneConfirmed.safeTxnHash === r.signAccountOp.accountOp.txnId
+      )
+      if (!userR) continue
+
+      const callsUserR = userR as CallsUserRequest
+
+      if (oneConfirmed.transactionHash) {
+        const accountOp = callsUserR.signAccountOp.accountOp
+        const submittedAccountOp: SubmittedAccountOp = {
+          ...accountOp,
+          status: AccountOpStatus.BroadcastedButNotConfirmed,
+          txnId: oneConfirmed.transactionHash,
+          nonce: BigInt(oneConfirmed.nonce),
+          identifiedBy: { type: 'Transaction', identifier: oneConfirmed.transactionHash },
+          timestamp: new Date().getTime()
+        }
+        const commonSuccessHandler = await this.#main
+          .commonHandlerForBroadcastSuccess({
+            type: 'default',
+            submittedAccountOp,
+            accountOp,
+            fromRequestId: userR.id
+          })
+          .catch((e: Error) => {
+            console.log('could not resolve Safe Global request')
+            console.log(e)
+            return e
+          })
+        if (commonSuccessHandler instanceof Error) continue
+
+        await this.#main.resolveAccountOpRequest(submittedAccountOp, userR.id, false).catch((e) => {
+          console.log('could not resolve Safe Global request')
+          console.log(e)
+        })
+
+        continue
+      }
+
+      // we come here only if transactionHash is undefined
+      const signatures = (oneConfirmed.confirmations?.map((c) => c.signature) || []) as Hex[]
+      const safeGlobalSigs = callsUserR.signAccountOp.accountOp.txnId
+        ? sortSigs(
+            signatures,
+            callsUserR.signAccountOp.accountOp.txnId,
+            callsUserR.signAccountOp.accountOp.safeTx?.confirmations
+          )
+        : null
+      if (
+        safeGlobalSigs &&
+        callsUserR.signAccountOp.isInRegistry() && // update only if on foreground
+        callsUserR.signAccountOp.accountOp.signature !== safeGlobalSigs &&
+        (callsUserR.signAccountOp.accountOp.signature?.length || 0) < safeGlobalSigs.length
+      ) {
+        callsUserR.signAccountOp.update({
+          accountOpData: {
+            signature: safeGlobalSigs
+          }
+        })
+      }
+    }
+  }
+
+  async #resolveConfirmedSafeMessages() {
+    await this.initialLoadPromise
+
+    // call only if the selected account is a safe
+    if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
+      return
+
+    const accountStates = await this.#main.accounts.getOrFetchAccountStates(
+      this.#main.selectedAccount.account.addr
+    )
+    if (!accountStates) return
+
+    const pendingSafeMessages = this.#main.requests.userRequests
+      .filter(
+        (r) =>
+          r.meta.accountAddr === this.#main.selectedAccount.account?.addr &&
+          (r.kind === 'message' || r.kind === 'typedMessage' || r.kind === 'siwe') &&
+          r.meta.hash &&
+          !!r.meta.signed?.length
+      )
+      .map((r) => {
+        return {
+          chainId: r.meta.chainId,
+          threshold: accountStates[r.meta.chainId]?.threshold || 0,
+          messageHash: r.meta.hash,
+          requestId: r.id
+        }
+      })
+    if (!pendingSafeMessages.length) return
+
+    const msgs = (await this.#main.safe.getMessagesByHash(pendingSafeMessages)).filter(
+      (m) => m.isConfirmed
+    )
+
+    // resolve each request
+    for (let i = 0; i < msgs.length; i++) {
+      const msg = msgs[i]!
+      const userR = this.#main.requests.userRequests.find(
+        (r) =>
+          (r.kind === 'message' || r.kind === 'typedMessage' || r.kind === 'siwe') &&
+          r.meta.hash === msg.messageHash
+      )
+      if (!userR) continue
+      await this.#main.requests.resolveUserRequest({ hash: msg.preparedSignature }, userR.id)
+    }
   }
 }

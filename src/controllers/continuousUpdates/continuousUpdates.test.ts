@@ -1,21 +1,16 @@
-/* eslint-disable no-await-in-loop */
-import fetch from 'node-fetch'
+import { Account } from '@/interfaces/account'
 
-/* eslint-disable prettier/prettier */
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
+import { ACTIVITY_REFRESH_INTERVAL } from '../../consts/intervals'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import * as accountStateLib from '../../libs/accountState/accountState'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { MainController } from '../main/main'
 
-const accounts = [
+const accounts: Account[] = [
   {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
     associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
@@ -24,6 +19,11 @@ const accounts = [
       bytecode:
         '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    },
+    initialPrivileges: [],
+    preferences: {
+      label: '',
+      pfp: ''
     }
   },
   {
@@ -34,6 +34,11 @@ const accounts = [
       bytecode:
         '0x7f1e7646e4695bead8bb0596679b0caf3a7ff6c4e04d2ad79103c8fa61fb6337f47fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    },
+    initialPrivileges: [],
+    preferences: {
+      label: '',
+      pfp: ''
     }
   },
   {
@@ -44,6 +49,11 @@ const accounts = [
       bytecode:
         '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+    },
+    initialPrivileges: [],
+    preferences: {
+      label: '',
+      pfp: ''
     }
   }
 ]
@@ -79,29 +89,14 @@ const submittedAccountOp = {
 } as SubmittedAccountOp
 
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  await storage.set('accounts', accounts)
-  await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-
-  const uiManager = mockUiManager().uiManager
-  jest.spyOn(accountStateLib, 'getAccountState').mockImplementation(async () => {
-    return []
-  })
   jest.spyOn(SwapProviderParallelExecutor.prototype, 'getSupportedChains').mockResolvedValue([])
-  const mainCtrl = new MainController({
-    appVersion: '5.31.0',
-    platform: 'default',
-    storageAPI: storage,
-    fetch,
-    relayerUrl,
-    featureFlags: {},
-    liFiApiKey: '',
-    bungeeApiKey: '',
-    keystoreSigners: { internal: KeystoreSigner },
-    externalSignerControllers: {},
-    uiManager,
-    velcroUrl
-  })
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    },
+    { skipContinuousUpdates: false, awaitInitialLoad: false }
+  )
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
   mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockImplementation(async () => {
     await wait(500)
@@ -170,25 +165,23 @@ describe('ContinuousUpdatesController intervals', () => {
       initialFnExecutionsCount + 1
     )
     const updateSelectedAccountCalledTimes = updateSelectedAccountPortfolioSpy.mock.calls.length
-    await mainCtrl.activity.addAccountOp(submittedAccountOp)
-    await jest.advanceTimersByTimeAsync(0)
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + 2
+      initialFnExecutionsCount + 1
     )
     expect(updateSelectedAccountPortfolioSpy).toHaveBeenCalledTimes(
       updateSelectedAccountCalledTimes
     ) // tests the branching in the updatePortfolio func
     mainCtrl.ui.removeView('1')
     await jest.advanceTimersByTimeAsync(0)
-    expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.restart).toHaveBeenCalledTimes(2)
+    // Only once because the extension is locked
+    expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.restart).toHaveBeenCalledTimes(1)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + 3
+      initialFnExecutionsCount + 2
     )
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates!.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + 4
+      initialFnExecutionsCount + 3
     )
   })
 
@@ -217,10 +210,69 @@ describe('ContinuousUpdatesController intervals', () => {
     jest
       .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
       .mockReturnValue(Object.fromEntries(mainCtrl.accounts.accounts.map((a) => [a.addr, []])))
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
+  })
+
+  test('should gradually slow accountsOpsStatusesInterval from the network refresh interval', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForMainCtrlReady(mainCtrl)
+
+    const network = mainCtrl.networks.networks.find(
+      ({ chainId }) => chainId === submittedAccountOp.chainId
+    )!
+    network.refreshInterval = 500
+
+    await mainCtrl.activity.addAccountOp(submittedAccountOp)
+    await jest.advanceTimersByTimeAsync(0)
+
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(500)
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(1500)
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(2500)
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(3500)
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(4500)
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(
+      ACTIVITY_REFRESH_INTERVAL
+    )
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(
+      ACTIVITY_REFRESH_INTERVAL
+    )
+
+    mainCtrl.continuousUpdates!.restartAccountsOpsStatusesInterval()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(500)
+  })
+  ;[undefined, 0, -1, ACTIVITY_REFRESH_INTERVAL + 1000].forEach((refreshInterval) => {
+    test(`should use ACTIVITY_REFRESH_INTERVAL for an invalid or too large network refresh interval: ${refreshInterval}`, async () => {
+      const { mainCtrl } = await prepareTest()
+      await waitForMainCtrlReady(mainCtrl)
+
+      const network = mainCtrl.networks.networks.find(
+        ({ chainId }) => chainId === submittedAccountOp.chainId
+      )!
+      network.refreshInterval = refreshInterval
+
+      await mainCtrl.activity.addAccountOp(submittedAccountOp)
+      await jest.advanceTimersByTimeAsync(0)
+
+      expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(
+        ACTIVITY_REFRESH_INTERVAL
+      )
+    })
   })
 
   test('should run updateAccountStateLatest and updateAccountStatePending', async () => {
@@ -242,12 +294,13 @@ describe('ContinuousUpdatesController intervals', () => {
     const mockAccountOp = new EventEmitter() as any
     mockAccountOp.signAndBroadcastPromise = new Promise(() => {})
     mockAccountOp.broadcastStatus = 'SUCCESS'
-    ;(mainCtrl.requests.currentUserRequest as any) = {
+    jest.spyOn(mainCtrl.requests, 'currentUserRequest', 'get').mockReturnValue({
       kind: 'calls',
       signAccountOp: mockAccountOp
-    }
-    ;(mainCtrl.requests as any).emitUpdate()
-    ;(mockAccountOp as any).emitUpdate()
+    } as any)
+    // @ts-expect-error — need synchronous emit here; forceEmitUpdate is async and won't resolve with fake timers
+    mainCtrl.requests.emitUpdate()
+    mockAccountOp.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
     expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.running).toBe(true)
@@ -278,27 +331,27 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
 
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)

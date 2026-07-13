@@ -1,53 +1,76 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { AaveWethGatewayV2 } from '../../const/abis'
-import { IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getOnBehalfOf, getToken } from '../../utils'
+import { HumanizerVisualization } from '../../interfaces'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getOnBehalfOf,
+  getToken
+} from '../../utils'
 
-export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
-  const iface = new Interface(AaveWethGatewayV2)
+const depositETHAbi = parseAbi([
+  'function depositETH(address lendingPool, address onBehalfOf, uint16 referralCode) payable'
+])
+const withdrawETHAbi = parseAbi([
+  'function withdrawETH(address lendingPool, uint256 amount, address to)'
+])
+const repayETHAbi = parseAbi([
+  'function repayETH(address lendingPool, uint256 amount, uint256 rateMode, address onBehalfOf) payable'
+])
+const borrowETHAbi = parseAbi([
+  'function borrowETH(address lendingPool, uint256 amount, uint256 interesRateMode, uint16 referralCode)'
+])
+
+export const aaveWethGatewayV2 = (): {
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+} => {
   return {
-    [iface.getFunction('depositETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [toFunctionSelector(depositETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
-      const [, onBehalfOf] = iface.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: depositETHAbi, data: call.data })
+      const [, onBehalfOf] = args
       return [
         getAction('Deposit'),
-        getToken(ZeroAddress, call.value),
+        getToken(zeroAddress, call.value),
         getLabel('to'),
         getAddressVisualization(call.to),
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [iface.getFunction('withdrawETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [toFunctionSelector(withdrawETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
-      const [, /* lendingPool */ amount, to] = iface.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: withdrawETHAbi, data: call.data })
+      const [, /* lendingPool */ amount, to] = args
       return [
         getAction('Withdraw'),
-        getToken(ZeroAddress, amount),
+        getToken(zeroAddress, amount),
         getLabel('from'),
         getAddressVisualization(call.to),
         ...getOnBehalfOf(to, accountOp.accountAddr)
       ]
     },
-    [iface.getFunction('repayETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [toFunctionSelector(repayETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
-      const [, , , /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] =
-        iface.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: repayETHAbi, data: call.data })
+      const [, , , /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] = args
       return [
         getAction('Repay'),
-        getToken(ZeroAddress, call.value),
+        getToken(zeroAddress, call.value),
         getLabel('to'),
         getAddressVisualization(call.to),
-        getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
+        ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [iface.getFunction('borrowETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [toFunctionSelector(borrowETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
-      const [, /* lendingPool */ amount] = iface.parseTransaction(call)?.args || []
+      const { args } = decodeFunctionData({ abi: borrowETHAbi, data: call.data })
+      const [, /* lendingPool */ amount] = args
       return [
         getAction('Borrow'),
-        getToken(ZeroAddress, amount),
+        getToken(zeroAddress, amount),
         getLabel('from'),
         getAddressVisualization(call.to)
       ]

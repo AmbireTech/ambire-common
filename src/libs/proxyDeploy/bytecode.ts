@@ -18,7 +18,6 @@ export async function get4437Bytecode(network: Network, priLevels: PrivLevels[])
   try {
     provider.destroy()
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error(e)
   }
 

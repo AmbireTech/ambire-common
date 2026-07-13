@@ -1,10 +1,11 @@
+import { CITREA_CHAIN_ID } from '@/services/squid/constants'
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -17,6 +18,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
@@ -164,6 +166,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
+    outputValueAfterGasInUsd:
+      route.gasCostUSD === undefined ? undefined : +route.toAmountUSD - +route.gasCostUSD,
     serviceTime: route.steps[0]?.estimate.executionDuration || 0,
     rawRoute: route,
     sender: route.fromAddress,
@@ -264,7 +268,6 @@ export class LiFiAPI implements SwapProvider {
     this.#apiKeyActivatedTimestamp = undefined
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     // Li.Fi's v1 API doesn't have a dedicated health endpoint
     return true
@@ -285,10 +288,15 @@ export class LiFiAPI implements SwapProvider {
     this.isHealthy = null
   }
 
+  /** disable explicitly citrea for lifi */
+  areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
+  }
+
   /**
    * Processes LiFi API responses and throws custom errors for various failures
    */
-  // eslint-disable-next-line class-methods-use-this
+
   async #handleResponse<T>({
     fetchPromise,
     errorPrefix
@@ -566,8 +574,8 @@ export class LiFiAPI implements SwapProvider {
     fromChainId: number
     toChainId: number
     bridge?: string
-  }): Promise<SwapAndBridgeRouteStatus> {
-    if (!bridge) return 'completed'
+  }): Promise<SwapAndBridgeRouteStatusResult> {
+    if (!bridge) return { status: 'completed', txnId: txHash }
 
     const params = new URLSearchParams({
       txHash,
@@ -604,13 +612,19 @@ export class LiFiAPI implements SwapProvider {
     }
 
     if (response instanceof SwapAndBridgeProviderApiError) {
-      return statuses.PENDING
+      return { status: statuses.PENDING }
     }
+
+    const receivingTxnId =
+      'receiving' in response && 'txHash' in response.receiving ? response.receiving.txHash : null
 
     if (response.substatus && response.substatus === 'REFUNDED') {
-      return statuses.REFUNDED
+      return { status: statuses.REFUNDED, txnId: receivingTxnId }
     }
 
-    return statuses[response.status as LiFiRouteStatusResponse['status']]
+    return {
+      status: statuses[response.status as LiFiRouteStatusResponse['status']],
+      txnId: receivingTxnId
+    }
   }
 }

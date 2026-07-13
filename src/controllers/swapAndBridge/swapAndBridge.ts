@@ -1,5 +1,8 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
+import { getAccountNetworks } from '@/libs/networks/networks'
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -9,6 +12,7 @@ import {
 } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -16,7 +20,6 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-/* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import {
@@ -28,12 +31,13 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -43,13 +47,17 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
+  getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
@@ -68,6 +76,7 @@ import {
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
+import { withTimeout } from '../../utils/with-timeout'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -75,6 +84,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -85,6 +95,8 @@ type SwapAndBridgeErrorType = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
+const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
+
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
@@ -93,6 +105,7 @@ const NETWORK_MISMATCH_MESSAGE =
 
 // For performance reasons, limit the max number of tokens in the to token list
 const TO_TOKEN_LIST_LIMIT = 100
+const TO_TOKEN_PRICE_TIMEOUT_MS = 4000
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
@@ -112,6 +125,133 @@ const STATUS_WRAPPED_METHODS = {
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
+export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute) => {
+  const isBridge = r1.fromChainId !== r1.toChainId
+
+  // the amount threshold in %. If below, we check the time as
+  // the deciding sort factor
+  const threshold = 1.2
+
+  const sortByTime = () => {
+    const aTime = Number(r1.serviceTime)
+    const bTime = Number(r2.serviceTime)
+    if (aTime === bTime) return 0
+    if (aTime > bTime) return 1
+    return -1
+  }
+
+  const sortByPerformance = () => {
+    // if it's a bridge, prioritize across and relay as we find
+    // across and relay the best bridges out where with a close
+    // to 100% success rate and an approximate bridge time of 30s
+    if (isBridge) {
+      const aHasAcross = r1.usedBridgeNames?.includes('across')
+      const bHasAcross = r2.usedBridgeNames?.includes('across')
+      if (aHasAcross && !bHasAcross) return -1
+      if (bHasAcross && !aHasAcross) return 1
+
+      const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
+      const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
+      if (aHasRelay && !bHasRelay) return -1
+      if (bHasRelay && !aHasRelay) return 1
+    } else {
+      // if it's a swap, deprioritize the bungee auto route as it's an intent
+      // engine. And intent engines are bad UX
+      const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
+      const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
+      if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
+      if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
+    }
+
+    // outputValueAfterGas is just as it name suggest: the value
+    // each provider returns after the gas calculations have been made.
+    // Uniswap is very efficient at this althouhg the rates might be slightly
+    // worse. But slightly worse rates are better than paying a massive
+    // transaction fee for the swap. That's why we're applying this sort
+    const aOutputValueAfterGasInUsd = r1.outputValueAfterGasInUsd
+    const bOutputValueAfterGasInUsd = r2.outputValueAfterGasInUsd
+    if (
+      aOutputValueAfterGasInUsd !== undefined &&
+      bOutputValueAfterGasInUsd !== undefined &&
+      Number.isFinite(aOutputValueAfterGasInUsd) &&
+      Number.isFinite(bOutputValueAfterGasInUsd)
+    ) {
+      if (aOutputValueAfterGasInUsd === bOutputValueAfterGasInUsd) {
+        if (!isBridge) return 0
+        return sortByTime()
+      }
+
+      const higherOutputValueAfterGasInUsd = Math.max(
+        aOutputValueAfterGasInUsd,
+        bOutputValueAfterGasInUsd
+      )
+      const lowerOutputValueAfterGasInUsd = Math.min(
+        aOutputValueAfterGasInUsd,
+        bOutputValueAfterGasInUsd
+      )
+      const outputComparison = aOutputValueAfterGasInUsd > bOutputValueAfterGasInUsd ? -1 : 1
+
+      // if it's not a bridge, just return the higher output route
+      if (!isBridge || higherOutputValueAfterGasInUsd <= 0) return outputComparison
+
+      const percentage =
+        ((higherOutputValueAfterGasInUsd - lowerOutputValueAfterGasInUsd) /
+          higherOutputValueAfterGasInUsd) *
+        100
+      if (percentage < threshold) return sortByTime()
+      return outputComparison
+    }
+
+    const a = BigInt(r1.toAmount)
+    const b = BigInt(r2.toAmount)
+
+    // if value is the same, check time if bridge
+    if (a === b) {
+      if (!isBridge) return 0
+      return sortByTime()
+    }
+
+    const aUsd = Number(r1.outputValueInUsd ?? 0)
+    const bUsd = Number(r2.outputValueInUsd ?? 0)
+    if (a > b) {
+      // if it's not a bridge, just return the higher output route
+      if (!isBridge) return -1
+
+      // if the bigint amount says a > b but the usd amount says
+      // the opposite, we're stuck, so just return a as the winner
+      if (bUsd > aUsd || aUsd === 0) return -1
+
+      const percentage = ((aUsd - bUsd) / aUsd) * 100
+      if (percentage < threshold) return sortByTime()
+      return -1
+    }
+
+    // if it's not a bridge, just return the higher output route
+    if (!isBridge) return 1
+
+    // if the bigint amount says b > a but the usd amount says
+    // the opposite, we're stuck, so just return b as the winner
+    if (aUsd > bUsd || bUsd === 0) return 1
+    const percentage = ((bUsd - aUsd) / bUsd) * 100
+    if (percentage < threshold) return sortByTime()
+    return 1
+  }
+
+  // move the routes with service fee to the bottom
+  const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
+  const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
+  if (r1ServiceFee && !r2ServiceFee) return 1
+  if (r2ServiceFee && !r1ServiceFee) return -1
+
+  return sortByPerformance()
+}
+
+type SignAccountOpControllerMethods = {
+  [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
+    ? K
+    : never]: SignAccountOpController[K]
+}
+
 /**
  * The Swap and Bridge controller is responsible for managing the state and
  * logic related to swapping and bridging tokens across different networks.
@@ -123,7 +263,7 @@ const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #selectedAccount: ISelectedAccountController
 
@@ -132,6 +272,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #activity: IActivityController
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
 
   #serviceProviderAPI: SwapProvider
 
@@ -220,6 +362,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -264,6 +408,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #onBroadcastFailed: OnBroadcastFailed
 
+  #ui: IUiController
+
+  #isOnSwapAndBridgeRoute: boolean = false
+
   constructor({
     eventEmitterRegistry,
     callRelayer,
@@ -276,7 +424,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks,
     activity,
     storage,
+    signAccountOpPreference,
     phishing,
+    dapps,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -284,10 +434,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     getVisibleUserRequests,
     swapProvider,
     onBroadcastSuccess,
-    onBroadcastFailed
+    onBroadcastFailed,
+    ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
-    callRelayer: Function
+    callRelayer: BindedRelayerCall
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController
@@ -297,7 +448,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks: INetworksController
     activity: IActivityController
     storage: IStorageController
+    signAccountOpPreference: SignAccountOpPreferenceController
     phishing: IPhishingController
+    dapps: IDappsController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -306,6 +459,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     swapProvider: SwapProvider
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
+    ui: IUiController
   }) {
     super(eventEmitterRegistry)
 
@@ -323,14 +477,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activity = activity
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
     this.#phishing = phishing
+    this.#dapps = dapps
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
+    this.#ui = ui
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
@@ -346,6 +502,29 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       BRIDGE_STATUS_INTERVAL,
       this.emitError.bind(this)
     )
+
+    this.#ui.uiEvent.on('updateView', (view: View) => {
+      if (isSwapAndBridge(view.currentRoute)) {
+        this.#isOnSwapAndBridgeRoute = true
+        // Fetch a fresh quote immediately if the form is ready and the last
+        // quote is older than 20 seconds (e.g. user was away on another screen).
+        // If the user just briefly switched screens, skip the immediate fetch
+        // and let the normal interval handle the next update.
+        const isQuoteStale = Date.now() - this.updateQuoteInterval.startedRunningAt > 20_000
+        this.updateQuoteInterval.restart({
+          runImmediately: !!this.#shouldAutoUpdateQuote && isQuoteStale
+        })
+      } else if (isSwapAndBridge(view.previousRoute)) {
+        this.#isOnSwapAndBridgeRoute = false
+        this.updateQuoteInterval.stop()
+      }
+    })
+
+    this.#ui.uiEvent.on('removeView', (view: View) => {
+      if (!isSwapAndBridge(view.currentRoute)) return
+      this.#isOnSwapAndBridgeRoute = false
+      this.updateQuoteInterval.stop()
+    })
   }
 
   #emitUpdateIfNeeded(forceUpdate: boolean = false) {
@@ -665,7 +844,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
         if (r.routeStatus !== 'failed') {
-          // eslint-disable-next-line no-param-reassign
           delete r.error
         }
       })
@@ -675,7 +853,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         // update the activeRoute.route prop for the new session
         this.activeRoutes.forEach((r) => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateActiveRoute(r.activeRouteId, undefined, true)
         })
       }
@@ -683,7 +860,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
     this.#serviceProviderAPI.updateHealth()
     await this.updatePortfolioTokenList(structuredClone(this.#selectedAccount.portfolio.tokens), {
       preselectedToken: preselectedFromToken,
@@ -696,7 +873,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#fetchSupportedChainsIfNeeded()
 
     if (activeRouteIdToDelete) {
-      this.removeActiveRoute(activeRouteIdToDelete, false)
+      await this.removeFailedRouteAndHideBanner(activeRouteIdToDelete)
     }
 
     this.#emitUpdateIfNeeded()
@@ -743,19 +920,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   get supportedChainIds(): Network['chainId'][] {
-    // if the account is smart, do not allow the user to bridge to
-    // a chain that doesn't support our smart accounts as those funds
-    // would be stuck
-    if (isSmartAccount(this.#selectedAccount.account)) {
-      return this.#cachedSupportedChains.data
-        .filter((c) => {
-          const network = this.#networks.networks.find((net) => net.chainId === BigInt(c.chainId))
-          if (!network) return false
-          return network.areContractsDeployed && (network.hasRelayer || network.erc4337.enabled)
-        })
-        .map((c) => BigInt(c.chainId))
-    }
-
     return this.#cachedSupportedChains.data.map((c) => BigInt(c.chainId))
   }
 
@@ -819,6 +983,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       toChainId?: bigint | number
       toSelectedTokenAddr?: SwapAndBridgeToToken['address'] | null
       routePriority?: 'output' | 'time'
+      activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId']
     },
     updateProps?: {
       emitUpdate?: boolean
@@ -832,7 +997,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmountFieldMode,
       toChainId,
       shouldSetMaxAmount,
-      routePriority
+      routePriority,
+      activeRouteIdToDelete
     } = props
 
     const fromSelectedToken = props.fromSelectedToken
@@ -870,8 +1036,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     if (shouldSetMaxAmount) {
+      // Always derive amounts from exact token balance. Using max fiat here
+      // would run fiat→token rounding and often leave spendable dust.
+      const previousFieldMode = this.fromAmountFieldMode
       this.fromAmountFieldMode = 'token'
       this.#setFromAmountAmount(this.maxFromAmount, true)
+      this.fromAmountFieldMode = previousFieldMode
     }
 
     if (fromAmount !== undefined) {
@@ -893,13 +1063,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
-          // Don't update the selected token programmatically if the user
-          // has selected it manually
-          if (!this.toSelectedToken) {
-            // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
-            this.toChainId = Number(network.chainId)
-            shouldUpdateToTokenList = true
-          }
+          shouldUpdateToTokenList = true
         }
       }
 
@@ -909,9 +1073,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           !fromSelectedToken ||
           this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
+        // This branch is invoked when the from token is changed, but also when the form is initialized.
+        // We want to persist the fromAmountFieldMode across sessions, but reset it when the user changes
+        // the token and has entered a value.
+        if (this.fromAmount !== '') this.fromAmountFieldMode = 'token'
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
-        this.fromAmountFieldMode = 'token'
       }
 
       // Always update to reflect portfolio amount (or other props) changes
@@ -941,6 +1108,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    if (activeRouteIdToDelete) {
+      await this.removeFailedRouteAndHideBanner(activeRouteIdToDelete)
+    }
+
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
@@ -963,7 +1134,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // while resetting all other state related to the form.
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
-    this.fromAmountFieldMode = 'token'
     this.toSelectedToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
@@ -1008,6 +1178,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+
+    // When the price endpoint is down, tokens come back without a USD price. We must
+    // not exclude them as "priceless" in that case, otherwise switching to an account
+    // with such tokens would wrongly hide them. Skip the price requirement for chains
+    // that currently have a price fetch error.
+    const chainIdsWithPriceError = new Set<string>()
+    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
+      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
+    )
+    priceError?.networkNames.forEach((networkName) => {
+      const network = this.#networks.networks.find((n) => n.name === networkName)
+      if (network) chainIdsWithPriceError.add(network.chainId.toString())
+    })
+
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1016,7 +1200,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(token) && !token.flags.isHidden
+          getIsTokenEligibleForSwapAndBridge(
+            token,
+            true,
+            !chainIdsWithPriceError.has(token.chainId.toString())
+          ) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
@@ -1052,13 +1240,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !isSelectedTokenFalsyBeforeListUpdate &&
       shouldUpdateFromSelectedToken
     ) {
+      // get the networks that account is supported on and select
+      // one from that list, not only the providers lists of networks
+      const accNetworks = getAccountNetworks(
+        this.#networks.networks,
+        this.#accounts.accountStates,
+        this.#selectedAccount.account
+      ).map((n) => n.chainId)
       const nextFromSelectedToken =
         fromSelectedTokenInNextPortfolio ||
         // Select the first token in the portfolio that is not the same as the "to" token
         this.portfolioTokenList.find(
           (t) =>
             t.address !== this.toSelectedToken?.address &&
-            this.supportedChainIds.includes(t.chainId)
+            this.supportedChainIds.includes(t.chainId) &&
+            accNetworks.includes(t.chainId)
         ) ||
         null
 
@@ -1066,7 +1262,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         {
           fromSelectedToken: nextFromSelectedToken,
           toSelectedTokenAddr: preselectedToToken?.address,
-          toChainId: preselectedToToken?.chainId,
+          toChainId:
+            preselectedToToken?.chainId ??
+            (!this.toSelectedToken ? nextFromSelectedToken?.chainId : undefined),
           fromAmount
         },
         {
@@ -1446,6 +1644,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           canTopUpGasTank: false,
           rewardsType: null
         },
+        marketDataIn: [],
         priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
 
@@ -1554,23 +1753,49 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       try {
         const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
         const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
+        const toSelectedToken = this.toSelectedToken
+        const selectedAccountAddress = this.#selectedAccount.account.addr
+        const toTokenPricePromise = withTimeout(
+          () =>
+            this.#portfolio.getTokenPrice(
+              selectedAccountAddress,
+              BigInt(this.toChainId!),
+              toSelectedToken.address
+            ),
+          {
+            timeoutMs: TO_TOKEN_PRICE_TIMEOUT_MS,
+            message: `Fetching the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId} timed out.`
+          }
+        ).catch((error: any) => {
+          this.emitError({
+            error,
+            level: 'silent',
+            message: `Unable to fetch the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId}.`
+          })
 
-        const quoteResult = await this.#serviceProviderAPI.quote({
-          fromAsset: this.fromSelectedToken,
-          fromChainId: this.fromChainId!,
-          fromTokenAddress: this.fromSelectedToken.address,
-          toAsset: this.toSelectedToken,
-          toChainId: this.toChainId!,
-          toTokenAddress: this.toSelectedToken.address,
-          fromAmount: bigintFromAmount,
-          userAddress: this.#selectedAccount.account.addr,
-          sort: this.routePriority,
-          isWrapOrUnwrap,
-          accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
-          nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+          return null
         })
+
+        const [toTokenPriceUSD, quoteResult] = await Promise.all([
+          toTokenPricePromise,
+          this.#serviceProviderAPI.quote({
+            fromAsset: this.fromSelectedToken,
+            fromChainId: this.fromChainId!,
+            fromTokenAddress: this.fromSelectedToken.address,
+            toAsset: toSelectedToken,
+            toChainId: this.toChainId!,
+            toTokenAddress: toSelectedToken.address,
+            fromAmount: bigintFromAmount,
+            userAddress: selectedAccountAddress,
+            sort: this.routePriority,
+            isWrapOrUnwrap,
+            accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
+            nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+          })
+        ])
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .map((route) => enrichRouteWithOutputUsdPrice(route, toTokenPriceUSD))
           .filter((route) => {
             const hasNoRouteId = !route.routeId
 
@@ -1590,87 +1815,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort((r1, r2) => {
-            const isBridge = r1.fromChainId !== r1.toChainId
-
-            // the amount threshold in %. If below, we check the time as
-            // the deciding sort factor
-            const threshold = 1.2
-
-            const sortByTime = () => {
-              const aTime = Number(r1.serviceTime)
-              const bTime = Number(r2.serviceTime)
-              if (aTime === bTime) return 0
-              if (aTime > bTime) return 1
-              return -1
-            }
-
-            const sortByPerformance = () => {
-              // if it's a bridge, prioritize across and relay as we find
-              // across and relay the best bridges out where with a close
-              // to 100% success rate and an approximate bridge time of 30s
-              if (isBridge) {
-                const aHasAcross = r1.usedBridgeNames?.includes('across')
-                const bHasAcross = r2.usedBridgeNames?.includes('across')
-                if (aHasAcross && !bHasAcross) return -1
-                if (bHasAcross && !aHasAcross) return 1
-
-                const aHasRelay = r1.usedBridgeNames?.includes('relaydepository')
-                const bHasRelay = r2.usedBridgeNames?.includes('relaydepository')
-                if (aHasRelay && !bHasRelay) return -1
-                if (bHasRelay && !aHasRelay) return 1
-              } else {
-                // if it's a swap, deprioritize the bungee auto route as it's an intent
-                // engine. And intent engines are bad UX
-                const aHasBungeeAutoRoute = r1.usedBridgeNames?.includes('bungeeAutoRoute')
-                const bHasBungeeAutoRoute = r2.usedBridgeNames?.includes('bungeeAutoRoute')
-                if (aHasBungeeAutoRoute && !bHasBungeeAutoRoute) return 1
-                if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
-              }
-
-              const a = BigInt(r1.toAmount)
-              const b = BigInt(r2.toAmount)
-
-              // if value is the same, check time if bridge
-              if (a === b) {
-                if (!isBridge) return 0
-                return sortByTime()
-              }
-
-              const aUsd = Number(r1.outputValueInUsd ?? 0)
-              const bUsd = Number(r2.outputValueInUsd ?? 0)
-              if (a > b) {
-                // if it's not a bridge, just return the higher output route
-                if (!isBridge) return -1
-
-                // if the bigint amount says a > b but the usd amount says
-                // the opposite, we're stuck, so just return a as the winner
-                if (bUsd > aUsd || aUsd === 0) return -1
-
-                const percentage = ((aUsd - bUsd) / aUsd) * 100
-                if (percentage < threshold) return sortByTime()
-                return -1
-              }
-
-              // if it's not a bridge, just return the higher output route
-              if (!isBridge) return 1
-
-              // if the bigint amount says b > a but the usd amount says
-              // the opposite, we're stuck, so just return b as the winner
-              if (aUsd > bUsd || bUsd === 0) return 1
-              const percentage = ((bUsd - aUsd) / bUsd) * 100
-              if (percentage < threshold) return sortByTime()
-              return 1
-            }
-
-            // move the routes with service fee to the bottom
-            const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
-            const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
-            if (r1ServiceFee && !r2ServiceFee) return 1
-            if (r2ServiceFee && !r1ServiceFee) return -1
-
-            return sortByPerformance()
-          })
+          .sort(sortSwapAndBridgeRoutes)
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined
@@ -1808,10 +1953,64 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
+  async recordBridgeActivity(
+    txnId: string,
+    activeRoute: SwapAndBridgeActiveRoute,
+    status: 'completed' | 'refunded'
+  ) {
+    await this.#initialLoadPromise
+
+    // when the status is completed, we expect the funds to land on the
+    // destination chain => we use toChainId;
+    // when it's refunded, we expect the source chain => fromChainId
+    const chainId =
+      status === 'completed' ? activeRoute.route?.toChainId : activeRoute.route?.fromChainId
+    if (!chainId) {
+      const message = 'recordBridgeActivity: no chainId found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!provider) {
+      const message = 'recordBridgeActivity: no provider found'
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    const receipt = await provider.getTransactionReceipt(txnId)
+    if (!receipt) {
+      const message = `recordBridgeActivity: no receipt found for txnId: ${txnId}`
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+      return
+    }
+
+    await this.#activity.addExternalAccountOp({
+      accountAddr: activeRoute.sender,
+      chainId: BigInt(chainId),
+      txnId,
+      receipt,
+      callId: `${activeRoute.activeRouteId}-external`
+    })
+  }
+
   async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
+      let routeStatusResult: SwapAndBridgeRouteStatusResult = { status: null }
 
       if (!activeRoute.userTxHash || activeRoute.routeStatus === 'completed') return
 
@@ -1831,13 +2030,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // should never happen
         if (!activeRoute.route) throw new Error('Route data is missing.')
 
-        status = await this.#serviceProviderAPI.getRouteStatus({
+        routeStatusResult = await this.#serviceProviderAPI.getRouteStatus({
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
           txHash: activeRoute.userTxHash!,
-          providerId: activeRoute.route.providerId
+          providerId: activeRoute.route.providerId,
+          requestId: (activeRoute.route.rawRoute as any)?.requestId,
+          routeId: activeRoute.route.routeId
         })
+        status = routeStatusResult.status
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
         this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
@@ -1858,6 +2060,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         })
       }
 
+      if (
+        routeStatusResult.txnId &&
+        (status === 'completed' || status === 'refunded') &&
+        activeRoute.route?.fromChainId !== activeRoute.route?.toChainId
+      ) {
+        // we shouldn't be awaiting this as it's OK to have it at a later stage
+        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute, status).catch(console.error)
+      }
+
       if (status === 'completed') {
         this.updateActiveRoute(
           activeRoute.activeRouteId,
@@ -1867,10 +2078,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
-        if (
-          this.#portfolioUpdate &&
-          activeRoute.route.fromChainId !== activeRoute.route.toChainId
-        ) {
+        if (this.#portfolioUpdate && getIsBridgeRoute(activeRoute.route)) {
           this.#portfolioUpdate([BigInt(activeRoute.route.toChainId)])
         }
       } else if (status === 'ready') {
@@ -1887,6 +2095,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           activeRoute.activeRouteId,
           {
             routeStatus: 'refunded',
+            error: undefined
+          },
+          true
+        )
+      } else if (status === 'failed') {
+        this.updateActiveRoute(
+          activeRoute.activeRouteId,
+          {
+            routeStatus: 'failed',
             error: undefined
           },
           true
@@ -1926,41 +2143,65 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.emitUpdate()
   }
 
-  addActiveRoute({ userTxIndex }: { userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex'] }) {
-    if (!this.quote || !this.quote.selectedRoute) {
+  addActiveRoute({
+    userTxIndex,
+    quote,
+    routeStatus = 'ready'
+  }: {
+    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
+    quote?: SwapAndBridgeQuote
+    routeStatus?:
+      | 'waiting-approval-to-resolve'
+      | 'in-progress'
+      | 'ready'
+      | 'completed'
+      | 'failed'
+      | 'refunded'
+  }) {
+    const finalQuote = quote || this.quote
+    if (!finalQuote || !finalQuote.selectedRoute) {
       const message = 'Unexpected swap & bridge error: no quote found. Please contact support'
       throw new EmittableError({ error: new Error(message), level: 'major', message })
     }
 
     try {
-      const route = this.quote.selectedRoute
-      this.activeRoutes.push({
-        serviceProviderId: this.quote.selectedRoute.providerId,
+      const route = finalQuote.selectedRoute
+      const activeRoute: SwapAndBridgeActiveRoute = {
+        serviceProviderId: finalQuote.selectedRoute.providerId,
         activeRouteId: route.routeId.toString(),
         userTxIndex,
-        routeStatus: 'ready',
+        routeStatus,
         userTxHash: null,
         fromAsset: {
-          ...this.quote.fromAsset,
-          icon: this.quote.fromAsset.icon || '',
-          logoURI: this.quote.fromAsset.icon || ''
+          ...finalQuote.fromAsset,
+          icon: finalQuote.fromAsset.icon || '',
+          logoURI: finalQuote.fromAsset.icon || ''
         },
         toAsset: {
-          ...this.quote.toAsset,
-          icon: this.quote.toAsset.icon || '',
-          logoURI: this.quote.toAsset.icon || ''
+          ...finalQuote.toAsset,
+          icon: finalQuote.toAsset.icon || '',
+          logoURI: finalQuote.toAsset.icon || ''
         },
-        fromAssetAddress: this.quote.fromAsset.address,
-        toAssetAddress: this.quote.toAsset.address,
+        fromAssetAddress: finalQuote.fromAsset.address,
+        toAssetAddress: finalQuote.toAsset.address,
         steps: route.steps,
         sender: route.userAddress,
         identifiedBy: null,
         route: {
           ...route,
-          routeStatus: 'ready',
+          routeStatus,
           transactionData: null
         }
-      })
+      }
+
+      const activeRouteIndex = this.activeRoutes.findIndex(
+        (r) => r.activeRouteId === activeRoute.activeRouteId
+      )
+
+      this.activeRoutes =
+        activeRouteIndex === -1
+          ? [...this.activeRoutes, activeRoute]
+          : this.activeRoutes.map((r, i) => (i === activeRouteIndex ? activeRoute : r))
 
       this.emitUpdate()
     } catch (error: any) {
@@ -2032,6 +2273,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /**
+   * Removes failed active routes and hides the failed txn banner
+   */
+  async removeFailedRouteAndHideBanner(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']) {
+    const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
+    if (!route) return
+
+    if (!route.identifiedBy || !route.route) return
+
+    const op = this.#activity.findByIdentifiedBy(
+      route.identifiedBy,
+      route.sender,
+      BigInt(route.route.fromChainId)
+    )
+
+    if (op) {
+      this.#activity.setDashboardBannersSeen('dashboard', route.sender, {
+        accountOpIds: [op.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+    }
+
+    this.removeActiveRoute(activeRouteId)
+  }
+
+  /**
    * Find the next route in line and try to re-estimate with it
    */
   async onEstimationFailure(activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId']) {
@@ -2090,6 +2357,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    this.#handleUpdateActiveRouteFromSwapTxnMeta(op)
+
     op.calls.forEach((call) => {
       this.#handleActiveRouteBroadcastedTransaction(call.id, op.status)
       this.#handleActiveRouteBroadcastedApproval(call.id, op.status)
@@ -2097,6 +2366,35 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#handleUpdateActiveRoutesUserTxData(call.id, op)
       this.#handleActiveRoutesCompleted(call.id, op.status)
     })
+  }
+
+  #handleUpdateActiveRouteFromSwapTxnMeta(submittedAccountOp: SubmittedAccountOp) {
+    const swapTxn = submittedAccountOp.meta?.swapTxn
+    if (!swapTxn) return
+
+    const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === swapTxn.activeRouteId)
+    if (!activeRoute) return
+
+    if (!activeRoute.userTxHash && submittedAccountOp.txnId) {
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        userTxHash: submittedAccountOp.txnId,
+        identifiedBy: submittedAccountOp.identifiedBy
+      })
+    }
+
+    if (
+      submittedAccountOp.status === AccountOpStatus.Failure ||
+      submittedAccountOp.status === AccountOpStatus.Rejected
+    ) {
+      const errorMessage =
+        submittedAccountOp.status === AccountOpStatus.Rejected
+          ? 'The transaction was rejected'
+          : 'The transaction failed onchain'
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        routeStatus: 'failed',
+        error: errorMessage
+      })
+    }
   }
 
   #handleActiveRouteBroadcastedTransaction(
@@ -2175,7 +2473,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let shouldUpdateActiveRouteStatus = false
 
-    const isSwap = activeRoute.route.fromChainId === activeRoute.route.toChainId
+    const isSwap = !getIsBridgeRoute(activeRoute.route)
 
     // force update the active route status if the route is of type 'swap'
     if (isSwap) shouldUpdateActiveRouteStatus = true
@@ -2344,24 +2642,24 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const feeToken = getFeeTokenForSponsorship(this.fromSelectedToken, this.quote, this.fromAmount)
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
       [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
-    )
+    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
     const swapSponsorship = getSwapSponsorship({
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
-      fromTokenPriceInUsd: this.quote?.selectedRoute?.inputValueInUsd,
-      fromTokenDecimals: this.quote?.fromAsset.decimals
+      feeTokenPriceInUsd: feeToken.feeTokenPriceInUsd,
+      feeTokenDecimals: feeToken.decimals,
+      providerId: this.quote?.selectedRoute?.providerId,
+      isBridge
     })
 
     if (this.#signAccountOpController) {
@@ -2390,6 +2688,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     const accountOp: AccountOp = {
+      id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
@@ -2399,9 +2698,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       nonce: accountState.nonce,
       signature: null,
       calls,
-      flags: {
-        hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
-      },
       meta: {
         swapTxn: userTxn,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
@@ -2410,6 +2706,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    await this.#signAccountOpPreference.initialLoadPromise
     this.#signAccountOpController = new SignAccountOpController({
       type: 'one-click-swap-and-bridge',
       callRelayer: this.#callRelayer,
@@ -2417,12 +2714,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,
       network,
       provider,
       phishing: this.#phishing,
+      dapps: this.#dapps,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
@@ -2459,15 +2758,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }, 'swap-and-bridge')
 
-    this.#signAccountOpController.onError((error) => {
+    this.#signAccountOpController.onError(async (error) => {
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
       // that is ALWAYS up-to-date with the current quote and the current form state.
       // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      if (this.#signAccountOpController)
-        this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
-
       this.emitError(error)
+
+      if (this.#signAccountOpController)
+        await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
     })
     // if the estimation emits an error, handle it
     this.#signAccountOpController.estimation.onUpdate(() => {
@@ -2486,6 +2785,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     })
   }
 
+  async callSignAccountOpMethod<M extends keyof SignAccountOpControllerMethods>(
+    method: M,
+    args: Parameters<SignAccountOpControllerMethods[M]>
+  ) {
+    if (!this.signAccountOpController) return
+
+    await (this.signAccountOpController[method] as any)(...args)
+  }
+
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
 
@@ -2494,7 +2802,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get swapSignErrors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.quote?.selectedRoute
+      ? getIsBridgeRoute(this.quote.selectedRoute)
+      : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
     if (
@@ -2521,18 +2831,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       })
     }
 
-    // if we're bridging to ethereum, make the min from amount 10 usd
-    if (
-      isBridge &&
-      this.toChainId === 1 &&
-      this.fromAmountInFiat &&
-      Number(this.fromAmountInFiat) < 10
-    ) {
-      errors.push({
-        title: 'Min amount for bridging to Ethereum is $10'
-      })
-    }
-
     return errors
   }
 
@@ -2554,6 +2852,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get #shouldAutoUpdateQuote() {
     return (
+      this.#isOnSwapAndBridgeRoute &&
       this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
       !this.hasProceeded &&
       this.quote &&
@@ -2630,6 +2929,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#updateActiveRoutesInterval.updateTimeout({
       timeout: startTimeout < ceiling ? startTimeout : ceiling
     })
+  }
+
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.signAccountOpController?.cancelSignReq()
   }
 
   toJSON() {

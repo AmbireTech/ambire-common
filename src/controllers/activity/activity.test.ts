@@ -1,33 +1,16 @@
+import { getAddress } from 'ethers'
 import fetch from 'node-fetch'
 
+import { generateUuid } from '@/utils/uuid'
 import { describe, expect } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { networks } from '../../consts/networks'
-import { IAccountsController } from '../../interfaces/account'
-import { INetworksController } from '../../interfaces/network'
-import { IPortfolioController } from '../../interfaces/portfolio'
-import { RPCProviders } from '../../interfaces/provider'
-import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { networks as predefinedNetworks } from '../../consts/networks'
+import { IMainController } from '../../interfaces/main'
+import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { getRpcProvider } from '../../services/provider'
-import { AccountsController } from '../accounts/accounts'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -70,6 +53,7 @@ const ACCOUNTS = [
 ]
 
 const SUBMITTED_ACCOUNT_OP = {
+  id: generateUuid(),
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
   gasLimit: null,
@@ -115,69 +99,43 @@ const SIGNED_MESSAGE: SignedMessage = {
   chainId: 1n
 }
 
-const providers: RPCProviders = {}
+let mainCtrl: IMainController
+let storageCtrl: IStorageController
+let storage: Storage
 
-networks.forEach((network) => {
-  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.chainId.toString()]!.isWorking = true
-})
+const buildMockReceipt = (overrides: Partial<any> = {}) =>
+  ({
+    status: 1,
+    blockNumber: 123,
+    blockHash: '0xmock-block-hash',
+    gasUsed: 21_000n,
+    logs: [],
+    ...overrides
+  }) as any
 
-const callRelayer = relayerCall.bind({ url: '', fetch })
-
-let providersCtrl: ProvidersController
-let portfolioCtrl: IPortfolioController
-let accountsCtrl: IAccountsController
-let selectedAccountCtrl: ISelectedAccountController
-let networksCtrl: INetworksController
-
-const storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-
-const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
-
-const prepareTest = async () => {
+const prepareTest = async (mode: 'accountsOps' | 'signedMessages' = 'accountsOps') => {
   const controller = new ActivityController(
-    storageCtrl,
+    mainCtrl.storage,
     fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioCtrl,
+    mainCtrl.callRelayer,
+    mainCtrl.accounts,
+    mainCtrl.selectedAccount,
+    mainCtrl.providers,
+    mainCtrl.networks,
+    mainCtrl.portfolio,
+    mainCtrl.safe,
     () => Promise.resolve()
   )
 
   const sessionId = Date.now().toString()
 
-  await controller.filterAccountsOps(sessionId, INIT_PARAMS)
-
-  return {
-    controller,
-    storage,
-    sessionId
+  if (mode === 'signedMessages') {
+    await controller.filterSignedMessages(sessionId, INIT_PARAMS)
+  } else {
+    await controller.filterAccountsOps(sessionId, INIT_PARAMS)
   }
-}
 
-const prepareSignedMessagesTest = async () => {
-  const controller = new ActivityController(
-    storageCtrl,
-    fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioCtrl,
-    () => Promise.resolve()
-  )
-
-  const sessionId = Date.now().toString()
-
-  await controller.filterSignedMessages(sessionId, INIT_PARAMS)
-
-  return { controller, sessionId }
+  return { controller, storage, sessionId }
 }
 
 describe('Activity Controller ', () => {
@@ -185,84 +143,202 @@ describe('Activity Controller ', () => {
   // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
   // errors
   beforeAll(async () => {
-    await storageCtrl.set('accounts', ACCOUNTS)
-
-    networksCtrl = new NetworksController({
-      storage: storageCtrl,
-      fetch,
-      relayerUrl,
-      useTempProvider: (props, cb) => {
-        return providersCtrl.useTempProvider(props, cb)
-      },
-      onAddOrUpdateNetworks: (nets) => {
-        nets.forEach((n) => {
-          providersCtrl.setProvider(n)
-        })
-      },
-      onReady: async () => {
-        await providersCtrl.init({ networks: networksCtrl.allNetworks })
-      }
-    })
-    providersCtrl = new ProvidersController({
-      storage: storageCtrl,
-      getNetworks: () => networksCtrl.allNetworks,
-      sendUiMessage: () => uiCtrl.message.sendUiMessage
-    })
-
-    const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
-    accountsCtrl = new AccountsController(
-      storageCtrl,
-      providersCtrl,
-      networksCtrl,
-      keystore,
-      () => {},
-      () => {},
-      () => {},
-      relayerUrl,
-      fetch
-    )
-    const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-    portfolioCtrl = new PortfolioController(
-      storageCtrl,
-      fetch,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      keystore,
-      relayerUrl,
-      velcroUrl,
-      new BannerController(storageCtrl),
-      featureFlagsCtrl
-    )
-
-    const autoLoginCtrl = new AutoLoginController(
-      storageCtrl,
-      keystore,
-      providersCtrl,
-      networksCtrl,
-      accountsCtrl,
-      {},
-      new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-    )
-    selectedAccountCtrl = new SelectedAccountController({
-      storage: storageCtrl,
-      accounts: accountsCtrl,
-      keystore,
-      autoLogin: autoLoginCtrl
-    })
-
-    await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(ACCOUNTS[1]!)
+    ;({ mainCtrl, storageCtrl, storage } = await makeMainController(async (s) => {
+      await s.set('accounts', ACCOUNTS)
+      await s.set(
+        'networks',
+        Object.fromEntries(
+          predefinedNetworks.map((network) => [network.chainId.toString(), network])
+        )
+      )
+    }))
+    await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
   })
 
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
+    jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
   })
 
   describe('AccountsOps', () => {
+    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 0/8 and reject total < 8 or 0/0)', async () => {
+      const { controller } = await prepareTest()
+
+      const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+      const poisoningRecipient4 = '0xF0cdAaAaaAAAaAAAaaaAaAaAAaAaaaAaAaaA37Db'
+      const poisoningRecipient5 = '0xf0cd7BbbBbbbBbBBbbbBBBBbbbbBBbbbbbb237DB'
+      const poisoningRecipient6 = '0xf0cd72ccCCccCcCccCCCCcCCcCcCCCCccCC237DB'
+      const poisoningRecipient4to8 = '0xF0CdDDDddddDdDdDdDDDDDDDDdddDDDD793237db'
+      const poisoningRecipient3to8 = '0xF0cEEeeeEEEEEeEEEEeeEEEEeeEeeeEe793237db'
+      const poisoningRecipient0to8 = '0xaB12ffFFfFFFFfFfFFFffffFffFFFfFF793237DB'
+      const poisoningRecipient3to4 = '0xF0cAAaAaAaaaAAaAAaaaaAAaaaAaAAAaAAaa37dB'
+      const poisoningRecipient0to0 = '0xAB12eeeeeeeEeeeEeeeEEeeeEEEEEeeEeEeeCdef'
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 226n,
+        txnId: '0x1111111111111111111111111111111111111111111111111111111111111111',
+        timestamp: 1_700_000_100_000,
+        calls: [{ to: trustedRecipient, value: 0n, data: '0x' }]
+      })
+
+      const trustedRecipientResult = await controller.hasAccountOpsSentTo(
+        trustedRecipient,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(trustedRecipientResult).toEqual({
+        found: true,
+        lastTransactionDate: new Date(1_700_000_100_000),
+        addressPoisoningMatch: null
+      })
+
+      const poisoningResult4 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult5 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient5,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult6 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient6,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult4to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult3to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult0to8 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient0to8,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult3to4 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to4,
+        ACCOUNTS[1]!.addr
+      )
+      const poisoningResult0to0 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient0to0,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(poisoningResult4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 4
+        }
+      })
+
+      expect(poisoningResult5).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 5,
+          matchedSuffixCharsCount: 5
+        }
+      })
+
+      expect(poisoningResult6).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 6,
+          matchedSuffixCharsCount: 5
+        }
+      })
+
+      expect(poisoningResult4to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 4,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult3to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 3,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult0to8).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 0,
+          matchedSuffixCharsCount: 8
+        }
+      })
+
+      expect(poisoningResult3to4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+
+      expect(poisoningResult0to0).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+    })
+
+    test('should not detect poisoning without transaction history', async () => {
+      const { controller } = await prepareTest()
+
+      const poisoningRecipient4to4 = '0xF0cdAaAaaAAAaAAAaaaAaAaAAaAaaaAaAaaA37Db'
+      const normalizedPoisoningRecipient4to4 = poisoningRecipient4to4.toLowerCase()
+
+      const firstTimeSendResult = await controller.hasAccountOpsSentTo(
+        poisoningRecipient4to4,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(firstTimeSendResult).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: null
+      })
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 227n,
+        txnId: '0x2222222222222222222222222222222222222222222222222222222222222222',
+        timestamp: 1_700_000_200_000,
+        calls: [{ to: normalizedPoisoningRecipient4to4, value: 0n, data: '0x' }]
+      })
+
+      const nonFirstTimeSendResult = await controller.hasAccountOpsSentTo(
+        normalizedPoisoningRecipient4to4,
+        ACCOUNTS[1]!.addr
+      )
+
+      expect(nonFirstTimeSendResult).toEqual({
+        found: true,
+        lastTransactionDate: new Date(1_700_000_200_000),
+        addressPoisoningMatch: null
+      })
+    })
+
     test('Retrieved from Controller and persisted in Storage', async () => {
       const { controller, sessionId } = await prepareTest()
 
@@ -279,6 +355,50 @@ describe('Activity Controller ', () => {
       expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']!['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
+    })
+
+    test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
+      const { controller, sessionId } = await prepareTest()
+
+      await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(2)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+
+      await controller.setAccountOpBalanceChanges(
+        SUBMITTED_ACCOUNT_OP.identifiedBy,
+        SUBMITTED_ACCOUNT_OP.accountAddr,
+        SUBMITTED_ACCOUNT_OP.chainId,
+        new Error('balance changes failed')
+      )
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
+      expect(
+        controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
+      ).toBe(3)
+      const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
+      expect(balanceChanges).not.toBe(undefined)
+      expect(balanceChanges?.length).toBe(0)
     })
 
     test('Pagination and filtration handled correctly', async () => {
@@ -403,9 +523,7 @@ describe('Activity Controller ', () => {
         }
       ] as submittedAccountOp.SubmittedAccountOp[]
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const accountOp of accountsOps) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addAccountOp(accountOp)
       }
 
@@ -461,6 +579,11 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 1 }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -495,24 +618,40 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
-      expect(controller.accountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'success',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], //  we expect success here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      if (
+        typeof controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges === 'undefined'
+      ) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            const updatedOp = controller.accountsOps[sessionId]!.result.items[0]
+
+            if (typeof updatedOp?.balanceChanges === 'undefined') return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
+      expect(controller.accountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controller.accountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'success',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
 
     test('`failed` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -549,21 +688,20 @@ describe('Activity Controller ', () => {
       await controller.updateAccountsOpsStatuses()
       const controllerAccountsOps = controller.accountsOps
 
-      expect(controllerAccountsOps[sessionId]!.result).toEqual({
-        items: [
-          {
-            ...accountOp,
-            status: 'failure',
-            blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
-            blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
-            gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
-          }
-        ], // we expect failure here
-        itemsTotal: 1,
-        currentPage: 0,
-        maxPages: 1
-      })
+      expect(controllerAccountsOps[sessionId]!.result.itemsTotal).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.currentPage).toBe(0)
+      expect(controllerAccountsOps[sessionId]!.result.maxPages).toBe(1)
+      expect(controllerAccountsOps[sessionId]!.result.items[0]).toEqual(
+        expect.objectContaining({
+          ...accountOp,
+          status: 'failure',
+          blockNumber: controller.accountsOps[sessionId]!.result.items[0]!.blockNumber,
+          blockHash: controller.accountsOps[sessionId]!.result.items[0]!.blockHash,
+          gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
+        })
+      )
     })
+
     test('should display pending txns banners', async () => {
       const { controller } = await prepareTest()
 
@@ -585,6 +723,10 @@ describe('Activity Controller ', () => {
     })
     test('should display failed txns banners and hide them on session removal', async () => {
       const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
 
       const accountOp = {
         ...SUBMITTED_ACCOUNT_OP,
@@ -598,7 +740,6 @@ describe('Activity Controller ', () => {
       expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
       const spy = jest.spyOn(submittedAccountOp, 'updateOpStatus')
       spy.mockImplementationOnce((op) => {
-        // eslint-disable-next-line no-param-reassign
         op.status = AccountOpStatus.Rejected
         return op
       })
@@ -613,6 +754,87 @@ describe('Activity Controller ', () => {
       expect(controller.banners[0]!.meta!.seen).toBe(true)
       controller.resetAccountsOpsFilters('dashboard-test-id')
       expect(controller.banners.length).toBe(0)
+    })
+
+    test('hideFailedBannerForRetriedOp hides the failed banner but keeps the op in history', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockImplementation(async () => buildMockReceipt({ status: 0 }))
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now()
+      }
+
+      await controller.addAccountOp(accountOp)
+      // Read banners while pending so the pending banner gets cached - the failed
+      // banner is derived from previously pending (now updated) ops
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+
+      const spy = jest.spyOn(submittedAccountOp, 'updateOpStatus')
+      spy.mockImplementationOnce((op) => {
+        op.status = AccountOpStatus.Failure
+        return op
+      })
+      await controller.updateAccountsOpsStatuses()
+
+      expect(controller.banners.length).toBe(1)
+      expect(controller.banners[0]!.category).toBe('failed-acc-ops')
+      expect(controller.banners[0]!.meta!.accountOpsCount).toBe(1)
+
+      const op = controller.findByIdentifiedBy(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+
+      controller.setDashboardBannersSeen('dashboard', accountOp.accountAddr, {
+        accountOpIds: [op!.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+
+      // Banner is gone
+      expect(controller.banners.length).toBe(0)
+
+      // The failed op is still present in the Activity history
+      const ops = controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })
+      expect(ops.length).toBe(1)
+      expect(ops[0]!.status).toBe(AccountOpStatus.Failure)
+      expect(ops[0]!.id).toBe(op!.id)
+    })
+
+    test('hideFailedBannerForRetriedOp is a no-op for a non-failed op', async () => {
+      const { controller } = await prepareTest()
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now()
+      }
+      await controller.addAccountOp(accountOp)
+
+      // Pending banner shows; the op is not failed
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+
+      const op = controller.findByIdentifiedBy(
+        accountOp.identifiedBy,
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+
+      controller.setDashboardBannersSeen('dashboard', accountOp.accountAddr, {
+        accountOpIds: [op!.id],
+        emitUpdate: true,
+        hideImmediately: true
+      })
+
+      const ops = controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })
+      expect(ops[0]!.id).toBe(op!.id)
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
     })
 
     // test('`Unknown but past nonce` status is set correctly', async () => {
@@ -731,9 +953,7 @@ describe('Activity Controller ', () => {
         }
       })
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const ao of accountsOps) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addAccountOp(ao)
       }
 
@@ -752,7 +972,7 @@ describe('Activity Controller ', () => {
 
       expect(controllerAccountsOps1!.filter(({ chainId }) => chainId === 56n).length).toBe(5)
 
-      await networksCtrl.updateNetwork({ disabled: true }, 56n)
+      await mainCtrl.networks.updateNetwork({ disabled: true }, 56n)
 
       await controller.filterAccountsOps(sessionId, INIT_PARAMS, {
         fromPage: 0,
@@ -766,7 +986,7 @@ describe('Activity Controller ', () => {
           .length
       ).toBe(0)
 
-      await networksCtrl.updateNetwork({ disabled: false }, 56n)
+      await mainCtrl.networks.updateNetwork({ disabled: false }, 56n)
     })
 
     test('Keeps no more than 1000 items', async () => {
@@ -807,9 +1027,7 @@ describe('Activity Controller ', () => {
         nonce: BigInt(key)
       }))
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const ao of accountsOps) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addAccountOp(ao)
       }
 
@@ -828,7 +1046,7 @@ describe('Activity Controller ', () => {
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       const signedMessage: SignedMessage = {
         fromRequestId: 1,
@@ -863,7 +1081,7 @@ describe('Activity Controller ', () => {
     })
 
     test('Pagination and filtration handled correctly', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       await controller.addSignedMessage(
         SIGNED_MESSAGE,
@@ -899,16 +1117,14 @@ describe('Activity Controller ', () => {
     })
 
     test('Keeps no more than 1000 items', async () => {
-      const { controller, sessionId } = await prepareSignedMessagesTest()
+      const { controller, sessionId } = await prepareTest('signedMessages')
 
       const signedMessages = Array.from(Array(1500).keys()).map((key) => ({
         ...SIGNED_MESSAGE,
         signature: key.toString()
       }))
 
-      // eslint-disable-next-line no-restricted-syntax
       for (const sm of signedMessages) {
-        // eslint-disable-next-line no-await-in-loop
         await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
@@ -927,14 +1143,15 @@ describe('Activity Controller ', () => {
   })
   test('removeAccountData', async () => {
     const controller = new ActivityController(
-      storageCtrl,
+      mainCtrl.storage,
       fetch,
-      callRelayer,
-      accountsCtrl,
-      selectedAccountCtrl,
-      providersCtrl,
-      networksCtrl,
-      portfolioCtrl,
+      mainCtrl.callRelayer,
+      mainCtrl.accounts,
+      mainCtrl.selectedAccount,
+      mainCtrl.providers,
+      mainCtrl.networks,
+      mainCtrl.portfolio,
+      mainCtrl.safe,
       () => Promise.resolve()
     )
 
@@ -959,5 +1176,64 @@ describe('Activity Controller ', () => {
     // Validate that the account data is removed
     expect(controller.accountsOps[sessionId]!.result!.items.length).toEqual(0)
     expect(controller.signedMessages[sessionId]!.result!.items.length).toEqual(0)
+  })
+
+  describe('Sent-to history', () => {
+    const DOMAIN_ADDR_A = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+    const DOMAIN_ADDR_B = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+
+    const SENT_AT = new Date('2024-03-01T10:00:00Z').getTime()
+    const SENT_AT_LATER = new Date('2024-06-15T18:30:00Z').getTime()
+
+    it('records and reads the address a domain was sent to (global, case-insensitive)', async () => {
+      const { controller } = await prepareTest()
+
+      // await controller.recordSentToDomain('alice.eth', DOMAIN_ADDR_A, SENT_AT)
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+      })
+
+      // Checksummed, and the domain lookup is case-insensitive.
+      expect(controller.getSentToDomainAddress('alice.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+      expect(controller.getSentToDomainAddress('ALICE.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+    })
+
+    it('overwrites with the most recent address', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        timestamp: SENT_AT,
+        calls: [{ to: DOMAIN_ADDR_B, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+      })
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        timestamp: SENT_AT_LATER,
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+      })
+
+      expect(controller.getSentToDomainAddress('alice.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+    })
+
+    it('stores recipients checksummed', async () => {
+      const { controller } = await prepareTest()
+
+      const recipientLower = '0xf0cd725d2195b1d3f4bd038c3786005b793237db'
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 302n,
+        txnId: '0x4c8a1d6f93b072e5af18c34d9e6072b1f5a83c0d7e29b46f1a0c5d8e3b97f246',
+        timestamp: SENT_AT_LATER,
+        calls: [{ to: recipientLower, value: 0n, data: '0x' }]
+      })
+
+      const stored = await storage.get('sentToHistory', { domains: {}, recipients: {} })
+      const recipientsForAccount = stored.recipients[SUBMITTED_ACCOUNT_OP.accountAddr]
+      expect(recipientsForAccount).toBeDefined()
+
+      expect(recipientsForAccount![getAddress(recipientLower)]).toBe(SENT_AT_LATER)
+      expect(recipientsForAccount![recipientLower]).toBeUndefined()
+    })
   })
 })

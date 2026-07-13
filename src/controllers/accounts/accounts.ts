@@ -26,11 +26,7 @@ import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keys
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import {
-  getUniqueAccountsArray,
-  isAmbireV2Account,
-  isSmartAccount
-} from '../../libs/account/account'
+import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -124,7 +120,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       this.emitError.bind(this)
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -153,7 +148,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
     // --------------------------------------------------
-    this.accountStateInitialLoadPromise = this.#updateAccountStates(
+    this.accountStateInitialLoadPromise = this.updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
     ).finally(() => {
       this.accountStateInitialLoadPromise = undefined
@@ -184,10 +179,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
-    await this.#updateAccountStates([accountData], blockTag, networks)
+    await this.updateAccountStates([accountData], blockTag, networks)
   }
 
-  async #updateAccountStates(
+  private async updateAccountStates(
     accounts: Account[],
     blockTag: string | number = 'latest',
     updateOnlyNetworksWithIds: bigint[] = []
@@ -213,15 +208,27 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             return
           }
 
+          const provider = this.#providers.providers[network.chainId.toString()]
+          if (!provider) {
+            const error = new Error(`Provider not found for network ${network.chainId.toString()}`)
+            this.emitError({
+              message: error.message,
+              level: 'silent',
+              sendCrashReport: true,
+              error
+            })
+            return
+          }
+
           this.accountStatesLoadingState[network.chainId.toString()] = getAccountState(
-            this.#providers.providers[network.chainId.toString()],
+            provider,
             network,
             accounts,
+            this.#keystore.keys,
             blockTag
           )
-          const networkAccountStates = await this.accountStatesLoadingState[
-            network.chainId.toString()
-          ]!
+          const networkAccountStates =
+            await this.accountStatesLoadingState[network.chainId.toString()]!
 
           this.#updateProviderIsWorking(network.chainId, true)
 
@@ -264,7 +271,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   async #addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
-    // eslint-disable-next-line no-param-reassign
+
     accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }))
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
     const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))
@@ -285,7 +292,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             ...acc.associatedKeys,
             ...(newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.associatedKeys || [])
           ])
-        )
+        ),
+        safeCreation:
+          acc.safeCreation ?? newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.safeCreation
       })),
       ...newAccountsNotAddedYet.map((a) => ({ ...a, newlyAdded: true }))
     ]
@@ -296,7 +305,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAddAccounts(accounts)
 
     // update the state of new accounts. Otherwise, the user needs to restart his extension
-    this.#updateAccountStates(newAccountsNotAddedYet)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateAccountStates(newAccountsNotAddedYet)
 
     this.emitUpdate()
   }
@@ -310,6 +320,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     delete this.accountStates[address]
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
@@ -383,7 +394,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       await this.updateAccountState(addr, 'latest', [chainId])
     }
 
-    return this.accountStates[addr][chainId.toString()]
+    return this.accountStates[addr]?.[chainId.toString()]
   }
 
   resetAccountsNewlyAddedState() {
@@ -398,7 +409,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   async setViewOnlyAccountIdentitiesIfNeeded(): Promise<void> {
     const viewOnlyAccountsNeedingIdentityFetch = this.accounts.filter(
-      (a) => !this.#keystore.getAccountKeys(a).length && !a.identityFetchedAt
+      (a) => !this.#keystore.getAccountKeys(a).length && !a.identityFetchedAt && !a.safeCreation
     )
 
     if (!viewOnlyAccountsNeedingIdentityFetch.length)
@@ -459,7 +470,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   async createSmartAccountIdentitiesIfNeeded(): Promise<void> {
     const smartAccountsNeedingIdentityCreate = this.accounts.filter(
       (a) =>
-        isSmartAccount(a) &&
         isAmbireV2Account(a.creation?.factoryAddr) &&
         this.#keystore.getAccountKeys(a).length &&
         !a.creation?.identityCreatedAt

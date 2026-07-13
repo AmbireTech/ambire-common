@@ -11,15 +11,13 @@ describe('EventEmitter', () => {
     eventEmitter = new EventEmitter()
   })
 
-  it('should unsubscribe from update events', () => {
+  it('should unsubscribe from update events', async () => {
     const mockCallback = jest.fn()
     let unsubscribe = eventEmitter.onUpdate(mockCallback)
 
-    // Trigger an update.
-    // Using 'as any' to access protected method for testing
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
 
     expect(mockCallback).toHaveBeenCalledTimes(3)
     // `callbacks` is private, change to public if you want to test it
@@ -27,8 +25,7 @@ describe('EventEmitter', () => {
 
     unsubscribe()
 
-    // Trigger another update
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
     // Count should remain 3, indicating the callback was not called again
     expect(mockCallback).toHaveBeenCalledTimes(3)
     // `callbacks` is private, change to public if you want to test it
@@ -36,15 +33,15 @@ describe('EventEmitter', () => {
 
     const mockCallback2 = jest.fn()
     unsubscribe = eventEmitter.onUpdate(mockCallback2)
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
 
     expect(mockCallback2).toHaveBeenCalledTimes(4)
 
     unsubscribe()
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
     expect(mockCallback2).toHaveBeenCalledTimes(4)
     // `callbacks` is private, change to public if you want to test it
     // expect(eventEmitter.callbacks.length).toBe(0)
@@ -89,7 +86,7 @@ describe('EventEmitter', () => {
     emitter.onError(mockErrorCallback)
 
     // Verify they work before destroy
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitUpdate()
     expect(mockCallback).toHaveBeenCalledTimes(1)
 
@@ -97,9 +94,9 @@ describe('EventEmitter', () => {
     emitter.destroy()
 
     // Try to emit again
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitError({ level: 'minor', message: 'test', error: new Error() })
 
     // Should not have been called again
@@ -135,7 +132,7 @@ describe('EventEmitter', () => {
       // The callback can still be executed, proving the old controller is kept alive
       const mockCallback = jest.fn()
       oldController.onError(mockCallback, 'test')
-      // @ts-ignore
+      // @ts-expect-error
       oldController.emitError({
         level: 'minor',
         message: 'test error',

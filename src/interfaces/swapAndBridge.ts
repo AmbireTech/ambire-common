@@ -31,6 +31,7 @@ export interface SwapAndBridgeToToken {
   address: string
   icon?: string
   decimals: number
+  priceUSD?: string
 }
 
 export interface SocketAPIQuote {
@@ -85,6 +86,90 @@ interface BungeeApprovalData {
   userAddress: string
 }
 
+export interface UniswapToken {
+  address: string
+  chainId: number
+  decimals: number
+  name: string
+  symbol: string
+  project?: {
+    logo?: {
+      url?: string
+    }
+  }
+}
+
+export interface UniswapQuote {
+  chainId: number
+  destinationChainId?: number
+  input: {
+    amount: string
+    token: string
+  }
+  output: {
+    amount: string
+    token: string
+    recipient?: string
+  }
+  swapper: string
+  tradeType: 'EXACT_INPUT' | 'EXACT_OUTPUT'
+  quoteId?: string
+  gasFeeUSD?: string
+  gasFee?: string
+  gasUseEstimate?: string
+  priceImpact?: number
+  slippage?: number
+  routeString?: string
+  estimatedFillTimeMs?: number
+  exclusiveRelayer?: string
+  exclusivityDeadline?: number
+  fillDeadline?: number
+  aggregatedOutputs?: {
+    amount: string
+    token: string
+    recipient: string
+    bps: number
+    minAmount?: string
+  }[]
+}
+
+export interface UniswapQuoteResponse {
+  requestId: string
+  routing: 'CLASSIC' | 'BRIDGE' | 'WRAP' | 'UNWRAP' | string
+  quote: UniswapQuote
+  permitData?: any
+}
+
+export interface UniswapTransactionRequest {
+  to: string
+  from: string
+  data: string
+  value: string
+  chainId: number
+}
+
+export interface UniswapSwapResponse {
+  requestId: string
+  swap: UniswapTransactionRequest
+  gasFee?: string
+}
+
+export interface UniswapApprovalResponse {
+  requestId: string
+  approval: UniswapTransactionRequest | null
+  cancel?: UniswapTransactionRequest | null
+}
+
+export interface UniswapStatusResponse {
+  requestId: string
+  swaps: {
+    swapType: string
+    status: 'PENDING' | 'SUCCESS' | 'NOT_FOUND' | 'FAILED' | 'EXPIRED'
+    txHash?: string
+    swapId?: string
+  }[]
+}
+
 export interface SwapAndBridgeRoute {
   providerId: string
   routeId: string
@@ -103,8 +188,9 @@ export interface SwapAndBridgeRoute {
   steps: SwapAndBridgeStep[]
   inputValueInUsd: number
   outputValueInUsd: number
+  outputValueAfterGasInUsd?: number
   serviceTime: number
-  rawRoute: SocketAPIRoute | LiFiRoute
+  rawRoute: SocketAPIRoute | LiFiRoute | SquidRoute | UniswapQuoteResponse
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
@@ -364,7 +450,12 @@ export interface BungeeRouteStatus {
   bungeeStatusCode: number
 }
 
-export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
+export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'failed' | 'refunded' | null
+
+export type SwapAndBridgeRouteStatusResult = {
+  status: SwapAndBridgeRouteStatus
+  txnId?: string | null
+}
 
 export type SocketAPISupportedChain = {
   chainId: number
@@ -477,6 +568,81 @@ export interface BungeeBuildTxnResponse {
   txData: BungeeTxData
 }
 
+export interface SquidToken {
+  address: string
+  chainId: number | string
+  decimals: number
+  logoURI?: string
+  name: string
+  symbol: string
+}
+
+export interface SquidRoute {
+  requestId?: string
+  quoteId: string
+  estimate: {
+    aggregatePriceImpact?: string
+    approvalAddress?: string
+    estimatedRouteDuration?: number
+    feeCosts?: {
+      amount: string
+      amountUSD?: string
+      amountUsd?: string
+      included?: boolean
+      token?: SquidToken
+    }[]
+    gasCosts?: {
+      amountUSD?: string
+    }[]
+    fromAmount?: string
+    fromAmountUSD?: string
+    route?: {
+      fromChain?: { dex?: string; logoURI?: string; type?: string }[]
+      toChain?: { dex?: string; logoURI?: string; type?: string }[]
+    }
+    toAmount: string
+    toAmountMin?: string
+    toAmountUSD?: string
+  }
+  params?: {
+    fromAmount?: string
+    fromChain?: number | string
+    fromToken?: string
+    toChain?: number | string
+    toToken?: string
+  }
+  transactionRequest?: {
+    data?: string
+    target?: string
+    to?: string
+    value?: string
+  }
+}
+
+export interface SquidRouteResponse {
+  route: SquidRoute
+}
+
+export interface SquidStatusResponse {
+  axelarTransactionUrl?: string
+  coralTransactionUrl?: string
+  fromChain?: {
+    transactionUrl?: string
+  }
+  isGMPTransaction?: boolean
+  squidTransactionStatus?: string
+  status?: string
+  toChain?: {
+    transactionUrl?: string
+  }
+}
+
+export interface SquidErrorResponse {
+  message?: string
+  statusCode?: number
+  type?: string
+}
+
 export interface ProviderQuoteParams {
   fromAsset: TokenResult | null
   fromChainId: number
@@ -503,6 +669,7 @@ export interface SwapProvider {
    * null if a successful fetch has not been made yet
    */
   supportedChains: SwapAndBridgeSupportedChain[] | null
+  areChainsSupported?(params: { fromChainId: number; toChainId: number }): boolean
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,
@@ -537,12 +704,16 @@ export interface SwapProvider {
     fromChainId,
     toChainId,
     bridge,
-    providerId
+    providerId,
+    requestId,
+    routeId
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
     bridge?: string
     providerId: string
-  }): Promise<SwapAndBridgeRouteStatus>
+    requestId?: string
+    routeId?: string
+  }): Promise<SwapAndBridgeRouteStatusResult>
 }

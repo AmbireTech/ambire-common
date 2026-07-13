@@ -22,7 +22,8 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
   const options: Partial<GetOptions> = {
     disableAutoDiscovery: true,
     additionalErc20Hints: allAddresses,
-    additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]]))
+    additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]])),
+    preventTokenBlacklisting: true
   }
   const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
 

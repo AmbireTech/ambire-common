@@ -1,42 +1,14 @@
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
-
-import { hexlify, randomBytes } from 'ethers'
-import fetch from 'node-fetch'
+import { formatUnits, getAddress, ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
-import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-import { AddressBookController } from '../addressBook/addressBook'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PhishingController } from '../phishing/phishing'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
+import * as ensDomainsModule from '../../services/ensDomains'
+import { DomainsController } from '../domains/domains'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -65,214 +37,23 @@ const account = {
   }
 }
 
-// TODO - this mocks are being duplicated across the tests. Should reuse it.
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
-
-class LedgerSigner {
-  key
-
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  constructor(_key: Key) {
-    this.key = _key
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
-
-const { uiManager } = mockUiManager()
-
 const getTokens = () => {
   return structuredClone(ETHEREUM_TOKENS.concat(POLYGON_TOKENS))
 }
 
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  const storageCtrl = new StorageController(storage)
-
-  const accounts = [account]
-
-  const mockKeys = mockInternalKeys(accounts as Account[])
-
-  storage.set('keystoreKeys', mockKeys)
-
-  storageCtrl.set('accounts', accounts)
-
-  let providersCtrl: any
-
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {},
-    onReady: async () => {
-      await providersCtrl.init({ networks: networksCtrl.allNetworks })
-    }
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('accounts', [account])
+    await storageCtrl.set('selectedAccount', account.addr)
   })
-
-  const uiCtrl = new UiController({ uiManager })
-  providersCtrl = new ProvidersController({
-    storage: storageCtrl,
-    getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
-  })
-
-  const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-  const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystoreController,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystoreController,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore: keystoreController,
-    autoLogin: autoLoginCtrl
-  })
-
-  const addressBookController = new AddressBookController(
-    storageCtrl,
-    accountsCtrl,
-    selectedAccountCtrl
-  )
-
-  const callRelayer = relayerCall.bind({ url: '', fetch })
-
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const portfolioController = new PortfolioController(
-    storageCtrl,
-    fetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystoreController,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl
-  )
-  const activity = new ActivityController(
-    storageCtrl,
-    fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolioController,
-    () => Promise.resolve()
-  )
-
-  const phishing = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    addressBook: addressBookController
-  })
-
-  const transferController = new TransferController(
-    () => {},
-    storageCtrl,
-    humanizerInfo as HumanizerMeta,
-    selectedAccountCtrl,
-    networksCtrl,
-    addressBookController,
-    accountsCtrl,
-    keystoreController,
-    portfolioController,
-    activity,
-    {},
-    providersCtrl,
-    phishing,
-    relayerUrl,
-    () => Promise.resolve(),
-    uiCtrl
-  )
-
-  await selectedAccountCtrl.initialLoadPromise
-  await selectedAccountCtrl.setAccount(account)
+  await mainCtrl.selectedAccount.setAccount(account)
+  mainCtrl.transfer.resetForm()
 
   return {
-    transferController,
-    tokens: getTokens()
+    transferController: mainCtrl.transfer,
+    tokens: getTokens(),
+    uiCtrl: mainCtrl.ui,
+    selectedAccountCtrl: mainCtrl.selectedAccount
   }
 }
 
@@ -282,7 +63,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -293,7 +75,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -306,7 +89,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: XWALLET_ADDRESS,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -332,6 +116,80 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.amount).toBe('1')
   })
+  test('should set max amount minus fee when the selected fee token matches the transfer token', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const feeAmount = 1_000_000_000_000_000n
+
+    await transferController.update({
+      selectedToken: nativeToken
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: feeAmount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(
+      formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
+    )
+  })
+  test('should preserve the amount when the fee leaves no transferable max amount', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const initialAmount = '0.001'
+
+    await transferController.update({
+      selectedToken: nativeToken,
+      amount: initialAmount
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: nativeToken.amount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(initialAmount)
+    expect(transferController.amountAdjustmentWarning).toBeNull()
+  })
   test('should set validation form messages', async () => {
     const { transferController, tokens } = await prepareTest()
 
@@ -344,7 +202,8 @@ describe('Transfer Controller', () => {
       selectedToken: xwalletOnEthereum,
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -378,6 +237,47 @@ describe('Transfer Controller', () => {
       amount: transferController.maxAmount
     })
   })
+  test('should allow proceeding with a Colibri-verified ENS recipient', async () => {
+    const { transferController, tokens } = await prepareTest()
+    const domain = '0xbobby.eth'
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    const provider = {} as any
+    const verificationProvider = { destroyed: false } as any
+    const domainsController = new DomainsController({
+      providers: { ['1']: provider },
+      verification: {
+        getReadyProvider: jest.fn(() => verificationProvider)
+      } as any
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null })
+
+    try {
+      await domainsController.resolveDomain({ domain })
+
+      expect(domainsController.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(domainsController.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+
+      const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+      await transferController.update({
+        amount: '0.0001',
+        selectedToken: nativeToken,
+        addressState: {
+          fieldValue: domain,
+          resolvedAddress,
+          resolvedAddressType: 'ens',
+          isDomainResolving: false
+        }
+      })
+
+      expect(transferController.recipientAddress).toBe(resolvedAddress)
+      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+      expect(transferController.isFormValid).toBe(true)
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
+  })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const { transferController, tokens } = await prepareTest()
 
@@ -405,7 +305,8 @@ describe('Transfer Controller', () => {
     await transferController.update({
       addressState: {
         fieldValue: FEE_COLLECTOR,
-        ensAddress: '',
+        resolvedAddress: '',
+        resolvedAddressType: null,
         isDomainResolving: false
       }
     })
@@ -424,7 +325,8 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
-      ensAddress: '',
+      resolvedAddress: '',
+      resolvedAddressType: null,
       isDomainResolving: false
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
@@ -434,8 +336,431 @@ describe('Transfer Controller', () => {
   test('should toJSON()', async () => {
     const { transferController } = await prepareTest()
 
-    const json = transferController.toJSON()
-    expect(json).toBeDefined()
+    expect(transferController.toJSON()).toBeDefined()
+  })
+})
+
+describe('Transfer Controller defaults logic', () => {
+  const getDefaultPortfolioState = () => {
+    return {
+      tokens: getTokens(),
+      isReadyToVisualize: true,
+      isAllReady: true
+    }
+  }
+
+  test('should initialize defaults and transfer session on updateView to transfer', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    expect(transferController.transferSessionId).not.toBe(null)
+    expect(transferController.areDefaultsSet).toBe(true)
+    expect(transferController.selectedToken).not.toBe(null)
+    expect(transferController.isTopUp).toBe(false)
+  })
+
+  test('should keep existing form when re-entering same mode with persisted state and no search params', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const initialSessionId = transferController.transferSessionId
+    const initialAmount = transferController.amount
+    const initialRecipient = transferController.recipientAddress
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: false,
+      searchParams: {}
+    })
+
+    expect(transferController.transferSessionId).toBe(initialSessionId)
+    expect(transferController.amount).toBe(initialAmount)
+    expect(transferController.recipientAddress).toBe(initialRecipient)
+  })
+
+  test('should reinitialize defaults when transfer route has token search params', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      selectedToken: getTokens().find((t) => t.address === STK_WALLET_ADDRESS && t.chainId === 1n),
+      amount: '2'
+    })
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {
+        address: ZeroAddress,
+        chainId: '1'
+      }
+    })
+
+    expect(transferController.selectedToken?.address).toBe(ZeroAddress)
+    expect(transferController.selectedToken?.chainId).toBe(1n)
+    expect(transferController.amount).toBe('')
+  })
+
+  test('should unload transfer state on navigate-out via updateView when there is no other transfer view', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'dashboard',
+      isReady: true,
+      searchParams: {}
+    })
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.areDefaultsSet).toBe(false)
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.amount).toBe('')
+  })
+
+  test('should preserve popup form state on removeView when form is persisted', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    uiCtrl.removeView('popup')
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.amount).toBe('1')
+    expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
+    expect(transferController.areDefaultsSet).toBe(true)
+  })
+
+  test('should reset transfer state on popup removeView when form is not persisted', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    expect(transferController.selectedToken).not.toBeNull()
+
+    uiCtrl.removeView('popup')
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.areDefaultsSet).toBe(false)
+    expect(transferController.selectedToken).toBeNull()
+  })
+
+  test('should not unload on removeView when another transfer view is open', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'transfer-tab-1',
+      type: 'tab',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.addView({
+      id: 'transfer-tab-2',
+      type: 'tab',
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    uiCtrl.updateView('transfer-tab-1', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const activeSessionId = transferController.transferSessionId
+    uiCtrl.removeView('transfer-tab-1')
+
+    expect(transferController.transferSessionId).toBe(activeSessionId)
+    expect(transferController.amount).toBe('1')
+    expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
+  })
+
+  test('should ignore selectedAccount updates when transfer session is not active', async () => {
+    const { transferController, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should set default token on selectedAccount force update when transfer session is active', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.transferSessionId).not.toBe(null)
+    expect(transferController.selectedToken).not.toBeNull()
+    expect(transferController.areDefaultsSet).toBe(true)
+  })
+
+  test('should not update defaults on selectedAccount force update when user has proceeded', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+    transferController.setUserProceeded(true)
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should not set default token when portfolio is not ready to visualize', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      tokens: getTokens(),
+      isReadyToVisualize: false,
+      isAllReady: true
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should set areDefaultsSet when portfolio isAllReady but no tokens are available', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    transferController.selectedToken = null
+    transferController.areDefaultsSet = false
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      tokens: [],
+      isReadyToVisualize: true,
+      isAllReady: true
+    }
+
+    await selectedAccountCtrl.forceEmitUpdate()
+
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(true)
   })
 })
 
@@ -455,7 +780,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }]
+    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }],
+    marketDataIn: []
   },
   {
     amount: 0n,
@@ -472,7 +798,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }],
+    marketDataIn: []
   },
   {
     amount: 0n,
@@ -489,7 +816,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }],
+    marketDataIn: []
   },
   {
     amount: 58316260607759458104900n,
@@ -506,7 +834,8 @@ const ETHEREUM_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }],
+    marketDataIn: []
   }
 ]
 
@@ -526,6 +855,7 @@ const POLYGON_TOKENS: TokenResult[] = [
       isHidden: false,
       suspectedType: null
     },
-    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }]
+    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }],
+    marketDataIn: []
   }
 ]

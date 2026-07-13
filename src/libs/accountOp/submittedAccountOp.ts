@@ -13,6 +13,7 @@ import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
 
+import type { TokenResult } from '../portfolio/interfaces'
 /*
  * AccountOpIdentifiedBy
  * The txnId may not neceseraly be final on the moment of broadcast.
@@ -47,6 +48,24 @@ export type PortfoliosToUpdate = {
   [address: string]: Network['chainId'][]
 }
 
+export type BalanceChange = Pick<
+  TokenResult,
+  | 'symbol'
+  | 'name'
+  | 'decimals'
+  | 'address'
+  | 'chainId'
+  | 'priceIn'
+  | 'marketDataIn'
+  | 'meta'
+  | 'flags'
+> & {
+  amount: bigint
+  amountBefore: bigint
+  amountAfter: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -57,6 +76,48 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  balanceChanges?: BalanceChange[]
+  balanceChangesFetchRetryCount?: number
+}
+
+type SubmittedAccountOpActionFields = Pick<
+  SubmittedAccountOp,
+  | 'signingKeyAddr'
+  | 'signingKeyType'
+  | 'nonce'
+  | 'eoaNonce'
+  | 'feeCall'
+  | 'activatorCall'
+  | 'gasLimit'
+  | 'signature'
+  | 'asUserOperation'
+  | 'signers'
+  | 'signed'
+  | 'safeTx'
+  | 'flags'
+>
+
+export interface SubmittedAccountOpLike
+  extends Pick<
+      SubmittedAccountOp,
+      | 'id'
+      | 'accountAddr'
+      | 'chainId'
+      | 'calls'
+      | 'gasFeePayment'
+      | 'txnId'
+      | 'status'
+      | 'meta'
+      | 'timestamp'
+      | 'identifiedBy'
+      | 'blockNumber'
+      | 'blockHash'
+      | 'gasUsed'
+      | 'balanceChanges'
+      | 'balanceChangesFetchRetryCount'
+    >,
+    Partial<SubmittedAccountOpActionFields> {
+  activitySource?: 'internal' | 'external'
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
@@ -85,15 +146,21 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
   call: Call
   callIndex: number
 } {
+  let lastWithTxId
+  let callIndex = 0
+
   // get the first BroadcastedButNotConfirmed call if any
   for (let i = 0; i < op.calls.length; i++) {
     const currentCall = op.calls[i]!
     if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
       return { call: currentCall, callIndex: i }
+
+    lastWithTxId = currentCall
+    callIndex = i
   }
 
   // if no BroadcastedButNotConfirmed, get the last one
-  return { call: op.calls[op.calls.length - 1]!, callIndex: op.calls.length - 1 }
+  return { call: lastWithTxId!, callIndex }
 }
 
 export async function fetchFrontRanTxnId(
@@ -107,19 +174,17 @@ export async function fetchFrontRanTxnId(
   if (counter >= 5) return foundTxnId
 
   const userOpHash = identifiedBy.identifier
-  const bundler = identifiedBy.bundler
-    ? getBundlerByName(identifiedBy.bundler)
-    : getDefaultBundler(network)
-  const bundlerResult = await bundler.getStatus(network, userOpHash)
+  const bundler = getDefaultBundler(network) // rely on pimlico for front running
+  const bundlerResult = await bundler.getReceipt(userOpHash, network)
   if (
-    !bundlerResult.transactionHash ||
-    bundlerResult.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
+    !bundlerResult.receipt ||
+    bundlerResult.receipt.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
   ) {
     await wait(2000)
     return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1)
   }
 
-  return bundlerResult.transactionHash
+  return bundlerResult.receipt.transactionHash
 }
 
 export function hasTimePassedSinceBroadcast(op: SubmittedAccountOp, mins: number): boolean {
@@ -248,7 +313,6 @@ export async function fetchTxnId(
   try {
     response = await callRelayer(`/v2/get-txn-id/${id}`)
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.log(`relayer responded with an error when trying to find the txnId: ${e}`)
     return {
       status: 'not_found',
@@ -283,32 +347,29 @@ export function updateOpStatus(
 ): SubmittedAccountOp | null {
   if (opReference.identifiedBy.type === 'MultipleTxns') {
     const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
-    // eslint-disable-next-line no-param-reassign
+
     opReference.calls[callIndex]!.status = status
 
     // if there's a receipt, add the fee
     if (receipt) {
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.fee = {
         inToken: ZeroAddress,
         amount: receipt.fee
       }
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.blockHash = receipt.blockHash
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.blockNumber = receipt.blockNumber
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.blockHash = receipt.blockHash
 
-      // eslint-disable-next-line no-param-reassign
       opReference.calls[callIndex]!.gasUsed = toBeHex(receipt.gasUsed)
     }
 
-    if (callIndex === opReference.calls.length - 1) {
-      // eslint-disable-next-line no-param-reassign
+    const left = !!opReference.calls.find(
+      (c) => c.status === AccountOpStatus.BroadcastedButNotConfirmed
+    )
+    if (!left) {
       opReference.status = status
       return opReference
     }
@@ -318,7 +379,6 @@ export function updateOpStatus(
     return null
   }
 
-  // eslint-disable-next-line no-param-reassign
   opReference.status = status
   return opReference
 }
@@ -330,15 +390,29 @@ const transferIface = new Interface(['function transfer(address,uint256)'])
  *
  * @param whitelist Optional list of addresses to filter the results.
  */
-export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: string[]): string[] {
+export function getAccountOpRecipients(
+  op: SubmittedAccountOp,
+  whitelist?: string[]
+): {
+  address: string
+  domain?: string
+}[] {
   const sentTo = new Set<string>()
+  const domainMap = new Map<string, string>()
   const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase())
+  const setDomain = (address: string, domain?: string) => {
+    const normalized = domain?.toLowerCase()?.trim()
+    if (normalized) {
+      domainMap.set(address, normalized)
+    }
+  }
 
   op.calls.forEach((call) => {
     // 1) Direct call.to match
     if (call.to && isAddress(call.to)) {
       if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
         sentTo.add(call.to)
+        setDomain(call.to, call.recipientDomain)
       }
     }
 
@@ -356,6 +430,7 @@ export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: strin
           if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase())) return
 
           sentTo.add(recipient)
+          setDomain(recipient, call.recipientDomain)
         }
       } catch {
         // ignore decode errors and continue
@@ -363,7 +438,10 @@ export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: strin
     }
   })
 
-  return Array.from(sentTo)
+  return Array.from(sentTo).map((address) => ({
+    address,
+    domain: domainMap.get(address)
+  }))
 }
 
 /**

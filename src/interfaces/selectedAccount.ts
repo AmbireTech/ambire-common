@@ -25,6 +25,7 @@ export type SelectedAccountPortfolioState = {
           | 'tokens'
           | 'collections'
           | 'tokenErrors'
+          | 'collectionErrors'
           | 'hintsFromExternalAPI'
           | 'priceCache'
           | 'total'
@@ -42,6 +43,14 @@ export type SelectedAccountPortfolioState = {
 export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
   latestAmount?: bigint
   pendingAmount?: bigint
+}
+
+export type SelectedAccountPortfolioVerification = {
+  provider: 'colibri'
+  status: 'loading' | 'success' | 'warning' | 'stale'
+  blockDiff?: number
+  verifiedChains: string[]
+  failedChains: string[]
 }
 
 export interface SelectedAccountPortfolio {
@@ -73,5 +82,10 @@ export interface SelectedAccountPortfolio {
   defiPositions: PositionsByProvider[]
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
+  verification: SelectedAccountPortfolioVerification | null
   projectedRewardsStats: ProjectedRewardsStats | null
+}
+
+export type SelectedAccountBalanceByAccount = {
+  [accountId: string]: number
 }
