@@ -577,7 +577,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     const ethereumProvider =
       this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
-    const citreaProvider = this.#isNetworkEnabled(4114n) && this.#providers['4114']
+    const citreaProvider = this.#isNetworkEnabled(4114n) ? this.#providers['4114'] : undefined
 
     if (!ethereumProvider) {
       this.emitError({
