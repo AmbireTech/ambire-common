@@ -29,8 +29,7 @@ export type ForwardResolution = {
  * A name service the wallet can resolve names against. To add one, add a resolver class under
  * `resolvers/` and register it in `resolvers/index.ts`: services that expose an ENS-compatible
  * universal resolver extend `EnsCompatibleResolver`, while a genuinely different system (e.g.
- * Unstoppable, Lens) implements this contract directly. The
- * controller depends only on this interface — it never learns how a given service resolves.
+ * Unstoppable, Lens) implements this contract directly.
  */
 export interface NameResolver {
   readonly id: NameServiceId

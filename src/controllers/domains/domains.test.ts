@@ -152,22 +152,27 @@ describe('Domains', () => {
       getNetwork: allNetworksEnabled
     })
     // The ENS resolver runs both the RPC resolve and the Colibri verification through
-    // `resolveENSDomain`, so this single spy stands in for both.
+    // `resolveENSDomain`, so this single spy stands in for both, distinguished by which
+    // provider instance it was called with (regular RPC vs. Colibri's verification provider).
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
-      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+      .mockImplementation(async ({ provider: usedProvider }: Parameters<
+        typeof ensDomainsModule.resolveENSDomain
+      >[0]) =>
+        usedProvider === verificationProvider
+          ? { address: resolvedAddress, avatar: null, expiry: null }
+          : { address: changedAddress, avatar: null, expiry: null }
+      )
 
     try {
+      // No verifier ready yet: resolves via RPC only (changedAddress), nothing to compare against.
       await controller.resolveDomain({ domain })
 
-      expect(controller.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(controller.domainToAddresses[domain]?.address).toBe(changedAddress)
       expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
 
+      // A Colibri verifier becomes ready; its resolution (resolvedAddress) now disagrees with RPC.
       getReadyProvider.mockReturnValue(verificationProvider)
-      controller.domainToAddresses[domain] = {
-        address: changedAddress,
-        type: 'ens'
-      }
 
       await controller.resolveDomain({ domain })
 
@@ -177,10 +182,11 @@ describe('Domains', () => {
       )
       expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
 
-      controller.domainToAddresses[domain] = {
+      resolveENSDomainSpy.mockResolvedValue({
         address: resolvedAddress,
-        type: 'ens'
-      }
+        avatar: null,
+        expiry: null
+      })
 
       await controller.resolveDomain({ domain })
 
@@ -198,6 +204,35 @@ describe('Domains', () => {
     } finally {
       resolveENSDomainSpy.mockRestore()
       restore()
+    }
+  })
+  it('resolveDomain always re-resolves fresh instead of short-circuiting off a cached domainToAddresses entry', async () => {
+    // Regression guard: resolveDomain must never reuse `domainToAddresses[domain]` to skip a fresh
+    // resolver call.
+    // https://docs.ens.domains/web/design#other-guidelines-and-tips
+    const domain = 'reassigned-owner.eth'
+    const firstAddress = getAddress('0x1111111111111111111111111111111111111111')
+    const secondAddress = getAddress('0x2222222222222222222222222222222222222222')
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      getNetwork: allNetworksEnabled
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValueOnce({ address: firstAddress, avatar: null, expiry: null })
+      .mockResolvedValueOnce({ address: secondAddress, avatar: null, expiry: null })
+
+    try {
+      await controller.resolveDomain({ domain })
+      expect(controller.domainToAddresses[domain]?.address).toBe(firstAddress)
+
+      // The domain now resolves to a different address; a second resolveDomain call must pick it up.
+      await controller.resolveDomain({ domain })
+
+      expect(resolveENSDomainSpy).toHaveBeenCalledTimes(2)
+      expect(controller.domainToAddresses[domain]?.address).toBe(secondAddress)
+    } finally {
+      resolveENSDomainSpy.mockRestore()
     }
   })
   it('verifies a GNS (.gwei) name through Colibri, since it resolves on Ethereum mainnet', async () => {

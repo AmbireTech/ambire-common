@@ -368,28 +368,6 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     delete this.verifiedDomainsStatus[domain]
     await this.forceEmitUpdate()
 
-    if (this.domainToAddresses[domain]) {
-      try {
-        const cachedAddress = this.domainToAddresses[domain]?.address
-        if (cachedAddress) {
-          const isVerified = await this.#verifyResolvedAddress(resolver, domain, cachedAddress)
-          if (isVerified) this.verifiedDomainsStatus[domain] = 'VERIFIED'
-        }
-
-        this.resolveDomainsStatus[domain] = 'RESOLVED'
-        await this.forceEmitUpdate()
-        this.resolveDomainsStatus[domain] = undefined
-      } catch (e: any) {
-        this.emitError({
-          error: e,
-          message: `${resolver.label} resolution failed for ${domain}: ${e?.message || e}`,
-          level: 'silent'
-        })
-        await this.#setResolveDomainFailure(domain, e)
-      }
-      return
-    }
-
     // A fresh resolution needs the owning service's network.
     const requiredChainId = resolver.requiredChainId(this.#defaultNetworksMode)
     if (requiredChainId && !this.#isNetworkEnabled(BigInt(requiredChainId))) {
