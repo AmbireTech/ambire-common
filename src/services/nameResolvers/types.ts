@@ -45,6 +45,12 @@ export interface NameResolver {
   readonly isFallback?: boolean
   readonly capabilities: { reverse: boolean; avatar: boolean; expiry: boolean }
   matches(domain: string): boolean
+  /**
+   * The chain this service resolves on for the given network mode, or undefined for a chain-agnostic
+   * service. Lets the controller (which owns the enabled-networks list) detect a disabled network
+   * before attempting resolution, without learning anything provider-specific.
+   */
+  requiredChainId(networkMode: NetworkMode): string | undefined
   resolve(domain: string, ctx: ResolveContext): Promise<ForwardResolution | null>
   reverse(addresses: string[], ctx: ResolveContext): Promise<ReverseLookupResult>
   getAvatar(name: string, ctx: ResolveContext): Promise<string | null>

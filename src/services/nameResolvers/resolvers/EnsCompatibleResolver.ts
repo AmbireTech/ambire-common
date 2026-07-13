@@ -9,7 +9,13 @@ import {
 } from '@/services/ensDomains'
 
 import { isNameExpiryStale } from '../expiry'
-import { ForwardResolution, NameResolver, NameServiceId, ResolveContext } from '../types'
+import {
+  ForwardResolution,
+  NameResolver,
+  NameServiceId,
+  NetworkMode,
+  ResolveContext
+} from '../types'
 
 export const ETHEREUM_CHAIN_ID = { mainnet: '1', testnet: '11155111' }
 
@@ -57,6 +63,10 @@ export abstract class EnsCompatibleResolver implements NameResolver {
   }
 
   abstract matches(domain: string): boolean
+
+  requiredChainId(networkMode: NetworkMode): string | undefined {
+    return this.chainId[networkMode]
+  }
 
   protected providerFor(ctx: ResolveContext) {
     return ctx.getProvider(this.chainId[ctx.networkMode])

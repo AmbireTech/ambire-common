@@ -248,7 +248,7 @@ describe('Transfer Controller', () => {
       verification: {
         getReadyProvider: jest.fn(() => verificationProvider)
       } as any,
-      isNetworkEnabled: () => true
+      getNetwork: (chainId: bigint) => ({ chainId, disabled: false }) as any
     })
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')

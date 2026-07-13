@@ -2,6 +2,7 @@ import { getAddress, isAddress } from 'ethers'
 
 import { Contacts } from '@/interfaces/addressBook'
 
+import EmittableError from '../../classes/EmittableError'
 import {
   Domains,
   ExtraReverseData,
@@ -11,6 +12,7 @@ import {
 } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { IVerificationController } from '../../interfaces/verification'
@@ -34,18 +36,14 @@ export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
 
 const REVERSE_LOOKUP_TIMEOUT_MS = 15000
 const RESOLUTION_VERIFY_TIMEOUT_MS = 15000
-// A resolution mismatch (the RPC and Colibri returned different addresses) is the only user-facing
-// resolution error. The service name in the message varies (ENS, GNS, ...), so match on the shared
-// marker rather than a fixed, ENS-specific prefix.
-const RESOLUTION_MISMATCH_ERROR_MARKER = 'resolution mismatch for'
 
-const getUserFacingResolutionError = (error: any) => {
-  const message = error?.message
-  if (typeof message !== 'string') return undefined
-  if (!message.includes(RESOLUTION_MISMATCH_ERROR_MARKER)) return undefined
-
-  return message
-}
+/**
+ * Only an `EmittableError`'s message is safe to show the user verbatim; it flags a deliberate,
+ * user-facing resolution failure (a resolution mismatch or a disabled network for the owning
+ * service). Every other failure (RPC/timeout) is a plain Error and surfaces the generic message.
+ */
+const getUserFacingResolutionError = (error: any) =>
+  error instanceof EmittableError ? error.message : undefined
 
 export const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS = 24 * 60 * 60 * 1000
 // Once a name is within the warn window, re-poll its expiry at most this often to catch a renewal.
@@ -81,7 +79,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   /** Name services the controller resolves against. Defaults to the built-in set; overridable for tests. */
   #resolvers: NameResolver[]
 
-  #isNetworkEnabled: (chainId: bigint) => boolean
+  #getNetwork: (chainId: bigint) => Network | undefined
 
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
@@ -120,7 +118,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     storage,
     featureFlags,
     resolvers,
-    isNetworkEnabled
+    getNetwork
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
@@ -131,7 +129,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     storage?: IStorageController
     featureFlags?: IFeatureFlagsController
     resolvers?: NameResolver[]
-    isNetworkEnabled: (chainId: bigint) => boolean
+    getNetwork: (chainId: bigint) => Network | undefined
   }) {
     super(eventEmitterRegistry)
 
@@ -141,7 +139,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.#storage = storage
     this.#featureFlags = featureFlags
     this.#resolvers = resolvers ?? DEFAULT_RESOLVERS
-    this.#isNetworkEnabled = isNetworkEnabled
+    this.#getNetwork = getNetwork
+  }
+
+  #isNetworkEnabled(chainId: bigint): boolean {
+    const network = this.#getNetwork(chainId)
+    return !!network && !network.disabled
   }
 
   /**
@@ -280,12 +283,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return true
     }
 
-    throw new Error(
-      `${resolver.label} resolution mismatch for ${domain}: RPC returned ${address}, Colibri returned ${verified.address}`
-    )
+    throw new EmittableError({
+      level: 'silent',
+      message: `${resolver.label} resolution mismatch for ${domain}: RPC returned ${address}, Colibri returned ${verified.address}`
+    })
   }
 
-  #setResolveDomainFailure(domain: string, error: any) {
+  async #setResolveDomainFailure(domain: string, error: any) {
     const message = getUserFacingResolutionError(error)
 
     if (message) {
@@ -297,6 +301,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       delete this.resolveDomainsErrors[domain]
     }
     this.resolveDomainsStatus[domain] = 'FAILED'
+    await this.forceEmitUpdate()
+    this.resolveDomainsStatus[domain] = undefined
   }
 
   async batchReverseLookup(addresses: string[], updateExpiryForAddresses?: string[]) {
@@ -346,9 +352,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
     // @TODO: Consider persisting a "no owner" result to avoid repeated lookups for unsupported domains, but only if the domain is valid (e.g., not a random string). Otherwise, we could end up caching a lot of junk.
     if (!resolver) {
-      this.resolveDomainsStatus[domain] = 'FAILED'
-      await this.forceEmitUpdate()
-      this.resolveDomainsStatus[domain] = undefined
+      await this.#setResolveDomainFailure(domain, new Error(`No resolver for ${domain}`))
       return
     }
 
@@ -381,10 +385,24 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           message: `${resolver.label} resolution failed for ${domain}: ${e?.message || e}`,
           level: 'silent'
         })
-        this.#setResolveDomainFailure(domain, e)
-        await this.forceEmitUpdate()
-        this.resolveDomainsStatus[domain] = undefined
+        await this.#setResolveDomainFailure(domain, e)
       }
+      return
+    }
+
+    // A fresh resolution needs the owning service's network.
+    const requiredChainId = resolver.requiredChainId(this.#defaultNetworksMode)
+    if (requiredChainId && !this.#isNetworkEnabled(BigInt(requiredChainId))) {
+      const network = this.#getNetwork(BigInt(requiredChainId))
+      await this.#setResolveDomainFailure(
+        domain,
+        new EmittableError({
+          level: 'silent',
+          message: `${network?.name ?? 'The required network'} is disabled. Enable it to resolve ${
+            resolver.label
+          } domains.`
+        })
+      )
       return
     }
 
@@ -425,9 +443,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           message: `${resolver.label} resolution failed for ${domain}: ${e?.message || e}`,
           level: 'silent'
         })
-        this.#setResolveDomainFailure(domain, e)
-        await this.forceEmitUpdate()
-        this.resolveDomainsStatus[domain] = undefined
+        await this.#setResolveDomainFailure(domain, e)
       })
   }
 
@@ -564,22 +580,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     if (!addressesToLookup.length) return
 
     const ctx = this.#context()
-    const reverseResolvers = this.#activeResolvers.filter(
-      (resolver) => resolver.capabilities.reverse
-    )
-
-    // const ethereumProvider =
-    //   this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
-    // const citreaProvider = this.#isNetworkEnabled(4114n) && this.#providers['4114']
-
-    // if (!ethereumProvider) {
-    //   this.emitError({
-    //     error: new Error('domains.reverseLookup: Ethereum provider is not available'),
-    //     message: 'The RPC provider for Ethereum is not available.',
-    //     level: 'major'
-    //   })
-    //   return
-    // }
+    // Skip a service whose network is disabled: without a provider its batch would only fail and
+    // retry forever. Dropping it silently lets the other services resolve (reverse lookup has no
+    // user-facing error).
+    const reverseResolvers = this.#activeResolvers.filter((resolver) => {
+      if (!resolver.capabilities.reverse) return false
+      const requiredChainId = resolver.requiredChainId(this.#defaultNetworksMode)
+      return !requiredChainId || this.#isNetworkEnabled(BigInt(requiredChainId))
+    })
 
     this.loadingAddresses.push(...addressesToLookup)
     this.emitUpdate()

@@ -4,9 +4,11 @@ import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
+import { Network } from '../../interfaces/network'
 // The resolvers call the ensDomains primitives through this barrel, so spying here intercepts what
 // the controller ultimately runs during a reverse lookup.
 import * as ensDomainsModule from '../../services/ensDomains'
+import { NameResolver, NameServiceId } from '../../services/nameResolvers'
 import { getRpcProvider } from '../../services/provider'
 import {
   DomainsController,
@@ -102,13 +104,16 @@ const makeFeatureFlags = (keepEnsProfilesUpToDate: boolean) =>
   }) as any
 const mainnetProvider = () => getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
 
+const allNetworksEnabled = (chainId: bigint): Network =>
+  ({ chainId, name: `chain-${chainId}`, disabled: false }) as Network
+
 describe('Domains', () => {
   // The TTL-based refresh tests below assume the "keep profiles up to date" mode.
   // Privacy mode (the default, no TTL refresh) is covered by its own tests.
   const domainsController = new DomainsController({
     providers,
     featureFlags: makeFeatureFlags(true),
-    isNetworkEnabled: () => true
+    getNetwork: allNetworksEnabled
   })
 
   it('should reverse lookup (ENS)', async () => {
@@ -144,7 +149,7 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: provider },
       verification: { getReadyProvider } as any,
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     // The ENS resolver runs both the RPC resolve and the Colibri verification through
     // `resolveENSDomain`, so this single spy stands in for both.
@@ -204,7 +209,7 @@ describe('Domains', () => {
       providers: { ['1']: {} as any },
       verification: { getReadyProvider } as any,
       featureFlags: makeFeatureFlags(true),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
@@ -230,7 +235,7 @@ describe('Domains', () => {
       providers: { ['1']: {} as any, ['4114']: {} as any },
       verification: { getReadyProvider } as any,
       featureFlags: makeFeatureFlags(true),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
@@ -352,7 +357,7 @@ describe('Domains', () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
     const controller = new DomainsController({
       providers: { ['1']: provider },
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
     // ENS and GNS both run on Ethereum, so the batch performs two lookups (ENS then GNS); Namoshi is
@@ -400,7 +405,7 @@ describe('Domains', () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
     const controller = new DomainsController({
       providers: { ['1']: provider },
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
 
@@ -438,7 +443,7 @@ describe('Domains', () => {
     const provider = getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
     const controller = new DomainsController({
       providers: { ['1']: provider },
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const addressInFlight = getAddress(ENS_OLDEST_RESOLVER.address)
     const addressInBatch = getAddress(ENS_LATEST_RESOLVER.address)
@@ -481,7 +486,7 @@ describe('Domains', () => {
     const { restore } = suppressConsole(true)
     const controller = new DomainsController({
       providers: { ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n) },
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const reverseLookupEnsSpy = jest.spyOn(ensDomainsModule, 'reverseLookupEns')
     const FAILED_ADDRESS = getAddress(ENS2.address)
@@ -571,7 +576,7 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       featureFlags: { isFeatureEnabled: (flag: string) => flag !== 'gnsDomains' } as any,
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     const reverseLookupEnsSpy = jest
       .spyOn(ensDomainsModule, 'reverseLookupEns')
@@ -592,7 +597,7 @@ describe('Domains', () => {
     const controller = new DomainsController({
       providers: { ['1']: mainnetProvider() },
       resolvers: [],
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     const domain = 'orphan.eth'
@@ -615,7 +620,7 @@ describe('Domains', () => {
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
       featureFlags: makeFeatureFlags(false),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
@@ -651,7 +656,7 @@ describe('Domains', () => {
       providers: { ['1']: mainnetProvider() },
       storage: makeStorage(),
       featureFlags: makeFeatureFlags(true),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     const address = getAddress(ENS_OLDEST_RESOLVER.address)
@@ -689,7 +694,7 @@ describe('Domains', () => {
       providers: { ['1']: mainnetProvider() },
       storage,
       featureFlags: makeFeatureFlags(false),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
     await first.reverseLookup(address)
 
@@ -708,7 +713,7 @@ describe('Domains', () => {
       providers: { ['1']: mainnetProvider() },
       storage,
       featureFlags: makeFeatureFlags(false),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     await second.init([
@@ -744,7 +749,7 @@ describe('Domains', () => {
       providers: { ['1']: mainnetProvider() },
       storage,
       featureFlags: makeFeatureFlags(false),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     await controller.init([
@@ -778,7 +783,7 @@ describe('Domains', () => {
       providers: { ['1']: mainnetProvider() },
       storage,
       featureFlags: makeFeatureFlags(false),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     await controller.init([
@@ -797,7 +802,7 @@ describe('Domains', () => {
       providers: {
         ['1']: getRpcProvider(networks.find((n) => n.chainId === 1n)!.rpcUrls, 1n)
       },
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
     const TEST = {
@@ -808,6 +813,73 @@ describe('Domains', () => {
     await controllerWithoutCitrea.resolveDomain({ domain: TEST.name })
 
     expect(controllerWithoutCitrea.domains[TEST.address]).toBeUndefined()
+  })
+
+  it('fails a domain resolution with an actionable error when the owning network is disabled', async () => {
+    const { restore } = suppressConsole()
+    const controller = new DomainsController({
+      providers,
+      getNetwork: (chainId: bigint) =>
+        chainId === citrea.chainId
+          ? ({ ...citrea, disabled: true } as unknown as Network)
+          : allNetworksEnabled(chainId)
+    })
+
+    const domain = 'nemo.citrea'
+    await controller.resolveDomain({ domain })
+
+    expect(controller.resolveDomainsErrors[domain]).toBe(
+      'Citrea Mainnet is disabled. Enable it to resolve Namoshi domains.'
+    )
+    // Nothing is cached, so a later resolve retries once the network is enabled.
+    expect(controller.domainToAddresses[domain]).toBeUndefined()
+
+    restore()
+  })
+
+  it('skips a service whose network is disabled during reverse lookup, without failing the batch', async () => {
+    const address = getAddress('0x1234567890123456789012345678901234567890')
+
+    const makeFakeResolver = (
+      id: NameServiceId,
+      requiredChainId: string,
+      reverse: NameResolver['reverse']
+    ): NameResolver => ({
+      id,
+      label: id,
+      capabilities: { reverse: true, avatar: false, expiry: false },
+      matches: () => false,
+      resolve: async () => null,
+      reverse,
+      getAvatar: async () => null,
+      requiredChainId: () => requiredChainId
+    })
+
+    const enabledReverse = jest.fn(async () => ({
+      [address]: { name: 'alice.eth', failed: false }
+    })) as unknown as NameResolver['reverse']
+    const disabledReverse = jest.fn(async () => ({
+      [address]: { name: null, failed: true }
+    })) as unknown as NameResolver['reverse']
+
+    const controller = new DomainsController({
+      providers,
+      resolvers: [
+        makeFakeResolver('ens', '1', enabledReverse),
+        makeFakeResolver('namoshi', String(citrea.chainId), disabledReverse)
+      ],
+      getNetwork: (chainId: bigint) =>
+        chainId === citrea.chainId
+          ? ({ ...citrea, disabled: true } as unknown as Network)
+          : allNetworksEnabled(chainId)
+    })
+
+    await controller.reverseLookup(address)
+
+    expect(enabledReverse).toHaveBeenCalledTimes(1)
+    // The disabled service is dropped, so its batch never runs and can't mark the address failed.
+    expect(disabledReverse).not.toHaveBeenCalled()
+    expect(controller.domains[address]!.names.ens).toBe('alice.eth')
   })
 })
 
@@ -839,7 +911,7 @@ describe('Domains - ENS expiry', () => {
       providers: { ['1']: mainnetProvider() },
       storage,
       featureFlags: makeFeatureFlags(true),
-      isNetworkEnabled: () => true
+      getNetwork: allNetworksEnabled
     })
 
   it('fetches and stores the ENS expiry on a reverse lookup with updateExpiry', async () => {
