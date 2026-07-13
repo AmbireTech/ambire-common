@@ -8,7 +8,7 @@ import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
-import { getSameNonceRequests } from '../safe/safe'
+import { getSameNonceRequests } from '../safe/helpers'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>

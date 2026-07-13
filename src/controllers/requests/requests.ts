@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { hashTypedData, isHex } from 'viem'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { EIP712TypedData } from '@safe-global/types-kit'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -83,7 +83,8 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'

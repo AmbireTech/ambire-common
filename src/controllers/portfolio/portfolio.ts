@@ -54,7 +54,6 @@ import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAs
 import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
-  getFlags,
   getHintsError,
   getTotal,
   validateERC20Token
@@ -83,6 +82,7 @@ import {
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'

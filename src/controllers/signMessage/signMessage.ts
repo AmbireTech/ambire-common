@@ -1,7 +1,6 @@
 import { toUtf8String } from 'ethers'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -45,12 +44,14 @@ import {
   getEIP712Signature,
   getPlainTextSignature,
   getSafeMessageTypedData,
-  getVerifyMessageSignature,
-  verifyMessage
+  getVerifyMessageSignature
 } from '../../libs/signMessage/signMessage'
+import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import type { IrMessage } from '../../libs/humanizer/interfaces'
