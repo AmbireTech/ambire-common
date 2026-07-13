@@ -595,11 +595,9 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     const json = await res.json()
-    // The new endpoint returns { tokens: [...] }; the legacy prod endpoint returns a bare array.
-    // Support both so the app keeps working across the endpoint migration.
-    const raw: RawTrendingToken[] = Array.isArray(json) ? json : json?.tokens
+    const raw: RawTrendingToken[] = json?.tokens
     if (!Array.isArray(raw)) {
-      throw new Error('Trending tokens response is not an array')
+      throw new Error('Trending tokens response does not contain a tokens array')
     }
 
     this.#trendingTokens = normalizeTrendingTokens(raw)

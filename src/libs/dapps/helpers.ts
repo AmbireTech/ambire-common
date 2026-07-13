@@ -155,42 +155,22 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
 // Items without a usable id or price are dropped — they can't be keyed or displayed meaningfully.
 function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
   return raw
-    .filter(
-      (token) =>
-        !!token?.id && (typeof token.usd === 'number' || typeof token.data?.price === 'number')
-    )
+    .filter((token) => !!token?.id && typeof token.usd === 'number')
     .map((token) => {
       const platformId = token.asset_platform_id ?? null
       const address =
         token.contract_address ?? (platformId ? token.platforms?.[platformId] : undefined) ?? null
-      const decimals =
-        (platformId ? token.decimals?.[platformId] : undefined) ??
-        (platformId ? token.detail_platforms?.[platformId]?.decimal_place : undefined) ??
-        null
-      const priceUSD = token.usd ?? token.data?.price ?? 0
-      const priceChange24hUSD =
-        typeof token.usd_24h_change === 'number'
-          ? token.usd_24h_change
-          : typeof token.data?.price_change_percentage_24h?.usd === 'number'
-            ? token.data.price_change_percentage_24h.usd
-            : null
-      const exchangeIds = Array.from(
-        new Set(
-          (token.tickers ?? [])
-            .map((ticker) => ticker?.market?.identifier)
-            .filter((id): id is string => !!id)
-        )
-      )
+      const decimals = (platformId ? token.decimals?.[platformId] : undefined) ?? null
 
       return {
         id: token.id,
         name: token.name,
         symbol: token.symbol,
-        icon: token.large || token.small || token.thumb || '',
-        priceUSD,
-        priceChange24hUSD,
+        icon: token.image?.large || token.image?.small || token.image?.thumb || '',
+        priceUSD: token.usd ?? 0,
+        priceChange24hUSD: typeof token.usd_24h_change === 'number' ? token.usd_24h_change : null,
         marketCapRank: token.market_cap_rank ?? null,
-        description: token.description?.en ?? token.data?.content?.description ?? null,
+        description: token.description?.en ?? null,
         address,
         platformId,
         decimals,
@@ -198,8 +178,8 @@ function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
         totalVolumeUSD: token.usd_24h_vol ?? null,
         fullyDilutedValuationUSD: token.usd_fully_diluted_valuation ?? null,
         totalSupply: token.total_supply ?? null,
-        website: token.links?.homepage?.find((url) => !!url) ?? null,
-        exchangeIds
+        website: token.homepage?.find((url) => !!url) ?? null,
+        exchangeIds: (token.exchanges ?? []).filter((id): id is string => !!id)
       }
     })
 }

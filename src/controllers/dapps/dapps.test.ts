@@ -19,7 +19,8 @@ import { PhishingController } from '../phishing/phishing'
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
 // Two valid entries plus one invalid (no price) to exercise normalization + filtering.
-// Mirrors the new endpoint shape: a { tokens: [...] } wrapper of full CoinGecko coin objects.
+// Mirrors the trimmed endpoint shape: a { tokens: [...] } wrapper of minimal coin objects
+// with flat USD fields, a top-level homepage and pre-deduped exchange ids.
 const mockTrending = {
   tokens: [
     {
@@ -27,19 +28,17 @@ const mockTrending = {
       name: 'Bitcoin',
       symbol: 'BTC',
       market_cap_rank: 1,
-      thumb: 'https://example.com/btc-thumb.png',
-      small: 'https://example.com/btc-small.png',
-      large: 'https://example.com/btc-large.png',
+      image: {
+        thumb: 'https://example.com/btc-thumb.png',
+        small: 'https://example.com/btc-small.png',
+        large: 'https://example.com/btc-large.png'
+      },
       asset_platform_id: 'ethereum',
       contract_address: '0xbtc',
       platforms: { ethereum: '0xbtc' },
       decimals: { ethereum: 8 },
-      links: { homepage: ['https://bitcoin.org'] },
-      tickers: [
-        { market: { identifier: 'binance' } },
-        { market: { identifier: 'binance' } },
-        { market: { identifier: 'coinbase' } }
-      ],
+      homepage: ['https://bitcoin.org'],
+      exchanges: ['binance', 'coinbase'],
       usd: 65000.5,
       usd_24h_change: 1.23,
       usd_market_cap: 1200000000,
@@ -53,9 +52,8 @@ const mockTrending = {
       name: 'Ethereum',
       symbol: 'ETH',
       market_cap_rank: 2,
-      thumb: 'https://example.com/eth-thumb.png',
-      small: 'https://example.com/eth-small.png',
-      large: 'https://example.com/eth-large.png',
+      // No `large` → the normalizer falls back to `small`.
+      image: { small: 'https://example.com/eth-small.png' },
       usd: 3200,
       usd_24h_change: -2.5,
       usd_market_cap: 400000000,
@@ -67,10 +65,7 @@ const mockTrending = {
       id: 'no-price-coin',
       name: 'No Price Coin',
       symbol: 'NPC',
-      market_cap_rank: 999,
-      thumb: '',
-      small: '',
-      large: ''
+      market_cap_rank: 999
     }
   ]
 }
@@ -1679,7 +1674,7 @@ describe('DappsController', () => {
       expect(btc.platformId).toBe('ethereum')
       expect(btc.decimals).toBe(8)
       expect(btc.website).toBe('https://bitcoin.org')
-      // Duplicate tickers collapse to unique exchange ids.
+      // Exchange ids come pre-deduped from the server and pass through as-is.
       expect(btc.exchangeIds).toEqual(['binance', 'coinbase'])
 
       const eth = controller.trendingTokens.find((tt) => tt.symbol === 'ETH')!
