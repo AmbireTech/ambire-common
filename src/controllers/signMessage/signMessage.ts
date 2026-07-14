@@ -78,6 +78,11 @@ export class SignMessageController
 
   #callRelayer?: BindedRelayerCall
 
+  // Bumped on every init()/reset(); a signing op captures it before its first
+  // await and re-checks after each, so a request replacing the message mid-sign
+  // can't be signed under the previous approval.
+  #signingGeneration = 0
+
   signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
@@ -184,6 +189,7 @@ export class SignMessageController
     ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
+      this.#signingGeneration += 1
       this.signed = signed || []
       this.signatures = signatures || []
       this.isInitialized = true
@@ -253,6 +259,7 @@ export class SignMessageController
     if (!this.isInitialized) return
 
     this.#onAbortOperation()
+    this.#signingGeneration += 1
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
@@ -427,10 +434,15 @@ export class SignMessageController
 
   /**
    * Checks if the signing operation is still valid after each async step, to guard
-   * against a race condition where the operation is reset before the async operation is completed.
+   * against a race condition where the operation is reset or the installed message is
+   * replaced before the async operation is completed. The `signingGeneration` captured
+   * at the start of the operation must still match, otherwise a same-kind request that
+   * called init() mid-signing would get its payload signed under the previous approval.
    */
-  #isSigningOperationValidAfterAsyncOperation() {
-    return this.isInitialized && !!this.messageToSign
+  #isSigningOperationValidAfterAsyncOperation(signingGeneration: number) {
+    return (
+      this.isInitialized && !!this.messageToSign && this.#signingGeneration === signingGeneration
+    )
   }
 
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
@@ -468,6 +480,10 @@ export class SignMessageController
       return SignMessageController.#throwMissingSigningKey()
     }
 
+    // Bind this op to the current message; if init() replaces it during any
+    // await below, the generation changes and the op aborts.
+    const signingGeneration = this.#signingGeneration
+
     // we're always signing with the first signer
     // the goal was to have an array of signers that sign simultaneously
     // but it was too confusing, so we threw it away
@@ -480,7 +496,7 @@ export class SignMessageController
     this.emitUpdate() // pass the signer to the UI
 
     try {
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+      if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
       if (!this.#account) {
         throw new Error(
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
@@ -534,7 +550,7 @@ export class SignMessageController
             }
           }
 
-          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
           // get the final signature
           signature =
@@ -576,7 +592,7 @@ export class SignMessageController
             }
           }
 
-          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
           signature =
             this.signatures.length === 1 || !signed.hash
@@ -640,7 +656,7 @@ export class SignMessageController
                 })
         }
         const isValidSignature = await verifyMessage(verifyMessageParams)
-        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+        if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
         if (!isValidSignature) {
           throw new Error(
