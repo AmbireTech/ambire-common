@@ -1,4 +1,4 @@
-import { parseEther } from 'ethers'
+import { MaxUint256, parseEther } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
@@ -13,6 +13,7 @@ const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const NFT_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
+const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f'
 const typedMessages = {
   erc20: [
     {
@@ -24,6 +25,32 @@ const typedMessages = {
     }
   ],
 
+  daiPermit: [
+    // grant with expiry
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 968187600n,
+      allowed: true
+    },
+    // grant without expiry (0 means the permit never expires)
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 0n,
+      allowed: true
+    },
+    // revoke
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 968187600n,
+      allowed: false
+    }
+  ],
   erc721: [
     {
       spender: address2,
@@ -125,6 +152,57 @@ describe('typed message tests', () => {
     ]
 
     messageTemplate.content.message = typedMessages.erc20[0]!
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (grant)', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2),
+      getDeadline(968187600n)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[0]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (grant, no expiry)', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[1]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (revoke)', () => {
+    const expectedVisualization = [
+      getAction('Revoke approval'),
+      getToken(DAI_ADDRESS, 0n),
+      getLabel('for'),
+      getAddressVisualization(address2)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[2]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
     const { fullVisualization } = erc20Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
