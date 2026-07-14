@@ -1010,8 +1010,15 @@ export class MainController extends EventEmitter implements IMainController {
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
-  async handleSignAndBroadcastAccountOp(type: SignAccountOpType, fromRequestId: string | number) {
+  async handleSignAndBroadcastAccountOp(
+    type: SignAccountOpType,
+    fromRequestId: string | number,
+    reviewedAccountOpId?: string
+  ) {
     let signAccountOp: ISignAccountOpController | null = null
+    // Only the dapp calls request path shares a mutable SignAccountOpController
+    // that a second dapp request can append to before signing starts.
+    let isDappCallsRequest = false
 
     if (
       type === 'one-click-swap-and-bridge' &&
@@ -1030,6 +1037,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.requests.currentUserRequest.signAccountOp
+      isDappCallsRequest = true
     }
 
     if (!signAccountOp) {
@@ -1039,6 +1047,24 @@ export class MainController extends EventEmitter implements IMainController {
           'Internal error: The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.',
         error: new Error(
           'Error: signAccountOp controller not initialized while trying to sign and broadcast'
+        )
+      })
+    }
+
+    // Security: a dapp can append calls before signing starts. The accountOp id
+    // changes on every calls change, so a mismatch with the reviewed id means the
+    // live op differs from the screen - abort so the user re-reviews.
+    if (
+      isDappCallsRequest &&
+      reviewedAccountOpId &&
+      signAccountOp.accountOp.id !== reviewedAccountOpId
+    ) {
+      return this.emitError({
+        level: 'major',
+        message:
+          'The transaction changed after you reviewed it. Please review the updated transaction and try again.',
+        error: new Error(
+          'handleSignAndBroadcastAccountOp: reviewed accountOp id does not match the live accountOp id; aborting to prevent signing unreviewed calls'
         )
       })
     }
