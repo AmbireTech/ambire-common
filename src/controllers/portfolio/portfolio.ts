@@ -1,4 +1,4 @@
-import { getAddress, ZeroAddress } from 'ethers'
+import { getAddress } from 'ethers'
 
 import {
   IRecurringTimeout,
@@ -27,17 +27,17 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
+  DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAccountNetworksWithPositions,
-  getAllAssetsAsHints,
-  getCanSkipUpdate,
   getCustomProviderPositions,
+  getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
-  getShouldBypassServerSideCache,
-  getUniqueMergedPositions
+  getUniqueMergedPositions,
+  mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -48,17 +48,14 @@ import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
 import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
+import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   convertApiTokenDataToTokenDataCache,
-  erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getFlags,
   getHintsError,
-  getSpecialHints,
   getTotal,
-  learnedErc721sToHints,
-  mergeERC721s,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 import {
@@ -72,15 +69,10 @@ import {
   FormattedPortfolioDiscoveryResponse,
   GasTankTokenResult,
   GetOptions,
-  Hints,
-  LearnedAssets,
   NetworkState,
   PortfolioControllerState,
-  PortfolioLibGetResult,
-  PreviousHintsStorage,
   ScheduledUpdates,
   TemporaryTokens,
-  ToBeLearnedAssets,
   TokenBlacklist,
   TokenDataCache,
   TokenDataCacheValue,
@@ -92,11 +84,8 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { HintsController } from '../hintsController/hintsController'
 
-const LEARNED_UNOWNED_LIMITS = {
-  erc20s: 20,
-  erc721s: 20
-}
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
   static: 60 * 60 * 1000
@@ -137,7 +126,10 @@ const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
-export class PortfolioController extends EventEmitter implements IPortfolioController {
+export class PortfolioController
+  extends EventEmitter<PortfolioDebugFlow>
+  implements IPortfolioController
+{
   #state: PortfolioControllerState
 
   // A queue to prevent race conditions when calling `updateSelectedAccount`.
@@ -148,10 +140,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
   // the response of the update call to be overwritten by a slower previous call.
   #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
-
-  customTokens: CustomToken[] = []
-
-  tokenPreferences: TokenPreference[] = []
 
   validTokens: any = { erc20: {}, erc721: {} }
 
@@ -179,22 +167,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  /**
-   * @deprecated - see #learnedAssets
-   */
-  #previousHints: PreviousHintsStorage = {
-    fromExternalAPI: {},
-    learnedTokens: {},
-    learnedNfts: {}
-  }
-
-  #toBeLearnedAssets: ToBeLearnedAssets = {
-    erc20s: {},
-    erc721s: {}
-  }
-
-  #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
-
   protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
 
   #providers: IProvidersController
@@ -206,6 +178,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #keystore: IKeystoreController
 
   #featureFlags: IFeatureFlagsController
+
+  /**
+   * Handles token learning, temporary tokens, hints and their storage.
+   */
+  protected hints: HintsController
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -271,9 +248,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#networks = networks
     this.#accounts = accounts
     this.#keystore = keystore
-    this.temporaryTokens = {}
     this.#banner = banner
     this.#featureFlags = featureFlags
+    this.hints = new HintsController(storage, accounts, keystore)
+    // Re-emit hints updates as portfolio updates so the re-exposed getters
+    // (customTokens, tokenPreferences) reach the UI when they change.
+    this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
     this.#blacklistInterval = new RecurringTimeout(
       this.fetchBlacklist.bind(this),
       BLACKLIST_UPDATE_INTERVAL,
@@ -298,17 +278,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             accountAddrs.map((accountAddr) => ({
               baseCurrency,
               accountAddr,
-              forceUpdateDefi: queue.some(
-                (x) =>
-                  x.data.baseCurrency === baseCurrency &&
-                  x.data.accountAddr === accountAddr &&
-                  x.data.forceUpdateDefi
+              // When several requests for the same account+currency are batched, the most
+              // aggressive update mode wins (see `mergeDefiUpdateModes`).
+              defiUpdateMode: mergeDefiUpdateModes(
+                queue
+                  .filter(
+                    (x) =>
+                      x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
+                  )
+                  .map((x) => x.data.defiUpdateMode)
               )
             }))
           )
           .flat()
 
-        return pairs.map(({ baseCurrency, accountAddr, forceUpdateDefi }) => {
+        return pairs.map(({ baseCurrency, accountAddr, defiUpdateMode }) => {
           const queueSegment = queue.filter(
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
@@ -323,16 +307,26 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           // Analytics should not be polluted with inactive extensions
           const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
 
-          // The relayer has internal cache for the defi positions. If we want to
-          // invalidate it, we need to pass this param.
-          // See `getShouldBypassServerSideCache` for more details.
-          const forceUpdateParam = forceUpdateDefi ? '&update=true' : ''
+          // This is a hack to achieve something that would require a good amount of refactoring in the portfolio
+          // To understand the problem you need to know the following information:
+          // Discovery is done with the batcher, every network is updated in parallel and customAppChain is updated
+          // in parallel with regular networks. customAppChain should be updated ONLY when AT LEAST ONE another network is updated.
+          // There is absolutely no reason to update customAppChain with default or force mode by itself. To fix this properly
+          // we have to move the logic that determines updateMode for each network BEFORE the Promise.all([]) that updates all networks
+          // in parallel and also make the call to velcro there, instead of using the batcher. This way we will know which networks have to
+          // be updated and can decide if customAppChain should be updated or not. For now, we will just update with 'cache' mode if the only
+          // network to be updated is customAppChain.
+          const isUpdatingOnlyDefiApps =
+            queueSegment.length === 1 && queueSegment[0]?.data.chainId === 'customAppChain'
+
+          // Tells velcro-v3 how fresh the defi positions must be
+          const defiParam = `&defi=${isUpdatingOnlyDefiApps ? 'cache' : defiUpdateMode}`
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${forceUpdateParam}&sigs=${accountKeysCount}${activeParam}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${defiParam}&sigs=${accountKeysCount}${activeParam}`
 
           return { url, queueSegment }
         })
@@ -469,18 +463,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
       await this.#featureFlags.initialLoadPromise
+      await this.hints.initialLoadPromise
 
-      this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
-      this.customTokens = await this.#storage.get('customTokens', [])
-
-      this.#learnedAssets = await this.#storage.get('learnedAssets', this.#learnedAssets)
-      this.#previousHints = await this.#storage.get('previousHints', {
-        learnedNfts: {},
-        learnedTokens: {},
-        fromExternalAPI: {}
-      })
-      // Don't load fromExternalAPI hints in memory as they are no longer used
-      this.#previousHints.fromExternalAPI = {}
       this.#networksWithPositionsByAccounts = await this.#storage.get(
         'networksWithPositionsByAccounts',
         {}
@@ -554,22 +538,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.initialLoadPromise
-    const isTokenAlreadyAdded = this.customTokens.some(
-      ({ address, chainId }) =>
-        address.toLowerCase() === customToken.address.toLowerCase() &&
-        chainId === customToken.chainId
-    )
+    const didChange = await this.hints.addCustomToken(customToken)
 
-    if (isTokenAlreadyAdded) return
-
-    this.customTokens.push(customToken)
-
-    if (shouldUpdatePortfolio) {
+    if (didChange && shouldUpdatePortfolio) {
       await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
     }
-
-    await this.#storage.set('customTokens', this.customTokens)
   }
 
   async removeCustomToken(
@@ -577,28 +550,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.initialLoadPromise
-    this.customTokens = this.customTokens.filter(
-      (token) =>
-        !(
-          token.address.toLowerCase() === customToken.address.toLowerCase() &&
-          token.chainId === customToken.chainId
-        )
-    )
-    const existingPreference = this.tokenPreferences.some(
-      (pref) => pref.address === customToken.address && pref.chainId === customToken.chainId
-    )
+    const didChange = await this.hints.removeCustomToken(customToken)
 
-    // Delete custom token preference if it exists
-    if (existingPreference) {
-      await this.toggleHideToken(customToken, selectedAccountAddr, shouldUpdatePortfolio)
-      await this.#storage.set('customTokens', this.customTokens)
-    } else {
-      this.emitUpdate()
-      if (shouldUpdatePortfolio) {
-        await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
-      }
-      await this.#storage.set('customTokens', this.customTokens)
+    if (didChange && shouldUpdatePortfolio) {
+      await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
     }
   }
 
@@ -607,33 +562,31 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    await this.initialLoadPromise
+    const didChange = await this.hints.toggleHideToken(tokenPreference)
 
-    const existingPreference = this.tokenPreferences.find(
-      ({ address, chainId }) =>
-        address.toLowerCase() === tokenPreference.address.toLowerCase() &&
-        chainId === tokenPreference.chainId
-    )
-
-    // Push the token as hidden
-    if (!existingPreference) {
-      this.tokenPreferences.push({ ...tokenPreference, isHidden: true })
-      // Remove the token preference if the user decides to show it again
-    } else if (existingPreference.isHidden) {
-      this.tokenPreferences = this.tokenPreferences.filter(
-        ({ address, chainId }) =>
-          !(address === tokenPreference.address && chainId === tokenPreference.chainId)
-      )
-    } else {
-      // Should happen only after migration
-      existingPreference.isHidden = !existingPreference.isHidden
-    }
-
-    this.emitUpdate()
-    if (shouldUpdatePortfolio) {
+    if (didChange && shouldUpdatePortfolio) {
       await this.#updatePortfolioOnTokenChange(tokenPreference.chainId, selectedAccountAddr)
     }
-    await this.#storage.set('tokenPreferences', this.tokenPreferences)
+  }
+
+  get customTokens(): CustomToken[] {
+    return this.hints.customTokens
+  }
+
+  get tokenPreferences(): TokenPreference[] {
+    return this.hints.tokenPreferences
+  }
+
+  addTokensToBeLearned(tokenAddresses: string[], chainId: bigint): boolean {
+    return this.hints.addTokensToBeLearned(tokenAddresses, chainId)
+  }
+
+  addErc721sToBeLearned(
+    nftsData: [string, bigint[]][] | undefined,
+    accountAddr: string,
+    chainId: bigint
+  ): boolean {
+    return this.hints.addErc721sToBeLearned(nftsData, accountAddr, chainId)
   }
 
   async #updateNetworksWithAssets(accountId: AccountId, accountState: AccountState) {
@@ -687,6 +640,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    */
   async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
+    this.debugLog(
+      'simulation',
+      `${chainId.toString()}: Overriding simulation results for ${accountAddr}`,
+      () => ({
+        accountOpId: accountOp.id
+      })
+    )
 
     const updatePromise = async () => {
       if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
@@ -814,8 +774,22 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
       // Debounce: start the 60s window from the most recent transaction, not the first
       networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+
+      this.debugLog(
+        'simulation',
+        `${chainId.toString()} Debounced scheduled update for ${accountId}`,
+        () => ({
+          bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
+          scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
+        })
+      )
       return
     }
+
+    this.debugLog('simulation', `${chainId.toString()} Scheduled update for ${accountId}`, () => ({
+      bypassServerSideCache,
+      scheduledAt: Date.now()
+    }))
 
     this.#scheduledUpdates[accountId] = [
       ...(this.#scheduledUpdates[accountId] || []),
@@ -870,6 +844,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     })
 
     if (!accountAddrToUpdate || networksToUpdate.length === 0) return
+    this.debugLog('simulation', `Discarding simulation for ${accountAddrToUpdate}`, () => ({
+      discardedOpIds: accountOps.map((op) => op.id),
+      chainIds: networksToUpdate.map((n) => n.chainId.toString())
+    }))
     await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
       accountOps: accountOpsAfterUpdate
     })
@@ -1255,39 +1233,50 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.#getNonceId(account, chainId)
     )
 
-    const canSkipDefiUpdate =
-      !bypassServerSideCache &&
-      getCanSkipUpdate(defiState, hasNonceChangedSinceLastUpdate, defiMaxDataAgeMs)
-
-    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
-      // Request can be skipped altogether
-      return null
-    }
-
     // Used by getShouldBypassServerSideCache to avoid spending the server-side bypass budget
     // before the scheduled update fires (the server has a per-account cooldown)
     const hasScheduledUpdate = !!this.#scheduledUpdates[account.addr]?.find(
       (update) => update.chainId === chainId && update.bypassServerSideCache
     )
 
-    let response: ExternalPortfolioDiscoveryResponse | null = null
-    const shouldForceUpdateDefi =
-      bypassServerSideCache ||
-      getShouldBypassServerSideCache(
-        defiState,
-        !!isManualUpdate,
-        hasKeys,
-        this.defiSessionIds,
-        hasNonceChangedSinceLastUpdate,
-        hasScheduledUpdate
+    const defiUpdateMode = getDefiUpdateMode({
+      previousState: defiState,
+      bypassServerSideCache: !!bypassServerSideCache,
+      isManualUpdate: !!isManualUpdate,
+      hasKeys,
+      sessionIds: this.defiSessionIds,
+      hasNonceChangedSinceLastUpdate,
+      hasScheduledUpdate,
+      maxDataAgeMs: defiMaxDataAgeMs
+    })
+
+    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.StaleOk
+
+    // Request can be skipped altogether
+    if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
+      this.debugLog(
+        'discovery',
+        `${chainId.toString()}: Skipping portfolio discovery for ${account.addr}`,
+        () => ({
+          lastUpdate: externalApiHintsResponse?.lastUpdate,
+          hasHints: externalApiHintsResponse?.hasHints,
+          isManualUpdate,
+          bypassServerSideCache,
+          hasNonceChangedSinceLastUpdate
+        })
       )
+
+      return null
+    }
+
+    let response: ExternalPortfolioDiscoveryResponse | null = null
 
     try {
       response = await this.batchedPortfolioDiscovery({
         chainId,
         accountAddr: account.addr,
         baseCurrency,
-        forceUpdateDefi: shouldForceUpdateDefi
+        defiUpdateMode
       })
 
       // Throw the error after assigning the response so we can still use the returned hints
@@ -1360,7 +1349,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             ? {
                 updatedAt: response.defi.updatedAt,
                 positions: getFormattedApiPositions(response.defi.positions),
-                isForceUpdate: shouldForceUpdateDefi
+                isForceUpdate: defiUpdateMode === DefiUpdateMode.Force
               }
             : null,
         otherNetworksDefiCounts: response.otherNetworksDefiCounts,
@@ -1402,7 +1391,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       maxDataAgeMs
     )
 
-    if (canSkipUpdate) return [true, null]
+    if (canSkipUpdate) {
+      this.debugLog(
+        'update',
+        `${network.chainId.toString()} update skipped for ${account.addr}`,
+        () => ({
+          lastSuccessfulUpdate: accountState[network.chainId.toString()]?.lastSuccessfulUpdate,
+          maxDataAgeMs,
+          isManualUpdate,
+          isLoading: accountState[network.chainId.toString()]?.isLoading
+        })
+      )
+      return [true, null]
+    }
 
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
@@ -1434,9 +1435,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
-      const allHints = this.getAllHints(
+      const allHints = this.hints.getAllHints(
         account.addr,
         network.chainId,
+        this.#state[account.addr]?.[network.chainId.toString()]?.result?.defiPositions,
         isManualUpdate,
         discoveryData?.data?.hints
       )
@@ -1583,7 +1585,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       !portfolioProps.bypassServerSideCache &&
       PortfolioController.#getCanSkipUpdate(accountState['defiApps'], defiMaxDataAgeMs)
 
-    if (canSkipUpdate) return
+    if (canSkipUpdate) {
+      this.debugLog('defi', 'Skipping DeFi apps update for account', () => ({
+        account: account.addr,
+        lastSuccessfulUpdate: accountState['defiApps']?.lastSuccessfulUpdate,
+        defiMaxDataAgeMs
+      }))
+      return
+    }
 
     const updateStarted = Date.now()
 
@@ -1645,124 +1654,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
 
       this.#setNetworkLoading(account.addr, 'defiApps', false, e)
-    }
-  }
-
-  #getImportedAccountsLearnedAssets(
-    chainId: bigint,
-    accountAddr: string
-  ): {
-    learnedTokens: Hints['erc20s']
-    learnedNfts: Hints['erc721s']
-  } {
-    const providedKey = `${chainId}:${accountAddr}` as `${string}:${string}`
-    // Add the assets from the provided account first
-    const learnedTokens = Object.keys(this.#learnedAssets.erc20s[providedKey] || {})
-    let learnedNfts = learnedErc721sToHints(
-      Object.keys(this.#learnedAssets.erc721s[providedKey] || {})
-    )
-
-    // Add the assets from all other imported accounts
-    const importedAccounts = this.#accounts.accounts.filter((acc) => {
-      return this.#keystore.getAccountKeys(acc).length > 0 && acc.addr !== accountAddr
-    })
-
-    importedAccounts.forEach(({ addr }) => {
-      const key = `${chainId}:${addr}` as `${string}:${string}`
-
-      const tokens = Object.keys(this.#learnedAssets.erc20s[key] || {})
-      const nfts = Object.keys(this.#learnedAssets.erc721s[key] || {})
-
-      // Don't dedupe here, it's already done in the portfolio library
-      learnedTokens.push(...tokens)
-      learnedNfts = mergeERC721s([learnedNfts, learnedErc721sToHints(nfts)])
-    })
-
-    return {
-      learnedTokens,
-      learnedNfts
-    }
-  }
-
-  /**
-   * Gets hints from all sources and formats them as expected
-   * by the portfolio lib. These are all hints the portfolio uses,
-   * except the external hints discovery request
-   */
-  protected getAllHints(
-    accountId: AccountId,
-    chainId: Network['chainId'],
-    isManualUpdate?: boolean,
-    velcroHints?: Hints | null
-  ): Pick<
-    Required<GetOptions>,
-    'specialErc20Hints' | 'specialErc721Hints' | 'additionalErc20Hints' | 'additionalErc721Hints'
-  > {
-    const key = `${chainId}:${accountId}` as `${string}:${string}`
-    const isKeyNotMigrated =
-      typeof this.#learnedAssets.erc20s[key] === 'undefined' ||
-      typeof this.#learnedAssets.erc721s[key] === 'undefined'
-    let learnedTokensHints: Hints['erc20s'] = Object.keys(this.#learnedAssets.erc20s[key] || {})
-    let learnedNftsHints: Hints['erc721s'] = mergeERC721s([
-      learnedErc721sToHints(Object.keys(this.#learnedAssets.erc721s[key] || {})),
-      velcroHints?.erc721s || {}
-    ])
-
-    // Add learned assets from all imported accounts on manual updates.
-    // This is done to handle the case where an account sends a token to another imported account
-    // We want the second account to see the token after a manual update
-    // Also, the user has a higher chance of holding similar assets in different accounts
-    if (isManualUpdate) {
-      const importedAccountsLearned = this.#getImportedAccountsLearnedAssets(chainId, accountId)
-
-      learnedTokensHints = importedAccountsLearned.learnedTokens
-      learnedNftsHints = importedAccountsLearned.learnedNfts
-    }
-
-    // Check if the user key exists in the new learned tokens structure
-    // Fallback to the old structure if not
-    const { specialErc20Hints, specialErc721Hints } = getSpecialHints(
-      chainId,
-      this.customTokens,
-      this.tokenPreferences,
-      this.#toBeLearnedAssets
-    )
-
-    // Add the tokens to toBeLearned, but only for this call if the key is not migrated.
-    // After the portfolio update all tokens with balance > 0 will be learned.
-    if (isKeyNotMigrated) {
-      const oldStructureLearnedNfts = this.#previousHints.learnedNfts?.[chainId.toString()] || {}
-      const oldStructureLearnedTokens =
-        this.#previousHints.learnedTokens?.[chainId.toString()] || {}
-
-      Object.keys(oldStructureLearnedTokens).forEach((tokenAddr) => {
-        specialErc20Hints.learn.push(tokenAddr)
-      })
-      Object.keys(oldStructureLearnedNfts).forEach((collectionAddr) => {
-        const nftIds = oldStructureLearnedNfts[collectionAddr]
-        if (!nftIds) return
-
-        // A hint for the collection already exists
-        if (specialErc721Hints.learn[collectionAddr]) {
-          specialErc721Hints.learn[collectionAddr].push(...nftIds)
-          return
-        }
-
-        specialErc721Hints.learn[collectionAddr] = nftIds
-      })
-    }
-
-    const defiHints = getAllAssetsAsHints(
-      this.#state[accountId]?.[chainId.toString()]?.result?.defiPositions
-    )
-
-    learnedTokensHints.push(...defiHints)
-
-    return {
-      specialErc20Hints,
-      specialErc721Hints,
-      additionalErc20Hints: [...learnedTokensHints, ...(velcroHints?.erc20s || [])],
-      additionalErc721Hints: learnedNftsHints
     }
   }
 
@@ -1847,9 +1738,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const {
       maxDataAgeMs: paramsMaxDataAgeMs = 0,
       maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
-      // Set to 6 hours by default. That is because we are making a lot of
+      // Set to -1 by default, which means no update. That is because we are making a lot of
       // portfolio updates, most of which shouldn't update the defi positions.
-      defiMaxDataAgeMs = 6 * 60 * 60 * 1000,
+      defiMaxDataAgeMs = -1,
       isManualUpdate,
       bypassServerSideCache
     } = opts || {}
@@ -1865,6 +1756,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const accountState = this.#state[accountId]
 
     const networksToUpdate = networks || this.#networks.networks
+    this.debugLog('update', `Update queued for ${accountId}`, () => ({
+      chainIds: networksToUpdate.map((n) => n.chainId.toString()),
+      hasSimulation: !!simulation,
+      opts
+    }))
     await Promise.all([
       this.#getAdditionalPortfolio(accountId, paramsMaxDataAgeMs),
       ...networksToUpdate.map(async (network) => {
@@ -1930,41 +1826,34 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             }
           )
 
+          if (accountOpsToSimulate?.length)
+            this.debugLog(
+              'simulation',
+              `${network.chainId.toString()}: Simulated ${accountOpsToSimulate.length} account op(s)`,
+              () => ({
+                accountOpIds: accountOpsToSimulate.map((op) => op.id),
+                isSuccessful
+              })
+            )
+
+          this.debugLog(
+            'update',
+            `${network.chainId.toString()}: Portfolio updated on ${network.name}`,
+            () => ({
+              isSuccessful
+            })
+          )
+
           // Learn tokens and nfts from the portfolio lib
           if (isSuccessful && accountState[network.chainId.toString()]?.result) {
             const networkResult = accountState[network.chainId.toString()]!.result
-            const { erc20s, erc721s } = networkResult?.toBeLearned || {}
-            let shouldUpdateLearnedInStorage = false
-
-            if (erc20s?.length) {
-              await this.learnTokens(erc20s, key, network.chainId)
-            } else if (!this.#learnedAssets.erc20s[key]) {
-              // Finalize the migration from #previousHints
-              // If there are no erc20s to be learned and the key does not exist
-              // in learnedAssets, we create an empty object to signal that
-              // the migration has been finalized for this key
-              // (the user has no erc20 tokens with balance in his portfolio)
-              this.#learnedAssets.erc20s[key] = {}
-              shouldUpdateLearnedInStorage = true
-            }
-            if (erc721s && Object.keys(erc721s).length) {
-              await this.learnNfts(
-                Object.entries(erc721s).map(([collectionAddr, ids]) => [collectionAddr, ids]),
-                accountId,
-                network.chainId
-              )
-            } else if (!this.#learnedAssets.erc721s[key]) {
-              // Finalize the migration from #previousHints
-              // (same as erc20 hints, see the comment above)
-              this.#learnedAssets.erc721s[key] = {}
-              shouldUpdateLearnedInStorage = true
-            }
 
             if (networkResult) {
-              this.cleanupToBeLearnedAssets(
+              await this.hints.learnAssetsFromLibResult(
+                key,
                 network.chainId,
-                networkResult.tokenErrors,
-                networkResult.collectionErrors
+                accountId,
+                networkResult
               )
             }
 
@@ -1973,10 +1862,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             if (!networks && discoveryResponse?.data) {
               this.defiPositionsCountOnDisabledNetworks[accountId] =
                 discoveryResponse.data.otherNetworksDefiCounts || {}
-            }
-
-            if (shouldUpdateLearnedInStorage) {
-              await this.#storage.set('learnedAssets', this.#learnedAssets)
             }
           }
         }
@@ -2096,294 +1981,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.emitUpdate()
   }
 
-  /**
-   * Adds tokens to the hints of the portfolio with the intention of learning them.
-   * The tokens are removed only if they are learned, which happens if their balance is
-   * more than 0.
-   */
-  addTokensToBeLearned(tokenAddresses: string[], chainId: bigint): boolean {
-    if (!tokenAddresses.length) return false
-    const chainIdString = chainId.toString()
-
-    if (!this.#toBeLearnedAssets.erc20s[chainIdString])
-      this.#toBeLearnedAssets.erc20s[chainIdString] = []
-
-    let networkToBeLearnedTokens = this.#toBeLearnedAssets.erc20s[chainIdString]
-    const uniqueTokenAddresses = Array.from(new Set(tokenAddresses))
-
-    const tokensToLearn = uniqueTokenAddresses.filter((address) => {
-      if (address === ZeroAddress) return false
-
-      let normalizedAddress: string | undefined
-
-      try {
-        normalizedAddress = getAddress(address)
-      } catch (e) {
-        console.error('Error while normalizing token address', e)
-      }
-
-      if (!normalizedAddress) return false
-
-      // Don't add to be learned if the token is already a custom token or a token with a preference
-      if (
-        this.tokenPreferences.find(
-          ({ chainId: cId, address: addr }) => cId === chainId && addr === normalizedAddress
-        ) ||
-        this.customTokens.find(
-          ({ chainId: cId, address: addr }) => cId === chainId && addr === normalizedAddress
-        )
-      )
-        return false
-
-      return !networkToBeLearnedTokens.includes(normalizedAddress)
-    })
-
-    if (!tokensToLearn.length) return false
-
-    networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
-
-    this.#toBeLearnedAssets.erc20s[chainIdString] = networkToBeLearnedTokens
-    return true
-  }
-
-  /**
-   * Adds ERC-721 NFTs to the hints of the portfolio with the intention of learning them.
-   * The nfts are removed only if they are learned, which happens if the user owns them
-   */
-  addErc721sToBeLearned(
-    nftsData: [string, bigint[]][] | undefined,
-    accountAddr: string,
-    chainId: bigint
-  ): boolean {
-    try {
-      if (!nftsData || !nftsData.length) return false
-
-      const formattedNftsData: [string, bigint[]][] = []
-
-      nftsData.forEach(([address, ids]) => {
-        try {
-          const checksummed = getAddress(address)
-
-          formattedNftsData.push([checksummed, ids])
-        } catch (e: any) {
-          console.error('addErc721sToBeLearned: Error while normalizing nft address', e)
-        }
-      })
-
-      if (!formattedNftsData.length) return false
-
-      const key = `${chainId}:${accountAddr}`
-
-      if (!this.#learnedAssets.erc721s[key]) {
-        this.#learnedAssets.erc721s[key] = {}
-      }
-
-      // Ensure toBeLearnedAssets is always defined
-      const toBeLearnedAssets =
-        this.#toBeLearnedAssets.erc721s[chainId.toString()] ??
-        (this.#toBeLearnedAssets.erc721s[chainId.toString()] = {})
-      const learnedErc721s = this.#learnedAssets.erc721s[key]
-
-      let added = false
-
-      formattedNftsData.forEach(([collectionAddress, tokenIds]) => {
-        // An enumerable NFT of this type already exists in either toBeLearned or learnedAssets
-        // so we don't have to add it again
-        if (
-          (toBeLearnedAssets?.[collectionAddress] &&
-            !toBeLearnedAssets?.[collectionAddress].length) ||
-          (learnedErc721s && learnedErc721s[`${collectionAddress}:enumerable`])
-        )
-          return
-
-        // Add an enumerable NFT toToBeLearned
-        if (!tokenIds.length) {
-          toBeLearnedAssets[collectionAddress] = []
-
-          return
-        }
-
-        const ids = erc721CollectionToLearnedAssetKeys([collectionAddress, tokenIds])
-
-        ids.forEach((id) => {
-          const [, tokenIdString] = id.split(':')
-          if (!tokenIdString) return
-
-          const tokenId = BigInt(tokenIdString)
-          // An NFT with this id is already added to toBeLearned or learnedAssets
-          if (
-            learnedErc721s[id] ||
-            (tokenId &&
-              toBeLearnedAssets[collectionAddress] &&
-              toBeLearnedAssets[collectionAddress].includes(BigInt(tokenId)))
-          )
-            return
-
-          if (!added) {
-            added = true
-          }
-
-          if (!toBeLearnedAssets[collectionAddress]) {
-            toBeLearnedAssets[collectionAddress] = []
-          }
-
-          if (tokenId) toBeLearnedAssets[collectionAddress].push(tokenId)
-        })
-      })
-
-      return added
-    } catch (e: any) {
-      console.error('Error during addErc721sToBeLearned: ', e)
-
-      return false
-    }
-  }
-
-  /**
-   * toBeLearnedAssets contains arbitrary addresses that include:
-   * - tokens and collectibles
-   * - random smart contracts and addresses
-   * That's why we need to clean it up by removing the addresses that the portfolio lib returned
-   * an error for, as those are not NFTs/Tokens.
-   */
-  private cleanupToBeLearnedAssets(
-    chainId: bigint,
-    tokenErrors: PortfolioLibGetResult['tokenErrors'],
-    collectionErrors: PortfolioLibGetResult['collectionErrors']
-  ) {
-    const chainIdString = chainId.toString()
-    const toBeLearnedTokens = this.#toBeLearnedAssets.erc20s[chainIdString] || []
-    const toBeLearnedNfts = this.#toBeLearnedAssets.erc721s[chainIdString] || {}
-
-    if (!tokenErrors?.length && !collectionErrors?.length) return
-
-    if (!toBeLearnedTokens.length && !Object.keys(toBeLearnedNfts).length) return
-
-    const erroredTokenAddresses = tokenErrors.map((e) => e.address)
-    const erroredCollectionAddresses = collectionErrors?.map((e) => e.address) || []
-
-    this.#toBeLearnedAssets.erc20s[chainIdString] = toBeLearnedTokens.filter(
-      (address) => !erroredTokenAddresses.includes(address)
-    )
-
-    this.#toBeLearnedAssets.erc721s[chainIdString] = Object.fromEntries(
-      Object.entries(toBeLearnedNfts).filter(
-        ([collectionAddress]) => !erroredCollectionAddresses.includes(collectionAddress)
-      )
-    )
-  }
-
-  /**
-   * Used to learn new tokens (by adding them to `learnedAssets`) and updating
-   * the timestamps of learned tokens.
-   *
-   * !!NOTE: This method must be called only by updateSelectedAccount with tokens
-   * that have a `balance > 0`, because it updates the timestamp of tokens, that indicates
-   * when the token was last seen with a balance > 0
-   *
-   * !!NOTE2: As this method is only called after a portfolio update, we are not
-   * checksumming the passed tokens (because the lib always returns them checksummed).
-   * If this ever changes, we need to checksum the addresses
-   */
-  protected async learnTokens(
-    tokensWithBalance: string[] | undefined,
-    key: `${string}:${string}`,
-    chainId: bigint
-  ): Promise<boolean> {
-    await this.initialLoadPromise
-    if (!tokensWithBalance) return false
-
-    if (!this.#learnedAssets.erc20s[key]) this.#learnedAssets.erc20s[key] = {}
-
-    const learnedTokens = this.#learnedAssets.erc20s[key]
-    const now = Date.now()
-
-    tokensWithBalance.forEach((address) => {
-      if (address === ZeroAddress) return
-      learnedTokens[address] = now
-      const toBeLearnedAddress = this.#toBeLearnedAssets.erc20s[chainId.toString()]
-
-      if (toBeLearnedAddress?.length) {
-        // Remove the token from toBeLearnedTokens if it will be learned now
-        this.#toBeLearnedAssets.erc20s[chainId.toString()] = toBeLearnedAddress.filter(
-          (addr) => addr !== address
-        )
-      }
-    })
-
-    // Keep a maximum of LEARNED_UNOWNED_LIMITS.erc20s tokens that are no longer owned by the user
-    const noLongerOwnedTokens = Object.entries(learnedTokens)
-      .filter(([, timestamp]) => timestamp !== now)
-      // Sort by newest timestamp first
-      .sort(([, timestampA], [, timestampB]) => timestampB - timestampA)
-      .map(([address]) => address)
-
-    // Remove the oldest no longer owned tokens
-    if (noLongerOwnedTokens.length > LEARNED_UNOWNED_LIMITS.erc20s) {
-      noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s).forEach((address) => {
-        delete learnedTokens[address]
-      })
-    }
-
-    await this.#storage.set('learnedAssets', this.#learnedAssets)
-
-    return true
-  }
-
-  /**
-   * Used to learn new ERC-721 NFTs (by adding them to `learnedAssets`) and updating
-   * the timestamps of learned collectibles.
-   *
-   * !!NOTE: This method must be called only by updateSelectedAccount with nfts
-   * that the user owns, because it updates the timestamp of collectibles, that indicates
-   * when the collectible was last seen with a balance > 0
-   * !!NOTE2: As this method is only called after a portfolio update, we are not
-   * checksumming the passed addresses (because the lib always returns them checksummed).
-   * If this ever changes, we need to checksum them
-   */
-  protected async learnNfts(
-    nftsData: [string, bigint[]][] | undefined,
-    accountAddr: string,
-    chainId: bigint
-  ): Promise<boolean> {
-    await this.initialLoadPromise
-    if (!nftsData?.length) return false
-    const key = `${chainId.toString()}:${accountAddr}`
-
-    if (!this.#learnedAssets.erc721s[key]) this.#learnedAssets.erc721s[key] = {}
-
-    if (!nftsData.length) return false
-
-    const now = Date.now()
-    const learnedNfts: LearnedAssets['erc721s'][string] = this.#learnedAssets.erc721s[key]
-
-    nftsData.forEach((collection) => {
-      const ids = erc721CollectionToLearnedAssetKeys(collection)
-
-      ids.forEach((id) => {
-        learnedNfts[id] = now
-      })
-    })
-
-    // Keep a maximum of LEARNED_UNOWNED_LIMITS.erc721s NFTs that are no longer owned by the user
-    const noLongerOwnedNfts = Object.entries(learnedNfts)
-      .filter(([, timestamp]) => {
-        return timestamp !== now
-      })
-      .map(([id]) => id)
-
-    // Remove the oldest no longer owned NFTs
-    if (noLongerOwnedNfts.length > LEARNED_UNOWNED_LIMITS.erc721s) {
-      noLongerOwnedNfts.slice(LEARNED_UNOWNED_LIMITS.erc721s).forEach((id) => {
-        delete learnedNfts[id]
-      })
-    }
-
-    await this.#storage.set('learnedAssets', this.#learnedAssets)
-
-    return true
-  }
-
   removeAccountData(address: Account['addr']) {
     delete this.#state[address]
     delete this.#networksWithAssetsByAccounts[address]
@@ -2395,7 +1992,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.#portfolioLibs.delete(key)
       }
     })
-    this.#storage.set('previousHints', this.#previousHints)
     this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
 
     this.emitUpdate()
@@ -2499,7 +2095,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      customTokens: this.customTokens,
+      tokenPreferences: this.tokenPreferences
     }
   }
 }

@@ -1,3 +1,5 @@
+import { SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
+
 import { ControllerInterface } from './controller'
 import { UserRequest } from './userRequest'
 
@@ -44,6 +46,10 @@ export interface Banner {
     startTime?: number
     endTime?: number
     requirements?: BannerRequirements
+    accountOpsDataForNextUpdate?: Pick<
+      SubmittedAccountOp,
+      'accountAddr' | 'chainId' | 'timestamp' | 'id'
+    >[]
     [key: string]: any
   }
 }

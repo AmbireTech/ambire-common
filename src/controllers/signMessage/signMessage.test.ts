@@ -1,5 +1,3 @@
-import { hexlify, randomBytes } from 'ethers'
-
 import { clearErc7730RegistryCache } from '@/libs/humanizer'
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
@@ -15,55 +13,19 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
-import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { SignMessageController } from './signMessage'
-
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    s
-  ) => '0x'
-}
 
 const account: Account = {
   addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
@@ -594,6 +556,60 @@ describe('SignMessageController', () => {
     expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
 
     getSignerSpy.mockRestore() // cleans up the spy
+  })
+
+  // Regression: a same-kind request replacing the installed message via init()
+  // while signing awaits getSigner() must NOT be signed under the previous approval.
+  test('does not sign a replacement request installed mid-signing', async () => {
+    const signingKeyAddr = account.addr
+    const dummySignature =
+      '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
+
+    const r1 = messageToSign
+    const r2: Message = {
+      ...messageToSign,
+      fromRequestId: 99,
+      content: { kind: 'message', message: '0x6576696c' } // "evil"
+    }
+
+    const mockSigner = {
+      // @ts-expect-error for mocking purposes only
+      signMessage: jest.fn().mockResolvedValue(dummySignature),
+      key: { addr: signingKeyAddr, type: 'internal', dedicatedToOneSA: true, meta: {} }
+    }
+
+    // Pause getSigner() so the replacement can be installed during its await - this is
+    // the exact async boundary the exploit relies on.
+    let releaseGetSigner!: () => void
+    const getSignerGate = new Promise<void>((resolve) => {
+      releaseGetSigner = resolve
+    })
+    const getSignerSpy = jest
+      .spyOn(keystoreCtrl, 'getSigner')
+      // @ts-expect-error mocked signer shape
+      .mockImplementation(async () => {
+        await getSignerGate
+        return mockSigner
+      })
+
+    await accountsCtrl.updateAccountState(r1.accountAddr, 'latest')
+    await signMessageController.init({ messageToSign: r1 })
+    signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
+
+    // Approval for R1 starts and blocks inside getSigner().
+    const signPromise = signMessageController.sign()
+
+    // Attacker races R2 onto the same controller before getSigner() resolves.
+    await signMessageController.init({ messageToSign: r2 })
+
+    releaseGetSigner()
+    await signPromise
+
+    // The stale R1 operation must abort: nothing signed, no message resolved.
+    expect(mockSigner.signMessage).not.toHaveBeenCalled()
+    expect(signMessageController.signedMessage).toBeNull()
+
+    getSignerSpy.mockRestore()
   })
 
   test('should expose hardware wallet EIP-712 data while signing a typed message', async () => {

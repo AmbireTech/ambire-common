@@ -1,5 +1,5 @@
 {
-  "version": "2.102.4",
+  "version": "2.103.2",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -23,10 +23,11 @@
     "@signinwithethereum/siwe": "4.2.0",
     "aes-js": "^3.1.2",
     "dotenv": "^16.3.1",
-    "eth-crypto": "^2.6.0",
+    "eth-crypto": "2.8.0",
     "eth-rpc-errors": "^4.0.3",
     "ethers": "^6.8.0",
     "events": "^3.3.0",
+    "hash-wasm": "^4.12.0",
     "js-yaml": "^4.1.0",
     "scrypt-js": "^3.0.1",
     "tldts": "7.0.17",
@@ -90,6 +91,8 @@
   },
   "overrides": {
     "elliptic": "^6.6.1",
+    "cipher-base": "^1.0.6",
+    "handlebars": "^4.7.9",
     "@safe-global/safe-deployments": "1.37.56",
     "@safe-global/safe-modules-deployments": "3.0.4"
   }
