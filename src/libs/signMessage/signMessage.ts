@@ -63,6 +63,18 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
   'bitrefill.com'
 ]
 
+export const AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE =
+  'Signing an AmbireOperation is not allowed'
+
+export const isAmbireOperationTypedData = (typedData: {
+  primaryType: string
+  types: Record<string, unknown>
+}) => {
+  if ('AmbireReadableOperation' in typedData.types) return false
+
+  return typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
+}
+
 /**
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
@@ -607,7 +619,8 @@ export async function getEIP712Signature(
   signer: KeystoreSignerInterface,
   network: Network,
   isOG = false,
-  withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest
+  withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest,
+  allowAmbireOperation = false
 ): Promise<{ signature: Hex; hash?: Hex }> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -641,6 +654,10 @@ export async function getEIP712Signature(
         withHardwareWalletSigningRequest
       )) as Hex
     }
+
+  if (isAmbireOperationTypedData(message) && !allowAmbireOperation) {
+    throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+  }
 
   if (!accountState.isV2) {
     if (
