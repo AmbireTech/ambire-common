@@ -67,6 +67,10 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import {
+  AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
+  isAmbireOperationTypedData
+} from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   getClaimWalletRequestParams,
@@ -396,6 +400,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     for (const req of reqs) {
       const { kind, meta, dappPromises } = req
+
+      if (
+        kind === 'typedMessage' &&
+        isAmbireOperationTypedData((meta as TypedMessageUserRequest['meta']).params)
+      ) {
+        this.#rejectAmbireOperationTypedDataRequest(req as TypedMessageUserRequest)
+        continue
+      }
 
       if (allowAccountSwitch && isSignRequest(kind)) {
         if ((meta as SignUserRequest['meta']).accountAddr !== this.#selectedAccount.account?.addr) {
@@ -914,6 +926,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         requestsToAddOrRemove.forEach((r) => {
           this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+
+          if (
+            r.kind === 'typedMessage' &&
+            isAmbireOperationTypedData((r as TypedMessageUserRequest).meta.params)
+          ) {
+            this.#rejectAmbireOperationTypedDataRequest(r as TypedMessageUserRequest)
+            return
+          }
+
           userRequestsToAdd.push(r)
         })
       }
@@ -1304,11 +1325,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
-      if (
-        msgAddress === this.#selectedAccount.account.addr &&
-        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
-      ) {
-        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
+      if (isAmbireOperationTypedData(typedData)) {
+        throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
       }
 
       userRequest = {
@@ -1720,7 +1738,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (userRequest) await this.addUserRequests([userRequest])
   }
 
+  #rejectAmbireOperationTypedDataRequest(req: TypedMessageUserRequest) {
+    req.dappPromises.forEach((p) => {
+      p.reject(ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE))
+    })
+  }
+
   async #addSwitchAccountUserRequest(req: SignUserRequest) {
+    if (req.kind === 'typedMessage' && isAmbireOperationTypedData(req.meta.params)) {
+      this.#rejectAmbireOperationTypedDataRequest(req)
+      return
+    }
+
     this.userRequestsWaitingAccountSwitch.push(req)
     await this.addUserRequests(
       [
