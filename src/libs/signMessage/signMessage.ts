@@ -50,6 +50,19 @@ import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountO
 // as 0x92 is not a valid value for v.
 const magicBytes = '6492649264926492649264926492649264926492649264926492649264926492'
 
+export const EIP_1271_NOT_SUPPORTED_BY = [
+  'opensea.io',
+  'paraswap.xyz',
+  'blur.io',
+  'aevo.xyz',
+  'socialscan.io',
+  'tally.xyz',
+  'questn.com',
+  'taskon.xyz',
+  'hyperliquid.xyz',
+  'bitrefill.com'
+]
+
 export const AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE =
   'Signing an AmbireOperation is not allowed'
 
