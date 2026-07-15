@@ -33,6 +33,7 @@ import asciiModule from './modules/AsciiModule'
 import Bundler3Module from './modules/Bundler3'
 import CowSwapModule from './modules/CowSwap'
 import curveModule from './modules/Curve'
+import daiPermitModule from './modules/DaiPermit'
 import { deploymentModule } from './modules/Deployment'
 import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
 import { ensModule } from './modules/ENS'
@@ -68,6 +69,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
+  daiPermitModule,
   TrustlessManifestoModule,
   LidoModule,
   gasTankModule,
