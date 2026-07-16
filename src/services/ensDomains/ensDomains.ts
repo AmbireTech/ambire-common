@@ -1,5 +1,5 @@
 import { isAddress, labelhash, namehash } from 'viem'
-import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, normalize } from 'viem/ens'
+import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, getEnsName, normalize } from 'viem/ens'
 
 import { RPCProvider } from '@/interfaces/provider'
 import { fromDescriptor } from '@/libs/deployless/deployless'
@@ -86,8 +86,8 @@ async function resolveENSDomain({
   const skipExpiry = options?.expiry === null
 
   const [address, avatar, expiry] = await Promise.all([
-    client.getEnsAddress({ name: normalizedDomainName, universalResolverAddress }),
-    client.getEnsAvatar({ name: normalizedDomainName, universalResolverAddress }),
+    getEnsAddress(client, { name: normalizedDomainName, universalResolverAddress }),
+    viemGetEnsAvatar(client, { name: normalizedDomainName, universalResolverAddress }),
     skipExpiry
       ? Promise.resolve(null)
       : getEnsExpiry(provider, {
@@ -179,7 +179,7 @@ async function reverseLookupEns(
     await Promise.all(
       offchainLookupAddresses.map(async (address) => {
         try {
-          const name = await client.getEnsName({
+          const name = await getEnsName(client, {
             address: address as `0x${string}`,
             universalResolverAddress,
             coinType: ETHEREUM_COIN_TYPE
