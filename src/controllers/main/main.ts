@@ -210,6 +210,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   #continuousUpdates: ContinuousUpdatesController | undefined
 
+  #fetchSafeTxnsPromise: Promise<void> | undefined
+
   safe: ISafeController
 
   get continuousUpdates() {
@@ -715,12 +717,16 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
-        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
       if (view.type === 'popup') await this.onPopupOpen(view.id)
+    })
+
+    this.ui.uiEvent.on('viewFocus', () => {
+      console.log('in')
+      this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
     })
   }
 
@@ -764,8 +770,6 @@ export class MainController extends EventEmitter implements IMainController {
       if (!this.accounts.areAccountStatesLoading) {
         this.accounts.updateAccountState(selectedAccountAddr)
       }
-
-      this.fetchSafeTxns().catch((e) => e) // we catch the error inside
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -1633,6 +1637,16 @@ export class MainController extends EventEmitter implements IMainController {
    * if the selected account is a safe
    */
   async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    if (this.#fetchSafeTxnsPromise) return this.#fetchSafeTxnsPromise
+
+    this.#fetchSafeTxnsPromise = this.#fetchSafeTxns(chainIds, forceRefetch).finally(() => {
+      this.#fetchSafeTxnsPromise = undefined
+    })
+
+    return this.#fetchSafeTxnsPromise
+  }
+
+  async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
