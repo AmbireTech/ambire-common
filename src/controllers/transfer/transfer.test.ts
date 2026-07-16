@@ -247,11 +247,12 @@ describe('Transfer Controller', () => {
       providers: { ['1']: provider },
       verification: {
         getReadyProvider: jest.fn(() => verificationProvider)
-      } as any
+      } as any,
+      getNetwork: (chainId: bigint) => ({ chainId, disabled: false }) as any
     })
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
-      .mockResolvedValue({ address: resolvedAddress, avatar: null })
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
 
     try {
       await domainsController.resolveDomain({ domain })
