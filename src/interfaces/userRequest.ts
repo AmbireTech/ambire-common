@@ -80,6 +80,10 @@ export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappP
     hash?: Hex
     created?: number
     signatures?: Hex[]
+    // set for Safe messages co-signed from another device, where there is no live
+    // dapp session; recovered from the Safe message's `origin` field
+    dappName?: string
+    dappUrl?: string
   }
 }
 
@@ -119,6 +123,10 @@ export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromi
     hash?: Hex
     created?: number
     signatures?: Hex[]
+    // set for Safe messages co-signed from another device, where there is no live
+    // dapp session; recovered from the Safe message's `origin` field
+    dappName?: string
+    dappUrl?: string
   }
 }
 
