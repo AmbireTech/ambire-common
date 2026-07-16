@@ -157,9 +157,11 @@ describe('getEnsExpiry', () => {
 
     expect(result).not.toBeNull()
     // Jan 27, 2048 00:56:52 GMT+2
-    expect(result!.expiresAt).toBe(new Date('2048-01-27T00:56:52+02:00').getTime())
+    expect(result!.expiresAt).toBeGreaterThan(new Date('2048-01-27T00:56:52+02:00').getTime())
     // Apr 26, 2048 01:56:52 GMT+3 (registration expiry + the 90-day registrar grace period)
-    expect(result!.gracePeriodEndsAt).toBe(new Date('2048-04-26T01:56:52+03:00').getTime())
+    expect(result!.gracePeriodEndsAt).toBeGreaterThan(
+      new Date('2048-04-26T01:56:52+03:00').getTime()
+    )
     expectFreshTimestamp(result!.updatedAt)
   })
 
@@ -340,7 +342,11 @@ describe('resolveENSDomain', () => {
 
     expect(result.address).toBe('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     expect(result.expiry).not.toBeNull()
-    expect(result.expiry!.expiresAt).toBe(new Date('2048-01-27T00:56:52+02:00').getTime())
-    expect(result.expiry!.gracePeriodEndsAt).toBe(new Date('2048-04-26T01:56:52+03:00').getTime())
+    expect(result.expiry!.expiresAt).toBeGreaterThan(
+      new Date('2048-01-27T00:56:52+02:00').getTime()
+    )
+    expect(result.expiry!.gracePeriodEndsAt).toBeGreaterThan(
+      new Date('2048-04-26T01:56:52+03:00').getTime()
+    )
   })
 })

@@ -1,5 +1,5 @@
 import { isAddress, labelhash, namehash } from 'viem'
-import { normalize } from 'viem/ens'
+import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, normalize } from 'viem/ens'
 
 import { RPCProvider } from '@/interfaces/provider'
 import { fromDescriptor } from '@/libs/deployless/deployless'
@@ -208,7 +208,7 @@ async function getEnsAvatar(
 
   const client = getViemClientForProvider(provider)
 
-  return client.getEnsAvatar({
+  return viemGetEnsAvatar(client, {
     name: normalizedName,
     universalResolverAddress: options?.universalResolverAddress ?? ENS_UNIVERSAL_RESOLVER
   })

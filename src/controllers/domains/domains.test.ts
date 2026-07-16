@@ -156,12 +156,13 @@ describe('Domains', () => {
     // provider instance it was called with (regular RPC vs. Colibri's verification provider).
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
-      .mockImplementation(async ({ provider: usedProvider }: Parameters<
-        typeof ensDomainsModule.resolveENSDomain
-      >[0]) =>
-        usedProvider === verificationProvider
-          ? { address: resolvedAddress, avatar: null, expiry: null }
-          : { address: changedAddress, avatar: null, expiry: null }
+      .mockImplementation(
+        async ({
+          provider: usedProvider
+        }: Parameters<typeof ensDomainsModule.resolveENSDomain>[0]) =>
+          usedProvider === verificationProvider
+            ? { address: resolvedAddress, avatar: null, expiry: null }
+            : { address: changedAddress, avatar: null, expiry: null }
       )
 
     try {

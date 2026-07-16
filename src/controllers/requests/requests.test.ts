@@ -689,14 +689,15 @@ describe('RequestsController ', () => {
 
     const buildSignTypedDataRequest = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      typedData: object
+      typedData: object,
+      signerAddress: string = FROM
     ) =>
       controller.build({
         type: 'dappRequest',
         params: {
           request: {
             method: 'eth_signTypedData_v4',
-            params: [FROM, JSON.stringify(typedData)],
+            params: [signerAddress, JSON.stringify(typedData)],
             session: MOCK_SESSION
           },
           dappPromise: {
@@ -779,6 +780,66 @@ describe('RequestsController ', () => {
       const req = controller.userRequests[0]! as any
       expect(req.kind).toBe('typedMessage')
       expect(req.meta.params.domain.chainId).toBe(1n)
+    })
+
+    const SELECTED_ACCOUNT = FROM
+    const OTHER_ACCOUNT = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+    const AMBIRE_OPERATION_TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+          { name: 'salt', type: 'bytes32' }
+        ],
+        AmbireOperation: [
+          { name: 'account', type: 'address' },
+          { name: 'hash', type: 'bytes32' }
+        ]
+      },
+      primaryType: 'AmbireOperation',
+      domain: {
+        name: 'Ambire',
+        version: '1',
+        chainId: 1,
+        verifyingContract: SELECTED_ACCOUNT,
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      message: {
+        account: SELECTED_ACCOUNT,
+        hash: '0x1111111111111111111111111111111111111111111111111111111111111111'
+      }
+    }
+
+    test('rejects AmbireOperation typed data for the selected account', async () => {
+      const { controller } = await prepareTest(true)
+      await expect(
+        buildSignTypedDataRequest(controller, AMBIRE_OPERATION_TYPED_DATA, SELECTED_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
+    })
+
+    test('rejects AmbireOperation typed data for a non-selected account', async () => {
+      const { controller } = await prepareTest(true)
+      const otherAccountTypedData = {
+        ...AMBIRE_OPERATION_TYPED_DATA,
+        domain: {
+          ...AMBIRE_OPERATION_TYPED_DATA.domain,
+          verifyingContract: OTHER_ACCOUNT
+        },
+        message: {
+          account: OTHER_ACCOUNT,
+          hash: '0x1111111111111111111111111111111111111111111111111111111111111111'
+        }
+      }
+
+      await expect(
+        buildSignTypedDataRequest(controller, otherAccountTypedData, OTHER_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
+      expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
     })
   })
 })

@@ -3,8 +3,7 @@ import {
   EXTREME_GAS_FEE_THRESHOLD_MAINNET_GWEI
 } from '../../consts/safeguards/extremeGasFee'
 import { getFeeSpeedIdentifier } from '../../controllers/signAccountOp/helper'
-import { FeeSpeed } from '../../controllers/signAccountOp/signAccountOp'
-import { ISignAccountOpController } from '../../interfaces/signAccountOp'
+import { FeeSpeed, ISignAccountOpController } from '../../interfaces/signAccountOp'
 
 const ETHEREUM_CHAIN_ID = 1n
 const WEI_PER_GWEI = 10n ** 9n

@@ -1,8 +1,5 @@
 import { toBeHex } from 'ethers'
 
-import { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
-import { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
-
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
@@ -21,6 +18,9 @@ import {
   SafeResults
 } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+import type { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
+import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 export const STATUS_WRAPPED_METHODS = {
   findSafe: 'INITIAL'

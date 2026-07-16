@@ -4,8 +4,6 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
-import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
-
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
@@ -15,6 +13,8 @@ import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
+
+import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces

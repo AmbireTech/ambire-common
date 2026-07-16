@@ -1,5 +1,7 @@
 import fetch from 'node-fetch'
 
+import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 import { expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
@@ -36,7 +38,6 @@ import { SurveyController } from '../survey/survey'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from './swapAndBridge'
 
 const accounts = [
   {
