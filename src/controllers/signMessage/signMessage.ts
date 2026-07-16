@@ -40,12 +40,14 @@ import {
   getSigningRequestDisplayData
 } from '../../libs/signingRequest/signingRequest'
 import {
+  AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   getAppFormatted,
   getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
   getSafeMessageTypedData,
-  getVerifyMessageSignature
+  getVerifyMessageSignature,
+  isAmbireOperationTypedData
 } from '../../libs/signMessage/signMessage'
 import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
@@ -568,6 +570,10 @@ export class SignMessageController
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
+          if (isAmbireOperationTypedData(this.messageToSign.content)) {
+            throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+          }
+
           if (this.#account.creation && this.messageToSign.content.primaryType === 'Permit') {
             throw new Error(
               'It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.'

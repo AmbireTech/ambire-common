@@ -3150,7 +3150,10 @@ export class SignAccountOpController
                 this.account,
                 accountState,
                 signer,
-                this.#network
+                this.#network,
+                false,
+                undefined,
+                true
               )
           )
           if (!this.accountOp.meta) {
