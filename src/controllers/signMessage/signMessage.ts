@@ -28,6 +28,7 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
@@ -451,10 +452,16 @@ export class SignMessageController
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
     if (!this.network || !this.#account) return
 
+    // Attach the requesting dapp's name and url so the other owners can see the
+    // request context when co-signing on a different device (see buildSafeMessageOrigin)
+    const origin = buildSafeMessageOrigin(this.dapp)
+
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig).catch((e) => {
-      console.log('failed to send message to Safe Global: ', e)
-    })
+    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig, origin).catch(
+      (e) => {
+        console.log('failed to send message to Safe Global: ', e)
+      }
+    )
   }
 
   async addSigToSafeGlobal(sig: string, hash: string) {
