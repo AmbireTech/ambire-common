@@ -1,7 +1,3 @@
-/* eslint-disable no-await-in-loop */
-/* eslint-disable no-continue */
-/* eslint-disable no-constant-condition */
-
 import { toBeHex } from 'ethers'
 
 import { EIP7702Auth } from '../../consts/7702'
