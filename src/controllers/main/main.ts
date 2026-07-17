@@ -724,7 +724,6 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.ui.uiEvent.on('viewFocus', () => {
-      console.log('in')
       this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
     })
   }

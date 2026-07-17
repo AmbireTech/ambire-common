@@ -153,6 +153,42 @@ export function decodeMultiSend(transactionsHex: string) {
 }
 
 /**
+ * The requesting dapp is only known on the device that originates the message.
+ * We stamp its name and url into Safe's `origin` field so other owners co-signing
+ * on a different device can see the request context (they fetch the message from
+ * the Safe Transaction Service, which carries no dapp identity of its own).
+ * `origin` is capped at 200 chars; if it doesn't fit we skip it rather than risk
+ * the message proposal failing validation (missing metadata is recoverable).
+ */
+export function buildSafeMessageOrigin(
+  dapp: { name?: string; url?: string } | null
+): string | undefined {
+  const name = dapp?.name || ''
+  const url = dapp?.url || ''
+  if (!name && !url) return undefined
+
+  const origin = JSON.stringify({ name, url })
+  if (origin.length > 200) return undefined
+  return origin
+}
+
+export function parseSafeMessageOrigin(origin?: string): { name?: string; url?: string } {
+  if (!origin) return {}
+  try {
+    const parsed = JSON.parse(origin)
+    if (parsed && typeof parsed === 'object') {
+      const name = typeof parsed.name === 'string' ? parsed.name : undefined
+      const url = typeof parsed.url === 'string' ? parsed.url : undefined
+      return { name, url }
+    }
+  } catch {
+    // origin may be a plain, non-JSON string set by another wallet; treat it as the name
+    return { name: origin }
+  }
+  return {}
+}
+
+/**
  * Safe requests may have multiple "call" ones with the same nonce
  */
 export function getSameNonceRequests(requests: CallsUserRequest[]) {

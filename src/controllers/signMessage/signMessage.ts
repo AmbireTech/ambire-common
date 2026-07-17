@@ -28,10 +28,10 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
-  buildSafeMessageOrigin,
   getImportedSignersThatHaveNotSigned,
   sortSigs
 } from '../../libs/safe/safe'

@@ -2,7 +2,8 @@ import { describe, expect, test } from '@jest/globals'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
 
-import { buildSafeMessageOrigin, normalizeSafeGlobalMessage, parseSafeMessageOrigin } from './safe'
+import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
+import { normalizeSafeGlobalMessage } from './safe'
 
 describe('normalizeSafeGlobalMessage', () => {
   test('converts a typed message domain chainId bigint to a decimal string', () => {
