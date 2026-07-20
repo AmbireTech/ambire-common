@@ -3131,9 +3131,11 @@ describe('traceCall asset discovery', () => {
 
     getShouldUseAccessListCallSpy.mockReturnValue(false)
     debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+    ethSimulateV1Spy.mockRejectedValueOnce(new Error('simulate failed'))
 
     await (controller as any).traceCall()
 
+    expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Failed)
     expect(emitErrorSpy).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'silent', message: 'Error in signAccountOp.traceCall' })
