@@ -1,6 +1,6 @@
 import { FeatureFlags } from '@/consts/featureFlags'
 import { RPCProvider } from '@/interfaces/provider'
-import { NameExpiry, ReverseLookupResult } from '@/services/ensDomains'
+import { NameExpiry, ReverseLookupResult } from '@/services/ensDomains/ensDomains'
 
 export type NameServiceId = 'ens' | 'namoshi' | 'gns'
 

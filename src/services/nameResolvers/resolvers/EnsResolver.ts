@@ -4,7 +4,7 @@ import {
   ENS_NAME_WRAPPER_SEPOLIA,
   ENS_UNIVERSAL_RESOLVER,
   NameExpiry
-} from '@/services/ensDomains'
+} from '@/services/ensDomains/ensDomains'
 
 import { EnsCompatibleResolver, ETHEREUM_CHAIN_ID } from './EnsCompatibleResolver'
 
