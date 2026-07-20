@@ -129,6 +129,7 @@ import {
 import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
+import { ethSimulateV1 } from '../../libs/tracer/ethSimulatev1'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -2150,6 +2151,7 @@ export class SignAccountOpController
       const stateOverride = getStateOverride(this.account, this.accountOp, state)
       const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
       let accessListFailed = false
+      let debugTraceCallFailed = false
 
       if (shouldUseAccessList) {
         console.log('Debug: using eth_createAccessList for asset discovery')
@@ -2181,7 +2183,39 @@ export class SignAccountOpController
 
       if (!shouldUseAccessList || accessListFailed) {
         console.log('Debug: using debug_traceCall for asset discovery')
-        const { tokens, nfts } = await debugTraceCall(
+        try {
+          const { tokens, nfts } = await debugTraceCall(
+            this.baseAccount,
+            this.accountOp,
+            this.#network,
+            state,
+            stateOverride
+          )
+          erc20s = tokens
+          erc721s = nfts
+        } catch (e: any) {
+          debugTraceCallFailed = true
+
+          this.emitError({
+            level: 'silent',
+            message: 'Error in signAccountOp.traceCall',
+            error: e
+          })
+        }
+      }
+
+      if (this.traceCallTimeoutId !== timeoutId) {
+        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
+        // and we should not proceed with this one
+        return
+      }
+
+      console.log('shouldUseAccessList', shouldUseAccessList)
+      console.log('accessListFailed', accessListFailed)
+      console.log('debugTraceCallFailed', debugTraceCallFailed)
+      if ((!shouldUseAccessList || accessListFailed) && debugTraceCallFailed) {
+        console.log('Debug: using eth_simulateV1 for asset discovery')
+        const { tokens, nfts } = await ethSimulateV1(
           this.baseAccount,
           this.accountOp,
           this.#network,
