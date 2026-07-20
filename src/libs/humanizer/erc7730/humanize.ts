@@ -1226,7 +1226,7 @@ const getModuleFallbackVisualization = (
 
   localFallbackModules.some((module) => {
     try {
-      const [result] = module(accountOp, [call as IrCall])
+      const result = module(accountOp, call as IrCall)
       if (!result?.fullVisualization?.length) return false
 
       humanizedCall = result
@@ -1238,8 +1238,7 @@ const getModuleFallbackVisualization = (
   })
 
   if (!humanizedCall?.fullVisualization?.length) {
-    const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [call as IrCall])
-    humanizedCall = fallbackCall
+    humanizedCall = genericErc20Humanizer({ accountAddr }, call as IrCall)
   }
 
   const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
@@ -1394,7 +1393,7 @@ const getSafeTxCallVisualizations = (
       )
       if (moduleFallbackVisualization) return moduleFallbackVisualization
 
-      const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [safeTxCall])
+      const fallbackCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
       if (!rows) return getKnownCallVisualization(safeTxCall)
 
@@ -1451,7 +1450,7 @@ const getSafeTxCallRows = (
     if (rows) return rows
   }
 
-  const [fallbackCall] = genericErc20Humanizer({ accountAddr: message.accountAddr }, [safeTxCall])
+  const fallbackCall = genericErc20Humanizer({ accountAddr: message.accountAddr }, safeTxCall)
 
   return getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
 }

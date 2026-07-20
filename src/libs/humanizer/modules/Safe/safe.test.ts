@@ -1,9 +1,46 @@
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 import SafeModule from './'
+
+const buildSafeTxFixture = (
+  overrides: Partial<SafeMultisigTransactionResponse>
+): SafeMultisigTransactionResponse => ({
+  safe: '0x0000000000000000000000000000000000000000',
+  to: '0x0000000000000000000000000000000000000000',
+  value: '0',
+  operation: 0,
+  gasToken: '0x0000000000000000000000000000000000000000',
+  safeTxGas: '0',
+  baseGas: '0',
+  gasPrice: '0',
+  nonce: '0',
+  executionDate: null,
+  submissionDate: '2024-01-01T00:00:00Z',
+  modified: '2024-01-01T00:00:00Z',
+  blockNumber: null,
+  transactionHash: null,
+  safeTxHash: '0x0',
+  executor: null,
+  proposer: null,
+  proposedByDelegate: null,
+  isExecuted: false,
+  isSuccessful: null,
+  ethGasPrice: null,
+  maxFeePerGas: null,
+  maxPriorityFeePerGas: null,
+  gasUsed: null,
+  fee: null,
+  origin: '',
+  confirmationsRequired: 1,
+  trusted: true,
+  signatures: null,
+  ...overrides
+})
 
 const transactions = [
   {
@@ -47,7 +84,64 @@ describe('Safe', () => {
         getAddressVisualization('0x0BbbEad62f7647AE8323d2cb243A0DB74B7C2b80')
       ]
     ]
-    const irCalls = SafeModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  describe('safeTx delegatecall warning', () => {
+    const plainCalls = [
+      { to: '0x1111111111111111111111111111111111111111', value: 0n, data: '0x' },
+      { to: '0x2222222222222222222222222222222222222222', value: 0n, data: '0x' },
+      { to: '0x3333333333333333333333333333333333333333', value: 0n, data: '0x' }
+    ]
+
+    test('attaches the warning to every call, not just the first, when the Safe tx is a delegatecall to an unwhitelisted contract', () => {
+      const accOpWithSafeTx: AccountOp = {
+        ...accountOp,
+        safeTx: buildSafeTxFixture({
+          operation: 1,
+          to: '0x9999999999999999999999999999999999999999'
+        })
+      }
+
+      const irCalls = plainCalls.map((c) =>
+        SafeModule(accOpWithSafeTx, c, humanizerInfo as HumanizerMeta)
+      )
+
+      irCalls.forEach((call) => {
+        expect(call.warnings).toBeDefined()
+        expect(call.warnings!.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBe(true)
+      })
+    })
+
+    test('does not warn when the Safe tx operation is a regular call (operation 0)', () => {
+      const accOpWithSafeTx: AccountOp = {
+        ...accountOp,
+        safeTx: buildSafeTxFixture({
+          operation: 0,
+          to: '0x9999999999999999999999999999999999999999'
+        })
+      }
+
+      const irCalls = plainCalls.map((c) =>
+        SafeModule(accOpWithSafeTx, c, humanizerInfo as HumanizerMeta)
+      )
+
+      irCalls.forEach((call) => {
+        expect(call.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBeFalsy()
+      })
+    })
+
+    test('does not warn when accountOp.safeTx is not set', () => {
+      const irCalls = plainCalls.map((c) =>
+        SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
+      )
+
+      irCalls.forEach((call) => {
+        expect(call.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBeFalsy()
+      })
+    })
   })
 })

@@ -98,7 +98,9 @@ describe('Across', () => {
         ...getRecipientText(accountOp.accountAddr, '0xae376B42699fDB0D80e9ceE068A4f75ae6d70d85')
       ]
     ]
-    const irCalls = AcrossModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      AcrossModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

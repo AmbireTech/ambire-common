@@ -51,7 +51,9 @@ describe('Pancake', () => {
         getDeadline(1746289513n)
       ]
     ]
-    const irCalls = OneInchModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      OneInchModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

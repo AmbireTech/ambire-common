@@ -96,10 +96,8 @@ describe('Hidden ambire operations', () => {
       accountAddr,
       calls: wrappedTransactions
     } as AccountOp
-    const irCalls = embeddedAmbireOperationHumanizer(
-      accountOp,
-      wrappedTransactions,
-      {} as HumanizerMeta
+    const irCalls = wrappedTransactions.map((c) =>
+      embeddedAmbireOperationHumanizer(accountOp, c, {} as HumanizerMeta)
     )
     expect(irCalls.length).toBe(8)
     irCalls.forEach((call: IrCall, i: number) => {
@@ -147,10 +145,8 @@ describe('Hidden ambire operations', () => {
       value: 0n
     }
 
-    const irCalls = embeddedAmbireOperationHumanizer(
-      accountOp,
-      [secondLayerTryCatch],
-      {} as HumanizerMeta
+    const irCalls = [secondLayerTryCatch].map((c) =>
+      embeddedAmbireOperationHumanizer(accountOp, c, {} as HumanizerMeta)
     )
     compareHumanizerVisualizations(irCalls, [
       [getAction('Allow multiple actions from this account!', { warning: true })]

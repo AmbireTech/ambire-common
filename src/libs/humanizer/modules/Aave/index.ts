@@ -11,13 +11,8 @@ const matcher = {
   ...aaveV3Pool()
 }
 
-export const aaveHumanizer: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
-  const newCalls = irCalls.map((call) => {
-    if (!call.to || !isHexCall(call)) return call
-    const sigHash = call.data.slice(0, 10)
-    return matcher[sigHash]
-      ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) }
-      : call
-  })
-  return newCalls
+export const aaveHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
+  if (!call.to || !isHexCall(call)) return call
+  const sigHash = call.data.slice(0, 10)
+  return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) } : call
 }

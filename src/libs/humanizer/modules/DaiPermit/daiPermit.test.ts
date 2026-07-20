@@ -50,7 +50,9 @@ const getPermitCall = (holder: string, permitExpiry: bigint, allowed: boolean): 
 
 describe('dai permit module', () => {
   test('grant with expiry', () => {
-    const calls = daiPermitModule(accountOp, [getPermitCall(accountOp.accountAddr, expiry, true)])
+    const calls = [getPermitCall(accountOp.accountAddr, expiry, true)].map((c) =>
+      daiPermitModule(accountOp, c)
+    )
     compareHumanizerVisualizations(calls, [
       [
         getAction('Grant approval'),
@@ -63,7 +65,9 @@ describe('dai permit module', () => {
     ])
   })
   test('grant without expiry (0 means the permit never expires)', () => {
-    const calls = daiPermitModule(accountOp, [getPermitCall(accountOp.accountAddr, 0n, true)])
+    const calls = [getPermitCall(accountOp.accountAddr, 0n, true)].map((c) =>
+      daiPermitModule(accountOp, c)
+    )
     compareHumanizerVisualizations(calls, [
       [
         getAction('Grant approval'),
@@ -75,7 +79,9 @@ describe('dai permit module', () => {
     ])
   })
   test('revoke', () => {
-    const calls = daiPermitModule(accountOp, [getPermitCall(accountOp.accountAddr, expiry, false)])
+    const calls = [getPermitCall(accountOp.accountAddr, expiry, false)].map((c) =>
+      daiPermitModule(accountOp, c)
+    )
     compareHumanizerVisualizations(calls, [
       [
         getAction('Revoke approval'),
@@ -86,7 +92,9 @@ describe('dai permit module', () => {
     ])
   })
   test('grant on behalf of another holder', () => {
-    const calls = daiPermitModule(accountOp, [getPermitCall(otherHolder, expiry, true)])
+    const calls = [getPermitCall(otherHolder, expiry, true)].map((c) =>
+      daiPermitModule(accountOp, c)
+    )
     compareHumanizerVisualizations(calls, [
       [
         getAction('Grant approval'),
@@ -102,7 +110,7 @@ describe('dai permit module', () => {
   })
   test('does not touch unrelated calls', () => {
     const unrelatedCall: IrCall = { to: DAI, value: 0n, data: '0x' }
-    const calls = daiPermitModule(accountOp, [unrelatedCall])
+    const calls = [unrelatedCall].map((c) => daiPermitModule(accountOp, c))
     expect(calls[0]!.fullVisualization).toBeUndefined()
   })
 })

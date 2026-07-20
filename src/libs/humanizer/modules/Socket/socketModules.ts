@@ -151,7 +151,7 @@ const bridgeERC20ToStargateV2Abi = parseAbi([
 // @TODO check all additional data provided
 // @TODO consider fees everywhere
 // @TODO add automated tests
-export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
+export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher: { [sighash: string]: (irCall: HexIrCall) => HumanizerVisualization[] } = {
     [toFunctionSelector(swapAndBridgeAcrossAbi[0])]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
@@ -774,77 +774,74 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       ]
     }
   }
-  const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
-    if (!call.to) return call
-    if (!isHexCall(call)) return call
+  if (!call.to) return call
+  if (!isHexCall(call)) return call
 
-    let dataToUse: `0x${string}` = call.data
-    if (call.data.startsWith(toFunctionSelector(executeControllerAbi[0]))) {
-      const { args } = decodeFunctionData({ abi: executeControllerAbi, data: call.data })
-      const [socketControllerRequest] = args
-      dataToUse = socketControllerRequest.data
+  let dataToUse: `0x${string}` = call.data
+  if (call.data.startsWith(toFunctionSelector(executeControllerAbi[0]))) {
+    const { args } = decodeFunctionData({ abi: executeControllerAbi, data: call.data })
+    const [socketControllerRequest] = args
+    dataToUse = socketControllerRequest.data
 
-      if (dataToUse.startsWith(toFunctionSelector(takeFeeAndSwapAndBridgeAbi[0]))) {
-        const { args: fsbArgs } = decodeFunctionData({
-          abi: takeFeeAndSwapAndBridgeAbi,
-          data: dataToUse
-        })
-        const [fsbRequest] = fsbArgs
-        const { swapData, bridgeData } = fsbRequest
-        const swapMatcher = matcher[swapData.slice(0, 10)]
-        const humanizationOfSwap = swapMatcher
-          ? swapMatcher({ ...call, data: swapData })
-          : [getAction('Swap')]
+    if (dataToUse.startsWith(toFunctionSelector(takeFeeAndSwapAndBridgeAbi[0]))) {
+      const { args: fsbArgs } = decodeFunctionData({
+        abi: takeFeeAndSwapAndBridgeAbi,
+        data: dataToUse
+      })
+      const [fsbRequest] = fsbArgs
+      const { swapData, bridgeData } = fsbRequest
+      const swapMatcher = matcher[swapData.slice(0, 10)]
+      const humanizationOfSwap = swapMatcher
+        ? swapMatcher({ ...call, data: swapData })
+        : [getAction('Swap')]
 
-        let humanizationOfBridge: HumanizerVisualization[] = [getAction('Bridge')]
+      let humanizationOfBridge: HumanizerVisualization[] = [getAction('Bridge')]
 
-        try {
-          const [decoded] = decodeAbiParameters(
-            parseAbiParameters(
-              '(address[] senderReceiverAddresses, address[] inputOutputTokens, uint256[] outputAmountToChainIdArray, uint32[] quoteAndDeadlineTimeStamps, uint256 bridgeFee, bytes32 metadata)'
-            ),
-            bridgeData
-          )
-          const [, receiver] = decoded.senderReceiverAddresses as [string, string]
-          const [tokenIn] = decoded.inputOutputTokens as [string, string]
-          const [, chainId] = decoded.outputAmountToChainIdArray as [bigint, bigint]
-          const [, deadline] = decoded.quoteAndDeadlineTimeStamps as [number, number]
+      try {
+        const [decoded] = decodeAbiParameters(
+          parseAbiParameters(
+            '(address[] senderReceiverAddresses, address[] inputOutputTokens, uint256[] outputAmountToChainIdArray, uint32[] quoteAndDeadlineTimeStamps, uint256 bridgeFee, bytes32 metadata)'
+          ),
+          bridgeData
+        )
+        const [, receiver] = decoded.senderReceiverAddresses as [string, string]
+        const [tokenIn] = decoded.inputOutputTokens as [string, string]
+        const [, chainId] = decoded.outputAmountToChainIdArray as [bigint, bigint]
+        const [, deadline] = decoded.quoteAndDeadlineTimeStamps as [number, number]
 
-          humanizationOfBridge = [
-            getAction('Bridge'),
-            getToken(tokenIn, 0n),
-            getLabel('to'),
-            getChain(chainId),
-            ...getRecipientText(accountOp.accountAddr, receiver),
-            getDeadline(deadline)
-          ]
-        } catch (e) {
-          console.log(e)
-        }
-        return {
-          ...call,
-          fullVisualization: [...humanizationOfSwap, getLabel('and'), ...humanizationOfBridge]
-        }
+        humanizationOfBridge = [
+          getAction('Bridge'),
+          getToken(tokenIn, 0n),
+          getLabel('to'),
+          getChain(chainId),
+          ...getRecipientText(accountOp.accountAddr, receiver),
+          getDeadline(deadline)
+        ]
+      } catch (e) {
+        console.log(e)
       }
-      if (dataToUse.startsWith(toFunctionSelector(takeFeesAndSwapAbi[0]))) {
-        const { args: ftsArgs } = decodeFunctionData({ abi: takeFeesAndSwapAbi, data: dataToUse })
-        const [ftsRequest] = ftsArgs
-        dataToUse = ftsRequest.swapRequestData
-      } else if (dataToUse.startsWith(toFunctionSelector(takeFeesAndBridgeAbi[0]))) {
-        const { args: ftbArgs } = decodeFunctionData({ abi: takeFeesAndBridgeAbi, data: dataToUse })
-        const [ftbRequest] = ftbArgs
-        dataToUse = ftbRequest.bridgeRequestData
+      return {
+        ...call,
+        fullVisualization: [...humanizationOfSwap, getLabel('and'), ...humanizationOfBridge]
       }
-    } else {
-      const stripped = `0x${dataToUse.slice(10)}`
-      if (!isHex(stripped)) return call
-      dataToUse = stripped
     }
-    const callMatcher = matcher[dataToUse.slice(0, 10)]
-    if (callMatcher) {
-      return { ...call, fullVisualization: callMatcher({ ...call, data: dataToUse }) }
+    if (dataToUse.startsWith(toFunctionSelector(takeFeesAndSwapAbi[0]))) {
+      const { args: ftsArgs } = decodeFunctionData({ abi: takeFeesAndSwapAbi, data: dataToUse })
+      const [ftsRequest] = ftsArgs
+      dataToUse = ftsRequest.swapRequestData
+    } else if (dataToUse.startsWith(toFunctionSelector(takeFeesAndBridgeAbi[0]))) {
+      const { args: ftbArgs } = decodeFunctionData({ abi: takeFeesAndBridgeAbi, data: dataToUse })
+      const [ftbRequest] = ftbArgs
+      dataToUse = ftbRequest.bridgeRequestData
     }
-    return call
-  })
-  return newCalls
+  } else {
+    const stripped = `0x${dataToUse.slice(10)}`
+    if (!isHex(stripped)) return call
+    dataToUse = stripped
+  }
+  const callMatcher = matcher[dataToUse.slice(0, 10)]
+  if (callMatcher) {
+    return { ...call, fullVisualization: callMatcher({ ...call, data: dataToUse }) }
+  }
+  return call
 }
