@@ -4,10 +4,9 @@ import { ProviderError } from '../../classes/ProviderError'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
-import { getShouldStateOverride } from '../../utils/simulationStateOverride'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { getDiscoveredAssets, getFunctionParams, parseCallTracerResult } from './debugTraceCall'
+import { getDiscoveredAssets, parseCallTracerResult } from './debugTraceCall'
 
 const SIMULATION_BALANCE = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
@@ -41,13 +40,7 @@ export function parseEthSimulateV1Result(
   })
 }
 
-export function getEthSimulateV1Params(
-  baseAcc: BaseAccount,
-  op: AccountOp,
-  network: Network,
-  accountState: AccountOnchainState,
-  overrideData?: any
-): {
+export function getEthSimulateV1Params(op: AccountOp): {
   callTargets: string[]
   params: [
     {
@@ -60,67 +53,27 @@ export function getEthSimulateV1Params(
     'latest'
   ]
 } | null {
-  const account = baseAcc.getAccount()
-  const shouldUseNativeBundle = op.calls.length > 1
-
-  if (shouldUseNativeBundle) {
-    const calls = getSignableCalls(op).map(([to, value, data]) => ({
-      ...(to ? { to } : {}),
-      value: toQuantity(value),
-      data,
-      from: op.accountAddr
-    }))
-
-    return {
-      callTargets: getSignableCalls(op)
-        .map(([to]) => to)
-        .filter(Boolean) as string[],
-      params: [
-        {
-          blockStateCalls: [
-            {
-              stateOverrides: {
-                [op.accountAddr]: {
-                  balance: SIMULATION_BALANCE
-                }
-              },
-              calls
-            }
-          ],
-          validation: false
-        },
-        'latest'
-      ]
-    }
-  }
-
-  const params = getFunctionParams(account, op, accountState)
-  if (!params) return null
-
-  const shouldUseStateOverrides = getShouldStateOverride(network, baseAcc) || !!overrideData
+  const calls = getSignableCalls(op).map(([to, value, data]) => ({
+    ...(to ? { to } : {}),
+    value: toQuantity(value),
+    data,
+    from: op.accountAddr
+  }))
 
   return {
-    callTargets: [params.to].filter(Boolean) as string[],
+    callTargets: getSignableCalls(op)
+      .map(([to]) => to)
+      .filter(Boolean) as string[],
     params: [
       {
         blockStateCalls: [
           {
-            stateOverrides: shouldUseStateOverrides
-              ? {
-                  [params.from]: {
-                    balance: SIMULATION_BALANCE
-                  },
-                  ...overrideData
-                }
-              : {},
-            calls: [
-              {
-                to: params.to,
-                value: toQuantity(params.value.toString()),
-                data: params.data,
-                from: params.from
+            stateOverrides: {
+              [op.accountAddr]: {
+                balance: SIMULATION_BALANCE
               }
-            ]
+            },
+            calls
           }
         ],
         validation: false
@@ -134,16 +87,9 @@ export async function ethSimulateV1(
   baseAcc: BaseAccount,
   op: AccountOp,
   network: Network,
-  accountState: AccountOnchainState,
-  overrideData?: any
+  accountState: AccountOnchainState
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
-  const ethSimulateV1Params = getEthSimulateV1Params(
-    baseAcc,
-    op,
-    network,
-    accountState,
-    overrideData
-  )
+  const ethSimulateV1Params = getEthSimulateV1Params(op)
   if (!ethSimulateV1Params) return { tokens: [], nfts: [] }
 
   const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)

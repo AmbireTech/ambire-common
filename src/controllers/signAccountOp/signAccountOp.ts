@@ -2216,8 +2216,7 @@ export class SignAccountOpController
           this.baseAccount,
           this.accountOp,
           this.#network,
-          state,
-          stateOverride
+          state
         )
         erc20s = tokens
         erc721s = nfts

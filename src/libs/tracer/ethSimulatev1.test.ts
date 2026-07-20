@@ -1,8 +1,5 @@
 import { getAddress, keccak256, toBeHex, toUtf8Bytes, zeroPadValue } from 'ethers'
 
-import { AccountOnchainState } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
-import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { getEthSimulateV1Params, parseEthSimulateV1Result } from './ethSimulatev1'
 
@@ -69,18 +66,6 @@ describe('parseEthSimulateV1Result', () => {
     const token = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
     const swapper = '0xB477751B76CF82d00a686A1232f5fCD772414Af3'
     const nvda = '0x0bd7d308f8e1639fab988df18a8011f41eacad73'
-    const baseAcc = {
-      getAccount: () => ({
-        addr: eoa,
-        associatedKeys: [eoa],
-        initialPrivileges: [],
-        preferences: { label: 'EOA', pfp: eoa },
-        newlyAdded: false
-      }),
-      shouldStateOverrideDuringSimulations: () => true
-    } as unknown as BaseAccount
-    const accountState = { isSmarterEoa: false } as AccountOnchainState
-    const network = { rpcNoStateOverride: true } as Network
     const op = {
       accountAddr: eoa,
       calls: [
@@ -97,7 +82,7 @@ describe('parseEthSimulateV1Result', () => {
       ]
     } as AccountOp
 
-    const ethSimulateV1Params = getEthSimulateV1Params(baseAcc, op, network, accountState)
+    const ethSimulateV1Params = getEthSimulateV1Params(op)
     if (!ethSimulateV1Params) throw new Error('Missing ethSimulateV1 params')
     const [payload] = ethSimulateV1Params.params
     const blockStateCall = payload.blockStateCalls[0]!
@@ -153,33 +138,9 @@ describe('parseEthSimulateV1Result', () => {
 
   it('simulates Safe bundles as native sequential calls from the Safe address', () => {
     const safe = '0xeae134A0FC0181624f9Db1389247BddAEDc59682'
-    const owner = '0xB0A9723c87E1B4652D8cb9DDc4dd26e58126C125'
     const token = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
     const swapper = '0xB477751B76CF82d00a686A1232f5fCD772414Af3'
     const rdw = '0x92ef19e82bd8ff36661de838d5eae7e5cef0effe'
-    const baseAcc = {
-      getAccount: () => ({
-        addr: safe,
-        associatedKeys: [owner],
-        initialPrivileges: [],
-        preferences: { label: 'Safe', pfp: safe },
-        newlyAdded: false,
-        safeCreation: {
-          version: '1.3.0'
-        }
-      }),
-      shouldStateOverrideDuringSimulations: () => true
-    } as unknown as BaseAccount
-    const accountState = { isDeployed: true, isSmarterEoa: false } as AccountOnchainState
-    const network = { rpcNoStateOverride: true } as Network
-    const overrideData = {
-      [safe]: {
-        code: '0x6000',
-        stateDiff: {
-          '0x01': '0x02'
-        }
-      }
-    }
     const op = {
       accountAddr: safe,
       calls: [
@@ -196,13 +157,7 @@ describe('parseEthSimulateV1Result', () => {
       ]
     } as AccountOp
 
-    const ethSimulateV1Params = getEthSimulateV1Params(
-      baseAcc,
-      op,
-      network,
-      accountState,
-      overrideData
-    )
+    const ethSimulateV1Params = getEthSimulateV1Params(op)
     if (!ethSimulateV1Params) throw new Error('Missing ethSimulateV1 params')
     const [payload] = ethSimulateV1Params.params
     const blockStateCall = payload.blockStateCalls[0]!
@@ -252,33 +207,9 @@ describe('parseEthSimulateV1Result', () => {
     expect(result.tokens.map((address) => address.toLowerCase())).toContain(rdw)
   })
 
-  it('keeps explicit Safe state overrides even when the network disables generic state overrides', () => {
+  it('gets the params for a single call to a Safe account successfully', () => {
     const safe = '0xeae134A0FC0181624f9Db1389247BddAEDc59682'
-    const owner = '0xB0A9723c87E1B4652D8cb9DDc4dd26e58126C125'
     const token = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
-    const baseAcc = {
-      getAccount: () => ({
-        addr: safe,
-        associatedKeys: [owner],
-        initialPrivileges: [],
-        preferences: { label: 'Safe', pfp: safe },
-        newlyAdded: false,
-        safeCreation: {
-          version: '1.3.0'
-        }
-      }),
-      shouldStateOverrideDuringSimulations: () => true
-    } as unknown as BaseAccount
-    const accountState = { isDeployed: true, isSmarterEoa: false } as AccountOnchainState
-    const network = { rpcNoStateOverride: true } as Network
-    const overrideData = {
-      [safe]: {
-        code: '0x6000',
-        stateDiff: {
-          '0x01': '0x02'
-        }
-      }
-    }
     const op = {
       accountAddr: safe,
       calls: [
@@ -290,23 +221,8 @@ describe('parseEthSimulateV1Result', () => {
       ]
     } as AccountOp
 
-    const ethSimulateV1Params = getEthSimulateV1Params(
-      baseAcc,
-      op,
-      network,
-      accountState,
-      overrideData
-    )
+    const ethSimulateV1Params = getEthSimulateV1Params(op)
     if (!ethSimulateV1Params) throw new Error('Missing ethSimulateV1 params')
-    const [payload] = ethSimulateV1Params.params
-    const blockStateCall = payload.blockStateCalls[0]!
-
-    expect(ethSimulateV1Params.callTargets).toEqual([safe])
-    expect(blockStateCall.stateOverrides).toEqual({
-      '0x0000000000000000000000000000000000000001': {
-        balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-      },
-      ...overrideData
-    })
+    expect(ethSimulateV1Params.callTargets).toEqual([token])
   })
 })
