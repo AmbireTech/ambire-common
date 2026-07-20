@@ -3878,6 +3878,7 @@ export class SignAccountOpController
     this.broadcastPromise = undefined
     this.signAndBroadcastPromise = undefined
     this.status = { type: SigningStatus.ReadyToSign }
+    this.#hwCleanup()
     this.emitUpdate()
   }
 
