@@ -2161,11 +2161,8 @@ export class SignAccountOpController
           this.#network,
           state
         ).catch((e) => {
-          this.emitError({
-            level: 'silent',
-            message: 'Error in signAccountOp.traceCall',
-            error: e
-          })
+          // do not emit an error here as there is a retry mechanism
+          console.log('eth_createAccessList failed', e)
           accessListFailed = true
           return null
         })
@@ -2194,13 +2191,9 @@ export class SignAccountOpController
           erc20s = tokens
           erc721s = nfts
         } catch (e: any) {
+          // do not emit an error here as there is a retry mechanism
+          console.log('debug_traceCall failed', e)
           debugTraceCallFailed = true
-
-          this.emitError({
-            level: 'silent',
-            message: 'Error in signAccountOp.traceCall',
-            error: e
-          })
         }
       }
 
