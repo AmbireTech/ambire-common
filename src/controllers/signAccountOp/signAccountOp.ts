@@ -2210,9 +2210,6 @@ export class SignAccountOpController
         return
       }
 
-      console.log('shouldUseAccessList', shouldUseAccessList)
-      console.log('accessListFailed', accessListFailed)
-      console.log('debugTraceCallFailed', debugTraceCallFailed)
       if ((!shouldUseAccessList || accessListFailed) && debugTraceCallFailed) {
         console.log('Debug: using eth_simulateV1 for asset discovery')
         const { tokens, nfts } = await ethSimulateV1(
