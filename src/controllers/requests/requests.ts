@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { hashTypedData, isHex } from 'viem'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { EIP712TypedData } from '@safe-global/types-kit'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -67,6 +67,10 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import {
+  AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
+  isAmbireOperationTypedData
+} from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   getClaimWalletRequestParams,
@@ -83,7 +87,8 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -395,6 +400,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     for (const req of reqs) {
       const { kind, meta, dappPromises } = req
+
+      if (
+        kind === 'typedMessage' &&
+        isAmbireOperationTypedData((meta as TypedMessageUserRequest['meta']).params)
+      ) {
+        this.#rejectAmbireOperationTypedDataRequest(req as TypedMessageUserRequest)
+        continue
+      }
 
       if (allowAccountSwitch && isSignRequest(kind)) {
         if ((meta as SignUserRequest['meta']).accountAddr !== this.#selectedAccount.account?.addr) {
@@ -913,6 +926,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         requestsToAddOrRemove.forEach((r) => {
           this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+
+          if (
+            r.kind === 'typedMessage' &&
+            isAmbireOperationTypedData((r as TypedMessageUserRequest).meta.params)
+          ) {
+            this.#rejectAmbireOperationTypedDataRequest(r as TypedMessageUserRequest)
+            return
+          }
+
           userRequestsToAdd.push(r)
         })
       }
@@ -1303,11 +1325,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
-      if (
-        msgAddress === this.#selectedAccount.account.addr &&
-        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
-      ) {
-        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
+      if (isAmbireOperationTypedData(typedData)) {
+        throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
       }
 
       userRequest = {
@@ -1452,7 +1471,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     message,
     messageHash,
     created,
-    signatures
+    signatures,
+    dappName,
+    dappUrl
   }: {
     chainId: bigint
     signed: string[]
@@ -1460,6 +1481,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     messageHash: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1478,7 +1501,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           signed,
           hash: messageHash,
           created,
-          signatures
+          signatures,
+          dappName,
+          dappUrl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1509,7 +1534,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         signed,
         hash: messageHash,
         created,
-        signatures
+        signatures,
+        dappName,
+        dappUrl
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1519,12 +1546,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amount,
     amountInFiat,
     recipientAddress,
+    recipientDomain,
     selectedToken,
     executionType = 'open-request-window'
   }: {
     amount: string
     amountInFiat: bigint
     recipientAddress: string
+    recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
   }) {
@@ -1562,7 +1591,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       amountInFiat,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      recipientDomain
     })
 
     if (!callsRequestParams) {
@@ -1716,7 +1746,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (userRequest) await this.addUserRequests([userRequest])
   }
 
+  #rejectAmbireOperationTypedDataRequest(req: TypedMessageUserRequest) {
+    req.dappPromises.forEach((p) => {
+      p.reject(ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE))
+    })
+  }
+
   async #addSwitchAccountUserRequest(req: SignUserRequest) {
+    if (req.kind === 'typedMessage' && isAmbireOperationTypedData(req.meta.params)) {
+      this.#rejectAmbireOperationTypedDataRequest(req)
+      return
+    }
+
     this.userRequestsWaitingAccountSwitch.push(req)
     await this.addUserRequests(
       [
