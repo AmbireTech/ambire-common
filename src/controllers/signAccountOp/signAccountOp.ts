@@ -55,10 +55,13 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FeeSpeed,
   HardwareWalletSigningRequest,
   ISignAccountOpController,
+  noStateUpdateStatuses,
   SignAccountOpBanner,
   SignAccountOpError,
+  SigningStatus,
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
@@ -98,12 +101,12 @@ import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../li
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { getSafeTxn } from '../../libs/safe/helpers'
 import {
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
   getNonce,
-  getSafeTxn,
   getSafeTxnHash,
   getSigs,
   propose,
@@ -162,53 +165,11 @@ import {
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
 
-export enum SigningStatus {
-  EstimationError = 'estimation-error',
-  UnableToSign = 'unable-to-sign',
-  ReadyToSign = 'ready-to-sign',
-  /**
-   * Used to prevent state updates while the user is resolving warnings, connecting a hardware wallet, etc.
-   * Signing is allowed in this state, but the state of the controller should not change.
-   */
-  UpdatesPaused = 'updates-paused',
-  InProgress = 'in-progress',
-  WaitingForPaymaster = 'waiting-for-paymaster-response',
-  Done = 'done',
-  Queued = 'queued',
-  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
-}
+import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 
-export type Status = {
-  // @TODO: get rid of the object and just use the type
-  type: SigningStatus
-}
-
-export enum FeeSpeed {
-  Slow = 'slow',
-  Medium = 'medium',
-  Fast = 'fast',
-  Ape = 'ape'
-}
-
-export type SpeedCalc = {
-  type: FeeSpeed
-  amount: bigint
-  simulatedGasLimit: bigint
-  amountFormatted: string
-  amountUsd: string
-  gasPrice: bigint
-  disabled: boolean
-  maxPriorityFeePerGas?: bigint
-}
-
-// declare the statuses we don't want state updates on
-export const noStateUpdateStatuses = [
-  SigningStatus.InProgress,
-  SigningStatus.Done,
-  SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster,
-  SigningStatus.SafeQuickBroadcastBundler
-]
+// Re-exporting for backwards compatibility with existing importers
+export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
+export type { SpeedCalc, Status }
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -3242,7 +3203,10 @@ export class SignAccountOpController
                 this.account,
                 accountState,
                 signer,
-                this.#network
+                this.#network,
+                false,
+                undefined,
+                true
               )
           )
           if (!this.accountOp.meta) {

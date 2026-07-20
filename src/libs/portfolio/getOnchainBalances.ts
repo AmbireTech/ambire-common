@@ -15,7 +15,6 @@ import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
-import { mapToken } from './helpers'
 import {
   CollectionResult,
   DeploylessContractOptions,
@@ -26,6 +25,7 @@ import {
   TokenError,
   TokenResult
 } from './interfaces'
+import { mapToken } from './tokenProcessing'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string

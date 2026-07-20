@@ -74,6 +74,13 @@ export class UiController extends EventEmitter implements IUiController {
     this.emitUpdate()
   }
 
+  emitViewFocus(viewId: string) {
+    const view = this.views.find((v) => v.id === viewId)
+    if (!view) return
+
+    this.uiEvent.emit('viewFocus', view)
+  }
+
   removeView(viewId: string) {
     const view = this.views.find((v) => v.id === viewId)
 

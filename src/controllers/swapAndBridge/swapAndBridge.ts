@@ -2,6 +2,7 @@ import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'eth
 
 import { getAccountNetworks } from '@/libs/networks/networks'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -107,17 +108,6 @@ const NETWORK_MISMATCH_MESSAGE =
 // For performance reasons, limit the max number of tokens in the to token list
 const TO_TOKEN_LIST_LIMIT = 100
 const TO_TOKEN_PRICE_TIMEOUT_MS = 4000
-
-export enum SwapAndBridgeFormStatus {
-  Empty = 'empty',
-  Invalid = 'invalid',
-  FetchingRoutes = 'fetching-routes',
-  NoRoutesFound = 'no-routes-found',
-  InvalidRouteSelected = 'invalid-route-selected',
-  ReadyToEstimate = 'ready-to-estimate',
-  ReadyToSubmit = 'ready-to-submit',
-  Proceeded = 'proceeded'
-}
 
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'

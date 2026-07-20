@@ -1,5 +1,6 @@
 import { toBeHex } from 'ethers'
 import { createPublicClient, defineChain, http } from 'viem'
+
 import { BUNDLER, CUSTOM } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
