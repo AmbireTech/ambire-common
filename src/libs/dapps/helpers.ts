@@ -17,6 +17,15 @@ const getDappIdFromUrl = (url: string): string => {
   }
 }
 
+// Safe messages co-signed from another device carry only the dapp name and url
+// (no live session, so no icon). Recover the icon from the dapp catalog by url.
+const getDappIconFromUrl = (url: string, dapps: Dapp[]): string => {
+  if (!url) return ''
+
+  const id = getDappIdFromUrl(url)
+  return dapps.find((d) => d.id === id)?.icon || ''
+}
+
 const getDomainFromUrl = (url: string) => {
   const predefinedDapp = predefinedDapps.find((d) => d.url === url)
   if (predefinedDapp) return predefinedDapp.id
@@ -147,6 +156,7 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
 
 export {
   getDappIdFromUrl,
+  getDappIconFromUrl,
   getDomainFromUrl,
   formatDappName,
   sortDapps,

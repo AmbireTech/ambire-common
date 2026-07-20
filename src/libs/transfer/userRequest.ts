@@ -1,6 +1,8 @@
 import { Interface, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
+import { Call } from '@/libs/accountOp/types'
+
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
@@ -19,6 +21,7 @@ interface BuildUserRequestParams {
   selectedToken: TokenResult
   selectedAccount: string
   recipientAddress: string
+  recipientDomain: string | undefined
   paymasterService?: PaymasterService
   windowId?: number
   amountInFiat?: bigint
@@ -95,7 +98,8 @@ function getTransferRequestParams({
   selectedToken,
   selectedAccount,
   recipientAddress: _recipientAddress,
-  paymasterService
+  paymasterService,
+  recipientDomain
 }: BuildUserRequestParams): {
   calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
   meta: CallsUserRequest['meta']
@@ -151,11 +155,12 @@ function getTransferRequestParams({
     }
   }
 
-  let calls = [
+  let calls: Call[] = [
     {
       to: selectedToken.address,
       value: BigInt(0),
-      data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+      data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount]),
+      recipientDomain
     }
   ]
 
@@ -164,7 +169,8 @@ function getTransferRequestParams({
       {
         to: recipientAddress,
         value: BigInt(bigNumberHexAmount),
-        data: '0x'
+        data: '0x',
+        recipientDomain
       }
     ]
   }

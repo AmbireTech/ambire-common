@@ -126,6 +126,9 @@ export type Action = (
   | {
       actionName: 'dismiss-defi-positions-banner'
     }
+  | {
+      actionName: 'dismiss-ens-expiry-banner'
+    }
   | { actionName: 'open-link'; meta: { url: string } }
   | { actionName: 'survey'; meta: { surveyId: string } }
 ) & {

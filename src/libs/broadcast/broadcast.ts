@@ -8,7 +8,7 @@ import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { getSafeBroadcastTxn } from '../../libs/safe/safe'
+import { getSafeBroadcastTxn } from '../../libs/safe/helpers'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -104,7 +104,7 @@ async function estimateGas(
     try {
       hasNonceDiscrepancyOnApproval =
         call.data !== '0x' && !!erc20interface.decodeFunctionData('approve', call.data)
-    } catch (e) {
+    } catch {
       hasNonceDiscrepancyOnApproval = false
     }
   }
@@ -136,9 +136,27 @@ export async function getTxnData(
 ): Promise<{ to: Hex | undefined; value: bigint; data: Hex; gasLimit?: bigint }> {
   if (account.safeCreation) {
     const safeData = getSafeBroadcastTxn(op, accountState)
+    const gasFeePayment = op.gasFeePayment as GasFeePayment
+    const simulatedGasLimit = gasFeePayment.simulatedGasLimit
+
+    if (gasFeePayment.isCustomGasLimit) {
+      return {
+        ...safeData,
+        gasLimit: simulatedGasLimit
+      }
+    }
+
+    const estimatedGasLimit = await estimateGas(
+      provider,
+      gasFeePayment.paidBy,
+      safeData,
+      nonce,
+      op.chainId
+    )
+
     return {
       ...safeData,
-      gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
+      gasLimit: estimatedGasLimit > simulatedGasLimit ? estimatedGasLimit : simulatedGasLimit
     }
   }
 

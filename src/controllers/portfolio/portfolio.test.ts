@@ -8,10 +8,11 @@ import { getNonce } from '../../../test/helpers'
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -22,24 +23,31 @@ import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
+import { DeploylessMode } from '../../libs/deployless/deployless'
 import {
   erc721CollectionToLearnedAssetKeys,
   learnedErc721sToHints
 } from '../../libs/portfolio/helpers'
 import {
   CollectionResult,
+  GetOptions,
   Hints,
   LearnedAssets,
   PortfolioGasTankResult,
+  PortfolioLibGetResult,
   PortfolioNetworkResult,
-  PreviousHintsStorage
+  PreviousHintsStorage,
+  TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
+import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
 import { PortfolioController } from './portfolio'
+
+import type { FeatureFlags } from '../../consts/featureFlags'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
@@ -51,6 +59,46 @@ networks.forEach((network) => {
 })
 
 const ethereum = networks.find((network) => network.chainId === 1n)!
+const gnosis: Network = {
+  ...ethereum,
+  name: 'Gnosis',
+  nativeAssetSymbol: 'xDAI',
+  nativeAssetName: 'xDAI',
+  rpcUrls: ['https://invictus.ambire.com/gnosis'],
+  selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
+  rpcNoStateOverride: true,
+  chainId: 100n,
+  explorerUrl: 'https://gnosisscan.io',
+  platformId: 'xdai',
+  nativeAssetId: 'xdai',
+  feeOptions: { is1559: false, feeIncrease: 100n },
+  wrappedAddr: '0x6A023ccd1ff6f2045C3309768eAd9E68F978f6e1'
+}
+
+const getAccountOnchainState = (
+  stateAccount: Account,
+  overrides?: Partial<AccountOnchainState>
+): AccountOnchainState => ({
+  accountAddr: stateAccount.addr,
+  isDeployed: true,
+  eoaNonce: null,
+  nonce: 0n,
+  erc4337Nonce: 0n,
+  associatedKeys: stateAccount.associatedKeys,
+  importedAccountKeys: [],
+  balance: 0n,
+  isEOA: false,
+  isErc4337Enabled: false,
+  isErc4337Nonce: false,
+  isV2: false,
+  currentBlock: 0n,
+  isSmarterEoa: false,
+  delegatedContract: null,
+  delegatedContractName: null,
+  threshold: 1,
+  updatedAt: 0,
+  ...overrides
+})
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
@@ -297,11 +345,13 @@ const prepareTest = async (opts?: {
   skipBlacklistFetch?: boolean
   awaitInitialLoad?: boolean
   skipAccountStateFetch?: boolean
+  featureFlags?: Partial<FeatureFlags>
 }) => {
   const {
     initialSetStorage,
     awaitInitialLoad = true,
     fetchOverride,
+    featureFlags,
     skipBlacklistFetch = true,
     skipAccountStateFetch = true
   } = opts || {}
@@ -334,7 +384,8 @@ const prepareTest = async (opts?: {
       skipPortfolioFetchBlacklistOnLoad: skipBlacklistFetch,
       skipAccountStateLoad: skipAccountStateFetch,
       overrides: {
-        fetch: fetchOverride
+        fetch: fetchOverride,
+        featureFlags
       }
     }
   )
@@ -348,10 +399,13 @@ const prepareTest = async (opts?: {
     controller: mainCtrl.portfolio as PortfolioController,
     storageCtrl: mainCtrl.storage,
     networksCtrl: mainCtrl.networks,
-    accountsCtrl: mainCtrl.accounts
+    accountsCtrl: mainCtrl.accounts,
+    providersCtrl: mainCtrl.providers,
+    verificationCtrl: mainCtrl.verification
   }
 }
 
+// @TODO: Divide into multiple files (.blacklisting, .hints, .simulation, .tokens, .defiPositions, etc.)
 describe('Portfolio Controller ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -393,6 +447,293 @@ describe('Portfolio Controller ', () => {
       [network.chainId.toString()]: [op]
     } as Record<string, AccountOp[]>
   }
+
+  test('Colibri portfolio verification warns on changed balances, stale RPCs and succeeds on matching balances', async () => {
+    // The Colibri head. Its relation to the RPC result block decides whether a
+    // fresh, comparable verification is possible (see VerificationController).
+    const verifiedProvider = {
+      destroyed: false,
+      getBlockNumber: jest.fn<() => Promise<number>>().mockResolvedValue(122)
+    } as any
+    const colibriEthereum = { ...ethereum, isColibriEnabled: true }
+    const tokenAddress = getAddress('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')
+    const rpcAmount = 100n
+    let verifiedAmount = 99n
+    // The block the RPC balances were fetched at. Colibri verifies at this exact block.
+    let rpcResultBlockNumber = 122
+    const makeToken = (amount: bigint, chainId: bigint): TokenResult => ({
+      symbol: 'USDC',
+      name: 'USD Coin',
+      decimals: 6,
+      address: tokenAddress,
+      chainId,
+      amount,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      marketDataIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: false,
+        isFeeToken: false
+      }
+    })
+    const makePortfolioLibResult = (
+      amount: bigint,
+      blockNumber: number,
+      chainId: bigint
+    ): PortfolioLibGetResult => ({
+      updateStarted: Date.now(),
+      discoveryTime: 0,
+      oracleCallTime: 0,
+      priceUpdateTime: 0,
+      tokenDataCache: new Map(),
+      tokens: [makeToken(amount, chainId)],
+      feeTokens: [],
+      toBeLearned: { erc20s: [], erc721s: {} },
+      tokenErrors: [],
+      collectionErrors: [],
+      collections: [],
+      errors: [],
+      blockNumber,
+      beforeNonce: 0n,
+      afterNonce: 0n
+    })
+    const createRelayerResponse = (body: unknown) =>
+      ({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify(body))
+      }) as any
+    const fetchOverride = jest.fn(() =>
+      Promise.resolve(
+        createRelayerResponse({
+          success: true,
+          data: {
+            banner: null,
+            rewards: {
+              stkWalletClaimableBalance: [],
+              walletClaimableBalance: []
+            },
+            rewardsProjectionDataV2: {},
+            frozenRewardSeason1: 0,
+            gasTank: {
+              balance: []
+            }
+          }
+        })
+      )
+    ) as unknown as typeof fetch
+    const { controller, providersCtrl, verificationCtrl } = await prepareTest({
+      fetchOverride,
+      featureFlags: { tokenAndDefiAutoDiscovery: false }
+    })
+
+    jest.spyOn(verificationCtrl, 'getReadyProvider').mockReturnValue(verifiedProvider)
+    const verifyPortfolioSpy = jest.spyOn(verificationCtrl, 'verifyPortfolio')
+    jest.spyOn(controller as any, 'batchedPortfolioDiscovery').mockResolvedValue({
+      data: { hints: null, defi: null, otherNetworksDefiCounts: {} },
+      discoveryTime: 0,
+      errors: []
+    })
+    jest
+      .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+      .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
+    const portfolioGetCalls: {
+      isColibri: boolean
+      blockTag: unknown
+      rpcNoStateOverride: boolean
+    }[] = []
+    const verifierPortfolioGetOptions: Partial<GetOptions>[] = []
+    const expectedVerifierDeployless = {
+      erc20: { mode: DeploylessMode.Predeployed, to: BALANCE_GETTER },
+      erc721: { mode: DeploylessMode.Predeployed, to: NFT_GETTER }
+    }
+    jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
+      const isColibri = this.provider === verifiedProvider
+      const chainId = this.network.chainId
+      if (isColibri) verifierPortfolioGetOptions.push(opts || {})
+      portfolioGetCalls.push({
+        isColibri,
+        blockTag: opts?.blockTag,
+        rpcNoStateOverride: this.network.rpcNoStateOverride
+      })
+
+      return Promise.resolve(
+        isColibri
+          ? makePortfolioLibResult(verifiedAmount, rpcResultBlockNumber, chainId)
+          : makePortfolioLibResult(rpcAmount, rpcResultBlockNumber, chainId)
+      )
+    })
+
+    // Verification is fire-and-forget, so it resolves after updateSelectedAccount returns.
+    const waitForVerification = async (chainId = '1') => {
+      for (let i = 0; i < 50; i += 1) {
+        const current = controller.getAccountPortfolioState(account.addr)[chainId]?.verification
+        if (current && current.status !== 'loading') return current
+
+        await wait(10)
+      }
+
+      return controller.getAccountPortfolioState(account.addr)[chainId]?.verification
+    }
+
+    // 1) Balances differ between RPC and Colibri at the same block -> warning.
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const warningVerification = await waitForVerification()
+
+    // The RPC fetch is a plain 'both'; Colibri re-fetches at the RPC result's block.
+    expect(portfolioGetCalls).toEqual(
+      expect.arrayContaining([
+        { isColibri: false, blockTag: 'both', rpcNoStateOverride: false },
+        { isColibri: true, blockTag: 122, rpcNoStateOverride: true }
+      ])
+    )
+    expect(verifierPortfolioGetOptions[0]?.deployless).toEqual(expectedVerifierDeployless)
+    expect(warningVerification?.status).toBe('warning')
+    expect(warningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
+
+    // 2) Matching balances -> success.
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const successfulVerification = await waitForVerification()
+
+    expect(successfulVerification?.status).toBe('success')
+    expect(successfulVerification?.error).toBeUndefined()
+
+    // 3) If Colibri is slightly behind, wait for it to catch up and verify the RPC block.
+    verifiedProvider.getBlockNumber.mockReset()
+    verifiedProvider.getBlockNumber.mockResolvedValueOnce(121).mockResolvedValueOnce(122)
+    rpcResultBlockNumber = 122
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    jest.useFakeTimers()
+    try {
+      await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+      await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
+      await Promise.resolve()
+
+      const catchUpVerification = controller.getAccountPortfolioState(account.addr)['1']
+        ?.verification
+      expect(catchUpVerification?.status).toBe('success')
+      expect(catchUpVerification?.error).toBeUndefined()
+      expect(verifiedProvider.getBlockNumber).toHaveBeenCalledTimes(2)
+      expect(portfolioGetCalls).toEqual(
+        expect.arrayContaining([
+          { isColibri: false, blockTag: 'both', rpcNoStateOverride: false },
+          { isColibri: true, blockTag: 122, rpcNoStateOverride: true }
+        ])
+      )
+    } finally {
+      jest.useRealTimers()
+    }
+
+    // 4) Colibri is more than the threshold behind the RPC block -> warning, no Colibri fetch.
+    rpcResultBlockNumber = 123
+    verifiedProvider.getBlockNumber.mockResolvedValue(117)
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const colibriBehindVerification = await waitForVerification()
+
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+    expect(colibriBehindVerification?.status).toBe('warning')
+    expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
+
+    // 5) RPC is more than the threshold behind Colibri -> stale, no Colibri fetch.
+    rpcResultBlockNumber = 100
+    verifiedProvider.getBlockNumber.mockResolvedValue(111)
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const staleVerification = await waitForVerification()
+
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+    expect(staleVerification?.status).toBe('stale')
+    expect(staleVerification?.blockDiff).toBe(11)
+
+    // 6) Gnosis is also Colibri-supported: changed balances warn.
+    const colibriGnosis = { ...gnosis, isColibriEnabled: true }
+    await providersCtrl.setProvider(colibriGnosis)
+    verifiedProvider.getBlockNumber.mockResolvedValue(222)
+    rpcResultBlockNumber = 222
+    verifiedAmount = 99n
+    portfolioGetCalls.length = 0
+    verifierPortfolioGetOptions.length = 0
+
+    await controller.updateSelectedAccount(account.addr, [colibriGnosis])
+    const gnosisWarningVerification = await waitForVerification('100')
+
+    expect(portfolioGetCalls).toEqual(
+      expect.arrayContaining([
+        { isColibri: false, blockTag: 'both', rpcNoStateOverride: true },
+        { isColibri: true, blockTag: 222, rpcNoStateOverride: true }
+      ])
+    )
+    expect(verifierPortfolioGetOptions[0]?.deployless).toEqual(expectedVerifierDeployless)
+    expect(gnosisWarningVerification?.status).toBe('warning')
+    expect(gnosisWarningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
+
+    // 7) Gnosis matching balances succeed.
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriGnosis])
+    const gnosisSuccessfulVerification = await waitForVerification('100')
+
+    expect(gnosisSuccessfulVerification?.status).toBe('success')
+    expect(gnosisSuccessfulVerification?.error).toBeUndefined()
+
+    // 8) Simulated portfolio updates must skip Colibri verification.
+    const verifyCallsBeforeSimulation = verifyPortfolioSpy.mock.calls.length
+    const simulatedAccountOp: AccountOp = {
+      id: 'colibri-simulation-skip',
+      accountAddr: account.addr,
+      signingKeyAddr: account.associatedKeys[0]!,
+      signingKeyType: 'internal',
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce: 0n,
+      signature: '0x',
+      calls: []
+    }
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(
+      account.addr,
+      [colibriEthereum],
+      {
+        accountOps: { ['1']: [simulatedAccountOp] },
+        states: { ['1']: getAccountOnchainState(account) }
+      },
+      { isManualUpdate: true }
+    )
+
+    expect(verifyPortfolioSpy).toHaveBeenCalledTimes(verifyCallsBeforeSimulation)
+    expect(controller.getAccountPortfolioState(account.addr)['1']?.verification).toBeUndefined()
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+
+    // 9) Unexpected verifier failures should resolve the pending loading state to a warning.
+    verifyPortfolioSpy.mockRejectedValueOnce(new Error('Colibri verification crashed'))
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const rejectedVerification = await waitForVerification()
+
+    expect(rejectedVerification?.status).toBe('warning')
+    expect(rejectedVerification?.error).toBe('Colibri could not verify portfolio balances')
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+  })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
     const { controller } = await prepareTest()
@@ -818,7 +1159,7 @@ describe('Portfolio Controller ', () => {
 
       // Mock getAllHints error which will cause the update to fail
       // @ts-expect-error test
-      jest.spyOn(controller, 'getAllHints').mockImplementationOnce(() => {
+      jest.spyOn(controller.hints, 'getAllHints').mockImplementationOnce(() => {
         throw new Error('Failed to get hints')
       })
 
@@ -1344,7 +1685,7 @@ describe('Portfolio Controller ', () => {
       controller.addErc721sToBeLearned([[NFT_ADDR, [1n]]], account2.addr, 1n)
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account2.addr, 1n)
+      const allHints = controller.hints.getAllHints(account2.addr, 1n)
 
       expect(allHints.specialErc721Hints.learn[NFT_ADDR]).toContain(1n)
     })
@@ -1354,7 +1695,7 @@ describe('Portfolio Controller ', () => {
       const { controller } = await prepareTest()
 
       // @ts-expect-error test
-      await controller.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
+      await controller.hints.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -1392,7 +1733,7 @@ describe('Portfolio Controller ', () => {
       const allCurrentlyOwned = [...firstBatchOf50.slice(0, 20), ...nextBatchOf30]
 
       // @ts-expect-error test
-      await controller.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
+      await controller.hints.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
 
       // Expect the oldest 10 to be removed
       const learnedAssets: LearnedAssets = await storageCtrl.get(
@@ -1452,7 +1793,7 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
+      await controller.hints.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
 
       // Expect the oldest 10 to be removed
       const learnedAssets: LearnedAssets = await storageCtrl.get(
@@ -1500,7 +1841,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account.addr, 1n)
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       expect(
         allHints.specialErc20Hints.learn.filter(
@@ -1525,7 +1866,7 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnTokens(
+      await controller.hints.learnTokens(
         [
           DUPLICATE_TOKEN_ADDR,
           '0x4c9edd5852cd905f086c759e8383e09bff1e68b3',
@@ -1536,7 +1877,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      await controller.learnTokens(
+      await controller.hints.learnTokens(
         [
           '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
           DUPLICATE_TOKEN_ADDR,
@@ -1547,10 +1888,10 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
       // @ts-expect-error test
-      await controller.learnNfts(
+      await controller.hints.learnNfts(
         [
           [DUPLICATE_COLLECTION[0], [1n, 2n]],
           ['0x0a1bbd57033f57e7b6743621b79fcb9eb2ce3676', [1n, 2n]]
@@ -1586,10 +1927,10 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
       // @ts-expect-error test
-      await controller.learnNfts(
+      await controller.hints.learnNfts(
         [
           // Empty array makes it enumerable
           [DUPLICATE_COLLECTION[0], []]
@@ -1611,7 +1952,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      const { additionalErc721Hints } = controller.getAllHints(account.addr, 1n)
+      const { additionalErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       // Enumerable is with priority
       expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
@@ -1626,7 +1967,7 @@ describe('Portfolio Controller ', () => {
       ]
 
       // @ts-expect-error test
-      await controller.learnNfts(
+      await controller.hints.learnNfts(
         [
           // Empty array makes it enumerable
           [DUPLICATE_COLLECTION[0], []]
@@ -1636,7 +1977,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
       const learnedAssets: LearnedAssets = await storageCtrl.get(
         'learnedAssets',
@@ -1651,7 +1992,7 @@ describe('Portfolio Controller ', () => {
       )
 
       // @ts-expect-error test
-      const { additionalErc721Hints } = controller.getAllHints(account.addr, 1n)
+      const { additionalErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       // Enumerable is with priority
       expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
@@ -1898,7 +2239,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account.addr, 1n)
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       expect(allHints.additionalErc20Hints).toContain(STETH)
       expect(allHints.additionalErc20Hints).not.toContain(CHAINLINK)
@@ -1918,7 +2259,7 @@ describe('Portfolio Controller ', () => {
       ).not.toBeDefined()
 
       // @ts-expect-error test
-      await controller.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
+      await controller.hints.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
 
@@ -1953,7 +2294,7 @@ describe('Portfolio Controller ', () => {
         1n
       )
       // @ts-expect-error test
-      const { specialErc721Hints } = controller.getAllHints(account.addr, 1n)
+      const { specialErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       expect(hasLearned).toBeFalsy()
       expect(specialErc721Hints).toEqual({
@@ -1968,7 +2309,10 @@ describe('Portfolio Controller ', () => {
         1n
       )
       // @ts-expect-error test
-      const { specialErc721Hints: specialErc721Hints2 } = controller.getAllHints(account.addr, 1n)
+      const { specialErc721Hints: specialErc721Hints2 } = controller.hints.getAllHints(
+        account.addr,
+        1n
+      )
 
       expect(hasLearned2).toBeTruthy()
       expect(specialErc721Hints2.learn).toEqual({
@@ -2081,7 +2425,7 @@ describe('Portfolio Controller ', () => {
       expect(learnedAssets).toBe(null)
 
       // @ts-expect-error test
-      const allHints = controller.getAllHints(account.addr, 1n)
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       Object.keys(previousHints.learnedTokens['1']!).forEach((addr) => {
         expect(allHints.specialErc20Hints.learn.find((toBeLearned) => addr === toBeLearned))
@@ -2095,7 +2439,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(account.addr)
 
       // @ts-expect-error test
-      const allHints2 = controller.getAllHints(account.addr, 1n)
+      const allHints2 = controller.hints.getAllHints(account.addr, 1n)
 
       expect(allHints2.specialErc20Hints.learn.length).toBe(0)
       expect(Object.keys(allHints2.specialErc721Hints.learn).length).toBe(0)
@@ -2112,7 +2456,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const hints = controller.getAllHints(account.addr, 1n, true)
+      const hints = controller.hints.getAllHints(account.addr, 1n, undefined, true)
       const key = `${1n}:${account.addr}`
 
       expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
@@ -2132,7 +2476,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const hints = controller.getAllHints(account.addr, 1n)
+      const hints = controller.hints.getAllHints(account.addr, 1n)
       const key = `${1n}:${account.addr}`
 
       expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
@@ -2152,7 +2496,7 @@ describe('Portfolio Controller ', () => {
       })
 
       // @ts-expect-error test
-      const hints = controller.getAllHints(account.addr, 1n, true)
+      const hints = controller.hints.getAllHints(account.addr, 1n, undefined, true)
       const key = `${1n}:${account.addr}`
       const key2 = `${1n}:${account2.addr}`
 

@@ -3,59 +3,43 @@ import {
   concat,
   Contract,
   getAddress,
-  getBytes,
   getCreate2Address,
   hexlify,
   Interface,
   keccak256,
   recoverAddress,
-  solidityPacked,
   toBeHex,
   toUtf8Bytes,
-  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
-import SafeApiKit, {
+import SafeApiKit from '@safe-global/api-kit'
+
+import SafeAbi from '../../../contracts/compiled/Safe.json'
+import { Hex } from '../../interfaces/hex'
+import { RPCProvider } from '../../interfaces/provider'
+import { SafeTx } from '../../interfaces/safe'
+import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
+import wait from '../../utils/wait'
+import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
+import { decodeMultiSend, multiCallAbi, parseSafeMessageOrigin } from './helpers'
+
+import type {
+  AddMessageOptions,
   ProposeTransactionProps,
   SafeCreationInfoResponse,
   SafeMessage,
   SafeMessageListResponse,
   SafeMultisigTransactionListResponse
 } from '@safe-global/api-kit'
-import {
+import type {
   EIP712TypedData,
   SafeMultisigConfirmationResponse,
   SafeMultisigTransactionResponse
 } from '@safe-global/types-kit'
 
-import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
-import { AccountOnchainState } from '../../interfaces/account'
-import { Hex } from '../../interfaces/hex'
-import { RPCProvider } from '../../interfaces/provider'
-import { SafeTx } from '../../interfaces/safe'
-import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import wait from '../../utils/wait'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
-
-const multiCallAbi = [
-  { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
-  {
-    inputs: [{ internalType: 'bytes', name: 'transactions', type: 'bytes' }],
-    name: 'multiSend',
-    outputs: [],
-    stateMutability: 'payable',
-    type: 'function'
-  }
-]
-
 export type ExtendedSafeMessage = SafeMessage & { isConfirmed: boolean }
-
-const SAFE_CALL_OPERATION = 0
-const SAFE_DELEGATE_CALL_OPERATION = 1
 
 export interface SafeResults {
   [chainId: string]: {
@@ -64,41 +48,18 @@ export interface SafeResults {
   }
 }
 
-export function encodeCalls(op: AccountOp): {
-  to: Hex
-  value: bigint
-  data: Hex
-  operation: number
-} {
-  const calls = getSignableCalls(op)
+function getTxServiceUrl(chainId: bigint) {
+  if (chainId === 8217n) return 'https://api.safe.global/tx-service/kaia/api'
+  if (chainId === 4663n) return 'https://api.safe.global/tx-service/robinhood/api'
+  return undefined
+}
 
-  if (calls.length === 1) {
-    const singleCall = calls[0]!
-    return {
-      to: singleCall[0] as Hex,
-      value: BigInt(singleCall[1]),
-      data: singleCall[2] as Hex,
-      operation: SAFE_CALL_OPERATION
-    }
-  }
-
-  const multiSendData = new Interface(multiCallAbi).encodeFunctionData('multiSend', [
-    concat(
-      calls.map((call) => {
-        return solidityPacked(
-          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-          [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt(getBytes(call[2]).length), call[2]]
-        )
-      })
-    )
-  ])
-
-  return {
-    to: multiSendAddr as Hex,
-    value: 0n,
-    data: multiSendData as Hex,
-    operation: SAFE_DELEGATE_CALL_OPERATION
-  }
+export function getApiKit(chainId: bigint) {
+  return new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY,
+    txServiceUrl: getTxServiceUrl(chainId)
+  })
 }
 
 export async function getCalculatedSafeAddress(
@@ -149,67 +110,6 @@ export function decodeSetupData(setupData: Hex): Hex[] {
 }
 
 /**
- * Construct a Safe txn for signing
- */
-export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
-  // todo: we're blindly trusting the returned txn from Safe Global, is this OK?
-  if (op.safeTx) {
-    return {
-      to: op.safeTx.to as Hex,
-      value: toBeHex(op.safeTx.value) as Hex,
-      data: op.safeTx.data ? (op.safeTx.data as Hex) : '0x',
-      operation: op.safeTx.operation,
-      safeTxGas: toBeHex(op.safeTx.safeTxGas) as Hex,
-      baseGas: toBeHex(op.safeTx.baseGas) as Hex,
-      gasPrice: toBeHex(op.safeTx.gasPrice) as Hex,
-      gasToken: op.safeTx.gasToken as Hex,
-      refundReceiver: op.safeTx.refundReceiver ? (op.safeTx.refundReceiver as Hex) : '0x',
-      nonce: toBeHex(op.safeTx.nonce) as Hex
-    }
-  }
-
-  const coder = new AbiCoder()
-  const { to, value, data, operation } = encodeCalls(op)
-
-  return {
-    to: to as Hex,
-    value: toBeHex(value) as Hex,
-    data: data as Hex,
-    operation,
-    safeTxGas: toBeHex(0) as Hex,
-    baseGas: toBeHex(0) as Hex,
-    gasPrice: toBeHex(0) as Hex,
-    gasToken: ZeroAddress as Hex,
-    refundReceiver: ZeroAddress as Hex,
-    nonce: toBeHex(op.nonce || state.nonce || 0n) as Hex
-  }
-}
-
-export function getSafeBroadcastTxn(
-  op: AccountOp,
-  state: AccountOnchainState
-): { to: Hex; value: bigint; data: Hex } {
-  const exec = new Interface(execTransactionAbi)
-  const safeTxn = getSafeTxn(op, state)
-  return {
-    to: op.accountAddr as Hex,
-    value: 0n,
-    data: exec.encodeFunctionData('execTransaction', [
-      safeTxn.to,
-      safeTxn.value,
-      safeTxn.data,
-      safeTxn.operation,
-      safeTxn.safeTxGas,
-      safeTxn.baseGas,
-      safeTxn.gasPrice,
-      safeTxn.gasToken,
-      safeTxn.refundReceiver,
-      op.signature
-    ]) as Hex
-  }
-}
-
-/**
  * In Safe, the signatures need to be in order, starting with
  * the smallest ecrecover(sig) owner, ascending. Here, we
  * sort the owners in that way
@@ -237,11 +137,7 @@ export async function propose(
   ownerSig: Hex,
   safeTxHash: string
 ) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const proposeTransactionProps: ProposeTransactionProps = {
     safeAddress: getAddress(safeAddress),
     safeTxHash: safeTxHash,
@@ -262,10 +158,7 @@ export async function propose(
 }
 
 export async function confirm(chainId: bigint, ownerSig: Hex, safeTxHash: string) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.confirmTransaction(safeTxHash, ownerSig)
 }
 
@@ -273,16 +166,19 @@ export async function addMessage(
   chainId: bigint,
   safeAddress: Hex,
   message: string | EIP712TypedData,
-  signature: string
+  signature: string,
+  origin?: string
 ) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-  return apiKit.addMessage(safeAddress, {
+  const apiKit = getApiKit(chainId)
+  // `origin` is a free-form field the Safe Transaction Service persists and returns
+  // on the message. api-kit doesn't type it, but it forwards the options as the POST
+  // body verbatim, so we widen the payload to carry it through.
+  const options: AddMessageOptions & { origin?: string } = {
     message: normalizeSafeGlobalMessage(message),
     signature
-  })
+  }
+  if (origin) options.origin = origin
+  return apiKit.addMessage(safeAddress, options)
 }
 
 export function normalizeSafeGlobalMessage(message: string | EIP712TypedData) {
@@ -308,10 +204,7 @@ export async function getMessage({
   threshold: number
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
-  const apiKit = new SafeApiKit({
-    chainId: chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   const msg = await apiKit.getMessage(messageHash).catch((e) => null)
   if (!msg) return null
   return {
@@ -321,10 +214,7 @@ export async function getMessage({
 }
 
 export async function addMessageSignature(chainId: bigint, hash: string, signature: string) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.addMessageSignature(hash, signature)
 }
 
@@ -332,11 +222,7 @@ export async function getPendingTransactions(
   chainId: bigint,
   safeAddress: Hex
 ): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const response = await apiKit.getPendingTransactions(safeAddress, {
     ordering: 'nonce'
   })
@@ -354,11 +240,7 @@ export async function getLatestMessages(
   chainId: bigint,
   safeAddress: Hex
 ): Promise<SafeMessageListResponse & { chainId: bigint; type: string }> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const response = await apiKit.getMessages(safeAddress, {
     ordering: '-created',
     limit: 15
@@ -376,11 +258,7 @@ export async function getTransaction(
   chainId: bigint,
   safeTxnHash: Hex
 ): Promise<SafeMultisigTransactionResponse> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   return apiKit.getTransaction(safeTxnHash)
 }
 
@@ -404,38 +282,6 @@ export async function fetchAllPending(
         results[r.chainId.toString()]!.messages = r.results.map((r) => {
           return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
         }) as ExtendedSafeMessage[]
-    })
-  }
-
-  return results
-}
-
-export function decodeMultiSend(transactionsHex: string) {
-  const bytes = getBytes(transactionsHex)
-  let i = 0
-  const results = []
-
-  while (i < bytes.length) {
-    const operation = bytes[i]
-    i += 1
-
-    const to = hexlify(bytes.slice(i, i + 20))
-    i += 20
-
-    const value = BigInt(hexlify(bytes.slice(i, i + 32)))
-    i += 32
-
-    const dataLength = Number(BigInt(hexlify(bytes.slice(i, i + 32))))
-    i += 32
-
-    const data = hexlify(bytes.slice(i, i + dataLength))
-    i += dataLength
-
-    results.push({
-      operation,
-      to,
-      value,
-      data
     })
   }
 
@@ -530,6 +376,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
     signature: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }
   isConfirmed: boolean
 }[] {
@@ -543,6 +391,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
       signature: Hex
       created: number
       signatures: Hex[]
+      dappName?: string
+      dappUrl?: string
     }
     isConfirmed: boolean
   }[] = []
@@ -554,6 +404,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
         ? (concat(message.confirmations.map((c) => c.signature)) as Hex)
         : null
       if (!signature) return
+
+      const { name: dappName, url: dappUrl } = parseSafeMessageOrigin(message.origin)
 
       userRequests.push({
         type: 'safeSignMessageRequest',
@@ -571,7 +423,9 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations
           ),
           created: new Date(message.created).getTime(),
-          signatures: message.confirmations.map((c) => c.signature) as Hex[]
+          signatures: message.confirmations.map((c) => c.signature) as Hex[],
+          dappName,
+          dappUrl
         },
         isConfirmed: !!message.isConfirmed
       })
@@ -652,22 +506,6 @@ export function sortSigs(
 
   const sorted = sortByAddress(signed)
   return concat(sorted.map((s) => s.sig)) as Hex
-}
-
-/**
- * Safe requests may have multiple "call" ones with the same nonce
- */
-export function getSameNonceRequests(requests: CallsUserRequest[]) {
-  return requests.reduce((acc: { [nonce: string]: CallsUserRequest[] }, r) => {
-    const key = r.signAccountOp.accountOp.nonce?.toString() || '0'
-
-    if (!acc[key]) {
-      acc[key] = []
-    }
-
-    acc[key].push(r)
-    return acc
-  }, {})
 }
 
 export async function fetchExecutedTransactions(
