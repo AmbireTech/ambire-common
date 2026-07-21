@@ -12,7 +12,6 @@ import {
 
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
@@ -131,8 +130,6 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import { getGasUsed } from '../../libs/singleton/singleton'
-import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
-import { ethSimulateV1 } from '../../libs/tracer/ethSimulatev1'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -151,6 +148,7 @@ import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
+import { discoverTxnTokens } from './discoverTxnTokens'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -2102,97 +2100,34 @@ export class SignAccountOpController
     this.traceCallTimeoutId = timeoutId
 
     try {
-      const state =
-        this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-      // TODO: how to handle this case?
-      if (!state) return
-      let erc20s: string[] = []
-      let erc721s: [string, bigint[]][] = []
+      const discoveredAssets = await discoverTxnTokens({
+        account: this.account,
+        accountOp: this.accountOp,
+        accountState:
+          this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()],
+        baseAccount: this.baseAccount,
+        network: this.#network,
+        isCurrent: () => this.traceCallTimeoutId === timeoutId
+      })
+      if (!discoveredAssets) return
 
-      const stateOverride = getStateOverride(this.account, this.accountOp, state)
-      const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
-      let accessListFailed = false
-      let debugTraceCallFailed = false
-
-      if (shouldUseAccessList) {
-        console.log('Debug: using eth_createAccessList for asset discovery')
-        const addresses = await createAccessListCall(
-          this.baseAccount,
-          this.accountOp,
-          this.#network,
-          state
-        ).catch((e) => {
-          // do not emit an error here as there is a retry mechanism
-          console.log('eth_createAccessList failed', e)
-          accessListFailed = true
-          return null
-        })
-        if (addresses) {
-          erc20s = addresses
-          erc721s = addresses.map((address) => [address, []])
-        }
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      if (!shouldUseAccessList || accessListFailed) {
-        console.log('Debug: using debug_traceCall for asset discovery')
-        try {
-          const { tokens, nfts } = await debugTraceCall(
-            this.baseAccount,
-            this.accountOp,
-            this.#network,
-            state,
-            stateOverride
-          )
-          erc20s = tokens
-          erc721s = nfts
-        } catch (e: any) {
-          // do not emit an error here as there is a retry mechanism
-          console.log('debug_traceCall failed', e)
-          debugTraceCallFailed = true
-        }
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      if ((!shouldUseAccessList || accessListFailed) && debugTraceCallFailed) {
-        console.log('Debug: using eth_simulateV1 for asset discovery')
-        const { tokens, nfts } = await ethSimulateV1(
-          this.baseAccount,
-          this.accountOp,
-          this.#network,
-          state
-        )
-        erc20s = tokens
-        erc721s = nfts
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
+      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(
+        discoveredAssets.tokens,
+        this.#network.chainId
+      )
       const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
-        erc721s,
+        discoveredAssets.nfts,
         this.account.addr,
         this.#network.chainId
       )
 
-      if (this.canUpdate() && (learnedNewTokens || learnedNewNfts)) {
-        !!this.#onUpdateAfterTraceCallSuccess && (await this.#onUpdateAfterTraceCallSuccess())
+      if (
+        this.canUpdate() &&
+        (learnedNewTokens || learnedNewNfts) &&
+        this.#onUpdateAfterTraceCallSuccess
+      ) {
+        await this.#onUpdateAfterTraceCallSuccess()
       }
-
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
     } catch (e: any) {
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
