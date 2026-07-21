@@ -350,19 +350,6 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     }
   }
 
-  // accOp.safeTx describes the outer Safe{WALLET} execTransaction being imported/co-signed,
-  // not any single call's own data, so this check runs for every call in the batch — a
-  // delegatecall to an unwhitelisted contract puts the entire batch at risk, not just the first call
-  if (accOp.safeTx) {
-    const warningInSafeTx = getDelegateCallWarning(BigInt(accOp.safeTx.operation), accOp.safeTx.to)
-    if (warningInSafeTx.length) {
-      newCall = {
-        ...newCall,
-        warnings: [...warningInSafeTx, ...(newCall.warnings || [])]
-      }
-    }
-  }
-
   return newCall
 }
 
