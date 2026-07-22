@@ -4,6 +4,7 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
   DAPP_VERIFICATION_BANNER_IDS,
@@ -51,6 +52,7 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { withTimeout } from '../../utils/with-timeout'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'
 
@@ -450,24 +452,34 @@ export class SignMessageController
   }
 
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
-    if (!this.network || !this.#account) return
+    const network = this.network
+    const account = this.#account
+    if (!network || !account) return
 
     // Attach the requesting dapp's name and url so the other owners can see the
     // request context when co-signing on a different device (see buildSafeMessageOrigin)
     const origin = buildSafeMessageOrigin(this.dapp)
 
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig, origin).catch(
-      (e) => {
-        console.log('failed to send message to Safe Global: ', e)
+    await withTimeout(
+      () => addMessage(network.chainId, account.addr as Hex, message, sig, origin),
+      {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
       }
-    )
+    ).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
   }
 
   async addSigToSafeGlobal(sig: string, hash: string) {
-    if (!this.network) return
+    const network = this.network
+    if (!network) return
 
-    await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+    await withTimeout(() => addMessageSignature(network.chainId, hash, sig), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message signature timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }
