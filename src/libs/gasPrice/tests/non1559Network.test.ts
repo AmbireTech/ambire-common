@@ -28,9 +28,9 @@ describe('non-1559 Network gas price tests', () => {
     const gasPrice = gasPriceData.gasPrice as GasPriceRecommendation[]
 
     expect(getByName(gasPrice, 'slow').gasPrice).toBe(ethers.parseUnits('2.4', 'gwei'))
-    expect(getByName(gasPrice, 'medium').gasPrice).toBe(ethers.parseUnits('2.52', 'gwei'))
-    expect(getByName(gasPrice, 'fast').gasPrice).toBe(ethers.parseUnits('2.64', 'gwei'))
-    expect(getByName(gasPrice, 'ape').gasPrice).toBe(ethers.parseUnits('2.76', 'gwei'))
+    expect(getByName(gasPrice, 'medium').gasPrice).toBe(ethers.parseUnits('2.424', 'gwei'))
+    expect(getByName(gasPrice, 'fast').gasPrice).toBe(ethers.parseUnits('2.448', 'gwei'))
+    expect(getByName(gasPrice, 'ape').gasPrice).toBe(ethers.parseUnits('2.472', 'gwei'))
     provider.destroy()
   })
 
@@ -44,9 +44,9 @@ describe('non-1559 Network gas price tests', () => {
     const gasPrice = gasPriceData.gasPrice as GasPriceRecommendation[]
 
     expect(getByName(gasPrice, 'slow').gasPrice).toBe(MIN_GAS_PRICE)
-    expect(getByName(gasPrice, 'medium').gasPrice).toBe(1050000000n)
-    expect(getByName(gasPrice, 'fast').gasPrice).toBe(1100000000n)
-    expect(getByName(gasPrice, 'ape').gasPrice).toBe(1150000000n)
+    expect(getByName(gasPrice, 'medium').gasPrice).toBe(1010000000n)
+    expect(getByName(gasPrice, 'fast').gasPrice).toBe(1020000000n)
+    expect(getByName(gasPrice, 'ape').gasPrice).toBe(1030000000n)
     provider.destroy()
   })
 
@@ -60,9 +60,9 @@ describe('non-1559 Network gas price tests', () => {
     const gasPrice = gasPriceData.gasPrice as GasPriceRecommendation[]
 
     expect(getByName(gasPrice, 'slow').gasPrice).toBe(ethers.parseUnits('2.64', 'gwei'))
-    expect(getByName(gasPrice, 'medium').gasPrice).toBe(ethers.parseUnits('2.772', 'gwei'))
-    expect(getByName(gasPrice, 'fast').gasPrice).toBe(ethers.parseUnits('2.904', 'gwei'))
-    expect(getByName(gasPrice, 'ape').gasPrice).toBe(ethers.parseUnits('3.036', 'gwei'))
+    expect(getByName(gasPrice, 'medium').gasPrice).toBe(ethers.parseUnits('2.6664', 'gwei'))
+    expect(getByName(gasPrice, 'fast').gasPrice).toBe(ethers.parseUnits('2.6928', 'gwei'))
+    expect(getByName(gasPrice, 'ape').gasPrice).toBe(ethers.parseUnits('2.7192', 'gwei'))
     provider.destroy()
   })
 })

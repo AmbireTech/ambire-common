@@ -2226,6 +2226,10 @@ export class SignAccountOpController
     // no increase if the user has set them
     if (this.hasCustomGasPrices) return this.gasPrices
 
+    // no increase if there's no bundlerEstimation as this means
+    // we're not using erc-4337 for broadcast
+    if (!this.estimation.estimation?.bundlerEstimation) return this.gasPrices
+
     return {
       slow: {
         maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.slow.maxFeePerGas), 5n),

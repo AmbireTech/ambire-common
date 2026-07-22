@@ -15,13 +15,29 @@ import type { PublicClient } from 'viem'
 // a 1 gwei min for gas price, non1559 networks
 export const MIN_GAS_PRICE = 1000000000n
 
-// multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
-// 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
+// Base fee buffers and priority fee ranges for each speed.
+// Priority fee ranges are relative to slow and prevent high percentiles from
+// producing disproportionately expensive recommendations.
 const speeds = [
-  { name: 'slow', baseFeeAddBps: 0n },
-  { name: 'medium', baseFeeAddBps: 500n },
-  { name: 'fast', baseFeeAddBps: 1000n },
-  { name: 'ape', baseFeeAddBps: 1500n }
+  { name: 'slow', baseFeeAddBps: 0n, priorityFeeMinAddBps: 0n, priorityFeeMaxAddBps: 0n },
+  {
+    name: 'medium',
+    baseFeeAddBps: 100n,
+    priorityFeeMinAddBps: 1250n,
+    priorityFeeMaxAddBps: 2500n
+  },
+  {
+    name: 'fast',
+    baseFeeAddBps: 200n,
+    priorityFeeMinAddBps: 2500n,
+    priorityFeeMaxAddBps: 5000n
+  },
+  {
+    name: 'ape',
+    baseFeeAddBps: 300n,
+    priorityFeeMinAddBps: 5000n,
+    priorityFeeMaxAddBps: 10000n
+  }
 ]
 
 const FEE_HISTORY_BLOCK_COUNT = 5
@@ -38,44 +54,27 @@ export interface Gas1559Recommendation {
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
 
-// https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
-function filterOutliers(data: bigint[]): bigint[] {
-  if (!data.length) return []
-
-  // numeric sort, a - b doesn't work for bigint
-  data.sort((a, b) => {
-    if (a === b) return 0
-    if (a > b) return 1
-    return -1
-  })
-
-  const q1 = data[Math.floor(data.length / 4)]
-  const endPosition = Math.ceil(data.length * (3 / 4))
-  const q2 = data[endPosition < data.length ? endPosition : data.length - 1]
-
-  // typescript extra protection
-  // q1 and q2 should always exist based on the code above.
-  // but the code changes and a bug is introduced, make sure we return
-  // the whole data instead of throwing an error
-  if (!q1 || !q2) {
-    console.error('q1 or q2 not found in gasPrice.ts')
-    return data
-  }
-
-  const iqr = q2 - q1
-  const maxValue = q2 + (iqr * 15n) / 10n
-  const minValue = q1 - (iqr * 15n) / 10n
-  const filteredValues = data.filter((x) => x <= maxValue && x >= minValue)
-  return filteredValues
-}
-
-function average(data: bigint[]): bigint {
+function median(data: bigint[]): bigint {
   if (data.length === 0) return 0n
-  return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
+
+  const sorted = [...data].sort((a, b) => {
+    if (a === b) return 0
+    return a > b ? 1 : -1
+  })
+  const middle = Math.floor(sorted.length / 2)
+
+  if (sorted.length % 2) return sorted[middle]!
+  return (sorted[middle - 1]! + sorted[middle]!) / 2n
 }
 
 function increaseByBps(value: bigint, bps: bigint): bigint {
   return value + (value * bps) / 10000n
+}
+
+function clamp(value: bigint, min: bigint, max: bigint): bigint {
+  if (value < min) return min
+  if (value > max) return max
+  return value
 }
 
 function increaseByPercent(value: bigint, percent?: bigint): bigint {
@@ -83,13 +82,13 @@ function increaseByPercent(value: bigint, percent?: bigint): bigint {
   return value + (value * percent) / 100n
 }
 
-function getAveragePriorityFeesFromHistory(rewards: bigint[][]): bigint[] {
+function getMedianPriorityFeesFromHistory(rewards: bigint[][]): bigint[] {
   return FEE_HISTORY_REWARD_PERCENTILES.map((_percentile, percentileIndex) => {
     const fees = rewards
       .map((reward) => reward[percentileIndex])
       .filter((fee): fee is bigint => typeof fee === 'bigint' && fee > 0n)
 
-    return average(filterOutliers(fees))
+    return median(fees)
   })
 }
 
@@ -128,32 +127,24 @@ async function get1559GasPriceRecommendations(
     ? (getLastBaseFeeFromHistory(feeHistory.baseFeePerGas) ?? estimatedBaseFee)
     : estimatedBaseFee
 
-  const priorityFees = feeHistory ? getAveragePriorityFeesFromHistory(feeHistory.reward ?? []) : []
+  const priorityFees = feeHistory ? getMedianPriorityFeesFromHistory(feeHistory.reward ?? []) : []
+  const estimatedPriorityFee =
+    estimatedFees.maxPriorityFeePerGas >= 100000n ? estimatedFees.maxPriorityFeePerGas : 100000n
+  const slowPriorityFee =
+    priorityFees[0] && priorityFees[0] > estimatedPriorityFee
+      ? priorityFees[0]
+      : estimatedPriorityFee
   const fee: Gas1559Recommendation[] = []
 
-  speeds.forEach(({ name, baseFeeAddBps }, i) => {
+  speeds.forEach(({ name, baseFeeAddBps, priorityFeeMinAddBps, priorityFeeMaxAddBps }, i) => {
     const baseFeePerGas = increaseByBps(expectedBaseFee, baseFeeAddBps)
-    let maxPriorityFeePerGas = priorityFees[i] || estimatedFees.maxPriorityFeePerGas
-
-    if (maxPriorityFeePerGas < estimatedFees.maxPriorityFeePerGas) {
-      maxPriorityFeePerGas = estimatedFees.maxPriorityFeePerGas
-    }
-
-    // set a bare minimum of 100000n for maxPriorityFeePerGas
-    maxPriorityFeePerGas = maxPriorityFeePerGas >= 100000n ? maxPriorityFeePerGas : 100000n
-
-    // compare the maxPriorityFeePerGas with the previous speed
-    // if it's not at least 12% bigger, then replace the calculated one
-    // with at least 12% bigger maxPriorityFeePerGas.
-    // This is most impactufull on L2s where txns get stuck for low maxPriorityFeePerGas
-    //
-    // if the speed is ape, make it 50% more
-    const prevSpeed = fee.length ? fee[i - 1]?.maxPriorityFeePerGas : null
-    if (prevSpeed) {
-      const divider = name === 'ape' ? 2n : 8n
-      const min = prevSpeed + prevSpeed / divider
-      if (maxPriorityFeePerGas < min) maxPriorityFeePerGas = min
-    }
+    const minPriorityFee = increaseByBps(slowPriorityFee, priorityFeeMinAddBps)
+    const maxPriorityFee = increaseByBps(slowPriorityFee, priorityFeeMaxAddBps)
+    const maxPriorityFeePerGas = clamp(
+      priorityFees[i] || minPriorityFee,
+      minPriorityFee,
+      maxPriorityFee
+    )
 
     fee.push({
       name,
