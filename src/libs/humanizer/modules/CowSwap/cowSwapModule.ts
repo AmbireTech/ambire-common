@@ -1,10 +1,19 @@
-import { decodeFunctionData, isHex, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
+import {
+  decodeAbiParameters,
+  decodeFunctionData,
+  isHex,
+  parseAbi,
+  parseAbiParameters,
+  toFunctionSelector,
+  zeroAddress
+} from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
+  getAddressVisualization,
   getDeadline,
   getLabel,
   getRecipientText,
@@ -61,6 +70,22 @@ const settleAbi = [
   }
 ] as const
 const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+// ComposableCoW lets an account (typically a Safe) authorize a conditional order (e.g. a TWAP)
+// that CoW's off-chain watchers later fill in parts via `settle`, so the humanization here
+// describes the intent that is being authorized, not any single fill
+const COMPOSABLE_COW_ADDRESS = '0xfdafc9d1902f4e0b84f65f49f244b32b31013b74'
+// deployed at the same address on every network CoW supports (deterministic CREATE2 deployment)
+const TWAP_HANDLER_ADDRESS = '0x6cf1e9ca41f7611def408122793c358a3d11e5a5'
+
+const conditionalOrderParamsTuple = '(address handler,bytes32 salt,bytes staticInput) params'
+const createAbi = parseAbi([`function create(${conditionalOrderParamsTuple}, bool dispatch)`])
+const createWithContextAbi = parseAbi([
+  `function createWithContext(${conditionalOrderParamsTuple}, address factory, bytes data, bool dispatch)`
+])
+
+const twapStaticInputAbiParams = parseAbiParameters(
+  'address sellToken, address buyToken, address receiver, uint256 partSellAmount, uint256 minPartLimit, uint256 t0, uint256 n, uint256 t, uint256 span, bytes32 appData'
+)
 
 const tradeTuple =
   '(uint256 sellTokenIndex,uint256 buyTokenIndex,address receiver,uint256 sellAmount,uint256 buyAmount,uint32 validTo,bytes32 appData,uint256 feeAmount,uint256 flags,uint256 executedAmount,bytes signature)'
@@ -144,6 +169,81 @@ const getSettlementVisualization = (
   ]
 }
 
+type ConditionalOrderParams = {
+  handler: string
+  salt: `0x${string}`
+  staticInput: `0x${string}`
+}
+
+const formatDurationText = (seconds: bigint): string => {
+  if (seconds % 3600n === 0n) {
+    const hours = seconds / 3600n
+    return `${hours} hour${hours === 1n ? '' : 's'}`
+  }
+  if (seconds % 60n === 0n) {
+    const minutes = seconds / 60n
+    return `${minutes} minute${minutes === 1n ? '' : 's'}`
+  }
+  return `${seconds} second${seconds === 1n ? '' : 's'}`
+}
+
+const getTwapVisualization = (
+  accountOp: AccountOp,
+  staticInput: `0x${string}`
+): HumanizerVisualization[] | null => {
+  let decoded: readonly [
+    string,
+    string,
+    string,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    string
+  ]
+  try {
+    decoded = decodeAbiParameters(twapStaticInputAbiParams, staticInput) as typeof decoded
+  } catch {
+    return null
+  }
+  const [sellToken, buyToken, receiver, partSellAmount, minPartLimit, t0, n, t] = decoded
+  if (n <= 0n) return null
+
+  const totalSellAmount = partSellAmount * n
+  const totalMinBuyAmount = minPartLimit * n
+
+  return [
+    getToken(sellToken, totalSellAmount, accountOp.chainId),
+    getLabel('for at least'),
+    getToken(buyToken, totalMinBuyAmount, accountOp.chainId),
+    getLabel(`split into ${n} parts, once every ${formatDurationText(t)}`),
+    ...(t0 !== 0n ? [getLabel(`starting ${new Date(Number(t0) * 1000).toLocaleString()}`)] : []),
+    ...getRecipientText(accountOp.accountAddr, receiver)
+  ]
+}
+
+const getConditionalOrderVisualization = (
+  accountOp: AccountOp,
+  params: ConditionalOrderParams
+): HumanizerVisualization[] => {
+  const handler = params.handler.toLowerCase()
+
+  if (handler === TWAP_HANDLER_ADDRESS) {
+    const twapVisualization = getTwapVisualization(accountOp, params.staticInput)
+    if (twapVisualization) return [getAction('Create CoW TWAP order'), ...twapVisualization]
+  }
+
+  // an unrecognized conditional order handler (e.g. a limit order or a custom strategy) -
+  // we can't decode `staticInput` without knowing its shape, so at least identify the handler
+  return [
+    getAction('Create CoW conditional order'),
+    getLabel('via'),
+    getAddressVisualization(handler)
+  ]
+}
+
 const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => HumanizerVisualization[]> = {
     [toFunctionSelector(swapAbi[0])]: (call) => {
@@ -183,11 +283,27 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) 
       const [orderUids] = args
 
       return [getAction('Clear CowSwap pre-signature storage'), getLabel(orderUids.length)]
+    },
+    [toFunctionSelector(createAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: createAbi, data: call.data })
+      const [params] = args
+
+      return getConditionalOrderVisualization(accountOp, params)
+    },
+    [toFunctionSelector(createWithContextAbi[0])]: (call) => {
+      const { args } = decodeFunctionData({ abi: createWithContextAbi, data: call.data })
+      const [params] = args
+
+      return getConditionalOrderVisualization(accountOp, params)
     }
   }
 
   if (call.fullVisualization || !isHexCall(call)) return call
-  if (call.to?.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS) return call
+  if (
+    call.to?.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS &&
+    call.to?.toLowerCase() !== COMPOSABLE_COW_ADDRESS
+  )
+    return call
 
   const match = matcher[call.data.slice(0, 10)]
   if (!match) return call
