@@ -16,6 +16,7 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
@@ -25,6 +26,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
+import * as safeLib from '../../libs/safe/safe'
 import { SignMessageController } from './signMessage'
 
 const account: Account = {
@@ -152,6 +154,46 @@ describe('SignMessageController', () => {
     expect(signMessageController.messageToSign).toBeNull()
     expect(signMessageController.signedMessage).toBeNull()
     expect(signMessageController.signer).toBeUndefined()
+  })
+
+  test('should resolve when adding a message to Safe Global times out', async () => {
+    const accountsController = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn().mockResolvedValue({
+        importedAccountKeys: []
+      })
+    } as unknown as IAccountsController
+    const controller = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsController,
+      {},
+      inviteCtrl
+    )
+    await controller.init({ messageToSign })
+    jest.useFakeTimers()
+    const addMessageSpy = jest
+      .spyOn(safeLib, 'addMessage')
+      .mockImplementation(() => new Promise(() => undefined))
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    try {
+      const addMessagePromise = controller.addMsgToSafeGlobal('0xsignature', 'message')
+
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+      await expect(addMessagePromise).resolves.toBeUndefined()
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        'failed to send message to Safe Global: ',
+        new Error(`Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`)
+      )
+    } finally {
+      addMessageSpy.mockRestore()
+      consoleLogSpy.mockRestore()
+      jest.useRealTimers()
+    }
   })
 
   test('should expose Safe EIP-712 data when initializing a Safe message', async () => {
