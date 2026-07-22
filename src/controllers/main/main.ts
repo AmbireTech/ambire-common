@@ -238,7 +238,8 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners,
     externalSignerControllers,
     uiManager,
-    loadRailgunWasm
+    loadRailgunWasm,
+    pimlicoApiKey
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -259,6 +260,9 @@ export class MainController extends EventEmitter implements IMainController {
     // asset loader is platform-specific, so this is optional for other environments
     // (mobile, benzin, legends) that don't construct it.
     loadRailgunWasm?: () => Promise<Response | BufferSource>
+    // Pimlico ERC-4337 bundler API key, used only for Railgun unshield/private-transfer
+    // broadcasting (Sepolia MVP). Optional - that flow simply isn't available without it.
+    pimlicoApiKey?: string
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -432,6 +436,8 @@ export class MainController extends EventEmitter implements IMainController {
             'railgun: no WASM loader was provided for this environment - Railgun is currently web-only'
           )
         }),
+      sendUiMessage: this.ui.message.sendUiMessage,
+      pimlicoApiKey,
       eventEmitterRegistry
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
