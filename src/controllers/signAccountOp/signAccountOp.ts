@@ -12,7 +12,6 @@ import {
 
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
@@ -132,7 +131,6 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import { getGasUsed } from '../../libs/singleton/singleton'
-import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -151,6 +149,7 @@ import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
+import { discoverTxnTokens } from './discoverTxnTokens'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -2154,75 +2153,34 @@ export class SignAccountOpController
     this.traceCallTimeoutId = timeoutId
 
     try {
-      const state =
-        this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-      // TODO: how to handle this case?
-      if (!state) return
-      let erc20s: string[] = []
-      let erc721s: [string, bigint[]][] = []
+      const discoveredAssets = await discoverTxnTokens({
+        account: this.account,
+        accountOp: this.accountOp,
+        accountState:
+          this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()],
+        baseAccount: this.baseAccount,
+        network: this.#network,
+        isCurrent: () => this.traceCallTimeoutId === timeoutId
+      })
+      if (!discoveredAssets) return
 
-      const stateOverride = getStateOverride(this.account, this.accountOp, state)
-      const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
-      let accessListFailed = false
-
-      if (shouldUseAccessList) {
-        console.log('Debug: using eth_createAccessList for asset discovery')
-        const addresses = await createAccessListCall(
-          this.baseAccount,
-          this.accountOp,
-          this.#network,
-          state
-        ).catch((e) => {
-          this.emitError({
-            level: 'silent',
-            message: 'Error in signAccountOp.traceCall',
-            error: e
-          })
-          accessListFailed = true
-          return null
-        })
-        if (addresses) {
-          erc20s = addresses
-          erc721s = addresses.map((address) => [address, []])
-        }
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      if (!shouldUseAccessList || accessListFailed) {
-        console.log('Debug: using debug_traceCall for asset discovery')
-        const { tokens, nfts } = await debugTraceCall(
-          this.baseAccount,
-          this.accountOp,
-          this.#network,
-          state,
-          stateOverride
-        )
-        erc20s = tokens
-        erc721s = nfts
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
+      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(
+        discoveredAssets.tokens,
+        this.#network.chainId
+      )
       const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
-        erc721s,
+        discoveredAssets.nfts,
         this.account.addr,
         this.#network.chainId
       )
 
-      if (this.canUpdate() && (learnedNewTokens || learnedNewNfts)) {
-        !!this.#onUpdateAfterTraceCallSuccess && (await this.#onUpdateAfterTraceCallSuccess())
+      if (
+        this.canUpdate() &&
+        (learnedNewTokens || learnedNewNfts) &&
+        this.#onUpdateAfterTraceCallSuccess
+      ) {
+        await this.#onUpdateAfterTraceCallSuccess()
       }
-
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
     } catch (e: any) {
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
@@ -3934,6 +3892,7 @@ export class SignAccountOpController
     this.broadcastPromise = undefined
     this.signAndBroadcastPromise = undefined
     this.status = { type: SigningStatus.ReadyToSign }
+    this.#hwCleanup()
     this.emitUpdate()
   }
 
