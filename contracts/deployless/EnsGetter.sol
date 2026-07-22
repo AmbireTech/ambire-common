@@ -9,6 +9,16 @@ interface IUniversalResolver {
   ) external view returns (string memory resolvedName, address resolver, address reverseResolver);
 }
 
+interface IBaseRegistrar {
+  function nameExpires(uint256 id) external view returns (uint256);
+
+  function GRACE_PERIOD() external view returns (uint256);
+}
+
+interface INameWrapper {
+  function getData(uint256 id) external view returns (address owner, uint32 fuses, uint64 expiry);
+}
+
 contract EnsGetter {
   struct ReverseLookupResult {
     string resolvedName;
@@ -17,6 +27,15 @@ contract EnsGetter {
     // lives behind a CCIP-read gateway
     // The caller is expected to retry these addresses off-chain
     bool needsOffchainLookup;
+  }
+
+  struct ExpiryResult {
+    // Registration expiry, in seconds
+    uint256 expiry;
+    // Grace period, in seconds. 0 on the NameWrapper path (the wrapper expiry has no separate grace)
+    uint256 gracePeriod;
+    // block.timestamp of the eth_call, so the caller's updatedAt is consistent with the expiry snapshot
+    uint256 blockTimestamp;
   }
 
   // EIP-3668
@@ -66,5 +85,26 @@ contract EnsGetter {
       coinType,
       gateways
     );
+  }
+
+  // Batches ENS expiry calls. Routing is decided by the caller:
+  // - useRegistrar == true: `.eth` 2LD, read from the BaseRegistrar (expiry + separate GRACE_PERIOD).
+  // - useRegistrar == false: subnames / non-`.eth` names, read from the NameWrapper (no grace period).
+  // `id` is the registrar token id (labelhash of the first label) or the wrapper node (namehash),
+  function getExpiry(
+    bool useRegistrar,
+    address baseRegistrar,
+    address nameWrapper,
+    uint256 id
+  ) external view returns (ExpiryResult memory result) {
+    result.blockTimestamp = block.timestamp;
+
+    if (useRegistrar) {
+      result.expiry = IBaseRegistrar(baseRegistrar).nameExpires(id);
+      result.gracePeriod = IBaseRegistrar(baseRegistrar).GRACE_PERIOD();
+    } else {
+      (, , uint64 wrapperExpiry) = INameWrapper(nameWrapper).getData(id);
+      result.expiry = wrapperExpiry;
+    }
   }
 }

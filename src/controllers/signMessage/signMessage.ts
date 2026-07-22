@@ -1,7 +1,6 @@
 import { toUtf8String } from 'ethers'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { EIP712TypedData } from '@safe-global/types-kit'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -30,6 +29,7 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
@@ -48,13 +48,15 @@ import {
   getPlainTextSignature,
   getSafeMessageTypedData,
   getVerifyMessageSignature,
-  verifyMessage,
   isAmbireOperationTypedData
 } from '../../libs/signMessage/signMessage'
+import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { withTimeout } from '../../utils/with-timeout'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import type { IrMessage } from '../../libs/humanizer/interfaces'
@@ -454,11 +456,18 @@ export class SignMessageController
     const account = this.#account
     if (!network || !account) return
 
+    // Attach the requesting dapp's name and url so the other owners can see the
+    // request context when co-signing on a different device (see buildSafeMessageOrigin)
+    const origin = buildSafeMessageOrigin(this.dapp)
+
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await withTimeout(() => addMessage(network.chainId, account.addr as Hex, message, sig), {
-      timeoutMs: SAFE_API_TIMEOUT_MS,
-      message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
-    }).catch((e) => {
+    await withTimeout(
+      () => addMessage(network.chainId, account.addr as Hex, message, sig, origin),
+      {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      }
+    ).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }

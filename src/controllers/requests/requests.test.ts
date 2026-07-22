@@ -193,6 +193,7 @@ const prepareTest = async (seedTestDapp = false) => {
 
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
+    portfolioCtrl: mainCtrl.portfolio,
     controller: mainCtrl.requests,
     getSignAccountOp,
     getCallsRequest,
@@ -280,7 +281,8 @@ describe('RequestsController ', () => {
         amount: '1',
         amountInFiat: 100000n,
         executionType: 'open-request-window',
-        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        recipientDomain: undefined
       }
     })
 
@@ -369,6 +371,40 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
+  })
+  test('rejecting an account switch removes the pending request and its simulation', async () => {
+    const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()
+    const req = await getCallsRequest({
+      addr: accounts[0]!.addr,
+      chainId: 1n
+    })
+    const rejectMock = jest.fn()
+    req.dappPromises = [
+      {
+        id: 'account-switch-request',
+        resolve: jest.fn(),
+        reject: rejectMock,
+        session: MOCK_SESSION,
+        meta: {}
+      }
+    ]
+    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
+    const overrideSimulationResultsSpy = jest.spyOn(portfolioCtrl, 'overrideSimulationResults')
+
+    await controller.addUserRequests([req], { allowAccountSwitch: true })
+
+    const switchAccountRequest = controller.userRequests[0]!
+    expect(switchAccountRequest.kind).toBe('switchAccount')
+    expect(controller.userRequestsWaitingAccountSwitch).toStrictEqual([req])
+
+    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+
+    expect(rejectMock).toHaveBeenCalledTimes(1)
+    expect(overrideSimulationResultsSpy).toHaveBeenCalledWith(req.signAccountOp.accountOp)
+    expect(destroySpy).toHaveBeenCalledTimes(1)
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    expect(controller.userRequests).toHaveLength(0)
   })
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()

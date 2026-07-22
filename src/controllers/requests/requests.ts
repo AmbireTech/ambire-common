@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { hashTypedData, isHex } from 'viem'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { EIP712TypedData } from '@safe-global/types-kit'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -87,7 +87,8 @@ import {
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -924,7 +925,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
 
         requestsToAddOrRemove.forEach((r) => {
-          this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+          this.userRequestsWaitingAccountSwitch.splice(
+            this.userRequestsWaitingAccountSwitch.indexOf(r),
+            1
+          )
 
           if (
             r.kind === 'typedMessage' &&
@@ -1001,16 +1005,35 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       shouldOpenNextRequest?: boolean
     }
   ) {
-    this.userRequests
-      .filter((r) => requestIds.includes(r.id))
-      .forEach(async (r) => {
-        r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+    const userRequestsToReject = this.userRequests.filter((r) => requestIds.includes(r.id))
+    const rejectedSwitchAccountRequestIds = userRequestsToReject
+      .filter((r) => r.kind === 'switchAccount')
+      .map((r) => r.id)
+    const waitingUserRequestsToReject = this.userRequestsWaitingAccountSwitch.filter((r) =>
+      rejectedSwitchAccountRequestIds.includes(r.meta.switchAccountRequestId)
+    )
 
-        // Done here because remove handles approved requests too. We want this logic only on reject
-        if (r.kind === 'calls') {
-          await this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
-        }
-      })
+    userRequestsToReject.forEach((r) => {
+      r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+    })
+
+    const callsUserRequestsToReject = [
+      ...userRequestsToReject,
+      ...waitingUserRequestsToReject
+    ].filter((r) => r.kind === 'calls') as CallsUserRequest[]
+
+    await Promise.all(
+      callsUserRequestsToReject.map((r) =>
+        this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
+      )
+    )
+
+    waitingUserRequestsToReject.forEach((r) => {
+      if (r.kind === 'calls') r.signAccountOp.destroy()
+    })
+    this.userRequestsWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.filter(
+      (r) => !waitingUserRequestsToReject.includes(r)
+    )
 
     await this.removeUserRequests(requestIds, options)
   }
@@ -1470,7 +1493,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     message,
     messageHash,
     created,
-    signatures
+    signatures,
+    dappName,
+    dappUrl
   }: {
     chainId: bigint
     signed: string[]
@@ -1478,6 +1503,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     messageHash: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1496,7 +1523,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           signed,
           hash: messageHash,
           created,
-          signatures
+          signatures,
+          dappName,
+          dappUrl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1527,7 +1556,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         signed,
         hash: messageHash,
         created,
-        signatures
+        signatures,
+        dappName,
+        dappUrl
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1537,12 +1568,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amount,
     amountInFiat,
     recipientAddress,
+    recipientDomain,
     selectedToken,
     executionType = 'open-request-window'
   }: {
     amount: string
     amountInFiat: bigint
     recipientAddress: string
+    recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
   }) {
@@ -1580,7 +1613,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       amountInFiat,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      recipientDomain
     })
 
     if (!callsRequestParams) {
@@ -1746,20 +1780,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
+    const switchAccountUserRequest = buildSwitchAccountUserRequest({
+      nextUserRequest: req,
+      selectedAccountAddr: req.meta.accountAddr,
+      dappPromises: req.dappPromises
+    })
+    req.meta.switchAccountRequestId = switchAccountUserRequest.id
     this.userRequestsWaitingAccountSwitch.push(req)
-    await this.addUserRequests(
-      [
-        buildSwitchAccountUserRequest({
-          nextUserRequest: req,
-          selectedAccountAddr: req.meta.accountAddr,
-          dappPromises: req.dappPromises
-        })
-      ],
-      {
-        position: 'last',
-        executionType: 'open-request-window'
-      }
-    )
+    await this.addUserRequests([switchAccountUserRequest], {
+      position: 'last',
+      executionType: 'open-request-window'
+    })
   }
 
   // ! IMPORTANT !

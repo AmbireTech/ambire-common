@@ -1,3 +1,4 @@
+import { getAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { generateUuid } from '@/utils/uuid'
@@ -167,14 +168,14 @@ describe('Activity Controller ', () => {
       const { controller } = await prepareTest()
 
       const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
-      const poisoningRecipient4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
-      const poisoningRecipient5 = '0xF0cD7bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb237DB'
-      const poisoningRecipient6 = '0xF0cD72ccccccccccccccccccccccccccccc237DB'
-      const poisoningRecipient4to8 = '0xF0cDdddddddddddddddddddddddddddd793237DB'
-      const poisoningRecipient3to8 = '0xF0ceeeeeeeeeeeeeeeeeeeeeeeeeeeee793237DB'
-      const poisoningRecipient0to8 = '0xAb12ffffffffffffffffffffffffffff793237DB'
-      const poisoningRecipient3to4 = '0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
-      const poisoningRecipient0to0 = '0xAb12eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeCDef'
+      const poisoningRecipient4 = '0xF0cdAaAaaAAAaAAAaaaAaAaAAaAaaaAaAaaA37Db'
+      const poisoningRecipient5 = '0xf0cd7BbbBbbbBbBBbbbBBBBbbbbBBbbbbbb237DB'
+      const poisoningRecipient6 = '0xf0cd72ccCCccCcCccCCCCcCCcCcCCCCccCC237DB'
+      const poisoningRecipient4to8 = '0xF0CdDDDddddDdDdDdDDDDDDDDdddDDDD793237db'
+      const poisoningRecipient3to8 = '0xF0cEEeeeEEEEEeEEEEeeEEEEeeEeeeEe793237db'
+      const poisoningRecipient0to8 = '0xaB12ffFFfFFFFfFfFFFffffFffFFFfFF793237DB'
+      const poisoningRecipient3to4 = '0xF0cAAaAaAaaaAAaAAaaaaAAaaaAaAAAaAAaa37dB'
+      const poisoningRecipient0to0 = '0xAB12eeeeeeeEeeeEeeeEEeeeEEEEEeeEeEeeCdef'
 
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
@@ -304,7 +305,7 @@ describe('Activity Controller ', () => {
     test('should not detect poisoning without transaction history', async () => {
       const { controller } = await prepareTest()
 
-      const poisoningRecipient4to4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+      const poisoningRecipient4to4 = '0xF0cdAaAaaAAAaAAAaaaAaAaAAaAaaaAaAaaA37Db'
       const normalizedPoisoningRecipient4to4 = poisoningRecipient4to4.toLowerCase()
 
       const firstTimeSendResult = await controller.hasAccountOpsSentTo(
@@ -1175,5 +1176,64 @@ describe('Activity Controller ', () => {
     // Validate that the account data is removed
     expect(controller.accountsOps[sessionId]!.result!.items.length).toEqual(0)
     expect(controller.signedMessages[sessionId]!.result!.items.length).toEqual(0)
+  })
+
+  describe('Sent-to history', () => {
+    const DOMAIN_ADDR_A = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+    const DOMAIN_ADDR_B = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+
+    const SENT_AT = new Date('2024-03-01T10:00:00Z').getTime()
+    const SENT_AT_LATER = new Date('2024-06-15T18:30:00Z').getTime()
+
+    it('records and reads the address a domain was sent to (global, case-insensitive)', async () => {
+      const { controller } = await prepareTest()
+
+      // await controller.recordSentToDomain('alice.eth', DOMAIN_ADDR_A, SENT_AT)
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+      })
+
+      // Checksummed, and the domain lookup is case-insensitive.
+      expect(controller.getSentToDomainAddress('alice.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+      expect(controller.getSentToDomainAddress('ALICE.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+    })
+
+    it('overwrites with the most recent address', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        timestamp: SENT_AT,
+        calls: [{ to: DOMAIN_ADDR_B, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+      })
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        timestamp: SENT_AT_LATER,
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+      })
+
+      expect(controller.getSentToDomainAddress('alice.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+    })
+
+    it('stores recipients checksummed', async () => {
+      const { controller } = await prepareTest()
+
+      const recipientLower = '0xf0cd725d2195b1d3f4bd038c3786005b793237db'
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        nonce: 302n,
+        txnId: '0x4c8a1d6f93b072e5af18c34d9e6072b1f5a83c0d7e29b46f1a0c5d8e3b97f246',
+        timestamp: SENT_AT_LATER,
+        calls: [{ to: recipientLower, value: 0n, data: '0x' }]
+      })
+
+      const stored = await storage.get('sentToHistory', { domains: {}, recipients: {} })
+      const recipientsForAccount = stored.recipients[SUBMITTED_ACCOUNT_OP.accountAddr]
+      expect(recipientsForAccount).toBeDefined()
+
+      expect(recipientsForAccount![getAddress(recipientLower)]).toBe(SENT_AT_LATER)
+      expect(recipientsForAccount![recipientLower]).toBeUndefined()
+    })
   })
 })

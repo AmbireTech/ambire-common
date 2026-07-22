@@ -84,6 +84,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
+import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
@@ -3017,6 +3018,7 @@ describe('traceCall asset discovery', () => {
 
     await wait(100)
     controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    clearDiscoverTxnTokensCache()
     jest.clearAllMocks()
 
     return controller
@@ -3076,11 +3078,10 @@ describe('traceCall asset discovery', () => {
 
     await (controller as any).traceCall()
 
-    // The access list failure is reported silently, then discovery falls back
-    // to debug_traceCall.
-    expect(emitErrorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ level: 'silent', message: 'Error in signAccountOp.traceCall' })
-    )
+    // The access list failure is not emitted as an error (it would be reported to
+    // Sentry) because there is a retry/fallback mechanism; discovery falls back to
+    // debug_traceCall and no error is emitted once a fallback succeeds.
+    expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
@@ -3118,8 +3119,47 @@ describe('traceCall asset discovery', () => {
       smartAccount.addr,
       1n
     )
-    expect(emitErrorSpy).toHaveBeenCalledTimes(2)
+    // Neither the access list nor the debug_traceCall failures are emitted as
+    // errors, since eth_simulateV1 (the last fallback) succeeds.
+    expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('tries the last successful method first on the next discovery', async () => {
+    const controller = await initTraceCall()
+
+    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
+
+    await (controller as any).traceCall()
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+  })
+
+  test('falls back to the other methods when the cached method fails', async () => {
+    const controller = await initTraceCall()
+
+    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
+
+    await (controller as any).traceCall()
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      createAccessListCallSpy.mock.invocationCallOrder[0]!
+    )
+    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
   })
 
   test('sets Failed and emits a silent error when discovery throws', async () => {
