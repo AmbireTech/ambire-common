@@ -2909,11 +2909,14 @@ export class SignAccountOpController
     const isExternalSignerInvolved =
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
+    const isCollectingSafeSignature =
+      !!this.account.safeCreation && (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
       !shouldSignDeployAuth &&
-      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)
+      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) &&
+      !isCollectingSafeSignature
 
     if (isImmediatelyWaitingForPaymaster) this.status = { type: SigningStatus.WaitingForPaymaster }
 
