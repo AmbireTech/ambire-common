@@ -32,6 +32,7 @@ import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
 import { ProvidersController } from '@/controllers/providers/providers'
+import { RailgunController } from '@/controllers/railgun/railgun'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
 import { SelectedAccountController } from '@/controllers/selectedAccount/selectedAccount'
@@ -76,6 +77,7 @@ import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IProvidersController } from '@/interfaces/provider'
+import { IRailgunController } from '@/interfaces/railgun'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
 import { ISelectedAccountController } from '@/interfaces/selectedAccount'
@@ -158,6 +160,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   portfolio: IPortfolioController
 
+  railgun: IRailgunController
+
   dapps: IDappsController
 
   phishing: IPhishingController
@@ -233,7 +237,8 @@ export class MainController extends EventEmitter implements IMainController {
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    loadRailgunWasm
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -250,6 +255,10 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    // Railgun (privacy pool) is currently web-only (see integration plan) - the WASM
+    // asset loader is platform-specific, so this is optional for other environments
+    // (mobile, benzin, legends) that don't construct it.
+    loadRailgunWasm?: () => Promise<Response | BufferSource>
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -411,6 +420,20 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       this.verification
     )
+    this.railgun = new RailgunController({
+      keystore: this.keystore,
+      providers: this.providers,
+      storage: this.storage,
+      fetch: this.fetch,
+      loadWasm:
+        loadRailgunWasm ||
+        (() => {
+          throw new Error(
+            'railgun: no WASM loader was provided for this environment - Railgun is currently web-only'
+          )
+        }),
+      eventEmitterRegistry
+    })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
         this.storage,
