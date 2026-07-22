@@ -37,4 +37,10 @@ export interface Call {
   dapp?: Dapp
   dappPromiseId?: string
   activeRouteId?: string
+  /**
+   * Added for transfer requests, to keep track of the domain that was used to
+   * resolve the recipient address. We store this address after the txn is confirmed
+   * and then use it to warn the user if the ENS resolves to a different address in the future.
+   */
+  recipientDomain?: string
 }

@@ -12,7 +12,6 @@ import {
 
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-import { debugTraceCall, getStateOverride } from '@/libs/tracer/debugTraceCall'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
@@ -54,10 +53,13 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FeeSpeed,
   HardwareWalletSigningRequest,
   ISignAccountOpController,
+  noStateUpdateStatuses,
   SignAccountOpBanner,
   SignAccountOpError,
+  SigningStatus,
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
@@ -97,12 +99,12 @@ import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../li
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { getSafeTxn } from '../../libs/safe/helpers'
 import {
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
   getNonce,
-  getSafeTxn,
   getSafeTxnHash,
   getSigs,
   propose,
@@ -128,7 +130,6 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import { getGasUsed } from '../../libs/singleton/singleton'
-import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -147,6 +148,7 @@ import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
+import { discoverTxnTokens } from './discoverTxnTokens'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -161,53 +163,11 @@ import {
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
 
-export enum SigningStatus {
-  EstimationError = 'estimation-error',
-  UnableToSign = 'unable-to-sign',
-  ReadyToSign = 'ready-to-sign',
-  /**
-   * Used to prevent state updates while the user is resolving warnings, connecting a hardware wallet, etc.
-   * Signing is allowed in this state, but the state of the controller should not change.
-   */
-  UpdatesPaused = 'updates-paused',
-  InProgress = 'in-progress',
-  WaitingForPaymaster = 'waiting-for-paymaster-response',
-  Done = 'done',
-  Queued = 'queued',
-  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
-}
+import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 
-export type Status = {
-  // @TODO: get rid of the object and just use the type
-  type: SigningStatus
-}
-
-export enum FeeSpeed {
-  Slow = 'slow',
-  Medium = 'medium',
-  Fast = 'fast',
-  Ape = 'ape'
-}
-
-export type SpeedCalc = {
-  type: FeeSpeed
-  amount: bigint
-  simulatedGasLimit: bigint
-  amountFormatted: string
-  amountUsd: string
-  gasPrice: bigint
-  disabled: boolean
-  maxPriorityFeePerGas?: bigint
-}
-
-// declare the statuses we don't want state updates on
-export const noStateUpdateStatuses = [
-  SigningStatus.InProgress,
-  SigningStatus.Done,
-  SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster,
-  SigningStatus.SafeQuickBroadcastBundler
-]
+// Re-exporting for backwards compatibility with existing importers
+export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
+export type { SpeedCalc, Status }
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -2140,75 +2100,34 @@ export class SignAccountOpController
     this.traceCallTimeoutId = timeoutId
 
     try {
-      const state =
-        this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-      // TODO: how to handle this case?
-      if (!state) return
-      let erc20s: string[] = []
-      let erc721s: [string, bigint[]][] = []
+      const discoveredAssets = await discoverTxnTokens({
+        account: this.account,
+        accountOp: this.accountOp,
+        accountState:
+          this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()],
+        baseAccount: this.baseAccount,
+        network: this.#network,
+        isCurrent: () => this.traceCallTimeoutId === timeoutId
+      })
+      if (!discoveredAssets) return
 
-      const stateOverride = getStateOverride(this.account, this.accountOp, state)
-      const shouldUseAccessList = getShouldUseAccessListCall(this.account, !!stateOverride)
-      let accessListFailed = false
-
-      if (shouldUseAccessList) {
-        console.log('Debug: using eth_createAccessList for asset discovery')
-        const addresses = await createAccessListCall(
-          this.baseAccount,
-          this.accountOp,
-          this.#network,
-          state
-        ).catch((e) => {
-          this.emitError({
-            level: 'silent',
-            message: 'Error in signAccountOp.traceCall',
-            error: e
-          })
-          accessListFailed = true
-          return null
-        })
-        if (addresses) {
-          erc20s = addresses
-          erc721s = addresses.map((address) => [address, []])
-        }
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      if (!shouldUseAccessList || accessListFailed) {
-        console.log('Debug: using debug_traceCall for asset discovery')
-        const { tokens, nfts } = await debugTraceCall(
-          this.baseAccount,
-          this.accountOp,
-          this.#network,
-          state,
-          stateOverride
-        )
-        erc20s = tokens
-        erc721s = nfts
-      }
-
-      if (this.traceCallTimeoutId !== timeoutId) {
-        // If the timeout ID doesn't match, it means that another traceCall has been initiated,
-        // and we should not proceed with this one
-        return
-      }
-
-      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(erc20s, this.#network.chainId)
+      const learnedNewTokens = this.#portfolio.addTokensToBeLearned(
+        discoveredAssets.tokens,
+        this.#network.chainId
+      )
       const learnedNewNfts = this.#portfolio.addErc721sToBeLearned(
-        erc721s,
+        discoveredAssets.nfts,
         this.account.addr,
         this.#network.chainId
       )
 
-      if (this.canUpdate() && (learnedNewTokens || learnedNewNfts)) {
-        !!this.#onUpdateAfterTraceCallSuccess && (await this.#onUpdateAfterTraceCallSuccess())
+      if (
+        this.canUpdate() &&
+        (learnedNewTokens || learnedNewNfts) &&
+        this.#onUpdateAfterTraceCallSuccess
+      ) {
+        await this.#onUpdateAfterTraceCallSuccess()
       }
-
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
     } catch (e: any) {
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
@@ -3189,7 +3108,10 @@ export class SignAccountOpController
                 this.account,
                 accountState,
                 signer,
-                this.#network
+                this.#network,
+                false,
+                undefined,
+                true
               )
           )
           if (!this.accountOp.meta) {
@@ -3914,6 +3836,7 @@ export class SignAccountOpController
     this.broadcastPromise = undefined
     this.signAndBroadcastPromise = undefined
     this.status = { type: SigningStatus.ReadyToSign }
+    this.#hwCleanup()
     this.emitUpdate()
   }
 

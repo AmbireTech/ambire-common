@@ -47,9 +47,9 @@ import {
   getSafeTypedData,
   getTypedData,
   getVerifyMessageSignature,
-  verifyMessage,
   wrapWallet
 } from './signMessage'
+import { verifyMessage } from './verifyMessage'
 
 const ethereumNetwork = networks.find((n) => n.chainId === 1n)!
 const polygonNetwork = networks.find((n) => n.chainId === 137n)!
@@ -359,6 +359,8 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountState,
       signer,
       polygonNetwork,
+      true,
+      undefined,
       true
     )
 
@@ -658,7 +660,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       smartAccount,
       accountState,
       signer,
-      polygonNetwork
+      polygonNetwork,
+      false,
+      undefined,
+      true
     )
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
     expect(eip712Sig.signature.slice(-2)).toEqual('00')
@@ -697,7 +702,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       v1Account,
       accountState,
       signer,
-      ethereumNetwork
+      ethereumNetwork,
+      false,
+      undefined,
+      true
     )
     // the key is for a v1 acc so it should be 00
     expect(eip712Sig.signature.slice(-2)).toEqual('00')
@@ -752,7 +760,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       v1Account,
       accountState,
       signer,
-      ethereumNetwork
+      ethereumNetwork,
+      false,
+      undefined,
+      true
     )
     // the key is for a v1 acc so it should be 00
     expect(eip712Sig.signature.slice(-2)).toEqual('00')
@@ -777,7 +788,16 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hashMessage('test')
     )
     try {
-      await getEIP712Signature(typedData, v1Account, accountState, signer, polygonNetwork)
+      await getEIP712Signature(
+        typedData,
+        v1Account,
+        accountState,
+        signer,
+        polygonNetwork,
+        false,
+        undefined,
+        true
+      )
       console.log('No error was thrown for [V1 SA]: eip-712, but it should have')
       expect(true).toEqual(false)
     } catch (e: any) {
@@ -855,7 +875,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       smartAccount,
       v2AccountState,
       signer,
-      polygonNetwork
+      polygonNetwork,
+      false,
+      undefined,
+      true
     )
     expect(eip712Sig.signature.slice(-2)).toEqual('00')
 
@@ -1056,7 +1079,16 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       hashMessage('test')
     )
     try {
-      await getEIP712Signature(typedData, smartAccount, accountState, signer, polygonNetwork)
+      await getEIP712Signature(
+        typedData,
+        smartAccount,
+        accountState,
+        signer,
+        polygonNetwork,
+        false,
+        undefined,
+        true
+      )
       console.log('No error was thrown for [Not dedicated to one SA]: eip-712, but it should have')
       expect(true).toEqual(false)
     } catch (e: any) {
@@ -1064,6 +1096,21 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
         `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
       )
     }
+  })
+  test('Signing [V2 SA]: rejects AmbireOperation typed data from untrusted sources by default', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const accountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      polygonNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
+    )
+
+    await expect(
+      getEIP712Signature(typedData, smartAccount, accountState, signer, polygonNetwork)
+    ).rejects.toThrow('Signing an AmbireOperation is not allowed')
   })
 })
 

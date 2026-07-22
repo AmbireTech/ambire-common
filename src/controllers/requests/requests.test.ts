@@ -193,6 +193,7 @@ const prepareTest = async (seedTestDapp = false) => {
 
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
+    portfolioCtrl: mainCtrl.portfolio,
     controller: mainCtrl.requests,
     getSignAccountOp,
     getCallsRequest,
@@ -280,7 +281,8 @@ describe('RequestsController ', () => {
         amount: '1',
         amountInFiat: 100000n,
         executionType: 'open-request-window',
-        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        recipientDomain: undefined
       }
     })
 
@@ -369,6 +371,40 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
+  })
+  test('rejecting an account switch removes the pending request and its simulation', async () => {
+    const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()
+    const req = await getCallsRequest({
+      addr: accounts[0]!.addr,
+      chainId: 1n
+    })
+    const rejectMock = jest.fn()
+    req.dappPromises = [
+      {
+        id: 'account-switch-request',
+        resolve: jest.fn(),
+        reject: rejectMock,
+        session: MOCK_SESSION,
+        meta: {}
+      }
+    ]
+    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
+    const overrideSimulationResultsSpy = jest.spyOn(portfolioCtrl, 'overrideSimulationResults')
+
+    await controller.addUserRequests([req], { allowAccountSwitch: true })
+
+    const switchAccountRequest = controller.userRequests[0]!
+    expect(switchAccountRequest.kind).toBe('switchAccount')
+    expect(controller.userRequestsWaitingAccountSwitch).toStrictEqual([req])
+
+    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+
+    expect(rejectMock).toHaveBeenCalledTimes(1)
+    expect(overrideSimulationResultsSpy).toHaveBeenCalledWith(req.signAccountOp.accountOp)
+    expect(destroySpy).toHaveBeenCalledTimes(1)
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    expect(controller.userRequests).toHaveLength(0)
   })
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()
@@ -688,14 +724,15 @@ describe('RequestsController ', () => {
 
     const buildSignTypedDataRequest = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      typedData: object
+      typedData: object,
+      signerAddress: string = FROM
     ) =>
       controller.build({
         type: 'dappRequest',
         params: {
           request: {
             method: 'eth_signTypedData_v4',
-            params: [FROM, JSON.stringify(typedData)],
+            params: [signerAddress, JSON.stringify(typedData)],
             session: MOCK_SESSION
           },
           dappPromise: {
@@ -778,6 +815,66 @@ describe('RequestsController ', () => {
       const req = controller.userRequests[0]! as any
       expect(req.kind).toBe('typedMessage')
       expect(req.meta.params.domain.chainId).toBe(1n)
+    })
+
+    const SELECTED_ACCOUNT = FROM
+    const OTHER_ACCOUNT = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+    const AMBIRE_OPERATION_TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+          { name: 'salt', type: 'bytes32' }
+        ],
+        AmbireOperation: [
+          { name: 'account', type: 'address' },
+          { name: 'hash', type: 'bytes32' }
+        ]
+      },
+      primaryType: 'AmbireOperation',
+      domain: {
+        name: 'Ambire',
+        version: '1',
+        chainId: 1,
+        verifyingContract: SELECTED_ACCOUNT,
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      message: {
+        account: SELECTED_ACCOUNT,
+        hash: '0x1111111111111111111111111111111111111111111111111111111111111111'
+      }
+    }
+
+    test('rejects AmbireOperation typed data for the selected account', async () => {
+      const { controller } = await prepareTest(true)
+      await expect(
+        buildSignTypedDataRequest(controller, AMBIRE_OPERATION_TYPED_DATA, SELECTED_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
+    })
+
+    test('rejects AmbireOperation typed data for a non-selected account', async () => {
+      const { controller } = await prepareTest(true)
+      const otherAccountTypedData = {
+        ...AMBIRE_OPERATION_TYPED_DATA,
+        domain: {
+          ...AMBIRE_OPERATION_TYPED_DATA.domain,
+          verifyingContract: OTHER_ACCOUNT
+        },
+        message: {
+          account: OTHER_ACCOUNT,
+          hash: '0x1111111111111111111111111111111111111111111111111111111111111111'
+        }
+      }
+
+      await expect(
+        buildSignTypedDataRequest(controller, otherAccountTypedData, OTHER_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
+      expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
     })
   })
 })

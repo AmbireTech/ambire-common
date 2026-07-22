@@ -390,15 +390,29 @@ const transferIface = new Interface(['function transfer(address,uint256)'])
  *
  * @param whitelist Optional list of addresses to filter the results.
  */
-export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: string[]): string[] {
+export function getAccountOpRecipients(
+  op: SubmittedAccountOp,
+  whitelist?: string[]
+): {
+  address: string
+  domain?: string
+}[] {
   const sentTo = new Set<string>()
+  const domainMap = new Map<string, string>()
   const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase())
+  const setDomain = (address: string, domain?: string) => {
+    const normalized = domain?.toLowerCase()?.trim()
+    if (normalized) {
+      domainMap.set(address, normalized)
+    }
+  }
 
   op.calls.forEach((call) => {
     // 1) Direct call.to match
     if (call.to && isAddress(call.to)) {
       if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
         sentTo.add(call.to)
+        setDomain(call.to, call.recipientDomain)
       }
     }
 
@@ -416,6 +430,7 @@ export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: strin
           if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase())) return
 
           sentTo.add(recipient)
+          setDomain(recipient, call.recipientDomain)
         }
       } catch {
         // ignore decode errors and continue
@@ -423,7 +438,10 @@ export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: strin
     }
   })
 
-  return Array.from(sentTo)
+  return Array.from(sentTo).map((address) => ({
+    address,
+    domain: domainMap.get(address)
+  }))
 }
 
 /**

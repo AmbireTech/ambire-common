@@ -1,6 +1,8 @@
 import { getAddress } from 'ethers'
 import { ethAddress, zeroAddress } from 'viem'
 
+import { FEE_COLLECTOR } from '@/consts/addresses'
+
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
@@ -421,7 +423,7 @@ export class SocketV3API implements SwapProvider {
       inputAmount: fromAmount.toString(),
       receiverAddress: userAddress
     })
-    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId] || FEE_COLLECTOR
     const shouldIncludeConvenienceFee =
       !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldIncludeConvenienceFee) {
