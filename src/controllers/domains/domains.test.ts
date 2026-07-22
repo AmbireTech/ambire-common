@@ -9,7 +9,10 @@ import { getRpcProvider } from '../../services/provider'
 import {
   DomainsController,
   PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS,
-  PERSIST_DOMAIN_FOR_IN_MS
+  PERSIST_DOMAIN_FOR_IN_MS,
+  PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS,
+  PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS,
+  shouldRefetchEnsExpiry
 } from './domains'
 
 const citrea = {
@@ -123,6 +126,66 @@ describe('Domains', () => {
 
     expect(domainsController.domainToAddresses[name]?.address).toBe(address)
     expect(domainsController.domainToAddresses[name]?.type).toBe('ens')
+  })
+  it('should fail Colibri verification for a changed ENS address and succeed for the resolved address', async () => {
+    const domain = '0xbobby.eth'
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    const changedAddress = getAddress('0x0000000000000000000000000000000000000001')
+    const provider = {} as any
+    const verificationProvider = {} as any
+    const getReadyProvider = jest.fn(() => undefined as any)
+    const { restore } = suppressConsole()
+    const controller = new DomainsController({
+      providers: { ['1']: provider },
+      verification: { getReadyProvider } as any,
+      isNetworkEnabled: () => true
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await controller.resolveDomain({ domain })
+
+      expect(controller.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+
+      getReadyProvider.mockReturnValue(verificationProvider)
+      controller.domainToAddresses[domain] = {
+        address: changedAddress,
+        type: 'ens'
+      }
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBe(
+        `ENS resolution mismatch for ${domain}: RPC returned ${changedAddress}, Colibri returned ${resolvedAddress}`
+      )
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+
+      controller.domainToAddresses[domain] = {
+        address: resolvedAddress,
+        type: 'ens'
+      }
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+
+      getReadyProvider.mockReturnValue(undefined as any)
+
+      await controller.resolveDomain({ domain })
+
+      expect(controller.resolveDomainsStatus[domain]).toBeUndefined()
+      expect(controller.resolveDomainsErrors[domain]).toBeUndefined()
+      expect(controller.verifiedDomainsStatus[domain]).toBeUndefined()
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+      restore()
+    }
   })
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
@@ -340,7 +403,7 @@ describe('Domains', () => {
 
     expect(controller.domains[addressInFlight]!.ens).toBe(ENS_OLDEST_RESOLVER.name)
     expect(controller.domains[addressInBatch]!.ens).toBe(ENS_LATEST_RESOLVER.name)
-    // One lookup for the in-flight address, one for the rest of the batch — no duplicate.
+    // One lookup for the in-flight address, one for the rest of the batch - no duplicate.
     expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(2)
 
     reverseLookupEnsSpy.mockRestore()
@@ -552,6 +615,37 @@ describe('Domains', () => {
     expect(controller.domains[ENS_OLD_RESOLVER.address]).toBeUndefined()
   })
 
+  it('removes resolved domains from storage that are past the grace period of the ENS expiry', async () => {
+    const storage = makeStorage({
+      [ENS_OLDEST_RESOLVER.address]: {
+        ens: ENS_OLDEST_RESOLVER.name,
+        updatedAt: Date.now(),
+        ensExpiry: {
+          expiresAt: Date.now() - 1000,
+          gracePeriodEndsAt: Date.now() - 1000,
+          updatedAt: Date.now()
+        }
+      }
+    })
+
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage,
+      featureFlags: makeFeatureFlags(false),
+      isNetworkEnabled: () => true
+    })
+
+    await controller.init([
+      {
+        name: 'test',
+        address: ENS_OLDEST_RESOLVER.address,
+        isWalletAccount: true
+      }
+    ])
+
+    expect(controller.domains[ENS_OLDEST_RESOLVER.address]).toEqual({ ens: null })
+  })
+
   it('controller works without a citrea provider', async () => {
     const controllerWithoutCitrea = new DomainsController({
       providers: {
@@ -568,5 +662,204 @@ describe('Domains', () => {
     await controllerWithoutCitrea.resolveDomain({ domain: TEST.name })
 
     expect(controllerWithoutCitrea.domains[TEST.address]).toBeUndefined()
+  })
+})
+
+describe('Domains - ENS expiry', () => {
+  const ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+
+  // Far-future expiry, so the name is nowhere near the warn window (no refetch is triggered by it).
+  const EXPIRES_AT = new Date('2030-04-20T00:00:00Z').getTime()
+  const GRACE_PERIOD_ENDS_AT = EXPIRES_AT + 90 * 24 * 60 * 60 * 1000
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  // The expiry is fetched during a reverse lookup (when `updateExpiry` is set) and only for an address
+  // that already has an entry. Seed a stale entry (past the name TTL) so the lookup re-runs and the
+  // entry exists when the expiry fetch is attempted - mirroring how the selected account is refreshed.
+  const seedStaleEntry = (ensExpiry?: ensDomainsModule.NameExpiry) =>
+    makeStorage({
+      [ADDR]: {
+        ens: 'vitalik.eth',
+        namoshi: null,
+        updatedAt: Date.now() - PERSIST_DOMAIN_FOR_IN_MS - 1000,
+        ...(ensExpiry ? { ensExpiry } : {})
+      }
+    })
+
+  const makeController = (storage: any) =>
+    new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      storage,
+      featureFlags: makeFeatureFlags(true),
+      isNetworkEnabled: () => true
+    })
+
+  it('fetches and stores the ENS expiry on a reverse lookup with updateExpiry', async () => {
+    jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [ADDR]: { name: 'vitalik.eth', failed: false } })
+    jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+    const expiry = {
+      expiresAt: EXPIRES_AT,
+      gracePeriodEndsAt: GRACE_PERIOD_ENDS_AT,
+      updatedAt: Date.now()
+    }
+    jest.spyOn(ensDomainsModule, 'getEnsExpiry').mockResolvedValue(expiry)
+
+    const controller = makeController(seedStaleEntry())
+    await controller.reverseLookup(ADDR, true, {
+      privacyUpdateMode: 'whenStale',
+      updateExpiry: true
+    })
+
+    expect(controller.domains[ADDR]!.ensExpiry).toEqual(expiry)
+  })
+
+  it('stores the ENS expiry fetched during a forward resolveDomain', async () => {
+    const expiry = {
+      expiresAt: EXPIRES_AT,
+      gracePeriodEndsAt: GRACE_PERIOD_ENDS_AT,
+      updatedAt: Date.now()
+    }
+    jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: ADDR, avatar: null, expiry })
+
+    const controller = makeController(makeStorage({}))
+    await controller.resolveDomain({ domain: 'vitalik.eth' })
+
+    expect(controller.domains[ADDR]!.ensExpiry).toEqual(expiry)
+  })
+
+  it('does not refetch the expiry when a fresh one is already cached', async () => {
+    jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [ADDR]: { name: 'vitalik.eth', failed: false } })
+    jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+    const getEnsExpirySpy = jest.spyOn(ensDomainsModule, 'getEnsExpiry')
+
+    // Cached expiry: far from the deadline and freshly fetched, so a refetch must NOT happen.
+    const cachedExpiry = {
+      expiresAt: EXPIRES_AT,
+      gracePeriodEndsAt: GRACE_PERIOD_ENDS_AT,
+      updatedAt: Date.now()
+    }
+    const controller = makeController(seedStaleEntry(cachedExpiry))
+
+    await controller.init([
+      {
+        name: 'test',
+        address: ADDR,
+        isWalletAccount: true
+      }
+    ])
+
+    await controller.reverseLookup(ADDR, true, {
+      privacyUpdateMode: 'whenStale',
+      updateExpiry: true
+    })
+
+    expect(getEnsExpirySpy).not.toHaveBeenCalled()
+    expect(controller.domains[ADDR]!.ensExpiry).toEqual(cachedExpiry)
+  })
+
+  it('does not fetch the expiry when updateExpiry is not requested', async () => {
+    jest
+      .spyOn(ensDomainsModule, 'reverseLookupEns')
+      .mockResolvedValue({ [ADDR]: { name: 'vitalik.eth', failed: false } })
+    jest.spyOn(ensDomainsModule, 'getEnsAvatar').mockResolvedValue(null)
+    const getEnsExpirySpy = jest.spyOn(ensDomainsModule, 'getEnsExpiry')
+
+    const controller = makeController(seedStaleEntry())
+    await controller.reverseLookup(ADDR, true, { privacyUpdateMode: 'whenStale' })
+
+    expect(getEnsExpirySpy).not.toHaveBeenCalled()
+    expect(controller.domains[ADDR]!.ensExpiry).toBeUndefined()
+  })
+})
+
+describe('shouldRefetchEnsExpiry', () => {
+  const WARN_WINDOW = ensDomainsModule.ENS_EXPIRY_WARN_WINDOW_IN_MS
+  const makeEntry = (ensExpiry: ensDomainsModule.NameExpiry | null | undefined) =>
+    ({ ens: 'vitalik.eth', namoshi: null, ensExpiry }) as any
+
+  it('refetches when never fetched (no entry / undefined / null)', () => {
+    expect(shouldRefetchEnsExpiry(undefined)).toBe(true)
+    expect(shouldRefetchEnsExpiry(makeEntry(undefined))).toBe(true)
+    expect(shouldRefetchEnsExpiry(makeEntry(null))).toBe(true)
+  })
+
+  it('does NOT refetch when far from the deadline, even if the cache is old', () => {
+    const farExpiry = {
+      expiresAt: Date.now() + WARN_WINDOW * 2,
+      gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
+      // Old cache, but it must not matter while far from the deadline.
+      updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS * 2
+    }
+    expect(shouldRefetchEnsExpiry(makeEntry(farExpiry))).toBe(false)
+  })
+
+  it('does NOT refetch when close to the deadline but freshly fetched', () => {
+    const closeFresh = {
+      expiresAt: Date.now(),
+      gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
+      updatedAt: Date.now()
+    }
+    expect(shouldRefetchEnsExpiry(makeEntry(closeFresh))).toBe(false)
+  })
+
+  it('refetches when close to the deadline and the cache is stale', () => {
+    const closeStale = {
+      expiresAt: Date.now(),
+      gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
+      updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS - 60_000
+    }
+    expect(shouldRefetchEnsExpiry(makeEntry(closeStale))).toBe(true)
+  })
+
+  describe('subnames', () => {
+    // A subname's expiry (set via NameWrapper `setChildFuses`) can be shortened at any time by the
+    // parent name's owner, unlike a .eth 2LD's registrar expiry which can only increase.
+    const makeSubnameEntry = (ensExpiry: ensDomainsModule.NameExpiry | null | undefined) =>
+      ({ ens: 'someone.ambire.eth', namoshi: null, ensExpiry }) as any
+
+    it('refetches once the subname TTL elapses, even far from the deadline', () => {
+      const staleFar = {
+        expiresAt: Date.now() + WARN_WINDOW * 2,
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
+        updatedAt: Date.now() - PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS - 60_000
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(staleFar))).toBe(true)
+    })
+
+    it('does NOT refetch before the subname TTL elapses, when far from the deadline', () => {
+      const freshFar = {
+        expiresAt: Date.now() + WARN_WINDOW * 2,
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW * 2,
+        updatedAt: Date.now() - PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS + 60_000
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(freshFar))).toBe(false)
+    })
+
+    it('still refetches close to the deadline via the hourly check, even while within the subname TTL', () => {
+      const closeStaleWithinSubnameTtl = {
+        expiresAt: Date.now(),
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
+        updatedAt: Date.now() - PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS - 60_000
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(closeStaleWithinSubnameTtl))).toBe(true)
+    })
+
+    it('does NOT refetch when within both the subname TTL and the hourly close-to-deadline window', () => {
+      const closeFreshWithinSubnameTtl = {
+        expiresAt: Date.now(),
+        gracePeriodEndsAt: Date.now() + WARN_WINDOW - 60_000,
+        updatedAt: Date.now()
+      }
+      expect(shouldRefetchEnsExpiry(makeSubnameEntry(closeFreshWithinSubnameTtl))).toBe(false)
+    })
   })
 })

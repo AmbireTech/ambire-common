@@ -5,6 +5,7 @@ import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { SiweMessage } from '@signinwithethereum/siwe'
 
+import { DEFAULT_AUTO_LOGIN_DURATION_OPTION } from '../../consts/autoLogin'
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
   AutoLoginPoliciesByAccount,
@@ -57,27 +58,6 @@ const normalizeSiweAuthority = (hostAndPort: string): string | null => {
  * A list of default policies for popular apps
  */
 const DEFAULT_POLICIES: DefaultAutoLoginPolicy[] = []
-
-const DEFAULT_AUTO_LOGIN_DURATION_OPTION = {
-  label: '30 days',
-  value: 30 * 24 * 60 * 60 * 1000
-}
-
-// Implemented here to ensure consistency between the controller and the UI
-// Also, in the future when the duration setting becomes exposed to the UI we
-// will need to validate the input from the UI, so these will be useful
-export const AUTO_LOGIN_DURATION_OPTIONS = [
-  { label: '24 hours', value: 24 * 60 * 60 * 1000 },
-  {
-    label: '7 days',
-    value: 7 * 24 * 60 * 60 * 1000
-  },
-  {
-    label: '14 days',
-    value: 14 * 24 * 60 * 60 * 1000
-  },
-  DEFAULT_AUTO_LOGIN_DURATION_OPTION
-]
 
 /**
  * The controller handles SIWE-like messages and provides auto-login functionality.

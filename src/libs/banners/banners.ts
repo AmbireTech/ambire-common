@@ -1,3 +1,6 @@
+import { FEE_COLLECTOR } from '@/consts/addresses'
+import { ENS_EXPIRY_WARN_WINDOW_IN_MS } from '@/services/ensDomains'
+
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
@@ -5,7 +8,7 @@ import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
-import { getSameNonceRequests } from '../safe/safe'
+import { getSameNonceRequests } from '../safe/helpers'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -277,6 +280,59 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     ]
   }
   return banner
+}
+
+export const ensExpiryBannerId = 'ens-expiry-banner'
+
+/**
+ * Banner warning that the selected account's own ENS name is expiring soon or is in the grace period.
+ * Escalates from a warning to an error once the name has expired.
+ */
+export const getEnsExpiryBanner = ({
+  accountAddr,
+  ens,
+  expiresAt,
+  gracePeriodEndsAt
+}: {
+  accountAddr: string
+  ens: string
+  expiresAt: number
+  gracePeriodEndsAt: number
+}): Banner | null => {
+  const now = Date.now()
+
+  if (now < expiresAt - ENS_EXPIRY_WARN_WINDOW_IN_MS) return null
+  if (now > gracePeriodEndsAt) return null
+
+  const hasExpired = now > expiresAt
+  const type: BannerType = hasExpired ? 'error' : 'warning'
+
+  return {
+    id: ensExpiryBannerId,
+    type,
+    title: hasExpired
+      ? `Your ENS name ${ens} has expired`
+      : `Your ENS name ${ens} is expiring soon`,
+    text: hasExpired
+      ? 'It is in the grace period. Renew it now - once released, the name can be taken over and funds others send to it could reach someone else.'
+      : 'Renew it to keep ownership. Expired names can be taken over, and funds others send to the name could reach someone else.',
+    actions: [
+      {
+        actionName: 'open-external-url',
+        meta: {
+          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`
+        },
+        label: 'Renew'
+      }
+    ],
+    dismissAction: {
+      actionName: 'dismiss-ens-expiry-banner',
+      label: 'Dismiss'
+    },
+    meta: {
+      accountAddr
+    }
+  }
 }
 
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
