@@ -594,21 +594,61 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.closeRequestWindow()
   }
 
-  // When the wallet runs in the Chrome side panel and the panel is open, the action
-  // requests are rendered inside the panel itself (over the dashboard) instead of a
-  // separate request window. A side-panel view only exists in `views` while the panel
-  // is open, so its presence is the signal to skip the window entirely.
+  // When the wallet runs in Chrome side-panel mode, action requests are rendered
+  // inside the panel itself instead of a separate request window. Prefer the
+  // persisted mode flag (survives brief view/port races) and fall back to an
+  // already-open side-panel view.
   get #isSidePanelOpen() {
     return this.#ui.views.some((view) => view.type === 'side-panel')
+  }
+
+  async #shouldHandleRequestsInSidePanel() {
+    if (this.#isSidePanelOpen) return true
+
+    try {
+      return !!(await this.#storage.get('isSidePanelModeEnabled', false))
+    } catch {
+      return false
+    }
+  }
+
+  // Drop a request-window chrome popup without dismissing the active request —
+  // used when side-panel mode should own the request UI instead.
+  async #discardRequestWindowShell() {
+    if (!this.requestWindow.windowProps) return
+
+    const winId = this.requestWindow.windowProps.id
+    this.requestWindow.windowProps = null
+    this.requestWindow.loaded = false
+    this.requestWindow.pendingMessage = null
+
+    try {
+      await this.#ui.window.remove(winId)
+    } catch (error) {
+      console.error('Failed to discard request window shell', error)
+    }
+  }
+
+  async #presentRequestInSidePanel(baseWindowId?: number) {
+    await this.#discardRequestWindowShell()
+
+    if (!this.#isSidePanelOpen) {
+      try {
+        await this.#ui.openSidePanel?.(baseWindowId)
+      } catch (error) {
+        console.error('Failed to open side panel for request', error)
+      }
+    }
+
+    await this.forceEmitUpdate()
   }
 
   async openRequestWindow(params?: OpenRequestWindowParams) {
     const { skipFocus, baseWindowId } = params || {}
     await this.#awaitPendingPromises()
 
-    if (this.#isSidePanelOpen) {
-      // The side panel reacts to `currentUserRequest` and renders the request in-place.
-      await this.forceEmitUpdate()
+    if (await this.#shouldHandleRequestsInSidePanel()) {
+      await this.#presentRequestInSidePanel(baseWindowId)
       return
     }
 
@@ -631,12 +671,25 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       try {
         await this.#ui.window.remove('popup')
+
+        // Side-panel mode / view can become available while we wait for overlay cleanup.
+        if (await this.#shouldHandleRequestsInSidePanel()) {
+          await this.#presentRequestInSidePanel(baseWindowId)
+          return
+        }
+
         this.requestWindow.openWindowPromise = this.#ui.window
           .open({ customSize, baseWindowId })
           .finally(() => {
             this.requestWindow.openWindowPromise = undefined
           })
         this.requestWindow.windowProps = await this.requestWindow.openWindowPromise
+
+        // If side-panel mode took over during window creation, discard the popup shell.
+        if (await this.#shouldHandleRequestsInSidePanel()) {
+          await this.#presentRequestInSidePanel(baseWindowId)
+          return
+        }
 
         this.emitUpdate()
       } catch (err) {
@@ -653,9 +706,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async focusRequestWindow(params?: FocusWindowParams) {
     await this.#awaitPendingPromises()
 
-    // In side-panel mode there is no separate window to focus; the panel already shows it.
-    if (this.#isSidePanelOpen) {
-      await this.forceEmitUpdate()
+    if (await this.#shouldHandleRequestsInSidePanel()) {
+      await this.#presentRequestInSidePanel()
       return
     }
 

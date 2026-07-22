@@ -17,6 +17,8 @@ export class UiController extends EventEmitter implements IUiController {
 
   dispatchDappTabFocus?: UiManager['dispatchDappTabFocus']
 
+  openSidePanel?: UiManager['openSidePanel']
+
   constructor({
     eventEmitterRegistry,
     uiManager
@@ -31,6 +33,7 @@ export class UiController extends EventEmitter implements IUiController {
     this.notification = uiManager.notification
     this.message = uiManager.message
     this.dispatchDappTabFocus = uiManager.dispatchDappTabFocus
+    this.openSidePanel = uiManager.openSidePanel
   }
 
   addView(view: View) {
@@ -106,7 +109,8 @@ export class UiController extends EventEmitter implements IUiController {
       uiEvent: undefined,
       window: undefined,
       notification: undefined,
-      message: undefined
+      message: undefined,
+      openSidePanel: undefined
     }
   }
 }

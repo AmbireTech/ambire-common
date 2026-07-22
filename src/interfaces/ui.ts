@@ -57,6 +57,8 @@ export type UiManager = {
   }
   // Extension-only: nudge a dapp tab after side-panel requests so React Query refetches.
   dispatchDappTabFocus?: (targets: { tabId: number; windowId?: number }[]) => void
+  // Extension-only: open the Chrome side panel for in-panel action requests.
+  openSidePanel?: (windowId?: number) => Promise<void>
 }
 
 export type WindowId = number
