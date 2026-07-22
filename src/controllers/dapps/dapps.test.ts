@@ -1654,7 +1654,7 @@ describe('DappsController', () => {
 
     test('fetches, normalizes and filters invalid entries on load', async () => {
       const { controller } = await prepareTest(seedStorage)
-      await controller.continuouslyUpdateTrendingTokens()
+      await controller.updateTrendingTokens()
 
       // The third fixture entry has no price and must be dropped.
       expect(controller.trendingTokens).toHaveLength(2)
@@ -1686,7 +1686,7 @@ describe('DappsController', () => {
 
     test('persists fetched trending tokens to storage', async () => {
       const { controller, mainCtrl } = await prepareTest(seedStorage)
-      await controller.continuouslyUpdateTrendingTokens()
+      await controller.updateTrendingTokens()
 
       const stored = await mainCtrl.storage.get('trending', { updatedAt: 0, tokens: [] })
       expect(stored.tokens).toHaveLength(2)
@@ -1723,7 +1723,7 @@ describe('DappsController', () => {
       expect(controller.trendingTokens).toEqual([seeded])
     })
 
-    test('keeps trending empty and backs off the interval when the fetch fails', async () => {
+    test('keeps trending empty and throws when the fetch fails', async () => {
       const { restore } = suppressConsole()
       const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
         if (url === 'https://api.llama.fi/protocols')
@@ -1734,15 +1734,9 @@ describe('DappsController', () => {
         return fetch(url, ...args)
       })
 
-      try {
-        await controller.continuouslyUpdateTrendingTokens()
-      } catch {
-        // The wrapper rethrows after switching to the failed-retry interval; expected here.
-      }
-
+      // Throws so the ContinuousUpdatesController scheduler can back off its retry cadence.
+      await expect(controller.updateTrendingTokens()).rejects.toThrow()
       expect(controller.trendingTokens).toEqual([])
-      // 1 minute failed-retry cadence (TRENDING_TOKENS_FAILED_UPDATE_INTERVAL).
-      expect(controller.updateTrendingTokensInterval.currentTimeout).toBe(60 * 1000)
       restore()
     })
   })

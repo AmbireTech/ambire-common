@@ -18,10 +18,6 @@ import {
   predefinedDapps
 } from '../../consts/dapps/dapps'
 import {
-  TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
-  TRENDING_TOKENS_UPDATE_INTERVAL
-} from '../../consts/intervals'
-import {
   ConnectionSource,
   Dapp,
   DAPP_VERIFICATION_BANNER_IDS,
@@ -115,16 +111,14 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #trendingTokensUpdatedAt: number | null = null
 
-  #updateTrendingTokensInterval: IRecurringTimeout
-
-  #continuouslyUpdateTrendingTokensPromise?: Promise<void>
-
   get trendingTokens(): TrendingToken[] {
     return this.#trendingTokens
   }
 
-  get updateTrendingTokensInterval() {
-    return this.#updateTrendingTokensInterval
+  // Timestamp of the last successful trending-tokens fetch. Read by the
+  // ContinuousUpdatesController which owns the trending update interval.
+  get trendingTokensUpdatedAt(): number | null {
+    return this.#trendingTokensUpdatedAt
   }
 
   get shouldRetryFetchAndUpdate() {
@@ -181,13 +175,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#retryFetchAndUpdateInterval = new RecurringTimeout(
       this.fetchAndUpdateDapps.bind(this),
       5 * 60 * 1000 // 5min.
-    )
-
-    // Trending tokens are refreshed server-side every 10 minutes; poll at the same cadence.
-    this.#updateTrendingTokensInterval = new RecurringTimeout(
-      () => this.continuouslyUpdateTrendingTokens(),
-      TRENDING_TOKENS_UPDATE_INTERVAL,
-      this.emitError.bind(this)
     )
 
     this.#ui.uiEvent.on('addView', () => {
@@ -290,8 +277,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
-
-    this.#updateTrendingTokensInterval.start({ runImmediately: true })
 
     void this.fetchAndUpdateDapps()
   }
@@ -549,44 +534,12 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Wrapper around #continuouslyUpdateTrendingTokens that:
-   * 1) deduplicates concurrent triggers via a shared promise
-   * 2) switches to the failed-retry interval when the fetch/update flow throws
+   * Fetches, normalizes and persists the trending tokens. Throws on a failed fetch or a
+   * malformed response so the caller can react (e.g. back off its retry cadence). The update
+   * interval and its lifecycle are owned by the ContinuousUpdatesController.
    */
-  async continuouslyUpdateTrendingTokens() {
-    if (this.#continuouslyUpdateTrendingTokensPromise) {
-      await this.#continuouslyUpdateTrendingTokensPromise
-
-      return
-    }
-
-    this.#continuouslyUpdateTrendingTokensPromise = this.#continuouslyUpdateTrendingTokens()
-      .catch((err) => {
-        this.#updateTrendingTokensInterval.updateTimeout({
-          timeout: TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
-        })
-        throw err
-      })
-      .finally(() => {
-        this.#continuouslyUpdateTrendingTokensPromise = undefined
-      })
-
-    await this.#continuouslyUpdateTrendingTokensPromise
-  }
-
-  async #continuouslyUpdateTrendingTokens() {
-    // Skip if the last successful update is still fresh — prevents redundant requests when the
-    // background reloads multiple times within a short period (e.g. service worker wake-ups).
-    const timeSinceLastUpdate = this.#trendingTokensUpdatedAt
-      ? Date.now() - this.#trendingTokensUpdatedAt
-      : null
-    if (
-      this.#trendingTokensUpdatedAt &&
-      timeSinceLastUpdate !== null &&
-      timeSinceLastUpdate < this.#updateTrendingTokensInterval.currentTimeout
-    ) {
-      return
-    }
+  async updateTrendingTokens() {
+    await this.initialLoadPromise
 
     const res = await fetchWithTimeout(this.#fetch, TRENDING_TOKENS_URL, {}, 30000)
 
@@ -606,13 +559,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
 
     await this.#storage.set('trending', { updatedAt, tokens: this.#trendingTokens })
-
-    // Recover the normal cadence after a previously failed fetch bumped it down.
-    if (
-      this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
-    ) {
-      this.#updateTrendingTokensInterval.updateTimeout({ timeout: TRENDING_TOKENS_UPDATE_INTERVAL })
-    }
   }
 
   async #createDappSession(initProps: SessionInitProps) {
@@ -1472,8 +1418,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       trendingTokens: this.trendingTokens,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
       retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
-      retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts,
-      updateTrendingTokensInterval: this.updateTrendingTokensInterval
+      retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts
     }
   }
 }
