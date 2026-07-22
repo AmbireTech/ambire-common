@@ -153,6 +153,7 @@ import HumanizationController from '../humanization/humanization'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
+  getSafeDelegateCallWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -1337,6 +1338,9 @@ export class SignAccountOpController
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
+
+    const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
+    if (safeDelegateCallWarning) warnings.push(safeDelegateCallWarning)
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]

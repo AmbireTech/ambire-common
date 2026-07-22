@@ -30,6 +30,12 @@ const WARNINGS: { [key: string]: Warning } = {
   v1Acc: {
     id: 'v1Acc',
     title: 'You can only broadcast transactions for Ambire v1 accounts from an EOA'
+  },
+  safeDelegateCall: {
+    id: 'safeDelegateCall',
+    title: 'Delegate call to an unverified contract',
+    text: 'This Safe transaction delegates permissions to a contract not whitelisted by Safe. Proceed with caution.',
+    promptBefore: ['sign', 'one-click-sign']
   }
 }
 
