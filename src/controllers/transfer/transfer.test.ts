@@ -9,7 +9,6 @@ import { networks } from '../../consts/networks'
 import { TokenResult } from '../../libs/portfolio'
 import * as ensDomainsModule from '../../services/ensDomains'
 import { DomainsController } from '../domains/domains'
-import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -247,11 +246,12 @@ describe('Transfer Controller', () => {
       providers: { ['1']: provider },
       verification: {
         getReadyProvider: jest.fn(() => verificationProvider)
-      } as any
+      } as any,
+      isNetworkEnabled: (chainId: bigint) => !!networks.find((n) => n.chainId === chainId)
     })
     const resolveENSDomainSpy = jest
       .spyOn(ensDomainsModule, 'resolveENSDomain')
-      .mockResolvedValue({ address: resolvedAddress, avatar: null })
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
 
     try {
       await domainsController.resolveDomain({ domain })
