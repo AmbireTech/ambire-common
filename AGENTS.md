@@ -37,6 +37,7 @@ Note: This package does not include compiled JS and TS output in the repository.
 - NEVER stage changes unless explicitly requested by user
 - Avoid TypeScript casts when possible. Prefer narrowing with if statements, discriminated unions, assertion functions, and type guards. Cast only at trusted boundaries, and keep it local
 - Avoid regex for parsing strings or business logic. Prefer explicit parsing, small helper functions, existing parsers or available library functions.
+- All warnings, errors, and other user-facing strings (controller `errors`/banners, e.g. `signAccountOp.ts`, `swapAndBridge.ts`; humanized strings in `src/libs/humanizer`, `src/libs/errorHumanizer`) must be phrased in plain language a non-technical user can understand. NEVER assume Web3/blockchain knowledge — avoid unexplained jargon (e.g. "RPC", "nonce", "gas limit", "Paymaster", "Bundler", "EOA", "Smart Account", "delegatecall", "calldata", "simulation failed") and instead describe the real-world action, cause, or risk in plain terms (e.g. "a pending transaction" instead of "nonce too low", "insufficient funds to cover the fee" instead of "low gas")
 
 ## Tests:
 - ALWAYS write test cases that cover positive, negative, edge cases and security implications of the code you change or add.
