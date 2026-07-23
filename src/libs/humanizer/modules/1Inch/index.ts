@@ -34,7 +34,7 @@ const swapWithPermitAbi = parseAbi([
   'function swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
 ])
 
-const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const OneInchModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(cancelOrderAbi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: cancelOrderAbi, data: call.data })
@@ -96,13 +96,9 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       ]
     }
   }
-  const newCalls = calls.map((call) => {
-    const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !isHexCall(call) || !match) return call
-    return { ...call, fullVisualization: match(call) }
-  })
-
-  return newCalls
+  const match = matcher[call.data.slice(0, 10)]
+  if (call.fullVisualization || !isHexCall(call) || !match) return call
+  return { ...call, fullVisualization: match(call) }
 }
 
 export default OneInchModule

@@ -19,10 +19,7 @@ const distributors: { [distributor: string]: string } = {
 }
 const WTC_TOKEN_ADDRESS = '0xeF4461891DfB3AC8572cCf7C794664A8DD927945'
 
-export const airdropsModule: HumanizerCallModule = (
-  accountOp: AccountOp,
-  currentIrCalls: IrCall[]
-) => {
+export const airdropsModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher = {
     [toFunctionSelector(claimTokensAbi[0])]: (call: HexIrCall): IrCall => {
       if (call.to !== '0x4ee97a759AACa2EdF9c1445223b6Cd17c2eD3fb4') return call
@@ -39,10 +36,8 @@ export const airdropsModule: HumanizerCallModule = (
       return { ...call, fullVisualization: [getAction('Claim'), getToken(STK_WALLET, amount)] }
     }
   }
-  return currentIrCalls.map((call) => {
-    if (!isHexCall(call)) return call
-    const selectedParser = matcher[call.data.slice(0, 10)]
-    if (!selectedParser) return call
-    return selectedParser(call)
-  })
+  if (!isHexCall(call)) return call
+  const selectedParser = matcher[call.data.slice(0, 10)]
+  if (!selectedParser) return call
+  return selectedParser(call)
 }

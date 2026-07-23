@@ -44,10 +44,7 @@ const erc20DecreaseApprovalAbi = parseAbi([
   'function decreaseApproval(address _spender, uint256 _subtractedValue) returns (bool)'
 ])
 
-export const genericErc721Humanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
-  currentIrCalls: IrCall[]
-) => {
+export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const nftTransferVisualization = (
     call: HexIrCall,
     abi: typeof erc721SafeTransferFromAbi | typeof erc721TransferFromAbi
@@ -111,18 +108,16 @@ export const genericErc721Humanizer: HumanizerCallModule = (
       nftTransferVisualization(call, erc721TransferFromAbi)
   }
 
-  return currentIrCalls.map((call) => {
-    if (!call.to) return call
-    if (!isHexCall(call)) return call
-    const selector = call.data.substring(0, 10)
-    return matcher[selector] ? { ...call, fullVisualization: matcher[selector](call) } : call
-  })
+  if (!call.to) return call
+  if (!isHexCall(call)) return call
+  const selector = call.data.substring(0, 10)
+  return matcher[selector] ? { ...call, fullVisualization: matcher[selector](call) } : call
 }
 
 export const genericErc20Humanizer = (
   { accountAddr }: { accountAddr: string },
-  currentIrCalls: IrCall[]
-): IrCall[] => {
+  call: IrCall
+): IrCall => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(erc20ApproveAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
@@ -243,10 +238,8 @@ export const genericErc20Humanizer = (
     }
   }
 
-  return currentIrCalls.map((call) => {
-    if (!call.to) return call
-    if (!isHexCall(call)) return call
-    const sigHash = call.data.substring(0, 10)
-    return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](call) } : call
-  })
+  if (!call.to) return call
+  if (!isHexCall(call)) return call
+  const sigHash = call.data.substring(0, 10)
+  return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](call) } : call
 }

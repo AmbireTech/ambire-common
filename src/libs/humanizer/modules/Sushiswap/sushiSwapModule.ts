@@ -16,7 +16,7 @@ const processRouteAbi = parseAbi([
   'function processRoute(address tokenIn, uint256 amountIn, address tokenOut, uint256 amountOutMin, address to, bytes route) payable returns (uint256 amountOut)'
 ])
 
-export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
+export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher = {
     [toFunctionSelector(processRouteAbi[0])]: (call: HexIrCall): IrCall => {
       const { args } = decodeFunctionData({ abi: processRouteAbi, data: call.data })
@@ -36,11 +36,8 @@ export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCal
       }
     }
   }
-  const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
-    if (!isHexCall(call)) return call
-    const match = matcher[call.data.slice(0, 10)]
-    if (!match) return call
-    return match(call)
-  })
-  return newCalls
+  if (!isHexCall(call)) return call
+  const match = matcher[call.data.slice(0, 10)]
+  if (!match) return call
+  return match(call)
 }

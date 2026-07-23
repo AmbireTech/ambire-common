@@ -16,7 +16,7 @@ const approveAbi = parseAbi([
   'function approve(address token, address spender, uint160 amount, uint48 expiration)'
 ])
 
-const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const PancakeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(approveAbi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: approveAbi, data: call.data })
@@ -39,13 +39,9 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       ]
     }
   }
-  const newCalls = calls.map((call) => {
-    const selector = call.data.slice(0, 10)
-    if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
-    return { ...call, fullVisualization: matcher[selector](call) }
-  })
-
-  return newCalls
+  const selector = call.data.slice(0, 10)
+  if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
+  return { ...call, fullVisualization: matcher[selector](call) }
 }
 
 export default PancakeModule

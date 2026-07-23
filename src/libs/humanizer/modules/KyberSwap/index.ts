@@ -11,7 +11,7 @@ const swapSimpleModeAbi = parseAbi([
   'function swapSimpleMode(address caller,(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes executorData,bytes clientData) returns (uint256,uint256)'
 ])
 
-const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const KyberModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(swapAbi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
@@ -36,13 +36,9 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => 
       ]
     }
   }
-  const newCalls = calls.map((call) => {
-    const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !isHexCall(call) || !match) return call
-    return { ...call, fullVisualization: match(call) }
-  })
-
-  return newCalls
+  const match = matcher[call.data.slice(0, 10)]
+  if (call.fullVisualization || !isHexCall(call) || !match) return call
+  return { ...call, fullVisualization: match(call) }
 }
 
 export default KyberModule

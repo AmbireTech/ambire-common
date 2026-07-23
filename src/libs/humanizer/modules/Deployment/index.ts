@@ -4,16 +4,12 @@ import { getAction } from '../../utils'
 
 export const deploymentModule: HumanizerCallModule = (
   _: AccountOp,
-  irCalls: IrCall[]
+  call: IrCall
   // humanizerMeta: HumanizerMeta
-) => {
-  const newCalls = irCalls.map((irCall) =>
-    irCall.to === undefined
-      ? {
-          ...irCall,
-          fullVisualization: [getAction('Deploy a smart contract')]
-        }
-      : irCall
-  )
-  return newCalls
-}
+) =>
+  call.to === undefined
+    ? {
+        ...call,
+        fullVisualization: [getAction('Deploy a smart contract')]
+      }
+    : call

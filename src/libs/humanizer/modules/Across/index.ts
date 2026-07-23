@@ -24,7 +24,7 @@ const depositWithSpokePoolAbi = parseAbi([
   'function deposit(address spokePool,address recipient,address originToken,uint256 amount,uint256 destinationChainId,int64 relayerFeePct,uint32 quoteTimestamp,bytes message,uint256 maxCount) payable'
 ])
 
-const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const AcrossModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(depositV3Abi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: depositV3Abi, data: call.data })
@@ -75,13 +75,9 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =>
       ]
     }
   }
-  const newCalls = calls.map((call) => {
-    const selector = call.data.slice(0, 10)
-    if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
-    return { ...call, fullVisualization: matcher[selector](call) }
-  })
-
-  return newCalls
+  const selector = call.data.slice(0, 10)
+  if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
+  return { ...call, fullVisualization: matcher[selector](call) }
 }
 
 export default AcrossModule

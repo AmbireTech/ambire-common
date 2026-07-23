@@ -134,14 +134,17 @@ type HumanizeMessageOptions = {
 const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
 
-  let currentCalls: IrCall[] = accountOp.calls
-  humanizerCallModules.forEach((hm) => {
-    try {
-      currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta)
-    } catch (error) {
-      console.error(error)
-      // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
-    }
+  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall) => {
+    let currentCall: IrCall = originalCall
+    humanizerCallModules.forEach((hm) => {
+      try {
+        currentCall = hm(accountOp, currentCall, humanizerInfo as HumanizerMeta)
+      } catch (error) {
+        console.error(error)
+        // No action is needed here; we only update `currentCall` if the module successfully resolves it.
+      }
+    })
+    return currentCall
   })
 
   if (options?.erc7730Descriptors) {

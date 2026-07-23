@@ -98,7 +98,7 @@ describe('AAVE', () => {
     ]
     accountOp.calls = [...transactions.aaveLendingPoolV2, ...transactions.aaveWethGatewayV2]
     let irCalls: IrCall[] = accountOp.calls
-    irCalls = aaveHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = irCalls.map((c) => aaveHumanizer(accountOp, c, humanizerInfo as HumanizerMeta))
     compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 })

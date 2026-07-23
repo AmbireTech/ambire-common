@@ -77,7 +77,9 @@ describe('CowSwap', () => {
       }
     ]
 
-    const irCalls = CowSwapModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      CowSwapModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, [
       [
         getAction('Swap'),
@@ -124,7 +126,9 @@ describe('CowSwap', () => {
       getDeadline(validTo)
     ]
 
-    const irCalls = CowSwapModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      CowSwapModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, [
       [getAction('Pre-sign CowSwap order'), ...orderUidVisualization],
       [getAction('Cancel CowSwap order'), ...orderUidVisualization]
