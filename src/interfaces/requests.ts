@@ -84,5 +84,7 @@ export type BuildRequest =
         messageHash: Hex
         created: number
         signatures: Hex[]
+        dappName?: string
+        dappUrl?: string
       }
     }

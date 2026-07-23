@@ -67,6 +67,10 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import {
+  AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
+  isAmbireOperationTypedData
+} from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   getClaimWalletRequestParams,
@@ -396,6 +400,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     for (const req of reqs) {
       const { kind, meta, dappPromises } = req
+
+      if (
+        kind === 'typedMessage' &&
+        isAmbireOperationTypedData((meta as TypedMessageUserRequest['meta']).params)
+      ) {
+        this.#rejectAmbireOperationTypedDataRequest(req as TypedMessageUserRequest)
+        continue
+      }
 
       if (allowAccountSwitch && isSignRequest(kind)) {
         if ((meta as SignUserRequest['meta']).accountAddr !== this.#selectedAccount.account?.addr) {
@@ -1011,7 +1023,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
 
         requestsToAddOrRemove.forEach((r) => {
-          this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+          this.userRequestsWaitingAccountSwitch.splice(
+            this.userRequestsWaitingAccountSwitch.indexOf(r),
+            1
+          )
+
+          if (
+            r.kind === 'typedMessage' &&
+            isAmbireOperationTypedData((r as TypedMessageUserRequest).meta.params)
+          ) {
+            this.#rejectAmbireOperationTypedDataRequest(r as TypedMessageUserRequest)
+            return
+          }
+
           userRequestsToAdd.push(r)
         })
       }
@@ -1079,16 +1103,35 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       shouldOpenNextRequest?: boolean
     }
   ) {
-    this.userRequests
-      .filter((r) => requestIds.includes(r.id))
-      .forEach(async (r) => {
-        r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+    const userRequestsToReject = this.userRequests.filter((r) => requestIds.includes(r.id))
+    const rejectedSwitchAccountRequestIds = userRequestsToReject
+      .filter((r) => r.kind === 'switchAccount')
+      .map((r) => r.id)
+    const waitingUserRequestsToReject = this.userRequestsWaitingAccountSwitch.filter((r) =>
+      rejectedSwitchAccountRequestIds.includes(r.meta.switchAccountRequestId)
+    )
 
-        // Done here because remove handles approved requests too. We want this logic only on reject
-        if (r.kind === 'calls') {
-          await this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
-        }
-      })
+    userRequestsToReject.forEach((r) => {
+      r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+    })
+
+    const callsUserRequestsToReject = [
+      ...userRequestsToReject,
+      ...waitingUserRequestsToReject
+    ].filter((r) => r.kind === 'calls') as CallsUserRequest[]
+
+    await Promise.all(
+      callsUserRequestsToReject.map((r) =>
+        this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
+      )
+    )
+
+    waitingUserRequestsToReject.forEach((r) => {
+      if (r.kind === 'calls') r.signAccountOp.destroy()
+    })
+    this.userRequestsWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.filter(
+      (r) => !waitingUserRequestsToReject.includes(r)
+    )
 
     await this.removeUserRequests(requestIds, options)
   }
@@ -1402,11 +1445,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
-      if (
-        msgAddress === this.#selectedAccount.account.addr &&
-        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
-      ) {
-        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
+      if (isAmbireOperationTypedData(typedData)) {
+        throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
       }
 
       userRequest = {
@@ -1551,7 +1591,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     message,
     messageHash,
     created,
-    signatures
+    signatures,
+    dappName,
+    dappUrl
   }: {
     chainId: bigint
     signed: string[]
@@ -1559,6 +1601,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     messageHash: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1577,7 +1621,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           signed,
           hash: messageHash,
           created,
-          signatures
+          signatures,
+          dappName,
+          dappUrl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1608,7 +1654,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         signed,
         hash: messageHash,
         created,
-        signatures
+        signatures,
+        dappName,
+        dappUrl
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1818,21 +1866,29 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (userRequest) await this.addUserRequests([userRequest])
   }
 
+  #rejectAmbireOperationTypedDataRequest(req: TypedMessageUserRequest) {
+    req.dappPromises.forEach((p) => {
+      p.reject(ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE))
+    })
+  }
+
   async #addSwitchAccountUserRequest(req: SignUserRequest) {
+    if (req.kind === 'typedMessage' && isAmbireOperationTypedData(req.meta.params)) {
+      this.#rejectAmbireOperationTypedDataRequest(req)
+      return
+    }
+
+    const switchAccountUserRequest = buildSwitchAccountUserRequest({
+      nextUserRequest: req,
+      selectedAccountAddr: req.meta.accountAddr,
+      dappPromises: req.dappPromises
+    })
+    req.meta.switchAccountRequestId = switchAccountUserRequest.id
     this.userRequestsWaitingAccountSwitch.push(req)
-    await this.addUserRequests(
-      [
-        buildSwitchAccountUserRequest({
-          nextUserRequest: req,
-          selectedAccountAddr: req.meta.accountAddr,
-          dappPromises: req.dappPromises
-        })
-      ],
-      {
-        position: 'last',
-        executionType: 'open-request-window'
-      }
-    )
+    await this.addUserRequests([switchAccountUserRequest], {
+      position: 'last',
+      executionType: 'open-request-window'
+    })
   }
 
   // ! IMPORTANT !

@@ -4,6 +4,7 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
   DAPP_VERIFICATION_BANNER_IDS,
@@ -28,6 +29,7 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
@@ -39,15 +41,18 @@ import {
   getSigningRequestDisplayData
 } from '../../libs/signingRequest/signingRequest'
 import {
+  AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   getAppFormatted,
   getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
   getSafeMessageTypedData,
-  getVerifyMessageSignature
+  getVerifyMessageSignature,
+  isAmbireOperationTypedData
 } from '../../libs/signMessage/signMessage'
 import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { withTimeout } from '../../utils/with-timeout'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'
 
@@ -78,6 +83,11 @@ export class SignMessageController
   #dapps?: IDappsController
 
   #callRelayer?: BindedRelayerCall
+
+  // Bumped on every init()/reset(); a signing op captures it before its first
+  // await and re-checks after each, so a request replacing the message mid-sign
+  // can't be signed under the previous approval.
+  #signingGeneration = 0
 
   signer?: KeystoreSignerInterface
 
@@ -185,6 +195,7 @@ export class SignMessageController
     ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
+      this.#signingGeneration += 1
       this.signed = signed || []
       this.signatures = signatures || []
       this.isInitialized = true
@@ -254,6 +265,7 @@ export class SignMessageController
     if (!this.isInitialized) return
 
     this.#onAbortOperation()
+    this.#signingGeneration += 1
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
@@ -428,25 +440,46 @@ export class SignMessageController
 
   /**
    * Checks if the signing operation is still valid after each async step, to guard
-   * against a race condition where the operation is reset before the async operation is completed.
+   * against a race condition where the operation is reset or the installed message is
+   * replaced before the async operation is completed. The `signingGeneration` captured
+   * at the start of the operation must still match, otherwise a same-kind request that
+   * called init() mid-signing would get its payload signed under the previous approval.
    */
-  #isSigningOperationValidAfterAsyncOperation() {
-    return this.isInitialized && !!this.messageToSign
+  #isSigningOperationValidAfterAsyncOperation(signingGeneration: number) {
+    return (
+      this.isInitialized && !!this.messageToSign && this.#signingGeneration === signingGeneration
+    )
   }
 
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
-    if (!this.network || !this.#account) return
+    const network = this.network
+    const account = this.#account
+    if (!network || !account) return
+
+    // Attach the requesting dapp's name and url so the other owners can see the
+    // request context when co-signing on a different device (see buildSafeMessageOrigin)
+    const origin = buildSafeMessageOrigin(this.dapp)
 
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig).catch((e) => {
+    await withTimeout(
+      () => addMessage(network.chainId, account.addr as Hex, message, sig, origin),
+      {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      }
+    ).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }
 
   async addSigToSafeGlobal(sig: string, hash: string) {
-    if (!this.network) return
+    const network = this.network
+    if (!network) return
 
-    await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+    await withTimeout(() => addMessageSignature(network.chainId, hash, sig), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message signature timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }
@@ -469,6 +502,10 @@ export class SignMessageController
       return SignMessageController.#throwMissingSigningKey()
     }
 
+    // Bind this op to the current message; if init() replaces it during any
+    // await below, the generation changes and the op aborts.
+    const signingGeneration = this.#signingGeneration
+
     // we're always signing with the first signer
     // the goal was to have an array of signers that sign simultaneously
     // but it was too confusing, so we threw it away
@@ -481,7 +518,7 @@ export class SignMessageController
     this.emitUpdate() // pass the signer to the UI
 
     try {
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+      if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
       if (!this.#account) {
         throw new Error(
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
@@ -535,7 +572,7 @@ export class SignMessageController
             }
           }
 
-          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
           // get the final signature
           signature =
@@ -545,6 +582,10 @@ export class SignMessageController
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
+          if (isAmbireOperationTypedData(this.messageToSign.content)) {
+            throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+          }
+
           if (this.#account.creation && this.messageToSign.content.primaryType === 'Permit') {
             throw new Error(
               'It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.'
@@ -577,7 +618,7 @@ export class SignMessageController
             }
           }
 
-          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
           signature =
             this.signatures.length === 1 || !signed.hash
@@ -641,7 +682,7 @@ export class SignMessageController
                 })
         }
         const isValidSignature = await verifyMessage(verifyMessageParams)
-        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+        if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
         if (!isValidSignature) {
           throw new Error(

@@ -46,6 +46,31 @@ import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountO
 // as 0x92 is not a valid value for v.
 const magicBytes = '6492649264926492649264926492649264926492649264926492649264926492'
 
+export const EIP_1271_NOT_SUPPORTED_BY = [
+  'opensea.io',
+  'paraswap.xyz',
+  'blur.io',
+  'aevo.xyz',
+  'socialscan.io',
+  'tally.xyz',
+  'questn.com',
+  'taskon.xyz',
+  'hyperliquid.xyz',
+  'bitrefill.com'
+]
+
+export const AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE =
+  'Signing an AmbireOperation is not allowed'
+
+export const isAmbireOperationTypedData = (typedData: {
+  primaryType: string
+  types: Record<string, unknown>
+}) => {
+  if ('AmbireReadableOperation' in typedData.types) return false
+
+  return typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
+}
+
 /**
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
@@ -463,7 +488,8 @@ export async function getEIP712Signature(
   signer: KeystoreSignerInterface,
   network: Network,
   isOG = false,
-  withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest
+  withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest,
+  allowAmbireOperation = false
 ): Promise<{ signature: Hex; hash?: Hex }> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -497,6 +523,10 @@ export async function getEIP712Signature(
         withHardwareWalletSigningRequest
       )) as Hex
     }
+
+  if (isAmbireOperationTypedData(message) && !allowAmbireOperation) {
+    throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+  }
 
   if (!accountState.isV2) {
     if (

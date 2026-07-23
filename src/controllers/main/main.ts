@@ -210,6 +210,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   #continuousUpdates: ContinuousUpdatesController | undefined
 
+  #fetchSafeTxnsPromise: Promise<void> | undefined
+
   safe: ISafeController
 
   get continuousUpdates() {
@@ -581,8 +583,7 @@ export class MainController extends EventEmitter implements IMainController {
       defaultNetworksMode: this.networks.defaultNetworksMode,
       storage: this.storage,
       featureFlags: this.featureFlags,
-      isNetworkEnabled: (chainId: bigint) =>
-        !!this.networks.networks.find((n) => n.chainId === chainId)
+      getNetwork: (chainId: bigint) => this.networks.allNetworks.find((n) => n.chainId === chainId)
     })
 
     this.contractNames = new ContractNamesController({
@@ -715,12 +716,15 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
-        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
+    })
+
+    this.ui.uiEvent.on('viewFocus', () => {
+      this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
     })
   }
 
@@ -764,8 +768,6 @@ export class MainController extends EventEmitter implements IMainController {
       if (!this.accounts.areAccountStatesLoading) {
         this.accounts.updateAccountState(selectedAccountAddr)
       }
-
-      this.fetchSafeTxns().catch((e) => e) // we catch the error inside
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -1010,8 +1012,15 @@ export class MainController extends EventEmitter implements IMainController {
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
-  async handleSignAndBroadcastAccountOp(type: SignAccountOpType, fromRequestId: string | number) {
+  async handleSignAndBroadcastAccountOp(
+    type: SignAccountOpType,
+    fromRequestId: string | number,
+    reviewedAccountOpId?: string
+  ) {
     let signAccountOp: ISignAccountOpController | null = null
+    // Only the dapp calls request path shares a mutable SignAccountOpController
+    // that a second dapp request can append to before signing starts.
+    let isDappCallsRequest = false
 
     if (
       type === 'one-click-swap-and-bridge' &&
@@ -1030,6 +1039,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.requests.currentUserRequest.signAccountOp
+      isDappCallsRequest = true
     }
 
     if (!signAccountOp) {
@@ -1039,6 +1049,24 @@ export class MainController extends EventEmitter implements IMainController {
           'Internal error: The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.',
         error: new Error(
           'Error: signAccountOp controller not initialized while trying to sign and broadcast'
+        )
+      })
+    }
+
+    // Security: a dapp can append calls before signing starts. The accountOp id
+    // changes on every calls change, so a mismatch with the reviewed id means the
+    // live op differs from the screen - abort so the user re-reviews.
+    if (
+      isDappCallsRequest &&
+      reviewedAccountOpId &&
+      signAccountOp.accountOp.id !== reviewedAccountOpId
+    ) {
+      return this.emitError({
+        level: 'major',
+        message:
+          'The transaction changed after you reviewed it. Please review the updated transaction and try again.',
+        error: new Error(
+          'handleSignAndBroadcastAccountOp: reviewed accountOp id does not match the live accountOp id; aborting to prevent signing unreviewed calls'
         )
       })
     }
@@ -1607,6 +1635,16 @@ export class MainController extends EventEmitter implements IMainController {
    * if the selected account is a safe
    */
   async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    if (this.#fetchSafeTxnsPromise) return this.#fetchSafeTxnsPromise
+
+    this.#fetchSafeTxnsPromise = this.#fetchSafeTxns(chainIds, forceRefetch).finally(() => {
+      this.#fetchSafeTxnsPromise = undefined
+    })
+
+    return this.#fetchSafeTxnsPromise
+  }
+
+  async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex

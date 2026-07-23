@@ -1,4 +1,5 @@
 import { NameExpiry } from '../services/ensDomains'
+import { NameServiceId, ResolvedNames } from '../services/nameResolvers'
 import { ControllerInterface } from './controller'
 
 export type IDomainsController = ControllerInterface<
@@ -7,34 +8,33 @@ export type IDomainsController = ControllerInterface<
 
 export type Domains = {
   [address: string]: {
-    ens: string | null
     /**
-     * Namoshi domains are fully compatible with the ENS implementation, they just use a different universal resolver contract
-     * and have different TLDs (.btc and .citrea).
+     * Resolved primary names keyed by service. ENS-compatible services share the ENS resolution
+     * path with a different universal resolver and TLDs (Namoshi: .btc/.citrea, GNS: .gwei).
      */
-    namoshi: string | null
+    names: ResolvedNames
     /**
-     * ENS or Namoshi avatar URL
+     * Avatar of the primary name (ENS, Namoshi and GNS all expose one).
      */
-    ensAvatar?: string | null
+    avatar?: string | null
     createdAt?: number
     updatedAt?: number
     updateFailedAt?: number
     /**
-     * ENS registration expiry:
+     * Registration expiry of the primary name (only ENS names have one today):
      * - undefined: not fetched yet
      * - a value: fetched; the name has a registration expiry
-     * - null: fetched, but not relevant (no primary `.eth` 2LD name / unregistered)
+     * - null: fetched, but not relevant (no expirable primary name / unregistered)
      */
-    ensExpiry?: NameExpiry | null
+    expiry?: NameExpiry | null
   }
 }
 
 export type ResolvedReverseEntry =
   | { address: string; failed: true }
-  | { address: string; failed: false; ens: string | null; namoshi: string | null }
+  | { address: string; failed: false; names: ResolvedNames }
 
-export type ExtraReverseData = { avatar: string | null; ensExpiry: NameExpiry | null | undefined }
+export type ExtraReverseData = { avatar: string | null; expiry: NameExpiry | null | undefined }
 
 type ReverseLookupOptions = {
   /**
@@ -50,7 +50,7 @@ type ReverseLookupOptions = {
 type AddressState = {
   fieldValue: string
   resolvedAddress: string
-  resolvedAddressType: 'ens' | 'namoshi' | null
+  resolvedAddressType: NameServiceId | null
   isDomainResolving: boolean
 }
 
