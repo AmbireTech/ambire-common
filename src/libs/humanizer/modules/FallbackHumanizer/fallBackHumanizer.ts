@@ -30,6 +30,10 @@ export const fallbackHumanizer: HumanizerCallModule = (
           ]
         }
       case 'has-to:no-value:no-data':
+        // preserve a visualization already set by an earlier, more specific module (e.g. a
+        // Safe{WALLET} "reject queued transaction" call), instead of unconditionally
+        // overwriting it with a generic "Empty call to" label below
+        if (call.fullVisualization) return call
         return {
           ...call,
           fullVisualization: [getAction('Empty call to'), getAddressVisualization(call.to!)]

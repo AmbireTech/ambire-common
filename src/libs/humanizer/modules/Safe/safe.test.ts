@@ -50,4 +50,32 @@ describe('Safe', () => {
     const irCalls = SafeModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
+
+  // regression test for a Safe{WALLET} "reject queued transaction" call (a 0-value, no-data
+  // self-call proposed with the nonce of the transaction it is meant to replace) — it must be
+  // labeled with its nonce and not fall through to a later module's "Empty call" label
+  test('reject queued transaction is labeled with its nonce', () => {
+    const rejectAccountOp: AccountOp = { ...accountOp, nonce: 5n }
+    const rejectCall = {
+      to: rejectAccountOp.accountAddr,
+      value: 0n,
+      data: '0x'
+    }
+    const expectedVisualization = [
+      [getAction('Reject'), getLabel('Tx with nonce'), getLabel(5, true)]
+    ]
+    const irCalls = SafeModule(rejectAccountOp, [rejectCall], humanizerInfo as HumanizerMeta)
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  test('reject queued transaction without a known nonce falls back to a generic label', () => {
+    const rejectCall = {
+      to: accountOp.accountAddr,
+      value: 0n,
+      data: '0x'
+    }
+    const expectedVisualization = [[getAction('Reject currently queued transaction')]]
+    const irCalls = SafeModule(accountOp, [rejectCall], humanizerInfo as HumanizerMeta)
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
 })
